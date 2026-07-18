@@ -30,10 +30,6 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeKey(value: unknown) {
-  return normalizeText(value).toLowerCase();
-}
-
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
@@ -94,96 +90,6 @@ function resolveVersionPreviewHtml(version: Record<string, unknown> | null): str
       validationSummary.htmlPreview ||
       validationSummary.html_preview,
   );
-}
-
-const SIGNATURE_FIELD_POSITION_BY_ROLE: Record<string, { x: number; y: number }> = {
-  seller: { x: 440, y: 692 },
-  agent: { x: 600, y: 692 },
-  purchaser_1: { x: 120, y: 692 },
-  purchaser_2: { x: 280, y: 692 },
-  contractor: { x: 760, y: 692 },
-  other: { x: 120, y: 692 },
-};
-
-function signatureFieldPositionForRole(role: unknown) {
-  return SIGNATURE_FIELD_POSITION_BY_ROLE[normalizeKey(role)] || SIGNATURE_FIELD_POSITION_BY_ROLE.other;
-}
-
-async function ensureSignerSignatureField({
-  supabase,
-  signer,
-  packet,
-  version,
-}: {
-  supabase: any;
-  signer: Record<string, unknown>;
-  packet: Record<string, unknown>;
-  version: Record<string, unknown>;
-}) {
-  const signerRole = normalizeKey(signer.signer_role);
-  const signerId = normalizeText(signer.id);
-  const packetId = normalizeText(packet.id);
-  const versionId = normalizeText(version.id);
-  if (!signerRole || !signerId || !packetId || !versionId) return null;
-  if (["signed", "declined", "expired"].includes(normalizeKey(signer.status))) return null;
-
-  const existing = await supabase
-    .from("document_signing_fields")
-    .select("id")
-    .eq("packet_id", packetId)
-    .eq("packet_version_id", versionId)
-    .eq("signer_role", signerRole)
-    .eq("field_type", "signature")
-    .limit(1);
-  if (existing.error) throw existing.error;
-  if ((existing.data || []).length) return null;
-
-  const position = signatureFieldPositionForRole(signerRole);
-  const insertPayload = {
-    organisation_id: normalizeText(packet.organisation_id) || normalizeText(signer.organisation_id) || null,
-    packet_id: packetId,
-    packet_document_id: normalizeText(signer.packet_document_id) || normalizeText(version.rendered_document_id) || null,
-    packet_version_id: versionId,
-    signer_role: signerRole,
-    signer_name: normalizeText(signer.signer_name) || null,
-    signer_email: normalizeText(signer.signer_email).toLowerCase() || null,
-    field_type: "signature",
-    page_number: 1,
-    x_position: position.x,
-    y_position: position.y,
-    width: 168,
-    height: 44,
-    required: true,
-    status: "pending",
-  };
-
-  const inserted = await supabase
-    .from("document_signing_fields")
-    .insert(insertPayload)
-    .select(
-      "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
-    )
-    .single();
-  if (inserted.error) throw inserted.error;
-
-  await supabase.from("document_packet_events").insert({
-    packet_id: packetId,
-    organisation_id: insertPayload.organisation_id,
-    version_id: versionId,
-    event_type: "signing_fields_repaired",
-    event_payload_json: {
-      activity_type: "signing_fields_repaired",
-      signer_id: signerId,
-      signer_role: signerRole,
-      field_id: inserted.data?.id || null,
-      reason: "signer_link_missing_required_fields",
-      message: "A missing signing field was restored for an active signing link.",
-    },
-    created_by: null,
-    created_at: new Date().toISOString(),
-  });
-
-  return inserted.data as Record<string, unknown>;
 }
 
 function assignBrandingValue(target: Record<string, unknown>, key: string, value: unknown) {
@@ -495,9 +401,16 @@ Deno.serve(async (req: Request) => {
 
     const nowIso = new Date().toISOString();
     const tokenExpiry = normalizeText(signer?.token_expires_at);
+    if (!tokenExpiry) {
+      return jsonResponse(410, {
+        success: false,
+        error: "This signing link is no longer active.",
+        errorCode: "SIGNER_SESSION_INACTIVE",
+      });
+    }
     if (tokenExpiry) {
       const expiryDate = new Date(tokenExpiry);
-      if (!Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() < Date.now()) {
+      if (Number.isNaN(expiryDate.getTime()) || expiryDate.getTime() <= Date.now()) {
         if (normalizeText(signer?.status).toLowerCase() !== "expired") {
           await supabase.from("document_packet_signers").update({ status: "expired" }).eq("id", String(signer.id));
         }
@@ -507,6 +420,13 @@ Deno.serve(async (req: Request) => {
           errorCode: "SIGNING_TOKEN_EXPIRED",
         });
       }
+    }
+    if (!["sent", "viewed"].includes(normalizeText(signer?.status).toLowerCase())) {
+      return jsonResponse(409, {
+        success: false,
+        error: "This signing link is no longer active.",
+        errorCode: "SIGNER_SESSION_INACTIVE",
+      });
     }
 
     const packetQuery = await supabase
@@ -541,6 +461,29 @@ Deno.serve(async (req: Request) => {
       });
     }
     const version = versionQuery.data as Record<string, unknown>;
+    const validation = version.validation_summary_json && typeof version.validation_summary_json === "object"
+      ? version.validation_summary_json as Record<string, unknown>
+      : {};
+    const lock = validation.lock_snapshot && typeof validation.lock_snapshot === "object"
+      ? validation.lock_snapshot as Record<string, unknown>
+      : {};
+    const runtimeBindingValid =
+      normalizeText(packet.organisation_id) === normalizeText(signer.organisation_id) &&
+      normalizeText(version.organisation_id) === normalizeText(signer.organisation_id) &&
+      Number(packet.current_version_number) === Number(version.version_number) &&
+      normalizeText(version.render_status).toLowerCase() === "generated" &&
+      validation.content_locked === true &&
+      normalizeText(validation.review_state).toLowerCase() === "locked" &&
+      normalizeText(lock.lockDecision).toLowerCase() === "locked" &&
+      normalizeText(lock.packetId) === normalizeText(packet.id) &&
+      normalizeText(lock.versionId) === normalizeText(version.id);
+    if (!runtimeBindingValid) {
+      return jsonResponse(409, {
+        success: false,
+        error: "This signing session is not bound to the current locked document version.",
+        errorCode: "SIGNER_SESSION_BINDING_INVALID",
+      });
+    }
 
     if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && normalizeText(signer.signer_role).toLowerCase() === "seller") {
       const agentSignerQuery = await supabase
@@ -563,34 +506,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    let documentPreviewVersion = version;
-    let previewDataVersion = version;
+    const documentPreviewVersion = version;
+    const previewDataVersion = version;
     const linkedVersionHasPreviewAsset = hasVersionPreviewAsset(version);
     const linkedVersionHasPreviewData = hasVersionPreviewData(version);
 
     if (!linkedVersionHasPreviewAsset || !linkedVersionHasPreviewData) {
-      const latestPreviewVersionQuery = await supabase
-        .from("document_packet_versions")
-        .select(
-          "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
-        )
-        .eq("packet_id", String(packet.id || ""))
-        .order("version_number", { ascending: false })
-        .limit(12);
-      if (latestPreviewVersionQuery.error) throw latestPreviewVersionQuery.error;
-      const previewCandidates = (latestPreviewVersionQuery.data || []) as Record<string, unknown>[];
-      const latestAssetVersion = previewCandidates.find((candidate) => hasVersionPreviewAsset(candidate));
-      const latestDataVersion = previewCandidates.find((candidate) => hasVersionPreviewData(candidate));
-
-      if (!linkedVersionHasPreviewAsset && latestAssetVersion) {
-        documentPreviewVersion = latestAssetVersion;
-      }
-      if (!linkedVersionHasPreviewData && latestDataVersion) {
-        previewDataVersion = latestDataVersion;
-      }
+      return jsonResponse(409, {
+        success: false,
+        error: "The exact locked document version is not available for signing preview.",
+        errorCode: "LOCKED_SIGNING_PREVIEW_UNAVAILABLE",
+      });
     }
 
-    let fieldsQuery = await supabase
+    const fieldsQuery = await supabase
       .from("document_signing_fields")
       .select(
         "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
@@ -601,31 +530,19 @@ Deno.serve(async (req: Request) => {
       .order("page_number", { ascending: true })
       .order("created_at", { ascending: true });
     if (fieldsQuery.error) throw fieldsQuery.error;
-    let allFields = ((fieldsQuery.data || []) as Record<string, unknown>[])
-      .filter((field) => normalizeText(field?.field_type).toLowerCase() !== "initial");
-
-    if (!allFields.length) {
-      await ensureSignerSignatureField({ supabase, signer, packet, version });
-      fieldsQuery = await supabase
-        .from("document_signing_fields")
-        .select(
-          "id, packet_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email",
-        )
-        .eq("packet_id", String(packet.id || ""))
-        .eq("packet_version_id", String(version.id || ""))
-        .eq("signer_role", normalizeText(signer.signer_role))
-        .order("page_number", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (fieldsQuery.error) throw fieldsQuery.error;
-      allFields = ((fieldsQuery.data || []) as Record<string, unknown>[])
-        .filter((field) => normalizeText(field?.field_type).toLowerCase() !== "initial");
-    }
-
+    const allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
     const signerEmail = normalizeText(signer.signer_email).toLowerCase();
     const fields = allFields.filter((field) => {
       const fieldEmail = normalizeText(field?.signer_email).toLowerCase();
       return !fieldEmail || fieldEmail === signerEmail;
     });
+    if (!fields.length) {
+      return jsonResponse(409, {
+        success: false,
+        error: "No prepared signing fields exist for this exact signer and locked version.",
+        errorCode: "SIGNER_FIELDS_NOT_PREPARED",
+      });
+    }
 
     const requiredInitials = fields.filter((field) => field.required && normalizeText(field.field_type) === "initial").length;
     const requiredSignatures = fields.filter((field) => field.required && normalizeText(field.field_type) === "signature").length;

@@ -1,0 +1,36 @@
+{
+  "version": "settings_phase7_release2_v1",
+  "enabled": false,
+  "environment": "production",
+  "organisationIds": [],
+  "workspaceTypes": [],
+  "release1": {
+    "status": "pending",
+    "completedAt": null,
+    "evidenceReference": null
+  },
+  "approval": {
+    "status": "pending",
+    "approvedBy": null,
+    "approvedAt": null,
+    "reference": null
+  },
+  "limits": {
+    "minOrganisations": 6,
+    "maxOrganisations": 25,
+    "minWorkspaceTypes": 2,
+    "minObservationHours": 72,
+    "minSettingsWrites": 20,
+    "minSaveSuccessPercent": 99.5,
+    "maxSettingsErrors": 0,
+    "maxOwnershipTransferFailures": 0,
+    "maxCriticalSupportIncidents": 0
+  },
+  "rollback": {
+    "strategy": "return_to_release_1_cohort_and_redeploy_previous_frontend",
+    "databaseMigrationsAreForwardOnly": true,
+    "preserveRelease1Organisations": true,
+    "preserveAuditEvents": true,
+    "preserveSavedSettings": true
+  }
+}

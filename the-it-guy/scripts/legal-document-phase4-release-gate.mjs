@@ -11,13 +11,11 @@ function runJson(script) {
 }
 
 const pilot = JSON.parse(fs.readFileSync('config/legal-document-pilot.json', 'utf8'))
-const phase3 = runJson('scripts/legal-document-phase3-launch-readiness.mjs')
-const monitor = runJson('scripts/legal-document-phase4-monitor.mjs')
-const blockers = [...(phase3.report?.blockers || []), ...(monitor.report?.blockers || [])]
-const warnings = [...(phase3.report?.warnings || [])]
+const phaseA2 = runJson('scripts/legal-document-phase-a2-readiness.mjs')
+const blockers = [...(phaseA2.report?.blockers || [])]
+const warnings = [...(phaseA2.report?.warnings || [])]
 
-if (!phase3.report) blockers.push({ code: 'PHASE3_GATE_UNAVAILABLE', detail: phase3.stderr || 'Phase 3 gate did not return JSON.' })
-if (!monitor.report) blockers.push({ code: 'PHASE4_MONITOR_UNAVAILABLE', detail: monitor.stderr || 'Phase 4 monitor did not return JSON.' })
+if (!phaseA2.report) blockers.push({ code: 'PHASE_A2_GATE_UNAVAILABLE', detail: phaseA2.stderr || 'The Phase A2 gate did not return JSON.' })
 if (!pilot.enabled) blockers.push({ code: 'PILOT_NOT_ENABLED', detail: 'The production pilot remains deliberately disabled.' })
 if (!Array.isArray(pilot.organisationIds) || !pilot.organisationIds.length) blockers.push({ code: 'PILOT_COHORT_EMPTY', detail: 'No production organisations are approved for the pilot.' })
 if ((pilot.organisationIds || []).length > Number(pilot.limits?.maxOrganisations || 5)) blockers.push({ code: 'PILOT_COHORT_TOO_LARGE', detail: 'Pilot cohort exceeds its configured safety limit.' })
@@ -32,7 +30,7 @@ const report = {
   blockers: uniqueBlockers,
   warnings,
   pilot: { enabled: pilot.enabled, cohortSize: pilot.organisationIds?.length || 0, maxOrganisations: pilot.limits?.maxOrganisations || 5 },
-  evidence: { phase3: phase3.report?.evidence || null, monitoring: monitor.report?.metrics || null },
+  evidence: { phaseA2: phaseA2.report?.evidence || null },
   checkedAt: new Date().toISOString(),
   mutatedData: false,
 }

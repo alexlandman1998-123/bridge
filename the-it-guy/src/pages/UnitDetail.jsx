@@ -37,6 +37,8 @@ import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
+import { formatLegalDocumentGenerationRecovery } from '../core/documents/legalDocumentGenerationRecovery'
+import { isAmbiguousLegalDocumentGenerationFailure } from '../core/documents/legalDocumentGenerationReconciliation'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -4903,7 +4905,9 @@ function UnitDetail() {
       await loadDetail()
       return true
     } catch (generationError) {
-      setError(generationError?.message || 'Unable to generate OTP draft right now.')
+      if (!isAmbiguousLegalDocumentGenerationFailure(generationError)) {
+        setError(formatLegalDocumentGenerationRecovery(generationError, { packetType: 'otp' }))
+      }
       throw generationError
     } finally {
       setSalesActionLoading('')

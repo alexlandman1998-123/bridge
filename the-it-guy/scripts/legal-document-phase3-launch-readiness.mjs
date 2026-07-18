@@ -29,15 +29,22 @@ function legalApproval(template = {}) {
     status: normalize(meta.legal_review_status || meta.legalApprovalStatus || review.status).toLowerCase(),
     approvedAt: normalize(meta.legal_approved_at || meta.legalApprovedAt || review.approvedAt),
     reference: normalize(meta.legal_approval_reference || meta.legalApprovalReference || review.reference),
+    contentDigest: normalize(meta.legal_approval_content_digest || meta.legalApprovalContentDigest || review.contentDigest),
+    reviewEvidenceDigest: normalize(meta.legal_counsel_review_evidence_digest || meta.legalCounselReviewEvidenceDigest || review.reviewEvidenceDigest),
   }
 }
 
 function approved(template) {
   const approval = legalApproval(template)
-  return approval.status === 'approved' && Boolean(approval.approvedAt) && Boolean(approval.reference)
+  const frozen = reviewManifestByTemplateId.get(template.id)
+  return approval.status === 'approved' && Boolean(approval.approvedAt) && Boolean(approval.reference) && Boolean(approval.reviewEvidenceDigest) && Boolean(frozen?.contentDigest) && approval.contentDigest === frozen.contentDigest
 }
 
 const env = { ...envFile('.env'), ...envFile('.env.staging.local'), ...process.env }
+const pilotConfig = JSON.parse(fs.readFileSync('config/legal-document-pilot.json', 'utf8'))
+const reviewManifest = JSON.parse(fs.readFileSync('config/legal-document-review-manifest.json', 'utf8'))
+const reviewManifestByTemplateId = new Map((reviewManifest.templates || []).map((row) => [row.templateId, row]))
+const candidateOrganisationIds = [...new Set(pilotConfig.cohortPreparation?.candidateOrganisationIds || [])]
 const url = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
 assert.ok(url.includes(STAGING_PROJECT_REF), 'Refusing Phase 3 readiness verification outside canonical staging.')
 assert.ok(env.SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY is required for the read-only release gate.')
@@ -51,21 +58,23 @@ const evidence = {}
 
 const templateResult = await client
   .from('document_packet_templates')
-  .select('id, packet_type, template_key, template_label, status, is_active, template_storage_bucket, template_storage_path, metadata_json, updated_at')
+  .select('id, organisation_id, packet_type, template_key, template_label, status, is_active, template_storage_bucket, template_storage_path, metadata_json, updated_at')
   .in('packet_type', ['otp', 'mandate'])
   .eq('status', 'published')
   .neq('is_active', false)
 assert.ifError(templateResult.error)
 const templates = templateResult.data || []
-const otpTemplate = templates.find((row) => normalize(row.packet_type).toLowerCase() === 'otp')
-const mandateTemplates = templates.filter((row) => normalize(row.packet_type).toLowerCase() === 'mandate')
-if (!otpTemplate?.template_storage_path) blockers.push({ code: 'OTP_TEMPLATE_SOURCE_MISSING', detail: 'Published OTP template has no renderable storage source.' })
-if (!approved(otpTemplate)) blockers.push({ code: 'OTP_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'OTP template needs approved status, approval date, and counsel/reference metadata.' })
+const routableTemplates = templates.filter((row) => row.organisation_id === null || candidateOrganisationIds.includes(row.organisation_id))
+const otpTemplates = routableTemplates.filter((row) => normalize(row.packet_type).toLowerCase() === 'otp')
+const mandateTemplates = routableTemplates.filter((row) => normalize(row.packet_type).toLowerCase() === 'mandate')
+if (!otpTemplates.length || otpTemplates.some((row) => !row.template_storage_path)) blockers.push({ code: 'OTP_TEMPLATE_SOURCE_MISSING', detail: 'Every published OTP route available to the pilot cohort must have a renderable storage source.' })
+if (!otpTemplates.length || otpTemplates.some((row) => !approved(row))) blockers.push({ code: 'OTP_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'Every published OTP route available to the pilot cohort needs approved status, approval date, and counsel/reference metadata.' })
 if (!mandateTemplates.length) blockers.push({ code: 'SALES_MANDATE_TEMPLATE_MISSING', detail: 'No published active SalesMandate template exists.' })
-if (!mandateTemplates.some(approved)) blockers.push({ code: 'SALES_MANDATE_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'At least one published SalesMandate route needs approved status, approval date, and counsel/reference metadata.' })
+if (!mandateTemplates.length || mandateTemplates.some((row) => !approved(row))) blockers.push({ code: 'SALES_MANDATE_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'Every published SalesMandate route available to the pilot cohort needs approved status, approval date, and counsel/reference metadata.' })
 evidence.templates = {
-  otp: otpTemplate ? { id: otpTemplate.id, key: otpTemplate.template_key, sourcePresent: Boolean(otpTemplate.template_storage_path), legalApproval: legalApproval(otpTemplate) } : null,
-  mandate: mandateTemplates.map((row) => ({ id: row.id, key: row.template_key, legalApproval: legalApproval(row) })),
+  cohortOrganisationIds: candidateOrganisationIds,
+  otp: otpTemplates.map((row) => ({ id: row.id, organisationId: row.organisation_id, key: row.template_key, sourcePresent: Boolean(row.template_storage_path), legalApproval: legalApproval(row) })),
+  mandate: mandateTemplates.map((row) => ({ id: row.id, organisationId: row.organisation_id, key: row.template_key, legalApproval: legalApproval(row) })),
 }
 
 const packetResult = await client

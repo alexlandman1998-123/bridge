@@ -48,6 +48,10 @@ const PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_AGENCY, label: 'Use Agency Preferred Partner' },
   { value: PARTNER_MODE_BUYER, label: 'Use Buyer Appointed Partner' },
 ]
+const TRANSFER_FIRM_MODE_OPTIONS = [
+  { value: PARTNER_MODE_AGENCY, label: 'Use Agency Preferred Firm' },
+  { value: PARTNER_MODE_BUYER, label: 'Use Seller-Appointed Firm' },
+]
 const OPTIONAL_PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_NONE, label: 'Not Assigned Yet' },
   ...PARTNER_ROLE_FIELD_OPTIONS,
@@ -1136,7 +1140,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         return {
           roleType,
           label: String(form.transferBuyerCompanyName || form.transferBuyerContactPerson || '').trim(),
-          detail: 'Buyer-appointed partner',
+          detail: 'Seller-appointed firm',
         }
       }
       return selectedTransferPartner
@@ -1552,15 +1556,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         && form.transferPartnerMode === PARTNER_MODE_AGENCY
       ) {
         if (!String(form.transferPreferredPartnerId || '').trim()) {
-          nextErrors.transferPreferredPartnerId = 'Select a transfer attorney partner.'
+          nextErrors.transferPreferredPartnerId = 'Select a transfer attorney firm.'
         }
       }
 
       if (transferChoice !== 'confirm' && form.transferPartnerMode === PARTNER_MODE_BUYER) {
-        if (!String(form.transferBuyerCompanyName || '').trim()) nextErrors.transferBuyerCompanyName = 'Company name is required.'
-        if (!String(form.transferBuyerContactPerson || '').trim()) nextErrors.transferBuyerContactPerson = 'Contact person is required.'
-        if (!String(form.transferBuyerEmail || '').trim()) nextErrors.transferBuyerEmail = 'Email is required.'
-        if (!String(form.transferBuyerPhone || '').trim()) nextErrors.transferBuyerPhone = 'Phone is required.'
+        if (!String(form.transferBuyerCompanyName || '').trim()) nextErrors.transferBuyerCompanyName = 'Attorney firm name is required.'
+        if (!String(form.transferBuyerEmail || '').trim()) nextErrors.transferBuyerEmail = 'Firm contact email is required.'
       }
 
       if (
@@ -1604,7 +1606,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         && transferChoice !== 'confirm'
         && !String(form.transferPreferredPartnerId || form.transferBuyerCompanyName || '').trim()
       ) {
-        nextErrors.transferPreferredPartnerId = 'Choose a transfer attorney or use the recommended route.'
+        nextErrors.transferPreferredPartnerId = 'Choose a transfer attorney firm or use the recommended route.'
       }
     }
 
@@ -1703,6 +1705,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         ? {
             mode: PARTNER_MODE_AGENCY,
             partnerId: selectedTransferPartner?.id || null,
+            partnerOrganisationId: selectedTransferPartner?.partnerOrganisationId || null,
             companyName: selectedTransferPartner?.companyName || '',
             contactPerson: selectedTransferPartner?.contactPerson || '',
             email: selectedTransferPartner?.email || '',
@@ -1786,7 +1789,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     const manualRolePlayers = {
       transfer_attorney: {
         roleType: 'transfer_attorney',
-        source: transferSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
+        source: transferSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'seller_nomination',
         preferredPartnerId: transferSelection.partnerId || null,
         partner: transferSelection,
       },
@@ -1865,7 +1868,6 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     const bondOriginatorDisplay = resolveRolePlayerDisplay('bond_originator', bondOriginatorSelection)
     const cancellationAttorneyDisplay = resolveRolePlayerDisplay('cancellation_attorney', cancellationAttorneySelection)
     const transferAttorneyLabel = transferAttorneyDisplay.label
-    const transferAttorneyEmail = transferAttorneyDisplay.email
     const bondOriginatorLabel = bondOriginatorDisplay.label
     const bondOriginatorEmail = bondOriginatorDisplay.email
     const cancellationAttorneyLabel = cancellationAttorneyDisplay.label
@@ -1873,9 +1875,11 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     const hasExternallyAppointedRolePlayer = [transferSelection, bondOriginatorSelection, cancellationAttorneySelection]
       .filter(Boolean)
       .some((item) => item.mode === PARTNER_MODE_BUYER)
-    const nextAction = hasExternallyAppointedRolePlayer
-      ? 'Externally appointed role player captured. Validate assignment while onboarding proceeds.'
-      : 'Finance details and bond requirements will be captured during client onboarding.'
+    const nextAction = transferAttorneyLabel
+      ? 'Transfer attorney firm nominated. Awaiting firm acceptance and internal primary attorney assignment.'
+      : hasExternallyAppointedRolePlayer
+        ? 'Externally appointed role player captured. Validate assignment while onboarding proceeds.'
+        : 'Finance details and bond requirements will be captured during client onboarding.'
 
     try {
       setSaving(true)
@@ -1944,7 +1948,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
               ? form.alterationChargeTreatment
               : 'included_in_purchase_price',
           attorney: transferAttorneyLabel,
-          attorneyEmail: transferAttorneyEmail,
+          attorneyEmail: '',
           bondOriginator: bondOriginatorLabel,
           bondOriginatorEmail,
           cancellationAttorney: cancellationAttorneyLabel,
@@ -2335,14 +2339,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-4">
                   <p className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Transaction Roles</p>
                   <p className="mt-1 text-sm text-[#5f748c]">
-                    Assign transfer, bond originator, and cancellation role players when needed. The transfer attorney can set the bond attorney after creation.
+                    Nominate the transfer attorney firm. The firm accepts the instruction and assigns its own primary attorney after creation.
                   </p>
                 </div>
 
                 <div className="mt-4 grid gap-4">
                   <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <strong className="text-sm text-[#22374d]">Transfer Attorney</strong>
+                      <strong className="text-sm text-[#22374d]">Transfer Attorney Firm</strong>
                       <span className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#5f748c]">
                         Required
                       </span>
@@ -2350,7 +2354,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                     <div className="grid gap-4 md:grid-cols-2">
                       <Field label="Selection Mode">
                         <select className={fieldClass()} value={form.transferPartnerMode} onChange={(event) => updateField('transferPartnerMode', event.target.value)}>
-                          {PARTNER_ROLE_FIELD_OPTIONS.map((item) => (
+                          {TRANSFER_FIRM_MODE_OPTIONS.map((item) => (
                             <option key={item.value} value={item.value}>
                               {item.label}
                             </option>
@@ -2371,9 +2375,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
 
                     {form.transferPartnerMode === PARTNER_MODE_AGENCY ? (
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <Field label="Agency Preferred Transfer Attorney" error={errors.transferPreferredPartnerId}>
+                        <Field label="Agency Preferred Transfer Firm" error={errors.transferPreferredPartnerId}>
                           <select className={fieldClass()} value={form.transferPreferredPartnerId} onChange={(event) => updateField('transferPreferredPartnerId', event.target.value)}>
-                            <option value="">Select transfer attorney</option>
+                            <option value="">Select transfer attorney firm</option>
                             {preferredPartnersLoading ? (
                               <option disabled>Loading preferred transfer attorneys...</option>
                             ) : preferredPartnersError ? (
@@ -2381,7 +2385,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                             ) : transferAttorneyOptions.length ? (
                               transferAttorneyOptions.map((partner) => (
                                 <option key={partner.id} value={partner.id}>
-                                  {partner.companyName} • {partner.contactPerson || 'Contact pending'} • {partner.email || 'No email'}
+                                  {partner.companyName} • {partner.contactPerson || 'Preferred contact pending'} • {partner.email || 'No email'}
                                 </option>
                               ))
                             ) : (
@@ -2393,11 +2397,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                           {selectedTransferPartner ? (
                             <>
                               <p className="font-semibold text-[#22374d]">{selectedTransferPartner.companyName}</p>
-                              <p className="mt-1">{selectedTransferPartner.contactPerson || 'No contact person'}</p>
+                              <p className="mt-1">Preferred contact: {selectedTransferPartner.contactPerson || 'None captured'}</p>
                               <p className="mt-1">{selectedTransferPartner.email || 'No email'} • {selectedTransferPartner.phone || 'No phone'}</p>
+                              <p className="mt-2 text-xs font-medium text-[#6f8298]">This preference does not assign the matter to a person. The firm controls its internal allocation.</p>
                             </>
                           ) : (
-                            <p>Select a preferred transfer attorney partner.</p>
+                            <p>Select the attorney firm that should receive the transfer instruction.</p>
                           )}
                           {preferredPartnersError ? (
                             <p className="mt-1 text-[#b42318]">Could not load agency preferred partners. Try refreshing the page.</p>
@@ -2411,10 +2416,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       </div>
                     ) : (
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <Field label="Buyer Appointed Company" error={errors.transferBuyerCompanyName}>
+                        <Field label="Seller-Appointed Firm" error={errors.transferBuyerCompanyName}>
                           <input className={fieldClass()} value={form.transferBuyerCompanyName} onChange={(event) => updateField('transferBuyerCompanyName', event.target.value)} />
                         </Field>
-                        <Field label="Buyer Appointed Contact" error={errors.transferBuyerContactPerson}>
+                        <Field label="Preferred Contact (Optional)" error={errors.transferBuyerContactPerson}>
                           <input className={fieldClass()} value={form.transferBuyerContactPerson} onChange={(event) => updateField('transferBuyerContactPerson', event.target.value)} />
                         </Field>
                         <Field label="Email" error={errors.transferBuyerEmail}>
@@ -2723,14 +2728,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       <p className="mt-1">{form.clientEmail} • {form.clientPhone}</p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transfer Attorney</p>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transfer Attorney Firm</p>
                       <p className="mt-2 font-semibold text-[#22374d]">
                         {form.transferPartnerMode === PARTNER_MODE_AGENCY
                           ? selectedTransferPartner?.companyName || selectedTransferPartner?.contactPerson || 'Pending selection'
-                          : form.transferBuyerCompanyName || form.transferBuyerContactPerson || 'Buyer-appointed partner pending'}
+                          : form.transferBuyerCompanyName || form.transferBuyerContactPerson || 'Seller-appointed firm pending'}
                       </p>
                       <p className="mt-1 text-[#5f748c]">
-                        {form.transferPartnerMode === PARTNER_MODE_AGENCY ? 'Agency preferred partner' : 'Buyer appointed partner'}
+                        Awaiting firm acceptance • Primary attorney will be assigned by the firm
                       </p>
                     </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">

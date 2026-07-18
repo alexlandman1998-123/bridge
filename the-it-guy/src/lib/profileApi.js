@@ -149,7 +149,7 @@ function normalizeProfileRow(row, user, fallback = null) {
   }
 }
 
-async function ensureProfileRecord(client, user, fallbackProfile) {
+async function persistProfileRecord(client, user, fallbackProfile, { createIfMissing = false } = {}) {
   const rowPayload = {
     id: user.id,
     email: fallbackProfile.email,
@@ -166,11 +166,26 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     onboarding_completed: Boolean(fallbackProfile.onboardingCompleted),
   }
 
-  let result = await client
-    .from('profiles')
-    .upsert(rowPayload, { onConflict: 'id' })
-    .select(PROFILE_SELECT_COLUMNS)
-    .single()
+  const writeProfile = (payload, selectColumns) => {
+    if (createIfMissing) {
+      return client
+        .from('profiles')
+        .insert(payload)
+        .select(selectColumns)
+        .single()
+    }
+
+    const updatePayload = { ...payload }
+    delete updatePayload.id
+    return client
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', user.id)
+      .select(selectColumns)
+      .maybeSingle()
+  }
+
+  let result = await writeProfile(rowPayload, PROFILE_SELECT_COLUMNS)
 
   if (
     result.error &&
@@ -184,11 +199,7 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     delete legacyPayload.attorney_role
     delete legacyPayload.system_role
     delete legacyPayload.avatar_url
-    result = await client
-      .from('profiles')
-      .upsert(legacyPayload, { onConflict: 'id' })
-      .select(LEGACY_PROFILE_SELECT_COLUMNS)
-      .single()
+    result = await writeProfile(legacyPayload, LEGACY_PROFILE_SELECT_COLUMNS)
   }
 
   if (result.error) {
@@ -199,6 +210,10 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
       throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
     }
     throw result.error
+  }
+
+  if (!result.data) {
+    throw new Error('Profile record was not found. Complete account setup before updating your profile.')
   }
 
   return normalizeProfileRow(result.data, user, fallbackProfile)
@@ -257,7 +272,7 @@ export async function getOrCreateUserProfile({ user } = {}) {
   }
 
   if (!profileQuery.data) {
-    return ensureProfileRecord(client, activeUser, fallbackProfile)
+    return persistProfileRecord(client, activeUser, fallbackProfile, { createIfMissing: true })
   }
 
   const normalized = normalizeProfileRow(profileQuery.data, activeUser, fallbackProfile)
@@ -270,7 +285,7 @@ export async function getOrCreateUserProfile({ user } = {}) {
     return normalized
   }
 
-  return ensureProfileRecord(client, activeUser, {
+  return persistProfileRecord(client, activeUser, {
     ...normalized,
     onboardingCompleted: normalized.onboardingCompleted,
   })
@@ -294,7 +309,7 @@ export async function updateUserProfile({
     throw new Error('User id is required to update profile.')
   }
 
-  const payload = { id: userId }
+  const payload = {}
 
   if (firstName !== undefined) {
     const safeFirstName = String(firstName || '').trim()
@@ -350,14 +365,15 @@ export async function updateUserProfile({
 
   console.debug('[PROFILE] write:start', {
     userId,
-    fields: Object.keys(payload).filter((key) => key !== 'id'),
+    fields: Object.keys(payload),
   })
 
   let updateResult = await client
     .from('profiles')
-    .upsert(payload, { onConflict: 'id' })
+    .update(payload)
+    .eq('id', userId)
     .select(PROFILE_SELECT_COLUMNS)
-    .single()
+    .maybeSingle()
 
   if (
     updateResult.error &&
@@ -373,9 +389,10 @@ export async function updateUserProfile({
     delete legacyPayload.avatar_url
     updateResult = await client
       .from('profiles')
-      .upsert(legacyPayload, { onConflict: 'id' })
+      .update(legacyPayload)
+      .eq('id', userId)
       .select(LEGACY_PROFILE_SELECT_COLUMNS)
-      .single()
+      .maybeSingle()
   }
 
   if (updateResult.error) {
@@ -386,6 +403,10 @@ export async function updateUserProfile({
       throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
     }
     throw updateResult.error
+  }
+
+  if (!updateResult.data) {
+    throw new Error('Profile record was not found. Complete account setup before updating your profile.')
   }
 
   console.debug('[PROFILE] write:success', {

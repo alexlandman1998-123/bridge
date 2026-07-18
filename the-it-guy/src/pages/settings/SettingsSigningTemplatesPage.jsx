@@ -33,6 +33,10 @@ import {
   prepareSigningFields,
   renderPacketPreview,
 } from '../../core/documents/packetService'
+import { formatLegalDocumentGenerationRecovery, resolveLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
+import { captureLegalDocumentGenerationBaseline, reconcileLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
+import { resolveLegalDocumentRetryPolicy } from '../../core/documents/legalDocumentGenerationRetryPolicy'
+import { recordLegalDocumentGenerationSupportHandoff } from '../../core/documents/legalDocumentGenerationSupportHandoff'
 import {
   listCanonicalMergeFields,
   suggestCanonicalMergeFieldKey,
@@ -55,6 +59,7 @@ import {
 } from '../../core/documents/mandateTemplateLaunchReadiness'
 import {
   archiveDocumentPacket,
+  appendDocumentPacketEvent,
   createDocumentPacket,
   createDocumentPacketTemplate,
   fetchDocumentPacket,
@@ -5692,25 +5697,26 @@ export default function SettingsSigningTemplatesPage({
   editorSituationKey = '',
   focusedLegalDocumentKey = '',
 } = {}) {
-  const { role, currentMembership, currentWorkspace, workspaceType } = useWorkspace()
+  const { role, currentWorkspace, organisationMembership, organisationMembershipRole, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const resolvedOrganisationId = normalizeText(
     currentWorkspace?.id ||
       currentWorkspace?.organisationId ||
       currentWorkspace?.organisation_id ||
-      currentMembership?.workspaceId ||
-      currentMembership?.workspace_id ||
-      currentMembership?.organisationId ||
-      currentMembership?.organisation_id,
+      organisationMembership?.workspaceId ||
+      organisationMembership?.workspace_id ||
+      organisationMembership?.organisationId ||
+      organisationMembership?.organisation_id,
   )
   const workspaceMembershipRole = useMemo(() => {
     const rawRole = normalizeText(
-      currentMembership?.workspaceRole ||
-        currentMembership?.workspace_role ||
-        currentMembership?.organisationRole ||
-        currentMembership?.organisation_role ||
-        currentMembership?.role ||
-        currentMembership?.membershipRole,
+      organisationMembershipRole ||
+        organisationMembership?.workspaceRole ||
+        organisationMembership?.workspace_role ||
+        organisationMembership?.organisationRole ||
+        organisationMembership?.organisation_role ||
+        organisationMembership?.role ||
+        organisationMembership?.membershipRole,
     )
     return rawRole
       ? normalizeOrganisationMembershipRole(rawRole, {
@@ -5718,7 +5724,7 @@ export default function SettingsSigningTemplatesPage({
           workspaceType: resolvedWorkspaceType,
         })
       : ''
-  }, [currentMembership, resolvedWorkspaceType, role])
+  }, [organisationMembership, organisationMembershipRole, resolvedWorkspaceType, role])
   const allowedPacketTypesKey = (
     Array.isArray(allowedPacketTypes) && allowedPacketTypes.length
       ? allowedPacketTypes
@@ -5755,6 +5761,8 @@ export default function SettingsSigningTemplatesPage({
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const documentGenerationFailureCountsRef = useRef(new Map())
+  const recordedDocumentGenerationHandoffsRef = useRef(new Set())
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [packetType, setPacketType] = useState(defaultPacketType)
   const [activeDocumentTypeKey, setActiveDocumentTypeKey] = useState(defaultPacketType)
@@ -7802,7 +7810,9 @@ export default function SettingsSigningTemplatesPage({
       setMessage(autoGenerate ? `Document created and generated: ${packet?.title || runPayload.title}` : `Draft document saved: ${packet?.title || runPayload.title}`)
       return packet
     } catch (packetError) {
-      setError(packetError?.message || 'Unable to create draft document.')
+      setError(autoGenerate
+        ? formatLegalDocumentGenerationRecovery(packetError, { packetType })
+        : packetError?.message || 'Unable to create draft document.')
       return null
     } finally {
       setCreatingDocumentPacket(false)
@@ -7870,6 +7880,7 @@ export default function SettingsSigningTemplatesPage({
       setActiveStudioArea('documents')
       return
     }
+    const generationBaseline = captureLegalDocumentGenerationBaseline(selectedLibraryPacketVersions)
     try {
       setPacketActionId(`generate:${packet.id}`)
       setError('')
@@ -7886,8 +7897,44 @@ export default function SettingsSigningTemplatesPage({
       await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
       await loadLibraryPacketDetail(packet.id)
       setMessage(`Generated document version v${result?.version?.version_number || result?.packet?.current_version_number || ''}.`)
+      documentGenerationFailureCountsRef.current.clear()
     } catch (generateError) {
-      setError(generateError?.message || 'Unable to generate document version.')
+      setMessage('Checking whether the document completed…')
+      const reconciliation = await reconcileLegalDocumentGenerationFailure({
+        error: generateError,
+        baseline: generationBaseline,
+        loadStatus: async () => {
+          const detail = await fetchDocumentPacket(packet.id, { includeVersions: true, includeEvents: true })
+          setSelectedLibraryPacketDetail(detail || null)
+          return detail || null
+        },
+      })
+      if (reconciliation.confirmed) {
+        setError('')
+        setMessage(`Generation completed and recovered version v${reconciliation.version?.version_number || ''} is ready to review.`)
+        documentGenerationFailureCountsRef.current.clear()
+        await loadDocumentLibrary({ targetPacketType: packet.packet_type || packetType })
+        return
+      }
+      setMessage('')
+      const recoveryPacketType = packet.packet_type || packetType
+      const recovery = resolveLegalDocumentGenerationRecovery(generateError, { packetType: recoveryPacketType })
+      const signature = `${recoveryPacketType}:${packet.id}:${recovery.code}`
+      const policy = resolveLegalDocumentRetryPolicy({ recovery, previousFailureCount: documentGenerationFailureCountsRef.current.get(signature) || 0, packetType: recoveryPacketType, packetId: packet.id })
+      documentGenerationFailureCountsRef.current.set(signature, policy.failureCount)
+      setError(`${policy.message} Next step: ${policy.nextAction}`)
+      if (policy.escalated && !recordedDocumentGenerationHandoffsRef.current.has(policy.supportReference)) {
+        void recordLegalDocumentGenerationSupportHandoff({
+          appendEvent: appendDocumentPacketEvent,
+          packetId: packet.id,
+          organisationId: packet.organisation_id || null,
+          policy,
+          packetType: recoveryPacketType,
+          surface: 'document_builder',
+        }).then((result) => {
+          if (result.recorded) recordedDocumentGenerationHandoffsRef.current.add(policy.supportReference)
+        })
+      }
     } finally {
       setPacketActionId('')
     }

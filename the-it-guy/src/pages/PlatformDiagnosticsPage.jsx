@@ -33,6 +33,8 @@ import {
   summarizeCrossModuleDocumentConsistencyAudit,
 } from '../services/documents/crossModuleDocumentConsistencyService'
 import { getWorkspaceBrandingIntegrityDiagnostics } from '../services/workspaceBrandingIntegrityService'
+import { listLegalDocumentGenerationSupportHandoffs, transitionLegalDocumentGenerationSupportHandoff } from '../lib/documentPacketsApi'
+import { LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -233,6 +235,10 @@ export default function PlatformDiagnosticsPage() {
   const [documentConsistencyLoading, setDocumentConsistencyLoading] = useState(false)
   const [workspaceBrandingIntegrity, setWorkspaceBrandingIntegrity] = useState(null)
   const [workspaceBrandingIntegrityLoading, setWorkspaceBrandingIntegrityLoading] = useState(false)
+  const [legalGenerationHandoffs, setLegalGenerationHandoffs] = useState(null)
+  const [legalGenerationHandoffsLoading, setLegalGenerationHandoffsLoading] = useState(false)
+  const [legalGenerationHandoffAction, setLegalGenerationHandoffAction] = useState('')
+  const [legalGenerationResolutionByReference, setLegalGenerationResolutionByReference] = useState({})
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
@@ -284,6 +290,47 @@ export default function PlatformDiagnosticsPage() {
       setError(operationsError?.message || 'Operations health check failed.')
     } finally {
       setOperationsLoading(false)
+    }
+  }
+
+  async function loadLegalGenerationHandoffs() {
+    try {
+      setLegalGenerationHandoffsLoading(true)
+      setError('')
+      setLegalGenerationHandoffs(await listLegalDocumentGenerationSupportHandoffs({
+        organisationId: currentWorkspace?.id || null,
+        limit: 50,
+      }))
+    } catch (handoffError) {
+      setError(handoffError?.code === 'SUPPORT_HANDOFF_ADMIN_REQUIRED'
+        ? 'Organisation administrator access is required to view legal-document support handoffs.'
+        : 'Legal-document support handoffs could not be loaded.')
+    } finally {
+      setLegalGenerationHandoffsLoading(false)
+    }
+  }
+
+  async function transitionLegalGenerationHandoff(handoff, action) {
+    const actionKey = `${action}:${handoff.supportReference}`
+    try {
+      setLegalGenerationHandoffAction(actionKey)
+      setError('')
+      await transitionLegalDocumentGenerationSupportHandoff({
+        organisationId: currentWorkspace?.id || null,
+        packetId: handoff.packetId,
+        supportReference: handoff.supportReference,
+        action,
+        resolutionCode: action === 'resolve'
+          ? legalGenerationResolutionByReference[handoff.supportReference] || 'generation_succeeded'
+          : '',
+      })
+      await loadLegalGenerationHandoffs()
+    } catch (handoffError) {
+      setError(handoffError?.code === 'SUPPORT_HANDOFF_ACKNOWLEDGEMENT_REQUIRED'
+        ? 'A legal-generation support handoff must be acknowledged before it can be resolved.'
+        : 'The legal-generation support handoff could not be updated.')
+    } finally {
+      setLegalGenerationHandoffAction('')
     }
   }
 
@@ -720,6 +767,107 @@ export default function PlatformDiagnosticsPage() {
             ) : null}
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Legal generation support handoffs</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#60758d]">
+                Find sanitised mandate and OTP generation escalations for the active organisation. This view is read-only and restricted to organisation administrators.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadLegalGenerationHandoffs} disabled={legalGenerationHandoffsLoading}>
+              {legalGenerationHandoffsLoading ? 'Loading handoffs...' : 'Load support handoffs'}
+            </button>
+          </div>
+          {legalGenerationHandoffs ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-7">
+                <StatCard label="Total" value={legalGenerationHandoffs.summary?.total || 0} />
+                <StatCard label="Open" value={legalGenerationHandoffs.summary?.open || 0} tone={legalGenerationHandoffs.summary?.open ? 'warning' : 'success'} />
+                <StatCard label="Acknowledged" value={legalGenerationHandoffs.summary?.acknowledged || 0} />
+                <StatCard label="Resolved" value={legalGenerationHandoffs.summary?.resolved || 0} tone="success" />
+                <StatCard label="SLA overdue" value={legalGenerationHandoffs.summary?.overdue || 0} tone={legalGenerationHandoffs.summary?.overdue ? 'critical' : 'success'} />
+                <StatCard label="Repeated failures" value={legalGenerationHandoffs.summary?.repeatedFailures || 0} tone={legalGenerationHandoffs.summary?.repeatedFailures ? 'warning' : 'success'} />
+                <StatCard label="Support escalations" value={legalGenerationHandoffs.summary?.support || 0} tone={legalGenerationHandoffs.summary?.support ? 'warning' : 'success'} />
+              </div>
+              {legalGenerationHandoffs.handoffs?.length ? (
+                <div className="overflow-x-auto rounded-[14px] border border-[#dde4ee]">
+                  <table className="w-full min-w-[920px] text-left text-sm">
+                    <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                      <tr>
+                        <th className="px-4 py-3">Reference</th>
+                        <th className="px-4 py-3">Document</th>
+                        <th className="px-4 py-3">Failure</th>
+                        <th className="px-4 py-3">Source</th>
+                        <th className="px-4 py-3">Case status</th>
+                        <th className="px-4 py-3">SLA</th>
+                        <th className="px-4 py-3">Created</th>
+                        <th className="px-4 py-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf1f6]">
+                      {legalGenerationHandoffs.handoffs.map((handoff) => (
+                        <tr key={handoff.id || `${handoff.supportReference}-${handoff.createdAt}`}>
+                          <td className="px-4 py-3">
+                            <button type="button" className="font-semibold text-[#245f91] hover:underline" onClick={() => navigator.clipboard?.writeText(handoff.supportReference).catch(() => null)}>
+                              {handoff.supportReference}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className={`font-semibold capitalize ${handoff.overdue ? 'text-[#9f1c1c]' : handoff.slaState === 'complete' ? 'text-[#236340]' : 'text-[#60758d]'}`}>{handoff.slaState.replace(/_/g, ' ')}</p>
+                            <p className="mt-1 text-xs text-[#60758d]">
+                              {handoff.caseStatus === 'open' && handoff.responseDueAt ? `Acknowledge by ${new Date(handoff.responseDueAt).toLocaleString('en-ZA')}` : handoff.caseStatus === 'acknowledged' && handoff.resolutionDueAt ? `Resolve by ${new Date(handoff.resolutionDueAt).toLocaleString('en-ZA')}` : 'Completed'}
+                            </p>
+                            {handoff.acknowledgedBy ? <p className="mt-1 text-xs text-[#60758d]">Owner {handoff.acknowledgedBy.slice(0, 8)}…</p> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-[#31485e]">{handoff.packetTitle}</p>
+                            <p className="mt-1 text-xs uppercase text-[#60758d]">{handoff.packetType} · {handoff.packetStatus}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p>{handoff.failureCode.replace(/_/g, ' ')}</p>
+                            <p className="mt-1 text-xs text-[#60758d]">Attempt {handoff.failureCount} · {handoff.escalationType}</p>
+                          </td>
+                          <td className="px-4 py-3 text-[#60758d]">{handoff.surface.replace(/_/g, ' ')}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${handoff.caseStatus === 'resolved' ? 'bg-[#effaf3] text-[#236340]' : handoff.caseStatus === 'acknowledged' ? 'bg-[#eef5ff] text-[#245f91]' : 'bg-[#fff8ec] text-[#8a4b10]'}`}>
+                              {handoff.caseStatus}
+                            </span>
+                            {handoff.resolutionCode ? <p className="mt-1 text-xs text-[#60758d]">{handoff.resolutionCode.replace(/_/g, ' ')}</p> : null}
+                          </td>
+                          <td className="px-4 py-3 text-[#60758d]">{handoff.createdAt ? new Date(handoff.createdAt).toLocaleString('en-ZA') : 'Unknown'}</td>
+                          <td className="px-4 py-3">
+                            {handoff.caseStatus === 'open' ? (
+                              <button type="button" className="header-secondary-cta" disabled={Boolean(legalGenerationHandoffAction)} onClick={() => void transitionLegalGenerationHandoff(handoff, 'acknowledge')}>
+                                {legalGenerationHandoffAction === `acknowledge:${handoff.supportReference}` ? 'Acknowledging...' : 'Acknowledge'}
+                              </button>
+                            ) : handoff.caseStatus === 'acknowledged' ? (
+                              <div className="flex min-w-[250px] items-center gap-2">
+                                <select className="rounded-lg border border-[#d7e2ee] bg-white px-2 py-2 text-xs" value={legalGenerationResolutionByReference[handoff.supportReference] || 'generation_succeeded'} onChange={(event) => setLegalGenerationResolutionByReference((current) => ({ ...current, [handoff.supportReference]: event.target.value }))}>
+                                  {LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES.map((code) => <option key={code} value={code}>{code.replace(/_/g, ' ')}</option>)}
+                                </select>
+                                <button type="button" className="header-primary-cta" disabled={Boolean(legalGenerationHandoffAction)} onClick={() => void transitionLegalGenerationHandoff(handoff, 'resolve')}>
+                                  {legalGenerationHandoffAction === `resolve:${handoff.supportReference}` ? 'Resolving...' : 'Resolve'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs font-semibold text-[#236340]">Closed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">No legal-generation support handoffs were found for this organisation.</p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-4 py-6 text-center text-sm text-[#60758d]">Load the read-only feed when support receives a legal-document reference.</p>
+          )}
+        </div>
 
         {launchReadiness ? (
           <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">

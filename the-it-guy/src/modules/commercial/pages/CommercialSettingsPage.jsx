@@ -8,13 +8,13 @@ function CommercialSettingsPage() {
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Commercial Settings</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Commercial Tools</h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              Commercial workspace controls, template management, and document creation entry points live here.
+              Open the working template, document, and import tools for this workspace.
             </p>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-            <Settings size={14} /> Workspace ready
+            <Settings size={14} /> Available tools
           </span>
         </div>
       </section>

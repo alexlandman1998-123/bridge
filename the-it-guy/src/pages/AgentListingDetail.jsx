@@ -34,6 +34,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
+import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -122,6 +123,9 @@ import { listCommunicationDeliveries } from '../services/communicationDeliverySe
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
+import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
+import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
+import { buildSellerDocumentReviewSlaReport } from '../lib/sellerDocumentReviewSla'
 import {
   captureShowDayLead,
   captureShowDayLeadBatch,
@@ -715,9 +719,22 @@ function groupListingDocumentsForDisplay(documents = []) {
 
 function isListingDocumentComplete(document = {}) {
   return Boolean(
-    document?.uploaded ||
-      ['uploaded', 'complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(document?.status)),
+    ['complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(document?.status)),
   )
+}
+
+function getSellerDocumentSlaPresentation(reviewSla = null) {
+  const state = String(reviewSla?.slaState || '').trim().toLowerCase()
+  if (!reviewSla || state === 'resolved') return null
+  if (state === 'critical' || state === 'unassigned') {
+    return {
+      label: state === 'unassigned' ? 'Review owner missing' : 'Review critically overdue',
+      classes: 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]',
+    }
+  }
+  if (state === 'breached') return { label: 'Review SLA breached', classes: 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]' }
+  if (state === 'due_soon') return { label: 'Review due within 24 hours', classes: 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]' }
+  return { label: 'Review within SLA', classes: 'border-[#d6e4f5] bg-[#f4f9ff] text-[#315b7d]' }
 }
 
 function resolveSellerEmailFromListing(listing = {}) {
@@ -1815,6 +1832,7 @@ function AgentListingDetail() {
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
+  const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
@@ -3019,6 +3037,52 @@ function AgentListingDetail() {
     }
   }
 
+  async function handleSellerDocumentReview({ item, document, action, reason }) {
+    const actionKey = `${item?.key || item?.id}:${action}`
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentWorkflowAction(actionKey)
+    try {
+      const result = await reviewSellerDocument({ document, action, reason })
+      await loadListingData()
+      const title = item?.title || item?.label || 'Seller document'
+      const message = action === 'approve'
+        ? `${title} approved. Assurance and transaction handoff will update automatically.`
+        : action === 'reject'
+          ? `${title} rejected. The seller replacement request and follow-up cadence were reopened automatically.`
+          : `${title} is now marked under review.`
+      setDetailMessage(result?.idempotent ? `${message} This action was already recorded.` : message)
+      return true
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to update the seller document review.')
+      return false
+    } finally {
+      setSellerDocumentWorkflowAction('')
+    }
+  }
+
+  async function handleSellerDocumentReminder({ item, requirementId }) {
+    const actionKey = `${item?.key || item?.id}:remind`
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentWorkflowAction(actionKey)
+    try {
+      const result = await sendSellerDocumentManualReminder({ requirementId })
+      await loadListingData()
+      setDetailMessage(
+        result?.idempotent
+          ? 'A reminder for this document was already queued today; no duplicate was sent.'
+          : `Reminder queued for ${item?.title || item?.label || 'the outstanding seller document'}.`,
+      )
+      return true
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to send the seller document reminder.')
+      return false
+    } finally {
+      setSellerDocumentWorkflowAction('')
+    }
+  }
+
   function openSellerWorkspaceSection(tab, message = '') {
     setActiveTab('seller')
     setSellerWorkspaceTab(tab)
@@ -4195,27 +4259,56 @@ function AgentListingDetail() {
     [sellerDocumentSource],
   )
 
+  const sellerDocumentExperience = useMemo(
+    () => buildSellerDocumentExperienceModel({
+      requirements: sellerDocumentTrackerRows,
+      audience: 'agent',
+    }),
+    [sellerDocumentTrackerRows],
+  )
+
+  const sellerDocumentReviewSla = useMemo(
+    () => buildSellerDocumentReviewSlaReport(
+      sellerDocumentExperience.items.map((item) => ({
+        ...item,
+        ownerMissing: !String(listingRecord?.assignedAgentId || listingRecord?.agentId || listingRecord?.assigned_agent_id || '').trim(),
+      })),
+    ),
+    [listingRecord?.agentId, listingRecord?.assignedAgentId, listingRecord?.assigned_agent_id, sellerDocumentExperience.items],
+  )
+  const sellerDocumentSlaById = useMemo(
+    () => new Map(sellerDocumentReviewSla.rows.map((row) => [row.documentId, row])),
+    [sellerDocumentReviewSla.rows],
+  )
+  const sellerDocumentExperienceItems = useMemo(
+    () => sellerDocumentExperience.items.map((item) => ({
+      ...item,
+      reviewSla: sellerDocumentSlaById.get(String(item?.linkedDocument?.id || '')) || null,
+    })),
+    [sellerDocumentExperience.items, sellerDocumentSlaById],
+  )
+
   const propertyDocuments = useMemo(
-    () => sellerDocumentTrackerRows.filter((doc) => {
+    () => sellerDocumentExperienceItems.filter((doc) => {
       const category = normalizeKey(doc?.category)
       const group = normalizeKey(doc?.group)
       return category === 'property' || ['property', 'compliance', 'property_compliance', 'financial', 'occupancy', 'mandate'].includes(group)
     }),
-    [sellerDocumentTrackerRows],
+    [sellerDocumentExperienceItems],
   )
 
   const sellerDocuments = useMemo(
-    () => sellerDocumentTrackerRows.filter((doc) => {
+    () => sellerDocumentExperienceItems.filter((doc) => {
       const category = normalizeKey(doc?.category)
       const group = normalizeKey(doc?.group)
       return category === 'fica' || ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group)
     }),
-    [sellerDocumentTrackerRows],
+    [sellerDocumentExperienceItems],
   )
 
   const listingDocumentGroups = useMemo(
-    () => groupListingDocumentsForDisplay(sellerDocumentTrackerRows),
-    [sellerDocumentTrackerRows],
+    () => groupListingDocumentsForDisplay(sellerDocumentExperienceItems),
+    [sellerDocumentExperienceItems],
   )
   const activeListingDocumentGroup = useMemo(
     () => listingDocumentGroups.find((group) => group.key === activeListingDocumentTab) || listingDocumentGroups[0] || null,
@@ -4223,10 +4316,6 @@ function AgentListingDetail() {
   )
 
   const listingReadinessItems = useMemo(() => {
-    const requiredSellerDocuments = sellerDocumentTrackerRows.filter((doc) => doc.required)
-    const sellerDocumentsComplete = requiredSellerDocuments.length
-      ? requiredSellerDocuments.every((doc) => doc.uploaded || ['uploaded', 'complete', 'completed', 'approved', 'verified'].includes(String(doc.status || '').toLowerCase()))
-      : false
     return [
       { key: 'address', label: 'Address captured', complete: Boolean(marketingDraft.addressLine1.trim()) },
       { key: 'asking_price', label: 'Asking price captured', complete: Number(marketingDraft.price || listingRecord?.askingPrice || 0) > 0 },
@@ -4236,10 +4325,10 @@ function AgentListingDetail() {
       { key: 'features', label: 'Property features captured', complete: marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0 },
       { key: 'mandate', label: 'Mandate signed', complete: mandateWorkspace.isSigned },
       { key: 'mandate_continuity', label: 'Mandate continuity verified', complete: mandateContinuity.ready },
-      { key: 'documents', label: 'Seller documents complete', complete: sellerDocumentsComplete },
+      { key: 'documents', label: 'Seller documents approved', complete: sellerDocumentExperience.summary.ready },
       { key: 'external_links', label: 'External links added', complete: normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => link.url) },
     ]
-  }, [listingRecord?.askingPrice, mandateContinuity.ready, mandateWorkspace.isSigned, marketingDraft, sellerDocumentTrackerRows])
+  }, [listingRecord?.askingPrice, mandateContinuity.ready, mandateWorkspace.isSigned, marketingDraft, sellerDocumentExperience.summary.ready])
 
   const listingReadinessCompleted = listingReadinessItems.filter((item) => item.complete).length
   const listingReadinessPercent = listingReadinessItems.length
@@ -8876,6 +8965,14 @@ function AgentListingDetail() {
                                 </p>
                               ) : null}
                             </div>
+                            {doc.reviewSla ? (() => {
+                              const sla = getSellerDocumentSlaPresentation(doc.reviewSla)
+                              return sla ? (
+                                <div className={`mt-3 rounded-[12px] border px-3 py-2 text-xs font-semibold ${sla.classes}`} role={doc.reviewSla.blocking ? 'alert' : 'status'}>
+                                  {sla.label}{doc.reviewSla.reviewDueAt ? ` · Due ${formatDate(doc.reviewSla.reviewDueAt)}` : ''}
+                                </div>
+                              ) : null
+                            })() : null}
                             <div className="mt-4 flex flex-wrap justify-end gap-2">
                               {doc.url || doc.filePath ? (
                                 <button
@@ -8893,6 +8990,12 @@ function AgentListingDetail() {
                                 </span>
                               )}
                             </div>
+                            <SellerDocumentReviewActions
+                              item={doc}
+                              busyAction={sellerDocumentWorkflowAction}
+                              onReview={handleSellerDocumentReview}
+                              onReminder={handleSellerDocumentReminder}
+                            />
                           </div>
                         ))}
                       </div>
@@ -9028,12 +9131,28 @@ function AgentListingDetail() {
           {sellerReadinessSummary ? (
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <h3 className="text-[1rem] font-semibold text-[#142132]">Seller Requirement Summary</h3>
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <MetricCard label="Completion" value={`${sellerDocumentSource?.summary?.totalRequired ? Math.round((sellerDocumentSource.summary.completeRequired / sellerDocumentSource.summary.totalRequired) * 100) : sellerReadinessSummary.requirementCompletionPct}%`} meta="Dynamic seller requirement progress" />
-                <MetricCard label="Missing" value={sellerDocumentSource?.summary?.blocking ?? sellerReadinessSummary.missingRequirementsCount} meta="Outstanding requirement count" />
-                <MetricCard label="Mandate Ready" value={sellerReadinessSummary.mandateReady ? 'Yes' : 'No'} meta="Based on onboarding + mandate inputs" />
-                <MetricCard label="Active Ready" value={sellerReadinessSummary.activeReady ? 'Yes' : 'No'} meta="Ready for activation checks" />
+              <div className="mt-4 grid gap-3 md:grid-cols-4 xl:grid-cols-7">
+                <MetricCard label="Approved" value={`${sellerDocumentExperience.summary.assurancePercent}%`} meta={`${sellerDocumentExperience.summary.approved}/${sellerDocumentExperience.summary.total} assured`} />
+                <MetricCard label="Received" value={`${sellerDocumentExperience.summary.collectionPercent}%`} meta="Includes review queue" />
+                <MetricCard label="Seller action" value={sellerDocumentExperience.summary.actionRequired} meta={`${sellerDocumentExperience.summary.overdue} overdue`} />
+                <MetricCard label="Review queue" value={sellerDocumentExperience.summary.reviewRequired} meta="Approve or reject" />
+                <MetricCard label="Rejected" value={sellerDocumentExperience.summary.rejected} meta="Correction required" />
+                <MetricCard label="Handoff issues" value={sellerDocumentExperience.summary.handoffBlocked + sellerDocumentExperience.summary.handoffPending} meta={`${sellerDocumentExperience.summary.handoffReady} transfer-ready`} />
+                <MetricCard label="Review SLA" value={sellerDocumentReviewSla.summary.blockingCount + sellerDocumentReviewSla.summary.attentionCount} meta={`${sellerDocumentReviewSla.summary.criticalCount} critical · ${sellerDocumentReviewSla.summary.breachedCount} breached`} />
               </div>
+              {sellerDocumentReviewSla.gate.status !== 'pass' ? (
+                <div className={`mt-4 rounded-[14px] border px-4 py-3 ${sellerDocumentReviewSla.gate.status === 'blocked' ? 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]' : 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]'}`} role="alert">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em]">Review SLA {sellerDocumentReviewSla.gate.status}</p>
+                  <p className="mt-1 text-sm">{sellerDocumentReviewSla.gate.reason}</p>
+                </div>
+              ) : null}
+              {sellerDocumentExperience.nextAction?.message ? (
+                <div className="mt-4 rounded-[14px] border border-[#d9e5f0] bg-[#f7fbff] px-4 py-3" role="status">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#47637d]">Next document action{sellerDocumentExperience.nextAction.stageLabel ? ` · ${sellerDocumentExperience.nextAction.stageLabel}` : ''}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#243d56]">{sellerDocumentExperience.nextAction.title}</p>
+                  <p className="mt-1 text-sm text-[#607387]">{sellerDocumentExperience.nextAction.message}</p>
+                </div>
+              ) : null}
               {sellerReadinessSummary.blockedBy?.length ? (
                 <div className="mt-4 rounded-[14px] border border-[#f3d9b0] bg-[#fff9ee] px-4 py-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8f5c18]">Readiness Blockers</p>
@@ -9074,9 +9193,15 @@ function AgentListingDetail() {
                           {doc.requirement_description ? (
                             <p className="mt-1 text-xs text-[#6b7d93]">{doc.requirement_description}</p>
                           ) : null}
+                          {doc.message ? <p className="mt-1 text-xs font-medium text-[#47637d]">{doc.message}</p> : null}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {doc.stageLabel ? <span className="rounded-full border border-[#dbe5ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">{doc.stageLabel}</span> : null}
+                            {doc.overdue ? <span className="rounded-full border border-[#f3c2c2] bg-[#fff1f1] px-2 py-0.5 text-[0.68rem] font-semibold text-[#b42318]">Overdue</span> : null}
+                            {doc.handoff?.applicable ? <span className="rounded-full border border-[#dbe5ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">{doc.handoff.label}</span> : null}
+                          </div>
                         </div>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(doc.status)}`}>
-                          {formatStatusLabel(doc.status)}
+                          {doc.statusLabel || formatStatusLabel(doc.status)}
                         </span>
                       </div>
                     </article>

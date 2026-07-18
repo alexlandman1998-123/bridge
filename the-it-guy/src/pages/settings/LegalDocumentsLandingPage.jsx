@@ -39,8 +39,8 @@ const BUILD_STEPS = Object.freeze([
 ])
 
 export default function LegalDocumentsLandingPage() {
-  const { currentMembership, currentWorkspace } = useWorkspace()
-  const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, currentMembership)
+  const { currentWorkspace, organisationMembership } = useWorkspace()
+  const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, organisationMembership)
   const {
     documents,
     summary,

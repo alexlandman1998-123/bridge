@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "phase": "B1",
+  "status": "frozen_for_counsel_review",
+  "digestAlgorithm": "sha256",
+  "projectRef": "isdowlnollckzvltkasn",
+  "candidateOrganisationIds": [
+    "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  ],
+  "generatedAt": "2026-07-17T20:19:34.408Z",
+  "templates": [
+    {
+      "templateId": "3cec3c33-fd76-43de-9e5c-d4dff3f510a1",
+      "organisationId": null,
+      "packetType": "otp",
+      "templateKey": "otp_default_v1",
+      "versionTag": "v1",
+      "templateFormat": "docx",
+      "storageBucket": "documents",
+      "storagePath": "legal-templates/global/agency/otp/otp_default_v1/v1/otp_default_v1.docx",
+      "sourceSha256": "2b0f5cd51db48c6999270b3272d720a7cc2d8a63ffe31395fc3654370490b0b0",
+      "sourceAvailable": true,
+      "sourceError": null,
+      "sectionsSha256": "2af3d4534500e4555d36aec846da2cc09e626e0860d108f959e9d0bb1a83f824",
+      "sectionCount": 7,
+      "contentDigest": "sha256:db30f9c82db7e068268442dcffd6aaa914bce55962eaa819c952e55ea3cef8a0",
+      "sourceUpdatedAt": "2026-07-16T17:22:24.017869+00:00"
+    },
+    {
+      "templateId": "d1208f47-1564-497e-b68f-4c0984a3a27b",
+      "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "packetType": "mandate",
+      "templateKey": "mandate_default_v1_draft_1783857886291",
+      "versionTag": "v1",
+      "templateFormat": "docx",
+      "storageBucket": "documents",
+      "storagePath": "templates/mandates/seller-mandate-v1.docx",
+      "sourceSha256": null,
+      "sourceAvailable": false,
+      "sourceError": "Object not found",
+      "sectionsSha256": "5721a4216833815d8c00852039c115ce8a12da3d5f8e2568930e9dda855d1b14",
+      "sectionCount": 8,
+      "contentDigest": "sha256:583e2abd16a0a3af0dbeb32118ff26913815858e49e53eb9990934b685cd1fdc",
+      "sourceUpdatedAt": "2026-07-14T21:14:07.285241+00:00"
+    },
+    {
+      "templateId": "f2ef4b55-416b-4d1d-ae76-0d6b9164e52a",
+      "organisationId": null,
+      "packetType": "mandate",
+      "templateKey": "mandate_default_v1",
+      "versionTag": "v1",
+      "templateFormat": "docx",
+      "storageBucket": "documents",
+      "storagePath": "templates/mandates/seller-mandate-v1.docx",
+      "sourceSha256": null,
+      "sourceAvailable": false,
+      "sourceError": "Object not found",
+      "sectionsSha256": "fb45586d48d244de2930047322626fd429a1b0802810167fdddfcc8243a90e1f",
+      "sectionCount": 8,
+      "contentDigest": "sha256:f6e7f717279845ea889fc31ecaa885d3f0d1ba9995565f2eba2535b7125f3e06",
+      "sourceUpdatedAt": "2026-07-14T21:14:07.285241+00:00"
+    }
+  ],
+  "manifestDigest": "sha256:1b5f6a0dc6cfbd2cf3f42643fbe84c7f8580dd928970eb432e1035893391c1da"
+}

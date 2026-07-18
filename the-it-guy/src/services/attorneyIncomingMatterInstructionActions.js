@@ -26,6 +26,10 @@ const ASSIGNMENT_SELECT_COLUMNS = [
   'instruction_declined_at',
   'instruction_declined_by',
   'instruction_decision_note',
+  'firm_acceptance_status',
+  'staff_assignment_status',
+  'allocation_state',
+  'appointment_source',
 ]
 
 const ASSIGNMENT_RESULT_SELECT = 'id, transaction_id, instruction_status'
@@ -491,6 +495,27 @@ export async function acceptAttorneyIncomingInstruction(client, {
   const readiness = assertAttorneyIncomingInstructionCanBeAccepted(assignment)
   const resolvedTransactionId = normalizeText(assignment.transaction_id || assignment.transactionId || normalizedTransactionId)
 
+  if (
+    normalizeText(assignment.allocation_state) === 'awaiting_firm_acceptance' &&
+    normalizeText(assignment.firm_acceptance_status) === 'awaiting_firm_acceptance'
+  ) {
+    const firmDecision = await client.rpc('bridge_manage_transfer_firm_allocation', {
+      p_assignment_id: assignment.id,
+      p_action: 'accept',
+      p_attorney_user_id: null,
+      p_reason: null,
+    })
+    if (firmDecision.error) throw firmDecision.error
+    return {
+      assignment: Array.isArray(firmDecision.data) ? firmDecision.data[0] : firmDecision.data,
+      transactionId: resolvedTransactionId,
+      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+      alreadyAccepted: false,
+      firmAccepted: true,
+      actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
+    }
+  }
+
   if (readiness.alreadyAccepted) {
     return {
       assignment,
@@ -585,6 +610,27 @@ export async function declineAttorneyIncomingInstruction(client, {
   const assignment = pickTransferAssignment(assignments) || assignments[0] || null
   const readiness = assertAttorneyIncomingInstructionCanBeDeclined(assignment)
   const resolvedTransactionId = normalizeText(assignment.transaction_id || assignment.transactionId || normalizedTransactionId)
+
+  if (
+    ['awaiting_firm_acceptance', 'awaiting_staff_assignment', 'staff_assigned'].includes(normalizeText(assignment.allocation_state)) &&
+    normalizeText(assignment.firm_acceptance_status) !== 'not_required'
+  ) {
+    const firmDecision = await client.rpc('bridge_manage_transfer_firm_allocation', {
+      p_assignment_id: assignment.id,
+      p_action: 'decline',
+      p_attorney_user_id: null,
+      p_reason: normalizeText(reason),
+    })
+    if (firmDecision.error) throw firmDecision.error
+    return {
+      assignment: Array.isArray(firmDecision.data) ? firmDecision.data[0] : firmDecision.data,
+      transactionId: resolvedTransactionId,
+      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
+      alreadyDeclined: false,
+      firmDeclined: true,
+      actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
+    }
+  }
 
   if (readiness.alreadyDeclined) {
     return {

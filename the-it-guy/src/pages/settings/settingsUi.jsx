@@ -1,11 +1,11 @@
 export const settingsPageClass =
-  'mx-auto w-full max-w-[1220px] space-y-6'
-export const settingsCardClass = 'rounded-[12px] border border-[#e4ebf2] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]'
-export const settingsGridClass = 'grid gap-3 md:grid-cols-2'
+  'mx-auto w-full max-w-[1120px] space-y-7'
+export const settingsCardClass = 'rounded-[14px] border border-[#e1e8ef] bg-white p-5'
+export const settingsGridClass = 'grid gap-4 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
 export const settingsFieldSpanClass = 'md:col-span-2'
 export const settingsActionRowClass = 'flex flex-wrap items-center justify-end gap-3 border-t border-[#e8eef5] pt-3'
-export const settingsTableClass = 'overflow-hidden rounded-[16px] border border-[#e3eaf2] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+export const settingsTableClass = 'overflow-hidden rounded-[16px] border border-[#dfe7ee] bg-white'
 
 function getAlertToneClasses(tone) {
   if (tone === 'success') {
@@ -21,11 +21,11 @@ function getAlertToneClasses(tone) {
 
 export function SettingsPageHeader({ kicker, title, description, actions }) {
   return (
-    <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <header className="flex flex-col gap-4 border-b border-[#e8edf2] pb-6 lg:flex-row lg:items-start lg:justify-between">
       <div className="space-y-2">
         {kicker ? <span className="text-[0.68rem] font-semibold uppercase text-[#7b8da6]">{kicker}</span> : null}
         <div className="space-y-1.5">
-          <h2 className="text-xl font-semibold leading-tight text-[#121c2d]">{title}</h2>
+          <h2 className="text-2xl font-semibold leading-tight tracking-[-0.025em] text-[#121c2d]">{title}</h2>
           {description ? <p className="max-w-3xl text-sm font-normal leading-6 text-[#607387]">{description}</p> : null}
         </div>
       </div>

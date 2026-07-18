@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Button from '../../components/ui/Button'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
@@ -11,8 +12,16 @@ import {
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
+  transferOrganisationOwnership,
+  updateOrganisationUserJobTitle,
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
+import { getOrganisationJobTitleLabel, ORGANISATION_JOB_TITLE_OPTIONS } from '../../lib/organisationJobTitles'
+import {
+  canGovernOrganisationRoleChange,
+  getOrganisationRoleOptions,
+  getOrganisationRolePermissionSummary,
+} from '../../lib/organisationRoleGovernance'
 import {
   createPrincipalClaimInvite,
   createWorkspaceUserInvite,
@@ -49,25 +58,11 @@ import {
   setCommercialUserAccess,
 } from '../../modules/commercial/services/commercialApi'
 
-const ROLE_OPTIONS = [
-  { value: 'owner', label: 'Organisation Owner' },
-  { value: 'super_admin', label: 'Super Admin' },
-  { value: 'principal', label: 'Principal' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'branch_manager', label: 'Branch Manager' },
-  { value: 'team_lead', label: 'Team Lead' },
-  { value: 'senior_agent', label: 'Senior Agent' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'assistant', label: 'Assistant' },
-  { value: 'transaction_coordinator', label: 'Transaction Coordinator' },
-  { value: 'listing_coordinator', label: 'Listing Coordinator' },
-  { value: 'admin_coordinator', label: 'Admin Coordinator' },
-  { value: 'viewer', label: 'Viewer' },
-]
-
-function resolveInviteRole(value = '', fallback = 'agent') {
+function resolveInviteRole(value = '', fallback = 'agent', roleOptions = []) {
   const normalized = String(value || '').trim().toLowerCase()
-  return ROLE_OPTIONS.some((option) => option.value === normalized) ? normalized : fallback
+  if (roleOptions.some((option) => option.value === normalized)) return normalized
+  if (roleOptions.some((option) => option.value === fallback)) return fallback
+  return roleOptions.find((option) => option.value !== 'owner')?.value || 'viewer'
 }
 
 function getRoleLevel(value = '') {
@@ -92,11 +87,23 @@ function canAssignOrganisationRole(actor = {}, targetRole = '', { target = {}, i
   )
 }
 
-function filterAssignableRoleOptions(actor = {}, { target = null, invite = false } = {}) {
+function filterAssignableRoleOptions(actor = {}, { target = null, invite = false, roleOptions = [] } = {}) {
   const currentRole = target?.role || ''
-  const options = ROLE_OPTIONS.filter((option) => canAssignOrganisationRole(actor, option.value, { target: target || {}, invite }))
+  const options = roleOptions.filter((option) => canAssignOrganisationRole(actor, option.value, { target: target || {}, invite }))
   if (currentRole && !options.some((option) => option.value === currentRole)) {
-    const currentOption = ROLE_OPTIONS.find((option) => option.value === currentRole)
+    const currentOption = roleOptions.find((option) => option.value === currentRole)
+    if (currentOption) return [currentOption, ...options]
+  }
+  return options
+}
+
+function filterGovernedRoleOptions(actor = {}, target = {}, roleOptions = []) {
+  const currentRole = target?.role || ''
+  const options = roleOptions.filter((option) =>
+    canGovernOrganisationRoleChange({ actor, target, nextRole: option.value }),
+  )
+  if (currentRole && !options.some((option) => option.value === currentRole)) {
+    const currentOption = roleOptions.find((option) => option.value === currentRole)
     if (currentOption) return [currentOption, ...options]
   }
   return options
@@ -117,6 +124,21 @@ function formatUserStatusLabel(userRow = {}) {
     if (userRow.status === 'invited') return 'Principal claim sent'
   }
   return String(userRow.status || 'invited').replaceAll('_', ' ')
+}
+
+function RolePermissionSummary({ role, workspaceType }) {
+  const summary = getOrganisationRolePermissionSummary(role, workspaceType)
+  const scopeText = summary.scopeLabels.join(' · ') || 'No workspace access'
+  return (
+    <details className="group mt-2">
+      <summary className="cursor-pointer list-none text-xs font-semibold text-[#39745a] marker:hidden">
+        {summary.permissionCount} permissions · {scopeText}
+      </summary>
+      <div className="mt-2 rounded-[10px] border border-[#dfe9e3] bg-[#f7fbf8] p-2.5 text-xs leading-5 text-[#526b5d]">
+        {summary.capabilities.length ? summary.capabilities.join(' · ') : 'Operational access only; no management permissions.'}
+      </div>
+    </details>
+  )
 }
 
 function formatInviteDate(value = '') {
@@ -172,15 +194,34 @@ function getCommercialAuditSubject(event = {}) {
 
 export default function SettingsUsersPage() {
   const location = useLocation()
-  const { can, role, currentMembership, currentWorkspace, workspaceRole, workspaceType, profile } = useWorkspace()
+  const {
+    can,
+    role,
+    currentWorkspace,
+    isOrganisationOwner,
+    organisationMembership,
+    organisationMembershipRole,
+    workspaceRole,
+    workspaceType,
+    profile,
+    retryWorkspaceBootstrap,
+  } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
+  const workspaceRoleOptions = useMemo(
+    () => getOrganisationRoleOptions(resolvedWorkspaceType),
+    [resolvedWorkspaceType],
+  )
   const [membershipRole, setMembershipRole] = useState('viewer')
   const canEdit = can(PERMISSIONS.manageUsers)
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const inviteSectionRef = useRef(null)
   const inviteNavigationState = readInviteNavigationState(location.state)
   const isPrincipalClaimInviteMode = inviteNavigationState.inviteIntent === 'residential_principal_manager'
-  const initialInviteRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'agent')
+  const initialInviteRole = resolveInviteRole(
+    inviteNavigationState.inviteRole || inviteNavigationState.role,
+    'agent',
+    workspaceRoleOptions,
+  )
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
@@ -195,23 +236,36 @@ export default function SettingsUsersPage() {
   const [reviewingRequestId, setReviewingRequestId] = useState('')
   const [savingCommercialModule, setSavingCommercialModule] = useState(false)
   const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
+  const [savingRoleUserId, setSavingRoleUserId] = useState('')
+  const [savingJobTitleUserId, setSavingJobTitleUserId] = useState('')
+  const [deactivationTarget, setDeactivationTarget] = useState(null)
+  const [deactivatingUser, setDeactivatingUser] = useState(false)
+  const [ownershipTransferTarget, setOwnershipTransferTarget] = useState(null)
+  const [transferringOwnership, setTransferringOwnership] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const authorityActor = useMemo(() => ({
-    id: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
-    userId: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
-    email: profile?.email || currentMembership?.email || '',
-    role: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
-    membershipRole: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
-    branchId: currentMembership?.primaryBranchId || currentMembership?.branchId || currentMembership?.primary_branch_id || currentMembership?.branch_id || '',
-  }), [currentMembership, membershipRole, profile, workspaceRole])
+    id: profile?.id || organisationMembership?.userId || organisationMembership?.user_id || '',
+    userId: profile?.id || organisationMembership?.userId || organisationMembership?.user_id || '',
+    email: profile?.email || organisationMembership?.email || '',
+    role: membershipRole || organisationMembershipRole || workspaceRole || 'viewer',
+    membershipRole: membershipRole || organisationMembershipRole || workspaceRole || 'viewer',
+    branchId:
+      organisationMembership?.primaryBranchId ||
+      organisationMembership?.branchId ||
+      organisationMembership?.primary_branch_id ||
+      organisationMembership?.branch_id ||
+      '',
+  }), [membershipRole, organisationMembership, organisationMembershipRole, profile, workspaceRole])
   const usesAgencyGovernance = useMemo(() => {
     const type = String(currentWorkspace?.type || workspaceType || '').trim().toLowerCase()
     return !type || ['agency', 'residential'].includes(type)
   }, [currentWorkspace?.type, workspaceType])
   const inviteRoleOptions = useMemo(
-    () => (usesAgencyGovernance ? filterAssignableRoleOptions(authorityActor, { invite: true }) : ROLE_OPTIONS),
-    [authorityActor, usesAgencyGovernance],
+    () => (usesAgencyGovernance
+      ? filterAssignableRoleOptions(authorityActor, { invite: true, roleOptions: workspaceRoleOptions })
+      : workspaceRoleOptions.filter((option) => option.value !== 'owner')),
+    [authorityActor, usesAgencyGovernance, workspaceRoleOptions],
   )
   const principalInviteSelected = usesAgencyGovernance && (isPrincipalClaimInviteMode || isPrincipalInviteRole(inviteForm.role))
 
@@ -281,7 +335,11 @@ export default function SettingsUsersPage() {
       }, 0)
       return
     }
-    const nextRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'principal')
+    const nextRole = resolveInviteRole(
+      inviteNavigationState.inviteRole || inviteNavigationState.role,
+      'principal',
+      workspaceRoleOptions,
+    )
     const allowedRole = inviteRoleOptions.some((option) => option.value === nextRole)
       ? nextRole
       : inviteRoleOptions[0]?.value || 'agent'
@@ -289,7 +347,7 @@ export default function SettingsUsersPage() {
     window.setTimeout(() => {
       inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 0)
-  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions, isPrincipalClaimInviteMode])
+  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions, isPrincipalClaimInviteMode, workspaceRoleOptions])
 
   useEffect(() => {
     if (isPrincipalClaimInviteMode) return
@@ -345,21 +403,68 @@ export default function SettingsUsersPage() {
     if (!canEdit) return
     try {
       setError('')
+      setMessage('')
+      setSavingRoleUserId(userRowId)
       await updateOrganisationUserRole(userRowId, nextRole)
       await loadUsers()
+      setMessage('User role updated.')
     } catch (saveError) {
       setError(saveError.message)
+    } finally {
+      setSavingRoleUserId('')
     }
   }
 
-  async function handleDeactivate(userRowId) {
-    if (!canEdit) return
+  async function handleJobTitleChange(userRowId, nextJobTitle) {
+    if (!isOrganisationOwner) return
     try {
       setError('')
-      await deactivateOrganisationUser(userRowId)
+      setMessage('')
+      setSavingJobTitleUserId(userRowId)
+      await updateOrganisationUserJobTitle(userRowId, nextJobTitle)
       await loadUsers()
+      setMessage('Job title updated.')
     } catch (saveError) {
       setError(saveError.message)
+    } finally {
+      setSavingJobTitleUserId('')
+    }
+  }
+
+  async function handleOwnershipTransfer() {
+    if (!isOrganisationOwner || !ownershipTransferTarget?.id) return
+    const targetName = ownershipTransferTarget.fullName || ownershipTransferTarget.email || 'the selected member'
+    try {
+      setTransferringOwnership(true)
+      setError('')
+      setMessage('')
+      await transferOrganisationOwnership(ownershipTransferTarget.id)
+      setOwnershipTransferTarget(null)
+      await loadUsers()
+      retryWorkspaceBootstrap?.()
+      setMessage(`Ownership transferred to ${targetName}. Your access has been changed to the workspace's senior management role.`)
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setTransferringOwnership(false)
+    }
+  }
+
+  async function handleDeactivate() {
+    if (!canEdit || !deactivationTarget?.id) return
+    const targetName = deactivationTarget.fullName || deactivationTarget.email || 'the selected user'
+    try {
+      setDeactivatingUser(true)
+      setError('')
+      setMessage('')
+      await deactivateOrganisationUser(deactivationTarget.id)
+      setDeactivationTarget(null)
+      await loadUsers()
+      setMessage(`${targetName} has been deactivated.`)
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDeactivatingUser(false)
     }
   }
 
@@ -871,18 +976,19 @@ export default function SettingsUsersPage() {
         ) : null}
 
         {!loading && users.length ? (
-          <div className={settingsTableClass}>
-            <div className="hidden grid-cols-[1.2fr_1.2fr_0.9fr_1.2fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid">
+          <div className={`${settingsTableClass} overflow-x-auto`}>
+            <div className="hidden grid-cols-[1.05fr_1.05fr_1.25fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] lg:grid lg:min-w-[1240px]">
               <span>Name</span>
               <span>Email</span>
               <span>Role</span>
+              <span>Job title</span>
               <span>Sales Commission Structure</span>
               <span>Status</span>
               <span>Last active</span>
               <span>Actions</span>
             </div>
 
-            <div className="divide-y divide-[#e9eff5]">
+            <div className="divide-y divide-[#e9eff5] lg:min-w-[1240px]">
               {users.map((userRow) => {
                 const profileByOrgUserId = commissionProfileByUserKey.get(`org-user:${String(userRow.id || '')}`)
                 const profileByUserId = commissionProfileByUserKey.get(`user:${String(userRow.userId || '')}`)
@@ -892,23 +998,36 @@ export default function SettingsUsersPage() {
                   ? commissionStructureById.get(String(commissionProfile.commissionStructureId))
                   : null
                 const usingDefault = !assignedStructure && defaultCommissionStructure
-                const roleOptions = usesAgencyGovernance
-                  ? filterAssignableRoleOptions(authorityActor, {
-                      target: {
-                        id: userRow.id,
-                        userId: userRow.userId,
-                        email: userRow.email,
-                        role: userRow.role,
-                        membershipRole: userRow.role,
-                        branchId: userRow.branchId || userRow.primaryBranchId || '',
-                      },
-                    })
-                  : ROLE_OPTIONS
+                const roleTarget = {
+                  id: userRow.id,
+                  userId: userRow.userId,
+                  email: userRow.email,
+                  role: userRow.role,
+                  membershipRole: userRow.role,
+                  branchId: userRow.branchId || userRow.primaryBranchId || '',
+                }
+                const roleOptions = filterGovernedRoleOptions(authorityActor, roleTarget, workspaceRoleOptions)
                 const canChangeRole = canEdit && roleOptions.some((option) => option.value !== userRow.role)
+                const isCurrentUser = Boolean(
+                  userRow.userId && String(userRow.userId) === String(profile?.id || organisationMembership?.userId || organisationMembership?.user_id || ''),
+                )
+                const canReceiveOwnership = Boolean(
+                  isOrganisationOwner &&
+                  !isCurrentUser &&
+                  userRow.userId &&
+                  userRow.status === 'active' &&
+                  userRow.role !== 'owner',
+                )
+                const canDeactivateUser = Boolean(
+                  canEdit &&
+                  !isCurrentUser &&
+                  userRow.status !== 'deactivated' &&
+                  userRow.role !== 'owner',
+                )
                 return (
                 <div
                   key={userRow.id}
-                  className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1.2fr_0.9fr_1.2fr_0.8fr_0.8fr_0.8fr] lg:items-center lg:gap-4"
+                  className="grid gap-3 px-5 py-4 lg:grid-cols-[1.05fr_1.05fr_1.25fr_0.95fr_1.1fr_0.65fr_0.7fr_0.65fr] lg:items-center lg:gap-4"
                 >
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Name</span>
@@ -921,7 +1040,14 @@ export default function SettingsUsersPage() {
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Role</span>
                     {canChangeRole ? (
-                      <Field as="select" value={userRow.role} className="py-2.5" onChange={(event) => handleRoleChange(userRow.id, event.target.value)}>
+                      <Field
+                        as="select"
+                        value={userRow.role}
+                        className="py-2.5"
+                        disabled={savingRoleUserId === userRow.id}
+                        aria-label={`Role for ${userRow.fullName}`}
+                        onChange={(event) => handleRoleChange(userRow.id, event.target.value)}
+                      >
                         {roleOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -930,6 +1056,30 @@ export default function SettingsUsersPage() {
                       </Field>
                     ) : (
                       <span className="text-sm capitalize text-[#51657b]">{userRow.role.replaceAll('_', ' ')}</span>
+                    )}
+                    <RolePermissionSummary role={userRow.role} workspaceType={resolvedWorkspaceType} />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Job title</span>
+                    {isOrganisationOwner ? (
+                      <Field
+                        as="select"
+                        value={userRow.jobTitle || ''}
+                        className="py-2.5"
+                        aria-label={`Job title for ${userRow.fullName}`}
+                        disabled={savingJobTitleUserId === userRow.id}
+                        onChange={(event) => handleJobTitleChange(userRow.id, event.target.value)}
+                      >
+                        {ORGANISATION_JOB_TITLE_OPTIONS.map((option) => (
+                          <option key={option.value || 'unassigned'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    ) : (
+                      <span className="text-sm text-[#51657b]">
+                        {getOrganisationJobTitleLabel(userRow.jobTitle, 'Not assigned')}
+                      </span>
                     )}
                   </div>
                   <div className="space-y-1">
@@ -990,15 +1140,30 @@ export default function SettingsUsersPage() {
                       {userRow.lastActiveAt ? new Date(userRow.lastActiveAt).toLocaleDateString() : 'Not tracked'}
                     </span>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Actions</span>
-                    {canEdit && userRow.status !== 'deactivated' ? (
-                      <Button type="button" variant="ghost" onClick={() => handleDeactivate(userRow.id)}>
+                    {canReceiveOwnership ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={transferringOwnership}
+                        onClick={() => setOwnershipTransferTarget(userRow)}
+                      >
+                        Transfer ownership
+                      </Button>
+                    ) : null}
+                    {canDeactivateUser ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={deactivatingUser}
+                        onClick={() => setDeactivationTarget(userRow)}
+                      >
                         Deactivate
                       </Button>
-                    ) : (
+                    ) : !canReceiveOwnership && !canDeactivateUser ? (
                       <span className="text-sm text-[#8da0b6]">—</span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )})}
@@ -1009,6 +1174,28 @@ export default function SettingsUsersPage() {
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
+
+      <ConfirmDialog
+        open={Boolean(deactivationTarget)}
+        title="Deactivate this user?"
+        description={`${deactivationTarget?.fullName || deactivationTarget?.email || 'This user'} will lose access to this workspace. Their account and historical activity will be retained.`}
+        confirmLabel="Deactivate user"
+        confirming={deactivatingUser}
+        variant="destructive"
+        onConfirm={handleDeactivate}
+        onCancel={() => setDeactivationTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(ownershipTransferTarget)}
+        title="Transfer organisation ownership?"
+        description={`This gives ${ownershipTransferTarget?.fullName || ownershipTransferTarget?.email || 'this member'} full control of users, billing, roles, and workspace settings. You will move to the senior management role for this workspace. This cannot be reversed from the normal role dropdown.`}
+        confirmLabel="Transfer ownership"
+        confirming={transferringOwnership}
+        variant="destructive"
+        onConfirm={handleOwnershipTransfer}
+        onCancel={() => setOwnershipTransferTarget(null)}
+      />
     </div>
   )
 }

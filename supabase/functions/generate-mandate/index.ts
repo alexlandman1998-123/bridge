@@ -19,6 +19,8 @@ type MandateSection = {
 };
 
 type GenerateMandateRequest = {
+  capacityProbe?: boolean;
+  capacity_probe?: boolean;
   packetId?: string;
   packet_id?: string;
   transactionId?: string;
@@ -57,6 +59,8 @@ type GenerateMandateRequest = {
   template_version?: string;
 };
 
+const RENDERER_CONTRACT = "i2-v1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -66,7 +70,7 @@ const corsHeaders = {
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "x-legal-renderer-contract": RENDERER_CONTRACT },
   });
 }
 
@@ -87,6 +91,12 @@ function mapFailureCodeFromMessage(message: string) {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const input = Uint8Array.from(bytes).buffer;
+  const digest = await crypto.subtle.digest("SHA-256", input);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 async function requireCaller(supabase: any, req: Request) {
@@ -381,6 +391,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload = (await req.json()) as GenerateMandateRequest;
+    const capacityProbe = Boolean(payload.capacityProbe || payload.capacity_probe);
+    const bearer = normalizeText(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+    if (capacityProbe && bearer !== SUPABASE_SERVICE_ROLE_KEY) {
+      return jsonResponse(403, { success: false, error: "Service-role renderer capacity authority is required.", errorCode: "RENDER_CAPACITY_FORBIDDEN" });
+    }
     const packetId = normalizeText(payload.packetId || payload.packet_id);
     if (!packetId) {
       return jsonResponse(400, { success: false, error: "packetId is required." });
@@ -436,7 +451,7 @@ Deno.serve(async (req: Request) => {
 
     const supabase: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const requestedTemplateId = normalizeText((generationPayload as Record<string, unknown>)?.template && ((generationPayload as Record<string, unknown>).template as Record<string, unknown>)?.id);
-    const caller = await requireCaller(supabase, req);
+    const caller = capacityProbe ? { id: null } : await requireCaller(supabase, req);
     const approval = await requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode });
     console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType: "mandate", templateId: approval.templateId, packetId, userId: caller.id }));
     let outputBytes: Uint8Array;
@@ -545,6 +560,23 @@ Deno.serve(async (req: Request) => {
       filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
     }
 
+    if (capacityProbe) {
+      const outputSha256 = await sha256Hex(outputBytes);
+      return jsonResponse(200, {
+        success: true,
+        capacityProbe: true,
+        contract: RENDERER_CONTRACT,
+        packetType: "mandate",
+        output: {
+          mediaType: contentType,
+          byteLength: outputBytes.length,
+          sha256: `sha256:${outputSha256}`,
+        },
+        durationMs: Date.now() - startedAt,
+        mutatedData: false,
+      });
+    }
+
     const uploadResult = await supabase.storage
       .from(outputBucketName)
       .upload(filePath, outputBytes, {
@@ -587,6 +619,7 @@ Deno.serve(async (req: Request) => {
       .createSignedUrl(filePath, 60 * 60);
 
     console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType: "mandate", templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
+    const outputSha256 = await sha256Hex(outputBytes);
     return jsonResponse(200, {
       success: true,
       legalApproval: { verified: true, reference: approval.approval.reference },
@@ -598,6 +631,9 @@ Deno.serve(async (req: Request) => {
         filePath,
         fileName: generatedFileName,
         signedUrl: signedUrlResult.data?.signedUrl || null,
+        mediaType: contentType,
+        byteLength: outputBytes.length,
+        sha256: `sha256:${outputSha256}`,
       },
       documentRecord: {
         table: inserted.sourceTable,

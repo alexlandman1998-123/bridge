@@ -591,6 +591,9 @@ function RowActions({ row }) {
 }
 
 function canAcceptIncomingMatter(row = {}) {
+  if (row.firmAcceptanceStatus === 'accepted' || row.allocationState === 'awaiting_staff_assignment' || row.allocationState === 'staff_assigned') {
+    return false
+  }
   return row.statusKey === 'ready_for_acceptance' || row.status === 'Ready For Acceptance'
 }
 

@@ -7,6 +7,8 @@ import { assertLegalTemplateApproved } from "../../../the-it-guy/src/core/docume
 type JsonRecord = Record<string, unknown>;
 
 type GenerateOtpRequest = {
+  capacityProbe?: boolean;
+  capacity_probe?: boolean;
   templateId?: string;
   template_id?: string;
   transactionId?: string;
@@ -34,6 +36,8 @@ type GenerateOtpRequest = {
   client_visible?: boolean;
 };
 
+const RENDERER_CONTRACT = "i2-v1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -43,12 +47,18 @@ const corsHeaders = {
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "x-legal-renderer-contract": RENDERER_CONTRACT },
   });
 }
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const input = Uint8Array.from(bytes).buffer;
+  const digest = await crypto.subtle.digest("SHA-256", input);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function asRecord(value: unknown): JsonRecord {
@@ -487,6 +497,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload = (await req.json()) as GenerateOtpRequest;
+    const capacityProbe = Boolean(payload.capacityProbe || payload.capacity_probe);
+    const bearer = normalizeText(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+    if (capacityProbe && bearer !== SUPABASE_SERVICE_ROLE_KEY) {
+      return jsonResponse(403, { success: false, error: "Service-role renderer capacity authority is required.", errorCode: "RENDER_CAPACITY_FORBIDDEN" });
+    }
     const templateId = normalizeText(payload.templateId || payload.template_id);
     const transactionId = normalizeText(payload.transactionId || payload.transaction_id);
     if (!transactionId) {
@@ -516,7 +531,7 @@ Deno.serve(async (req: Request) => {
     const outputBucketName = outputBucket || bucketCandidates[0] || "documents";
 
     const supabase: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const caller = await requireCaller(supabase, req);
+    const caller = capacityProbe ? { id: null } : await requireCaller(supabase, req);
     const approval = await requireApprovedOtpTemplate({ supabase, templateId, templatePath, templateBucket, templateBase64 });
     console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType: "otp", templateId, userId: caller.id }));
 
@@ -664,6 +679,22 @@ Deno.serve(async (req: Request) => {
     }
 
     const outputBytes = doc.getZip().generate({ type: "uint8array" });
+    if (capacityProbe) {
+      const outputSha256 = await sha256Hex(outputBytes);
+      return jsonResponse(200, {
+        success: true,
+        capacityProbe: true,
+        contract: RENDERER_CONTRACT,
+        packetType: "otp",
+        output: {
+          mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          byteLength: outputBytes.length,
+          sha256: `sha256:${outputSha256}`,
+        },
+        durationMs: Date.now() - startedAt,
+        mutatedData: false,
+      });
+    }
     const extension = templateFilename.toLowerCase().endsWith(".docx") ? "docx" : "docx";
     const generatedFileName = `${sanitizePart(development?.name, "development")}-${sanitizePart(unit?.unit_number ? `unit-${unit.unit_number}` : "unit", "unit")}-${sanitizePart(buyer?.name, "buyer")}-otp-${Date.now()}.${extension}`;
     const filePath = `transaction-${transactionId}/sales-documents/${generatedFileName}`;
@@ -696,6 +727,7 @@ Deno.serve(async (req: Request) => {
       .createSignedUrl(filePath, 60 * 60);
 
     console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType: "otp", templateId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
+    const outputSha256 = await sha256Hex(outputBytes);
     return jsonResponse(200, {
       success: true,
       legalApproval: { verified: true, reference: approval.approval.reference },
@@ -705,6 +737,9 @@ Deno.serve(async (req: Request) => {
         filePath,
         fileName: generatedFileName,
         signedUrl: signedUrlResult.data?.signedUrl || null,
+        mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        byteLength: outputBytes.length,
+        sha256: `sha256:${outputSha256}`,
       },
       documentRecord: {
         table: inserted.sourceTable,

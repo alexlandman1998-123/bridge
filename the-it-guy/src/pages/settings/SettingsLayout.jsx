@@ -1,139 +1,9 @@
-import {
-  BadgePercent,
-  Bell,
-  Building2,
-  Code2,
-  CreditCard,
-  Mail,
-  Menu,
-  Palette,
-  PlugZap,
-  Shield,
-  UserCircle2,
-  UsersRound,
-  X,
-} from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Menu, SlidersHorizontal, X } from 'lucide-react'
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
-import { fetchOrganisationSettings } from '../../lib/settingsApi'
-
-const SETTINGS_NAV_GROUPS = [
-  {
-    label: 'ACCOUNT',
-    items: [
-      {
-        to: '/settings/profile',
-        label: 'Profile',
-        icon: UserCircle2,
-        keywords: 'account personal information avatar photo job title bio language timezone preferences fields',
-      },
-      {
-        to: '/settings/security',
-        label: 'Security',
-        icon: Shield,
-        keywords: 'password mfa sessions devices permissions authentication',
-      },
-      {
-        to: '/settings/notifications',
-        label: 'Notifications',
-        icon: Bell,
-        keywords: 'email push sms alerts messages workflow documents',
-      },
-    ],
-  },
-  {
-    label: 'WORKSPACE',
-    items: [
-      {
-        to: '/settings/organisation',
-        label: 'Organisation',
-        icon: Building2,
-        roles: ['developer', 'agent', 'attorney', 'bond_originator'],
-        keywords: 'company agency principal branches permissions visibility governance',
-      },
-      {
-        to: '/settings/branding',
-        label: 'Branding',
-        icon: Palette,
-        roles: ['developer', 'agent', 'attorney', 'bond_originator'],
-        keywords: 'logo colours colors brand portal reports primary icon dark',
-      },
-      {
-        to: '/settings/commission',
-        label: 'Commission',
-        icon: BadgePercent,
-        roles: ['developer', 'agent'],
-        requiresManage: true,
-        keywords: 'commission splits targets referrals overrides templates finance agency performance',
-      },
-      {
-        to: '/settings/users',
-        label: 'Users',
-        icon: UsersRound,
-        roles: ['developer', 'agent'],
-        requiresManage: true,
-        keywords: 'members team roles invites access permissions',
-      },
-    ],
-  },
-  {
-    label: 'PLATFORM',
-    items: [
-      {
-        to: '/settings/billing',
-        label: 'Billing',
-        icon: CreditCard,
-        roles: ['developer', 'agent'],
-        requiresManage: true,
-        keywords: 'billing subscription invoices plan entitlements usage',
-      },
-      {
-        to: '/settings/integrations',
-        label: 'Integrations',
-        icon: PlugZap,
-        keywords: 'connected services property24 whatsapp resend google supabase integrations',
-      },
-      {
-        to: '/settings/lead-capture',
-        label: 'Lead Capture',
-        icon: Mail,
-        roles: ['agent'],
-        keywords: 'lead capture forwarding addresses agent activation inbound enquiry health property24 private property website parser review queue',
-      },
-      {
-        to: '/settings/api',
-        label: 'API',
-        icon: Code2,
-        keywords: 'api keys webhooks developer access integrations platform',
-      },
-    ],
-  },
-  {
-    label: 'ADVANCED',
-    items: [
-      {
-        to: '/settings/audit-log',
-        label: 'Developer',
-        icon: Code2,
-        keywords: 'developer audit log advanced events diagnostics platform',
-      },
-      {
-        to: '/settings/danger-zone',
-        label: 'Danger Zone',
-        icon: X,
-        keywords: 'danger zone account deletion destructive controls',
-      },
-    ],
-  },
-]
-
-function canShowSettingsItem(item, { role, canManage }) {
-  if (item.roles && !item.roles.includes(role)) return false
-  if (item.requiresManage && !canManage) return false
-  return true
-}
+import { buildVisibleSettingsGroups } from './settingsNavigation'
 
 function SettingsNavigation({ groups, onNavigate }) {
   if (!groups.length) {
@@ -178,79 +48,75 @@ function SettingsNavigation({ groups, onNavigate }) {
 }
 
 export default function SettingsLayout() {
-  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const {
+    can,
+    role,
+    currentWorkspace,
+    organisationMembershipRole,
+    workspaceRole,
+    workspaceType,
+  } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
-  const [membershipRole, setMembershipRole] = useState('viewer')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-
-  useEffect(() => {
-    let active = true
-
-    async function loadSettingsContext() {
-      try {
-        const context = role === 'client' ? null : await fetchOrganisationSettings().catch(() => null)
-        if (!active) return
-        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole, {
-          appRole: role,
-          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
-        }))
-      } catch {
-        if (active) {
-          setMembershipRole('viewer')
-        }
-      }
-    }
-
-    void loadSettingsContext()
-    return () => {
-      active = false
-    }
-  }, [role, resolvedWorkspaceType])
+  const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || workspaceRole || 'viewer', {
+    appRole: role,
+    workspaceType: resolvedWorkspaceType,
+  })
 
   const canManage = canManageOrganisationSettings({
     appRole: role,
     membershipRole,
     workspaceType: resolvedWorkspaceType,
   })
-  const navGroups = useMemo(
-    () =>
-      SETTINGS_NAV_GROUPS
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((item) => canShowSettingsItem(item, { role, canManage })),
-        }))
-        .filter((group) => group.items.length),
-    [canManage, role],
-  )
+  const navGroups = buildVisibleSettingsGroups({ role, canManage, can })
+  const workspaceName = currentWorkspace?.name || currentWorkspace?.organisationName || 'Personal workspace'
+  const membershipLabel = membershipRole.replaceAll('_', ' ')
 
   return (
-    <section className="min-h-[calc(100vh-96px)] pt-1">
-      <div className="mx-auto grid w-full max-w-[1240px] gap-4">
-        <div className="lg:hidden">
+    <section className="min-h-[calc(100vh-96px)] pb-10 pt-1">
+      <div className="mx-auto grid w-full max-w-[1420px] gap-5">
+        <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe8ef] bg-[linear-gradient(135deg,#ffffff_0%,#f5faf7_100%)] px-5 py-5 shadow-[0_14px_38px_rgba(15,23,42,0.055)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#123c2f] text-white shadow-[0_8px_18px_rgba(18,60,47,0.18)]">
+              <SlidersHorizontal size={19} strokeWidth={1.9} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-[#718499]">Settings</p>
+              <h1 className="truncate text-xl font-semibold tracking-[-0.02em] text-[#142234]">{workspaceName}</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-[#d7e4dc] bg-white/80 px-3 py-1.5 capitalize text-[#365647]">{membershipLabel}</span>
+            <span className="rounded-full border border-[#dfe7ef] bg-white/80 px-3 py-1.5 capitalize text-[#607387]">{resolvedWorkspaceType.replaceAll('_', ' ') || 'workspace'}</span>
+          </div>
+        </header>
+
+        <div className="flex items-center justify-between lg:hidden">
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d8e3ee] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d8e3ee] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
             onClick={() => setMobileNavOpen((open) => !open)}
             aria-expanded={mobileNavOpen}
+            aria-controls="mobile-settings-navigation"
           >
             {mobileNavOpen ? <X size={15} /> : <Menu size={15} />}
             Settings sections
           </button>
         </div>
         {mobileNavOpen ? (
-          <aside className="rounded-[16px] border border-[#dde7f0] bg-[#fbfcfe] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] lg:hidden">
+          <aside id="mobile-settings-navigation" className="rounded-[18px] border border-[#dde7f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] lg:hidden">
             <SettingsNavigation groups={navGroups} onNavigate={() => setMobileNavOpen(false)} />
           </aside>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid gap-5 lg:grid-cols-[248px_minmax(0,1fr)]">
           <aside className="hidden lg:block">
-            <div className="sticky top-4 rounded-[18px] border border-[#dde7f0] bg-[#fbfcfe] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.045)]">
+            <div className="sticky top-4 rounded-[20px] border border-[#dde7f0] bg-[#f8fafc] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
               <SettingsNavigation groups={navGroups} />
             </div>
           </aside>
 
-          <main className="min-w-0 pb-8">
+          <main className="min-w-0 rounded-[22px] border border-[#e1e8ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-7 lg:p-8">
             <Outlet />
           </main>
         </div>

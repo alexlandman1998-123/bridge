@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const migration = fs.readFileSync('../supabase/migrations/202607170017_legal_document_review_cycle_restart_c3.sql', 'utf8')
+const restart = fs.readFileSync('scripts/legal-document-phase-c3-restart.mjs', 'utf8')
+const verify = fs.readFileSync('scripts/legal-document-phase-c3-verify.mjs', 'utf8')
+const fingerprint = fs.readFileSync('scripts/legal-document-review-fingerprint.mjs', 'utf8')
+const a2 = fs.readFileSync('scripts/legal-document-phase-a2-readiness.mjs', 'utf8')
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+
+assert.match(migration, /^begin;/)
+assert.match(migration, /commit;\s*$/)
+assert.match(migration, /bridge_restart_legal_document_review_cycle/)
+assert.match(migration, /auth\.role\(\) <> 'service_role'/)
+assert.match(migration, /for update/)
+assert.match(migration, /legal_review_status', 'pending'/)
+assert.match(migration, /legal_approval_content_digest', null/)
+assert.match(migration, /legal_counsel_review_evidence_digest', null/)
+assert.match(migration, /legal_review_cycle_restarted/)
+assert.match(migration, /revoke all[\s\S]*anon, authenticated/)
+assert.match(migration, /grant execute[\s\S]*service_role/)
+for (const guard of ['LEGAL_DOCUMENT_PHASE_C3_WRITE', 'confirm-project-ref', 'confirm-previous-manifest-digest', 'confirm-next-manifest-digest', 'confirm-template-ids', 'restarted-by', 'reference']) assert.match(restart, new RegExp(guard))
+assert.match(restart, /legal-document-phase-c1-verify\.mjs/)
+assert.match(restart, /legal-document-phase-c2-verify\.mjs/)
+assert.match(restart, /\.rpc\('bridge_restart_legal_document_review_cycle'/)
+assert.match(restart, /decision: 'pending'/)
+assert.match(verify, /C3_RESTART_AUDIT_MISSING/)
+assert.match(verify, /nextManifestDigest === manifest\.manifestDigest/)
+assert.match(a2, /legal-document-phase-c3-verify\.mjs/)
+for (const key of ['legal_c3_restarted_at', 'legal_c3_restarted_by', 'legal_c3_restart_reference']) assert.match(fingerprint, new RegExp(key))
+for (const name of ['test:legal-documents-phase-c3', 'restart:legal-documents:phase-c3', 'verify:legal-documents:phase-c3']) assert.ok(pkg.scripts?.[name])
+
+console.log('Legal document C3 review-cycle restart contract passed.')

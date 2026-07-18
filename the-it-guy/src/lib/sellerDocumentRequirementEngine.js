@@ -41,36 +41,6 @@ function normalizeDocumentMatchKey(value) {
     .replace(/^_+|_+$/g, '')
 }
 
-const SELLER_DOCUMENT_MATCH_ALIASES = {
-  signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
-  id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
-  proof_of_address: ['proof_of_address', 'residential_address', 'residence', 'address'],
-  title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
-  title_deed_copy: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
-  rates_account: ['rates_account', 'rates'],
-  property_condition_disclosure: ['property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
-  solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
-}
-
-function getSellerDocumentMatchAliases(key = '') {
-  const normalized = normalizeDocumentMatchKey(key)
-  if (!normalized) return []
-  return SELLER_DOCUMENT_MATCH_ALIASES[normalized] || [normalized]
-}
-
-function sellerDocumentKeysOverlap(left = '', right = '') {
-  const leftAliases = getSellerDocumentMatchAliases(left)
-  const rightAliases = getSellerDocumentMatchAliases(right)
-  if (!leftAliases.length || !rightAliases.length) return false
-  return leftAliases.some((leftAlias) =>
-    rightAliases.some((rightAlias) =>
-      leftAlias === rightAlias ||
-      leftAlias.includes(rightAlias) ||
-      rightAlias.includes(leftAlias),
-    ),
-  )
-}
-
 function hasValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'number') return Number.isFinite(value) && value > 0
@@ -97,6 +67,7 @@ function normalizeSellerType(value) {
 function normalizeMaritalRegime(value, ownershipType = '') {
   const normalized = normalizeKey(value || ownershipType)
   if (!normalized) return 'single'
+  if (normalized.includes('foreign_marriage') || normalized === 'foreign') return 'foreign_marriage'
   if (normalized === 'married_cop' || normalized.includes('in_community') || normalized.includes('cop')) return 'married_in_community'
   if (normalized === 'married_anc' || normalized.includes('antenuptial') || normalized.includes('anc')) return 'antenuptial_contract'
   if (normalized.includes('out_of_community')) return 'married_out_of_community'
@@ -292,6 +263,24 @@ function appendSectionalRequirements(docs, generatedFrom) {
       visibility: 'seller_visible',
       generatedFrom,
     }),
+    buildRequirement({
+      key: 'body_corporate_rules',
+      name: 'Body Corporate Rules',
+      description: 'Current conduct and management rules for the sectional-title scheme.',
+      group: 'property',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'body_corporate_insurance_schedule',
+      name: 'Body Corporate Insurance Schedule',
+      description: 'Current scheme insurance schedule, including the unit participation where available.',
+      group: 'property',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
   )
 }
 
@@ -332,6 +321,33 @@ function appendOccupancyRequirements(docs, generatedFrom) {
       description: 'Tenant contact details and lease term information.',
       group: 'occupancy',
       visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'rental_schedule',
+      name: 'Rental Schedule',
+      description: 'Current rental schedule or written rental summary.',
+      group: 'occupancy',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'deposit_details',
+      name: 'Tenant Deposit Details',
+      description: 'Tenant deposit amount, holder and interest details for transfer handover.',
+      group: 'occupancy',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'notice_period_details',
+      name: 'Lease Notice / Termination Details',
+      description: 'Notice period, any notice already given, and occupation timing details.',
+      group: 'occupancy',
+      visibility: 'seller_visible',
+      required: false,
       generatedFrom,
     }),
   )
@@ -422,6 +438,141 @@ function appendComplianceTriggerRequirements(docs, generatedFrom, triggers = [])
         generatedFrom,
       }),
     )
+  }
+  if (triggerSet.has('approved_building_plans')) {
+    docs.push(buildRequirement({
+      key: 'approved_building_plans',
+      name: 'Approved Building Plans',
+      description: 'Municipally approved plans covering the property and disclosed alterations.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('occupation_certificate')) {
+    docs.push(buildRequirement({
+      key: 'occupation_certificate',
+      name: 'Occupation Certificate',
+      description: 'Municipal occupation certificate where additions, alterations or property use require it.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('water_installation_certificate')) {
+    docs.push(buildRequirement({
+      key: 'water_installation_certificate',
+      name: 'Water Installation Certificate',
+      description: 'City of Cape Town water installation compliance certificate required for transfer.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('beetle_certificate')) {
+    docs.push(buildRequirement({
+      key: 'beetle_certificate',
+      name: 'Beetle / Wood-Borer Certificate',
+      description: 'Beetle or wood-borer inspection certificate where regionally or contractually applicable.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('plumbing_certificate')) {
+    docs.push(buildRequirement({
+      key: 'plumbing_certificate',
+      name: 'Plumbing Compliance Certificate',
+      description: 'Plumbing compliance certificate where required by the municipality or sale agreement.',
+      group: 'property_compliance',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+}
+
+function appendSellerTransferReadinessRequirements(docs, generatedFrom, triggers = []) {
+  const triggerSet = new Set(toArray(triggers).map(normalizeKey))
+  docs.push(
+    buildRequirement({
+      key: 'seller_bank_account_confirmation',
+      name: 'Seller Bank Account Confirmation',
+      description: 'Bank-issued account confirmation for secure payment of sale proceeds.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'seller_tax_number',
+      name: 'Seller Income Tax Number',
+      description: 'SARS income-tax number or tax reference for transfer preparation.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'property_acquisition_record',
+      name: 'Original Property Acquisition Record',
+      description: 'Original acquisition date, purchase price and supporting purchase agreement or statement.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'capital_improvement_records',
+      name: 'Capital Improvement Invoices / CGT Records',
+      description: 'Invoices and records for qualifying capital improvements and capital-gains-tax cost base.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+  )
+
+  if (triggerSet.has('seller_tax_residency_declaration')) {
+    docs.push(buildRequirement({
+      key: 'seller_tax_residency_declaration',
+      name: 'Seller Tax Residency Declaration',
+      description: 'Signed South African tax-residency and non-resident seller declaration.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('non_resident_tax_documents')) {
+    docs.push(buildRequirement({
+      key: 'non_resident_tax_documents',
+      name: 'Non-Resident Seller Tax Documents',
+      description: 'SARS directive, tax clearance or withholding-tax support documents applicable to a non-resident seller.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('vat_registration_certificate')) {
+    docs.push(buildRequirement({
+      key: 'vat_registration_certificate',
+      name: 'VAT Registration Certificate',
+      description: 'SARS VAT registration confirmation for a VAT-registered seller.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
+  }
+  if (triggerSet.has('going_concern_supporting_documents')) {
+    docs.push(buildRequirement({
+      key: 'going_concern_supporting_documents',
+      name: 'Going-Concern Sale Documents',
+      description: 'VAT and operating-enterprise evidence supporting treatment of the sale as a going concern.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }))
   }
 }
 
@@ -892,15 +1043,6 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         visibility: 'seller_visible',
         generatedFrom,
       }),
-      buildRequirement({
-        key: 'income_tax_number',
-        name: 'Income Tax Number',
-        description: 'Income tax number where required.',
-        group: 'financial',
-        visibility: 'internal',
-        required: false,
-        generatedFrom,
-      }),
     )
   }
 
@@ -968,6 +1110,33 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           group: 'marital',
           visibility: 'seller_visible',
           required: false,
+          generatedFrom,
+        }),
+      )
+    } else if (maritalRegime === 'foreign_marriage') {
+      docs.push(
+        buildRequirement({
+          key: 'foreign_marriage_certificate',
+          name: 'Foreign Marriage Certificate',
+          description: 'Official foreign marriage certificate, with certified translation where needed.',
+          group: 'marital',
+          visibility: 'seller_visible',
+          generatedFrom,
+        }),
+        buildRequirement({
+          key: 'foreign_marital_regime_documents',
+          name: 'Foreign Marital Regime Documents',
+          description: 'Marriage-regime agreement, legal opinion or comparable foreign-law authority documents.',
+          group: 'marital',
+          visibility: 'seller_visible',
+          generatedFrom,
+        }),
+        buildRequirement({
+          key: 'spouse_passport_document',
+          name: 'Spouse Passport / Identity Document',
+          description: 'Passport or identity document for the seller’s spouse.',
+          group: 'marital',
+          visibility: 'seller_visible',
           generatedFrom,
         }),
       )
@@ -1303,9 +1472,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   if (['vacant_land', 'agricultural'].includes(propertyBranch)) {
     appendLandRequirements(docs, generatedFrom, propertyBranch)
   }
-  if (profile.occupancyStatus === 'tenant_occupied') {
+  if (profile.occupancyStatus === 'tenant_occupied' || documentTriggers.has('lease_agreement')) {
     appendOccupancyRequirements(docs, generatedFrom)
   }
+  appendSellerTransferReadinessRequirements(docs, generatedFrom, Array.from(documentTriggers))
   appendComplianceTriggerRequirements(docs, generatedFrom, Array.from(documentTriggers))
 
   return docs
@@ -1380,21 +1550,24 @@ export function syncSellerDocumentRequirements(listing = {}, existingRequirement
 
 export function isSellerRequirementSatisfied(requirement = {}, documents = []) {
   const status = normalizeKey(requirement?.status)
-  if (COMPLETED_REQUIREMENT_STATUSES.has(status) || status === 'not_applicable') return true
+  if (status === 'not_applicable') return true
+  const verifiedSatisfierId = normalizeText(
+    requirement?.satisfied_by_document_id || requirement?.satisfiedByDocumentId || requirement?.canonical_satisfied_by_document_id,
+  )
+  if (COMPLETED_REQUIREMENT_STATUSES.has(status) && verifiedSatisfierId) return true
   const key = normalizeDocumentMatchKey(requirement?.requirement_key || requirement?.key)
+  const id = normalizeText(requirement?.id || requirement?.requirement_id)
   if (!key) return false
   const matchedDocument = toArray(documents).find((document) => {
+    const linkedRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
+    if (linkedRequirementId) return Boolean(id && linkedRequirementId === id)
     const requirementKey = normalizeDocumentMatchKey(document?.requirement_key || document?.requirementKey)
     const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
-    const category = normalizeDocumentMatchKey(document?.category || document?.document_category)
-    const name = normalizeDocumentMatchKey(document?.document_name || document?.name || document?.file_name)
-    return [requirementKey, documentType, category, name].some((candidate) =>
-      candidate === key || sellerDocumentKeysOverlap(candidate, key),
-    )
+    return [requirementKey, documentType].some((candidate) => candidate === key)
   })
   if (!matchedDocument) return false
   const docStatus = normalizeKey(matchedDocument?.status)
-  return COMPLETED_REQUIREMENT_STATUSES.has(docStatus) || ['uploaded', 'under_review', 'verified'].includes(docStatus)
+  return COMPLETED_REQUIREMENT_STATUSES.has(docStatus) || docStatus === 'verified'
 }
 
 export function getMandateReadiness(listingOrProfile = {}) {
@@ -1428,6 +1601,17 @@ export function getListingReadinessSummary(listing = {}) {
   const requiredRows = requirements.filter((row) => row?.is_required !== false && normalizeKey(row?.status) !== 'not_applicable')
   const completedRows = requiredRows.filter((row) => requirementSatisfied(row))
   const missingRows = requiredRows.filter((row) => !requirementSatisfied(row))
+  const receivedRows = requiredRows.filter((row) => {
+    const id = normalizeText(row?.id || row?.requirement_id)
+    const key = normalizeDocumentMatchKey(row?.requirement_key || row?.key)
+    return documents.some((document) => {
+      const linkedRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
+      const exactMatch = linkedRequirementId
+        ? Boolean(id && linkedRequirementId === id)
+        : normalizeDocumentMatchKey(document?.requirement_key || document?.requirementKey || document?.document_type || document?.documentType) === key
+      return exactMatch && ['uploaded', 'under_review', 'approved', 'completed', 'verified'].includes(normalizeKey(document?.status))
+    })
+  })
   const completionPct = requiredRows.length ? Math.round((completedRows.length / requiredRows.length) * 100) : 0
   const activeReady = Boolean(mandateReadiness.ready && mandateSigned && missingRows.length === 0)
   const blockedBy = [
@@ -1445,6 +1629,8 @@ export function getListingReadinessSummary(listing = {}) {
     requirementCompletionPct: completionPct,
     totalRequirements: requiredRows.length,
     completedRequirementsCount: completedRows.length,
+    receivedRequirementsCount: receivedRows.length,
+    pendingReviewRequirementsCount: receivedRows.filter((row) => !requirementSatisfied(row)).length,
     missingRequirementsCount: missingRows.length,
     missingRequirements: missingRows,
     completedRequirements: completedRows,

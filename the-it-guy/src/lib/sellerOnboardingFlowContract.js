@@ -907,35 +907,6 @@ export function resolveSellerBranch(form = {}, listing = {}, facts = {}) {
   return 'individual'
 }
 
-function hasEstateHoaOverlay(form = {}, listing = {}, facts = {}) {
-  const legacyStructureType = normalizePropertyStructureType(
-    form?.propertyStructureType ||
-      form?.canonicalPropertyType ||
-      listing?.propertyStructureType ||
-      listing?.property_structure_type ||
-      facts?.property?.structure_type ||
-      facts?.property?.property_structure_type,
-    { fallback: '' },
-  )
-  const estateName = normalizeText(
-    form?.estateName ||
-      form?.estateComplexName ||
-      listing?.estateName ||
-      listing?.estateComplexName ||
-      facts?.property?.estate_name ||
-      facts?.property?.estateName ||
-      facts?.property?.estate_complex_name,
-  )
-
-  if (hasOwnValue(form, 'estateOrHoa')) return normalizeBoolean(form?.estateOrHoa)
-  return Boolean(
-    legacyStructureType === 'estate' ||
-      normalizeBoolean(facts?.property?.estate_or_hoa) ||
-      normalizeBoolean(facts?.property?.hoa) ||
-      estateName,
-  )
-}
-
 export function resolveSellerPropertyModel(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
   const propertyCategoryCandidate =
@@ -1027,6 +998,7 @@ function resolveBranchContract(branchType, branchKey, baseRules) {
 
 function collectDynamicTriggers(form = {}, source = {}) {
   const triggers = []
+  const seller = form?.seller || source?.seller || {}
   const compliance = form?.compliance || source?.compliance || {}
   const property = form?.property || source?.property || {}
   const occupancy = form?.occupancy || source?.occupancy || {}
@@ -1047,12 +1019,63 @@ function collectDynamicTriggers(form = {}, source = {}) {
       source?.occupancy?.tenant_occupied ||
       false,
   ) || normalizeKey(occupancy?.status) === 'tenant_occupied'
+  const municipality = normalizeKey(
+    form?.municipality ||
+      form?.propertyMunicipality ||
+      property?.municipality ||
+      property?.address_details?.municipality ||
+      source?.property?.municipality ||
+      source?.property?.address_details?.municipality ||
+      '',
+  )
+  const residencyStatus = normalizeKey(
+    form?.foreignResidencyStatus ||
+      form?.residencyStatus ||
+      seller?.foreign?.residency_status ||
+      seller?.residency_status ||
+      source?.seller?.foreign?.residency_status ||
+      '',
+  )
+  const maritalRegime = normalizeKey(
+    form?.maritalRegime || form?.marriageRegime || seller?.marital_regime || source?.seller?.marital_regime || '',
+  )
 
   if (hasBond) triggers.push('bond_statement')
   if (hasBond) triggers.push('bond_bank_details')
   if (hasBond) triggers.push('settlement_figure')
   if (tenantOccupied) {
-    triggers.push('lease_agreement', 'tenant_details')
+    triggers.push('lease_agreement', 'tenant_details', 'rental_schedule', 'deposit_details', 'notice_period_details')
+  }
+
+  if (['city_of_cape_town', 'cape_town', 'city_cape_town'].includes(municipality)) {
+    triggers.push('water_installation_certificate')
+  }
+  if (
+    normalizeBoolean(
+      form?.beetleCertificateRegion ||
+        compliance?.beetle_certificate_region ||
+        source?.compliance?.beetle_certificate_region ||
+        false,
+    )
+  ) {
+    triggers.push('beetle_certificate')
+  }
+  if (['foreign_marriage', 'foreign'].includes(maritalRegime)) {
+    triggers.push('foreign_marriage_documents')
+  }
+  if (['non_resident', 'nonresident', 'foreign_non_resident'].includes(residencyStatus)) {
+    triggers.push('seller_tax_residency_declaration', 'non_resident_tax_documents')
+  }
+  if (normalizeBoolean(form?.vatRegistered ?? seller?.vat_registered ?? source?.seller?.vat_registered, false)) {
+    triggers.push('vat_registration_certificate')
+  }
+  if (
+    normalizeBoolean(
+      form?.goingConcernSale ?? form?.saleAsGoingConcern ?? source?.transaction?.going_concern ?? false,
+      false,
+    )
+  ) {
+    triggers.push('going_concern_supporting_documents')
   }
 
   if (
@@ -1089,6 +1112,16 @@ function collectDynamicTriggers(form = {}, source = {}) {
   }
   if (
     normalizeBoolean(
+      form?.plumbingCertificateRequired ||
+        compliance?.plumbing_certificate_required ||
+        source?.compliance?.plumbing_certificate_required ||
+        false,
+    )
+  ) {
+    triggers.push('plumbing_certificate')
+  }
+  if (
+    normalizeBoolean(
       form?.boreholeInstallation ||
         form?.borehole ||
         compliance?.borehole_installation ||
@@ -1111,7 +1144,7 @@ function collectDynamicTriggers(form = {}, source = {}) {
         false,
     )
   ) {
-    triggers.push('alteration_approvals')
+    triggers.push('alteration_approvals', 'approved_building_plans', 'occupation_certificate')
   }
 
   return triggers

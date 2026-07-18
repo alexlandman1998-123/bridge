@@ -415,6 +415,9 @@ export type SendSellerMandateSentPayload = {
 export type SendSellerMandateSignedPayload = {
   type: "seller_mandate_signed";
   to: string;
+  packetType?: "mandate" | "otp";
+  documentLabel?: string;
+  idempotencyKey?: string;
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;

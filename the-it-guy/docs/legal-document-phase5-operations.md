@@ -4,7 +4,7 @@ Phase 5 turns the controlled pilot into an observable, auditable service with ex
 
 ## Watchdog
 
-`legal-document-watchdog` records a privacy-safe row in `system_health_snapshots` for every run. It measures unresolved generation failures, signing packets stale for more than two hours, completed OTP/SalesMandate packets without final signed artifacts, final-artifact integrity, and approval blocks. Structured start/completion/failure logs include request ID and duration.
+`legal-document-watchdog` records a privacy-safe row in `system_health_snapshots` for every run. It measures unresolved generation failures, signing packets stale for more than two hours, completed OTP/SalesMandate packets without final signed artifacts, missing immutable F2 evidence, incomplete F3 recipient delivery, missing or incorrect portal publication, final-artifact integrity, and approval blocks. Structured start/completion/failure logs include request ID and duration.
 
 The production scheduler should invoke it at least hourly using a protected service credential. The function accepts only the Supabase service-role bearer token. Never place that token in source control; use the platform secret store or Vault-backed scheduler configuration.
 

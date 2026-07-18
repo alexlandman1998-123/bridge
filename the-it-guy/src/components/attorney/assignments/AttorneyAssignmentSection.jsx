@@ -9,14 +9,17 @@ import {
   removeTransactionAttorneyAssignment,
 } from '../../../services/transactionAttorneyAssignments'
 import { resolveAttorneyWorkflowForTransaction } from '../../../services/attorneyWorkflow/attorneyWorkflowService'
+import { getTransferFirmAllocation } from '../../../services/transferFirmAllocationService'
 import AttorneyAssignmentForm from './AttorneyAssignmentForm'
 import AttorneyAssignmentSummaryCard from './AttorneyAssignmentSummaryCard'
+import TransferFirmAllocationActions from './TransferFirmAllocationActions'
 
 function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transaction = {} }) {
   const { role: appRole } = useWorkspace()
   const permissionState = useAttorneyPermissions()
   const [firms, setFirms] = useState([])
   const [assignments, setAssignments] = useState([])
+  const [transferFirmAllocation, setTransferFirmAllocation] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeForm, setActiveForm] = useState({ type: '', assignmentId: '' })
@@ -78,14 +81,16 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
       setLoading(true)
       setError('')
       try {
-        const [nextFirms, nextAssignments] = await Promise.all([
+        const [nextFirms, nextAssignments, nextTransferFirmAllocation] = await Promise.all([
           listAttorneyFirmsForAssignment(),
           getTransactionAttorneyAssignments(transactionId),
+          getTransferFirmAllocation(transactionId),
         ])
 
         if (!active) return
         setFirms(nextFirms)
         setAssignments(nextAssignments)
+        setTransferFirmAllocation(nextTransferFirmAllocation)
       } catch (loadError) {
         if (!active) return
         setError(loadError?.message || 'Unable to load attorney assignments for this transaction.')
@@ -145,7 +150,13 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
     setAssignments(nextAssignments)
   }
 
-  function renderAssignmentBlock({ type, assignment, supportingAssignments = [], title, helper }) {
+  async function handleTransferFirmAllocationChanged(nextAllocation) {
+    setTransferFirmAllocation(nextAllocation)
+    const nextAssignments = await getTransactionAttorneyAssignments(transactionId)
+    setAssignments(nextAssignments)
+  }
+
+  function renderAssignmentBlock({ type, assignment, supportingAssignments = [], title, helper, allocation = null }) {
     const isEditing = activeForm.type === type
     const editingAssignment = isEditing && activeForm.assignmentId
       ? [assignment, ...supportingAssignments].find((item) => item?.id === activeForm.assignmentId) || assignment
@@ -185,6 +196,13 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
         </div>
 
         <div className="mt-3">
+          {type === 'transfer' ? (
+            <TransferFirmAllocationActions
+              allocation={allocation}
+              canManage={canUpdateAssignments}
+              onChanged={handleTransferFirmAllocationChanged}
+            />
+          ) : null}
           {isEditing ? (
             <AttorneyAssignmentForm
               key={`${type}-${editingAssignment?.id || 'new'}-${activeForm.isPrimary === false ? 'supporting' : 'primary'}`}
@@ -203,8 +221,16 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
                   key={item.id}
                   assignment={item}
                   busy={busy}
-                  onEdit={canUpdateAssignments ? () => setActiveForm({ type, assignmentId: item.id, isPrimary: item.isPrimary !== false }) : null}
-                  onRemove={canRemoveAssignments ? () => void handleRemove(item) : null}
+                  onEdit={
+                    canUpdateAssignments && !(allocation?.id === item.id && allocation?.allocationState !== 'active')
+                      ? () => setActiveForm({ type, assignmentId: item.id, isPrimary: item.isPrimary !== false })
+                      : null
+                  }
+                  onRemove={
+                    canRemoveAssignments && !(allocation?.id === item.id && allocation?.allocationState !== 'active')
+                      ? () => void handleRemove(item)
+                      : null
+                  }
                 />
               ))}
             </div>
@@ -316,7 +342,11 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
                   <AttorneyFirmRolePlayerCard
                     rolePlayer={transferAssignment}
                     assignmentLabel="Transfer Attorney"
-                    onViewDetails={canUpdateAssignments ? () => setActiveForm({ type: 'transfer', assignmentId: transferAssignment.id }) : null}
+                    onViewDetails={
+                      canUpdateAssignments && (!transferFirmAllocation || transferFirmAllocation.allocationState === 'active')
+                        ? () => setActiveForm({ type: 'transfer', assignmentId: transferAssignment.id })
+                        : null
+                    }
                     readOnly={!canUpdateAssignments}
                   />
                 ) : (
@@ -366,6 +396,7 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
             supportingAssignments: transferAssignments.filter((item) => item.id !== transferAssignment?.id),
             title: 'Transfer Attorney Assignment',
             helper: workflow.lanes.transfer.reason,
+            allocation: transferFirmAllocation,
           })}
 
           {showBondAssignment ? (

@@ -49,6 +49,13 @@ import {
 } from './sellerDocumentRequirementsService.js'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
 import { getSellerMandateContinuityDiagnosticsSnapshot } from './sellerMandateContinuityReportService.js'
+import { issueSellerDocumentRequests } from './sellerDocumentRequestOrchestrationService.js'
+import {
+  assertSellerUploadTarget,
+  buildSellerDocumentAssuranceReport,
+  documentExactlyMatchesSellerRequirement,
+  resolveExactSellerRequirement,
+} from './sellerDocumentSatisfactionAssuranceService.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -978,7 +985,7 @@ export async function uploadPrivateListingMediaAsset(file, { listingId = '', typ
 }
 
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, requested_from_role, request_stage, request_priority, request_due_date, request_delivery_channels, request_dedupe_key, request_source, requested_at, request_revision, last_request_reason, request_metadata, satisfied_by_document_id, satisfaction_verified_at, satisfaction_method, assurance_state, assurance_metadata, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_NO_APPLIES_TO =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, canonical_requirement_instance_id, created_at, updated_at'
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_BASE =
@@ -992,7 +999,7 @@ const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS =
 const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at, updated_at'
+  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, promotion_status, promotion_error, promotion_attempted_at, promotion_revision, review_revision, review_started_at, reviewed_at, reviewed_by, review_reason, rejection_reason, review_due_at, review_sla_revision, review_sla_level, review_sla_escalated_at, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_id, document_type, document_name, status, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
@@ -1286,6 +1293,26 @@ function normalizeRequirementRows(rows = []) {
       is_required: row?.is_required !== false,
       generated_from: row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {},
       canonical_requirement_instance_id: normalizeText(row?.canonical_requirement_instance_id || ''),
+      requested_from_role: normalizeText(row?.requested_from_role || row?.requestedFromRole || ''),
+      request_stage: normalizeText(row?.request_stage || row?.requestStage || ''),
+      request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
+      request_due_date: normalizeText(row?.request_due_date || row?.requestDueDate || ''),
+      request_delivery_channels: Array.isArray(row?.request_delivery_channels)
+        ? row.request_delivery_channels.filter(Boolean)
+        : Array.isArray(row?.requestDeliveryChannels)
+          ? row.requestDeliveryChannels.filter(Boolean)
+          : [],
+      request_dedupe_key: normalizeText(row?.request_dedupe_key || row?.requestDedupeKey || ''),
+      request_source: normalizeText(row?.request_source || row?.requestSource || ''),
+      requested_at: normalizeText(row?.requested_at || row?.requestedAt || ''),
+      request_revision: Number(row?.request_revision || row?.requestRevision || 0),
+      last_request_reason: normalizeText(row?.last_request_reason || row?.lastRequestReason || ''),
+      request_metadata: row?.request_metadata && typeof row.request_metadata === 'object' ? row.request_metadata : {},
+      satisfied_by_document_id: normalizeText(row?.satisfied_by_document_id || row?.satisfiedByDocumentId || ''),
+      satisfaction_verified_at: row?.satisfaction_verified_at || row?.satisfactionVerifiedAt || null,
+      satisfaction_method: normalizeText(row?.satisfaction_method || row?.satisfactionMethod || ''),
+      assurance_state: normalizeText(row?.assurance_state || row?.assuranceState || ''),
+      assurance_metadata: row?.assurance_metadata && typeof row.assurance_metadata === 'object' ? row.assurance_metadata : {},
       created_at: row?.created_at || null,
       updated_at: row?.updated_at || row?.created_at || null,
     }))
@@ -1313,6 +1340,20 @@ function normalizeDocumentRows(rows = []) {
       pending_transaction_promotion: Boolean(row?.pending_transaction_promotion),
       promoted_transaction_id: normalizeText(row?.promoted_transaction_id || ''),
       promoted_document_id: normalizeText(row?.promoted_document_id || ''),
+      promotion_status: normalizeText(row?.promotion_status || row?.promotionStatus || ''),
+      promotion_error: normalizeText(row?.promotion_error || row?.promotionError || ''),
+      promotion_attempted_at: row?.promotion_attempted_at || row?.promotionAttemptedAt || null,
+      promotion_revision: Number(row?.promotion_revision || row?.promotionRevision || 0),
+      review_revision: Number(row?.review_revision || row?.reviewRevision || 0),
+      review_started_at: row?.review_started_at || row?.reviewStartedAt || null,
+      reviewed_at: row?.reviewed_at || row?.reviewedAt || null,
+      reviewed_by: normalizeText(row?.reviewed_by || row?.reviewedBy || ''),
+      review_reason: normalizeText(row?.review_reason || row?.reviewReason || ''),
+      rejection_reason: normalizeText(row?.rejection_reason || row?.rejectionReason || ''),
+      review_due_at: row?.review_due_at || row?.reviewDueAt || null,
+      review_sla_revision: Number(row?.review_sla_revision || row?.reviewSlaRevision || 0),
+      review_sla_level: normalizeText(row?.review_sla_level || row?.reviewSlaLevel || ''),
+      review_sla_escalated_at: row?.review_sla_escalated_at || row?.reviewSlaEscalatedAt || null,
       uploaded_at: normalizeText(row?.uploaded_at || ''),
       created_at: row?.created_at || null,
       updated_at: row?.updated_at || row?.created_at || null,
@@ -1398,20 +1439,6 @@ function isMandateDocumentRow(row = {}) {
   return searchable.includes('mandate')
 }
 
-function getPrivateListingDocumentMatchKey(document = {}) {
-  return normalizeCompatibilityKey(
-    document?.requirement_key ||
-      document?.requirementKey ||
-      document?.document_type ||
-      document?.documentType ||
-      document?.category ||
-      document?.document_name ||
-      document?.documentName ||
-      document?.fileName ||
-      '',
-  )
-}
-
 const PRIVATE_LISTING_DOCUMENT_MATCH_ALIASES = {
   signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
   id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
@@ -1443,14 +1470,7 @@ function privateListingDocumentKeysOverlap(left = '', right = '') {
 }
 
 function documentMatchesRequirementRow(document = {}, requirement = {}) {
-  const requirementId = normalizeText(requirement?.id || requirement?.requirement_id)
-  const documentRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
-  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
-
-  const requirementKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
-  if (!requirementKey) return false
-  const documentKey = getPrivateListingDocumentMatchKey(document)
-  return documentKey === requirementKey || privateListingDocumentKeysOverlap(documentKey, requirementKey)
+  return documentExactlyMatchesSellerRequirement(document, requirement)
 }
 
 function resolveDocumentUploadForRequirement(requirement = {}, documents = []) {
@@ -2179,6 +2199,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const resolvedDocumentRequirements = resolvePrivateListingDocumentRequirements(mapped, requirementRows, documentRows)
   const mappedWithDocumentState = {
     ...mapped,
+    documents: documentRows,
     documentRequirements: resolvedDocumentRequirements,
     requiredDocuments: resolvedDocumentRequirements.map((requirement) => ({
       ...requirement,
@@ -2190,6 +2211,10 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   return {
     ...mappedWithDocumentState,
     readinessSummary: getListingReadinessSummary(mappedWithDocumentState),
+    sellerDocumentAssurance: buildSellerDocumentAssuranceReport({
+      requirements: resolvedDocumentRequirements,
+      documents: documentRows,
+    }),
   }
 }
 
@@ -4892,7 +4917,47 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
     getPrivateListingDocumentRequirements(listing.id),
     getPrivateListingDocuments(listing.id),
   ])
-  const hydrated = hydrateListingWithRequirementData(listing, requirements, documents)
+  const requestIssuance = await issueSellerDocumentRequests({
+    client,
+    listing: {
+      ...listing,
+      sellerContactEmail: profile.sellerContactEmail,
+    },
+    requirements,
+    documents,
+    reason,
+  }).catch((requestError) => ({
+    applied: [],
+    failed: [{ error: requestError }],
+    counts: { issued: 0, existing: 0, suppressed: 0, applied: 0, failed: 1 },
+  }))
+  const refreshedRequirements = requestIssuance?.counts?.applied
+    ? await getPrivateListingDocumentRequirements(listing.id)
+    : requirements
+  const hydrated = hydrateListingWithRequirementData(listing, refreshedRequirements, documents)
+
+  if (requestIssuance?.applied?.length) {
+    await Promise.all(requestIssuance.applied.map((request) => createPrivateListingActivity({
+      privateListingId: listing.id,
+      activityType: 'seller_document_requested',
+      activityTitle: `${request.requirementName || 'Seller document'} requested`,
+      activityDescription: request.requirement?.requirement_description || 'A document is required to progress the property file.',
+      performedBy: null,
+      visibility: 'client_visible',
+      metadata: {
+        requirementId: request.requirementId,
+        requirementKey: request.requirementKey,
+        requestedFromRole: request.requestedFromRole,
+        requestStage: request.requestStage,
+        requestPriority: request.requestPriority,
+        requestDueDate: request.requestDueDate,
+        deliveryChannels: request.requestDeliveryChannels,
+        requestDedupeKey: request.requestDedupeKey,
+        requestSource: request.requestSource,
+        requestedAt: request.requestedAt,
+      },
+    }).catch(() => null)))
+  }
 
   if (emitActivity) {
     const createdCount = upsertRows.filter((row) => !row.id).length
@@ -4917,6 +4982,8 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
         archivedCount,
         totalRequirements: requirements.length,
         missingRequirements: hydrated?.readinessSummary?.missingRequirementsCount || 0,
+        automaticallyIssuedRequests: requestIssuance?.counts?.applied || 0,
+        requestIssuanceFailures: requestIssuance?.counts?.failed || 0,
       },
     }).catch(() => {})
 
@@ -4943,8 +5010,9 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   return {
     listing: hydrated,
     requirementProfile: profile,
-    requirements,
+    requirements: refreshedRequirements,
     readinessSummary: hydrated.readinessSummary,
+    requestIssuance,
   }
 }
 
@@ -5655,13 +5723,38 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
   const canonicalBlockers = canonicalGate?.allowed === false
     ? [canonicalGate.reason || 'Canonical document readiness is blocking this listing stage.']
     : []
+  const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
+  const assuranceStages = normalizedTarget === 'transaction_created'
+    ? new Set(['mandate_ready', 'listing_ready', 'transaction_ready'])
+    : normalizedTarget === 'active'
+      ? new Set(['mandate_ready', 'listing_ready'])
+      : normalizedTarget === 'mandate_ready'
+        ? new Set(['mandate_ready'])
+        : null
+  const assuranceRequirements = assuranceStages
+    ? (listing.documentRequirements || []).filter((requirement) => {
+        const key = normalizeKey(requirement?.requirement_key || requirement?.key)
+        if (normalizedTarget === 'mandate_ready' && key === 'signed_mandate') return false
+        const stage = normalizeKey(requirement?.request_stage || requirement?.requestStage || 'listing_ready')
+        return assuranceStages.has(stage)
+      })
+    : []
+  const sellerDocumentAssurance = buildSellerDocumentAssuranceReport({
+    requirements: assuranceRequirements,
+    documents: listing.documents || [],
+  })
+  const assuranceBlockers = assuranceStages && sellerDocumentAssurance.ready === false && !options?.allowOverride
+    ? sellerDocumentAssurance.missing.slice(0, 8).map(({ requirement }) =>
+        `${requirement?.requirement_name || requirement?.requirement_key || 'Seller document'} must be approved before ${normalizedTarget.replaceAll('_', ' ')}.`)
+    : []
 
   return {
     listing,
     ...evaluation,
     canonicalGate,
-    allowed: evaluation.allowed && canonicalBlockers.length === 0,
-    blockers: [...(evaluation.blockers || []), ...canonicalBlockers],
+    sellerDocumentAssurance,
+    allowed: evaluation.allowed && canonicalBlockers.length === 0 && assuranceBlockers.length === 0,
+    blockers: [...(evaluation.blockers || []), ...canonicalBlockers, ...assuranceBlockers],
   }
 }
 
@@ -5895,9 +5988,32 @@ export async function uploadSellerClientPortalDocument({
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
   const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
-  const matchedRequirement = normalizedRequirementKey
-    ? requiredDocuments.find((item) => normalizeKey(item?.requirement_key || item?.key) === normalizeKey(normalizedRequirementKey)) || null
-    : null
+  const matchedRequirement = resolveExactSellerRequirement({
+    requirements: requiredDocuments,
+    requirementKey: normalizedRequirementKey,
+  })
+  let canonicalRequirement = null
+  if (canonicalRequirementInstanceId) {
+    const linkedCanonicalId = normalizeUuid(matchedRequirement?.canonical_requirement_instance_id || matchedRequirement?.canonicalRequirementInstanceId)
+    if (!matchedRequirement || linkedCanonicalId !== canonicalRequirementInstanceId) {
+      throw new Error('The canonical document request does not match the selected seller request.')
+    }
+    canonicalRequirement = {
+      id: canonicalRequirementInstanceId,
+      document_definition_key: matchedRequirement.requirement_key || matchedRequirement.key,
+      context_type: 'private_listing',
+      context_id: listing.id,
+      listing_id: listing.id,
+      uploadable_by_roles: ['seller'],
+    }
+  }
+  assertSellerUploadTarget({
+    listingId: listing.id,
+    requirement: matchedRequirement,
+    requirementKey: normalizedRequirementKey,
+    canonicalRequirement,
+    canonicalRequirementInstanceId,
+  })
   const normalizedDocumentType =
     normalizeText(documentType) ||
     normalizeText(matchedRequirement?.requirement_key || matchedRequirement?.key) ||
@@ -5986,9 +6102,6 @@ export async function uploadSellerClientPortalDocument({
       },
       client,
       force: true,
-    }).catch((linkError) => {
-      console.warn('[Private Listings] canonical seller upload link skipped', linkError)
-      return null
     })
   }
 
@@ -6022,6 +6135,9 @@ export async function uploadSellerClientPortalDocument({
     transactionId: promotedTransactionId || null,
     sharedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
     promotedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
+    promotionStatus: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : ''),
+    promotionError: documentRow?.promotion_error || null,
+    promotionRevision: documentRow?.promotion_revision || 0,
     sharedDocument: promotedSharedDocument,
   }
 }

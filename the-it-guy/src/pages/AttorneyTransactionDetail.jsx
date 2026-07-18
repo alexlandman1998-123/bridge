@@ -10730,7 +10730,7 @@ function AttorneyTransactionDetail() {
     const replacement = transferReassignmentOptions.find((option) => option.id === transferReassignmentDraft.attorneyId) || null
     const reason = String(transferReassignmentDraft.reason || '').trim()
     if (!replacement) {
-      setTransferReassignmentError('Select a replacement transfer attorney.')
+      setTransferReassignmentError('Select a replacement transfer attorney firm.')
       return
     }
     if (!reason) {
@@ -10760,11 +10760,11 @@ function AttorneyTransactionDetail() {
         actorRole: workspaceRole,
       })
       setTransferReassignmentOpen(false)
-      setOnboardingActionMessage('Replacement transfer instruction issued and placed in the new attorney firm’s incoming queue.')
+      setOnboardingActionMessage('Replacement transfer firm nominated and placed in the firm’s incoming queue for acceptance and internal allocation.')
       await loadData({ background: true })
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (reassignmentError) {
-      setTransferReassignmentError(reassignmentError?.message || 'Unable to issue the replacement transfer instruction.')
+      setTransferReassignmentError(reassignmentError?.message || 'Unable to nominate the replacement transfer attorney firm.')
     } finally {
       setTransferReassignmentBusy(false)
     }
@@ -13534,7 +13534,7 @@ function AttorneyTransactionDetail() {
                       {transferInstructionLifecycle.health === 'on_track' ? 'On track' : transferInstructionLifecycle.health === 'blocked' ? 'Blocked' : 'Needs attention'}
                     </span>
                   </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-5">
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                     {transferInstructionLifecycle.steps.map((step) => (
                       <article key={step.key} className={`rounded-[12px] border px-3 py-3 ${
                         step.status === 'complete'
@@ -13562,7 +13562,7 @@ function AttorneyTransactionDetail() {
                 <div className="mt-5 flex flex-col gap-3 rounded-[16px] border border-danger/30 bg-dangerSoft px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <strong className="text-sm text-danger">Transfer attorney reassignment required</strong>
-                    <p className="mt-1 text-sm text-textMuted">The instructed firm declined after OTP. Select a different preferred attorney to reissue the instruction.</p>
+                    <p className="mt-1 text-sm text-textMuted">The nominated firm declined after OTP. Select a different transfer attorney firm; that firm will allocate its own primary attorney.</p>
                   </div>
                   <Button type="button" size="sm" onClick={openTransferAttorneyReassignment} disabled={partnerOptionsLoading}>
                     Choose Replacement
@@ -13883,8 +13883,8 @@ function AttorneyTransactionDetail() {
       <Modal
         open={transferReassignmentOpen}
         onClose={transferReassignmentBusy ? undefined : () => setTransferReassignmentOpen(false)}
-        title="Replace Declined Transfer Attorney"
-        subtitle="Reissue the signed-OTP transfer instruction to a different preferred attorney."
+        title="Replace Declined Transfer Attorney Firm"
+        subtitle="Nominate a different firm. The replacement firm will accept and allocate its primary attorney internally."
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setTransferReassignmentOpen(false)} disabled={transferReassignmentBusy}>
@@ -13892,18 +13892,18 @@ function AttorneyTransactionDetail() {
             </Button>
             <Button type="button" onClick={() => void handleTransferAttorneyReassignment()} disabled={transferReassignmentBusy || !transferReassignmentOptions.length}>
               <Send size={14} />
-              {transferReassignmentBusy ? 'Issuing...' : 'Issue Replacement Instruction'}
+              {transferReassignmentBusy ? 'Nominating...' : 'Nominate Replacement Firm'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-4">
           <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
-            The original mandate selection and decline remain in the audit history. The replacement receives a new instruction in “Ready for Acceptance”.
+            The original nomination and decline remain in the audit history. No person is assigned until the replacement firm accepts and allocates its primary attorney.
           </p>
           {transferReassignmentOptions.length ? (
             <RoleplayerSelect
-              label="Replacement Transfer Attorney"
+              label="Replacement Transfer Attorney Firm"
               required
               value={transferReassignmentDraft.attorneyId}
               onChange={(value) => setTransferReassignmentDraft((previous) => ({ ...previous, attorneyId: value }))}
@@ -13912,7 +13912,7 @@ function AttorneyTransactionDetail() {
             />
           ) : (
             <p className="rounded-[14px] border border-warning/30 bg-warningSoft px-4 py-3 text-sm font-semibold text-warning">
-              No alternative preferred transfer attorneys are available. Add another firm under Partners first.
+              No alternative preferred transfer attorney firms are available. Add another firm under Partners first.
             </p>
           )}
           <label className="block space-y-2">

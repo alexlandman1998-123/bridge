@@ -84,6 +84,7 @@ import {
 } from '../lib/stages'
 import { getOffersForListing } from '../lib/listingOffersService'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
+import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -1161,7 +1162,6 @@ const CLIENT_PORTAL_MENU = [
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'handover', label: 'Handover', icon: KeyRound },
   { key: 'snags', label: 'Snags', icon: Wrench },
-  { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'team', label: 'Team', icon: Users },
 ]
 
@@ -3202,40 +3202,6 @@ function buildSellerImportantDocuments({ uploadedDocuments = [], requiredDocumen
     .slice(0, 4)
 }
 
-function buildSellerDocumentTracker({ uploadedDocuments = [], requiredDocuments = [] } = {}) {
-  const visibleRequirements = requiredDocuments.filter((document) => document?.visibility !== 'internal')
-  const uploadedKeys = new Set(
-    uploadedDocuments.map((document) => normalizeSellerPortalKey(
-      document?.key || document?.documentKey || document?.document_key || document?.documentType || document?.document_type || getSellerDocumentTitle(document),
-    )).filter(Boolean),
-  )
-  const completedStatuses = new Set(['approved', 'complete', 'completed', 'received', 'ready', 'signed', 'submitted', 'uploaded', 'verified'])
-  const completed = visibleRequirements.filter((document) => {
-    const key = normalizeSellerPortalKey(
-      document?.key || document?.documentKey || document?.document_key || document?.documentType || document?.document_type || getSellerDocumentTitle(document),
-    )
-    const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
-    return Boolean(
-      document?.complete ||
-      document?.completed ||
-      document?.uploadedDocumentId ||
-      document?.uploaded_document_id ||
-      completedStatuses.has(status) ||
-      (key && uploadedKeys.has(key)),
-    )
-  }).length
-  const total = visibleRequirements.length || uploadedKeys.size
-  const completedCount = visibleRequirements.length ? completed : uploadedKeys.size
-  const pendingCount = Math.max(total - completedCount, 0)
-
-  return {
-    total,
-    completed: completedCount,
-    pending: pendingCount,
-    percent: total ? Math.round((completedCount / total) * 100) : 0,
-  }
-}
-
 function SellerPortalAction({ action, token, workspaceNavigationScope, className = '', children }) {
   const content = children || (
     <>
@@ -3962,26 +3928,31 @@ function SellerDocumentTracker({ tracker = {}, token, workspaceNavigationScope }
   const total = Number(tracker?.total || 0)
   const completed = Number(tracker?.completed || 0)
   const pending = Number(tracker?.pending || 0)
+  const awaitingReview = Number(tracker?.awaitingReview || 0)
 
   return (
     <article className="flex h-full min-h-[390px] flex-col rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <SellerSectionHeading title="Document Tracker" subtitle="See what has been received and what still needs attention." />
+      <SellerSectionHeading title="Document Tracker" subtitle="Approval progress is separate from files received for review." />
       <div className="mt-7 flex flex-1 flex-col items-center justify-center gap-7 sm:flex-row">
         <div className="relative grid h-36 w-36 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#078449 ${percent * 3.6}deg, #e4edf2 0deg)` }}>
           <div className="grid h-[108px] w-[108px] place-items-center rounded-full bg-white text-center shadow-inner">
             <div>
               <strong className="block text-2xl font-semibold text-[#123f3a]">{percent}%</strong>
-              <span className="mt-0.5 block text-[0.67rem] font-semibold uppercase tracking-[0.1em] text-[#718196]">Complete</span>
+              <span className="mt-0.5 block text-[0.67rem] font-semibold uppercase tracking-[0.1em] text-[#718196]">Approved</span>
             </div>
           </div>
         </div>
         <div className="w-full max-w-[260px] space-y-3">
           <div className="flex items-center justify-between rounded-[12px] bg-[#f2faf6] px-3.5 py-3">
-            <span className="flex items-center gap-2 text-sm text-[#40566b]"><CheckCircle2 size={15} className="text-[#078449]" /> Received</span>
+            <span className="flex items-center gap-2 text-sm text-[#40566b]"><CheckCircle2 size={15} className="text-[#078449]" /> Approved</span>
             <strong className="text-sm text-[#123f3a]">{completed}</strong>
           </div>
+          <div className="flex items-center justify-between rounded-[12px] bg-[#f3f7fc] px-3.5 py-3">
+            <span className="flex items-center gap-2 text-sm text-[#40566b]"><Clock3 size={15} className="text-[#2f6fa4]" /> Awaiting review</span>
+            <strong className="text-sm text-[#244c6d]">{awaitingReview}</strong>
+          </div>
           <div className="flex items-center justify-between rounded-[12px] bg-[#fff8ec] px-3.5 py-3">
-            <span className="flex items-center gap-2 text-sm text-[#40566b]"><Clock3 size={15} className="text-[#d97706]" /> Outstanding</span>
+            <span className="flex items-center gap-2 text-sm text-[#40566b]"><AlertTriangle size={15} className="text-[#d97706]" /> Action needed</span>
             <strong className="text-sm text-[#8a570f]">{pending}</strong>
           </div>
           <div className="flex items-center justify-between px-3.5 py-1 text-sm text-[#64748b]">
@@ -4310,7 +4281,7 @@ function ClientPortal() {
     if (location.pathname.endsWith('/handover')) return 'handover'
     if (location.pathname.endsWith('/homeowner')) return 'handover'
     if (location.pathname.endsWith('/snags') || location.pathname.endsWith('/issues')) return 'snags'
-    if (location.pathname.endsWith('/settings')) return 'settings'
+    if (location.pathname.endsWith('/settings')) return 'overview'
     if (location.pathname.endsWith('/team')) return 'team'
     if (location.pathname.endsWith('/alterations')) return 'alterations'
     if (location.pathname.endsWith('/review')) return 'review'
@@ -6807,10 +6778,12 @@ function ClientPortal() {
   const sellerUploadedDocuments = Array.isArray(workspaceData?.documentCenter?.uploadedDocuments)
     ? workspaceData.documentCenter.uploadedDocuments
     : (Array.isArray(portal?.documents) ? portal.documents : [])
-  const sellerDocumentsNeedingAttention = sellerRequiredDocuments.filter((item) => {
-    const status = normalizePortalStatus(item?.status || item?.requiredDocumentStatus || '')
-    return ['required', 'requested', 'rejected'].includes(status) && item?.visibility !== 'internal'
+  const sellerDocumentExperience = buildSellerDocumentExperienceModel({
+    requirements: sellerRequiredDocuments.filter((item) => item?.visibility !== 'internal'),
+    documents: sellerUploadedDocuments,
+    audience: 'seller',
   })
+  const sellerDocumentsNeedingAttention = sellerDocumentExperience.actionItems
   const normalizedSellerOnboardingStatus = normalizePortalStatus(
     activeSellingContext?.sellerOnboardingStatus ||
       activeSellingContext?.seller_onboarding_status ||
@@ -6837,8 +6810,7 @@ function ClientPortal() {
       normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active'),
   )
   const hasDocumentsComplete = Boolean(
-    (sellerRequiredDocuments.length > 0 || sellerUploadedDocuments.length > 0 || sellerStageMeta.currentStageKey === 'registered') &&
-      sellerDocumentsNeedingAttention.length === 0 &&
+    (sellerDocumentExperience.summary.ready || sellerStageMeta.currentStageKey === 'registered') &&
       hasListingCreated,
   )
   const inferredSellerListingProgressModel = buildSellerPortalProgressModel({
@@ -6997,10 +6969,14 @@ function ClientPortal() {
   const sellerAgentAvatarUrl = resolveSellerAgentAvatarUrl({ portal, activeSellingContext })
   const sellerListingUrl = sellerVisibleListingLinks[0]?.url || ''
   const sellerMarketingChannels = buildSellerMarketingChannels(sellerVisibleListingLinks, sellerAgencyLogoUrl)
-  const sellerDocumentTracker = buildSellerDocumentTracker({
-    uploadedDocuments: sellerUploadedDocuments,
-    requiredDocuments: sellerRequiredDocuments,
-  })
+  const sellerDocumentTracker = {
+    total: sellerDocumentExperience.summary.total,
+    completed: sellerDocumentExperience.summary.approved,
+    pending: sellerDocumentExperience.summary.actionRequired,
+    awaitingReview: sellerDocumentExperience.summary.reviewRequired,
+    percent: sellerDocumentExperience.summary.assurancePercent,
+    collectionPercent: sellerDocumentExperience.summary.collectionPercent,
+  }
   const sellerHealth = buildSellerTransactionHealth({
     hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
     hasMandatePacket,
@@ -7852,15 +7828,11 @@ function ClientPortal() {
                         ) : null}
                       </div>
 
-                      <Link
-                        to={getClientPortalPath(token, 'settings')}
-                        className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
-                      >
+                      <span className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d]">
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[0.68rem] font-semibold text-[#35546c]">
                           {buyerInitial}
                         </span>
-                        <Settings size={14} />
-                      </Link>
+                      </span>
                     </div>
                   </div>
 
@@ -7959,13 +7931,6 @@ function ClientPortal() {
                         <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Secure buyer link active</h3>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#566b82]">{buyerPortalAccessDescription}</p>
                       </div>
-                      <Link
-                        to={getClientPortalPath(token, 'settings')}
-                        className="inline-flex min-h-[38px] items-center gap-2 rounded-[11px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                      >
-                        <ShieldCheck size={14} />
-                        Access details
-                      </Link>
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       {buyerPortalStatusItems.map((item) => (

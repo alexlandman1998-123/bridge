@@ -1,4 +1,5 @@
 import { ArrowRight, CheckCircle2, CircleAlert, Clock3, FileStack, UploadCloud, XCircle } from 'lucide-react'
+import { createElement } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import SellerDocumentRow from './SellerDocumentRow'
 
@@ -51,6 +52,35 @@ function buildSummaryModel(requiredItems = []) {
   }
 }
 
+function summaryFromExperience(experienceModel = null, requiredItems = []) {
+  if (!experienceModel?.summary) return buildSummaryModel(requiredItems)
+  const items = Array.isArray(experienceModel.items) ? experienceModel.items : []
+  const approved = Number(experienceModel.summary.approved || 0)
+  const received = Number(experienceModel.summary.received || 0)
+  const total = Number(experienceModel.summary.total || 0)
+  return {
+    total,
+    completed: approved,
+    collected: approved + received,
+    percent: Number(experienceModel.summary.assurancePercent || 0),
+    collectionPercent: Number(experienceModel.summary.collectionPercent || 0),
+    counts: {
+      outstanding: items.filter((item) => item.statusBucket === 'outstanding').length,
+      uploaded: items.filter((item) => item.status === 'uploaded').length,
+      under_review: items.filter((item) => item.status === 'under_review').length,
+      approved,
+      rejected: Number(experienceModel.summary.rejected || 0),
+      overdue: Number(experienceModel.summary.overdue || 0),
+    },
+    blockingItems: experienceModel.actionItems || [],
+    stages: experienceModel.stages || [],
+    nextAction: experienceModel.nextAction || null,
+    handoffBlocked: Number(experienceModel.summary.handoffBlocked || 0),
+    handoffPending: Number(experienceModel.summary.handoffPending || 0),
+    handoffReady: Number(experienceModel.summary.handoffReady || 0),
+  }
+}
+
 function SummaryMetric({ label = '', value = 0, tone = 'neutral', icon: Icon = FileStack }) {
   const classes = {
     danger: 'border-[#f3d0ce] bg-[#fff7f6] text-[#ba473f]',
@@ -63,7 +93,7 @@ function SummaryMetric({ label = '', value = 0, tone = 'neutral', icon: Icon = F
   return (
     <article className={`rounded-[18px] border px-4 py-3 ${classes[tone] || classes.neutral}`}>
       <div className="flex items-center gap-2">
-        <Icon size={15} />
+        {createElement(Icon, { size: 15, 'aria-hidden': true })}
         <span className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] opacity-80">{label}</span>
       </div>
       <p className="mt-2 text-[1.25rem] font-semibold tracking-[-0.03em]">{value}</p>
@@ -88,12 +118,13 @@ function SellerDocumentWorkspace({
   allCompleteMessage = 'All required documents have been uploaded.',
   footerText = 'Use the row actions to upload, view, or re-upload documents without leaving this page.',
   listId = 'seller-document-list',
+  experienceModel = null,
 }) {
   const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0] || null
-  const summary = buildSummaryModel(requiredItems)
+  const summary = summaryFromExperience(experienceModel, requiredItems)
   const hasRejected = summary.counts.rejected > 0
   const completionLabel = summary.total > 0
-    ? `${summary.completed} of ${summary.total} complete`
+    ? `${summary.completed} of ${summary.total} approved`
     : 'No required documents pending'
 
   if (errorMessage) {
@@ -137,14 +168,14 @@ function SellerDocumentWorkspace({
             <h3 className="mt-2 text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">{completionLabel}</h3>
           </div>
           <div className="text-left lg:text-right">
-            <p className="text-[1rem] font-semibold text-[#142132]">{clampPercent(summary.percent)}% complete</p>
-            <p className="mt-1 text-sm text-[#6b7d93]">Based on your currently applicable required documents.</p>
+            <p className="text-[1rem] font-semibold text-[#142132]">{clampPercent(summary.percent)}% approved</p>
+            <p className="mt-1 text-sm text-[#6b7d93]">{clampPercent(summary.collectionPercent ?? summary.percent)}% received · approval is required for completion.</p>
           </div>
         </div>
 
         <div className="mt-5">
           <div className="mb-2 flex items-center justify-between gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-            <span>Progress</span>
+            <span>Assurance progress</span>
             <span>{summary.completed} / {summary.total || 0}</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-[#e8eef5]">
@@ -162,6 +193,25 @@ function SellerDocumentWorkspace({
           <SummaryMetric label="Approved" value={summary.counts.approved} tone="success" icon={CheckCircle2} />
           {hasRejected ? <SummaryMetric label="Rejected" value={summary.counts.rejected} tone="danger" icon={XCircle} /> : null}
         </div>
+
+        {summary.nextAction?.message ? (
+          <div className="mt-5 rounded-[18px] border border-[#dbe6f1] bg-[#f7fbff] px-4 py-3" role="status">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#60748a]">Next action{summary.nextAction.stageLabel ? ` · ${summary.nextAction.stageLabel}` : ''}</p>
+            <p className="mt-1 text-sm font-semibold text-[#20384f]">{summary.nextAction.title}</p>
+            <p className="mt-1 text-sm leading-6 text-[#60748a]">{summary.nextAction.message}</p>
+          </div>
+        ) : null}
+
+        {summary.stages?.length ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Document stages">
+            {summary.stages.map((stage) => (
+              <article key={stage.key} className="rounded-[16px] border border-[#e1e9f2] bg-white px-4 py-3">
+                <p className="text-xs font-semibold text-[#20384f]">{stage.label}</p>
+                <p className="mt-1 text-xs text-[#6b7d93]">{stage.approved}/{stage.total} approved · {stage.reviewRequired} awaiting review · {stage.actionRequired} action needed</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -208,6 +258,7 @@ function SellerDocumentWorkspace({
                 ['Uploaded', summary.counts.uploaded],
                 ['Under Review', summary.counts.under_review],
                 ['Approved', summary.counts.approved],
+                ...(summary.counts.overdue ? [['Overdue', summary.counts.overdue]] : []),
                 ...(hasRejected ? [['Rejected', summary.counts.rejected]] : []),
               ].map(([label, value]) => (
                 <div key={label} className="flex items-center justify-between gap-3 rounded-[16px] border border-[#e5edf5] bg-[#f9fbfe] px-3.5 py-3">

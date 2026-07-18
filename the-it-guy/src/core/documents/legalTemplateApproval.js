@@ -15,6 +15,8 @@ export function readLegalTemplateApproval(template = {}) {
     status: text(metadata.legal_review_status || metadata.legalApprovalStatus || nested.status).toLowerCase(),
     approvedAt: text(metadata.legal_approved_at || metadata.legalApprovedAt || nested.approvedAt),
     reference: text(metadata.legal_approval_reference || metadata.legalApprovalReference || nested.reference),
+    contentDigest: text(metadata.legal_approval_content_digest || metadata.legalApprovalContentDigest || nested.contentDigest),
+    reviewEvidenceDigest: text(metadata.legal_counsel_review_evidence_digest || metadata.legalCounselReviewEvidenceDigest || nested.reviewEvidenceDigest),
     revokedAt: text(metadata.legal_revoked_at || metadata.legalRevokedAt || nested.revokedAt),
   }
 }
@@ -33,6 +35,8 @@ export function assessLegalTemplateApproval(template = {}, { expectedPacketType 
   if (!approval.approvedAt || !Number.isFinite(approvedTime)) reasons.push('LEGAL_APPROVAL_DATE_MISSING')
   if (Number.isFinite(approvedTime) && approvedTime > Date.now() + 5 * 60 * 1000) reasons.push('LEGAL_APPROVAL_DATE_IN_FUTURE')
   if (!approval.reference) reasons.push('LEGAL_APPROVAL_REFERENCE_MISSING')
+  if (!approval.contentDigest) reasons.push('LEGAL_APPROVAL_CONTENT_DIGEST_MISSING')
+  if (!approval.reviewEvidenceDigest) reasons.push('LEGAL_COUNSEL_REVIEW_EVIDENCE_MISSING')
   if (approval.revokedAt) reasons.push('LEGAL_APPROVAL_REVOKED')
 
   return {

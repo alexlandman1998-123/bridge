@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
 type JsonRecord = Record<string, unknown>;
+const FINALISER_CONTRACT = "h4-v1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,7 @@ const corsHeaders = {
 };
 
 function response(status: number, body: JsonRecord) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "x-legal-finalizer-contract": FINALISER_CONTRACT } });
 }
 
 function logEvent(level: "info" | "error", message: string, details: JsonRecord = {}) {
@@ -21,6 +22,28 @@ function logEvent(level: "info" | "error", message: string, details: JsonRecord 
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function authorizeFinalisation(req: Request, serviceClient: any, serviceKey: string, packet: JsonRecord) {
+  const bearer = text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+  if (bearer === serviceKey) return { service: true, userId: null };
+  if (!bearer) return null;
+  const userResult = await serviceClient.auth.getUser(bearer);
+  const userId = text(userResult.data?.user?.id);
+  if (userResult.error || !userId) return null;
+  const membership = await serviceClient.from("organisation_users").select("role, workspace_role, organisation_role, app_role, status, membership_status").eq("organisation_id", text(packet.organisation_id)).eq("user_id", userId).limit(1).maybeSingle();
+  if (membership.error || !membership.data || !["active", "accepted"].includes(text(membership.data.status || membership.data.membership_status).toLowerCase())) return null;
+  const roles = [membership.data.role, membership.data.workspace_role, membership.data.organisation_role, membership.data.app_role].map((value) => text(value).toLowerCase());
+  const admin = roles.some((role) => ["principal", "owner", "admin", "super_admin", "branch_manager", "manager", "agency_admin", "agent_admin"].includes(role));
+  if (!admin && text(packet.assigned_agent_id) !== userId && text(packet.created_by) !== userId) return null;
+  return { service: false, userId };
+}
+
+async function dispatchFinalDelivery({ url, serviceKey, packetId, packetVersionId }: { url: string; serviceKey: string; packetId: string; packetVersionId: string }) {
+  try {
+    const result = await fetch(`${url.replace(/\/$/, "")}/functions/v1/dispatch-final-signed-document`, { method: "POST", headers: { "Content-Type": "application/json", "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }, body: JSON.stringify({ packetId, packetVersionId }) });
+    return await result.json().catch(() => ({ success: false, errorCode: `HTTP_${result.status}` }));
+  } catch (error) { return { success: false, errorCode: "FINAL_DELIVERY_REQUEST_FAILED", error: String(error) }; }
 }
 
 function safe(value: unknown) {
@@ -348,34 +371,62 @@ Deno.serve(async (req: Request) => {
     const packetId = text(payload.packetId || payload.packet_id);
     observedPacketId = packetId;
     const requestedVersionId = text(payload.packetVersionId || payload.packet_version_id);
-    const finalisedBy = text(payload.finalisedBy || payload.finalised_by) || null;
+    let finalisedBy = text(payload.finalisedBy || payload.finalised_by) || null;
     if (!packetId) return response(400, { success: false, error: "packetId is required.", errorCode: "MISSING_PACKET_ID" });
+    if (!requestedVersionId) return response(400, { success: false, error: "packetVersionId is required for exact-version finalisation.", errorCode: "FINAL_VERSION_ID_REQUIRED" });
     logEvent("info", "otp_finalisation_started", { requestId, packetId });
     const supabase = createClient(url, serviceKey);
-    const packetResult = await supabase.from("document_packets").select("id, organisation_id, packet_type, transaction_id, status").eq("id", packetId).maybeSingle();
+    const packetResult = await supabase.from("document_packets").select("id, organisation_id, packet_type, transaction_id, assigned_agent_id, created_by, status, current_version_number, source_context_json").eq("id", packetId).maybeSingle();
     if (packetResult.error) throw packetResult.error;
     const packet = packetResult.data as JsonRecord | null;
     if (!packet || text(packet.packet_type).toLowerCase() !== "otp") return response(400, { success: false, error: "OTP packet not found.", errorCode: "OTP_PACKET_NOT_FOUND" });
-    let versionQuery = supabase.from("document_packet_versions").select("id, packet_id, version_number, final_signed_file_path, final_signed_file_bucket, final_signed_file_name, finalised_at, placeholders_resolved_json").eq("packet_id", packetId).eq("render_status", "generated").order("version_number", { ascending: false }).limit(1);
-    if (requestedVersionId) versionQuery = supabase.from("document_packet_versions").select("id, packet_id, version_number, final_signed_file_path, final_signed_file_bucket, final_signed_file_name, finalised_at, placeholders_resolved_json").eq("packet_id", packetId).eq("id", requestedVersionId).limit(1);
+    const authority = await authorizeFinalisation(req, supabase, serviceKey, packet);
+    if (!authority) return response(403, { success: false, error: "You are not allowed to finalise this OTP.", errorCode: "FINALISATION_FORBIDDEN" });
+    if (!authority.service) finalisedBy = authority.userId;
+    const versionQuery = supabase.from("document_packet_versions").select("id, packet_id, organisation_id, version_number, render_status, validation_summary_json, final_signed_file_path, final_signed_file_bucket, final_signed_file_name, finalised_at, placeholders_resolved_json").eq("packet_id", packetId).eq("id", requestedVersionId).limit(1);
     const versionResult = await versionQuery.maybeSingle();
     if (versionResult.error) throw versionResult.error;
     const version = versionResult.data as JsonRecord | null;
     if (!version) return response(400, { success: false, error: "Generated OTP version not found.", errorCode: "NO_GENERATED_VERSION" });
-    if (text(version.final_signed_file_path)) return response(200, { success: true, packetId, packetVersionId: version.id, finalArtifact: { bucket: version.final_signed_file_bucket, path: version.final_signed_file_path, fileName: version.final_signed_file_name, finalisedAt: version.finalised_at }, version, note: "Final signed OTP already exists." });
+    const validation = version.validation_summary_json && typeof version.validation_summary_json === "object" ? version.validation_summary_json as JsonRecord : {};
+    const lock = validation.lock_snapshot && typeof validation.lock_snapshot === "object" ? validation.lock_snapshot as JsonRecord : {};
+    const finalVersionBindingValid = text(version.organisation_id) === text(packet.organisation_id) && Number(version.version_number) === Number(packet.current_version_number) && text(version.render_status).toLowerCase() === "generated" && validation.content_locked === true && text(validation.review_state).toLowerCase() === "locked" && text(lock.lockDecision).toLowerCase() === "locked" && text(lock.packetId) === packetId && text(lock.versionId) === requestedVersionId;
+    if (!finalVersionBindingValid) return response(409, { success: false, error: "Finalisation is not bound to the exact current locked OTP version.", errorCode: "FINAL_VERSION_BINDING_INVALID" });
+    if (text(version.final_signed_file_path)) {
+      const existingEvidenceResult = await supabase.from("legal_final_artifact_evidence").select("bucket, path, file_name, media_type, sha256, byte_length, generated_at").eq("packet_version_id", requestedVersionId).maybeSingle();
+      if (existingEvidenceResult.error) throw existingEvidenceResult.error;
+      const existingEvidence = existingEvidenceResult.data as JsonRecord | null;
+      if (!existingEvidence || text(existingEvidence.path) !== text(version.final_signed_file_path)) return response(409, { success: false, error: "Existing final OTP has no matching F2 evidence.", errorCode: "FINAL_ARTIFACT_EVIDENCE_MISSING" });
+      const existingDownload = await supabase.storage.from(text(existingEvidence.bucket)).download(text(existingEvidence.path));
+      if (existingDownload.error || !existingDownload.data) return response(409, { success: false, error: "Existing final OTP cannot be read.", errorCode: "FINAL_ARTIFACT_UNREADABLE" });
+      const existingBytes = new Uint8Array(await existingDownload.data.arrayBuffer());
+      if (await imageFingerprint(existingBytes) !== text(existingEvidence.sha256) || existingBytes.length !== Number(existingEvidence.byte_length)) return response(409, { success: false, error: "Existing final OTP bytes do not match F2 evidence.", errorCode: "FINAL_ARTIFACT_INTEGRITY_MISMATCH" });
+      const finalDelivery = await dispatchFinalDelivery({ url, serviceKey, packetId, packetVersionId: requestedVersionId });
+      return response(200, { success: true, packetId, packetVersionId: version.id, finalArtifact: { bucket: version.final_signed_file_bucket, path: version.final_signed_file_path, fileName: version.final_signed_file_name, finalisedAt: version.finalised_at, sha256: existingEvidence.sha256, byteLength: existingEvidence.byte_length }, finalDelivery, version, note: "Final signed OTP already exists and passed F2 integrity verification." });
+    }
 
     const signersResult = await supabase.from("document_packet_signers").select("id, signer_role, signer_name, signer_email, status, signed_at").eq("packet_id", packetId).eq("packet_version_id", version.id);
-    const fieldsResult = await supabase.from("document_signing_fields").select("id, signer_role, signer_email, field_type, required, status, signature_asset_path").eq("packet_id", packetId).eq("packet_version_id", version.id).eq("field_type", "signature").eq("required", true);
+    const fieldsResult = await supabase.from("document_signing_fields").select("id, signer_role, signer_email, field_type, required, status, signature_asset_path").eq("packet_id", packetId).eq("packet_version_id", version.id).eq("required", true);
     if (signersResult.error) throw signersResult.error;
     if (fieldsResult.error) throw fieldsResult.error;
     const signers = (signersResult.data || []) as JsonRecord[];
     const fields = (fieldsResult.data || []) as JsonRecord[];
     if (!signers.length || signers.some((row) => text(row.status).toLowerCase() !== "signed")) return response(400, { success: false, error: "Required OTP signers are incomplete.", errorCode: "SIGNERS_INCOMPLETE" });
-    if (!fields.length || fields.some((row) => text(row.status).toLowerCase() !== "completed" || !text(row.signature_asset_path))) return response(400, { success: false, error: "Required OTP signature fields are incomplete.", errorCode: "FIELDS_INCOMPLETE" });
+    if (!fields.length || fields.some((row) => text(row.status).toLowerCase() !== "completed" || (["signature", "initial"].includes(text(row.field_type).toLowerCase()) && !text(row.signature_asset_path)))) return response(400, { success: false, error: "Required OTP signing fields are incomplete.", errorCode: "FIELDS_INCOMPLETE" });
+    const misScopedAssets = fields.filter((field) => {
+      if (!["signature", "initial"].includes(text(field.field_type).toLowerCase())) return false;
+      const fieldRole = text(field.signer_role).toLowerCase();
+      const fieldEmail = text(field.signer_email).toLowerCase();
+      const matchingSigner = signers.find((signer) => text(signer.signer_role).toLowerCase() === fieldRole && (!fieldEmail || text(signer.signer_email).toLowerCase() === fieldEmail));
+      return !matchingSigner || !text(field.signature_asset_path).startsWith(`document-signatures/${packetId}/${text(matchingSigner.id)}/`);
+    });
+    if (misScopedAssets.length) return response(403, { success: false, error: "A required OTP signing asset is outside its signer-owned storage namespace.", errorCode: "SIGNATURE_ASSET_SCOPE_INVALID" });
+    const signatureFields = fields.filter((row) => text(row.field_type).toLowerCase() === "signature");
+    if (!signatureFields.length) return response(400, { success: false, error: "Required OTP signature fields are missing.", errorCode: "FIELDS_INCOMPLETE" });
 
     let signatureImages: PdfImage[];
     try {
-      signatureImages = await loadSignatureImages({ supabase, packetId, fields, signers });
+      signatureImages = await loadSignatureImages({ supabase, packetId, fields: signatureFields, signers });
     } catch (assetError) {
       logEvent("error", "otp_signature_embedding_failed", { requestId, packetId, error: String(assetError), durationMs: Date.now() - startedAt });
       return response(422, {
@@ -387,6 +438,9 @@ Deno.serve(async (req: Request) => {
     }
     const finalBytes = buildPdf((version.placeholders_resolved_json || {}) as JsonRecord, packetId, signers, signatureImages);
     const finalisedAt = new Date().toISOString();
+    const finalArtifactSha256 = await imageFingerprint(finalBytes);
+    const signerEvidenceSha256 = await imageFingerprint(new TextEncoder().encode(JSON.stringify(signers.map((signer) => ({ id: text(signer.id), role: text(signer.signer_role).toLowerCase(), email: text(signer.signer_email).toLowerCase(), status: text(signer.status).toLowerCase(), signedAt: text(signer.signed_at) })).sort((a, b) => a.id.localeCompare(b.id)))));
+    const fieldEvidenceSha256 = await imageFingerprint(new TextEncoder().encode(JSON.stringify(fields.map((field) => ({ id: text(field.id), role: text(field.signer_role).toLowerCase(), email: text(field.signer_email).toLowerCase(), type: text(field.field_type).toLowerCase(), status: text(field.status).toLowerCase(), assetPath: text(field.signature_asset_path) })).sort((a, b) => a.id.localeCompare(b.id)))));
     const fileName = `otp-v${Number(version.version_number) || 1}-final-signed.pdf`;
     const path = `signed-documents/${packetId}/${version.id}/${Date.now()}-${fileName}`;
     const outputBuckets = buckets(Deno.env.get("SIGNED_DOCUMENTS_BUCKET"), Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"), Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"), "documents");
@@ -396,13 +450,12 @@ Deno.serve(async (req: Request) => {
       if (!upload.error) { uploadedBucket = bucket; break; }
     }
     if (!uploadedBucket) return response(500, { success: false, error: "Unable to store final signed OTP.", errorCode: "FINAL_SIGNED_UPLOAD_FAILED" });
-    const update = await supabase.from("document_packet_versions").update({ final_signed_file_path: path, final_signed_file_url: null, final_signed_file_bucket: uploadedBucket, final_signed_file_name: fileName, finalised_at: finalisedAt, finalised_by: finalisedBy }).eq("id", version.id).select("id, packet_id, version_number, final_signed_file_path, final_signed_file_bucket, final_signed_file_name, finalised_at").single();
+    const update = await supabase.rpc("bridge_record_final_artifact_f2", { p_organisation_id: text(packet.organisation_id), p_packet_id: packetId, p_packet_version_id: text(version.id), p_bucket: uploadedBucket, p_path: path, p_file_name: fileName, p_sha256: finalArtifactSha256, p_byte_length: finalBytes.length, p_signer_evidence_sha256: signerEvidenceSha256, p_field_evidence_sha256: fieldEvidenceSha256, p_generated_at: finalisedAt, p_event_type: "final_signed_otp_generated", p_event_payload: { generatedFilePath: path, generatedFileBucket: uploadedBucket, signerCount: signers.length, fieldCount: fields.length, embeddedSignatureCount: signatureImages.length, signatureEvidenceMode: "visual_and_audit", signatureAssetFingerprints: signatureImages.map((image) => ({ role: image.role, sha256: image.hash, path: image.path, bucket: image.bucket })), finalArtifactSha256, finalArtifactByteLength: finalBytes.length, signerEvidenceSha256, fieldEvidenceSha256, generatedAt: finalisedAt }, p_finalised_by: finalisedBy, p_final_signed_document_id: null });
     if (update.error) throw update.error;
-    await supabase.from("document_packets").update({ status: "completed", completed_at: finalisedAt }).eq("id", packetId);
-    await supabase.from("document_packet_events").insert({ packet_id: packetId, organisation_id: packet.organisation_id, version_id: version.id, event_type: "final_signed_otp_generated", event_payload_json: { generatedFilePath: path, generatedFileBucket: uploadedBucket, signerCount: signers.length, fieldCount: fields.length, embeddedSignatureCount: signatureImages.length, signatureEvidenceMode: "visual_and_audit", signatureAssetFingerprints: signatureImages.map((image) => ({ role: image.role, sha256: image.hash, path: image.path, bucket: image.bucket })), generatedAt: finalisedAt }, created_by: null, created_at: finalisedAt });
     const signedUrl = await supabase.storage.from(uploadedBucket).createSignedUrl(path, 3600);
+    const finalDelivery = await dispatchFinalDelivery({ url, serviceKey, packetId, packetVersionId: text(version.id) });
     logEvent("info", "otp_finalisation_completed", { requestId, packetId, packetVersionId: version.id, durationMs: Date.now() - startedAt, embeddedSignatureCount: signatureImages.length, signatureEvidenceMode: "visual_and_audit", outputBytes: finalBytes.length });
-    return response(200, { success: true, packetId, packetVersionId: version.id, finalArtifact: { bucket: uploadedBucket, path, url: signedUrl.data?.signedUrl || null, fileName, finalisedAt, finalisedBy, embeddedSignatureCount: signatureImages.length, signatureEvidenceMode: "visual_and_audit" }, version: update.data, sourceFormat: "otp_structured_pdf_with_visual_signatures" });
+    return response(200, { success: true, packetId, packetVersionId: version.id, finalArtifact: { bucket: uploadedBucket, path, url: signedUrl.data?.signedUrl || null, fileName, finalisedAt, finalisedBy, embeddedSignatureCount: signatureImages.length, signatureEvidenceMode: "visual_and_audit", sha256: finalArtifactSha256, byteLength: finalBytes.length }, finalDelivery, version: update.data, sourceFormat: "otp_structured_pdf_with_visual_signatures" });
   } catch (error) {
     logEvent("error", "otp_finalisation_failed", { requestId, packetId: observedPacketId || null, error: String(error), durationMs: Date.now() - startedAt });
     return response(500, { success: false, error: String(error), errorCode: "FINAL_SIGNED_OTP_GENERATION_FAILED" });

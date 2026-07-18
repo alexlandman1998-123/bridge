@@ -72,10 +72,9 @@ const definitionsByKey = new Map(
   NOTIFICATION_AUTOMATION_DEFINITIONS.map((definition) => [definition.key, definition]),
 )
 
-assert.equal(
-  NOTIFICATION_AUTOMATION_DEFINITIONS.length,
-  requiredKeys.length,
-  'app contract should define exactly the phase 1 notification keys',
+assert.ok(
+  NOTIFICATION_AUTOMATION_DEFINITIONS.length >= requiredKeys.length,
+  'app contract must retain every phase 1 notification key while allowing later phases to extend the catalog',
 )
 
 for (const key of requiredKeys) {

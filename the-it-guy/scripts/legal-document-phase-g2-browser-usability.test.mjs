@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const workspace = fs.readFileSync('src/components/documents/LegalDocumentWorkspace.jsx', 'utf8')
+const verifier = fs.readFileSync('scripts/legal-document-phase-g2-browser-usability.mjs', 'utf8')
+assert.match(workspace, /Download Signed \$\{isOtpPacket \? 'OTP' : 'Mandate'\}/)
+assert.match(workspace, /Review and download the final signed/)
+assert.match(workspace, /aria-label="Finalized legal record"/)
+assert.match(workspace, /role="status"/)
+assert.match(verifier, /legal-document-phase-g1-verify\.mjs/)
+assert.match(verifier, /\/legal-documents\/\$\{encodeURIComponent\(target\.packetId\)\}/)
+assert.match(verifier, /width: 390, height: 844/)
+assert.match(verifier, /assertNoUnlabelledControls/)
+assert.match(verifier, /G2_BROWSER_ACTOR_UNAVAILABLE/)
+assert.match(verifier, /horizontal overflow/)
+assert.match(verifier, /mutatedData: false/)
+assert.doesNotMatch(verifier, /createClient|\.insert\(|\.update\(|\.upsert\(|\.delete\(/)
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+for (const name of ['test:legal-documents-phase-g2', 'verify:legal-documents:phase-g2']) assert.ok(pkg.scripts?.[name])
+console.log('Legal document G2 browser usability contract passed.')

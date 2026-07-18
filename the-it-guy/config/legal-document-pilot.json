@@ -3,6 +3,44 @@
   "enabled": false,
   "environment": "production",
   "organisationIds": [],
+  "cohortPreparation": {
+    "candidateOrganisationIds": [
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+    ],
+    "minimumActiveAgents": 1,
+    "requiredPacketTypes": [
+      "mandate",
+      "otp"
+    ],
+    "requirePreferredTransferAttorney": true,
+    "sourceEnvironment": "staging",
+    "status": "pending_readiness"
+  },
+  "releasePreparation": {
+    "status": "pending_evidence",
+    "organisationIds": [],
+    "approvedBy": null,
+    "approvedAt": null,
+    "approvalReference": null,
+    "requiredChecks": [
+      "a1_cohort_ready",
+      "all_routable_templates_legally_approved",
+      "controlled_otp_acceptance_complete",
+      "negative_approval_lock_smoke",
+      "monitoring_healthy"
+    ]
+  },
+  "activation": {
+    "status": "inactive",
+    "targetProjectRef": null,
+    "activatedOrganisationIds": [],
+    "activatedBy": null,
+    "activatedAt": null,
+    "activationReference": null,
+    "deactivatedBy": null,
+    "deactivatedAt": null,
+    "deactivationReason": null
+  },
   "limits": {
     "maxOrganisations": 5,
     "maxGenerationFailures24h": 0,

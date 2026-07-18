@@ -431,6 +431,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber),
+      residency_status: normalizeText(form.foreignResidencyStatus || form.residencyStatus),
       vat_registered: vatEligibleSeller ? normalizeBoolean(form.vatRegistered, false) : false,
       vat_number: vatEligibleSeller ? normalizeText(form.vatNumber) : '',
       existing_bond: existingBond,
@@ -624,6 +625,12 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       cancellation_required: normalizeBoolean(form.cancellationRequired, existingBond),
       cancellation_attorney_known: normalizeBoolean(form.cancellationAttorneyKnown, false),
       cancellation_attorney_details: normalizeText(form.cancellationAttorneyDetails),
+      seller_bank_account_confirmation_available: normalizeBoolean(form.sellerBankAccountConfirmationAvailable, false),
+      seller_bank_name: normalizeText(form.sellerBankName),
+      seller_bank_account_last_four: normalizeText(form.sellerBankAccountLastFour),
+      original_acquisition_date: normalizeDate(form.originalAcquisitionDate || form.propertyAcquisitionDate),
+      original_purchase_price: normalizeNumber(form.originalPurchasePrice || form.propertyAcquisitionPrice),
+      capital_improvement_records_available: normalizeBoolean(form.capitalImprovementRecordsAvailable, false),
     },
     compliance: {
       gas_installation: gasInstallation,
@@ -670,6 +677,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         ...normalizeRecord(form.specialMandateConditions),
       },
       additional_conditions: normalizeText(form.additionalConditions || form.additional_conditions || form.additionalMandateConditions || form.additional_mandate_conditions),
+      going_concern: normalizeBoolean(form.goingConcernSale ?? form.saleAsGoingConcern, false),
     },
     context: {
       type: options.contextType || 'private_listing',

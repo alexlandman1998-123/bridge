@@ -20647,6 +20647,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     'partner_prospect',
     'invited_partner',
     'transaction_direct',
+    'seller_nomination',
   ])
 
   return rolePlayers
@@ -20757,6 +20758,29 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     .filter(Boolean)
 }
 
+export function prepareFirmFirstTransferRoleplayer(selection = {}) {
+  if (selection?.roleType !== 'transfer_attorney') return selection
+  const preferredAttorneyUserId = normalizeNullableUuid(
+    selection.preferredAttorneyUserId || selection.userId,
+  )
+  return {
+    ...selection,
+    firmFirstAllocation: true,
+    preferredAttorneyUserId,
+    userId: null,
+    assignmentStatus: 'selected',
+    activationTrigger: 'appointed_firm_staff_assignment',
+    snapshot: {
+      ...(selection.snapshot || {}),
+      firmFirstAllocation: true,
+      preferredAttorneyUserId,
+      userId: null,
+      assignmentStatus: 'selected',
+      activationTrigger: 'appointed_firm_staff_assignment',
+    },
+  }
+}
+
 function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, options = {}) {
   const allowedSources =
     options.allowedSources ||
@@ -20772,6 +20796,7 @@ function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, op
       'transaction_direct',
       'partner_routing_rule',
       'seller_mandate',
+      'seller_nomination',
       'agent_reassignment',
     ])
   const explicitSource = normalizeTextValue(
@@ -20840,7 +20865,10 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   )
 
   for (const item of rolePlayers) {
-    const resolvedUserId = item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
+    const isFirmFirstTransfer = item.roleType === 'transfer_attorney' && item.firmFirstAllocation === true
+    const resolvedUserId = isFirmFirstTransfer
+      ? null
+      : item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
     const scope = resolveRoleplayerSelectionScope(item, resolvedUserId)
     const payload = {
       transaction_id: transactionId,
@@ -20874,16 +20902,22 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       physical_address: item.physicalAddress || null,
       province: item.province || null,
       notes: item.notes || null,
-      status: item.assignmentStatus === 'pending_assignment' ? 'pending' : 'active',
-      assignment_status: item.assignmentStatus || 'active',
-      activation_trigger: item.assignmentStatus === 'pending_assignment' ? 'routing_queue' : 'immediate',
-      activated_at: nowIso,
+      status: isFirmFirstTransfer ? 'selected' : item.assignmentStatus === 'pending_assignment' ? 'pending' : 'active',
+      assignment_status: isFirmFirstTransfer ? 'selected' : item.assignmentStatus || 'active',
+      activation_trigger: isFirmFirstTransfer
+        ? 'appointed_firm_staff_assignment'
+        : item.assignmentStatus === 'pending_assignment'
+          ? 'routing_queue'
+          : 'immediate',
+      activated_at: isFirmFirstTransfer ? null : nowIso,
       assigned_by: actorProfile?.userId || null,
       removed_at: null,
       snapshot_json: {
         ...(item.snapshot || {}),
         canonicalTransactionId: transactionId,
         roleplayerStatus: item.assignmentStatus || 'assigned',
+        firmFirstAllocation: isFirmFirstTransfer,
+        preferredAttorneyUserId: isFirmFirstTransfer ? item.preferredAttorneyUserId || null : null,
         userId: resolvedUserId,
         organisationId: scope.organisationId || item.partnerOrganisationId || null,
         partnerOrganisationId: scope.organisationId || item.partnerOrganisationId || null,
@@ -21040,7 +21074,10 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
   if (!transactionId || !roleType) return null
 
   const profileIdByEmail = selection?.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
-  const resolvedUserId = selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
+  const isFirmFirstTransfer = selection.roleType === 'transfer_attorney' && selection.firmFirstAllocation === true
+  const resolvedUserId = isFirmFirstTransfer
+    ? null
+    : selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
   const participantName = selection.partnerName || selection.contactPerson || null
   const participantEmail = selection.email || null
@@ -21050,7 +21087,7 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
     role_type: roleType,
     legal_role: roleType === 'attorney' ? legalRole : 'none',
     transaction_role: selection.roleType,
-    status: 'active',
+    status: isFirmFirstTransfer ? 'pending' : 'active',
     user_id: resolvedUserId,
     assigned_organisation_id: scope.organisationId,
     assigned_workspace_unit_id: scope.workspaceUnitId,
@@ -21067,12 +21104,12 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
     participant_email: participantEmail,
     invited_by_user_id: actorProfile?.userId || null,
     invited_at: nowIso,
-    accepted_at: nowIso,
+    accepted_at: isFirmFirstTransfer ? null : nowIso,
     removed_at: null,
     visibility_scope: 'shared',
     is_internal: isInternalStakeholderRole(roleType),
     participant_scope: 'transaction',
-    assignment_source: 'transaction_direct',
+    assignment_source: isFirmFirstTransfer ? 'agent_firm_nomination' : 'transaction_direct',
     ...buildStakeholderPermissionPayload(roleType, financeManagedBy),
   }
 
@@ -21222,6 +21259,70 @@ async function resolveAttorneyFirmPrimaryUserId(client, { firmId, selection }) {
   return memberQuery.data?.[0]?.user_id || null
 }
 
+export function buildCreationAttorneyAssignmentPayload({
+  transactionId,
+  selection,
+  actorProfile,
+  firmId,
+  attorneyUserId = null,
+  scope = {},
+  nowIso = new Date().toISOString(),
+} = {}) {
+  const assignmentType = attorneyAssignmentTypeForRoleplayer(selection?.roleType)
+  const attorneyRole = selection?.roleType
+  const isFirmFirstTransfer = attorneyRole === 'transfer_attorney' && selection?.firmFirstAllocation === true
+  const operationalAttorneyUserId = isFirmFirstTransfer ? null : attorneyUserId
+
+  return {
+    transaction_id: transactionId,
+    firm_id: firmId,
+    attorney_firm_id: firmId,
+    assignment_type: assignmentType,
+    attorney_role: attorneyRole,
+    matter_type: assignmentType,
+    instruction_status: 'new_instruction',
+    assigned_organisation_id: scope.organisationId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_region_id: scope.regionId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: operationalAttorneyUserId,
+    scope_level: isFirmFirstTransfer ? 'organisation' : operationalAttorneyUserId ? 'user' : scope.scopeLevel,
+    scope_metadata: {
+      source: isFirmFirstTransfer ? 'agent_firm_nomination' : 'transaction_roleplayer_propagation',
+      roleType: selection?.roleType,
+      firmFirstAllocation: isFirmFirstTransfer,
+    },
+    primary_attorney_id: operationalAttorneyUserId,
+    attorney_user_id: operationalAttorneyUserId,
+    preferred_attorney_user_id: isFirmFirstTransfer ? selection?.preferredAttorneyUserId || null : null,
+    preferred_contact_name: isFirmFirstTransfer ? selection?.contactPerson || null : null,
+    preferred_contact_email: isFirmFirstTransfer ? selection?.email || null : null,
+    preferred_contact_phone: isFirmFirstTransfer ? selection?.phone || null : null,
+    appointment_source: isFirmFirstTransfer ? selection?.selectionSource || 'agent_nomination' : 'legacy_assignment',
+    replaces_assignment_id: isFirmFirstTransfer ? selection?.snapshot?.previousAssignmentId || null : null,
+    replacement_reason: isFirmFirstTransfer ? selection?.snapshot?.replacementReason || null : null,
+    firm_acceptance_status: isFirmFirstTransfer ? 'awaiting_firm_acceptance' : 'accepted',
+    firm_accepted_by: isFirmFirstTransfer ? null : actorProfile?.userId || null,
+    firm_accepted_at: isFirmFirstTransfer ? null : nowIso,
+    staff_assignment_status: operationalAttorneyUserId ? 'staff_assigned' : 'awaiting_staff_assignment',
+    allocation_state: isFirmFirstTransfer ? 'awaiting_firm_acceptance' : operationalAttorneyUserId ? 'active' : 'awaiting_staff_assignment',
+    status: isFirmFirstTransfer ? 'pending' : 'active',
+    assignment_status: isFirmFirstTransfer ? 'pending' : 'active',
+    is_primary: true,
+    visibility_scope: isFirmFirstTransfer ? 'firm_matter' : 'assigned_matter',
+    can_edit: true,
+    can_manage_documents: true,
+    can_manage_signing: true,
+    can_add_internal_notes: true,
+    can_add_shared_updates: true,
+    can_update_workflow_lane: true,
+    assigned_by: actorProfile?.userId || null,
+    assigned_at: nowIso,
+    updated_at: nowIso,
+  }
+}
+
 async function ensureAttorneyMatterAssignment(client, { transactionId, selection, actorProfile }) {
   if (!['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(selection?.roleType)) return null
 
@@ -21230,7 +21331,10 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
 
   const assignmentType = attorneyAssignmentTypeForRoleplayer(selection.roleType)
   const attorneyRole = selection.roleType
-  const attorneyUserId = await resolveAttorneyFirmPrimaryUserId(client, { firmId, selection })
+  const isFirmFirstTransfer = attorneyRole === 'transfer_attorney' && selection.firmFirstAllocation === true
+  const attorneyUserId = isFirmFirstTransfer
+    ? null
+    : await resolveAttorneyFirmPrimaryUserId(client, { firmId, selection })
   const scope = resolveRoleplayerSelectionScope(selection, attorneyUserId)
   const nowIso = new Date().toISOString()
 
@@ -21239,12 +21343,16 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
     .select('id')
     .eq('transaction_id', transactionId)
     .eq('attorney_role', attorneyRole)
-    .eq('assignment_status', 'active')
+    .in('allocation_state', ['awaiting_firm_acceptance', 'awaiting_staff_assignment', 'staff_assigned', 'active'])
     .limit(1)
 
   if (
     existingQuery.error &&
-    (isMissingColumnError(existingQuery.error, 'attorney_role') || isMissingColumnError(existingQuery.error, 'assignment_status'))
+    (
+      isMissingColumnError(existingQuery.error, 'attorney_role')
+      || isMissingColumnError(existingQuery.error, 'assignment_status')
+      || isMissingColumnError(existingQuery.error, 'allocation_state')
+    )
   ) {
     existingQuery = await client
       .from('transaction_attorney_assignments')
@@ -21260,41 +21368,15 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
     throw existingQuery.error
   }
 
-  const payload = {
-    transaction_id: transactionId,
-    firm_id: firmId,
-    attorney_firm_id: firmId,
-    assignment_type: assignmentType,
-    attorney_role: attorneyRole,
-    matter_type: assignmentType,
-    instruction_status: 'new_instruction',
-    assigned_organisation_id: scope.organisationId,
-    assigned_workspace_unit_id: scope.workspaceUnitId,
-    assigned_branch_id: scope.branchId,
-    assigned_region_id: scope.regionId,
-    assigned_team_id: scope.teamId,
-    assigned_user_id: attorneyUserId,
-    scope_level: attorneyUserId ? 'user' : scope.scopeLevel,
-    scope_metadata: {
-      source: 'transaction_roleplayer_propagation',
-      roleType: selection.roleType,
-    },
-    primary_attorney_id: attorneyUserId,
-    attorney_user_id: attorneyUserId,
-    status: 'active',
-    assignment_status: 'active',
-    is_primary: true,
-    visibility_scope: 'assigned_matter',
-    can_edit: true,
-    can_manage_documents: true,
-    can_manage_signing: true,
-    can_add_internal_notes: true,
-    can_add_shared_updates: true,
-    can_update_workflow_lane: true,
-    assigned_by: actorProfile?.userId || null,
-    assigned_at: nowIso,
-    updated_at: nowIso,
-  }
+  const payload = buildCreationAttorneyAssignmentPayload({
+    transactionId,
+    selection,
+    actorProfile,
+    firmId,
+    attorneyUserId,
+    scope,
+    nowIso,
+  })
 
   if (existingQuery.data?.[0]?.id) {
     const updated = await updateRecordByIdWithMissingColumnFallback(
@@ -21510,7 +21592,9 @@ async function propagateTransactionRoleplayersIfPossible(
         : selection.roleType === 'cancellation_attorney'
           ? 'cancellation_attorney_assigned'
           : selection.roleType === 'transfer_attorney'
-            ? 'transfer_attorney_assigned'
+            ? selection.firmFirstAllocation === true
+              ? 'attorney_firm_nominated'
+              : 'transfer_attorney_assigned'
             : 'roleplayer_visibility_granted',
       createdBy: actorProfile?.userId || null,
       createdByRole: actorRole || actorProfile?.role || null,
@@ -21519,7 +21603,9 @@ async function propagateTransactionRoleplayersIfPossible(
         roleType: selection.roleType,
         partnerName: selection.partnerName || null,
         partnerOrganisationId: selection.partnerOrganisationId || null,
-        userId: selection.userId || null,
+        userId: selection.firmFirstAllocation === true ? null : selection.userId || null,
+        preferredAttorneyUserId: selection.preferredAttorneyUserId || null,
+        allocationState: selection.firmFirstAllocation === true ? 'awaiting_firm_acceptance' : null,
         visibilityGranted: true,
         canonicalTransactionId: transactionId,
       },
@@ -21534,7 +21620,9 @@ async function propagateTransactionRoleplayersIfPossible(
         roleType: selection.roleType,
         partnerName: selection.partnerName || null,
         partnerOrganisationId: selection.partnerOrganisationId || null,
-        userId: selection.userId || null,
+        userId: selection.firmFirstAllocation === true ? null : selection.userId || null,
+        preferredAttorneyUserId: selection.preferredAttorneyUserId || null,
+        allocationState: selection.firmFirstAllocation === true ? 'awaiting_firm_acceptance' : null,
         visibilityGranted: true,
         canonicalTransactionId: transactionId,
       },
@@ -21813,8 +21901,13 @@ async function recordUniversalRolePlayerAssignmentEvent(client, {
 
 async function upsertTransactionRoleplayerSelection(client, { transactionId, selection, actorProfile }) {
   const now = new Date().toISOString()
-  const profileIdByEmail = !selection.userId && selection.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
-  const resolvedUserId = selection.userId || (selection.email ? profileIdByEmail[selection.email] || null : null)
+  const isFirmFirstTransfer = selection.roleType === 'transfer_attorney' && selection.firmFirstAllocation === true
+  const profileIdByEmail = !isFirmFirstTransfer && !selection.userId && selection.email
+    ? await resolveProfileIdsByEmail(client, [selection.email])
+    : {}
+  const resolvedUserId = isFirmFirstTransfer
+    ? null
+    : selection.userId || (selection.email ? profileIdByEmail[selection.email] || null : null)
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
   const selectionSource = selection.selectionSource || 'transaction_direct'
   const payload = {
@@ -22298,14 +22391,23 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     throw new Error('This transaction does not have a declined transfer instruction to reassign.')
   }
 
-  const selection = normalizeTransactionRoleplayerSelection({
+  const normalizedReplacement = normalizeTransactionRoleplayerSelection({
     ...replacement,
     roleType: 'transfer_attorney',
     selectionSource: 'agent_reassignment',
-    assignmentStatus: 'active',
-    activationTrigger: 'immediate',
+    assignmentStatus: 'selected',
+    activationTrigger: 'appointed_firm_staff_assignment',
   })
-  if (!selection) throw new Error('Select a valid replacement transfer attorney.')
+  if (!normalizedReplacement) throw new Error('Select a valid replacement transfer attorney firm.')
+  const selection = prepareFirmFirstTransferRoleplayer({
+    ...normalizedReplacement,
+    snapshot: {
+      ...(normalizedReplacement.snapshot || {}),
+      source: 'declined_transfer_firm_reassignment',
+      replacementReason: normalizeNullableText(reason),
+      previousAssignmentId: declinedTransferAssignment.id || null,
+    },
+  })
 
   const existingRoleplayers = await fetchTransactionRolePlayersIfPossible(client, normalizedTransactionId)
   const existingActiveTransferAttorney = existingRoleplayers.find((roleplayer) => {
@@ -22313,7 +22415,7 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     return roleplayer.roleType === 'transfer_attorney' && !['removed', 'declined', 'rejected'].includes(status)
   })
   if (existingActiveTransferAttorney) {
-    throw new Error('This transaction already has an active transfer attorney selection.')
+    throw new Error('This transaction already has an open transfer attorney firm nomination.')
   }
   const sameDeclinedAttorney = existingRoleplayers.some((roleplayer) => {
     const removed = ['removed', 'declined', 'rejected'].includes(normalizeTextValue(roleplayer.assignmentStatus || roleplayer.status).toLowerCase())
@@ -22324,7 +22426,7 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     )
   })
   if (sameDeclinedAttorney) {
-    throw new Error('Choose a different transfer attorney from the firm that declined the instruction.')
+    throw new Error('Choose a different transfer attorney firm from the firm that declined the instruction.')
   }
 
   const savedRows = await upsertTransactionRoleplayerSelection(client, {
@@ -22341,11 +22443,11 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     normalizedTransactionId,
     {
       attorney: selection.companyName || selection.contactPerson || null,
-      assigned_attorney_email: selection.email || null,
+      assigned_attorney_email: null,
       current_main_stage: 'ATT',
       attorney_stage: 'instruction_sent',
-      next_action: 'Replacement transfer instruction sent. Awaiting attorney acceptance.',
-      comment: normalizeNullableText(reason) || 'Replacement transfer attorney selected after the original firm declined.',
+      next_action: 'Replacement transfer firm nominated. Awaiting firm acceptance and internal primary attorney assignment.',
+      comment: normalizeNullableText(reason) || 'Replacement transfer attorney firm nominated after the original firm declined.',
       last_meaningful_activity_at: nowIso,
       updated_at: nowIso,
     },
@@ -22357,23 +22459,25 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     transaction: {
       ...transaction,
       attorney: selection.companyName || selection.contactPerson || null,
-      assigned_attorney_email: selection.email || null,
+      assigned_attorney_email: null,
     },
     rolePlayers: [{
       roleType: 'transfer_attorney',
       selectionSource: 'agent_reassignment',
-      assignmentStatus: 'active',
-      activationTrigger: 'immediate',
+      assignmentStatus: 'selected',
+      activationTrigger: 'appointed_firm_staff_assignment',
       partnerOrganisationId: selection.organisationId || null,
       partnerRelationshipId: selection.relationshipId || null,
       partnerName: selection.companyName || selection.contactPerson || null,
       contactPerson: selection.contactPerson || selection.companyName || null,
       email: selection.email || null,
       phone: selection.phone || null,
-      userId: selection.userId || null,
+      userId: null,
+      firmFirstAllocation: true,
+      preferredAttorneyUserId: selection.preferredAttorneyUserId || null,
       snapshot: {
         ...(selection.snapshot || {}),
-        source: 'declined_transfer_instruction_reassignment',
+        source: 'declined_transfer_firm_reassignment',
         replacementReason: normalizeNullableText(reason),
         previousAssignmentId: declinedTransferAssignment.id || null,
       },
@@ -22425,7 +22529,7 @@ export async function reassignDeclinedTransferAttorneyInstruction({
 
   await logTransactionEventIfPossible(client, {
     transactionId: normalizedTransactionId,
-    eventType: 'transfer_attorney_reassigned',
+    eventType: 'transfer_attorney_firm_renominated',
     createdBy: actorProfile.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
@@ -22434,6 +22538,7 @@ export async function reassignDeclinedTransferAttorneyInstruction({
       replacementOrganisationId: selection.organisationId || null,
       replacementName: selection.companyName || selection.contactPerson || null,
       replacementEmail: selection.email || null,
+      allocationState: 'awaiting_firm_acceptance',
       reason: normalizeNullableText(reason),
     },
   })
@@ -22442,8 +22547,8 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     await notifyRolesForTransaction(client, {
       transactionId: normalizedTransactionId,
       roleTypes: ['attorney', 'agent', 'seller'],
-      title: 'Replacement transfer instruction issued',
-      message: `${selection.companyName || selection.contactPerson || 'The replacement attorney'} received the transfer instruction and must accept the matter.`,
+      title: 'Replacement transfer firm nominated',
+      message: `${selection.companyName || selection.contactPerson || 'The replacement firm'} must accept the nomination and allocate a primary attorney.`,
       notificationType: 'lane_handoff',
       eventType: 'TransactionUpdated',
       eventData: {
@@ -23994,7 +24099,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     ...autoResolvedSelections.filter(
       (selection) => selection?.roleType && !rolePlayerSelections.some((existing) => normalizeRoleType(existing.roleType) === normalizeRoleType(selection.roleType)),
     ),
-  ]
+  ].map(prepareFirmFirstTransferRoleplayer)
   const primaryPartnerSelection = mergedRolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
   const hierarchyScope =
     options?.hierarchyScope && typeof options.hierarchyScope === 'object'

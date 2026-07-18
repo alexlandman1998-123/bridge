@@ -14,6 +14,7 @@ import { resolveAppBaseUrl } from "../utils/url.ts";
 const REMINDER_AUTOMATION_KEYS = [
   "buyer_onboarding_reminder",
   "seller_onboarding_reminder",
+  "seller_document_request_reminder",
   "attorney_invite_reminder",
   "bond_originator_invite_reminder",
   "agent_invite_reminder",
@@ -181,6 +182,17 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
     }`;
   }
 
+  const sellerWorkspaceToken = coalesceText(
+    payload.sellerWorkspaceToken,
+    payload.seller_workspace_token,
+    sourceMetadata.sellerWorkspaceToken,
+    sourceMetadata.seller_workspace_token,
+    onboardingToken,
+  );
+  if (sellerWorkspaceToken && automationKey === "seller_document_request_reminder") {
+    return `${appBaseUrl}/client/${encodeURIComponent(sellerWorkspaceToken)}/selling/documents`;
+  }
+
   const inviteToken = coalesceText(
     payload.inviteToken,
     payload.invite_token,
@@ -201,6 +213,10 @@ function reminderDisplayName(automationKey: string) {
   }
   if (automationKey === "seller_onboarding_reminder") {
     return "seller onboarding";
+  }
+
+  if (automationKey === "seller_document_request_reminder") {
+    return "seller document request";
   }
   if (automationKey === "attorney_invite_reminder") {
     return "attorney invite";
@@ -275,6 +291,38 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
         "If the secure button is not available, reply to this email and the team will resend your seller onboarding link.",
       security:
         "Your seller onboarding workspace is protected and only shared with authorised people working on your file.",
+    };
+  }
+
+  if (automationKey === "seller_document_request_reminder") {
+    const documentName = coalesceText(
+      payload.requirementName,
+      payload.requirement_name,
+      sourceMetadata.requirementName,
+      "Requested seller document",
+    );
+    const isReupload = payload.isReupload === true || payload.is_reupload === true;
+    return {
+      title: isReupload ? "Please replace a seller document" : "A seller document is needed",
+      ctaLabel: isReupload ? "Replace Document" : "Upload Document",
+      greeting,
+      organisationName,
+      intro: [
+        isReupload
+          ? `The previously supplied ${documentName} could not be accepted and needs a replacement.`
+          : `${documentName} is required to keep your property file moving.`,
+        "Upload it securely in your seller document centre. Your agent will be notified when it is received.",
+      ],
+      summaryTitle: "Document Request",
+      summaryFields: [
+        { label: "Document", value: documentName },
+        { label: "Reminder", value: reminderLabel },
+        { label: "Due date", value: coalesceText(payload.dueDate, payload.due_date) },
+      ],
+      fallback:
+        "If the secure button is not available, contact your agent and ask them to resend your seller portal link.",
+      security:
+        "For bank details or other sensitive documents, use the secure seller portal rather than replying with an attachment.",
     };
   }
 
@@ -546,6 +594,13 @@ function isMissingPhase6QueueRpc(error: unknown) {
     message.includes("bridge_queue_notification_reminder_events_phase6");
 }
 
+function isMissingRpc(error: unknown, rpcName: string) {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const code = normalizeText(record.code).toUpperCase();
+  const message = normalizeText(record.message).toLowerCase();
+  return code === "42883" || message.includes(normalizeText(rpcName).toLowerCase());
+}
+
 async function queueDueNotificationReminderEvents(
   supabase: any,
   {
@@ -558,6 +613,43 @@ async function queueDueNotificationReminderEvents(
     dryRun: boolean;
   },
 ) {
+  const sellerDocuments = await supabase.rpc(
+    "bridge_queue_seller_document_follow_ups_p0_3",
+    {
+      p_limit: queueLimit,
+      p_now: now,
+      p_dry_run: dryRun,
+      p_listing_id: null,
+    },
+  );
+  const sellerDocumentsUnavailable = isMissingRpc(
+    sellerDocuments.error,
+    "bridge_queue_seller_document_follow_ups_p0_3",
+  );
+  if (sellerDocuments.error && !sellerDocumentsUnavailable) {
+    return sellerDocuments;
+  }
+
+  const sellerDocumentReviewSla = await supabase.rpc(
+    "bridge_refresh_seller_document_review_sla_p1_9",
+    {
+      p_limit: queueLimit,
+      p_now: now,
+      p_dry_run: dryRun,
+      p_organisation_id: null,
+      p_listing_id: null,
+    },
+  );
+  const sellerDocumentReviewSlaUnavailable = isMissingRpc(
+    sellerDocumentReviewSla.error,
+    "bridge_refresh_seller_document_review_sla_p1_9",
+  );
+  if (
+    sellerDocumentReviewSla.error && !sellerDocumentReviewSlaUnavailable
+  ) {
+    return sellerDocumentReviewSla;
+  }
+
   const phase6 = await supabase.rpc(
     "bridge_queue_notification_reminder_events_phase6",
     {
@@ -569,7 +661,14 @@ async function queueDueNotificationReminderEvents(
   );
 
   if (!phase6.error) {
-    return phase6;
+    return {
+      ...phase6,
+      data: {
+        ...(asRecord(phase6.data)),
+        sellerDocumentFollowUps: sellerDocuments.error ? null : sellerDocuments.data,
+        sellerDocumentReviewSla: sellerDocumentReviewSla.error ? null : sellerDocumentReviewSla.data,
+      },
+    };
   }
 
   if (!isMissingPhase6QueueRpc(phase6.error)) {
@@ -595,6 +694,7 @@ async function queueDueNotificationReminderEvents(
       ...(asRecord(phase3.data)),
       phase6Fallback: true,
       phase: "phase_3_reminder_queue",
+      sellerDocumentReviewSla: sellerDocumentReviewSla.error ? null : sellerDocumentReviewSla.data,
     },
   };
 }
@@ -668,6 +768,32 @@ export async function handleNotificationReminderDispatchEmail(
       });
     }
     queueResult = queued.data || null;
+
+    const sellerDocumentReleaseHeartbeat = await supabase.rpc(
+      "bridge_record_seller_document_automation_heartbeat_p1_10",
+      {
+        p_source: "notification_reminder_dispatch",
+        p_dry_run: dryRun,
+        p_status: "completed",
+        p_payload: asRecord(queued.data),
+      },
+    );
+    const heartbeatUnavailable = isMissingRpc(
+      sellerDocumentReleaseHeartbeat.error,
+      "bridge_record_seller_document_automation_heartbeat_p1_10",
+    );
+    if (sellerDocumentReleaseHeartbeat.error && !heartbeatUnavailable) {
+      return jsonResponse(500, {
+        error: "Seller document automation heartbeat could not be recorded.",
+        details: sellerDocumentReleaseHeartbeat.error,
+      });
+    }
+    queueResult = {
+      ...asRecord(queueResult),
+      sellerDocumentReleaseHeartbeat: heartbeatUnavailable
+        ? null
+        : sellerDocumentReleaseHeartbeat.data,
+    };
   }
 
   const claimed = dryRun
@@ -709,6 +835,24 @@ export async function handleNotificationReminderDispatchEmail(
         dryRun: true,
       });
       continue;
+    }
+
+    if (automationKey === "seller_document_request_reminder") {
+      const currentEvent = await supabase
+        .from("notification_events")
+        .select("status")
+        .eq("id", event.id)
+        .maybeSingle();
+      if (currentEvent.error || currentEvent.data?.status !== "processing") {
+        results.push({
+          eventId: event.id,
+          automationKey,
+          ok: true,
+          skipped: true,
+          reason: currentEvent.error ? "stop_condition_check_failed" : "document_request_no_longer_open",
+        });
+        continue;
+      }
     }
 
     if (!recipientEmail) {

@@ -6,6 +6,11 @@ import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from '../lib/appRoleMetadata'
 import { can, canAll, canAny, createPermissionResolver, getPermissionScope } from '../auth/permissions/permissionResolver'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
+import {
+  isOrganisationOwnerMembership,
+  resolveActiveOrganisationMembership,
+  resolveOrganisationMembershipRole,
+} from '../lib/organisationMembershipResolution'
 
 const WORKSPACE_CONTEXT_GLOBAL_KEY = '__arch9WorkspaceContextV1'
 const WorkspaceContext =
@@ -108,6 +113,17 @@ export function WorkspaceProvider({ children }) {
     [authState.activeMemberships, authState.currentMembership, authState.currentMemberships, authState.currentWorkspace, authState.membershipContexts, authState.workspaceType, baseRole, profile],
   )
   const permissionResolver = useMemo(() => createPermissionResolver(permissionContext), [permissionContext])
+  const organisationMembership = useMemo(
+    () => resolveActiveOrganisationMembership({
+      currentMembership: authState.currentMembership,
+      currentMemberships: authState.currentMemberships,
+      membershipContexts: authState.membershipContexts,
+      currentWorkspace: authState.currentWorkspace,
+    }),
+    [authState.currentMembership, authState.currentMemberships, authState.currentWorkspace, authState.membershipContexts],
+  )
+  const organisationMembershipRole = resolveOrganisationMembershipRole(organisationMembership)
+  const isOrganisationOwner = isOrganisationOwnerMembership(organisationMembership)
   const isAgentBaseRole = baseRole === 'agent'
   const [agencyWorkflowMode, setAgencyWorkflowModeState] = useState(DEFAULT_AGENCY_WORKFLOW_MODE)
 
@@ -237,6 +253,9 @@ export function WorkspaceProvider({ children }) {
       currentMembership: authState.currentMembership,
       currentMemberships: authState.currentMemberships,
       membershipContexts: authState.membershipContexts,
+      organisationMembership,
+      organisationMembershipRole,
+      isOrganisationOwner,
       currentWorkspace: authState.currentWorkspace,
       workspaceType: authState.workspaceType,
       workspaceRole: authState.workspaceRole,
@@ -260,6 +279,9 @@ export function WorkspaceProvider({ children }) {
       authState.currentMembership,
       authState.currentMemberships,
       authState.membershipContexts,
+      organisationMembership,
+      organisationMembershipRole,
+      isOrganisationOwner,
       authState.currentWorkspace,
       authState.memberships,
       authState.pendingMemberships,

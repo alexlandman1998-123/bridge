@@ -7,6 +7,7 @@ export async function sendViaResendApi({
   text,
   attachments,
   replyTo,
+  idempotencyKey,
   timeoutMs = 0,
 }: {
   apiKey: string;
@@ -16,6 +17,7 @@ export async function sendViaResendApi({
   html: string;
   text?: string;
   replyTo?: string;
+  idempotencyKey?: string;
   timeoutMs?: number;
   attachments?: Array<{
     filename: string;
@@ -35,6 +37,7 @@ export async function sendViaResendApi({
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,

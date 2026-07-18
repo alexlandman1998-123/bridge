@@ -54,6 +54,10 @@ const ASSIGNMENT_COLUMNS = [
   'assigned_at',
   'created_at',
   'updated_at',
+  'firm_acceptance_status',
+  'staff_assignment_status',
+  'allocation_state',
+  'appointment_source',
 ]
 
 const TRANSACTION_COLUMNS = [
@@ -352,6 +356,10 @@ function normalizeAssignment(row = {}) {
     primary_attorney_id: row.primary_attorney_id || attorneyUserId,
     attorneyUserId,
     attorney_user_id: attorneyUserId,
+    firmAcceptanceStatus: row.firm_acceptance_status || 'not_required',
+    staffAssignmentStatus: row.staff_assignment_status || 'not_required',
+    allocationState: row.allocation_state || 'active',
+    appointmentSource: row.appointment_source || '',
   }
 }
 
@@ -494,7 +502,14 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     onboardingSubmittedAt: transaction.external_onboarding_submitted_at || transaction.onboarding_completed_at || onboarding?.submitted_at || null,
     otpStatus: getOtpStatus({ transaction, status: contract.status }),
     documents: documentSummary,
-    nextAction: getNextAction({ transaction, contract, documents: documentSummary }),
+    nextAction: normalizedAssignment.allocationState === 'awaiting_staff_assignment'
+      ? 'Firm accepted. Assign an internal primary transfer attorney.'
+      : normalizedAssignment.allocationState === 'staff_assigned'
+        ? 'Primary attorney assigned. Activate the transfer matter.'
+        : getNextAction({ transaction, contract, documents: documentSummary }),
+    firmAcceptanceStatus: normalizedAssignment.firmAcceptanceStatus,
+    staffAssignmentStatus: normalizedAssignment.staffAssignmentStatus,
+    allocationState: normalizedAssignment.allocationState,
     assignedAttorney: {
       id: primaryAttorneyId || '',
       name: assignedAttorneyName,

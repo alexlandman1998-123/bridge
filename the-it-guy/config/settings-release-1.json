@@ -1,0 +1,30 @@
+{
+  "version": "settings_phase7_release1_v1",
+  "enabled": false,
+  "environment": "production",
+  "organisationIds": [],
+  "workspaceTypes": [
+    "agency",
+    "developer_company",
+    "attorney_firm",
+    "bond_originator"
+  ],
+  "approval": {
+    "status": "pending",
+    "approvedBy": null,
+    "approvedAt": null,
+    "reference": null
+  },
+  "limits": {
+    "maxOrganisations": 5,
+    "maxSettingsErrors24h": 0,
+    "maxFailedSaves24h": 0,
+    "maxOwnershipTransferFailures24h": 0
+  },
+  "rollback": {
+    "strategy": "disable_cohort_and_redeploy_previous_frontend",
+    "databaseMigrationsAreForwardOnly": true,
+    "preserveAuditEvents": true,
+    "preserveSavedSettings": true
+  }
+}

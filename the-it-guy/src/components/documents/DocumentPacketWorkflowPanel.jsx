@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isOrganisationAdminMembershipRole } from '../../lib/organisationAccess'
@@ -16,6 +16,11 @@ import {
   resetSigningFields,
   savePacketDraft,
 } from '../../core/documents/packetService'
+import { resolveLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
+import { captureLegalDocumentGenerationBaseline, findReconciledLegalDocumentVersion, reconcileLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
+import { resolveLegalDocumentRetryPolicy } from '../../core/documents/legalDocumentGenerationRetryPolicy'
+import { recordLegalDocumentGenerationSupportHandoff } from '../../core/documents/legalDocumentGenerationSupportHandoff'
+import { appendDocumentPacketEvent } from '../../lib/documentPacketsApi'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -525,6 +530,9 @@ export default function DocumentPacketWorkflowPanel({
   const [errorMessage, setErrorMessage] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [statusLabel, setStatusLabel] = useState('')
+  const [generationRecovery, setGenerationRecovery] = useState(null)
+  const generationFailureCountsRef = useRef(new Map())
+  const recordedGenerationHandoffsRef = useRef(new Set())
   const [signingSummary, setSigningSummary] = useState(null)
   const [canManagePacketAdminActions, setCanManagePacketAdminActions] = useState(false)
   const [conversionHealth, setConversionHealth] = useState(null)
@@ -672,6 +680,7 @@ export default function DocumentPacketWorkflowPanel({
   }
 
   async function handleGenerateVersion({ regenerate = false } = {}) {
+    const generationBaseline = captureLegalDocumentGenerationBaseline(versions)
     try {
       setLoadingAction(regenerate ? 'regenerate' : 'generate')
       setErrorMessage('')
@@ -688,6 +697,8 @@ export default function DocumentPacketWorkflowPanel({
       setPreviewState(result.validation)
       setStatusLabel('Document generated')
       setStatusMessage(regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.')
+      setGenerationRecovery(null)
+      generationFailureCountsRef.current.clear()
       await refreshSigningSummary(result.packet?.id)
       if (result.packet?.id && typeof onPacketIdChange === 'function') {
         onPacketIdChange(result.packet.id)
@@ -700,11 +711,90 @@ export default function DocumentPacketWorkflowPanel({
       if (error?.validation) {
         setPreviewState(error.validation)
       }
-      const feedback = resolvePacketErrorFeedback(error)
-      setStatusLabel(feedback.label)
-      setErrorMessage(feedback.message)
+      setStatusLabel('Checking draft status')
+      const reconciliation = await reconcileLegalDocumentGenerationFailure({
+        error,
+        baseline: generationBaseline,
+        loadStatus: async () => {
+          const resolvedPacketId = normalizeText(packetState?.id || packetId || error?.packetId)
+          const rows = resolvedPacketId ? await listPacketVersions(resolvedPacketId) : []
+          setVersions(rows || [])
+          return rows || []
+        },
+      })
+      if (reconciliation.confirmed) {
+        setStatusLabel('Document generated')
+        setStatusMessage('Generation completed and the recovered draft is ready to review.')
+        setErrorMessage('')
+        setGenerationRecovery(null)
+        generationFailureCountsRef.current.clear()
+        await refreshSigningSummary(packetState?.id || packetId)
+        return
+      }
+      const recovery = resolveLegalDocumentGenerationRecovery(error, { packetType })
+      const recoveryPacketId = normalizeText(packetState?.id || packetId || error?.packetId)
+      const signature = `${packetType}:${recoveryPacketId || 'unsaved'}:${recovery.code}`
+      const policy = resolveLegalDocumentRetryPolicy({ recovery, previousFailureCount: generationFailureCountsRef.current.get(signature) || 0, packetType, packetId: recoveryPacketId })
+      generationFailureCountsRef.current.set(signature, policy.failureCount)
+      const displayMessage = `${policy.message} Next step: ${policy.nextAction}`
+      setGenerationRecovery({ ...policy, displayMessage, baseline: generationBaseline, packetId: recoveryPacketId })
+      setStatusLabel(policy.label)
+      setErrorMessage(displayMessage)
+      if (policy.escalated) void ensureGenerationSupportHandoff({ ...policy, packetId: recoveryPacketId })
     } finally {
       setLoadingAction('')
+    }
+  }
+
+  async function ensureGenerationSupportHandoff(policy) {
+    const reference = normalizeText(policy?.supportReference)
+    if (!reference || recordedGenerationHandoffsRef.current.has(reference)) return false
+    const result = await recordLegalDocumentGenerationSupportHandoff({
+      appendEvent: appendDocumentPacketEvent,
+      packetId: normalizeText(policy?.packetId || packetState?.id || packetId),
+      organisationId: packetState?.organisation_id || null,
+      policy,
+      packetType,
+      surface: 'packet_panel',
+    })
+    if (result.recorded) recordedGenerationHandoffsRef.current.add(reference)
+    return result.recorded
+  }
+
+  async function handleGenerationRecoveryAction() {
+    if (!generationRecovery || loadingAction) return
+    if (generationRecovery.actionKey === 'retry') {
+      await handleGenerateVersion({ regenerate: true })
+      return
+    }
+    if (generationRecovery.actionKey === 'refresh') {
+      setLoadingAction('refresh_recovery')
+      try {
+        const rows = generationRecovery.packetId ? await listPacketVersions(generationRecovery.packetId) : []
+        setVersions(rows || [])
+        if (findReconciledLegalDocumentVersion(rows, generationRecovery.baseline)) {
+          setGenerationRecovery(null)
+          setErrorMessage('')
+          setStatusLabel('Document generated')
+          setStatusMessage('The completed draft is ready to review.')
+        }
+      } finally {
+        setLoadingAction('')
+      }
+      return
+    }
+    if (generationRecovery.actionKey === 'sign_in') {
+      window.location.assign('/auth')
+      return
+    }
+    if (generationRecovery.actionKey === 'review_information') {
+      setStatusMessage('Review the validation summary above, complete the missing information, and generate again.')
+      return
+    }
+    if (['contact_admin', 'contact_support'].includes(generationRecovery.actionKey)) {
+      const recorded = await ensureGenerationSupportHandoff(generationRecovery)
+      await navigator.clipboard?.writeText(generationRecovery.supportReference).catch(() => null)
+      setStatusMessage(`Reference ${generationRecovery.supportReference} copied. Include it when asking for help.${recorded ? ' The handoff was added to the packet audit trail.' : ''}`)
     }
   }
 
@@ -941,6 +1031,11 @@ export default function DocumentPacketWorkflowPanel({
           <div className="rounded-[12px] border border-[#f3d1ce] bg-[#fff4f3] px-3 py-2 text-xs text-[#8e1f15]">
             {statusLabel ? <p className="font-semibold">{statusLabel}</p> : null}
             <p>{errorMessage}</p>
+            {generationRecovery?.displayMessage === errorMessage ? (
+              <Button className="mt-2" size="sm" variant="secondary" onClick={() => void handleGenerationRecoveryAction()} disabled={Boolean(loadingAction)}>
+                {generationRecovery.actionLabel}
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {statusMessage ? (

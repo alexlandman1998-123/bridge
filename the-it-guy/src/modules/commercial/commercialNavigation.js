@@ -96,7 +96,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
 
 export const COMMERCIAL_BOTTOM_NAV_ITEMS = [
   { label: 'Brokers', to: '/commercial/brokers', icon: UserRoundCheck, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/performance/brokers', '/commercial/agency/brokers'] },
-  { label: 'Settings', to: '/commercial/settings', icon: Settings2 },
+  { label: 'Tools', to: '/commercial/settings', icon: Settings2 },
 ]
 
 export const COMMERCIAL_NAV_ITEMS = [

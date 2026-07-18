@@ -53,8 +53,8 @@ function getIssueText(issue) {
 export default function LegalDocumentPreviewPage() {
   const { documentKey = '' } = useParams()
   const definition = getLegalDocumentDefinition(documentKey)
-  const { currentMembership, currentWorkspace } = useWorkspace()
-  const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, currentMembership)
+  const { currentWorkspace, organisationMembership } = useWorkspace()
+  const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, organisationMembership)
   const { documentsByKey, loading, error, refresh } = useLegalDocumentLibrary({ organisationId: organisationId || null })
   const document = definition ? documentsByKey[definition.key] : null
   const scenarios = listLegalDocumentPreviewScenarios()

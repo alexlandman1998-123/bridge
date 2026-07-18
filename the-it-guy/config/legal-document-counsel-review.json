@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "phase": "B2",
+  "status": "pending_review",
+  "projectRef": "isdowlnollckzvltkasn",
+  "b1ManifestDigest": "sha256:1b5f6a0dc6cfbd2cf3f42643fbe84c7f8580dd928970eb432e1035893391c1da",
+  "reviewBatchReference": null,
+  "reviews": [
+    {
+      "templateId": "3cec3c33-fd76-43de-9e5c-d4dff3f510a1",
+      "packetType": "otp",
+      "contentDigest": "sha256:db30f9c82db7e068268442dcffd6aaa914bce55962eaa819c952e55ea3cef8a0",
+      "decision": "pending",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "reviewReference": null,
+      "notes": null,
+      "history": []
+    },
+    {
+      "templateId": "d1208f47-1564-497e-b68f-4c0984a3a27b",
+      "packetType": "mandate",
+      "contentDigest": "sha256:583e2abd16a0a3af0dbeb32118ff26913815858e49e53eb9990934b685cd1fdc",
+      "decision": "pending",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "reviewReference": null,
+      "notes": null,
+      "history": []
+    },
+    {
+      "templateId": "f2ef4b55-416b-4d1d-ae76-0d6b9164e52a",
+      "packetType": "mandate",
+      "contentDigest": "sha256:f6e7f717279845ea889fc31ecaa885d3f0d1ba9995565f2eba2535b7125f3e06",
+      "decision": "pending",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "reviewReference": null,
+      "notes": null,
+      "history": []
+    }
+  ]
+}

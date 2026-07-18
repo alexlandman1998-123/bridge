@@ -263,12 +263,11 @@ const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
-const SettingsAuditLogPage = lazy(() => import('./pages/settings/SettingsAuditLogPage'))
+const SettingsActivityPage = lazy(() => import('./pages/settings/SettingsActivityPage'))
 const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
 const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
-const SettingsIntegrationsPage = lazy(() => import('./pages/settings/SettingsIntegrationsPage'))
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
@@ -281,7 +280,6 @@ const LegalDocumentEditorRoute = lazy(() => import('./pages/settings/LegalDocume
 const LegalDocumentsLandingPage = lazy(() => import('./pages/settings/LegalDocumentsLandingPage'))
 const LegalDocumentOverviewPage = lazy(() => import('./pages/settings/LegalDocumentOverviewPage'))
 const LegalDocumentPreviewPage = lazy(() => import('./pages/settings/LegalDocumentPreviewPage'))
-const SettingsSupportPage = lazy(() => import('./pages/settings/SettingsSupportPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
 const SignerPortal = lazy(() => import('./pages/SignerPortal'))
@@ -2742,9 +2740,6 @@ function AppRoutes() {
                 <Route path="account" element={<SettingsAccountPage section="profile" />} />
                 <Route path="profile" element={<SettingsAccountPage section="profile" />} />
                 <Route path="security" element={<SettingsAccountPage section="security" />} />
-                <Route path="notifications" element={<SettingsAccountPage section="notifications" />} />
-                <Route path="preferences" element={<SettingsAccountPage section="preferences" />} />
-                <Route path="danger-zone" element={<SettingsAccountPage section="danger" />} />
                 <Route
                   path="organisation"
                   element={
@@ -2853,14 +2848,10 @@ function AppRoutes() {
                     </RoleRoute>
                   }
                 />
-                <Route path="integrations" element={<SettingsIntegrationsPage />} />
-                <Route path="api" element={<SettingsIntegrationsPage view="api" />} />
-                <Route path="audit-log" element={<SettingsAuditLogPage />} />
-                <Route path="help" element={<SettingsSupportPage />} />
                 <Route
                   path="users"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <PermissionGate capability="manage_users">
                         <SettingsUsersPage />
                       </PermissionGate>
@@ -2868,10 +2859,22 @@ function AppRoutes() {
                   }
                 />
                 <Route
+                  path="activity"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <PermissionGate capability="manage_workspace_settings">
+                        <SettingsActivityPage />
+                      </PermissionGate>
+                    </RoleRoute>
+                  }
+                />
+                <Route
                   path="billing"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsBillingPage />
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <PermissionGate capability="manage_billing">
+                        <SettingsBillingPage />
+                      </PermissionGate>
                     </RoleRoute>
                   }
                 />

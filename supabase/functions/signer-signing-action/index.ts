@@ -300,9 +300,19 @@ async function loadSignerByToken({
   }
 
   const expiry = normalizeText(signer?.token_expires_at);
+  if (!expiry) {
+    return {
+      signer: null,
+      error: {
+        status: 410,
+        message: "This signing link is no longer active.",
+        errorCode: "SIGNER_SESSION_INACTIVE",
+      },
+    };
+  }
   if (expiry) {
     const expiryDate = new Date(expiry);
-    if (!Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() < Date.now()) {
+    if (Number.isNaN(expiryDate.getTime()) || expiryDate.getTime() <= Date.now()) {
       if (normalizeText(signer.status).toLowerCase() !== "expired") {
         await supabase.from("document_packet_signers").update({ status: "expired" }).eq("id", String(signer.id));
       }
@@ -991,6 +1001,8 @@ async function maybeSendSellerMandateInvite({
       .from("document_packet_signers")
       .update({
         status: "ready_to_send",
+        signing_token: null,
+        token_expires_at: null,
       })
       .eq("id", String(sellerSigner.id));
     await appendPacketEvent({
@@ -1057,6 +1069,7 @@ async function sendFinalSignedMandateEmails({
   finalBody: Record<string, unknown>;
   nowIso: string;
 }) {
+  if (finalBody?.finalDelivery && typeof finalBody.finalDelivery === "object") return;
   const artifact = finalBody?.finalArtifact && typeof finalBody.finalArtifact === "object"
     ? finalBody.finalArtifact as Record<string, unknown>
     : {};
@@ -1768,6 +1781,53 @@ Deno.serve(async (req: Request) => {
     const packetVersionId = String(signer.packet_version_id || "");
     const organisationId = String(signer.organisation_id || "");
     const nowIso = new Date().toISOString();
+    const [runtimePacketResult, runtimeVersionResult] = await Promise.all([
+      supabase.from("document_packets")
+        .select("id, organisation_id, current_version_number")
+        .eq("id", packetId)
+        .maybeSingle(),
+      supabase.from("document_packet_versions")
+        .select("id, packet_id, organisation_id, version_number, render_status, validation_summary_json")
+        .eq("id", packetVersionId)
+        .eq("packet_id", packetId)
+        .maybeSingle(),
+    ]);
+    if (runtimePacketResult.error) throw runtimePacketResult.error;
+    if (runtimeVersionResult.error) throw runtimeVersionResult.error;
+    const runtimePacket = runtimePacketResult.data as Record<string, unknown> | null;
+    const runtimeVersion = runtimeVersionResult.data as Record<string, unknown> | null;
+    const runtimeValidation = runtimeVersion?.validation_summary_json && typeof runtimeVersion.validation_summary_json === "object"
+      ? runtimeVersion.validation_summary_json as Record<string, unknown>
+      : {};
+    const runtimeLock = runtimeValidation.lock_snapshot && typeof runtimeValidation.lock_snapshot === "object"
+      ? runtimeValidation.lock_snapshot as Record<string, unknown>
+      : {};
+    const runtimeBindingValid = Boolean(runtimePacket && runtimeVersion) &&
+      normalizeText(runtimePacket?.organisation_id) === organisationId &&
+      normalizeText(runtimeVersion?.organisation_id) === organisationId &&
+      Number(runtimePacket?.current_version_number) === Number(runtimeVersion?.version_number) &&
+      normalizeText(runtimeVersion?.render_status).toLowerCase() === "generated" &&
+      runtimeValidation.content_locked === true &&
+      normalizeText(runtimeValidation.review_state).toLowerCase() === "locked" &&
+      normalizeText(runtimeLock.lockDecision).toLowerCase() === "locked" &&
+      normalizeText(runtimeLock.packetId) === packetId &&
+      normalizeText(runtimeLock.versionId) === packetVersionId;
+    if (!runtimeBindingValid) {
+      return jsonResponse(409, {
+        success: false,
+        error: "This signer action is not bound to the current locked document version.",
+        errorCode: "SIGNER_SESSION_BINDING_INVALID",
+      });
+    }
+    const signerStatus = normalizeText(signer.status).toLowerCase();
+    const signerSessionActive = ["sent", "viewed"].includes(signerStatus) || (signerStatus === "signed" && action === "complete_signing");
+    if (!signerSessionActive) {
+      return jsonResponse(409, {
+        success: false,
+        error: "This signer session is no longer active.",
+        errorCode: "SIGNER_SESSION_INACTIVE",
+      });
+    }
 
     if (action === "upsert_asset") {
       const assetType = normalizeText(payload.assetType).toLowerCase();
@@ -1987,6 +2047,47 @@ Deno.serve(async (req: Request) => {
 
     if (action === "complete_signing") {
       if (normalizeText(signer.status).toLowerCase() === "signed") {
+        const [retryPacketResult, retryVersionResult] = await Promise.all([
+          supabase.from("document_packets").select("packet_type").eq("id", packetId).maybeSingle(),
+          supabase.from("document_packet_versions").select("final_signed_file_path").eq("id", packetVersionId).eq("packet_id", packetId).maybeSingle(),
+        ]);
+        if (retryPacketResult.error) throw retryPacketResult.error;
+        if (retryVersionResult.error) throw retryVersionResult.error;
+        if (!normalizeText(retryVersionResult.data?.final_signed_file_path)) {
+          const retryFinaliser = normalizeText(retryPacketResult.data?.packet_type).toLowerCase() === "otp"
+            ? "generate-final-signed-otp"
+            : "generate-final-signed-document";
+          const retryResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${retryFinaliser}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": SUPABASE_FUNCTION_AUTH_KEY,
+              "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
+            },
+            body: JSON.stringify({ packetId, packetVersionId, finalisedBy: null }),
+          });
+          const retryBody = await retryResponse.json().catch(() => ({}));
+          if (!retryResponse.ok || retryBody?.success === false) {
+            return jsonResponse(502, {
+              success: false,
+              error: "Your signature is safe, but final document generation still needs to be retried.",
+              errorCode: retryBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
+              signerCompleted: true,
+              retryable: true,
+            });
+          }
+          return jsonResponse(200, {
+            success: true,
+            signer,
+            alreadyCompleted: true,
+            packetStatus: "completed",
+            signingStatus: "completed",
+            finalArtifact: retryBody?.finalArtifact || null,
+            finalisationRetried: true,
+          });
+        }
+      }
+      if (normalizeText(signer.status).toLowerCase() === "signed") {
         const allSignersResult = await supabase
           .from("document_packet_signers")
           .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
@@ -2076,7 +2177,6 @@ Deno.serve(async (req: Request) => {
       if (requiredFieldsQuery.error) throw requiredFieldsQuery.error;
 
       const relevantRequired = (requiredFieldsQuery.data || [])
-        .filter((field: Record<string, unknown>) => normalizeText(field.field_type).toLowerCase() !== "initial")
         .filter((field: Record<string, unknown>) => fieldBelongsToSigner(field, signer));
       const remaining = relevantRequired.filter((field: Record<string, unknown>) => normalizeText(field.status).toLowerCase() !== "completed");
       if (remaining.length) {
@@ -2163,23 +2263,25 @@ Deno.serve(async (req: Request) => {
       const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
       const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
       const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
+      const progressSigningStatus = nextPacketStatus === "completed" ? "finalising" : workflowSigningStatus;
 
-      await supabase
+      const preFinalPacketStatus = nextPacketStatus === "completed" ? "partially_signed" : nextPacketStatus;
+      const packetProgressUpdate = await supabase
         .from("document_packets")
         .update({
-          status: nextPacketStatus,
-          completed_at: nextPacketStatus === "completed" ? nowIso : null,
+          status: preFinalPacketStatus,
+          completed_at: null,
           source_context_json: {
             ...existingSourceContext,
             signing_method: existingSourceContext.signing_method || "digital",
             signingMethod: existingSourceContext.signingMethod || "digital",
-            signing_status: workflowSigningStatus,
-            signingStatus: workflowSigningStatus,
-            mandateStatus: workflowSigningStatus,
+            signing_status: progressSigningStatus,
+            signingStatus: progressSigningStatus,
+            mandateStatus: progressSigningStatus,
             agentSignedAt: isMandateAgent(signer.signer_role) ? nowIso : existingSourceContext.agentSignedAt || null,
             sellerSignedAt: isMandateSeller(signer.signer_role) ? nowIso : existingSourceContext.sellerSignedAt || null,
             sellerSigningEmailSentAt:
-              sellerInviteSent || workflowSigningStatus === "sent_to_seller"
+              sellerInviteSent || progressSigningStatus === "sent_to_seller"
                 ? existingSourceContext.sellerSigningEmailSentAt || nowIso
                 : existingSourceContext.sellerSigningEmailSentAt || null,
             signedAt: nextPacketStatus === "completed" ? nowIso : existingSourceContext.signedAt || null,
@@ -2187,6 +2289,7 @@ Deno.serve(async (req: Request) => {
           },
         })
         .eq("id", packetId);
+      if (packetProgressUpdate.error) throw packetProgressUpdate.error;
 
       if (nextPacketStatus === "completed") {
         await appendPacketEvent({
@@ -2236,6 +2339,13 @@ Deno.serve(async (req: Request) => {
             mandateId: packetId,
             status: finalResponse.status,
             errorCode: finalBody?.errorCode || null,
+          });
+          return jsonResponse(502, {
+            success: false,
+            error: "Your signature was saved, but the final signed document could not be generated. It is safe to retry finalisation.",
+            errorCode: finalBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
+            signerCompleted: true,
+            retryable: true,
           });
         } else {
           await appendPacketEvent({

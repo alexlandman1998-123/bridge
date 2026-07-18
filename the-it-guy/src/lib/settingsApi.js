@@ -57,6 +57,7 @@ import { MOCK_DATA_ENABLED } from './mockData'
 import { loadSignupIntentForUser } from './signupIntent'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
+import { normalizeOrganisationJobTitle } from './organisationJobTitles'
 
 export { fetchAgencyOnboardingSettings } from './organisationBootstrapApi'
 
@@ -95,6 +96,27 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
   quietHoursEnd: '07:00',
   quietHoursTimezone: 'Africa/Johannesburg',
 }
+
+const ACCOUNT_PROFILE_SELECT_COLUMNS = `
+  id,
+  email,
+  first_name,
+  last_name,
+  full_name,
+  company_name,
+  phone_number,
+  avatar_url,
+  role,
+  title,
+  bio,
+  department,
+  office,
+  timezone,
+  language,
+  date_format,
+  theme,
+  notification_preferences_json
+`
 
 export const DEFAULT_DEVELOPER_PROFILE_SETTINGS = {
   entityType: 'company',
@@ -1553,10 +1575,17 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
       'super_admin',
       'owner',
       'principal',
+      'director',
+      'partner',
       'admin',
       'branch_manager',
+      'hq_manager',
+      'regional_manager',
       'team_lead',
       'manager',
+      'sales_manager',
+      'development_manager',
+      'sales_agent',
       'senior_agent',
       'assistant',
       'transaction_coordinator',
@@ -1565,7 +1594,13 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
       'developer',
       'agent',
       'attorney',
+      'conveyancer',
+      'paralegal',
       'bond_originator',
+      'consultant',
+      'processor',
+      'compliance',
+      'admin_staff',
       'viewer',
     ].includes(normalized)
   ) {
@@ -2900,26 +2935,7 @@ export async function fetchAccountSettings() {
   const profile = await getOrCreateUserProfile({ user })
   const { data, error } = await client
     .from('profiles')
-    .select(`
-      id,
-      email,
-      first_name,
-      last_name,
-      full_name,
-      company_name,
-      phone_number,
-      avatar_url,
-      role,
-      title,
-      bio,
-      department,
-      office,
-      timezone,
-      language,
-      date_format,
-      theme,
-      notification_preferences_json
-    `)
+    .select(ACCOUNT_PROFILE_SELECT_COLUMNS)
     .eq('id', user.id)
     .maybeSingle()
 
@@ -2933,19 +2949,29 @@ export async function fetchAccountSettings() {
   return normalizeAccountSettings(data, profile)
 }
 
+async function recordAccountSettingsAudit(client, user, action, metadata = {}) {
+  const context = await ensureOrganisationContextCached(client).catch(() => null)
+  return recordSecurityAuditEvent({
+    userId: user?.id,
+    workspaceId: context?.organisation?.id || '',
+    action,
+    targetType: 'profile',
+    targetId: user?.id,
+    metadata,
+  }).catch(() => ({ persisted: false, reason: 'audit_write_failed' }))
+}
+
 export async function updateAccountSettings(input = {}) {
   const client = requireClient()
   const user = await getAuthenticatedUser()
 
   const payload = {
-    id: user.id,
     first_name: normalizeNullableText(input.firstName),
     last_name: normalizeNullableText(input.lastName),
     full_name: normalizeNullableText([input.firstName, input.lastName].filter(Boolean).join(' ')),
     company_name: normalizeNullableText(input.companyName),
     phone_number: normalizeNullableText(input.phoneNumber),
     avatar_url: normalizeNullableText(input.avatarUrl),
-    title: normalizeNullableText(input.title),
     bio: normalizeNullableText(input.bio),
     department: normalizeNullableText(input.department),
     office: normalizeNullableText(input.office),
@@ -2959,30 +2985,14 @@ export async function updateAccountSettings(input = {}) {
     },
   }
 
-  const { data, error } = await client
+  const updateResult = await client
     .from('profiles')
-    .upsert(payload, { onConflict: 'id' })
-    .select(`
-      id,
-      email,
-      first_name,
-      last_name,
-      full_name,
-      company_name,
-      phone_number,
-      avatar_url,
-      role,
-      title,
-      bio,
-      department,
-      office,
-      timezone,
-      language,
-      date_format,
-      theme,
-      notification_preferences_json
-    `)
-    .single()
+    .update(payload)
+    .eq('id', user.id)
+    .select(ACCOUNT_PROFILE_SELECT_COLUMNS)
+    .maybeSingle()
+
+  const { data, error } = updateResult
 
   if (error) {
     if (isMissingAccountProfileColumn(error)) {
@@ -2996,6 +3006,9 @@ export async function updateAccountSettings(input = {}) {
       })
 
       clearOrganisationRuntimeCache()
+      void recordAccountSettingsAudit(client, user, 'account_profile_updated', {
+        fields: ['firstName', 'lastName', 'companyName', 'phoneNumber', 'avatarUrl'],
+      })
 
       return normalizeAccountSettings(
         {
@@ -3014,9 +3027,29 @@ export async function updateAccountSettings(input = {}) {
     throw error
   }
 
-  clearOrganisationRuntimeCache()
+  if (!data?.id) {
+    throw new Error('Profile record was not found. Complete account setup before updating your profile.')
+  }
 
-  return normalizeAccountSettings(data, {
+  const verification = await client
+    .from('profiles')
+    .select(ACCOUNT_PROFILE_SELECT_COLUMNS)
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (verification.error) {
+    throw verification.error
+  }
+  if (!verification.data?.id) {
+    throw new Error('Profile saved, but Arch9 could not verify the updated record.')
+  }
+
+  clearOrganisationRuntimeCache()
+  void recordAccountSettingsAudit(client, user, 'account_profile_updated', {
+    fields: Object.keys(input || {}).filter((field) => field !== 'notificationPreferences'),
+  })
+
+  return normalizeAccountSettings(verification.data, {
     id: user.id,
     email: user.email,
     role: input.role || 'viewer',
@@ -3070,10 +3103,12 @@ export async function changePassword({ password }) {
     throw new Error('A new password is required.')
   }
 
-  const { error } = await client.auth.updateUser({ password })
+  const { data, error } = await client.auth.updateUser({ password })
   if (error) {
     throw error
   }
+
+  void recordAccountSettingsAudit(client, data?.user, 'account_password_changed')
 
   return true
 }
@@ -5245,12 +5280,12 @@ function normalizeOrganisationUserRow(row) {
     userId: row?.user_id || null,
     organisationId: row?.organisation_id || null,
     branchId: row?.branch_id || null,
-    firstName: normalizeText(row?.first_name) || profileFirstName,
-    lastName: normalizeText(row?.last_name) || profileLastName,
+    firstName: profileFirstName || normalizeText(row?.first_name),
+    lastName: profileLastName || normalizeText(row?.last_name),
     fullName:
-      [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') ||
       profileFullName ||
       [profileFirstName, profileLastName].filter(Boolean).join(' ') ||
+      [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') ||
       normalizeText(row?.email),
     email: normalizeText(row?.email),
     avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
@@ -5259,6 +5294,7 @@ function normalizeOrganisationUserRow(row) {
     membershipStatus: status,
     workspaceRole: normalizeText(row?.workspace_role) || role,
     organisationRole: normalizeText(row?.organisation_role || row?.organization_role) || role,
+    jobTitle: normalizeOrganisationJobTitle(row?.job_title || row?.jobTitle),
     scopeMetadata,
     isPrincipalClaim,
     lastActiveAt: row?.last_active_at || null,
@@ -5351,11 +5387,23 @@ export async function listOrganisationUsers() {
       ]
     }
 
-    const { data, error } = await client
+    const selectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
+    const legacySelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
+    let usersQuery = await client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at')
+      .select(selectColumns)
       .eq('organisation_id', context.organisation.id)
       .order('created_at', { ascending: true })
+
+    if (usersQuery.error && isMissingColumnError(usersQuery.error, 'job_title')) {
+      usersQuery = await client
+        .from('organisation_users')
+        .select(legacySelectColumns)
+        .eq('organisation_id', context.organisation.id)
+        .order('created_at', { ascending: true })
+    }
+
+    const { data, error } = usersQuery
 
     if (error) {
       if (isMissingTableError(error, 'organisation_users')) {
@@ -5521,19 +5569,15 @@ export async function updateOrganisationUserRole(userRowId, role) {
     }
   }
 
-  const { data, error } = await client
-    .from('organisation_users')
-    .update({
-      role: nextRole,
-      workspace_role: nextRole,
-      organisation_role: nextRole,
-    })
-    .eq('id', userRowId)
-    .eq('organisation_id', context.organisation.id)
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, invited_at, accepted_at, last_active_at')
-    .single()
+  const { data, error } = await client.rpc('bridge_set_organisation_user_role', {
+    p_membership_id: userRowId,
+    p_role: nextRole,
+  })
 
   if (error) {
+    if (isMissingRpcError(error, 'bridge_set_organisation_user_role')) {
+      throw new Error('Role governance is not installed yet. Apply the Phase 3.2 settings migration.')
+    }
     throw error
   }
 
@@ -5555,6 +5599,79 @@ export async function updateOrganisationUserRole(userRowId, role) {
   })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
+}
+
+export async function updateOrganisationUserJobTitle(userRowId, jobTitle) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner') {
+    throw new Error('Only the organisation owner can change job titles.')
+  }
+
+  const normalizedJobTitle = normalizeOrganisationJobTitle(jobTitle)
+  if (normalizeText(jobTitle) && !normalizedJobTitle) {
+    throw new Error('Choose a valid job title from the available options.')
+  }
+
+  const { data, error } = await client.rpc('bridge_set_organisation_user_job_title', {
+    p_membership_id: userRowId,
+    p_job_title: normalizedJobTitle || null,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_set_organisation_user_job_title')) {
+      throw new Error('Job-title management is not installed yet. Apply the Phase 3.1 settings migration.')
+    }
+    throw error
+  }
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'organisation_user_job_title_changed',
+    targetType: 'organisation_user',
+    targetId: userRowId,
+    metadata: { jobTitle: normalizedJobTitle || null },
+  })
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return normalizeOrganisationUserRow(data)
+}
+
+export async function transferOrganisationOwnership(targetMembershipId) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner') {
+    throw new Error('Only the organisation owner can transfer ownership.')
+  }
+
+  const { data, error } = await client.rpc('bridge_transfer_organisation_ownership', {
+    p_target_membership_id: targetMembershipId,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_transfer_organisation_ownership')) {
+      throw new Error('Ownership transfer is not installed yet. Apply the Phase 3.3 settings migration.')
+    }
+    throw error
+  }
+
+  const newOwner = normalizeOrganisationUserRow(data?.newOwner)
+  const previousOwner = normalizeOrganisationUserRow(data?.previousOwner)
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'organisation_ownership_transferred',
+    targetType: 'organisation_user',
+    targetId: targetMembershipId,
+    metadata: {
+      previousOwnerMembershipId: previousOwner.id,
+      newOwnerMembershipId: newOwner.id,
+    },
+  })
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return { organisationId: data?.organisationId || context.organisation.id, previousOwner, newOwner }
 }
 
 export async function deactivateOrganisationUser(userRowId) {

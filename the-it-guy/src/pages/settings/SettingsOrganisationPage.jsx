@@ -9,7 +9,6 @@ import {
   FileText,
   GitBranch,
   Globe2,
-  HelpCircle,
   Mail,
   MapPin,
   Monitor,
@@ -924,18 +923,6 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typogr
           <OverviewRow label="Brand Health" value={`${brandHealth}%`} verified={brandHealth >= 80} />
           <OverviewRow label="Assets" value={configuredAssetCount} verified={configuredAssetCount >= 3} />
           <OverviewRow label="Colours" value="Configured" verified />
-        </div>
-        <div className="rounded-[16px] bg-[#f8fbfa] p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#17233a]">
-            <HelpCircle className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
-            Need Help?
-          </div>
-          <Link
-            to="/settings/help"
-            className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
-          >
-            Brand Guidelines
-          </Link>
         </div>
       </div>
     </aside>
@@ -2534,18 +2521,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <OverviewRow label="Branches" value={branchCount} />
                 <OverviewRow label="Branding" value={isBrandingConfigured ? 'Configured' : 'Incomplete'} verified={isBrandingConfigured} />
                 <OverviewRow label="PPRA" value={isPpraVerified ? 'Verified' : 'Pending'} verified={isPpraVerified} />
-              </div>
-              <div className="rounded-[16px] bg-[#f8fbfa] p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-[#17233a]">
-                  <HelpCircle className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
-                  Need Help?
-                </div>
-                <Link
-                  to="/settings/help"
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
-                >
-                  Organisation Documentation
-                </Link>
               </div>
             </div>
           </aside>

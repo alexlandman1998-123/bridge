@@ -23,6 +23,10 @@ import {
   prepareSigningFields,
   resolveActiveTemplate,
 } from '../../core/documents/packetService'
+import { resolveLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
+import { captureLegalDocumentGenerationBaseline, reconcileLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
+import { resolveLegalDocumentRetryPolicy } from '../../core/documents/legalDocumentGenerationRetryPolicy'
+import { recordLegalDocumentGenerationSupportHandoff } from '../../core/documents/legalDocumentGenerationSupportHandoff'
 import {
   getCanonicalMergeFieldDefinition,
   getRequiredCanonicalMergeFields,
@@ -43,6 +47,8 @@ import {
   resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from '../../lib/mandateSignatureRules'
+import { assertDraftReviewApproval, buildDraftReviewApprovalSnapshot } from '../../core/documents/draftReviewApproval'
+import { assertDraftLock, buildDraftLockSnapshot } from '../../core/documents/draftLockAssurance'
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 
@@ -2654,7 +2660,7 @@ export default function LegalDocumentWorkspace({
   autoGenerateEnabled = true,
 }) {
   const isPageMode = displayMode === 'page'
-  const { role: workspaceRole } = useWorkspace()
+  const { role: workspaceRole, profile: workspaceProfile } = useWorkspace()
   const legalPermissions = useMemo(
     () => resolveLegalPermissions(workspaceRole),
     [workspaceRole],
@@ -2667,6 +2673,7 @@ export default function LegalDocumentWorkspace({
   const [actionProgressMessage, setActionProgressMessage] = useState('')
   const [actionFeedback, setActionFeedback] = useState('')
   const [loadError, setLoadError] = useState('')
+  const [generationRecovery, setGenerationRecovery] = useState(null)
   const [signerBusy, setSignerBusy] = useState(false)
   const [signerDraftByRole, setSignerDraftByRole] = useState({})
   const [finalizeBusy, setFinalizeBusy] = useState(false)
@@ -2691,6 +2698,8 @@ export default function LegalDocumentWorkspace({
   const autoGenerateRunRef = useRef(0)
   const statusStateRef = useRef(initialStatus || null)
   const actionBusyRef = useRef(false)
+  const generationFailureCountsRef = useRef(new Map())
+  const recordedGenerationHandoffsRef = useRef(new Set())
   const signerBusyRef = useRef(false)
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
@@ -3669,6 +3678,7 @@ export default function LegalDocumentWorkspace({
     centerTabPreferenceRef.current = 'editor'
     setCenterTab('editor')
     setLoadError('')
+    setGenerationRecovery(null)
   }
 
   function handleRemoveSection(sectionKey) {
@@ -4241,21 +4251,27 @@ export default function LegalDocumentWorkspace({
     }
 
     if (target === 'approved') {
-      nextSummary.approval_snapshot = {
+      const reviewerUserId = normalizeText(workspaceProfile?.user_id || workspaceProfile?.id)
+      nextSummary.approval_snapshot = buildDraftReviewApprovalSnapshot({
+        packet,
+        version,
+        reviewerUserId,
+        reviewerRole: workspaceRole,
         approvedAt: nowIso,
-        approvedByRole: normalizeText(workspaceRole) || null,
-        reviewState: target,
-        ...frozenRenderSnapshot,
-      }
+        approvalReference: `draft-review:${normalizeText(packet?.id)}:${normalizeText(version?.id)}:${nowIso}`,
+      })
     }
 
     if (target === 'locked') {
-      nextSummary.lock_snapshot = {
+      const lockedByUserId = normalizeText(workspaceProfile?.user_id || workspaceProfile?.id)
+      nextSummary.lock_snapshot = buildDraftLockSnapshot({
+        packet,
+        version,
+        lockedByUserId,
+        lockedByRole: workspaceRole,
         lockedAt: nowIso,
-        lockedByRole: normalizeText(workspaceRole) || null,
-        reviewState: target,
-        ...frozenRenderSnapshot,
-      }
+        lockReference: `draft-lock:${normalizeText(packet?.id)}:${normalizeText(version?.id)}:${nowIso}`,
+      })
       nextSummary.content_locked = true
       nextSummary.content_locked_at = nowIso
     }
@@ -4295,6 +4311,14 @@ export default function LegalDocumentWorkspace({
       ...(packet?.source_context_json || {}),
       lifecycle_state: target,
       lifecycle_updated_at: nowIso,
+    }
+    if (target === 'approved' && latestVersion?.id) {
+      const approvalSummary = buildVersionGovernanceSummary({ target, packet, version: latestVersion, nowIso })
+      assertDraftReviewApproval({ packet, version: { ...latestVersion, validation_summary_json: approvalSummary } })
+    }
+    if (target === 'locked' && latestVersion?.id) {
+      const lockSummary = buildVersionGovernanceSummary({ target, packet, version: latestVersion, nowIso })
+      assertDraftLock({ packet, version: { ...latestVersion, validation_summary_json: lockSummary } })
     }
 
     let nextPacketStatus = packet.status
@@ -4337,7 +4361,7 @@ export default function LegalDocumentWorkspace({
     }
 
     const updatedPacket = await updateWorkspacePacket(packet.id, transitionUpdates)
-    const updatedVersion = latestVersion?.id
+    const updatedVersion = latestVersion?.id && target !== 'sent'
       ? await updateWorkspaceVersion(latestVersion.id, {
           validationSummaryJson: buildVersionGovernanceSummary({
             target,
@@ -4346,7 +4370,7 @@ export default function LegalDocumentWorkspace({
             nowIso,
           }),
         })
-      : null
+      : latestVersion
 
     const eventTypeByState = {
       in_review: 'draft_marked_in_review',
@@ -4370,6 +4394,11 @@ export default function LegalDocumentWorkspace({
             normalizeText(updatedVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
             normalizeText(latestVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
             null,
+          approvalReference: normalizeText(updatedVersion?.validation_summary_json?.approval_snapshot?.approvalReference) || null,
+          approvedByUserId: normalizeText(updatedVersion?.validation_summary_json?.approval_snapshot?.approvedByUserId) || null,
+          artifactSha256: normalizeText(updatedVersion?.validation_summary_json?.approval_snapshot?.artifactSha256) || null,
+          lockReference: normalizeText(updatedVersion?.validation_summary_json?.lock_snapshot?.lockReference) || null,
+          lockedByUserId: normalizeText(updatedVersion?.validation_summary_json?.lock_snapshot?.lockedByUserId) || null,
         },
       })
     }
@@ -4662,7 +4691,9 @@ export default function LegalDocumentWorkspace({
         signingStatus: workflowSigningStatus,
         sentAt: nowIso,
         emailDeliveryId: normalizeText(sendResult?.emailDeliveryId) || null,
-        emailConfirmed: Boolean(sendResult?.emailDeliveryId || sendResult?.recipientEmail),
+        emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
+        emailDeliveryIds: Array.isArray(sendResult?.emailDeliveryIds) ? sendResult.emailDeliveryIds : [],
+        recipientCount: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails.length : (sendResult?.recipientEmail ? 1 : 0),
         recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
         recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
@@ -4679,6 +4710,7 @@ export default function LegalDocumentWorkspace({
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
+    setGenerationRecovery(null)
     setActionFeedback('')
     setActionProgressMessage('')
     try {
@@ -5315,8 +5347,10 @@ export default function LegalDocumentWorkspace({
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
+    setGenerationRecovery(null)
     setActionFeedback('')
     setActionProgressMessage(`Generating ${isOtpPacket ? 'OTP' : 'mandate'}…`)
+    const generationBaseline = captureLegalDocumentGenerationBaseline(statusStateRef.current)
     try {
       const generationResult = await onGenerate({
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
@@ -5347,13 +5381,97 @@ export default function LegalDocumentWorkspace({
         }
       }
       setActionFeedback(generationResult?.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
+      generationFailureCountsRef.current.clear()
     } catch (error) {
       await logMandateFailure(`generate_${isOtpPacket ? 'otp' : 'mandate'}`, error)
-      setLoadError(toFriendlyWorkspaceError(error, `Unable to generate this ${isOtpPacket ? 'OTP' : 'mandate'} draft right now.`))
+      setActionProgressMessage('Checking whether the draft completed…')
+      const reconciliation = await reconcileLegalDocumentGenerationFailure({
+        error,
+        baseline: generationBaseline,
+        loadStatus: refreshWorkspaceData,
+      })
+      if (reconciliation.confirmed) {
+        if (reconciliation.status) {
+          statusStateRef.current = reconciliation.status
+          setStatusState(reconciliation.status)
+        }
+        setLoadError('')
+        setGenerationRecovery(null)
+        setActionFeedback(`${isOtpPacket ? 'OTP' : 'Mandate'} generation completed. The recovered draft is ready to review.`)
+        generationFailureCountsRef.current.clear()
+        void Promise.resolve(onRefreshContext?.()).catch(() => null)
+        return
+      }
+      const recoveryPacketType = isOtpPacket ? 'otp' : 'mandate'
+      const baseRecovery = resolveLegalDocumentGenerationRecovery(error, { packetType: recoveryPacketType })
+      const recoveryPacketId = normalizeText(error?.packetId || statusStateRef.current?.packet?.id || packetId)
+      const failureSignature = `${recoveryPacketType}:${recoveryPacketId || 'unsaved'}:${baseRecovery.code}`
+      const policy = resolveLegalDocumentRetryPolicy({
+        recovery: baseRecovery,
+        previousFailureCount: generationFailureCountsRef.current.get(failureSignature) || 0,
+        packetType: recoveryPacketType,
+        packetId: recoveryPacketId,
+      })
+      generationFailureCountsRef.current.set(failureSignature, policy.failureCount)
+      const displayMessage = `${policy.message} Next step: ${policy.nextAction}`
+      setGenerationRecovery({ ...policy, displayMessage, packetId: recoveryPacketId })
+      setLoadError(displayMessage)
+      if (policy.escalated) void ensureGenerationSupportHandoff({ ...policy, displayMessage, packetId: recoveryPacketId })
     } finally {
       setActionProgressMessage('')
       actionBusyRef.current = false
       setActionBusy(false)
+    }
+  }
+  const activeGenerationRecovery = generationRecovery?.displayMessage === loadError ? generationRecovery : null
+  async function ensureGenerationSupportHandoff(policy) {
+    const supportReference = normalizeText(policy?.supportReference)
+    if (!supportReference || recordedGenerationHandoffsRef.current.has(supportReference)) return false
+    const currentPacket = statusStateRef.current?.packet || {}
+    const result = await recordLegalDocumentGenerationSupportHandoff({
+      appendEvent: appendDocumentPacketEvent,
+      packetId: normalizeText(policy?.packetId || currentPacket?.id || packetId),
+      organisationId: currentPacket?.organisation_id || organisationId || null,
+      policy,
+      packetType: isOtpPacket ? 'otp' : 'mandate',
+      surface: 'workspace',
+    })
+    if (result.recorded) recordedGenerationHandoffsRef.current.add(supportReference)
+    return result.recorded
+  }
+  const handleGenerationRecoveryAction = async () => {
+    if (!activeGenerationRecovery || actionBusyRef.current) return
+    if (activeGenerationRecovery.actionKey === 'retry') {
+      await handleGeneratePacketDraft()
+      return
+    }
+    if (activeGenerationRecovery.actionKey === 'refresh') {
+      setActionProgressMessage('Refreshing draft status…')
+      const refreshed = await refreshWorkspaceData().catch(() => null)
+      setActionProgressMessage('')
+      const generated = getGeneratedPacketVersionForSigning(refreshed?.resolved?.versions || [])
+      if (generated) {
+        setLoadError('')
+        setGenerationRecovery(null)
+        setActionFeedback(`${isOtpPacket ? 'OTP' : 'Mandate'} draft status refreshed and ready to review.`)
+      }
+      return
+    }
+    if (activeGenerationRecovery.actionKey === 'review_information') {
+      setMergeDetailsOpen(true)
+      return
+    }
+    if (activeGenerationRecovery.actionKey === 'sign_in') {
+      window.location.assign('/auth')
+      return
+    }
+    if (['contact_admin', 'contact_support'].includes(activeGenerationRecovery.actionKey)) {
+      const reference = activeGenerationRecovery.supportReference
+      const recorded = await ensureGenerationSupportHandoff(activeGenerationRecovery)
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(reference).catch(() => null)
+      }
+      setActionFeedback(`Reference ${reference} copied. Include it when asking for help.${recorded ? ' The handoff was added to this packet’s audit trail.' : ''}`)
     }
   }
   const handleWorkspacePrimaryAction = () => {
@@ -5447,9 +5565,11 @@ export default function LegalDocumentWorkspace({
                     </span>
                   </div>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-[#607387]">
-                    {isMandatePacket
-                      ? 'Generate, preview and send the seller mandate. Seller and property details stay managed from the Seller workspace.'
-                      : 'Generate, preview and send this legal document from the existing packet workflow.'}
+                    {isFullySignedLifecycle || hasFinalArtifact
+                      ? `Review and download the final signed ${isOtpPacket ? 'OTP' : 'mandate'}. This legal record is locked and cannot be edited.`
+                      : isMandatePacket
+                        ? 'Generate, preview and send the seller mandate. Seller and property details stay managed from the Seller workspace.'
+                        : 'Generate, preview and send this legal document from the existing packet workflow.'}
                   </p>
                 </div>
               </div>
@@ -5550,16 +5670,14 @@ export default function LegalDocumentWorkspace({
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => {
-                      if (isMandatePacket && typeof onGenerate === 'function') {
-                        void resetFailedMandateAndRegenerate()
-                        return
-                      }
-                      void refreshWorkspaceData()
-                    }}
+                    onClick={() => activeGenerationRecovery
+                      ? void handleGenerationRecoveryAction()
+                      : isMandatePacket && typeof onGenerate === 'function'
+                        ? void resetFailedMandateAndRegenerate()
+                        : void refreshWorkspaceData()}
                     disabled={loading || actionBusy}
                   >
-                    {isMandatePacket && typeof onGenerate === 'function' ? 'Reset & Regenerate' : 'Retry'}
+                    {activeGenerationRecovery?.actionLabel || (isMandatePacket && typeof onGenerate === 'function' ? 'Reset & Regenerate' : 'Retry')}
                   </Button>
                 </div>
               </article>
@@ -5571,7 +5689,7 @@ export default function LegalDocumentWorkspace({
             ) : null}
 
             {isFullySignedLifecycle || hasFinalArtifact ? (
-              <section className="mb-6 rounded-[24px] border border-[#cfe8d9] bg-[#effaf4] px-5 py-4">
+              <section className="mb-6 rounded-[24px] border border-[#cfe8d9] bg-[#effaf4] px-5 py-4" aria-label="Finalized legal record" role="status" aria-live="polite">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold text-[#20b26b]">Finalized Legal Record</p>
@@ -5599,10 +5717,10 @@ export default function LegalDocumentWorkspace({
                       href={signedPreviewUrl}
                       target="_blank"
                       rel="noreferrer"
-                      download={normalizeText(latestVersion?.final_signed_file_name || 'signed-mandate.pdf')}
+                      download={normalizeText(latestVersion?.final_signed_file_name || `signed-${isOtpPacket ? 'otp' : 'mandate'}.pdf`)}
                       className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c]"
                     >
-                      Download Signed Mandate
+                      {`Download Signed ${isOtpPacket ? 'OTP' : 'Mandate'}`}
                     </a>
                   ) : null}
                   {!signedPreviewUrl && canFinalizeSignedRecord && legalPermissions.canFinalize ? (

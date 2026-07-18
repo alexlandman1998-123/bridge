@@ -76,6 +76,8 @@ import { activatePrivateListing, createPrivateListing, createPrivateListingActiv
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
+import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
+import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import { listInboundLeadEmails } from '../../services/leadEmailCaptureService'
 import {
@@ -7563,7 +7565,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           console.warn('[MANDATE] failure activity write skipped.', activityError)
         })
       }
-      setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
+      if (!isAmbiguousLegalDocumentGenerationFailure(mandateError)) {
+        setError(formatLegalDocumentGenerationRecovery(mandateError, { packetType: 'mandate' }))
+      }
       throw mandateError
     } finally {
       setIsMandateGenerating(false)

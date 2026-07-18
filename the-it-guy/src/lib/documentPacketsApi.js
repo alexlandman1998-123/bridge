@@ -8,6 +8,11 @@ import {
 import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
+import { assertDraftReviewApproval } from '../core/documents/draftReviewApproval'
+import { assertDraftLock } from '../core/documents/draftLockAssurance'
+import { assertSigningEnvelopeReady } from '../core/documents/signingEnvelopeAssurance'
+import { assertSigningDispatchReady } from '../core/documents/signingDispatchAssurance'
+import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
 export const DOCUMENT_PACKET_STATUSES = [
@@ -399,13 +404,8 @@ async function hydratePacketVersionAccessUrls(client, version = {}) {
 
 function generateSecureSigningToken() {
   const bytes = new Uint8Array(32)
-  if (typeof crypto?.getRandomValues === 'function') {
-    crypto.getRandomValues(bytes)
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256)
-    }
-  }
+  if (typeof crypto?.getRandomValues !== 'function') throw new Error('Secure random token generation is unavailable in this browser.')
+  crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
@@ -1860,19 +1860,6 @@ export async function uploadFinalSignedPacketArtifact({
   }
 }
 
-async function getNextPacketVersionNumber(client, packetId) {
-  const { data, error } = await client
-    .from('document_packet_versions')
-    .select('version_number')
-    .eq('packet_id', packetId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) throw error
-  const latest = normalizeOptionalNumber(data?.version_number) || 0
-  return latest + 1
-}
-
 export async function createDocumentPacketVersion(input = {}) {
   const client = requireClient()
   if (!input.packetId) throw new Error('packetId is required.')
@@ -1881,52 +1868,25 @@ export async function createDocumentPacketVersion(input = {}) {
   if (!packet) throw new Error('Document packet not found.')
   await assertPacketNotLockedForSigning(client, packet, { actionLabel: 'be regenerated' })
 
-  const versionNumber = normalizeOptionalNumber(input.versionNumber) || (await getNextPacketVersionNumber(client, input.packetId))
   const resolvedRenderStatus = normalizeText(input.renderStatus || 'draft')
-
-  const payload = {
-    packet_id: packet.id,
-    organisation_id: packet.organisation_id,
-    version_number: versionNumber,
-    render_status: resolvedRenderStatus,
-    rendered_document_id: normalizeNullableUuid(input.renderedDocumentId),
-    rendered_file_path: normalizeNullableText(input.renderedFilePath),
-    rendered_file_name: normalizeNullableText(input.renderedFileName),
-    rendered_file_url: normalizeNullableText(input.renderedFileUrl),
-    placeholders_resolved_json:
-      input.placeholdersResolvedJson && typeof input.placeholdersResolvedJson === 'object' ? input.placeholdersResolvedJson : {},
-    placeholders_missing_json: Array.isArray(input.placeholdersMissingJson) ? input.placeholdersMissingJson : [],
-    section_manifest_json: Array.isArray(input.sectionManifestJson) ? input.sectionManifestJson : [],
-    validation_summary_json:
-      input.validationSummaryJson && typeof input.validationSummaryJson === 'object' ? input.validationSummaryJson : {},
-    generated_by: normalizeNullableUuid(input.generatedBy),
-    generated_at: input.generatedAt || new Date().toISOString(),
-  }
-
-  const { data, error } = await client
-    .from('document_packet_versions')
-    .insert(payload)
-    .select(PACKET_VERSION_SELECT)
-    .single()
-  if (error) throw error
-
-  const { error: packetUpdateError } = await client
-    .from('document_packets')
-    .update({ current_version_number: versionNumber })
-    .eq('id', packet.id)
-  if (packetUpdateError) throw packetUpdateError
-
-  await appendDocumentPacketEvent({
-    packetId: packet.id,
-    organisationId: packet.organisation_id,
-    versionId: data.id,
-    eventType: 'version_created',
-    eventPayload: {
-      versionNumber,
-      renderStatus: resolvedRenderStatus,
-      renderedDocumentId: data.rendered_document_id,
-    },
+  const { data: result, error } = await client.rpc('bridge_create_document_packet_version_i1', {
+    p_packet_id: packet.id,
+    p_render_status: resolvedRenderStatus,
+    p_rendered_document_id: normalizeNullableUuid(input.renderedDocumentId),
+    p_rendered_file_path: normalizeNullableText(input.renderedFilePath),
+    p_rendered_file_name: normalizeNullableText(input.renderedFileName),
+    p_rendered_file_url: normalizeNullableText(input.renderedFileUrl),
+    p_placeholders_resolved_json: input.placeholdersResolvedJson && typeof input.placeholdersResolvedJson === 'object' ? input.placeholdersResolvedJson : {},
+    p_placeholders_missing_json: Array.isArray(input.placeholdersMissingJson) ? input.placeholdersMissingJson : [],
+    p_section_manifest_json: Array.isArray(input.sectionManifestJson) ? input.sectionManifestJson : [],
+    p_validation_summary_json: input.validationSummaryJson && typeof input.validationSummaryJson === 'object' ? input.validationSummaryJson : {},
+    p_generated_by: normalizeNullableUuid(input.generatedBy),
+    p_generated_at: input.generatedAt || new Date().toISOString(),
+    p_dry_run: false,
   })
+  if (error) throw error
+  if (result?.contract !== 'i1-v1' || result?.dryRun !== false || !result?.version?.id) throw new Error('The atomic packet-version contract returned an invalid result.')
+  const data = result.version
 
   if (normalizeText(resolvedRenderStatus).toLowerCase() === 'generated') {
     await linkPacketVersionToCanonicalRequirementSafely(client, {
@@ -1941,6 +1901,29 @@ export async function createDocumentPacketVersion(input = {}) {
   }
 
   return hydratePacketVersionAccessUrls(client, data)
+}
+
+export async function claimDocumentPacketGenerationLease({ packetId, generationAttemptId, ttlSeconds = 300 } = {}) {
+  const client = requireClient()
+  if (!packetId || !generationAttemptId) throw new Error('packetId and generationAttemptId are required.')
+  const { data, error } = await client.rpc('bridge_claim_generation_lease_i3', {
+    p_packet_id: packetId,
+    p_generation_attempt_id: generationAttemptId,
+    p_ttl_seconds: ttlSeconds,
+  })
+  if (error) throw error
+  return data === true
+}
+
+export async function releaseDocumentPacketGenerationLease({ packetId, generationAttemptId } = {}) {
+  const client = requireClient()
+  if (!packetId || !generationAttemptId) return false
+  const { data, error } = await client.rpc('bridge_release_generation_lease_i3', {
+    p_packet_id: packetId,
+    p_generation_attempt_id: generationAttemptId,
+  })
+  if (error) throw error
+  return data === true
 }
 
 export async function appendDocumentPacketEvent({
@@ -1997,6 +1980,100 @@ export async function appendDocumentPacketEvent({
     throw error
   }
   return data
+}
+
+export async function listLegalDocumentGenerationSupportHandoffs({ organisationId = null, limit = 50 } = {}) {
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) {
+    const error = new Error('Organisation administrator access is required to view legal-document support handoffs.')
+    error.code = 'SUPPORT_HANDOFF_ADMIN_REQUIRED'
+    throw error
+  }
+  const resolvedLimit = Math.max(1, Math.min(100, Number(limit || 50)))
+  const { data: handoffEvents, error: eventsError } = await client
+    .from('document_packet_events')
+    .select('id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at')
+    .eq('organisation_id', context.organisationId)
+    .eq('event_type', 'legal_generation_support_handoff')
+    .eq('event_payload_json->>contract', 'j4-v1')
+    .order('created_at', { ascending: false })
+    .limit(resolvedLimit)
+  if (eventsError) throw eventsError
+  const { data: lifecycleEvents, error: lifecycleError } = await client
+    .from('document_packet_events')
+    .select('id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at')
+    .eq('organisation_id', context.organisationId)
+    .in('event_type', ['legal_generation_support_acknowledged', 'legal_generation_support_resolved'])
+    .eq('event_payload_json->>contract', 'k2-v1')
+    .order('created_at', { ascending: false })
+    .limit(resolvedLimit * 2)
+  if (lifecycleError) throw lifecycleError
+  const events = [...(handoffEvents || []), ...(lifecycleEvents || [])]
+  const packetIds = [...new Set((events || []).map((event) => normalizeNullableUuid(event?.packet_id)).filter(Boolean))]
+  let packets = []
+  if (packetIds.length) {
+    const { data, error } = await client
+      .from('document_packets')
+      .select('id, organisation_id, packet_type, title, status')
+      .eq('organisation_id', context.organisationId)
+      .in('id', packetIds)
+    if (error) throw error
+    packets = data || []
+  }
+  return {
+    ...buildLegalDocumentSupportTriageSnapshot({ events: events || [], packets }),
+    organisationId: context.organisationId,
+    checkedAt: new Date().toISOString(),
+  }
+}
+
+export async function transitionLegalDocumentGenerationSupportHandoff({ organisationId = null, packetId, supportReference, action, resolutionCode = '' } = {}) {
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) {
+    const error = new Error('Organisation administrator access is required to update legal-document support handoffs.')
+    error.code = 'SUPPORT_HANDOFF_ADMIN_REQUIRED'
+    throw error
+  }
+  const resolvedPacketId = normalizeNullableUuid(packetId)
+  const resolvedReference = normalizeText(supportReference).toUpperCase()
+  const resolvedAction = normalizeText(action).toLowerCase()
+  if (!resolvedPacketId || !/^LD-(OTP|MAN)-[A-Z0-9]+-[A-Z0-9]+$/.test(resolvedReference)) throw new Error('A valid packet and support reference are required.')
+  if (!['acknowledge', 'resolve'].includes(resolvedAction)) throw new Error('Support handoff action must be acknowledge or resolve.')
+  if (resolvedAction === 'resolve' && !LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES.includes(resolutionCode)) throw new Error('Choose a valid support resolution category.')
+  const { data: packet, error: packetError } = await client.from('document_packets').select('id, organisation_id, packet_type, title, status').eq('id', resolvedPacketId).eq('organisation_id', context.organisationId).maybeSingle()
+  if (packetError) throw packetError
+  if (!packet?.id) throw new Error('Support handoff packet was not found in this organisation.')
+  const current = await listLegalDocumentGenerationSupportHandoffs({ organisationId: context.organisationId, limit: 100 })
+  const handoff = current.handoffs.find((row) => row.packetId === resolvedPacketId && row.supportReference === resolvedReference)
+  if (!handoff) throw new Error('Support handoff was not found in this organisation.')
+  if (resolvedAction === 'acknowledge' && handoff.caseStatus !== 'open') return { handoff, changed: false }
+  if (resolvedAction === 'resolve' && handoff.caseStatus !== 'acknowledged') {
+    const error = new Error('A support handoff must be acknowledged before it can be resolved.')
+    error.code = 'SUPPORT_HANDOFF_ACKNOWLEDGEMENT_REQUIRED'
+    throw error
+  }
+  const eventType = resolvedAction === 'acknowledge' ? 'legal_generation_support_acknowledged' : 'legal_generation_support_resolved'
+  let event = null
+  try {
+    event = await appendDocumentPacketEvent({
+      packetId: resolvedPacketId,
+      organisationId: context.organisationId,
+      eventType,
+      eventPayload: {
+        contract: 'k2-v1',
+        supportReference: resolvedReference,
+        action: resolvedAction,
+        resolutionCode: resolvedAction === 'resolve' ? resolutionCode : null,
+        rawDetailsIncluded: false,
+      },
+    })
+  } catch (error) {
+    if (error?.code === '23505') return { handoff, changed: false, action: resolvedAction, supportReference: resolvedReference }
+    throw error
+  }
+  return { event, changed: Boolean(event), action: resolvedAction, supportReference: resolvedReference }
 }
 
 export async function archiveDocumentPacket(packetId, { reason = '' } = {}) {
@@ -2221,7 +2298,7 @@ async function assertPacketVersionBelongsToPacket(client, packetId, packetVersio
   if (!packetVersionId) throw new Error('packetVersionId is required.')
   const { data, error } = await client
     .from('document_packet_versions')
-    .select('id, packet_id, organisation_id, version_number, render_status, rendered_document_id')
+    .select('id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, placeholders_resolved_json, validation_summary_json')
     .eq('id', packetVersionId)
     .eq('packet_id', packetId)
     .maybeSingle()
@@ -2650,7 +2727,7 @@ export async function generateDocumentPacketSigningLinks({
     : await (async () => {
         const { data, error } = await client
           .from('document_packet_versions')
-          .select('id, packet_id, organisation_id, version_number')
+          .select('id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, placeholders_resolved_json, validation_summary_json')
           .eq('packet_id', packet.id)
           .eq('render_status', 'generated')
           .order('version_number', { ascending: false })
@@ -2666,6 +2743,8 @@ export async function generateDocumentPacketSigningLinks({
     versionError.code = 'NO_GENERATED_VERSION'
     throw versionError
   }
+  assertDraftReviewApproval({ packet, version: targetVersion })
+  assertDraftLock({ packet, version: targetVersion })
 
   const signers = await listDocumentPacketSigners({
     packetId: packet.id,
@@ -2676,13 +2755,12 @@ export async function generateDocumentPacketSigningLinks({
     throw new Error('No signers found. Prepare signing fields first.')
   }
   const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
-  const signingFields = isMandatePacket
-    ? await listDocumentSigningFields({
-        packetId: packet.id,
-        packetVersionId: targetVersion.id,
-        organisationId: packet.organisation_id,
-      })
-    : []
+  const signingFields = await listDocumentSigningFields({
+    packetId: packet.id,
+    packetVersionId: targetVersion.id,
+    organisationId: packet.organisation_id,
+  })
+  assertSigningEnvelopeReady({ packet, version: targetVersion, signers, fields: signingFields })
   const spouseFields = signingFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
   const mandateSecondarySigner = isMandatePacket
     ? resolveMandateSecondarySignerConfig({ packet })
@@ -2738,7 +2816,8 @@ export async function generateDocumentPacketSigningLinks({
   }
 
   const expiryHours = Math.min(168, Math.max(1, Number(expiresInHours) || 72))
-  const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString()
+  const issuedAt = new Date().toISOString()
+  const expiresAt = new Date(Date.parse(issuedAt) + expiryHours * 60 * 60 * 1000).toISOString()
   const normalizedBaseUrl = normalizeText(baseUrl).replace(/\/$/, '') || (typeof window !== 'undefined' ? window.location.origin : '')
 
   const signersToUpdate = normalizedTargetSignerRole
@@ -2794,7 +2873,8 @@ export async function generateDocumentPacketSigningLinks({
       continue
     }
     const existingToken = normalizeText(signer?.signing_token)
-    const shouldRefresh = regenerate || !existingToken
+    const existingExpired = !Number.isFinite(Date.parse(signer?.token_expires_at || '')) || Date.parse(signer.token_expires_at) <= Date.now()
+    const shouldRefresh = regenerate || !existingToken || existingExpired || Boolean(signer?.token_used_at)
     const nextToken = shouldRefresh ? generateSecureSigningToken() : existingToken
 
     const { data, error } = await client
@@ -2819,6 +2899,9 @@ export async function generateDocumentPacketSigningLinks({
     })
   }
 
+  const dispatchAssessment = assertSigningDispatchReady({ packet, version: targetVersion, signers: updates, fields: signingFields, issuedAt })
+  const dispatchReference = `signing-dispatch:${packet.id}:${targetVersion.id}:${issuedAt}`
+
   await appendDocumentPacketEvent({
     packetId: packet.id,
     organisationId: packet.organisation_id,
@@ -2830,6 +2913,9 @@ export async function generateDocumentPacketSigningLinks({
       expiresAt,
       regenerate: Boolean(regenerate),
       targetSignerRole: normalizedTargetSignerRole || null,
+      dispatchReference,
+      issuedAt,
+      activeSignerRoles: dispatchAssessment.activeSignerRoles,
     },
   })
 
@@ -2873,6 +2959,8 @@ export async function generateDocumentPacketSigningLinks({
     expiresAt,
     targetSignerRole: normalizedTargetSignerRole || linkSignerRole || null,
     signingStatus,
+    dispatchReference,
+    issuedAt,
     signers: updates,
   }
 }

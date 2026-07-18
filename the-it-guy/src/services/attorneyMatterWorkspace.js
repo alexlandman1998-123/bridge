@@ -351,6 +351,9 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     incomingAgeDays: row.incomingAgeDays || 0,
     documents: row.documents || {},
     otpStatus: row.otpStatus || null,
+    firmAcceptanceStatus: row.firmAcceptanceStatus || 'not_required',
+    staffAssignmentStatus: row.staffAssignmentStatus || 'not_required',
+    allocationState: row.allocationState || 'active',
   }
 
   nextRow.searchText = [

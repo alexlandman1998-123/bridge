@@ -138,6 +138,7 @@ function getUploadStateLabel(item = {}, normalizedStatus = '') {
 }
 
 function getSupportingLine(item = {}, normalizedStatus = '') {
+  if (item?.message) return item.message
   if (normalizedStatus === 'rejected' && item?.rejectionReason) {
     return `Reason: ${item.rejectionReason}`
   }
@@ -220,12 +221,27 @@ function SellerDocumentRow({
                   Required
                 </span>
               ) : null}
+              {item?.stageLabel ? (
+                <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.69rem] font-semibold text-[#52657b]">
+                  {item.stageLabel}
+                </span>
+              ) : null}
+              {item?.overdue ? (
+                <span className="inline-flex items-center rounded-full border border-[#f3c2c2] bg-[#fff1f1] px-2.5 py-1 text-[0.69rem] font-semibold text-[#b42318]">
+                  Overdue
+                </span>
+              ) : null}
             </div>
             <div className="mt-3 space-y-1.5">
               <p className="text-[0.78rem] font-medium text-[#41576e]">
                 <span className="font-semibold text-[#142132]">Upload state:</span> {uploadStateLabel}
               </p>
               <p className="text-[0.78rem] leading-5 text-[#70839b]">{supportingLine}</p>
+              {item?.handoff?.applicable ? (
+                <p className={`text-[0.78rem] leading-5 ${item.handoff.status === 'blocked' ? 'text-[#b42318]' : 'text-[#60748a]'}`}>
+                  <span className="font-semibold">Transfer handoff:</span> {item.handoff.label}
+                </p>
+              ) : null}
             </div>
             <details className="mt-3 group">
               <summary className="cursor-pointer list-none text-[0.78rem] font-semibold text-[#2f6fa4] transition hover:text-[#214e72]">

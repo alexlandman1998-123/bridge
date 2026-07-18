@@ -26,6 +26,9 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
   const propertyTitle = normalizeText(payload.propertyTitle) || "property";
   const signedAt = normalizeText(payload.signedAt) || "Just now";
   const signedDocumentName = normalizeText(payload.signedDocumentName) || "Signed mandate";
+  const packetType = normalizeText(payload.packetType).toLowerCase();
+  const documentLabel = normalizeText(payload.documentLabel) || (packetType === "otp" ? "Offer to Purchase" : "mandate");
+  const titleLabel = documentLabel.replace(/\b\w/g, (character) => character.toUpperCase());
   const downloadLink = normalizeText(payload.downloadLink);
   const organisationName =
     normalizeText(payload.organisationName) ||
@@ -45,19 +48,19 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
 
-  const subject = `Signed mandate ready: ${propertyTitle}`;
+  const subject = `Signed ${documentLabel} ready: ${propertyTitle}`;
   const html = renderBridgeEmailLayout({
-    preheader: `The signed mandate for ${propertyTitle} is ready to download.`,
-    title: "Signed Mandate Ready",
+    preheader: `The signed ${documentLabel} for ${propertyTitle} is ready to download.`,
+    title: `Signed ${titleLabel} Ready`,
     greeting: `Hi ${recipientName || agentName},`,
     contentHtml: [
       renderBridgeIntroParagraphs([
-        `All required signatures for the mandate on ${propertyTitle} are complete.`,
+        `All required signatures for the ${documentLabel} on ${propertyTitle} are complete.`,
         downloadLink
           ? "Use the secure download link below to access the signed PDF."
           : "The signed mandate record is available in Arch9 for authorised users linked to this workflow.",
       ]),
-      renderBridgeCta("Download signed mandate", downloadLink),
+      renderBridgeCta(`Download signed ${documentLabel}`, downloadLink),
       renderBridgeSummaryCard(
         [
           { label: "Property", value: propertyTitle },
@@ -68,10 +71,10 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
         "Signature Summary",
       ),
     ].join(""),
-    securityTitle: "Secure Mandate Record",
+    securityTitle: `Secure ${titleLabel} Record`,
     securityBody: downloadLink
-      ? "This download link is secure and time-limited. Authorised users can also access the signed mandate from Arch9."
-      : "The signed mandate record is retained in Arch9 for authorised users linked to this workflow.",
+      ? `This download link is secure and time-limited. Authorised users can also access the signed ${documentLabel} from Arch9.`
+      : `The signed ${documentLabel} record is retained in Arch9 for authorised users linked to this workflow.`,
     helpBody: "Need help? Reply to this email or review the listing workflow in Arch9.",
     organisationName,
     supportEmail,
@@ -80,12 +83,12 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
   const text = [
     `Hi ${recipientName || agentName},`,
     "",
-    `All required signatures for the mandate on ${propertyTitle} are complete.`,
+    `All required signatures for the ${documentLabel} on ${propertyTitle} are complete.`,
     `Signed at: ${signedAt}`,
     `Document: ${signedDocumentName}`,
     downloadLink ? `Download: ${downloadLink}` : "",
     "",
-    "The signed mandate is retained in Arch9 for authorised users linked to this workflow.",
+    `The signed ${documentLabel} is retained in Arch9 for authorised users linked to this workflow.`,
     "",
     organisationName,
     "Powered by Arch9",
@@ -98,6 +101,7 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     subject,
     html,
     text,
+    idempotencyKey: normalizeText(payload.idempotencyKey),
   });
 
   if (!emailResult.ok) {

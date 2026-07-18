@@ -1,0 +1,51 @@
+{
+  "version": "settings_phase7_release3_v1",
+  "enabled": false,
+  "environment": "production",
+  "rollout": {
+    "mode": "all_supported_organisations",
+    "percentage": 100,
+    "workspaceTypes": [
+      "agency",
+      "developer_company",
+      "attorney_firm",
+      "bond_originator"
+    ]
+  },
+  "release2": {
+    "status": "pending",
+    "completedAt": null,
+    "evidenceReference": null
+  },
+  "operations": {
+    "releaseManager": null,
+    "engineeringOwner": null,
+    "supportOwner": null,
+    "supportRunbookReference": null,
+    "releaseNotesReference": null,
+    "communicationsStatus": "pending"
+  },
+  "approval": {
+    "status": "pending",
+    "approvedBy": null,
+    "approvedAt": null,
+    "reference": null
+  },
+  "limits": {
+    "minObservationHours": 168,
+    "minSettingsWrites": 100,
+    "minSaveSuccessPercent": 99.9,
+    "minActivityCoveragePercent": 100,
+    "maxSettingsErrors": 0,
+    "maxOwnershipTransferFailures": 0,
+    "maxCriticalSupportIncidents": 0,
+    "maxOpenSettingsIncidents": 0
+  },
+  "rollback": {
+    "strategy": "return_to_release_2_cohort_and_redeploy_previous_frontend",
+    "databaseMigrationsAreForwardOnly": true,
+    "preserveRelease2Organisations": true,
+    "preserveAuditEvents": true,
+    "preserveSavedSettings": true
+  }
+}

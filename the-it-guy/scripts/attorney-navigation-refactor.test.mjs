@@ -87,6 +87,6 @@ assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users rout
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')
 assert.match(settingsLayoutSource, /label:\s*'Organisation'/, 'Organisation settings should remain available from Settings')
-assert.match(appSource, /SettingsAuditLogPage/, 'Audit Logs should be available from Settings routes')
+assert.doesNotMatch(appSource, /SettingsAuditLogPage/, 'Placeholder Audit Logs should stay out of Settings until real telemetry is connected')
 
 console.log('attorney navigation refactor contract passed')

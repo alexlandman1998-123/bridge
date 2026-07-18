@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "status": "pending_evidence",
+  "maximumWatchdogAgeMinutes": 90,
+  "operationsOwner": null,
+  "supportOwner": null,
+  "incidentChannelReference": null,
+  "monitoringReference": null,
+  "supportRunbookReference": "docs/legal-document-phase5-operations.md",
+  "rollbackRunbookReference": "docs/legal-document-phase4-controlled-launch.md#monitoring-and-rollback"
+}

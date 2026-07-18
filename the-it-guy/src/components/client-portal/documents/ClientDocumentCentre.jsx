@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
+import { buildSellerDocumentExperienceModel } from '../../../lib/sellerDocumentExperienceModel'
 import { getEducationalContentForRequirement } from '../../../content/clientPortalEducation'
 import SellerDocumentWorkspace from './SellerDocumentWorkspace'
 
@@ -152,14 +153,20 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     openLabel: isSignedMandateRequirement(requirement) && linkedDocument ? 'Download Signed Mandate' : '',
     metaLine: toText(requirement?.requestedBy || requirement?.requested_by_name),
     education: toText(education?.shortExplanation),
+    requestStages: requirement?.requestStages || requirement?.request_stages || requirement?.requestStage || requirement?.request_stage || [],
+    dueDate: requirement?.dueDate || requirement?.due_date || requirement?.requestDueAt || requirement?.request_due_at || '',
+    promotionStatus: linkedDocument?.promotionStatus || linkedDocument?.promotion_status || '',
+    promotionError: linkedDocument?.promotionError || linkedDocument?.promotion_error || '',
   }
 }
 
 function normalizeAdditionalRequest(request = {}, uploadedDocumentsById = new Map()) {
   const requestId = toText(request?.id || request?.request_id || request?.title || 'additional-request')
-  const status = normalizeDocumentStatus(request?.status || 'requested')
+  const requestStatus = normalizeDocumentStatus(request?.status || 'requested')
   const linkedDocumentId = toText(request?.requestedDocumentId || request?.requested_document_id || request?.uploadedDocumentId || request?.uploaded_document_id)
   const linkedDocument = linkedDocumentId ? uploadedDocumentsById.get(linkedDocumentId) || null : null
+  const linkedStatus = linkedDocument ? normalizeDocumentStatus(linkedDocument?.status || 'uploaded') : ''
+  const status = linkedDocument && ['required', 'requested'].includes(requestStatus) ? linkedStatus : requestStatus
   const requester = toText(request?.requestedBy || request?.requested_by_name || request?.createdByName || request?.created_by_name, 'Transaction team')
   const requesterRole = toText(request?.requestedByRole || request?.requested_by_role || request?.createdByRole || request?.created_by_role)
   const dueDate = toText(request?.dueDate || request?.due_date)
@@ -182,6 +189,10 @@ function normalizeAdditionalRequest(request = {}, uploadedDocumentsById = new Ma
     },
     metaLine: `${requester}${requesterRole ? ` • ${requesterRole.replaceAll('_', ' ')}` : ''}${dueDate ? ` • Due ${dueDate}` : ''}${priority ? ` • ${priority}` : ''}`,
     education: toText(education?.shortExplanation),
+    dueDate,
+    requestStages: request?.requestStages || request?.request_stages || request?.requestStage || request?.request_stage || [],
+    promotionStatus: linkedDocument?.promotionStatus || linkedDocument?.promotion_status || '',
+    promotionError: linkedDocument?.promotionError || linkedDocument?.promotion_error || '',
   }
 }
 
@@ -417,16 +428,24 @@ function ClientDocumentCentre({
   const [activeBuyerDocumentTab, setActiveBuyerDocumentTab] = useState('sales')
   const sections = buildDocumentCentreSections(documentCenter, workspace)
   const isSelling = workspace === 'selling'
+  const sellerExperienceModel = isSelling
+    ? buildSellerDocumentExperienceModel({
+        requirements: uniqueById([...sections.allRequired, ...sections.additionalRequests]),
+        audience: 'seller',
+      })
+    : null
+  const sellerExperienceById = new Map((sellerExperienceModel?.items || []).map((item) => [item.id, item]))
+  const withSellerExperience = (item = {}) => sellerExperienceById.get(item.id) || item
   const sellerFicaDocuments = sections.allRequired
     .filter((item) => sellerRequirementGroup(item) === 'fica')
-    .map((item) => decoratePortalDocumentItem(item, 'fica'))
+    .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'fica'))
   const sellerPropertyDocuments = sections.allRequired
     .filter((item) => sellerRequirementGroup(item) === 'property')
-    .map((item) => decoratePortalDocumentItem(item, 'property'))
+    .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'property'))
   const sellerMandateDocuments = [
     ...sections.allRequired
       .filter((item) => sellerRequirementGroup(item) === 'mandate')
-      .map((item) => decoratePortalDocumentItem(item, 'mandate')),
+      .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'mandate')),
     ...sections.signedDocuments
       .filter((item) => /mandate/i.test(`${item?.title || ''} ${item?.description || ''}`))
       .map((item) => decoratePortalDocumentItem(item, 'mandate')),
@@ -434,12 +453,12 @@ function ClientDocumentCentre({
   const sellerTransferDocuments = [
     ...sections.allRequired
       .filter((item) => sellerRequirementGroup(item) === 'transfer')
-      .map((item) => decoratePortalDocumentItem(item, 'transfer')),
+      .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'transfer')),
     ...sections.signedDocuments
       .filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`))
       .map((item) => decoratePortalDocumentItem(item, 'transfer')),
   ]
-  const sellerAdditionalDocuments = sections.additionalRequests.map((item) => decoratePortalDocumentItem(item, 'additional'))
+  const sellerAdditionalDocuments = sections.additionalRequests.map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'additional'))
   const sellerDocumentTabs = [
     {
       key: 'property',
@@ -551,6 +570,7 @@ function ClientDocumentCentre({
         activeTabKey={activeSellerDocumentSection.key}
         onTabChange={setActiveSellerDocumentTab}
         requiredItems={sections.allRequired.map((item) => decoratePortalDocumentItem(item, sellerRequirementGroup(item)))}
+        experienceModel={sellerExperienceModel}
         errorMessage={documentCenter?.loadError || documentCenter?.error || ''}
         onPrimaryUploadAction={() => handlePrimaryUploadAction(sellerDocumentTabs, setActiveSellerDocumentTab, 'seller-document-list')}
         uploadingDocumentKey={uploadingDocumentKey}

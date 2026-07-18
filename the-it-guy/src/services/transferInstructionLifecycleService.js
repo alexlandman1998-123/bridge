@@ -37,6 +37,18 @@ function getRoleplayerStatus(roleplayer = {}) {
   return normalize(roleplayer.assignment_status || roleplayer.assignmentStatus || roleplayer.status)
 }
 
+function getAllocationState(assignment = {}) {
+  const row = assignment || {}
+  const explicit = normalize(row.allocation_state || row.allocationState)
+  if (explicit) return explicit
+  const instruction = getAssignmentStatus(row)
+  const status = normalize(row.assignment_status || row.assignmentStatus || row.status)
+  if (instruction === 'declined') return 'declined'
+  if (status === 'removed') return 'removed'
+  if (instruction === 'accepted' || status === 'active') return 'active'
+  return 'awaiting_firm_acceptance'
+}
+
 export function buildTransferInstructionLifecycle({
   transaction = {},
   allocations = [],
@@ -59,11 +71,17 @@ export function buildTransferInstructionLifecycle({
     return role === 'transfer_attorney' || ['transfer', 'transfer_and_bond'].includes(type)
   })
   const activeAssignments = transferAssignments.filter((row) =>
-    !['removed', 'declined', 'completed'].includes(normalize(row.assignment_status || row.status)),
+    !['removed', 'declined'].includes(getAllocationState(row)) &&
+    !['removed', 'completed'].includes(normalize(row.assignment_status || row.status)),
   )
   const acceptedAssignment = transferAssignments.find((row) => getAssignmentStatus(row) === 'accepted') || null
   const declinedAssignment = transferAssignments.find((row) => getAssignmentStatus(row) === 'declined') || null
   const readyAssignment = transferAssignments.find((row) => getAssignmentStatus(row) === 'ready_for_acceptance') || null
+  const currentAssignment = activeAssignments[0] || acceptedAssignment || readyAssignment || declinedAssignment || transferAssignments[0] || null
+  const allocationState = getAllocationState(currentAssignment)
+  const firmAcceptanceStatus = normalize(currentAssignment?.firm_acceptance_status || currentAssignment?.firmAcceptanceStatus)
+  const staffAssignmentStatus = normalize(currentAssignment?.staff_assignment_status || currentAssignment?.staffAssignmentStatus)
+  const assignedAttorneyUserId = currentAssignment?.attorney_user_id || currentAssignment?.attorneyUserId || currentAssignment?.primary_attorney_id || currentAssignment?.primaryAttorneyId || null
   const activeTransferRoleplayers = roleplayers.filter((row) => {
     const role = normalize(row.role_type || row.roleType)
     return role === 'transfer_attorney' && !['removed', 'declined', 'rejected'].includes(getRoleplayerStatus(row))
@@ -78,6 +96,21 @@ export function buildTransferInstructionLifecycle({
     issues.push('declined_attorney_still_active')
   }
   if (activeAssignments.length > 1) issues.push('multiple_active_transfer_assignments')
+  if (allocationState === 'awaiting_staff_assignment' && firmAcceptanceStatus !== 'accepted') {
+    issues.push('staff_assignment_open_before_firm_acceptance')
+  }
+  if (allocationState === 'awaiting_staff_assignment' && assignedAttorneyUserId) {
+    issues.push('person_linked_before_internal_assignment')
+  }
+  if (allocationState === 'staff_assigned' && (!assignedAttorneyUserId || staffAssignmentStatus !== 'staff_assigned')) {
+    issues.push('staff_assigned_state_missing_primary_attorney')
+  }
+  if (
+    allocationState === 'active' &&
+    (firmAcceptanceStatus === 'awaiting_firm_acceptance' || staffAssignmentStatus === 'awaiting_staff_assignment' || !assignedAttorneyUserId)
+  ) {
+    issues.push('active_matter_missing_firm_or_person_gate')
+  }
   if (!signedOtp && activeAssignments.some((row) => ['ready_for_acceptance', 'accepted'].includes(getAssignmentStatus(row)))) {
     issues.push('instruction_activated_before_signed_otp')
   }
@@ -88,21 +121,17 @@ export function buildTransferInstructionLifecycle({
     issues.push('allocation_missing_transaction_link')
   }
 
-  const decisionState = acceptedAssignment
-    ? 'accepted'
-    : declinedAssignment && !readyAssignment
-      ? 'declined'
-      : readyAssignment
-        ? 'ready_for_acceptance'
-        : transferAssignments.length
-          ? 'instruction_preparing'
-          : 'not_issued'
+  const decisionState = currentAssignment
+    ? allocationState
+    : transferAssignments.length
+      ? 'instruction_preparing'
+      : 'not_issued'
   const steps = [
     {
-      key: 'mandate_attorney',
-      label: 'Mandate Attorney',
+      key: 'mandate_firm',
+      label: 'Mandate Firm',
       status: transferAllocations.length ? 'complete' : 'pending',
-      detail: latestAllocation?.company_name || latestAllocation?.companyName || 'Attorney not allocated',
+      detail: latestAllocation?.company_name || latestAllocation?.companyName || 'Firm not nominated',
     },
     {
       key: 'buyer_onboarding',
@@ -117,25 +146,63 @@ export function buildTransferInstructionLifecycle({
       detail: signedOtp ? 'Accepted OTP received' : 'Formal instruction remains locked',
     },
     {
-      key: 'transfer_instruction',
-      label: 'Transfer Instruction',
+      key: 'firm_nomination',
+      label: 'Firm Nomination',
       status: transferAssignments.length ? 'complete' : signedOtp ? 'current' : 'pending',
-      detail: transferAssignments.length ? 'Instruction issued' : 'Not yet issued',
+      detail: transferAssignments.length ? 'Transfer firm nominated' : 'Not yet nominated',
     },
     {
-      key: 'attorney_decision',
-      label: 'Attorney Decision',
-      status: acceptedAssignment ? 'complete' : declinedAssignment && !readyAssignment ? 'attention' : readyAssignment ? 'current' : 'pending',
-      detail:
-        decisionState === 'accepted'
-          ? 'Matter accepted and active'
-          : decisionState === 'declined'
-            ? 'Replacement attorney required'
-            : decisionState === 'ready_for_acceptance'
-              ? 'Awaiting attorney acceptance'
-              : 'Awaiting formal instruction',
+      key: 'firm_acceptance',
+      label: 'Firm Acceptance',
+      status: ['awaiting_staff_assignment', 'staff_assigned', 'active'].includes(allocationState)
+        ? 'complete'
+        : allocationState === 'declined'
+          ? 'attention'
+          : allocationState === 'awaiting_firm_acceptance'
+            ? 'current'
+            : 'pending',
+      detail: allocationState === 'declined'
+        ? 'Replacement firm required'
+        : allocationState === 'awaiting_firm_acceptance'
+          ? 'Awaiting firm decision'
+          : ['awaiting_staff_assignment', 'staff_assigned', 'active'].includes(allocationState)
+            ? 'Firm accepted nomination'
+            : 'Awaiting nomination',
+    },
+    {
+      key: 'internal_assignment',
+      label: 'Internal Assignment',
+      status: ['staff_assigned', 'active'].includes(allocationState)
+        ? 'complete'
+        : allocationState === 'awaiting_staff_assignment'
+          ? 'current'
+          : 'pending',
+      detail: assignedAttorneyUserId
+        ? 'Primary attorney assigned by firm'
+        : allocationState === 'awaiting_staff_assignment'
+          ? 'Awaiting primary attorney'
+          : 'Firm must accept first',
+    },
+    {
+      key: 'matter_activation',
+      label: 'Matter Activation',
+      status: allocationState === 'active' ? 'complete' : allocationState === 'staff_assigned' ? 'current' : 'pending',
+      detail: allocationState === 'active'
+        ? 'Transfer matter active'
+        : allocationState === 'staff_assigned'
+          ? 'Ready to activate'
+          : 'Acceptance and primary attorney required',
     },
   ]
+
+  const blockedIssues = new Set([
+    'declined_attorney_still_active',
+    'multiple_active_transfer_assignments',
+    'staff_assignment_open_before_firm_acceptance',
+    'person_linked_before_internal_assignment',
+    'staff_assigned_state_missing_primary_attorney',
+    'active_matter_missing_firm_or_person_gate',
+  ])
 
   return {
     transactionId: transaction.id || transaction.transaction_id || '',
@@ -143,11 +210,11 @@ export function buildTransferInstructionLifecycle({
     onboardingStatus,
     signedOtp,
     decisionState,
-    health: issues.length ? (issues.includes('declined_attorney_still_active') || issues.includes('multiple_active_transfer_assignments') ? 'blocked' : 'attention') : declinedAssignment && !readyAssignment ? 'blocked' : 'on_track',
+    health: issues.length ? (issues.some((issue) => blockedIssues.has(issue)) ? 'blocked' : 'attention') : allocationState === 'declined' ? 'blocked' : 'on_track',
     issues: compact(issues),
     steps,
     allocation: latestAllocation || null,
-    assignment: acceptedAssignment || readyAssignment || declinedAssignment || transferAssignments[0] || null,
+    assignment: currentAssignment,
   }
 }
 

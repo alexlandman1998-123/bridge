@@ -3789,12 +3789,57 @@ export default function LegalDocumentWorkspacePage() {
     const shouldResolveStatus = packetType === 'otp' || !resend
     const status = shouldResolveStatus ? await resolveCurrentStatus() : null
     const latestVersion = status ? getLatestVersion(status) : null
-    if (packetType === 'otp' && latestVersion?.rendered_document_id) {
-      await updateOtpDocumentWorkflowState({
-        documentId: latestVersion.rendered_document_id,
-        workflowState: OTP_DOCUMENT_TYPES.sentToClient,
-        isClientVisible: true,
-      })
+    if (packetType === 'otp') {
+      const recipients = (Array.isArray(signerLinks) ? signerLinks : []).filter((signer) =>
+        normalizeText(signer?.signing_link) && normalizeText(signer?.signer_email)
+      )
+      if (!recipients.length) {
+        const error = new Error('No OTP signing recipient has a secure link and email address.')
+        error.code = 'SIGNING_EMAIL_FAILED'
+        throw error
+      }
+      const deliveries = []
+      for (const signer of recipients) {
+        const recipientEmail = normalizeText(signer.signer_email).toLowerCase()
+        const recipientName = normalizeText(signer.signer_name) || 'Signer'
+        const response = await withLegalWorkspaceTimeout(
+          invokeEdgeFunction('send-mandate-signing-email', {
+            body: {
+              type: 'seller_mandate_sent',
+              to: recipientEmail,
+              organisationId,
+              packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
+              recipientRole: 'seller',
+              recipientName,
+              sellerName: recipientName,
+              propertyTitle: transactionReference || 'your property transaction',
+              mandateType: 'Offer to Purchase',
+              portalLink: normalizeText(signer.signing_link),
+              resend: Boolean(resend),
+            },
+          }),
+          `The OTP signing email to ${recipientEmail} timed out before delivery was confirmed.`,
+          LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
+        )
+        assertEdgeFunctionSuccess(response, `The OTP signing email could not be sent to ${recipientEmail}.`)
+        deliveries.push({ emailDeliveryId: normalizeText(response?.data?.emailId), recipientEmail, recipientRole: normalizeText(signer.signer_role) })
+      }
+      if (latestVersion?.rendered_document_id) {
+        await updateOtpDocumentWorkflowState({
+          documentId: latestVersion.rendered_document_id,
+          workflowState: OTP_DOCUMENT_TYPES.sentToClient,
+          isClientVisible: true,
+        })
+      }
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      return {
+        emailDeliveryId: deliveries[0]?.emailDeliveryId || null,
+        emailDeliveryIds: deliveries.map((row) => row.emailDeliveryId).filter(Boolean),
+        recipientEmail: deliveries[0]?.recipientEmail || null,
+        recipientEmails: deliveries.map((row) => row.recipientEmail),
+        recipientRole: deliveries[0]?.recipientRole || null,
+        emailConfirmed: deliveries.length === recipients.length,
+      }
     }
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
       const sellerName =

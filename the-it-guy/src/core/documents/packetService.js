@@ -1,5 +1,7 @@
 import { generateMandateDocumentFromTemplate, generateOtpDocumentFromTemplate } from '../../lib/api'
 import { assertLegalTemplateApproved } from './legalTemplateApproval'
+import { assertGeneratedDraftVersion, buildDraftLegalProvenance } from './draftGenerationAssurance'
+import { assertGeneratedDraftArtifact, buildDraftArtifactProvenance } from './draftArtifactAssurance'
 import {
   addPacketEvent,
   archiveDocumentPacket,
@@ -7,6 +9,7 @@ import {
   createDocumentPacketSigners as createPacketSignersRecord,
   createDocumentSigningFields as createPacketSigningFieldRecords,
   createDocumentPacketVersion,
+  claimDocumentPacketGenerationLease,
   generateFinalSignedDocument as generateFinalSignedDocumentRecord,
   deleteDocumentPacketSigners as deletePacketSignersRecord,
   deleteDocumentSigningFields as deletePacketSigningFieldsRecord,
@@ -22,6 +25,7 @@ import {
   listDocumentPacketVersions,
   resolveDocumentPacketBranding,
   resolveActivePacketTemplate,
+  releaseDocumentPacketGenerationLease,
   updatePacket,
   updateDocumentSigningFieldStatus as updateSigningFieldStatusRecord,
   validateDocumentPacketPlaceholders,
@@ -217,6 +221,15 @@ function isMissingPlaceholderWarning(issue = {}, missingPlaceholderKeys = new Se
 function normalizeNullableUuid(value) {
   const text = normalizeText(value)
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null
+}
+
+function createGenerationAttemptId() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16)
+    const value = character === 'x' ? random : (random & 0x3) | 0x8
+    return value.toString(16)
+  })
 }
 
 function normalizePathSegment(value = '', fallback = 'item') {
@@ -441,6 +454,8 @@ function buildRenderProvenance({
     propertyClauseProfile: normalizeText(legalDocumentScenarioProfile?.propertyClauseProfile || pdfPlaceholders?.property_clause_profile) || null,
     financeClauseProfile: normalizeText(legalDocumentScenarioProfile?.financeClauseProfile || pdfPlaceholders?.finance_clause_profile) || null,
     generatedAt: generatedAt || null,
+    generationAttemptId: normalizeText(generationPayload?.generationAttemptId) || null,
+    ...buildDraftLegalProvenance(template),
     sectionManifestHash: buildContentFingerprint(sectionManifest),
     placeholderHash: buildContentFingerprint(pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {}),
     generationPayloadHash: buildContentFingerprint(generationPayload && typeof generationPayload === 'object' ? generationPayload : {}),
@@ -516,6 +531,7 @@ async function recordGenerationFailure({
       failed_action: 'generate',
       missing_fields: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       source_context: sourceContextSnapshot,
+      generationAttemptId: normalizeText(generationPayload?.generationAttemptId) || null,
       message: failureMessage,
       metadata: {
         error_code: failureCode,
@@ -1018,6 +1034,10 @@ function extractGeneratedArtifact(result = {}) {
         result?.url ||
         result?.renderedFileUrl,
     ),
+    renderedFileBucket: normalizeNullableText(result?.output?.bucket || result?.storage?.bucket),
+    renderedMediaType: normalizeNullableText(result?.output?.mediaType || result?.output?.contentType),
+    renderedByteLength: Number(result?.output?.byteLength || 0),
+    renderedSha256: normalizeNullableText(result?.output?.sha256),
   }
 }
 
@@ -2620,14 +2640,31 @@ export async function generatePacketVersion({
   }
 
   const generatedAt = new Date().toISOString()
-  const generationPayload = buildGenerationPayload({
+  const generationAttemptId = createGenerationAttemptId()
+  const generationLeaseClaimed = await claimDocumentPacketGenerationLease({
+    packetId: packet.id,
+    generationAttemptId,
+    ttlSeconds: 300,
+  })
+  if (!generationLeaseClaimed) {
+    const error = createPacketError(
+      'GENERATION_ALREADY_IN_PROGRESS',
+      'This document is already being generated. Wait for the current attempt to finish before retrying.',
+    )
+    error.packetId = packet.id
+    throw error
+  }
+  const generationPayload = {
+    ...buildGenerationPayload({
     packet,
     context,
     validation,
     template: effectiveTemplate,
     templateResolution: prepared.templateResolution || null,
     generatedAt,
-  })
+    }),
+    generationAttemptId,
+  }
   const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
   const templateVersion = resolveTemplateVersion(effectiveTemplate)
   const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
@@ -2656,6 +2693,7 @@ export async function generatePacketVersion({
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
       generatedAt,
+      generationAttemptId,
       message: validation.packetType === 'mandate'
         ? 'Mandate generation started.'
         : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
@@ -2753,6 +2791,7 @@ export async function generatePacketVersion({
       previewOnlyGeneration = true
       previewOnlyReason = failureMessage
     } else {
+      await releaseDocumentPacketGenerationLease({ packetId: packet.id, generationAttemptId }).catch(() => false)
       const isTimeoutFailure = failureCode === 'GENERATION_TIMEOUT'
       if (isTimeoutFailure) {
         void recordGenerationFailure({
@@ -2775,6 +2814,7 @@ export async function generatePacketVersion({
 
         const error = createPacketError(failureCode, failureMessage)
         error.validation = validation
+        error.packetId = packet.id
         throw error
       }
 
@@ -2799,6 +2839,7 @@ export async function generatePacketVersion({
         failedVersionNumber: failedVersion.version_number,
       })
       error.validation = validation
+      error.packetId = packet.id
       throw error
     }
   }
@@ -2816,6 +2857,28 @@ export async function generatePacketVersion({
     templateVersion,
     generatedAt,
   })
+  const artifactProvenance = buildDraftArtifactProvenance(artifact)
+
+  if (!previewOnlyGeneration) {
+    assertGeneratedDraftArtifact({ artifact, packetType: validation.packetType })
+    assertGeneratedDraftVersion({
+      packet,
+      template: effectiveTemplate,
+      version: {
+        render_status: renderStatus,
+        rendered_document_id: artifact.renderedDocumentId,
+        rendered_file_path: artifact.renderedFilePath,
+        rendered_file_url: artifact.renderedFileUrl,
+        placeholders_missing_json: validation.missingPlaceholders,
+        generated_at: generatedAt,
+        validation_summary_json: {
+          generationStatus: 'generated',
+          previewOnly: false,
+          render_provenance: renderProvenance,
+        },
+      },
+    })
+  }
 
   const version = await createDocumentPacketVersionSafely({
     packetId: packet.id,
@@ -2836,7 +2899,9 @@ export async function generatePacketVersion({
       templateVersion,
       templateResolution: prepared.templateResolution || null,
       generatedAt,
+      generationAttemptId,
       render_provenance: renderProvenance,
+      artifact_provenance: artifactProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: buildWarningsSnapshot(context, validation),
@@ -2859,6 +2924,8 @@ export async function generatePacketVersion({
       templateVersion,
       generatedAt,
       renderProvenance,
+      artifactProvenance,
+      generationAttemptId,
       templateResolutionSource: generationPayload.templateResolutionSource || null,
       mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
       mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
@@ -2893,6 +2960,7 @@ export async function generatePacketVersion({
       leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
       transactionId: context?.transaction?.id || context?.transactionId || null,
       versionNumber: version.version_number,
+      generationAttemptId,
       renderStatus: version.render_status,
       renderedDocumentId: version.rendered_document_id,
       renderedFilePath: version.rendered_file_path,
