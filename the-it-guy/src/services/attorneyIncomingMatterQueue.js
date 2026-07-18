@@ -1,5 +1,5 @@
 import {
-  getAttorneyRolePermissions,
+  getAttorneyProfessionalProfilePermissions,
   getCurrentUserAttorneyMembership,
 } from '../lib/attorneyPermissions'
 import {
@@ -794,7 +794,7 @@ function mapCurrentUser(authUser = {}, membership = null, permissions = {}) {
   return {
     id: authUser.id || '',
     email: authUser.email || '',
-    role: membership?.role || authUser.user_metadata?.attorney_role || 'candidate_attorney',
+    role: membership?.professionalRole || '',
     permissions,
   }
 }
@@ -810,8 +810,16 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   }
 
   const membership = options.membership || await getCurrentUserAttorneyMembership(firm.id, currentUserId).catch(() => null)
-  const role = membership?.role || authUser.user_metadata?.attorney_role || 'candidate_attorney'
-  const permissions = getAttorneyRolePermissions(role)
+  const role = membership?.isActive ? membership.professionalRole : ''
+  const permissions = membership?.isActive
+    ? getAttorneyProfessionalProfilePermissions(membership)
+    : getAttorneyProfessionalProfilePermissions({})
+  if (!membership?.isActive) {
+    return buildAttorneyIncomingMatterQueueFromSources({
+      firm: null,
+      currentUser: mapCurrentUser(authUser, null, permissions),
+    }, options)
+  }
   const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
 
   const preInstructionAllocations = await fetchPreInstructionAllocations(client, firm.id)

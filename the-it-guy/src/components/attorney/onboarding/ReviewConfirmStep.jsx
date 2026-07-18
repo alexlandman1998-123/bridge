@@ -18,22 +18,13 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react'
+import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
 
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer Department',
   bond: 'Bond Department',
   admin: 'Admin Department',
   management: 'Management',
-}
-
-const ROLE_LABELS = {
-  director_partner: 'Director / Partner',
-  transfer_attorney: 'Transfer Attorney',
-  bond_attorney: 'Bond Attorney',
-  conveyancing_secretary: 'Conveyancing Secretary',
-  admin_staff: 'Admin Staff',
-  reception_scheduling: 'Reception / Scheduling',
-  candidate_attorney: 'Candidate Attorney',
 }
 
 const STATE_LABELS = {
@@ -321,7 +312,7 @@ function ReviewConfirmStep({ firmInformation, branding, activeDepartmentTypes, i
                 <span>{String(invite.email || '?')[0].toUpperCase()}</span>
                 <p>
                   <strong>{invite.email}</strong>
-                  <em>{ROLE_LABELS[invite.role] || invite.role} - {DEPARTMENT_LABELS[invite.departmentType] || invite.departmentType}</em>
+                  <em>{getAttorneyRoleLabel(invite.role)} - {DEPARTMENT_LABELS[invite.departmentType] || invite.departmentType}</em>
                 </p>
               </div>
             ))}

@@ -1,16 +1,9 @@
 import { BriefcaseBusiness, Mail, Plus, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react'
-import { ATTORNEY_FIRM_ROLE_VALUES } from '../../../lib/attorneyPermissions'
+import {
+  getAttorneyRoleLabel,
+  getInviteableAttorneyFirmRoles,
+} from '../../../constants/attorneyRoleCatalog.js'
 import { getAllowedDepartmentsForRole } from './teamInviteUtils'
-
-const ROLE_LABELS = {
-  director_partner: 'Director',
-  transfer_attorney: 'Conveyancer',
-  bond_attorney: 'Attorney',
-  conveyancing_secretary: 'Assistant',
-  admin_staff: 'Admin / Accounts',
-  reception_scheduling: 'Reception',
-  candidate_attorney: 'Candidate Attorney',
-}
 
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer Department',
@@ -19,7 +12,7 @@ const DEPARTMENT_LABELS = {
   management: 'Management',
 }
 
-const ALLOWED_INVITE_ROLES = ATTORNEY_FIRM_ROLE_VALUES.filter((role) => role !== 'firm_admin')
+const ALLOWED_INVITE_ROLES = getInviteableAttorneyFirmRoles()
 
 function inviteInitial(invite = {}, index = 0) {
   const email = String(invite.email || '').trim()
@@ -120,7 +113,7 @@ function TeamInvitesStep({ invites = [], activeDepartmentTypes = [], onAddInvite
                   >
                     <option value="">Select role</option>
                     {ALLOWED_INVITE_ROLES.map((role) => (
-                      <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>
+                      <option key={role} value={role}>{getAttorneyRoleLabel(role)}</option>
                     ))}
                   </PremiumSelectField>
 

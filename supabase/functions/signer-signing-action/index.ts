@@ -1783,7 +1783,7 @@ Deno.serve(async (req: Request) => {
     const nowIso = new Date().toISOString();
     const [runtimePacketResult, runtimeVersionResult] = await Promise.all([
       supabase.from("document_packets")
-        .select("id, organisation_id, current_version_number")
+        .select("id, organisation_id, status, current_version_number")
         .eq("id", packetId)
         .maybeSingle(),
       supabase.from("document_packet_versions")
@@ -1796,26 +1796,17 @@ Deno.serve(async (req: Request) => {
     if (runtimeVersionResult.error) throw runtimeVersionResult.error;
     const runtimePacket = runtimePacketResult.data as Record<string, unknown> | null;
     const runtimeVersion = runtimeVersionResult.data as Record<string, unknown> | null;
-    const runtimeValidation = runtimeVersion?.validation_summary_json && typeof runtimeVersion.validation_summary_json === "object"
-      ? runtimeVersion.validation_summary_json as Record<string, unknown>
-      : {};
-    const runtimeLock = runtimeValidation.lock_snapshot && typeof runtimeValidation.lock_snapshot === "object"
-      ? runtimeValidation.lock_snapshot as Record<string, unknown>
-      : {};
+    const runtimePacketStatus = normalizeText(runtimePacket?.status).toLowerCase();
     const runtimeBindingValid = Boolean(runtimePacket && runtimeVersion) &&
       normalizeText(runtimePacket?.organisation_id) === organisationId &&
       normalizeText(runtimeVersion?.organisation_id) === organisationId &&
       Number(runtimePacket?.current_version_number) === Number(runtimeVersion?.version_number) &&
       normalizeText(runtimeVersion?.render_status).toLowerCase() === "generated" &&
-      runtimeValidation.content_locked === true &&
-      normalizeText(runtimeValidation.review_state).toLowerCase() === "locked" &&
-      normalizeText(runtimeLock.lockDecision).toLowerCase() === "locked" &&
-      normalizeText(runtimeLock.packetId) === packetId &&
-      normalizeText(runtimeLock.versionId) === packetVersionId;
+      ["sent", "partially_signed", "completed"].includes(runtimePacketStatus);
     if (!runtimeBindingValid) {
       return jsonResponse(409, {
         success: false,
-        error: "This signer action is not bound to the current locked document version.",
+        error: "This signer action is not bound to the current generated document version.",
         errorCode: "SIGNER_SESSION_BINDING_INVALID",
       });
     }
@@ -2047,6 +2038,14 @@ Deno.serve(async (req: Request) => {
 
     if (action === "complete_signing") {
       if (normalizeText(signer.status).toLowerCase() === "signed") {
+        const completedSession = await supabase.rpc("bridge_complete_controlled_signer_session_f2", { p_token: token });
+        if (completedSession.error) {
+          return jsonResponse(409, {
+            success: false,
+            error: "The completed signature could not be matched to its controlled signer session.",
+            errorCode: "F2_CONTROLLED_SESSION_COMPLETION_FAILED",
+          });
+        }
         const [retryPacketResult, retryVersionResult] = await Promise.all([
           supabase.from("document_packets").select("packet_type").eq("id", packetId).maybeSingle(),
           supabase.from("document_packet_versions").select("final_signed_file_path").eq("id", packetVersionId).eq("packet_id", packetId).maybeSingle(),
@@ -2202,6 +2201,17 @@ Deno.serve(async (req: Request) => {
         )
         .single();
       if (signerUpdate.error) throw signerUpdate.error;
+
+      const completedSession = await supabase.rpc("bridge_complete_controlled_signer_session_f2", { p_token: token });
+      if (completedSession.error) {
+        return jsonResponse(409, {
+          success: false,
+          error: "Your signature was saved, but its controlled session could not be closed. It is safe to retry.",
+          errorCode: "F2_CONTROLLED_SESSION_COMPLETION_FAILED",
+          signerCompleted: true,
+          retryable: true,
+        });
+      }
 
       await appendPacketEvent({
         supabase,

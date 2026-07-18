@@ -66,7 +66,9 @@ function resolveSupabaseFrontendKey() {
   }
 
   const payload = decodeJwtPayload(selectedCandidate)
-  const role = String(payload?.role || '').trim().toLowerCase()
+  const role = String(payload?.role || '')
+    .trim()
+    .toLowerCase()
   if (role === 'service_role') {
     console.error('[supabase] Refusing to use service_role key in frontend runtime.')
     return ''
@@ -89,10 +91,10 @@ function isPlaceholder(value = '') {
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
-    supabaseKey &&
-    !isPlaceholder(supabaseUrl) &&
-    !isPlaceholder(supabaseKey) &&
-    String(supabaseUrl).startsWith('https://'),
+  supabaseKey &&
+  !isPlaceholder(supabaseUrl) &&
+  !isPlaceholder(supabaseKey) &&
+  String(supabaseUrl).startsWith('https://'),
 )
 
 export const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseKey) : null
@@ -121,7 +123,9 @@ export function isUnsupportedJwtAlgorithmError(error) {
 }
 
 export function isUserFromSubClaimMissingError(error) {
-  const code = String(error?.code || '').trim().toLowerCase()
+  const code = String(error?.code || '')
+    .trim()
+    .toLowerCase()
   const message = String(error?.message || '').toLowerCase()
   const details = String(error?.details || '').toLowerCase()
   return (
@@ -147,9 +151,7 @@ export async function clearSupabaseLocalAuthState() {
   }
 
   const projectRef = getSupabaseProjectRef()
-  const prefixes = projectRef
-    ? [`sb-${projectRef}-`, 'supabase.auth.']
-    : ['sb-', 'supabase.auth.']
+  const prefixes = projectRef ? [`sb-${projectRef}-`, 'supabase.auth.'] : ['sb-', 'supabase.auth.']
 
   for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
     const key = window.localStorage.key(index)
@@ -193,7 +195,7 @@ async function invokeEdgeFunctionWithAnonAuth(functionName, body, headers = {}) 
     return {
       data: null,
       error: {
-        code: String(payload?.code || response.status || ''),
+        code: String(payload?.errorCode || payload?.error_code || payload?.code || response.status || ''),
         message: String(payload?.error || payload?.message || fallbackMessage),
         details: payload?.details ?? null,
         hint: payload?.hint ?? null,
@@ -217,7 +219,9 @@ async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken
   if (!isSupabaseConfigured || !accessToken) {
     return {
       data: null,
-      error: { message: 'Supabase is not configured or access token is missing.' },
+      error: {
+        message: 'Supabase is not configured or access token is missing.',
+      },
     }
   }
 
@@ -244,7 +248,7 @@ async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken
     return {
       data: null,
       error: {
-        code: String(payload?.code || response.status || ''),
+        code: String(payload?.errorCode || payload?.error_code || payload?.code || response.status || ''),
         message: String(payload?.error || payload?.message || fallbackMessage),
         details: payload?.details ?? null,
         hint: payload?.hint ?? null,
@@ -334,7 +338,12 @@ export function createScopedSupabaseClient(headers = {}) {
   }
 
   const normalizedEntries = Object.entries(headers || {})
-    .map(([key, value]) => [String(key || '').trim().toLowerCase(), String(value || '').trim()])
+    .map(([key, value]) => [
+      String(key || '')
+        .trim()
+        .toLowerCase(),
+      String(value || '').trim(),
+    ])
     .filter(([key, value]) => key && value)
     .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
   const cacheKey = JSON.stringify(normalizedEntries)
@@ -371,7 +380,9 @@ export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
 )
 
 const configuredLegalTemplateBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET),
+  ...parseBucketCandidates(
+    viteEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET,
+  ),
   ...parseBucketCandidates(viteEnv.VITE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_LEGAL_TEMPLATES_BUCKET),
 ]
 
@@ -390,11 +401,17 @@ const configuredBrandingBuckets = [
 export const BRANDING_BUCKET = configuredBrandingBuckets[0] || 'organisation-branding'
 
 export const BRANDING_BUCKET_CANDIDATES = Array.from(
-  new Set([BRANDING_BUCKET, ...configuredBrandingBuckets, 'organisation-branding', ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
+  new Set(
+    [BRANDING_BUCKET, ...configuredBrandingBuckets, 'organisation-branding', ...DOCUMENTS_BUCKET_CANDIDATES].filter(
+      Boolean,
+    ),
+  ),
 )
 
 const configuredProfileAvatarBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET || processEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET),
+  ...parseBucketCandidates(
+    viteEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET || processEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET,
+  ),
   ...parseBucketCandidates(viteEnv.VITE_PROFILE_AVATAR_BUCKET || processEnv.VITE_PROFILE_AVATAR_BUCKET),
 ]
 

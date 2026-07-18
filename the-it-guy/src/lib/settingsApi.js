@@ -40,6 +40,7 @@ import {
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
+import { deriveAttorneyProfessionalProfile } from '../constants/attorneyRoleCatalog.js'
 import { recordSecurityAuditEvent } from '../services/auditLogService'
 import {
   AGENCY_AUTHORITY_ACTIONS,
@@ -5272,9 +5273,16 @@ function normalizeOrganisationUserRow(row) {
   const profileLastName = normalizeText(row?.profile?.last_name || row?.profile?.lastName)
   const profileFullName = normalizeText(row?.profile?.full_name || row?.profile?.fullName)
   const scopeMetadata = row?.scope_metadata && typeof row.scope_metadata === 'object' ? row.scope_metadata : {}
-  const role = normalizeText(row?.workspace_role || row?.organisation_role || row?.organization_role || row?.role) || 'viewer'
+  const genericRole = normalizeText(row?.workspace_role || row?.organisation_role || row?.organization_role || row?.role) || 'viewer'
   const status = normalizeText(row?.membership_status || row?.status) || 'invited'
   const isPrincipalClaim = scopeMetadata.source === 'principal_claim_invite' || Boolean(scopeMetadata.principalClaimInviteId)
+  const isAttorneyWorkspace = normalizeText(row?.workspace_type) === 'attorney_firm' || Boolean(row?.attorney_professional_role)
+  const attorneyProfile = deriveAttorneyProfessionalProfile({
+    role: row?.attorney_compatibility_role || row?.organisation_role || row?.organization_role,
+    professionalRole: row?.attorney_professional_role,
+    practiceQualifications: row?.attorney_practice_qualifications,
+  })
+  const role = isAttorneyWorkspace ? attorneyProfile.professionalRole : genericRole
   return {
     id: row?.id || null,
     userId: row?.user_id || null,
@@ -5294,6 +5302,9 @@ function normalizeOrganisationUserRow(row) {
     membershipStatus: status,
     workspaceRole: normalizeText(row?.workspace_role) || role,
     organisationRole: normalizeText(row?.organisation_role || row?.organization_role) || role,
+    attorneyProfessionalRole: isAttorneyWorkspace ? attorneyProfile.professionalRole : '',
+    attorneyPracticeQualifications: isAttorneyWorkspace ? attorneyProfile.practiceQualifications : [],
+    attorneyCompatibilityRole: isAttorneyWorkspace ? normalizeText(row?.attorney_compatibility_role) || null : null,
     jobTitle: normalizeOrganisationJobTitle(row?.job_title || row?.jobTitle),
     scopeMetadata,
     isPrincipalClaim,
@@ -5387,13 +5398,26 @@ export async function listOrganisationUsers() {
       ]
     }
 
-    const selectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
+    const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at, attorney_professional_role, attorney_practice_qualifications, attorney_compatibility_role'
+    const selectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
     const legacySelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
     let usersQuery = await client
       .from('organisation_users')
-      .select(selectColumns)
+      .select(canonicalSelectColumns)
       .eq('organisation_id', context.organisation.id)
       .order('created_at', { ascending: true })
+
+    if (usersQuery.error && (
+      isMissingColumnError(usersQuery.error, 'attorney_professional_role') ||
+      isMissingColumnError(usersQuery.error, 'attorney_practice_qualifications') ||
+      isMissingColumnError(usersQuery.error, 'attorney_compatibility_role')
+    )) {
+      usersQuery = await client
+        .from('organisation_users')
+        .select(selectColumns)
+        .eq('organisation_id', context.organisation.id)
+        .order('created_at', { ascending: true })
+    }
 
     if (usersQuery.error && isMissingColumnError(usersQuery.error, 'job_title')) {
       usersQuery = await client

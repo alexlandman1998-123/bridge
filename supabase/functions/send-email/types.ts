@@ -406,6 +406,8 @@ export type SendSellerMandateSentPayload = {
   mandateEndDate?: string;
   askingPrice?: string;
   portalLink?: string;
+  reminder?: boolean;
+  resend?: boolean;
   agentName?: string;
   organisationName?: string;
   supportEmail?: string;
@@ -556,6 +558,7 @@ export type SendAppointmentEmailPayload = {
   appointmentDate?: string;
   appointmentTime?: string;
   appointmentEndTime?: string;
+  timezone?: string;
   relatedListing?: string;
   location?: string;
   status?: string;

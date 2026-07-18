@@ -37,7 +37,7 @@ function AttorneyAssignmentForm({
   const [form, setForm] = useState({
     firmId: initialAssignment?.firmId || '',
     departmentId: initialAssignment?.departmentId || '',
-    primaryAttorneyId: initialAssignment?.primaryAttorneyId || '',
+    primaryAttorneyId: initialAssignment?.attorneyUserId || initialAssignment?.primaryAttorneyId || '',
     secretaryId: initialAssignment?.secretaryId || '',
     adminHandlerId: initialAssignment?.adminHandlerId || '',
     status: initialAssignment?.status || 'active',
@@ -46,6 +46,7 @@ function AttorneyAssignmentForm({
   const [departments, setDepartments] = useState([])
   const [assignableMembers, setAssignableMembers] = useState({
     primaryAttorneys: [],
+    supportingAttorneys: [],
     secretaries: [],
     adminHandlers: [],
   })
@@ -60,7 +61,7 @@ function AttorneyAssignmentForm({
       if (!form.firmId) {
         if (!active) return
         setDepartments([])
-        setAssignableMembers({ primaryAttorneys: [], secretaries: [], adminHandlers: [] })
+        setAssignableMembers({ primaryAttorneys: [], supportingAttorneys: [], secretaries: [], adminHandlers: [] })
         return
       }
 
@@ -91,6 +92,7 @@ function AttorneyAssignmentForm({
         setDepartments(filteredDepartments)
         setAssignableMembers({
           primaryAttorneys: roleMembers.primaryAttorneys || [],
+          supportingAttorneys: roleMembers.supportingAttorneys || [],
           secretaries: roleMembers.secretaries || [],
           adminHandlers: roleMembers.adminHandlers || [],
         })
@@ -177,8 +179,8 @@ function AttorneyAssignmentForm({
         </label>
 
         <AttorneyMemberSelector
-          label={assignmentRoleLabel(assignmentType)}
-          options={assignableMembers.primaryAttorneys}
+          label={form.isPrimary ? assignmentRoleLabel(assignmentType) : `Supporting ${assignmentRoleLabel(assignmentType).replace('Primary ', '')}`}
+          options={form.isPrimary ? assignableMembers.primaryAttorneys : assignableMembers.supportingAttorneys}
           value={form.primaryAttorneyId}
           onChange={(primaryAttorneyId) => setForm((previous) => ({ ...previous, primaryAttorneyId }))}
           disabled={saving || !form.firmId || loadingMembers}
@@ -190,7 +192,7 @@ function AttorneyAssignmentForm({
           <select
             className="input"
             value={form.isPrimary ? 'primary' : 'supporting'}
-            onChange={(event) => setForm((previous) => ({ ...previous, isPrimary: event.target.value === 'primary' }))}
+            onChange={(event) => setForm((previous) => ({ ...previous, isPrimary: event.target.value === 'primary', primaryAttorneyId: '' }))}
             disabled={saving || Boolean(initialAssignment?.id && initialAssignment.isPrimary)}
           >
             <option value="primary">Primary attorney</option>

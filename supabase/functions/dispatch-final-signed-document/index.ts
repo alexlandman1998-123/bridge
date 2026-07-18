@@ -33,6 +33,22 @@ Deno.serve(async (req: Request) => {
     const signers = (signersResult.data || []) as JsonRecord[];
     const bindingValid = Boolean(packet && version && evidence) && text(packet?.status).toLowerCase() === "completed" && Number(packet?.current_version_number) === Number(version?.version_number) && text(packet?.organisation_id) === text(version?.organisation_id) && text(evidence?.packet_id) === packetId && text(evidence?.packet_version_id) === packetVersionId && text(evidence?.path) === text(version?.final_signed_file_path) && text(evidence?.bucket) === text(version?.final_signed_file_bucket);
     if (!bindingValid || !signers.length || signers.some((signer) => text(signer.status).toLowerCase() !== "signed")) return response(409, { success: false, error: "F2 final completion evidence is required before delivery.", errorCode: "FINAL_DELIVERY_F2_INVALID" });
+    const transactionPublication = await supabase.rpc("bridge_publish_final_artifact_to_transaction_f3", { p_packet_version_id: packetVersionId });
+    if (transactionPublication.error || !transactionPublication.data) {
+      return response(409, {
+        success: false,
+        error: "The final signed document could not be attached to its transaction.",
+        errorCode: "F3_TRANSACTION_PUBLICATION_FAILED",
+      });
+    }
+    const surfaceCompletion = await supabase.rpc("bridge_complete_final_document_surfaces_f4", { p_packet_version_id: packetVersionId });
+    if (surfaceCompletion.error || !surfaceCompletion.data) {
+      return response(409, {
+        success: false,
+        error: "The signed document was saved, but its transaction and portal status could not be completed.",
+        errorCode: "F4_SURFACE_COMPLETION_FAILED",
+      });
+    }
     const signedUrl = await supabase.storage.from(text(evidence?.bucket)).createSignedUrl(text(evidence?.path), 60 * 60 * 24);
     if (signedUrl.error || !signedUrl.data?.signedUrl) return response(409, { success: false, error: "The final signed artifact is not readable for secure delivery.", errorCode: "FINAL_DELIVERY_ARTIFACT_UNREADABLE" });
     const portalSurface = text(packet?.packet_type).toLowerCase() === "mandate" ? "seller_portal" : "client_portal";
@@ -70,9 +86,9 @@ Deno.serve(async (req: Request) => {
     }
     const allDelivered = outcomes.length === signers.length && outcomes.every((outcome) => outcome.status === "sent");
     const eventType = allDelivered ? "final_signed_delivery_completed" : "final_signed_delivery_incomplete";
-    const eventInsert = await supabase.from("document_packet_events").insert({ packet_id: packetId, organisation_id: text(packet?.organisation_id), version_id: packetVersionId, event_type: eventType, event_payload_json: { artifactSha256: text(evidence?.sha256), artifactPath: text(evidence?.path), recipientCount: signers.length, sentCount: outcomes.filter((outcome) => outcome.status === "sent").length, portalSurface, recordedAt: new Date().toISOString() }, created_by: null, created_at: new Date().toISOString() });
+    const eventInsert = await supabase.from("document_packet_events").insert({ packet_id: packetId, organisation_id: text(packet?.organisation_id), version_id: packetVersionId, event_type: eventType, event_payload_json: { artifactSha256: text(evidence?.sha256), artifactPath: text(evidence?.path), transactionId: transactionPublication.data?.transactionId || null, transactionDocumentId: transactionPublication.data?.documentId || null, transactionPublicationId: transactionPublication.data?.publicationId || null, recipientCount: signers.length, sentCount: outcomes.filter((outcome) => outcome.status === "sent").length, portalSurface, recordedAt: new Date().toISOString() }, created_by: null, created_at: new Date().toISOString() });
     if (eventInsert.error) throw eventInsert.error;
-    return response(200, { success: allDelivered, allDelivered, packetId, packetVersionId, portalSurface, recipientCount: signers.length, sentCount: outcomes.filter((outcome) => outcome.status === "sent").length, outcomes });
+    return response(200, { success: allDelivered, allDelivered, packetId, packetVersionId, portalSurface, transactionPublication: transactionPublication.data, surfaceCompletion: surfaceCompletion.data, recipientCount: signers.length, sentCount: outcomes.filter((outcome) => outcome.status === "sent").length, outcomes });
   } catch (error) {
     console.error("dispatch-final-signed-document failed", error);
     return response(500, { success: false, error: "Final signed document delivery failed.", errorCode: "FINAL_DELIVERY_FAILED" });

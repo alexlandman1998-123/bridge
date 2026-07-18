@@ -32,6 +32,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const recipientName = normalizeText(payload.recipientName) || (recipientRole === "agent" ? normalizeText(payload.agentName) || "there" : sellerName);
   const propertyTitle = normalizeText(payload.propertyTitle) || "your property";
   const mandateType = normalizeText(payload.mandateType) || "mandate";
+  const isReminder = payload.reminder === true;
   const isOtp = /offer to purchase|otp/i.test(mandateType);
   const mandateStartDate = normalizeText(payload.mandateStartDate) || "TBC";
   const mandateEndDate = normalizeText(payload.mandateEndDate) || "TBC";
@@ -73,12 +74,19 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
 
-  const subject = normalizeText(templateOverrides?.subject) ||
+  const subject = isReminder
+    ? `Reminder: ${mandateType} awaiting your signature – ${propertyTitle}`
+    : normalizeText(templateOverrides?.subject) ||
     (recipientRole === "agent"
       ? `${mandateType} ready for agency signature: ${propertyTitle}`
       : `${mandateType} ready for review: ${propertyTitle}`);
   const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) && templateOverrides.introParagraphs.length
     ? templateOverrides.introParagraphs
+    : isReminder
+      ? [
+        `This is a reminder that the ${mandateType.toLowerCase()} for ${propertyTitle} is still awaiting your signature.`,
+        "Your existing secure signing link remains active; no new link has been created.",
+      ]
     : recipientRole === "agent"
       ? [
         `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature.`,
@@ -127,7 +135,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       (recipientRole === "agent"
         ? `Agency signature is required before the seller can sign ${propertyTitle}.`
         : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`),
-    title: normalizeText(templateOverrides?.title) || (recipientRole === "agent" ? `${mandateType} Ready for Agent Signature` : `${mandateType} Ready`),
+    title: isReminder ? `${mandateType} Signature Reminder` : normalizeText(templateOverrides?.title) || (recipientRole === "agent" ? `${mandateType} Ready for Agent Signature` : `${mandateType} Ready`),
     greeting: `Hi ${recipientName},`,
     contentHtml,
     securityTitle: normalizeText(templateOverrides?.securityTitle) || (isOtp ? "Secure Offer Review" : "Secure Mandate Review"),
@@ -140,7 +148,9 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const text = [
     `Hi ${recipientName},`,
     "",
-    recipientRole === "agent"
+    isReminder
+      ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is still awaiting your signature. Your current secure link remains active.`
+      : recipientRole === "agent"
       ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature. The seller will be invited after you sign.`
       : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
     "",

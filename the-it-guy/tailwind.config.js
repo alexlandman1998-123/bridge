@@ -75,9 +75,9 @@ export default {
         display: ['Inter Tight', 'Inter', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
       },
       fontSize: {
-        'page-title': ['1.75rem', { lineHeight: '1.15', letterSpacing: '-0.03em' }],
-        'section-title': ['1.25rem', { lineHeight: '1.2', letterSpacing: '-0.022em' }],
-        'card-title': ['1rem', { lineHeight: '1.3', letterSpacing: '-0.016em' }],
+        'page-title': ['2rem', { lineHeight: '1.12', letterSpacing: '-0.035em' }],
+        'section-title': ['1.5rem', { lineHeight: '1.2', letterSpacing: '-0.025em' }],
+        'card-title': ['1.125rem', { lineHeight: '1.3', letterSpacing: '-0.018em' }],
         body: ['0.9375rem', { lineHeight: '1.58', letterSpacing: '-0.004em' }],
         secondary: ['0.875rem', { lineHeight: '1.5', letterSpacing: '-0.003em' }],
         nav: ['0.875rem', { lineHeight: '1.35', letterSpacing: '-0.003em' }],

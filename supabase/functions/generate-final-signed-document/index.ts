@@ -2136,25 +2136,15 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const finalValidation = version.validation_summary_json && typeof version.validation_summary_json === "object"
-      ? version.validation_summary_json as Record<string, unknown>
-      : {};
-    const finalLock = finalValidation.lock_snapshot && typeof finalValidation.lock_snapshot === "object"
-      ? finalValidation.lock_snapshot as Record<string, unknown>
-      : {};
     const finalVersionBindingValid =
       normalizeText(version.organisation_id) === normalizeText(packet.organisation_id) &&
       Number(version.version_number) === Number(packet.current_version_number) &&
       lower(version.render_status) === "generated" &&
-      finalValidation.content_locked === true &&
-      lower(finalValidation.review_state) === "locked" &&
-      lower(finalLock.lockDecision) === "locked" &&
-      normalizeText(finalLock.packetId) === packetId &&
-      normalizeText(finalLock.versionId) === requestedVersionId;
+      ["sent", "partially_signed", "completed"].includes(lower(packet.status));
     if (!finalVersionBindingValid) {
       return jsonResponse(409, {
         success: false,
-        error: "Finalisation is not bound to the exact current locked document version.",
+        error: "Finalisation is not bound to the exact current generated document version.",
         errorCode: "FINAL_VERSION_BINDING_INVALID",
       });
     }

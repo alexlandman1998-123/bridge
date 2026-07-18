@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 
 const SENSITIVE_KEY_PATTERN = /(password|token|secret|key|authorization|cookie|otp|session|email|phone|name)/i
 

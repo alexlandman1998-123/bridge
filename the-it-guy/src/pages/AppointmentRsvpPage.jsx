@@ -1,24 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
+import {
+  APPOINTMENT_RSVP_TIMEZONE,
+  buildAppointmentRsvpContract,
+  getAppointmentRsvpStatusCopy,
+  isCompletedAppointmentRsvp,
+} from '../core/appointments/appointmentRsvpContract'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
-}
-
-function actionToStatus(action = '') {
-  const normalized = normalizeText(action).toLowerCase()
-  if (normalized === 'accept') return 'Accepted'
-  if (normalized === 'decline') return 'Declined'
-  if (normalized === 'reschedule') return 'Proposed New Time'
-  return ''
-}
-
-function statusCopy(status = '') {
-  if (status === 'Accepted') return 'Thanks, your attendance has been confirmed.'
-  if (status === 'Declined') return 'Thanks, your response has been recorded.'
-  if (status === 'Proposed New Time') return 'Thanks, your alternative time request has been sent to the Arch9 team.'
-  return 'Choose a response for this appointment request.'
 }
 
 export default function AppointmentRsvpPage() {
@@ -37,17 +28,14 @@ export default function AppointmentRsvpPage() {
   const [preferredEndTime, setPreferredEndTime] = useState('')
   const [resultStatus, setResultStatus] = useState('')
 
-  const selectedStatus = useMemo(() => actionToStatus(selectedAction), [selectedAction])
-  const preferredStartIso = useMemo(() => {
-    if (selectedStatus !== 'Proposed New Time' || !preferredDate || !preferredStartTime) return null
-    const parsed = new Date(`${preferredDate}T${preferredStartTime}`)
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
-  }, [preferredDate, preferredStartTime, selectedStatus])
-  const preferredEndIso = useMemo(() => {
-    if (selectedStatus !== 'Proposed New Time' || !preferredDate || !preferredEndTime) return null
-    const parsed = new Date(`${preferredDate}T${preferredEndTime}`)
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
-  }, [preferredDate, preferredEndTime, selectedStatus])
+  const rsvpContract = useMemo(() => buildAppointmentRsvpContract({
+    action: selectedAction,
+    preferredDate,
+    preferredStartTime,
+    preferredEndTime,
+    message: rescheduleMessage,
+  }), [preferredDate, preferredEndTime, preferredStartTime, rescheduleMessage, selectedAction])
+  const selectedStatus = rsvpContract.value.status
 
   useEffect(() => {
     let cancelled = false
@@ -57,6 +45,9 @@ export default function AppointmentRsvpPage() {
       try {
         if (!isSupabaseConfigured || !supabase) {
           throw new Error('Appointment RSVP is not available in this environment.')
+        }
+        if (!normalizeText(token)) {
+          throw new Error('This appointment RSVP link is invalid or has expired.')
         }
         const rsvpResult = await supabase.rpc('get_appointment_rsvp_by_token', { p_token: token })
         if (rsvpResult.error) throw rsvpResult.error
@@ -83,6 +74,9 @@ export default function AppointmentRsvpPage() {
             meeting_url: row.meeting_url,
             status: row.status,
           })
+          if (isCompletedAppointmentRsvp(row.rsvp_status)) {
+            setResultStatus(row.rsvp_status)
+          }
         }
       } catch (loadError) {
         if (!cancelled) setError(loadError?.message || 'Unable to load this appointment RSVP.')
@@ -98,28 +92,29 @@ export default function AppointmentRsvpPage() {
 
   async function submitResponse(event) {
     event.preventDefault()
-    if (!participant?.participant_id || !selectedStatus) return
+    if (!participant?.participant_id) return
+    if (!rsvpContract.isValid) {
+      setError(rsvpContract.errors[0]?.message || 'Choose a valid appointment response.')
+      return
+    }
     setSubmitting(true)
     setError('')
     try {
-      const updatePayload = {
-        rsvp_status: selectedStatus,
-        proposed_new_time: preferredStartIso,
-        preferred_end: preferredEndIso,
-        rsvp_comment: selectedStatus === 'Proposed New Time' ? normalizeText(rescheduleMessage) || null : null,
-        responded_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
       const result = await supabase.rpc('submit_appointment_rsvp', {
         p_token: token,
         p_rsvp_status: selectedStatus,
-        p_proposed_new_time: updatePayload.proposed_new_time,
-        p_preferred_end: updatePayload.preferred_end,
-        p_rsvp_comment: updatePayload.rsvp_comment,
+        p_proposed_new_time: rsvpContract.value.proposedNewTime,
+        p_preferred_end: rsvpContract.value.preferredEnd,
+        p_rsvp_comment: rsvpContract.value.comment,
       })
       if (result.error) throw result.error
-      setResultStatus(selectedStatus)
-      setParticipant((previous) => previous ? { ...previous, rsvp_status: selectedStatus } : previous)
+      const response = Array.isArray(result.data) ? result.data[0] : null
+      if (!response?.participant_id) {
+        throw new Error('This appointment RSVP link is invalid, expired, or already closed.')
+      }
+      const recordedStatus = normalizeText(response.rsvp_status) || selectedStatus
+      setResultStatus(recordedStatus)
+      setParticipant((previous) => previous ? { ...previous, rsvp_status: recordedStatus } : previous)
     } catch (submitError) {
       setError(submitError?.message || 'Unable to record your RSVP right now.')
     } finally {
@@ -154,7 +149,7 @@ export default function AppointmentRsvpPage() {
 
             {resultStatus ? (
               <div className="mt-5 rounded-[16px] border border-[#cfe6d7] bg-[#effaf2] px-4 py-4 text-sm font-semibold text-[#1f7a43]">
-                {statusCopy(resultStatus)}
+                {getAppointmentRsvpStatusCopy(resultStatus)}
               </div>
             ) : (
               <form className="mt-5 space-y-4" onSubmit={submitResponse}>
@@ -187,6 +182,8 @@ export default function AppointmentRsvpPage() {
                         type="date"
                         value={preferredDate}
                         onChange={(event) => setPreferredDate(event.target.value)}
+                        min={new Intl.DateTimeFormat('en-CA', { timeZone: APPOINTMENT_RSVP_TIMEZONE }).format(new Date())}
+                        required
                         className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
                       />
                     </label>
@@ -196,6 +193,7 @@ export default function AppointmentRsvpPage() {
                         type="time"
                         value={preferredStartTime}
                         onChange={(event) => setPreferredStartTime(event.target.value)}
+                        required
                         className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
                       />
                     </label>
@@ -216,6 +214,7 @@ export default function AppointmentRsvpPage() {
                         onChange={(event) => setRescheduleMessage(event.target.value)}
                         className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
                         placeholder="Share a note for the scheduler."
+                        maxLength={1000}
                       />
                     </label>
                   </div>
@@ -223,13 +222,14 @@ export default function AppointmentRsvpPage() {
 
                 <button
                   type="submit"
-                  disabled={!selectedStatus || submitting || (selectedStatus === 'Proposed New Time' && !preferredStartIso)}
+                  disabled={!rsvpContract.isValid || submitting}
                   className="inline-flex h-11 items-center justify-center rounded-[14px] bg-[#214f75] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(33,79,117,0.18)] disabled:opacity-50"
                 >
                   {submitting ? 'Saving...' : 'Submit RSVP'}
                 </button>
               </form>
             )}
+            <p className="mt-4 text-xs text-[#6d829a]">Times are interpreted in {APPOINTMENT_RSVP_TIMEZONE}.</p>
           </>
         )}
         <Link to="/bridge" className="mt-6 inline-flex text-sm font-semibold text-[#214f75]">Back to Arch9</Link>

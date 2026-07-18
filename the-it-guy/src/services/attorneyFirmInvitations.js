@@ -19,6 +19,7 @@ import {
   resolveInviteExpiryIso,
 } from './attorneyFirmServiceShared'
 import { createOrActivateAttorneyFirmMember } from './attorneyFirmMembers'
+import { deriveAttorneyProfessionalProfile } from '../constants/attorneyRoleCatalog.js'
 
 function isMissingInviteRpcError(error) {
   if (!error) return false
@@ -49,6 +50,8 @@ export async function inviteAttorneyFirmMember({
   role,
   departmentId = null,
   expiresInDays = 7,
+  professionalRole = '',
+  practiceQualifications = [],
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -56,6 +59,11 @@ export async function inviteAttorneyFirmMember({
   const normalizedFirmId = normalizeText(firmId)
   const normalizedEmail = normalizeEmail(email)
   const normalizedRole = assertRole(role)
+  const professionalProfile = deriveAttorneyProfessionalProfile({
+    role: normalizedRole,
+    professionalRole,
+    practiceQualifications,
+  })
 
   if (!normalizedFirmId) {
     throw new Error('Firm id is required.')
@@ -69,6 +77,8 @@ export async function inviteAttorneyFirmMember({
     firm_id: normalizedFirmId,
     email: normalizedEmail,
     role: normalizedRole,
+    professional_role: professionalProfile.professionalRole,
+    practice_qualifications: professionalProfile.practiceQualifications,
     department_id: departmentId || null,
     invited_by: actor.id,
     token,
@@ -79,7 +89,7 @@ export async function inviteAttorneyFirmMember({
   const query = await client
     .from('attorney_firm_invitations')
     .insert(payload)
-    .select('id, firm_id, email, role, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
+    .select('id, firm_id, email, role, professional_role, practice_qualifications, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
     .single()
 
   if (query.error) {
@@ -101,6 +111,8 @@ export async function inviteAttorneyFirmMember({
         legacy_invite_id: query.data.id,
         attorney_firm_id: query.data.firm_id,
         department_id: query.data.department_id,
+        attorney_professional_role: professionalProfile.professionalRole,
+        attorney_practice_qualifications: professionalProfile.practiceQualifications,
       },
     })
   } catch (canonicalError) {
@@ -121,7 +133,7 @@ export async function getAttorneyFirmInvitations(firmId, { status = null } = {})
 
   let query = client
     .from('attorney_firm_invitations')
-    .select('id, firm_id, email, role, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
+    .select('id, firm_id, email, role, professional_role, practice_qualifications, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
     .eq('firm_id', normalizedFirmId)
     .order('created_at', { ascending: false })
 
@@ -190,7 +202,7 @@ export async function acceptAttorneyFirmInvitation(token) {
   const nowIso = new Date().toISOString()
   const invitationQuery = await client
     .from('attorney_firm_invitations')
-    .select('id, firm_id, email, role, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
+    .select('id, firm_id, email, role, professional_role, practice_qualifications, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
     .eq('token', normalizedToken)
     .maybeSingle()
 
@@ -228,6 +240,8 @@ export async function acceptAttorneyFirmInvitation(token) {
     firmId: invitation.firm_id,
     userId: user.id,
     role: invitation.role,
+    professionalRole: invitation.professional_role,
+    practiceQualifications: invitation.practice_qualifications,
     departmentId: invitation.department_id || null,
     status: 'active',
     invitedBy: invitation.invited_by || null,
@@ -240,7 +254,7 @@ export async function acceptAttorneyFirmInvitation(token) {
       accepted_at: nowIso,
     })
     .eq('id', invitation.id)
-    .select('id, firm_id, email, role, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
+    .select('id, firm_id, email, role, professional_role, practice_qualifications, department_id, invited_by, token, status, expires_at, accepted_at, created_at, updated_at')
     .single()
 
   if (inviteUpdate.error) {

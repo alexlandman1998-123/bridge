@@ -34,6 +34,7 @@ import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
 import {
   appendDocumentPacketEvent,
   createDocumentPacket,
+  createEditableDocumentDraftFromTemplate,
   fetchDocumentPacket,
   listDocumentPackets,
   resolveDocumentPacketBranding,
@@ -54,6 +55,7 @@ import {
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
+import { fetchDocumentExperienceRuntimeRolloutAccess } from '../services/documentExperienceRuntimeRolloutService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -2421,6 +2423,7 @@ export default function LegalDocumentWorkspacePage() {
   const [preferredTransferAttorneysError, setPreferredTransferAttorneysError] = useState('')
   const [selectedTransferAttorneyId, setSelectedTransferAttorneyId] = useState('')
   const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
+  const [runtimeRolloutAccess, setRuntimeRolloutAccess] = useState({ organisationId: '', decision: null })
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -2442,6 +2445,20 @@ export default function LegalDocumentWorkspacePage() {
     : normalizeKey(initialStatus?.packet?.packet_type || initialStatus?.packetType || 'mandate')
   const documentStartSourceMode = normalizeKey(searchParams.get('sourceMode'))
   const documentStartEntryPoint = normalizeKey(searchParams.get('documentStart'))
+
+  useEffect(() => {
+    if (loadingContext) return undefined
+    let active = true
+    const scopedOrganisationId = normalizeText(organisationId)
+    fetchDocumentExperienceRuntimeRolloutAccess({ organisationId: scopedOrganisationId })
+      .then((decision) => {
+        if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision })
+      })
+      .catch(() => {
+        if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision: { allowed: false, title: 'Document rollout unavailable', message: 'The runtime rollout check could not be completed.', solution: { phases: [{ id: 'N6.1', action: 'Retry after the rollout service is restored.' }] } } })
+      })
+    return () => { active = false }
+  }, [loadingContext, organisationId])
   const documentStartLegalScenario = useMemo(
     () => readDocumentStartLegalScenarioParams(searchParams, packetType),
     [packetType, searchParams],
@@ -3164,8 +3181,7 @@ export default function LegalDocumentWorkspacePage() {
       throw new Error('A transaction is required before generating an OTP.')
     }
 
-    const packet = await withLegalWorkspaceTimeout(
-      createDocumentPacket({
+    const packetInput = {
         organisationId,
         packetType,
         title: `${resolveDocumentLabel(packetType)} - ${transactionReference}`,
@@ -3189,7 +3205,22 @@ export default function LegalDocumentWorkspacePage() {
           ...(packetType === 'mandate' ? { mandateDraft: effectiveMandateDraft } : {}),
           ...(packetType === 'otp' ? { otpDraft: effectiveOtpDraft } : {}),
         },
-      }),
+      }
+    const templateStatus = normalizeText(template?.status || template?.template_status || template?.metadata_json?.template_status).toLowerCase()
+    const templateFormat = normalizeText(template?.template_format || template?.templateFormat).toLowerCase()
+    const canCreateEditableDraft = isUuidLike(template?.id) &&
+      ['published', 'active', 'approved', 'live'].includes(templateStatus) &&
+      template?.is_active !== false &&
+      ['structured', 'json'].includes(templateFormat)
+    const packet = await withLegalWorkspaceTimeout(
+      canCreateEditableDraft
+        ? createEditableDocumentDraftFromTemplate({
+            ...packetInput,
+            placeholders: packetType === 'mandate'
+              ? effectiveMandateDraft?.placeholders || {}
+              : effectiveOtpDraft?.placeholders || {},
+          })
+        : createDocumentPacket(packetInput),
       'Packet creation is taking too long.',
       LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS,
     )
@@ -3362,7 +3393,7 @@ export default function LegalDocumentWorkspacePage() {
     routeListingId,
   ])
 
-  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
+  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false, editableSections = null, renderFreeze = null } = {}) => {
     onProgress?.('Preparing draft...')
     if (packetType === 'mandate' && !effectiveMandateDraft.transferAttorneyPreferredPartnerId && !effectiveMandateDraft.transferAttorneySelectionDeferred) {
       throw new Error('Select the seller\'s transfer attorney or explicitly defer the nomination before generating the mandate.')
@@ -3447,6 +3478,12 @@ export default function LegalDocumentWorkspacePage() {
       branding: workspaceBranding,
       settings: workspaceSettings,
     })
+    if (Array.isArray(editableSections) && editableSections.length) {
+      generationContext.editableSections = editableSections
+    }
+    if (renderFreeze?.freezeId) {
+      generationContext.editableRenderFreeze = renderFreeze
+    }
     if (packetType === 'otp') {
       const otpContext = buildOtpDraftGenerationOverrides({
         transaction: generationContext.transaction || transaction,
@@ -3785,7 +3822,7 @@ export default function LegalDocumentWorkspacePage() {
     workspaceSettings,
   ])
 
-  const handleSend = useCallback(async ({ resend = false, signerLinks = [], packetId: sentPacketId = '', targetSignerRole = '', signingStatus = '' } = {}) => {
+  const handleSend = useCallback(async ({ resend = false, reminder = false, signerLinks = [], packetId: sentPacketId = '', targetSignerRole = '', signingStatus = '' } = {}) => {
     const shouldResolveStatus = packetType === 'otp' || !resend
     const status = shouldResolveStatus ? await resolveCurrentStatus() : null
     const latestVersion = status ? getLatestVersion(status) : null
@@ -3816,6 +3853,7 @@ export default function LegalDocumentWorkspacePage() {
               mandateType: 'Offer to Purchase',
               portalLink: normalizeText(signer.signing_link),
               resend: Boolean(resend),
+              reminder: Boolean(reminder),
             },
           }),
           `The OTP signing email to ${recipientEmail} timed out before delivery was confirmed.`,
@@ -3895,6 +3933,7 @@ export default function LegalDocumentWorkspacePage() {
               portalLink: signingLink,
               agentName,
               resend: Boolean(resend),
+              reminder: Boolean(reminder),
             },
           }),
           `The mandate signing email to the ${recipientLabelLower} timed out before the email provider confirmed delivery. The signing link is prepared; use Resend from this page if no email arrives.`,
@@ -3952,10 +3991,12 @@ export default function LegalDocumentWorkspacePage() {
       void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',
-        activityNote: resend
+        activityNote: reminder
+          ? `Signing reminder was sent to the ${recipientLabelLower}.`
+          : resend
           ? `Mandate signing link was resent to the ${recipientLabelLower}.`
           : `Mandate was sent to the ${recipientLabelLower} for digital signing.`,
-        outcome: resend ? `Signing link resent to ${recipientLabelLower}` : `Sent to ${recipientLabelLower} for digital signing`,
+        outcome: reminder ? `Signing reminder sent to ${recipientLabelLower}` : resend ? `Signing link resent to ${recipientLabelLower}` : `Sent to ${recipientLabelLower} for digital signing`,
       })
       window.dispatchEvent(new Event('itg:transaction-updated'))
       return {
@@ -4342,6 +4383,30 @@ export default function LegalDocumentWorkspacePage() {
             </Button>
           </div>
         </div>
+      </section>
+    )
+  }
+
+  const rolloutScopeMatches = runtimeRolloutAccess.organisationId === normalizeText(organisationId)
+  if (!rolloutScopeMatches || !runtimeRolloutAccess.decision) {
+    return (
+      <section className="flex min-h-[420px] items-center justify-center rounded-[18px] border border-[#dce6f2] bg-white text-sm font-semibold text-[#60758d]">
+        Checking document rollout access...
+      </section>
+    )
+  }
+
+  if (runtimeRolloutAccess.decision?.allowed !== true) {
+    const rolloutDecision = runtimeRolloutAccess.decision
+    return (
+      <section className="rounded-[20px] border border-[#f0d8aa] bg-[#fffaf0] p-6" data-testid="document-runtime-rollout-blocked">
+        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.08em] text-[#8a5a12]"><AlertCircle size={16} /> Controlled document rollout</p>
+        <h1 className="mt-2 text-2xl font-semibold text-[#142132]">{rolloutDecision.title || 'Document workspace temporarily unavailable'}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6b7d93]">{rolloutDecision.message}</p>
+        <ol className="mt-4 space-y-2 text-sm text-[#52677f]">
+          {(rolloutDecision.solution?.phases || []).map((phase) => <li key={phase.id}><span className="font-semibold">{phase.id}</span> {phase.action}</li>)}
+        </ol>
+        <Button type="button" variant="secondary" className="mt-5" onClick={handleBack}><ArrowLeft size={14} /> Back</Button>
       </section>
     )
   }

@@ -1,39 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
-  getAttorneyRolePermissions,
+  getAttorneyProfessionalProfilePermissions,
   getCurrentUserAttorneyMembership,
-  hasAttorneyPermission,
+  hasAttorneyProfessionalPermission,
 } from '../lib/attorneyPermissions'
 import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
 
-const EMPTY_PERMISSIONS = getAttorneyRolePermissions('candidate_attorney')
-
-function buildBootstrapMembership({ firmId = '', userId = '' } = {}) {
-  const nowIso = new Date().toISOString()
-  return {
-    id: `bootstrap-${firmId}-${userId || 'current'}`,
-    firmId,
-    userId,
-    departmentId: null,
-    role: 'firm_admin',
-    status: 'active',
-    joinedAt: nowIso,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-    isActive: true,
-  }
-}
+const EMPTY_PERMISSIONS = getAttorneyProfessionalProfilePermissions({})
 
 function normalizeOperationalMembership(membership = null, { firmId = '', userId = '' } = {}) {
-  if (!membership) return firmId ? buildBootstrapMembership({ firmId, userId }) : null
+  if (!membership) return null
   const status = String(membership.status || '').trim().toLowerCase()
-  if (status === 'suspended' || status === 'removed') return membership
   return {
     ...membership,
-    role: membership.role || 'firm_admin',
-    status: 'active',
-    isActive: true,
+    firmId: membership.firmId || firmId || null,
+    userId: membership.userId || userId || null,
+    role: membership.role || '',
+    professionalRole: membership.professionalRole || '',
+    practiceQualifications: membership.practiceQualifications || [],
+    status: status || 'unknown',
+    isActive: status === 'active',
   }
 }
 
@@ -102,19 +89,22 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
     }
   }, [appRole, firmId, profile?.id, profile?.primaryAttorneyFirmId, profileLoading, workspaceReady])
 
-  const role = membership?.role || null
-  const permissions = role ? getAttorneyRolePermissions(role) : EMPTY_PERMISSIONS
+  const role = membership?.professionalRole || null
+  const compatibilityRole = membership?.role || null
+  const permissions = role ? getAttorneyProfessionalProfilePermissions(membership) : EMPTY_PERMISSIONS
   const isActiveMembership = Boolean(membership?.isActive || membership?.status === 'active')
 
   const hasPermission = useMemo(
-    () => (permissionKey) => (role && isActiveMembership ? hasAttorneyPermission(role, permissionKey) : false),
-    [isActiveMembership, role],
+    () => (permissionKey) => (role && isActiveMembership ? hasAttorneyProfessionalPermission(membership, permissionKey) : false),
+    [isActiveMembership, membership, role],
   )
 
   return {
     firmId: resolvedFirmId || null,
     membership: membership ? { ...membership, isActive: isActiveMembership } : null,
     role,
+    professionalRole: role,
+    compatibilityRole,
     permissions,
     hasPermission,
     canViewManagementDashboard: hasPermission('can_view_firm_dashboard'),

@@ -8,13 +8,11 @@ function eventSignerId(event = {}) {
 
 export function assessFinalSignedCompletion({ packet = {}, version = {}, signers = [], fields = [], events = [], evidence = {} } = {}) {
   const reasons = []
-  const validation = version.validation_summary_json && typeof version.validation_summary_json === 'object' ? version.validation_summary_json : {}
-  const lock = validation.lock_snapshot && typeof validation.lock_snapshot === 'object' ? validation.lock_snapshot : {}
   const packetId = text(packet.id)
   const versionId = text(version.id)
   if (text(packet.status).toLowerCase() !== 'completed' || !Number.isFinite(Date.parse(packet.completed_at || ''))) reasons.push('F2_PACKET_NOT_COMPLETED')
   if (!packetId || !versionId || text(version.packet_id) !== packetId || Number(packet.current_version_number) !== Number(version.version_number)) reasons.push('F2_VERSION_BINDING_INVALID')
-  if (text(version.render_status).toLowerCase() !== 'generated' || validation.content_locked !== true || text(validation.review_state).toLowerCase() !== 'locked' || text(lock.lockDecision).toLowerCase() !== 'locked' || text(lock.packetId) !== packetId || text(lock.versionId) !== versionId) reasons.push('F2_LOCK_BINDING_INVALID')
+  if (text(version.render_status).toLowerCase() !== 'generated' || text(version.organisation_id) !== text(packet.organisation_id)) reasons.push('F2_GENERATED_VERSION_BINDING_INVALID')
   const signerRows = Array.isArray(signers) ? signers : []
   if (!signerRows.length || signerRows.some((signer) => text(signer.packet_version_id) !== versionId || text(signer.status).toLowerCase() !== 'signed' || !Number.isFinite(Date.parse(signer.signed_at || '')))) reasons.push('F2_SIGNERS_INCOMPLETE')
   const requiredFields = (Array.isArray(fields) ? fields : []).filter((field) => field.required === true)

@@ -2,7 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
-import { assertLegalTemplateApproved } from "../../../the-it-guy/src/core/documents/legalTemplateApproval.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -83,15 +82,15 @@ async function requireApprovedOtpTemplate({ supabase, templateId, templatePath, 
   templateBucket: string;
   templateBase64: string;
 }) {
-  if (!templateId) throw Object.assign(new Error("An approved OTP template is required."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
+  if (!templateId) throw Object.assign(new Error("An OTP template is required."), { code: "TEMPLATE_REQUIRED", status: 422 });
   const result = await supabase
     .from("document_packet_templates")
     .select("id, packet_type, template_key, status, is_active, template_storage_bucket, template_storage_path, metadata_json")
     .eq("id", templateId)
     .maybeSingle();
   if (result.error) throw result.error;
-  if (!result.data) throw Object.assign(new Error("The selected OTP template was not found."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
-  const assessment = assertLegalTemplateApproved(result.data, { expectedPacketType: "otp" });
+  if (!result.data) throw Object.assign(new Error("The selected OTP template was not found."), { code: "TEMPLATE_NOT_FOUND", status: 422 });
+  if (result.data.is_active === false) throw Object.assign(new Error("The selected OTP template is inactive."), { code: "TEMPLATE_INACTIVE", status: 422 });
   const approvedPath = normalizeText(result.data.template_storage_path);
   const approvedBucket = normalizeText(result.data.template_storage_bucket);
   if (templateBase64 || !approvedPath || templatePath !== approvedPath || (approvedBucket && templateBucket !== approvedBucket)) {
@@ -100,16 +99,7 @@ async function requireApprovedOtpTemplate({ supabase, templateId, templatePath, 
       status: 422,
     });
   }
-  return assessment;
-}
-
-function requirePilotOrganisation(organisationId: unknown) {
-  const enabled = normalizeText(Deno.env.get("LEGAL_DOCUMENT_PILOT_ENABLED")).toLowerCase() === "true";
-  const cohort = String(Deno.env.get("LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS") || "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (!enabled) throw Object.assign(new Error("Legal document pilot generation is not enabled."), { code: "LEGAL_DOCUMENT_PILOT_DISABLED", status: 503 });
-  if (!normalizeText(organisationId) || !cohort.includes(normalizeText(organisationId))) {
-    throw Object.assign(new Error("This organisation is not in the controlled legal document pilot."), { code: "LEGAL_DOCUMENT_PILOT_ACCESS_REQUIRED", status: 403 });
-  }
+  return { templateId: result.data.id };
 }
 
 function normalizeNumber(value: unknown) {
@@ -569,7 +559,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const transaction = transactionQuery.data as Record<string, unknown>;
-    requirePilotOrganisation(transaction.organisation_id);
 
     const buyerPromise = transaction.buyer_id
       ? supabase.from("buyers").select("id, name, email, phone").eq("id", String(transaction.buyer_id)).maybeSingle()
@@ -730,7 +719,7 @@ Deno.serve(async (req: Request) => {
     const outputSha256 = await sha256Hex(outputBytes);
     return jsonResponse(200, {
       success: true,
-      legalApproval: { verified: true, reference: approval.approval.reference },
+      templateSource: { verified: true, templateId: approval.templateId },
       transactionId,
       output: {
         bucket: outputBucketName,

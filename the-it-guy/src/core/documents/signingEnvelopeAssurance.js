@@ -1,4 +1,3 @@
-import { assessDraftLock } from './draftLockAssurance.js'
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile.js'
 import { resolveMandateSecondarySignerConfig } from '../../lib/mandateSignatureRules.js'
 
@@ -18,20 +17,32 @@ function finiteNumber(value) {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function assessSigningEnvelope({ packet = {}, version = {}, signers = [], fields = [] } = {}) {
-  const lock = assessDraftLock({ packet, version })
   const signerRows = Array.isArray(signers) ? signers : []
   const fieldRows = Array.isArray(fields) ? fields : []
-  const reasons = lock.locked ? [] : ['E3_E2_LOCK_INVALID']
+  const reasons = []
   const packetId = text(packet.id)
   const versionId = text(version.id)
   const organisationId = text(packet.organisation_id || packet.organisationId)
   const packetType = key(packet.packet_type || packet.packetType)
+  const packetStatus = key(packet.status)
   const placeholders = version.placeholders_resolved_json && typeof version.placeholders_resolved_json === 'object'
     ? version.placeholders_resolved_json
     : {}
   const context = packet.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
+
+  if (
+    !packetId ||
+    !versionId ||
+    text(version.packet_id || version.packetId) !== packetId ||
+    (organisationId && text(version.organisation_id || version.organisationId) !== organisationId) ||
+    Number(packet.current_version_number || packet.currentVersionNumber) !== Number(version.version_number || version.versionNumber) ||
+    key(version.render_status || version.renderStatus) !== 'generated'
+  ) reasons.push('E3_VERSION_BINDING_INVALID')
+  if (!['signing_prep', 'sent', 'partially_signed', 'completed'].includes(packetStatus)) {
+    reasons.push('E3_PACKET_NOT_READY_TO_SEND')
+  }
 
   if (!signerRows.length) reasons.push('E3_SIGNERS_MISSING')
   if (!fieldRows.length) reasons.push('E3_FIELDS_MISSING')
@@ -95,7 +106,7 @@ export function assessSigningEnvelope({ packet = {}, version = {}, signers = [],
   return {
     ready: reasons.length === 0,
     reasons: [...new Set(reasons)],
-    lock,
+    versionBindingValid: !reasons.includes('E3_VERSION_BINDING_INVALID'),
     signerCount: signerRows.length,
     fieldCount: fieldRows.length,
     signerRoles: [...signerByRole.keys()],
@@ -107,7 +118,7 @@ export function assessSigningEnvelope({ packet = {}, version = {}, signers = [],
 export function assertSigningEnvelopeReady(input = {}) {
   const assessment = assessSigningEnvelope(input)
   if (assessment.ready) return assessment
-  const error = new Error('The signing envelope is incomplete or is not bound to the exact locked draft.')
+  const error = new Error('The signing envelope is incomplete or is not bound to the exact current generated version.')
   error.code = 'SIGNING_ENVELOPE_NOT_READY'
   error.details = assessment
   throw error

@@ -26,7 +26,7 @@ assert.match(source, /Open Transfer/, 'Incoming row action should open the trans
 assert.match(source, /Open Signed Mandate/, 'Pre-instruction rows should open the signed mandate')
 assert.match(source, /row\.isPreInstruction/, 'Pre-instruction rows should be explicitly gated from formal instruction actions')
 assert.match(source, /Formal instruction actions unlock after an accepted OTP/, 'Pre-instruction rows should explain why matter actions are locked')
-assert.match(source, /Follow Up OTP/, 'Incoming row actions should include OTP follow-up')
+assert.doesNotMatch(incomingActionsSource, /Follow Up OTP|Request Documents|Assign Attorney|Email Client/, 'Incoming row actions should not expose commands without handlers')
 assert.match(source, /acceptAttorneyIncomingMatterInstruction/, 'Incoming ready rows should call the acceptance command')
 assert.match(source, /Accept Transfer/, 'Incoming ready rows should expose transfer acceptance')
 assert.match(source, /statusKey === 'ready_for_acceptance'/, 'Accept action should be gated to ready incoming rows')
@@ -34,7 +34,8 @@ assert.match(source, /declineAttorneyIncomingMatterInstruction/, 'Incoming rows 
 assert.match(source, /function IncomingDeclineDialog/, 'Declining an incoming matter should collect a reason')
 assert.match(source, /Decline Transfer/, 'Incoming row actions should expose transfer decline')
 assert.match(source, /getAttorneyMatterWorkspace\(\{ view: viewKey \}\)/, 'Accepting an incoming matter should refresh the queue')
-assert.match(source, /incoming=\{usesIncomingQueue\}/, 'Bulk actions should switch for the incoming route')
+assert.doesNotMatch(source, /incoming=\{usesIncomingQueue\}/, 'Bulk selection should not expose an unimplemented incoming action mode')
+assert.match(source, /Bulk actions are unavailable until a supported operation is selected/, 'Bulk selection should explain why unsupported operations are unavailable')
 assert.doesNotMatch(incomingActionsSource, /Archive/, 'Incoming action menu should not inherit archive-first register actions')
 assert.doesNotMatch(incomingTableSource, /StageProgress/, 'Incoming table should not render the generic matter progress column')
 

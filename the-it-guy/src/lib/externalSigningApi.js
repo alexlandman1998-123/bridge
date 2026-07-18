@@ -1,4 +1,6 @@
 import { invokeEdgeFunction } from './supabaseClient'
+import { assertCanonicalSigningSession, buildCanonicalSigningSession } from '../core/documents/signingSessionContract'
+import { buildSigningCompletion } from '../core/documents/signingCompletionContract'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -30,7 +32,42 @@ export async function resolveExternalSignerSession({ token } = {}) {
     throw edgeError
   }
 
-  return data
+  const canonicalInput = data?.signingSession || data?.signing_session || null
+  const signingSession = canonicalInput
+    ? assertCanonicalSigningSession(canonicalInput)
+    : buildCanonicalSigningSession({
+        document: {
+          id: data?.session?.packet?.id,
+          packetId: data?.session?.packet?.id,
+          type: data?.session?.packet?.packet_type,
+          title: data?.session?.packet?.title,
+        },
+        version: {
+          id: data?.session?.version?.id,
+          number: data?.session?.version?.version_number,
+          status: data?.session?.version?.render_status,
+          documentId: data?.session?.version?.rendered_document_id,
+          fileName: data?.session?.version?.rendered_file_name,
+          pdfPath: data?.session?.version?.rendered_file_path,
+          pdfUrl: data?.session?.documentPreviewUrl,
+        },
+        signer: data?.session?.signer,
+        fields: data?.session?.fields,
+        binding: data?.session?.sessionBinding,
+        presentation: data?.session?.previewData,
+      })
+
+  return {
+    ...data,
+    signingSession,
+    completion: data?.completion ? buildSigningCompletion(data.completion) : null,
+    session: data?.session
+      ? {
+          ...data.session,
+          completion: data?.completion ? buildSigningCompletion(data.completion) : data.session.completion || null,
+        }
+      : data?.session,
+  }
 }
 
 async function invokeSignerAction(payload = {}) {

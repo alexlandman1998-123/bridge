@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { assessFinalSignedCompletion } from '../src/core/documents/finalSignedCompletionAssurance.js'
 
 const packet = { id: '11111111-1111-4111-8111-111111111111', organisation_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', current_version_number: 2, status: 'completed', completed_at: '2026-07-17T14:00:00Z' }
-const version = { id: '22222222-2222-4222-8222-222222222222', packet_id: packet.id, organisation_id: packet.organisation_id, version_number: 2, render_status: 'generated', final_signed_file_path: 'signed-documents/final.pdf', final_signed_file_bucket: 'documents', finalised_at: '2026-07-17T14:00:00Z', validation_summary_json: { review_state: 'locked', content_locked: true, lock_snapshot: { lockDecision: 'locked', packetId: packet.id, versionId: '22222222-2222-4222-8222-222222222222' } } }
+const version = { id: '22222222-2222-4222-8222-222222222222', packet_id: packet.id, organisation_id: packet.organisation_id, version_number: 2, render_status: 'generated', final_signed_file_path: 'signed-documents/final.pdf', final_signed_file_bucket: 'documents', finalised_at: '2026-07-17T14:00:00Z', validation_summary_json: {} }
 const signer = { id: '33333333-3333-4333-8333-333333333333', packet_version_id: version.id, status: 'signed', signed_at: '2026-07-17T13:59:00Z' }
 const field = { id: '44444444-4444-4444-8444-444444444444', packet_version_id: version.id, required: true, status: 'completed', field_type: 'initial', signature_asset_path: `document-signatures/${packet.id}/${signer.id}/initial.png` }
 const events = ['signer_link_viewed', 'signer_completed_signing'].map((event_type) => ({ version_id: version.id, event_type, event_payload_json: { signerId: signer.id } })).concat({ version_id: version.id, event_type: 'all_signers_completed', event_payload_json: {} })
@@ -12,6 +12,7 @@ assert.equal(assessFinalSignedCompletion({ packet, version, signers: [signer], f
 assert.ok(assessFinalSignedCompletion({ packet, version, signers: [{ ...signer, status: 'viewed' }], fields: [field], events, evidence }).reasons.includes('F2_SIGNERS_INCOMPLETE'))
 assert.ok(assessFinalSignedCompletion({ packet, version, signers: [signer], fields: [{ ...field, signature_asset_path: '' }], events, evidence }).reasons.includes('F2_SIGNATURE_ASSET_MISSING'))
 assert.ok(assessFinalSignedCompletion({ packet, version, signers: [signer], fields: [field], events, evidence: { ...evidence, sha256: 'bad' } }).reasons.includes('F2_FINAL_EVIDENCE_INVALID'))
+assert.ok(assessFinalSignedCompletion({ packet, version: { ...version, organisation_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }, signers: [signer], fields: [field], events, evidence }).reasons.includes('F2_GENERATED_VERSION_BINDING_INVALID'))
 
 const mandate = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
 const otp = fs.readFileSync('../supabase/functions/generate-final-signed-otp/index.ts', 'utf8')

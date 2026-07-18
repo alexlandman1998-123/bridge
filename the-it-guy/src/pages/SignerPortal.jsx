@@ -1,5 +1,5 @@
-import { Check, ChevronRight, Loader2, LockKeyhole, PenLine, ShieldCheck, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronRight, Download, FileCheck2, Loader2, LockKeyhole, PenLine, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -9,7 +9,33 @@ import {
   resolveExternalSignerSession,
   saveSignerAsset,
 } from '../lib/externalSigningApi'
+import { fetchClientOtpSigningByToken, submitClientOtpSignature } from '../lib/api'
+import {
+  adaptCanonicalSigningSessionToPortal,
+  completePortalSessionField,
+} from '../core/documents/signingSessionPortalAdapter'
 import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
+import { buildSigningCompletion } from '../core/documents/signingCompletionContract'
+import { getSigningCompletionAccess } from '../core/documents/signingCompletionAccess'
+import { buildDocumentRoleGuidance } from '../core/documents/documentRoleGuidance'
+import DocumentRoleGuidanceCard from '../components/documents/DocumentRoleGuidanceCard'
+import { buildDocumentRoleActions } from '../core/documents/documentRoleActions'
+import DocumentRoleActionBar from '../components/documents/DocumentRoleActionBar'
+import { buildDocumentResponsibility } from '../core/documents/documentResponsibility'
+import DocumentResponsibilityCard from '../components/documents/DocumentResponsibilityCard'
+import { buildDocumentHelpRecovery } from '../core/documents/documentHelpRecovery'
+import DocumentHelpRecoveryCard from '../components/documents/DocumentHelpRecoveryCard'
+import { buildDocumentJourneyProgress } from '../core/documents/documentJourneyProgress'
+import { DocumentJourneyProgress } from '../components/documents/DocumentJourneyProgress'
+import { buildDocumentMobileAction } from '../core/documents/documentMobileAction'
+import { DocumentMobileActionDock } from '../components/documents/DocumentMobileActionDock'
+import { buildDocumentAccessibility } from '../core/documents/documentAccessibility'
+import { DocumentAccessibilityNavigation } from '../components/documents/DocumentAccessibilityNavigation'
+import { buildDocumentCommitConfirmation } from '../core/documents/documentCommitConfirmation'
+import { DocumentCommitConfirmation } from '../components/documents/DocumentCommitConfirmation'
+import { buildDocumentOutcomeFeedback } from '../core/documents/documentOutcomeFeedback'
+import { DocumentOutcomeNotice } from '../components/documents/DocumentOutcomeNotice'
+import { recordDocumentExperienceEvent } from '../services/documentExperienceTelemetryService'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -58,6 +84,73 @@ function resolveErrorMessage(error = null) {
     return 'This signing link could not be opened. Please request a new signing link from your agent.'
   }
   return message || 'Unable to process signing right now.'
+}
+
+function SigningCompleteScreen({ completion, packet = {}, signer = {}, version = {}, refreshing = false, onRefresh = null }) {
+  const finalArtifact = completion?.finalArtifact || {}
+  const finalUrl = normalizeText(finalArtifact.url)
+  const documentType = normalizeKey(completion?.document?.type || packet?.packet_type)
+  const completedLabel = documentType === 'otp' ? 'Offer to Purchase' : documentType === 'mandate' ? 'Mandate' : 'Document'
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef3f8] p-4 text-[#142132] sm:p-6">
+      <section className="w-full max-w-2xl rounded-[28px] border border-[#d4e5dc] bg-white px-6 py-8 text-center shadow-[0_24px_70px_rgba(15,32,54,0.12)] sm:px-10 sm:py-11">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#e9f8ef] text-[#237047]">
+          <FileCheck2 className="h-8 w-8" />
+        </div>
+        <p className="mt-5 text-xs font-bold uppercase tracking-[0.14em] text-[#2b7b4d]">Signing complete</p>
+        <h1 className="mt-2 text-2xl font-black text-[#142132] sm:text-3xl">Your {completedLabel} has been signed</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#607387]">
+          Thank you, {completion?.signer?.name || signer?.signer_name || 'Signer'}. Your signature was saved against this transaction and this signing link will not restart the process.
+        </p>
+
+        <div className="mt-7 rounded-[18px] border border-[#d7e2ef] bg-[#f8fbfd] p-4 text-left">
+          <p className="text-sm font-bold text-[#142132]">{completion?.document?.title || packet?.title || 'Signed document'}</p>
+          <p className="mt-1 text-xs text-[#607387]">
+            Version {completion?.version?.number || version?.version_number || '—'} · completed {formatDateTime(completion?.completedAt || completion?.signer?.signedAt)}
+          </p>
+          <p className={`mt-3 flex items-center gap-2 text-xs font-semibold ${completion?.transactionSaved ? 'text-[#276b46]' : 'text-[#8a641f]'}`}>
+            <ShieldCheck className="h-4 w-4" />
+            {completion?.transactionSaved
+              ? 'Completed version locked, verified and saved to the transaction'
+              : 'Completed version locked — transaction publication is being verified'}
+          </p>
+          {completion?.delivery?.emailStatus === 'sent' ? (
+            <p className="mt-2 text-xs font-semibold text-[#276b46]">A secure completed-copy email was delivered.</p>
+          ) : null}
+        </div>
+
+        {finalUrl ? (
+          <a
+            href={finalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-6 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#12385f] px-5 text-sm font-bold text-white shadow-[0_14px_30px_rgba(18,56,95,0.22)] sm:w-auto"
+          >
+            <Download className="h-5 w-5" /> Open completed PDF
+          </a>
+        ) : (
+          <p className="mt-6 rounded-[14px] border border-[#d8e3ef] bg-[#f4f8fc] px-4 py-3 text-sm font-semibold text-[#35546c]">
+            Your part is complete. The final PDF will be available in the transaction once every required signer has finished.
+          </p>
+        )}
+
+        {(!finalUrl || !completion?.transactionSaved) && typeof onRefresh === 'function' ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[12px] border border-[#cbd9e8] bg-white px-4 text-sm font-bold text-[#35546c] disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Checking…' : 'Check for completed copy'}
+          </button>
+        ) : null}
+
+        <p className="mt-6 text-xs leading-5 text-[#7389a2]">You may safely close this page. Reopening this link will continue to show this confirmation.</p>
+      </section>
+    </main>
+  )
 }
 
 function fieldTypeLabel(fieldType = '') {
@@ -498,8 +591,9 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
   )
 }
 
-export default function SignerPortal() {
+export default function SignerPortal({ sessionSource = 'packet' } = {}) {
   const { token = '' } = useParams()
+  const legacyOtpMode = sessionSource === 'legacy-otp'
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -508,11 +602,24 @@ export default function SignerPortal() {
   const [assets, setAssets] = useState({ initial: null, signature: null })
   const [activeFieldId, setActiveFieldId] = useState('')
   const [captureField, setCaptureField] = useState(null)
+  const [legacyOtpSignatureDataUrl, setLegacyOtpSignatureDataUrl] = useState('')
+  const [completeConfirmationOpen, setCompleteConfirmationOpen] = useState(false)
+  const lastSignerJourneyTelemetryRef = useRef('')
+  const lastSignerOutcomeTelemetryRef = useRef('')
+
+  async function resolvePortalSession() {
+    if (legacyOtpMode) {
+      const result = await fetchClientOtpSigningByToken(token)
+      return adaptCanonicalSigningSessionToPortal(result?.signingSession, { completion: result?.completion })
+    }
+    const result = await resolveExternalSignerSession({ token })
+    return result?.session || null
+  }
 
   async function refreshSession() {
-    const result = await resolveExternalSignerSession({ token })
-    setSession(result?.session || null)
-    return result?.session || null
+    const nextSession = await resolvePortalSession()
+    setSession(nextSession)
+    return nextSession
   }
 
   useEffect(() => {
@@ -521,9 +628,9 @@ export default function SignerPortal() {
       try {
         setLoading(true)
         setErrorMessage('')
-        const result = await resolveExternalSignerSession({ token })
+        const result = await resolvePortalSession()
         if (!active) return
-        setSession(result?.session || null)
+        setSession(result)
       } catch (error) {
         if (active) setErrorMessage(resolveErrorMessage(error))
       } finally {
@@ -532,11 +639,23 @@ export default function SignerPortal() {
     }
     void load()
     return () => { active = false }
-  }, [token])
+  }, [legacyOtpMode, token])
+
+  useEffect(() => {
+    const completion = session?.completion
+    if (!completion || !getSigningCompletionAccess(completion).shouldPoll) return undefined
+    const timer = window.setTimeout(() => {
+      void refreshSession().catch((error) => {
+        console.warn('[SignerPortal] Completion refresh is still pending.', error)
+      })
+    }, 15000)
+    return () => window.clearTimeout(timer)
+  }, [legacyOtpMode, session?.completion?.finalArtifact?.ready, session?.completion?.transactionSaved, token])
 
   const signer = session?.signer || {}
   const packet = session?.packet || {}
   const version = session?.version || {}
+  const sessionBinding = session?.sessionBinding || session?.session_binding || {}
   const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
   const documentPreviewUrl = normalizeText(
     session?.documentPreviewUrl ||
@@ -582,6 +701,35 @@ export default function SignerPortal() {
   const canCompleteSigning = progress.remainingCount === 0 && progress.requiredCount > 0
   const signerInstruction = signerInstructionText({ signer, progress })
   const currentCaptureType = normalizeKey(captureField?.field_type)
+  const signerExperienceState = loading ? 'loading' : normalizeKey(signer?.status) || 'pending'
+  const signerOutcomeFeedback = buildDocumentOutcomeFeedback({
+    surface: 'signer_portal',
+    message: statusMessage,
+    remainingFields: progress.remainingCount,
+  })
+  const recordSignerExperience = useCallback((eventName, metadata = {}) => {
+    void recordDocumentExperienceEvent({
+      eventName,
+      surface: 'signer_portal',
+      role: signer?.signer_role,
+      packetType: packet?.packet_type,
+      ...metadata,
+    })
+  }, [packet?.packet_type, signer?.signer_role])
+
+  useEffect(() => {
+    if (!session || lastSignerJourneyTelemetryRef.current === signerExperienceState) return
+    lastSignerJourneyTelemetryRef.current = signerExperienceState
+    recordSignerExperience('journey_viewed', { state: signerExperienceState })
+  }, [recordSignerExperience, session, signerExperienceState])
+
+  useEffect(() => {
+    const category = signerOutcomeFeedback?.category || ''
+    const outcomeKey = `${signerExperienceState}:${category}`
+    if (!category || lastSignerOutcomeTelemetryRef.current === outcomeKey) return
+    lastSignerOutcomeTelemetryRef.current = outcomeKey
+    recordSignerExperience('outcome_shown', { state: signerExperienceState, category })
+  }, [recordSignerExperience, signerExperienceState, signerOutcomeFeedback?.category])
 
   function scrollToField(field = progress.nextField) {
     const fieldId = getFieldId(field)
@@ -605,6 +753,21 @@ export default function SignerPortal() {
   async function applyFieldWithAsset(field, asset) {
     const fieldId = getFieldId(field)
     const fieldType = normalizeKey(field?.field_type)
+    if (legacyOtpMode) {
+      const completedAt = new Date().toISOString()
+      const nextSession = {
+        ...session,
+        fields: fields.map((row) =>
+          getFieldId(row) === fieldId
+            ? { ...row, status: 'completed', completed_at: completedAt }
+            : row,
+        ),
+      }
+      setSession(nextSession)
+      setStatusMessage(`${fieldTypeLabel(fieldType)} added to ${fieldLocationLabel(field, { includeType: false })}. Complete signing to submit it.`)
+      setCaptureField(null)
+      return nextSession
+    }
     await applySignerField({
       token,
       fieldId,
@@ -627,6 +790,13 @@ export default function SignerPortal() {
       setBusyAction(`field_${getFieldId(field)}`)
       setErrorMessage('')
       setStatusMessage('')
+      if (legacyOtpMode) {
+        const asset = { path: 'legacy-otp-local-signature', dataUrl }
+        setLegacyOtpSignatureDataUrl(dataUrl)
+        setAssets((current) => ({ ...current, [assetType]: asset }))
+        await applyFieldWithAsset(field, asset)
+        return
+      }
       const result = await saveSignerAsset({ token, assetType, dataUrl })
       const asset = result?.asset || null
       setAssets((current) => ({ ...current, [assetType]: asset }))
@@ -657,14 +827,37 @@ export default function SignerPortal() {
     }
   }
 
-  async function handleCompleteSigning() {
+  async function handleCompleteSigning(confirmedCompletion = false) {
+    if (!confirmedCompletion) {
+      recordSignerExperience('commit_opened', { state: signerExperienceState, actionId: 'complete_signing' })
+      setCompleteConfirmationOpen(true)
+      return
+    }
+    recordSignerExperience('commit_confirmed', { state: signerExperienceState, actionId: 'complete_signing' })
     try {
       setBusyAction('complete_signing')
       setErrorMessage('')
       setStatusMessage('')
-      await completeSignerSigning({ token })
-      await refreshSession()
-      setStatusMessage('Signing completed successfully.')
+      if (legacyOtpMode) {
+        if (!legacyOtpSignatureDataUrl) {
+          throw new Error('Add your signature before completing signing.')
+        }
+        const result = await submitClientOtpSignature({
+          token,
+          otpDocumentId: session?.version?.rendered_document_id || session?.version?.id || null,
+          signatureDataUrl: legacyOtpSignatureDataUrl,
+          confirmationAccepted: true,
+          signatureName: signer?.signer_name || '',
+        })
+        const signatureField = fields.find((field) => normalizeKey(field?.field_type) === 'signature')
+        setSession({
+          ...completePortalSessionField(session, getFieldId(signatureField), result?.signedAt),
+          completion: result?.completion || null,
+        })
+      } else {
+        await completeSignerSigning({ token })
+        await refreshSession()
+      }
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error))
     } finally {
@@ -672,21 +865,166 @@ export default function SignerPortal() {
     }
   }
 
+  async function handleRefreshCompletion() {
+    try {
+      setBusyAction('refresh_completion')
+      setErrorMessage('')
+      await refreshSession()
+    } catch (error) {
+      setErrorMessage(resolveErrorMessage(error))
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  async function handleRetryPortalSession() {
+    try {
+      setLoading(true)
+      setErrorMessage('')
+      await refreshSession()
+    } catch (error) {
+      setErrorMessage(resolveErrorMessage(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) return <LoadingShell />
 
   if (errorMessage && !session) {
+    const unavailableHelp = buildDocumentHelpRecovery({ surface: 'signer_portal', issue: errorMessage })
     return (
       <main className="min-h-screen bg-[#eef3f8] p-4 text-[#142132] sm:p-6">
-        <div className="mx-auto max-w-4xl rounded-[22px] border border-[#f1d2ce] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+        <div className="mx-auto max-w-4xl space-y-4 rounded-[22px] border border-[#f1d2ce] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
           <h1 className="text-lg font-bold text-[#8e1f15]">Signing Link Unavailable</h1>
           <p className="mt-2 text-sm text-[#8e1f15]">{errorMessage}</p>
+          <DocumentHelpRecoveryCard model={unavailableHelp} busy={loading} compact onAction={() => void handleRetryPortalSession()} />
         </div>
       </main>
     )
   }
 
+  const completion = session?.completion || (normalizeKey(session?.signer?.status) === 'signed'
+    ? buildSigningCompletion({
+        completedAt: session?.signer?.signed_at,
+        document: {
+          id: session?.packet?.id,
+          packetId: session?.packet?.id,
+          type: session?.packet?.packet_type,
+          title: session?.packet?.title,
+          transactionId: session?.packet?.transaction_id,
+          transactionReference: session?.packet?.transaction_reference,
+          propertyLabel: session?.packet?.property_label,
+        },
+        version: { id: session?.version?.id, number: session?.version?.version_number },
+        signer: session?.signer,
+      })
+    : null)
+
+  if (completion) {
+    return (
+      <SigningCompleteScreen
+        completion={completion}
+        packet={packet}
+        signer={signer}
+        version={version}
+        refreshing={busyAction === 'refresh_completion'}
+        onRefresh={() => void handleRefreshCompletion()}
+      />
+    )
+  }
+
+  const signerGuidance = buildDocumentRoleGuidance({
+    surface: 'signer_portal',
+    role: signer?.signer_role,
+    packetType: packet?.packet_type,
+    signerStatus: signer?.status,
+    remainingFields: progress.remainingCount,
+    completedFields: progress.completedCount,
+  })
+  const signerJourney = buildDocumentJourneyProgress({
+    surface: 'signer_portal',
+    signerStatus: signer?.status,
+    requiredFields: progress.requiredCount,
+    completedFields: progress.completedCount,
+  })
+  const signerActions = buildDocumentRoleActions({
+    surface: 'signer_portal',
+    role: signer?.signer_role,
+    remainingFields: progress.remainingCount,
+    requiredFields: progress.requiredCount,
+    canComplete: canCompleteSigning,
+  })
+  const signerResponsibility = buildDocumentResponsibility({
+    surface: 'signer_portal',
+    role: signer?.signer_role,
+    state: signer?.status,
+    signers: session?.signingOrder || [],
+    currentSigner: signer,
+  })
+  const signerHelpRecovery = buildDocumentHelpRecovery({
+    surface: 'signer_portal',
+    role: signer?.signer_role,
+    state: signer?.status,
+    issue: errorMessage,
+    hasPreview: Boolean(documentPreviewUrl || fallbackPreviewHtml),
+  })
+  const signerMobileAction = buildDocumentMobileAction({
+    surface: 'signer_portal',
+    recoveryAction: signerHelpRecovery.hasIssue && signerHelpRecovery.action
+      ? { ...signerHelpRecovery.action, description: signerHelpRecovery.summary }
+      : null,
+    blocked: signerHelpRecovery.hasIssue,
+    remainingFields: progress.remainingCount,
+    requiredFields: progress.requiredCount,
+    canComplete: canCompleteSigning,
+    currentOwnerLabel: signerResponsibility.currentOwner?.name || signerResponsibility.currentOwner?.roleLabel,
+  })
+  const signerAccessibility = buildDocumentAccessibility({
+    surface: 'signer_portal',
+    journey: signerJourney,
+    responsibility: signerResponsibility,
+    helpRecovery: signerHelpRecovery,
+    mobileAction: signerMobileAction,
+    completedFields: progress.completedCount,
+    requiredFields: progress.requiredCount,
+    contentTargetId: 'signer-document-content',
+    actionsTargetId: 'signer-document-actions',
+  })
+  const completeConfirmation = buildDocumentCommitConfirmation({
+    action: 'complete_signing',
+    packetType: packet?.packet_type,
+    remainingFields: progress.remainingCount,
+    signerRole: signer?.signer_role,
+  })
+
+  async function handleConfirmedCompletion() {
+    await handleCompleteSigning(true)
+    setCompleteConfirmationOpen(false)
+  }
+
+  function handleSignerRoleAction(actionId) {
+    recordSignerExperience('primary_action_selected', { state: signerExperienceState, actionId })
+    if (actionId === 'next_field') scrollToField(progress.nextField || fields[0])
+    else if (actionId === 'review_document') window.scrollTo({ top: 0, behavior: 'smooth' })
+    else if (actionId === 'complete_signing' && canCompleteSigning) void handleCompleteSigning()
+  }
+
+  function handleHelpRecoveryAction(actionId) {
+    recordSignerExperience('recovery_selected', { state: signerExperienceState, actionId, category: signerHelpRecovery.category })
+    if (actionId === 'next_field') scrollToField(progress.nextField || fields[0])
+    else if (actionId === 'retry' || actionId === 'refresh') void handleRetryPortalSession()
+    else if (actionId === 'review_document') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function handleMobileAction(actionId) {
+    if (['next_field', 'review_document', 'complete_signing'].includes(actionId)) handleSignerRoleAction(actionId)
+    else handleHelpRecoveryAction(actionId)
+  }
+
   return (
-    <main className="min-h-screen bg-[#eef3f8] text-[#142132]">
+    <main className="min-h-screen bg-[#eef3f8] pb-[calc(7rem+env(safe-area-inset-bottom))] text-[#142132] md:pb-0">
+      <DocumentAccessibilityNavigation model={signerAccessibility} />
       <header className="sticky top-0 z-40 border-b border-[#d7e2ef] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
           <Arch9Mark />
@@ -697,7 +1035,7 @@ export default function SignerPortal() {
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46]">
             <ShieldCheck className="h-4 w-4" />
-            Secure
+            {sessionBinding?.certified ? 'Certified document' : 'Secure'}
           </div>
         </div>
       </header>
@@ -710,21 +1048,25 @@ export default function SignerPortal() {
         <div className="h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
           <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
         </div>
-        <button type="button" onClick={() => scrollToField()} disabled={!progress.nextField} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#12385f] text-sm font-bold text-white disabled:bg-[#9daec1]">
-          Next Required Field <ChevronRight className="h-4 w-4" />
-        </button>
       </div>
 
       <div className="mx-auto grid max-w-[1500px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px] lg:p-5">
-        <DocumentPreview
-          documentUrl={documentPreviewUrl}
-          fallbackHtml={fallbackPreviewHtml}
-          fields={fields}
-          activeFieldId={activeFieldId}
-          onFieldClick={selectField}
-        />
+        <div id="signer-document-content" tabIndex={-1} className="min-w-0 scroll-mt-24 focus:outline-none">
+          <DocumentPreview
+            documentUrl={documentPreviewUrl}
+            fallbackHtml={fallbackPreviewHtml}
+            fields={fields}
+            activeFieldId={activeFieldId}
+            onFieldClick={selectField}
+          />
+        </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
+        <aside id="signer-document-actions" tabIndex={-1} className="scroll-mt-24 space-y-4 focus:outline-none lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
+          <DocumentJourneyProgress model={signerJourney} compact />
+          <DocumentRoleGuidanceCard guidance={signerGuidance} compact />
+          <DocumentRoleActionBar model={signerActions} busy={Boolean(busyAction)} compact onAction={handleSignerRoleAction} />
+          <DocumentResponsibilityCard model={signerResponsibility} compact />
+          <DocumentHelpRecoveryCard model={signerHelpRecovery} busy={Boolean(busyAction) || loading} compact onAction={handleHelpRecoveryAction} />
           <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -749,6 +1091,7 @@ export default function SignerPortal() {
               <p><span className="font-bold text-[#142132]">Role:</span> {String(signer?.signer_role || '').replace(/_/g, ' ') || '—'}</p>
               <p><span className="font-bold text-[#142132]">Status:</span> {signer?.status || 'pending'}</p>
               <p><span className="font-bold text-[#142132]">Expires:</span> {formatDateTime(signer?.token_expires_at)}</p>
+              {sessionBinding?.certified ? <p className="flex items-center gap-1.5 font-semibold text-[#276b46]"><ShieldCheck className="h-4 w-4" /> Exact delivered PDF verified</p> : null}
             </div>
           </section>
 
@@ -779,7 +1122,7 @@ export default function SignerPortal() {
           </section>
 
           {errorMessage ? <p className="rounded-[14px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15]">{errorMessage}</p> : null}
-          {statusMessage ? <p className="rounded-[14px] border border-[#d4ebdd] bg-[#edf9f2] px-4 py-3 text-sm font-semibold text-[#1d7347]">{statusMessage}</p> : null}
+          {statusMessage ? <DocumentOutcomeNotice model={signerOutcomeFeedback} onDismiss={() => setStatusMessage('')} /> : null}
 
           <button
             type="button"
@@ -792,6 +1135,16 @@ export default function SignerPortal() {
           </button>
         </aside>
       </div>
+
+      <DocumentMobileActionDock model={signerMobileAction} busy={Boolean(busyAction) || loading} onAction={handleMobileAction} />
+
+      <DocumentCommitConfirmation
+        model={completeConfirmation}
+        open={completeConfirmationOpen}
+        busy={busyAction === 'complete_signing'}
+        onCancel={() => setCompleteConfirmationOpen(false)}
+        onConfirm={() => void handleConfirmedCompletion()}
+      />
 
       {captureField ? (
         <SigningCanvas

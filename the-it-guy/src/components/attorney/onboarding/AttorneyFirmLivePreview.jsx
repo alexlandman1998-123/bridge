@@ -1,20 +1,11 @@
 import { AlertCircle, BriefcaseBusiness, Check, FileText, Mail, Monitor, Scale, ShieldCheck, Users } from 'lucide-react'
+import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
 
 const DEPARTMENT_LABELS = {
   transfer: 'Transfer',
   bond: 'Bond',
   admin: 'Admin',
   management: 'Management',
-}
-
-const ROLE_LABELS = {
-  director_partner: 'Director',
-  transfer_attorney: 'Conveyancer',
-  bond_attorney: 'Bond Attorney',
-  conveyancing_secretary: 'Secretary',
-  admin_staff: 'Admin',
-  reception_scheduling: 'Reception',
-  candidate_attorney: 'Candidate',
 }
 
 function normalizeText(value = '') {
@@ -192,7 +183,7 @@ function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readines
                 <span>{normalizeText(invite.email)[0]?.toUpperCase() || 'T'}</span>
                 <p>
                   <strong>{normalizeText(invite.email)}</strong>
-                  <em>{ROLE_LABELS[invite.role] || invite.role || 'Team member'}</em>
+                  <em>{getAttorneyRoleLabel(invite.role, { short: true, fallback: 'Team member' })}</em>
                 </p>
               </div>
             ))}

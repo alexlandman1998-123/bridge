@@ -19,7 +19,7 @@ import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
-import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
+import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { clearStoredSignupIntent } from '../lib/signupIntent'
 import { hasCommercialAccessMarker } from '../lib/commercialAccess'
@@ -585,6 +585,14 @@ export default function PostDashboardSetup() {
     () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialAccessMarker(membership)),
     [activeMemberships, currentMembership],
   )
+  const hasActiveMembership = activeMemberships.length > 0
+  const recoveryReasons = [onboardingRequiredReason, onboardingState?.recoveryReason]
+    .map((reason) => normalizeText(reason))
+    .filter(Boolean)
+  const hasBlockingRecoveryReason = recoveryReasons.some(
+    (reason) => reason !== ONBOARDING_REQUIRED_REASONS.noActiveMembership,
+  )
+  const canOpenActiveWorkspace = hasActiveMembership && !hasBlockingRecoveryReason
   const pageTitle = useMemo(() => {
     if (canClaimExistingWorkspace) return 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
@@ -621,18 +629,16 @@ export default function PostDashboardSetup() {
   }, [activeMemberships.length, hasCommercialWorkspaceAccess, navigate])
 
   useEffect(() => {
-    if (!activeMemberships.length || onboardingRequiredReason || onboardingState?.recoveryReason) return
+    if (!canOpenActiveWorkspace) return
     clearStoredSignupIntent()
     navigate(getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole }), { replace: true })
   }, [
-    activeMemberships.length,
     agencySignupType,
     baseRole,
+    canOpenActiveWorkspace,
     hasCommercialWorkspaceAccess,
     intent,
     navigate,
-    onboardingRequiredReason,
-    onboardingState?.recoveryReason,
   ])
 
   useEffect(() => {
@@ -1143,7 +1149,6 @@ export default function PostDashboardSetup() {
     }
   }
 
-  const hasActiveMembership = activeMemberships.length > 0
   const hasPendingMembership = pendingMemberships.length > 0
   const hasSuspendedMembership = suspendedMemberships.length > 0
   const hasPendingOnboardingState = onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
@@ -1990,7 +1995,7 @@ export default function PostDashboardSetup() {
             </SetupStatusCard>
           )}
 
-          {hasActiveMembership ? (
+          {canOpenActiveWorkspace ? (
             <SetupStatusCard title="Workspace membership active" tone="success">
               <p>Your active membership is ready. You can open your dashboard.</p>
               {currentWorkspace?.name ? (
@@ -2122,13 +2127,13 @@ export default function PostDashboardSetup() {
             </div>
           ) : null}
 
-          {!intent && onboardingRequiredReason ? (
+          {!canOpenActiveWorkspace && !intent && onboardingRequiredReason ? (
             <SetupStatusCard title="Repair state" tone="warning">
               <p>Current setup reason: {onboardingRequiredReason.replace(/_/g, ' ')}.</p>
             </SetupStatusCard>
           ) : null}
 
-          {onboardingState?.recoveryReason ? (
+          {!canOpenActiveWorkspace && onboardingState?.recoveryReason ? (
             <SetupStatusCard title="Recovery required" tone="warning">
               <p>Arch9 needs to repair: {onboardingState.recoveryReason.replace(/_/g, ' ')}.</p>
             </SetupStatusCard>

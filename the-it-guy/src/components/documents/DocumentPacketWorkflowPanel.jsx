@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
+import SigningOperationalStatusCard from './SigningOperationalStatusCard'
+import SigningProgressTimeline from './SigningProgressTimeline'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isOrganisationAdminMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../../lib/settingsApi'
@@ -20,7 +22,8 @@ import { resolveLegalDocumentGenerationRecovery } from '../../core/documents/leg
 import { captureLegalDocumentGenerationBaseline, findReconciledLegalDocumentVersion, reconcileLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
 import { resolveLegalDocumentRetryPolicy } from '../../core/documents/legalDocumentGenerationRetryPolicy'
 import { recordLegalDocumentGenerationSupportHandoff } from '../../core/documents/legalDocumentGenerationSupportHandoff'
-import { appendDocumentPacketEvent } from '../../lib/documentPacketsApi'
+import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
+import { appendDocumentPacketEvent, getFinalDocumentCompletionStatus } from '../../lib/documentPacketsApi'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -455,7 +458,7 @@ function VersionList({ versions = [] }) {
   )
 }
 
-function SigningFieldsSummary({ summary = null }) {
+function SigningFieldsSummary({ summary = null, canManage = false, busy = false, onSignerAction = null }) {
   const grouped = Array.isArray(summary?.groupedBySigner) ? summary.groupedBySigner : []
   if (!summary || (!summary.signerCount && !summary.fieldCount)) {
     return (
@@ -487,26 +490,7 @@ function SigningFieldsSummary({ summary = null }) {
           </article>
         ))}
       </div>
-      {summary?.signers?.length ? (
-        <div className="mt-3 space-y-2 border-t border-[#e2ebf5] pt-3">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Signer Links</p>
-          {summary.signers.map((signer) => (
-            <article key={signer.id} className="rounded-[10px] border border-[#dce6f2] bg-white px-2.5 py-2 text-xs">
-              <p className="font-semibold text-[#142132]">
-                {signer.signer_name} • {String(signer.signer_role || '').replace(/_/g, ' ')}
-              </p>
-              <p className="mt-0.5 text-[#607387]">Status: {signer.status || 'pending'}</p>
-              {signer.signing_token ? (
-                <p className="mt-0.5 break-all text-[#2f5d87]">
-                  {(typeof window !== 'undefined' ? `${window.location.origin}` : '')}/sign/{signer.signing_token}
-                </p>
-              ) : (
-                <p className="mt-0.5 text-[#8a9eb3]">Link not generated yet</p>
-              )}
-            </article>
-          ))}
-        </div>
-      ) : null}
+      {summary?.signers?.length ? <div className="mt-3"><SigningProgressTimeline signers={summary.signers} canManage={canManage} canRemind={false} busy={busy} onSignerAction={onSignerAction} compact /></div> : null}
     </section>
   )
 }
@@ -536,6 +520,7 @@ export default function DocumentPacketWorkflowPanel({
   const [signingSummary, setSigningSummary] = useState(null)
   const [canManagePacketAdminActions, setCanManagePacketAdminActions] = useState(false)
   const [conversionHealth, setConversionHealth] = useState(null)
+  const [finalCompletion, setFinalCompletion] = useState(null)
   const { role } = useWorkspace()
   const selectedTemplate = useMemo(
     () => templates.find((item) => String(item?.id || '') === String(selectedTemplateId || '')) || null,
@@ -623,6 +608,9 @@ export default function DocumentPacketWorkflowPanel({
   const latestFinalVersion = (versions || []).find(
     (version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url),
   )
+  const latestFinalStatusVersion = (versions || []).find(
+    (version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url),
+  )
   const completedSignersCount = (signingSummary?.signers || []).filter(
     (signer) => String(signer?.status || '').toLowerCase() === 'signed',
   ).length
@@ -632,6 +620,31 @@ export default function DocumentPacketWorkflowPanel({
     Number(signingSummary?.requiredSignatures || 0) > 0 &&
     (signingSummary?.allRequiredFieldsCompleted ||
       Number(signingSummary?.completedRequiredFieldCount || 0) === Number(signingSummary?.requiredFieldCount || 0))
+  const signingOperationalStatus = useMemo(() => resolveSigningOperationalStatus({
+    packetType,
+    packet: packetState || {},
+    versions,
+    signingSummary: signingSummary || {},
+    finalCompletion,
+    viewerRole: role,
+  }), [finalCompletion, packetState, packetType, role, signingSummary, versions])
+
+  useEffect(() => {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    const resolvedVersionId = normalizeText(latestFinalStatusVersion?.id)
+    if (!resolvedPacketId || !resolvedVersionId) {
+      setFinalCompletion(null)
+      return undefined
+    }
+    let active = true
+    getFinalDocumentCompletionStatus({ packetId: resolvedPacketId, versionId: resolvedVersionId })
+      .then((result) => { if (active) setFinalCompletion(result) })
+      .catch((error) => {
+        console.warn('[DocumentPacketWorkflowPanel] Final completion status unavailable.', error)
+        if (active) setFinalCompletion(null)
+      })
+    return () => { active = false }
+  }, [latestFinalStatusVersion?.id, packetId, packetState?.id])
 
   const refreshVersions = useCallback(async (nextPacketId = '') => {
     const resolvedPacketId = normalizeText(nextPacketId || packetState?.id || packetId)
@@ -887,7 +900,7 @@ export default function DocumentPacketWorkflowPanel({
     }
   }
 
-  async function handleGenerateSigningLinks() {
+  async function handleGenerateSigningLinks(targetSignerRole = '') {
     const resolvedPacketId = normalizeText(packetState?.id || packetId)
     if (!resolvedPacketId) {
       setStatusLabel('Packet required')
@@ -904,11 +917,12 @@ export default function DocumentPacketWorkflowPanel({
         packetId: resolvedPacketId,
         expiresInHours: 72,
         baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
-        regenerate: false,
+        regenerate: Boolean(targetSignerRole),
+        targetSignerRole,
       })
       await refreshSigningSummary(resolvedPacketId)
-      setStatusLabel('Signing links generated')
-      setStatusMessage(`Generated secure links for ${result?.signers?.length || 0} signer(s).`)
+      setStatusLabel(targetSignerRole ? 'Signing link resent' : 'Signing links generated')
+      setStatusMessage(targetSignerRole ? `Generated a new secure link for ${targetSignerRole.replace(/_/g, ' ')}.` : `Generated secure links for ${result?.signers?.length || 0} signer(s).`)
     } catch (error) {
       const feedback = resolvePacketErrorFeedback(error)
       setStatusLabel(feedback.label)
@@ -986,6 +1000,7 @@ export default function DocumentPacketWorkflowPanel({
       </aside>
 
       <section className="space-y-3.5 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+        <SigningOperationalStatusCard status={signingOperationalStatus} compact />
         <div className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
           <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
             Template
@@ -1005,7 +1020,12 @@ export default function DocumentPacketWorkflowPanel({
         </div>
 
         <ValidationSummary validation={previewState} showAuditDetails={canManagePacketAdminActions} />
-        <SigningFieldsSummary summary={signingSummary} />
+        <SigningFieldsSummary
+          summary={signingSummary}
+          canManage={canManagePacketAdminActions}
+          busy={loadingAction === 'generate_links'}
+          onSignerAction={(action, signer) => void handleGenerateSigningLinks(action === 'resend' ? signer.role : '')}
+        />
         {canManagePacketAdminActions && conversionHealth ? (
           <div
             className={`rounded-[12px] border px-3 py-2 text-xs ${

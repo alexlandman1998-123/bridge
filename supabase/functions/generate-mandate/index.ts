@@ -7,13 +7,15 @@ import {
   TEMPLATE_RENDER_MODES,
   renderStructuredTemplate,
 } from "../../../the-it-guy/src/core/documents/structuredTemplateRenderer.js";
-import { assertLegalTemplateApproved } from "../../../the-it-guy/src/core/documents/legalTemplateApproval.js";
 
 type JsonRecord = Record<string, unknown>;
 
 type MandateSection = {
   key?: string;
   label?: string;
+  content?: string;
+  legalText?: string;
+  legal_text?: string;
   required?: boolean;
   placeholders?: Array<[string, string]> | string[];
 };
@@ -110,6 +112,25 @@ async function requireCaller(supabase: any, req: Request) {
   return userResult.data.user;
 }
 
+async function assertGenerationLeaseFenceI5(supabase: any, packetId: string, generationAttemptId: string, stage: "pre_render" | "pre_persist") {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(generationAttemptId)) {
+    throw Object.assign(new Error("A valid generation attempt is required before rendering."), { code: "GENERATION_LEASE_FENCE_REJECTED", status: 409 });
+  }
+  const result = await supabase.rpc("bridge_assert_generation_lease_i5", {
+    p_packet_id: packetId,
+    p_generation_attempt_id: generationAttemptId,
+    p_stage: stage,
+  });
+  if (result.error || result.data?.contract !== "i5-generator-v1" || result.data?.fenced !== true) {
+    throw Object.assign(new Error("This generation attempt is no longer active. Refresh before trying again."), {
+      code: "GENERATION_LEASE_FENCE_REJECTED",
+      status: 409,
+      details: result.error?.message || null,
+    });
+  }
+  return result.data;
+}
+
 async function requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode }: {
   supabase: any;
   packetId: string;
@@ -135,9 +156,9 @@ async function requireApprovedMandateTemplate({ supabase, packetId, requestedTem
     .eq("id", packetTemplateId)
     .maybeSingle();
   if (templateResult.error) throw templateResult.error;
-  if (!templateResult.data) throw Object.assign(new Error("The selected mandate template was not found."), { code: "LEGAL_TEMPLATE_APPROVAL_REQUIRED", status: 422 });
-  const assessment = assertLegalTemplateApproved(templateResult.data, { expectedPacketType: "mandate" });
-  requirePilotOrganisation(packetResult.data.organisation_id);
+  if (!templateResult.data) throw Object.assign(new Error("The selected document template was not found."), { code: "TEMPLATE_NOT_FOUND", status: 422 });
+  if (templateResult.data.is_active === false) throw Object.assign(new Error("The selected document template is inactive."), { code: "TEMPLATE_INACTIVE", status: 422 });
+  const packetType = normalizeText(packetResult.data.packet_type).toLowerCase() || "mandate";
   if (renderMode !== TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
     const approvedPath = normalizeText(templateResult.data.template_storage_path);
     const approvedBucket = normalizeText(templateResult.data.template_storage_bucket);
@@ -145,16 +166,79 @@ async function requireApprovedMandateTemplate({ supabase, packetId, requestedTem
       throw Object.assign(new Error("Mandate generation must use the exact approved template source."), { code: "LEGAL_TEMPLATE_SOURCE_MISMATCH", status: 422 });
     }
   }
-  return assessment;
+  return { templateId: templateResult.data.id, packetType };
 }
 
-function requirePilotOrganisation(organisationId: unknown) {
-  const enabled = normalizeText(Deno.env.get("LEGAL_DOCUMENT_PILOT_ENABLED")).toLowerCase() === "true";
-  const cohort = String(Deno.env.get("LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS") || "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (!enabled) throw Object.assign(new Error("Legal document pilot generation is not enabled."), { code: "LEGAL_DOCUMENT_PILOT_DISABLED", status: 503 });
-  if (!normalizeText(organisationId) || !cohort.includes(normalizeText(organisationId))) {
-    throw Object.assign(new Error("This organisation is not in the controlled legal document pilot."), { code: "LEGAL_DOCUMENT_PILOT_ACCESS_REQUIRED", status: 403 });
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function sectionContent(section: MandateSection = {}) {
+  return String(section.content ?? section.legalText ?? section.legal_text ?? "");
+}
+
+async function resolveFrozenNativeRenderInputD2({ supabase, packetId, generationPayload, requestedSections, requestedPlaceholders }: {
+  supabase: any;
+  packetId: string;
+  generationPayload: JsonRecord;
+  requestedSections: MandateSection[];
+  requestedPlaceholders: JsonRecord;
+}) {
+  const freeze = asRecord(generationPayload.editableRenderFreeze);
+  const freezeId = normalizeText(freeze.freezeId);
+  if (!freezeId) {
+    return { sections: requestedSections, placeholders: requestedPlaceholders, attestation: null };
   }
+  if (normalizeText(freeze.contract) !== "c4-v1") {
+    throw Object.assign(new Error("The editable render freeze contract is unsupported."), { code: "D2_FROZEN_RENDER_INPUT_INVALID", status: 422 });
+  }
+
+  const sourceResult = await supabase
+    .from("document_packet_versions")
+    .select("id, packet_id, version_number, edit_sequence, render_freeze_id, render_freeze_status, render_frozen_at, render_content_fingerprint, editable_content_json, section_manifest_json, placeholders_resolved_json")
+    .eq("packet_id", packetId)
+    .eq("render_freeze_id", freezeId)
+    .maybeSingle();
+  if (sourceResult.error) throw sourceResult.error;
+  const source = sourceResult.data;
+  if (!source || normalizeText(source.render_freeze_status) !== "frozen") {
+    throw Object.assign(new Error("The frozen editable revision is unavailable or is no longer renderable."), { code: "D2_FROZEN_RENDER_INPUT_NOT_FOUND", status: 422 });
+  }
+  if (normalizeText(freeze.sourceVersionId) !== normalizeText(source.id) ||
+      normalizeText(freeze.contentFingerprint) !== normalizeText(source.render_content_fingerprint)) {
+    throw Object.assign(new Error("The requested render source does not match the database freeze."), { code: "D2_FROZEN_RENDER_SOURCE_MISMATCH", status: 422 });
+  }
+
+  const editableSections = Array.isArray(source.editable_content_json?.sections) ? source.editable_content_json.sections as MandateSection[] : [];
+  const frozenManifest = Array.isArray(source.section_manifest_json) ? source.section_manifest_json as MandateSection[] : [];
+  if (!editableSections.length || editableSections.length !== frozenManifest.length) {
+    throw Object.assign(new Error("The frozen editable revision has an invalid section manifest."), { code: "D2_FROZEN_RENDER_INPUT_INVALID", status: 422 });
+  }
+  const editableByKey = new Map(editableSections.map((section) => [normalizeText(section.key), section]));
+  const sections = frozenManifest.map((section, index) => {
+    const key = normalizeText(section.key) || `section_${index + 1}`;
+    const editable = editableByKey.get(key);
+    if (!editable || sectionContent(editable) !== sectionContent(section)) {
+      throw Object.assign(new Error(`Frozen section '${key}' does not match its editable revision.`), { code: "D2_FROZEN_RENDER_INPUT_INVALID", status: 422 });
+    }
+    return { ...section, key, content: sectionContent(section), legalText: sectionContent(section) };
+  });
+
+  return {
+    sections,
+    placeholders: asRecord(source.placeholders_resolved_json),
+    attestation: {
+      contract: "d2-v1",
+      inputAuthority: "database_frozen_revision",
+      freezeId,
+      sourceVersionId: normalizeText(source.id),
+      sourceVersionNumber: Number(source.version_number || 0) || null,
+      editSequence: Number(source.edit_sequence || 0),
+      contentFingerprint: normalizeText(source.render_content_fingerprint),
+      frozenAt: normalizeText(source.render_frozen_at) || null,
+      sectionCount: sections.length,
+    },
+  };
 }
 
 function decodeBase64ToBytes(base64Value: string) {
@@ -197,10 +281,10 @@ function inferTemplateFileName(path: string) {
   return parts[parts.length - 1] || "mandate-template.docx";
 }
 
-function inferOutputFileName({ leadId, packetId, renderMode }: { leadId: string | null; packetId: string; renderMode: string; }) {
-  const base = sanitizePart(leadId || packetId || "mandate", "mandate");
+function inferOutputFileName({ leadId, packetId, packetType, renderMode }: { leadId: string | null; packetId: string; packetType: string; renderMode: string; }) {
+  const base = sanitizePart(leadId || packetId || packetType, packetType);
   const extension = renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? "pdf" : "docx";
-  return `${base}-mandate-${Date.now()}.${extension}`;
+  return `${base}-${packetType}-${Date.now()}.${extension}`;
 }
 
 function safePlaceholderValue(value: unknown): string {
@@ -267,6 +351,14 @@ async function renderHtmlToPdfBytes(html: string, fileName = "mandate.pdf") {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+function assertValidPdfBytes(bytes: Uint8Array) {
+  const header = new TextDecoder().decode(bytes.subarray(0, 5));
+  const trailer = new TextDecoder().decode(bytes.subarray(Math.max(0, bytes.length - 2048)));
+  if (bytes.length < 100 || header !== "%PDF-" || !trailer.includes("%%EOF")) {
+    throw Object.assign(new Error("The PDF converter returned an invalid PDF artifact."), { code: "D2_PDF_ARTIFACT_INVALID", status: 502 });
+  }
+}
+
 function buildSectionSummary(sectionManifest: MandateSection[] = []) {
   if (!Array.isArray(sectionManifest) || !sectionManifest.length) return "";
   return sectionManifest
@@ -324,6 +416,7 @@ async function insertMandateDocumentRecord({
   generatedByRole,
   generatedByUserId,
   clientVisible,
+  packetType,
 }: {
   supabase: ReturnType<typeof createClient>;
   transactionId: string | null;
@@ -333,6 +426,7 @@ async function insertMandateDocumentRecord({
   generatedByRole: string;
   generatedByUserId: string | null;
   clientVisible: boolean;
+  packetType: string;
 }) {
   const now = new Date().toISOString();
 
@@ -340,13 +434,13 @@ async function insertMandateDocumentRecord({
     transaction_id: transactionId || null,
     name: fileName,
     file_path: filePath,
-    category: "mandate_documents",
-    document_type: "mandate_draft",
+    category: packetType === "otp" ? "sales_documents" : "mandate_documents",
+    document_type: packetType === "otp" ? "otp_draft" : "mandate_draft",
     visibility_scope: clientVisible ? "shared" : "internal",
     is_client_visible: clientVisible,
     uploaded_by_role: generatedByRole || null,
     uploaded_by_user_id: generatedByUserId,
-    stage_key: "seller_mandate",
+    stage_key: packetType === "otp" ? "offer_to_purchase" : "seller_mandate",
     created_at: now,
     updated_at: now,
   };
@@ -413,31 +507,20 @@ Deno.serve(async (req: Request) => {
     const clientVisible = Boolean(payload.clientVisible ?? payload.client_visible ?? false);
     const transactionId = normalizeText(payload.transactionId || payload.transaction_id) || null;
     const leadId = normalizeText(payload.leadId || payload.lead_id) || null;
-    const sectionManifest = (payload.sectionManifest || payload.section_manifest || []) as MandateSection[];
-    const rawPlaceholders = payload.placeholders && typeof payload.placeholders === "object" ? payload.placeholders : {};
+    let sectionManifest = (payload.sectionManifest || payload.section_manifest || []) as MandateSection[];
+    let rawPlaceholders = payload.placeholders && typeof payload.placeholders === "object" ? payload.placeholders : {};
     const branding = payload.branding && typeof payload.branding === "object" ? payload.branding : {};
     const generationPayload = payload.generationPayload && typeof payload.generationPayload === "object"
       ? payload.generationPayload
       : payload.generation_payload && typeof payload.generation_payload === "object"
         ? payload.generation_payload
         : {};
+    const generationAttemptId = normalizeText((generationPayload as Record<string, unknown>).generationAttemptId);
     const sourceContext = payload.sourceContext && typeof payload.sourceContext === "object"
       ? payload.sourceContext
       : payload.source_context && typeof payload.source_context === "object"
         ? payload.source_context
         : {};
-
-    const placeholderMap = createAliasMap(rawPlaceholders);
-    const sectionSummary = buildSectionSummary(sectionManifest);
-    if (!placeholderMap.packet_sections_summary) {
-      placeholderMap.packet_sections_summary = sectionSummary;
-    }
-    if (!placeholderMap.packet_id) {
-      placeholderMap.packet_id = packetId;
-    }
-    if (!placeholderMap.generated_date) {
-      placeholderMap.generated_date = new Date().toISOString().slice(0, 10);
-    }
 
     const bucketCandidates = parseBucketCandidates(
       Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
@@ -453,21 +536,39 @@ Deno.serve(async (req: Request) => {
     const requestedTemplateId = normalizeText((generationPayload as Record<string, unknown>)?.template && ((generationPayload as Record<string, unknown>).template as Record<string, unknown>)?.id);
     const caller = capacityProbe ? { id: null } : await requireCaller(supabase, req);
     const approval = await requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode });
-    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType: "mandate", templateId: approval.templateId, packetId, userId: caller.id }));
+    const preRenderFence = capacityProbe ? null : await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render");
+    const packetType = approval.packetType === "otp" ? "otp" : "mandate";
+    const frozenInput = renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+      ? await resolveFrozenNativeRenderInputD2({
+          supabase,
+          packetId,
+          generationPayload: generationPayload as JsonRecord,
+          requestedSections: sectionManifest,
+          requestedPlaceholders: rawPlaceholders as JsonRecord,
+        })
+      : { sections: sectionManifest, placeholders: rawPlaceholders as JsonRecord, attestation: null };
+    sectionManifest = frozenInput.sections;
+    rawPlaceholders = frozenInput.placeholders;
+    const placeholderMap = createAliasMap(rawPlaceholders);
+    const sectionSummary = buildSectionSummary(sectionManifest);
+    if (!placeholderMap.packet_sections_summary) placeholderMap.packet_sections_summary = sectionSummary;
+    if (!placeholderMap.packet_id) placeholderMap.packet_id = packetId;
+    if (!placeholderMap.generated_date) placeholderMap.generated_date = new Date().toISOString().slice(0, 10);
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_started", requestId, packetType, templateId: approval.templateId, packetId, userId: caller.id }));
     let outputBytes: Uint8Array;
-    let generatedFileName = inferOutputFileName({ leadId, packetId, renderMode });
-    let filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
+    let generatedFileName = inferOutputFileName({ leadId, packetId, packetType, renderMode });
+    let filePath = `packet-${packetId}/${packetType}-documents/${generatedFileName}`;
     let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     let nativeRender: any = null;
 
     if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
       const generationTemplate = ((generationPayload as Record<string, unknown>).template || {}) as Record<string, unknown>;
       nativeRender = (renderStructuredTemplate as any)({
-        packetType: "mandate",
+        packetType,
         template: {
-          packet_type: "mandate",
+          packet_type: packetType,
           render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
-          template_label: normalizeText(generationTemplate.label || "Mandate Agreement"),
+          template_label: normalizeText(generationTemplate.label || (packetType === "otp" ? "Offer to Purchase" : "Mandate Agreement")),
           metadata_json: {
             render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
           },
@@ -492,14 +593,18 @@ Deno.serve(async (req: Request) => {
 
       try {
         outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
+        assertValidPdfBytes(outputBytes);
         contentType = "application/pdf";
         generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");
-        filePath = requestedOutputPath || `packet-${packetId}/mandate-documents/${generatedFileName}`;
+        filePath = requestedOutputPath || `packet-${packetId}/${packetType}-documents/${generatedFileName}`;
       } catch (error) {
-        return jsonResponse(500, {
+        const typed = error as { code?: string; status?: number };
+        return jsonResponse(typed.status || 500, {
           success: false,
-          error: "PDF render failed for the native mandate template.",
-          errorCode: "PDF_RENDER_FAILED",
+          error: typed.code === "D2_PDF_ARTIFACT_INVALID"
+            ? "The PDF converter returned an invalid document. Nothing was stored."
+            : "PDF render failed for the native legal template.",
+          errorCode: typed.code || "PDF_RENDER_FAILED",
           details: String(error),
         });
       }
@@ -566,7 +671,18 @@ Deno.serve(async (req: Request) => {
         success: true,
         capacityProbe: true,
         contract: RENDERER_CONTRACT,
-        packetType: "mandate",
+        generatorContract: "i2-generator-v1",
+        packetType,
+        frozenInput: frozenInput.attestation
+          ? {
+              contract: frozenInput.attestation.contract,
+              inputAuthority: frozenInput.attestation.inputAuthority,
+              freezeId: frozenInput.attestation.freezeId,
+              sourceVersionId: frozenInput.attestation.sourceVersionId,
+              contentFingerprint: frozenInput.attestation.contentFingerprint,
+              sectionCount: frozenInput.attestation.sectionCount,
+            }
+          : null,
         output: {
           mediaType: contentType,
           byteLength: outputBytes.length,
@@ -577,6 +693,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const prePersistFence = await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_persist");
     const uploadResult = await supabase.storage
       .from(outputBucketName)
       .upload(filePath, outputBytes, {
@@ -601,6 +718,7 @@ Deno.serve(async (req: Request) => {
         fileName: generatedFileName,
         filePath,
         packetId,
+        packetType,
         generatedByRole,
         generatedByUserId,
         clientVisible,
@@ -618,11 +736,21 @@ Deno.serve(async (req: Request) => {
       .from(outputBucketName)
       .createSignedUrl(filePath, 60 * 60);
 
-    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType: "mandate", templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType, templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
     const outputSha256 = await sha256Hex(outputBytes);
+    const renderAttestation = frozenInput.attestation
+      ? {
+          ...frozenInput.attestation,
+          rendererContract: RENDERER_CONTRACT,
+          rendererVersion: NATIVE_RENDERER_VERSION,
+          mediaType: contentType,
+          byteLength: outputBytes.length,
+          sha256: `sha256:${outputSha256}`,
+        }
+      : null;
     return jsonResponse(200, {
       success: true,
-      legalApproval: { verified: true, reference: approval.approval.reference },
+      templateSource: { verified: true, templateId: approval.templateId },
       packetId,
       transactionId,
       leadId,
@@ -643,6 +771,12 @@ Deno.serve(async (req: Request) => {
       sectionSummary,
       renderMode,
       rendererVersion: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+      generationFence: {
+        contract: "i5-generator-v1",
+        preRender: preRenderFence?.fenced === true,
+        prePersist: prePersistFence?.fenced === true,
+      },
+      renderAttestation,
       nativeRender: nativeRender
         ? {
             renderable: nativeRender.renderable,

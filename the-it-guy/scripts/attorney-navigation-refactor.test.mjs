@@ -6,6 +6,7 @@ const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', impo
 const mattersSource = readFileSync(new URL('../src/pages/AttorneyMattersPage.jsx', import.meta.url), 'utf8')
 const matterWorkspaceServiceSource = readFileSync(new URL('../src/services/attorneyMatterWorkspace.js', import.meta.url), 'utf8')
 const settingsLayoutSource = readFileSync(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
+const settingsNavigationSource = readFileSync(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const headerSource = readFileSync(new URL('../src/components/HeaderBar.jsx', import.meta.url), 'utf8')
 const permissionsSource = readFileSync(new URL('../src/auth/permissions/permissionRegistry.js', import.meta.url), 'utf8')
@@ -86,7 +87,8 @@ assert.match(navigationPermissionsSource, /attorney_firm_users:\s*PERMISSIONS\.m
 assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users route should be permission protected')
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')
-assert.match(settingsLayoutSource, /label:\s*'Organisation'/, 'Organisation settings should remain available from Settings')
+assert.match(settingsLayoutSource, /buildVisibleSettingsGroups/, 'Settings should render the permission-aware settings navigation')
+assert.match(settingsNavigationSource, /label:\s*'Organisation'/, 'Organisation settings should remain available from Settings')
 assert.doesNotMatch(appSource, /SettingsAuditLogPage/, 'Placeholder Audit Logs should stay out of Settings until real telemetry is connected')
 
 console.log('attorney navigation refactor contract passed')

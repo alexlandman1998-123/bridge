@@ -1,4 +1,4 @@
-import { getAttorneyRolePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
+import { getAttorneyProfessionalProfilePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
 import { getFirmAttorneyAssignments, getUserAttorneyAssignments } from './transactionAttorneyAssignments'
 import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
@@ -20,6 +20,8 @@ import {
   proposeAppointmentReschedule,
   resolveAppointmentRescheduleRequest,
 } from './appointmentRescheduleService'
+import { requireValidAttorneyInvite } from '../core/appointments/attorneyInviteContract'
+import { summarizeAttorneyInviteDelivery } from '../core/appointments/attorneyInviteDelivery'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -54,6 +56,7 @@ const ROLE_COPY = {
   candidate_attorney: 'Follow your assigned matters, complete internal tasks, and support document preparation workflows.',
   firm_admin: 'Monitor and execute operational work across the firm while retaining management visibility.',
   director_partner: 'Track leadership-level operational workload and support execution across departments.',
+  attorney_conveyancer: 'Manage qualified transaction lanes assigned to you, including documents, signing, workflow, and client updates.',
 }
 
 function toLower(value) {
@@ -102,45 +105,6 @@ function buildAppointmentDateTime(date = '', startTime = '', fallback = '') {
   const safeStart = normalizeText(startTime)
   if (!safeDate || !safeStart) return ''
   return `${safeDate}T${safeStart.length === 5 ? `${safeStart}:00` : safeStart}`
-}
-
-function buildBootstrapMembership({ firmId = '', userId = '', role = 'firm_admin' } = {}) {
-  const nowIso = new Date().toISOString()
-  return {
-    id: `bootstrap-${firmId}-${userId}`,
-    firmId,
-    userId,
-    departmentId: null,
-    role,
-    status: 'active',
-    joinedAt: nowIso,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-    isActive: true,
-  }
-}
-
-function resolveOperationalMembership({ listedMembership = null, fallbackMembership = null, firmId = '', userId = '' } = {}) {
-  const explicitStatus = toLower(listedMembership?.status)
-  if (['suspended', 'removed'].includes(explicitStatus)) {
-    return listedMembership
-  }
-
-  const candidate = listedMembership || fallbackMembership
-  if (candidate) {
-    return {
-      ...candidate,
-      role: candidate.role || 'firm_admin',
-      status: ['suspended', 'removed'].includes(toLower(candidate.status)) ? candidate.status : 'active',
-      isActive: !['suspended', 'removed'].includes(toLower(candidate.status)),
-    }
-  }
-
-  if (firmId && userId) {
-    return buildBootstrapMembership({ firmId, userId })
-  }
-
-  return null
 }
 
 function buildStageLabel(transaction = {}) {
@@ -745,22 +709,58 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     }
   }
 
-  const [departments, members, fallbackMembership] = await Promise.all([
+  const currentUserId = userId || authUser.id
+  const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, currentUserId).catch(() => null)
+  if (!currentMembership?.isActive) {
+    return {
+      firm: null,
+      currentUser: {
+        id: currentUserId,
+        name: authUser.user_metadata?.full_name || authUser.email || 'Attorney User',
+        email: authUser.email || '',
+        role: '',
+        roleLabel: '',
+        department: 'Unassigned Department',
+        roleCopy: 'An active attorney firm membership is required.',
+        status: currentMembership?.status || 'missing',
+      },
+      permissions: getAttorneyProfessionalProfilePermissions({}),
+      kpis: {
+        myActiveMatters: 0,
+        tasksDueToday: 0,
+        outstandingDocuments: 0,
+        pendingSignatures: 0,
+        delayedMatters: 0,
+        upcomingAppointments: 0,
+        transferMatters: 0,
+        bondMatters: 0,
+        roleSpecific: [],
+      },
+      priorityQueue: [],
+      matterQueue: [],
+      documentQueue: [],
+      appointmentQueue: [],
+      recentUpdates: [],
+      accessBlocked: true,
+      canViewFirmDashboard: false,
+      availableFilters: {
+        departments: [],
+        members: [],
+        matterTypes: ['Transfer', 'Bond', 'Transfer + Bond', 'Admin'],
+        statuses: [],
+      },
+    }
+  }
+
+  const [departments, members] = await Promise.all([
     getAttorneyFirmDepartments(resolvedFirm.id).catch(() => []),
     getAttorneyFirmMembers(resolvedFirm.id).catch(() => []),
-    getCurrentUserAttorneyMembership(resolvedFirm.id, userId || authUser.id).catch(() => null),
   ])
 
-  const currentUserId = userId || authUser.id
   const listedMembership = (members || []).find((member) => member.userId === currentUserId) || null
-  const currentMembership = resolveOperationalMembership({
-    listedMembership,
-    fallbackMembership,
-    firmId: resolvedFirm.id,
-    userId: currentUserId,
-  })
-  const membersWithCurrent = currentMembership && !(members || []).some((member) => member.userId === currentUserId)
-    ? [...(members || []), currentMembership]
+  const resolvedCurrentMembership = listedMembership?.isActive ? listedMembership : currentMembership
+  const membersWithCurrent = resolvedCurrentMembership && !(members || []).some((member) => member.userId === currentUserId)
+    ? [...(members || []), resolvedCurrentMembership]
     : (members || [])
   const activeMembers = membersWithCurrent.filter((member) => !['suspended', 'removed'].includes(toLower(member.status)))
 
@@ -773,19 +773,19 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     email: toLower(authUser.email),
   }
 
-  const currentRole = currentMembership?.role || normalizeText(authUser.user_metadata?.attorney_role || '') || 'candidate_attorney'
-  const permissions = getAttorneyRolePermissions(currentRole)
+  const currentRole = resolvedCurrentMembership?.professionalRole || ''
+  const permissions = getAttorneyProfessionalProfilePermissions(resolvedCurrentMembership)
 
   const departmentById = (departments || []).reduce((accumulator, department) => {
     accumulator[department.id] = department
     return accumulator
   }, {})
 
-  const currentDepartment = currentMembership?.departmentId ? departmentById[currentMembership.departmentId] : null
+  const currentDepartment = resolvedCurrentMembership?.departmentId ? departmentById[resolvedCurrentMembership.departmentId] : null
 
   const assignments = MANAGEMENT_ROLES.has(currentRole) || permissions.can_view_all_firm_matters
     ? await getFirmAttorneyAssignments(resolvedFirm.id)
-    : currentMembership
+    : resolvedCurrentMembership
       ? await getUserAttorneyAssignments(resolvedFirm.id, currentUserId)
       : []
 
@@ -1177,7 +1177,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       roleLabel: normalizeRoleLabel(currentRole),
       department: currentDepartment?.name || 'Unassigned Department',
       roleCopy: ROLE_COPY[currentRole] || 'Your assigned matters, document tasks, and signing actions in one place.',
-      status: currentMembership?.status || 'unknown',
+      status: resolvedCurrentMembership?.status || 'unknown',
     },
     permissions,
     kpis: {
@@ -1196,7 +1196,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     documentQueue,
     appointmentQueue,
     recentUpdates,
-    accessBlocked: !currentMembership || ['suspended', 'removed'].includes(toLower(currentMembership.status)),
+    accessBlocked: false,
     canViewFirmDashboard: Boolean(permissions.can_view_firm_dashboard),
     availableFilters: {
       departments: (departments || [])
@@ -1393,57 +1393,46 @@ export async function upsertAttorneyAppointmentParticipant(appointmentId, payloa
 }
 
 export async function createAttorneyAppointmentInvite(input = {}) {
+  const invite = requireValidAttorneyInvite(input)
   const client = requireClient()
-  const organisationId = normalizeText(input.organisationId || input.organisation_id)
-  const transactionId = normalizeText(input.transactionId || input.transaction_id)
-  const appointmentType = normalizeAppointmentTypeKey(input.appointmentType || input.appointment_type || 'attorney_consultation')
-  const templated = applyAppointmentTemplate(appointmentType, input)
-  const appointmentDate = normalizeText(templated.date || input.date || input.appointmentDate)
-  const startTime = normalizeText(templated.startTime || input.startTime)
-  const endTime = normalizeText(templated.endTime || input.endTime)
-  const dateTime = buildAppointmentDateTime(appointmentDate, startTime, templated.dateTime || input.dateTime)
-  const recipientEmail = toLower(input.recipientEmail || input.email)
-  const recipientName = normalizeText(input.recipientName || input.name) || recipientEmail
-
-  if (!organisationId) {
-    throw new Error('Firm workspace is required before creating an attorney invite.')
-  }
-  if (!transactionId) {
-    throw new Error('Choose the matter this invite belongs to.')
-  }
-  if (!recipientEmail) {
-    throw new Error('Recipient email is required.')
-  }
-  if (!appointmentDate || !startTime) {
-    throw new Error('Invite date and time are required.')
-  }
+  const organisationId = invite.organisationId
+  const transactionId = invite.transactionId
+  const appointmentType = normalizeAppointmentTypeKey(invite.appointmentType)
+  const templated = applyAppointmentTemplate(appointmentType, invite)
+  const appointmentDate = normalizeText(templated.date || invite.date)
+  const startTime = normalizeText(templated.startTime || invite.startTime)
+  const endTime = normalizeText(templated.endTime || invite.endTime)
+  const dateTime = buildAppointmentDateTime(appointmentDate, startTime, templated.dateTime || invite.dateTime)
+  const recipientEmail = invite.recipientEmail
+  const recipientName = invite.recipientName || recipientEmail
 
   const user = await getAuthenticatedUser(client).catch(() => null)
   const appointmentId = createUuid()
   const nowIso = new Date().toISOString()
-  const visibility = normalizeText(templated.visibility || input.visibility || 'client_visible') || 'client_visible'
+  const visibility = normalizeText(templated.visibility || invite.visibility || 'client_visible') || 'client_visible'
   const insertPayload = {
     appointment_id: appointmentId,
     organisation_id: organisationId,
     transaction_id: transactionId,
     appointment_type: appointmentType,
-    title: normalizeText(templated.title || input.title) || getAppointmentTypeLabel(appointmentType),
+    title: normalizeText(templated.title || invite.title) || getAppointmentTypeLabel(appointmentType),
     appointment_date: appointmentDate,
     start_time: startTime,
     end_time: endTime || null,
     date_time: dateTime || null,
-    location_type: normalizeText(input.locationType || input.location_type) || null,
-    location: normalizeText(input.location) || null,
-    meeting_url: normalizeText(input.meetingUrl || input.meeting_url) || null,
-    linked_workflow: normalizeText(templated.linkedWorkflow || input.linkedWorkflow) || null,
-    linked_workflow_stage: normalizeText(templated.linkedWorkflowStage || input.linkedWorkflowStage) || null,
-    linked_transaction_stage: normalizeText(input.linkedTransactionStage || input.linked_transaction_stage) || null,
+    timezone: invite.timezone,
+    location_type: invite.locationType || null,
+    location: invite.location || null,
+    meeting_url: invite.meetingUrl || null,
+    linked_workflow: normalizeText(templated.linkedWorkflow || invite.linkedWorkflow) || null,
+    linked_workflow_stage: normalizeText(templated.linkedWorkflowStage || invite.linkedWorkflowStage) || null,
+    linked_transaction_stage: invite.linkedTransactionStage || null,
     visibility_scope: visibility,
-    appointment_instructions: normalizeText(input.instructions || templated.instructions) || null,
+    appointment_instructions: normalizeText(invite.instructions || templated.instructions) || null,
     required_documents: Array.isArray(templated.requiredDocuments) ? templated.requiredDocuments : [],
-    resource_id: normalizeText(input.resourceId || input.resource_id) || null,
+    resource_id: invite.resourceId || null,
     status: 'Pending Confirmation',
-    notes: normalizeText(input.notes) || null,
+    notes: invite.notes || null,
     created_by: isUuidLike(user?.id) ? user.id : null,
     created_at: nowIso,
     updated_at: nowIso,
@@ -1457,6 +1446,7 @@ export async function createAttorneyAppointmentInvite(input = {}) {
 
   if (appointmentResult.error && isMissingColumnError(appointmentResult.error)) {
     const fallbackPayload = { ...insertPayload }
+    delete fallbackPayload.timezone
     delete fallbackPayload.location_type
     delete fallbackPayload.meeting_url
     delete fallbackPayload.linked_workflow
@@ -1475,29 +1465,34 @@ export async function createAttorneyAppointmentInvite(input = {}) {
 
   if (appointmentResult.error) throw appointmentResult.error
 
+  const recipientParticipantId = createUuid()
   const participantRows = [
     {
+      participant_id: recipientParticipantId,
       appointment_id: appointmentId,
       organisation_id: organisationId,
       name: recipientName || 'Client',
       email: recipientEmail,
-      participant_role: normalizeText(input.participantRole || input.participant_role || 'Client') || 'Client',
+      participant_role: invite.participantRole || 'Client',
       rsvp_status: 'Pending',
+      rsvp_expires_at: dateTime || null,
       created_at: nowIso,
       updated_at: nowIso,
     },
   ]
 
-  const attorneyName = normalizeText(input.attorneyName || input.senderName || user?.user_metadata?.full_name || user?.email)
-  const attorneyEmail = toLower(input.attorneyEmail || user?.email)
+  const attorneyName = normalizeText(invite.attorneyName || user?.user_metadata?.full_name || user?.email)
+  const attorneyEmail = toLower(invite.attorneyEmail || user?.email)
   if (attorneyName || attorneyEmail) {
     participantRows.push({
+      participant_id: createUuid(),
       appointment_id: appointmentId,
       organisation_id: organisationId,
       name: attorneyName || 'Attorney',
       email: attorneyEmail || null,
       participant_role: 'Attorney',
       rsvp_status: 'Accepted',
+      rsvp_expires_at: null,
       created_at: nowIso,
       updated_at: nowIso,
     })
@@ -1509,25 +1504,60 @@ export async function createAttorneyAppointmentInvite(input = {}) {
       const next = { ...row }
       delete next.created_at
       delete next.updated_at
+      delete next.rsvp_expires_at
       return next
     })
     participantResult = await client.from('appointment_participants').insert(fallbackParticipantRows)
   }
-  if (participantResult.error && !isMissingTableError(participantResult.error, 'appointment_participants')) {
-    throw participantResult.error
+  if (participantResult.error) {
+    const rollback = await client.from('appointments').delete().eq('appointment_id', appointmentId)
+    const persistenceError = new Error(
+      rollback.error
+        ? 'Invite participants could not be saved and the incomplete appointment could not be rolled back.'
+        : 'Invite participants could not be saved. The incomplete appointment was rolled back.',
+    )
+    persistenceError.name = 'AttorneyInvitePersistenceError'
+    persistenceError.code = 'ATTORNEY_INVITE_PARTICIPANT_PERSISTENCE_FAILED'
+    persistenceError.appointmentRolledBack = !rollback.error
+    persistenceError.cause = participantResult.error
+    throw persistenceError
   }
 
-  const notificationResult = await notifyAppointmentParticipants(appointmentId, 'appointment_confirmation_required', {
-    visibility: appointmentResult.data?.visibility_scope || visibility,
-    metadata: {
-      source: 'createAttorneyAppointmentInvite',
-      appointmentType,
-      transactionId,
-      attachCalendarInvite: input.attachCalendarInvite !== false,
-    },
-  }).catch((notificationError) => [{ error: notificationError?.message || 'Notification delivery failed.' }])
+  let notificationResult = []
+  let notificationError = null
+  try {
+    notificationResult = await notifyAppointmentParticipants(appointmentId, 'appointment_confirmation_required', {
+      visibility: appointmentResult.data?.visibility_scope || visibility,
+      recipientParticipantIds: [recipientParticipantId],
+      metadata: {
+        source: 'createAttorneyAppointmentInvite',
+        appointmentType,
+        transactionId,
+        timezone: invite.timezone,
+        organizerName: attorneyName,
+        organizerEmail: attorneyEmail,
+        attachCalendarInvite: invite.attachCalendarInvite,
+      },
+    })
+  } catch (error) {
+    notificationError = error
+  }
 
-  await scheduleAppointmentReminders(appointmentId).catch(() => null)
+  let reminderResult = []
+  let reminderError = null
+  try {
+    reminderResult = await scheduleAppointmentReminders(appointmentId, { recipientParticipantIds: [recipientParticipantId] })
+  } catch (error) {
+    reminderError = error
+  }
+
+  const delivery = summarizeAttorneyInviteDelivery({
+    notificationResults: notificationResult,
+    notificationError,
+    reminderResults: reminderResult,
+    reminderError,
+    calendarInviteRequested: invite.attachCalendarInvite,
+  })
 
   return {
     appointmentId,
@@ -1535,6 +1565,8 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     status: appointmentResult.data?.status || 'Pending Confirmation',
     appointmentType,
     notificationResult,
+    reminderResult,
+    delivery,
   }
 }
 
@@ -1564,8 +1596,11 @@ export async function resendAttorneyAppointmentCommunication(appointmentId, comm
     eventType = 'appointment_updated'
   }
 
+  const user = await getAuthenticatedUser(client).catch(() => null)
   const result = await notifyAppointmentParticipants(scopedAppointmentId, eventType, {
     visibility,
+    forceDelivery: true,
+    excludeRecipientEmails: [user?.email],
     metadata: {
       source: 'resendAttorneyAppointmentCommunication',
       communicationType,
@@ -1575,7 +1610,8 @@ export async function resendAttorneyAppointmentCommunication(appointmentId, comm
   return {
     appointmentId: scopedAppointmentId,
     eventType,
-    deliveredCount: Array.isArray(result) ? result.length : 0,
+    deliveredCount: Array.isArray(result) ? result.filter((row) => row?.email?.sent === true).length : 0,
+    failedCount: Array.isArray(result) ? result.filter((row) => row?.email?.status === 'failed').length : 0,
   }
 }
 

@@ -5,14 +5,41 @@ import {
   resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from './mandateSignatureRules'
-import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, supabase } from './supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
-import { assertDraftReviewApproval } from '../core/documents/draftReviewApproval'
-import { assertDraftLock } from '../core/documents/draftLockAssurance'
 import { assertSigningEnvelopeReady } from '../core/documents/signingEnvelopeAssurance'
 import { assertSigningDispatchReady } from '../core/documents/signingDispatchAssurance'
 import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
+import {
+  assertDocumentLifecycleTransition,
+  normalizeDocumentLifecycleState,
+  resolveDocumentLifecycleStateFromPacket,
+  toDocumentPacketStorageStatus,
+} from '../core/documents/documentLifecycle'
+import {
+  buildCanonicalTemplateDefinition,
+  TEMPLATE_DEFINITION_SCHEMA_VERSION,
+  validateCanonicalTemplateDefinition,
+} from '../core/documents/canonicalTemplateDefinition'
+import { buildOrganisationTemplateCloneInput } from '../core/documents/organisationTemplateClone'
+import { buildTemplateRevisionInput, isImmutableTemplateRevision } from '../core/documents/templateVersioning'
+import { assertSigningFieldLayout } from '../core/documents/signingFieldLayout'
+import {
+  buildEditableDraftSectionManifest,
+  buildEditableTransactionDocumentDraft,
+} from '../core/documents/transactionDocumentDraft'
+import {
+  buildEditableDocumentRevision,
+  buildEditableRevisionManifest,
+} from '../core/documents/editableDocumentRevision'
+export {
+  DOCUMENT_LIFECYCLE_STATES,
+  DOCUMENT_LIFECYCLE_TRANSITIONS,
+  normalizeDocumentLifecycleState,
+  resolveDocumentLifecycleStateFromPacket,
+  toDocumentPacketStorageStatus,
+} from '../core/documents/documentLifecycle'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
 export const DOCUMENT_PACKET_STATUSES = [
@@ -52,7 +79,7 @@ export const DOCUMENT_SIGNING_FIELD_STATUSES = ['pending', 'completed', 'skipped
 export const DOCUMENT_PACKET_SIGNER_STATUSES = ['pending', 'ready_to_send', 'sent', 'viewed', 'signed', 'declined', 'expired']
 
 const PACKET_VERSION_SELECT =
-  'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, generated_by, generated_at, created_at, updated_at'
+  'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, rendered_file_bucket, rendered_media_type, rendered_byte_length, rendered_sha256, transaction_pdf_persisted, transaction_pdf_persisted_at, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, source_template_revision_id, editable_content_schema_version, editable_content_json, edit_status, edit_sequence, render_freeze_id, render_freeze_status, render_frozen_at, render_content_fingerprint, render_source_version_id, render_source_fingerprint, render_input_verified, render_input_verified_at, native_pdf_verified, native_pdf_verified_at, native_pdf_renderer_contract, generated_by, generated_at, created_at, updated_at'
 
 let organisationBrandingTableAvailable = true
 let cachedPacketAuthUser = null
@@ -61,7 +88,7 @@ let pendingPacketAuthUserPromise = null
 const PACKET_AUTH_USER_CACHE_TTL_MS = 10 * 1000
 const PACKET_CONTEXT_CACHE_TTL_MS = 10 * 1000
 const TEMPLATE_SELECT_PLAN_CACHE_TTL_MS = 10 * 60 * 1000
-const TEMPLATE_SELECT_PLAN_CACHE_KEY = 'arch9:document-packet-template-select-plan:v1'
+const TEMPLATE_SELECT_PLAN_CACHE_KEY = 'arch9:document-packet-template-select-plan:v2'
 const cachedPacketContexts = new Map()
 const pendingPacketContextPromises = new Map()
 let documentPacketTemplateSelectPlanIndex = 0
@@ -381,8 +408,13 @@ async function hydratePacketVersionAccessUrls(client, version = {}) {
   const finalPath = normalizeText(version?.final_signed_file_path)
 
   if (renderedPath) {
-    const renderedSignedUrl = await createSignedUrlAcrossBuckets(client, renderedPath, DOCUMENTS_BUCKET_CANDIDATES)
+    const renderedBucketHint = normalizeText(version?.rendered_file_bucket)
+    const renderedCandidates = renderedBucketHint
+      ? [renderedBucketHint, ...DOCUMENTS_BUCKET_CANDIDATES]
+      : DOCUMENTS_BUCKET_CANDIDATES
+    const renderedSignedUrl = await createSignedUrlAcrossBuckets(client, renderedPath, renderedCandidates)
     hydrated.rendered_file_access_url = renderedSignedUrl?.signedUrl || normalizeNullableText(version?.rendered_file_url)
+    hydrated.rendered_file_bucket = renderedSignedUrl?.bucket || renderedBucketHint || null
   } else {
     hydrated.rendered_file_access_url = normalizeNullableText(version?.rendered_file_url)
   }
@@ -471,7 +503,7 @@ function resolveTemplateMetadataValue(template = {}, keys = []) {
 }
 
 function hydrateTemplateRecord(template = {}) {
-  return {
+  const hydrated = {
     ...template,
     template_storage_path: resolveTemplateMetadataValue(template, ['template_storage_path', 'templatePath']),
     template_storage_bucket: resolveTemplateMetadataValue(template, [
@@ -486,8 +518,16 @@ function hydrateTemplateRecord(template = {}) {
     ]),
     template_output_bucket: resolveTemplateMetadataValue(template, ['template_output_bucket', 'output_bucket', 'outputBucket']),
   }
+  return {
+    ...hydrated,
+    canonical_definition: buildCanonicalTemplateDefinition(hydrated),
+  }
 }
 
+const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE_B4 =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, definition_schema_version, definition_json, revision_root_template_id, revision_parent_template_id, revision_number, superseded_by_template_id, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
+const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE_B1 =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, definition_schema_version, definition_json, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2 =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT =
@@ -498,6 +538,14 @@ const DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, is_default, metadata_json, created_by, created_at, updated_at'
 
 const DOCUMENT_PACKET_TEMPLATE_QUERY_PLANS = [
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE_B4,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
+  {
+    select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE_B1,
+    activeFilter: ({ includeInactive }) => !includeInactive,
+  },
   {
     select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
     activeFilter: ({ includeInactive }) => !includeInactive,
@@ -531,6 +579,12 @@ const DOCUMENT_PACKET_TEMPLATE_SCHEMA_COMPAT_COLUMNS = [
   'published_at',
   'archived_by',
   'archived_at',
+  'definition_schema_version',
+  'definition_json',
+  'revision_root_template_id',
+  'revision_parent_template_id',
+  'revision_number',
+  'superseded_by_template_id',
 ]
 
 const DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS = new Set([
@@ -545,6 +599,12 @@ const DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS = new Set([
   'published_at',
   'archived_by',
   'archived_at',
+  'definition_schema_version',
+  'definition_json',
+  'revision_root_template_id',
+  'revision_parent_template_id',
+  'revision_number',
+  'superseded_by_template_id',
 ])
 
 function getDocumentPacketTemplateCompatibleMissingColumn(error) {
@@ -689,6 +749,7 @@ async function updateDocumentPacketTemplateRowWithFallback(client, templateId, p
   let lastError = null
 
   for (let attempt = 0; attempt < DOCUMENT_PACKET_TEMPLATE_WRITE_COMPAT_COLUMNS.size + 1; attempt += 1) {
+    if (!Object.keys(nextPayload).length) return true
     const { error } = await client
       .from('document_packet_templates')
       .update(nextPayload)
@@ -754,6 +815,39 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
   }
 
   throw lastError || new Error('Unable to load document packet templates.')
+}
+
+async function syncCanonicalDocumentPacketTemplateDefinition(client, templateId, { template = null, sections = null } = {}) {
+  const resolvedTemplate = template || await queryDocumentPacketTemplatesWithFallback(client, { templateId })
+  if (!resolvedTemplate) throw new Error('Template not found while synchronizing its canonical definition.')
+  if (!['mandate', 'otp', 'addendum'].includes(normalizeText(resolvedTemplate.packet_type).toLowerCase())) return null
+
+  let resolvedSections = sections
+  if (!Array.isArray(resolvedSections)) {
+    const { data, error } = await client
+      .from('document_template_sections')
+      .select('id, template_id, section_key, section_label, section_type, sort_order, is_required, is_repeatable, condition_json, placeholder_keys, legal_text, metadata_json, created_at, updated_at')
+      .eq('template_id', templateId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    resolvedSections = data || []
+  }
+
+  const definition = buildCanonicalTemplateDefinition(resolvedTemplate, resolvedSections)
+  const validation = validateCanonicalTemplateDefinition(definition)
+  if (!validation.valid) {
+    const error = new Error(`Invalid canonical template definition: ${validation.blockers[0]}`)
+    error.code = 'INVALID_CANONICAL_TEMPLATE_DEFINITION'
+    error.blockers = validation.blockers
+    throw error
+  }
+
+  await updateDocumentPacketTemplateRowWithFallback(client, templateId, {
+    definition_schema_version: TEMPLATE_DEFINITION_SCHEMA_VERSION,
+    definition_json: definition,
+  })
+  return definition
 }
 
 async function getAuthenticatedUser(client) {
@@ -1137,7 +1231,11 @@ export async function fetchDocumentPacketTemplate(templateId, { includeSections 
     sections = data || []
   }
 
-  return { ...hydrateTemplateRecord(template), sections }
+  const hydrated = { ...hydrateTemplateRecord(template), sections }
+  return {
+    ...hydrated,
+    canonical_definition: buildCanonicalTemplateDefinition(hydrated, includeSections ? sections : null),
+  }
 }
 
 export async function createDocumentPacketTemplate(input = {}) {
@@ -1191,13 +1289,110 @@ export async function createDocumentPacketTemplate(input = {}) {
     created_by: context.user.id,
   }
 
+  if (input.revisionRootTemplateId !== undefined) payload.revision_root_template_id = normalizeNullableUuid(input.revisionRootTemplateId)
+  if (input.revisionParentTemplateId !== undefined) payload.revision_parent_template_id = normalizeNullableUuid(input.revisionParentTemplateId)
+  if (input.revisionNumber !== undefined) payload.revision_number = Math.max(1, Math.trunc(Number(input.revisionNumber) || 1))
+
   const template = await insertDocumentPacketTemplateWithFallback(client, payload)
   const sections = Array.isArray(input.sections) ? input.sections : []
   if (sections.length) {
     await replaceDocumentTemplateSections(template.id, sections, { organisationId: context.organisationId })
   }
 
+  await syncCanonicalDocumentPacketTemplateDefinition(client, template.id)
+
   return fetchDocumentPacketTemplate(template.id, { includeSections: true })
+}
+
+export async function cloneDocumentPacketTemplate({
+  sourceTemplateId,
+  templateLabel = '',
+  description = '',
+  variantLabel = '',
+  templateKey = '',
+} = {}) {
+  const resolvedSourceTemplateId = normalizeText(sourceTemplateId)
+  if (!resolvedSourceTemplateId) throw new Error('sourceTemplateId is required.')
+
+  const sourceTemplate = await fetchDocumentPacketTemplate(resolvedSourceTemplateId, { includeSections: true })
+  if (!sourceTemplate?.id) throw new Error('Source template not found.')
+  const cloneInput = buildOrganisationTemplateCloneInput(sourceTemplate, {
+    templateLabel,
+    description,
+    variantLabel,
+    templateKey,
+  })
+  return createDocumentPacketTemplate(cloneInput)
+}
+
+export async function createDocumentPacketTemplateRevision({ sourceTemplateId, ...overrides } = {}) {
+  const resolvedSourceTemplateId = normalizeText(sourceTemplateId)
+  if (!resolvedSourceTemplateId) throw new Error('sourceTemplateId is required.')
+
+  const sourceTemplate = await fetchDocumentPacketTemplate(resolvedSourceTemplateId, { includeSections: true })
+  if (!sourceTemplate?.id) throw new Error('Source template not found.')
+  if (!sourceTemplate.organisation_id) {
+    throw new Error('Create a company template copy before creating a new version.')
+  }
+
+  const revisionInput = buildTemplateRevisionInput(sourceTemplate, overrides)
+  return createDocumentPacketTemplate(revisionInput)
+}
+
+export async function publishDocumentPacketTemplateRevision(templateId, updates = {}) {
+  const template = await fetchDocumentPacketTemplate(templateId, { includeSections: true })
+  if (!template?.id) throw new Error('Template not found.')
+  if (!template.organisation_id) throw new Error('Only company-owned templates can be published.')
+
+  let publishTarget = template
+  if (isImmutableTemplateRevision(template) && (
+    updates.templateLabel !== undefined || updates.description !== undefined ||
+    updates.metadataJson !== undefined || Array.isArray(updates.sections)
+  )) {
+    publishTarget = await createDocumentPacketTemplateRevision({ sourceTemplateId: template.id, ...updates })
+  } else if (!isImmutableTemplateRevision(template) && Object.keys(updates).length) {
+    publishTarget = await updateDocumentPacketTemplate(template.id, {
+      ...updates,
+      templateStatus: 'draft',
+      isActive: false,
+      isDefault: false,
+    })
+  }
+
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId: publishTarget.organisation_id })
+  if (!context.isOrgAdmin) throw new Error('Only Principal/Super Admin/Admin can publish signing templates.')
+
+  const { data, error } = await client.rpc('bridge_publish_template_revision_b4', {
+    p_template_id: publishTarget.id,
+    p_make_default: updates.makeDefault === undefined ? true : Boolean(updates.makeDefault),
+  })
+  if (error) throw error
+  return fetchDocumentPacketTemplate(data?.id || publishTarget.id, { includeSections: true })
+}
+
+export async function archiveDocumentPacketTemplate(templateId, { organisationId = null } = {}) {
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) throw new Error('Only Principal/Super Admin/Admin can archive signing templates.')
+  const existing = await queryDocumentPacketTemplatesWithFallback(client, {
+    templateId,
+    organisationId: context.organisationId,
+    includeInactive: true,
+  })
+  if (!existing || normalizeText(existing.organisation_id) !== normalizeText(context.organisationId)) {
+    throw new Error('Template not found.')
+  }
+  if (existing.is_default) throw new Error('Publish another default template before archiving this one.')
+
+  await updateDocumentPacketTemplateRowWithFallback(client, templateId, {
+    status: 'archived',
+    is_active: false,
+    is_default: false,
+    archived_by: context.user.id,
+    archived_at: new Date().toISOString(),
+  })
+  return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
 export async function updateDocumentPacketTemplate(templateId, updates = {}) {
@@ -1215,6 +1410,16 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   if (!existing) throw new Error('Template not found.')
   if (normalizeText(existing.organisation_id) !== normalizeText(context.organisationId)) {
     throw new Error('You can only edit templates owned by your organisation.')
+  }
+
+  const immutableContentKeys = [
+    'templateLabel', 'description', 'templateStorageBucket', 'templateStoragePath',
+    'templateFileName', 'templateFormat', 'versionTag', 'metadataJson', 'sections',
+  ]
+  if (isImmutableTemplateRevision(existing) && immutableContentKeys.some((key) => updates[key] !== undefined)) {
+    const immutableError = new Error('This template is already published. Save the changes as a new draft revision.')
+    immutableError.code = 'PUBLISHED_TEMPLATE_IMMUTABLE'
+    throw immutableError
   }
 
   const payload = {}
@@ -1270,6 +1475,8 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   if (Array.isArray(updates.sections)) {
     await replaceDocumentTemplateSections(templateId, updates.sections, { organisationId: context.organisationId })
   }
+
+  await syncCanonicalDocumentPacketTemplateDefinition(client, templateId)
 
   return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
@@ -1423,6 +1630,8 @@ export async function replaceDocumentTemplateSections(templateId, sections = [],
   const { error: deleteError } = await deleteQuery
   if (deleteError) throw deleteError
 
+  await syncCanonicalDocumentPacketTemplateDefinition(client, templateId, { sections: rows })
+
   return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
@@ -1501,6 +1710,78 @@ export async function createDocumentPacket(input = {}) {
   }
 
   return data
+}
+
+export async function createEditableDocumentDraftFromTemplate(input = {}) {
+  const client = requireClient()
+  const templateId = normalizeNullableUuid(input.templateId)
+  if (!templateId) throw new Error('A published template revision is required.')
+
+  const context = await resolvePacketContext(client, { organisationId: input.organisationId || null })
+  const template = await fetchDocumentPacketTemplate(templateId, { includeSections: true })
+  if (!template?.id) throw new Error('Template revision not found.')
+  const templateOrganisationId = normalizeText(template.organisation_id)
+  if (templateOrganisationId && templateOrganisationId !== normalizeText(context.organisationId)) {
+    throw new Error('Template revision does not belong to the active organisation.')
+  }
+  if (!isTemplatePublished(template) || template.is_active === false) {
+    throw new Error('Publish the template before creating a transaction document from it.')
+  }
+
+  const packetType = assertPacketType(input.packetType || template.packet_type)
+  if (packetType !== normalizeText(template.packet_type).toLowerCase()) {
+    throw new Error('The selected template does not match this document type.')
+  }
+  const editableDraft = buildEditableTransactionDocumentDraft(template, {
+    title: input.title,
+    packetType,
+  })
+  const invalidUuidReferences = collectInvalidUuidReferences(input, [
+    { inputKey: 'transactionId' },
+    { inputKey: 'leadId' },
+    { inputKey: 'contactId' },
+    { inputKey: 'dealId' },
+    { inputKey: 'unitId' },
+    { inputKey: 'assignedAgentId' },
+  ])
+  const sourceContextJson = mergeSourceContextWithInvalidReferences(input.sourceContextJson, invalidUuidReferences)
+
+  const { data: result, error } = await client.rpc('bridge_create_editable_document_draft_c1', {
+    p_organisation_id: context.organisationId,
+    p_packet_type: packetType,
+    p_title: normalizeNullableText(input.title || editableDraft.title),
+    p_template_id: template.id,
+    p_transaction_id: normalizeNullableUuid(input.transactionId),
+    p_lead_id: normalizeNullableUuid(input.leadId),
+    p_contact_id: normalizeNullableUuid(input.contactId),
+    p_deal_id: normalizeNullableUuid(input.dealId),
+    p_unit_id: normalizeNullableUuid(input.unitId),
+    p_assigned_agent_id: normalizeNullableUuid(input.assignedAgentId),
+    p_source_context_json: {
+      ...sourceContextJson,
+      editableDocumentDraft: {
+        schemaVersion: editableDraft.schemaVersion,
+        templateRevision: editableDraft.templateRevision,
+      },
+    },
+    p_branding_snapshot_json: input.brandingSnapshotJson && typeof input.brandingSnapshotJson === 'object'
+      ? input.brandingSnapshotJson
+      : {},
+    p_editable_content_json: editableDraft,
+    p_section_manifest_json: buildEditableDraftSectionManifest(editableDraft),
+    p_placeholders_json: input.placeholders && typeof input.placeholders === 'object' ? input.placeholders : {},
+  })
+  if (error) throw error
+  if (result?.contract !== 'c1-v1' || !result?.packet?.id || !result?.version?.id) {
+    throw new Error('The editable document draft contract returned an invalid result.')
+  }
+
+  return {
+    ...result.packet,
+    editableDraft: result.editableContent || editableDraft,
+    versions: [result.version],
+    currentVersion: result.version,
+  }
 }
 
 export async function updateDocumentPacket(packetId, updates = {}) {
@@ -1601,6 +1882,66 @@ export async function updateDocumentPacket(packetId, updates = {}) {
   }
 
   return data
+}
+
+export async function transitionDocumentPacketLifecycle({
+  packetId,
+  nextState,
+  versionId = null,
+  sourceContextPatch = {},
+  eventPayload = {},
+  expectedUpdatedAt = null,
+} = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  if (!resolvedPacketId) throw new Error('packetId is required for a lifecycle transition.')
+
+  const packet = await fetchDocumentPacket(resolvedPacketId, {
+    includeVersions: false,
+    includeEvents: false,
+  })
+  if (!packet?.id) throw new Error('Document packet not found for lifecycle transition.')
+
+  const currentState = resolveDocumentLifecycleStateFromPacket(packet)
+  const targetState = assertDocumentLifecycleTransition(currentState, nextState)
+  const nowIso = new Date().toISOString()
+  const sourcePatch = sourceContextPatch && typeof sourceContextPatch === 'object' ? sourceContextPatch : {}
+  const updates = {
+    status: toDocumentPacketStorageStatus(targetState),
+    expectedUpdatedAt: normalizeText(expectedUpdatedAt || packet.updated_at) || null,
+    allowSigningMetadataUpdate: true,
+    sourceContextJson: {
+      ...(packet.source_context_json && typeof packet.source_context_json === 'object' ? packet.source_context_json : {}),
+      ...sourcePatch,
+      lifecycle_state: targetState,
+      lifecycle_previous_state: currentState,
+      lifecycle_updated_at: nowIso,
+    },
+  }
+  if (targetState === 'sent') updates.sentAt = normalizeText(sourcePatch.sentAt) || nowIso
+  if (targetState === 'completed') updates.completedAt = normalizeText(sourcePatch.completedAt) || nowIso
+  if (targetState === 'archived') updates.archivedAt = normalizeText(sourcePatch.archivedAt) || nowIso
+
+  const updatedPacket = await updateDocumentPacket(resolvedPacketId, updates)
+  await appendDocumentPacketEvent({
+    packetId: updatedPacket.id,
+    organisationId: updatedPacket.organisation_id || null,
+    versionId: normalizeNullableUuid(versionId),
+    eventType: 'document_lifecycle_transitioned',
+    eventPayload: {
+      ...(eventPayload && typeof eventPayload === 'object' ? eventPayload : {}),
+      fromState: currentState,
+      toState: targetState,
+      storageStatus: updatedPacket.status,
+      transitionedAt: nowIso,
+    },
+  })
+
+  return {
+    packet: updatedPacket,
+    fromState: currentState,
+    toState: targetState,
+    transitionedAt: nowIso,
+  }
 }
 
 export async function listDocumentPackets({
@@ -1814,6 +2155,466 @@ export async function updateDocumentPacketVersion(packetVersionId, updates = {})
   return hydratePacketVersionAccessUrls(client, data)
 }
 
+export async function saveEditableDocumentDraftRevision({
+  packetId,
+  baseVersionId,
+  expectedEditSequence = 0,
+  baseDocument = {},
+  sections = [],
+  placeholders = {},
+  validationSummary = {},
+  reviewState = 'draft',
+} = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(baseVersionId)) throw new Error('baseVersionId is required.')
+
+  const editableContent = buildEditableDocumentRevision({
+    baseDocument,
+    sections,
+    reviewState,
+  })
+  const sectionManifest = buildEditableRevisionManifest(editableContent)
+  const compatibilitySnapshot = {
+    ...editableContent,
+    review_state: editableContent.reviewState,
+    last_saved_at: editableContent.updatedAt,
+    sections: editableContent.sections.map((section) => ({
+      ...section,
+      tokens: (section.mergeFields || []).map((token) => ({ token, label: token })),
+    })),
+  }
+
+  const { data: result, error } = await client.rpc('bridge_save_editable_document_revision_c2', {
+    p_packet_id: packetId,
+    p_base_version_id: baseVersionId,
+    p_expected_edit_sequence: Math.max(0, Math.trunc(Number(expectedEditSequence) || 0)),
+    p_editable_content_json: editableContent,
+    p_section_manifest_json: sectionManifest,
+    p_placeholders_json: placeholders && typeof placeholders === 'object' ? placeholders : {},
+    p_validation_summary_json: {
+      ...(validationSummary && typeof validationSummary === 'object' ? validationSummary : {}),
+      editable_draft: compatibilitySnapshot,
+      editable_draft_saved_at: editableContent.updatedAt,
+    },
+    p_review_state: editableContent.reviewState,
+  })
+  if (error) {
+    if (normalizeText(error?.details).includes('STALE_EDITABLE_DOCUMENT_REVISION') || error?.code === '40001') {
+      const conflict = new Error('A newer document revision exists. Reload the document before saving your changes.')
+      conflict.code = 'STALE_EDITABLE_DOCUMENT_REVISION'
+      conflict.cause = error
+      throw conflict
+    }
+    throw error
+  }
+  if (result?.contract !== 'c2-v1' || !result?.packet?.id || !result?.version?.id) {
+    throw new Error('The editable document revision contract returned an invalid result.')
+  }
+  return result
+}
+
+export async function restoreEditableDocumentDraftRevision({
+  packetId,
+  sourceVersionId,
+  baseVersionId,
+  expectedEditSequence = 0,
+} = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(sourceVersionId)) throw new Error('sourceVersionId is required.')
+  if (!normalizeNullableUuid(baseVersionId)) throw new Error('baseVersionId is required.')
+
+  const { data: result, error } = await client.rpc('bridge_restore_editable_document_revision_c3', {
+    p_packet_id: packetId,
+    p_source_version_id: sourceVersionId,
+    p_base_version_id: baseVersionId,
+    p_expected_edit_sequence: Math.max(0, Math.trunc(Number(expectedEditSequence) || 0)),
+  })
+  if (error) {
+    if (normalizeText(error?.details).includes('STALE_EDITABLE_DOCUMENT_REVISION') || error?.code === '40001') {
+      const conflict = new Error('A newer document revision exists. Reload before restoring an earlier version.')
+      conflict.code = 'STALE_EDITABLE_DOCUMENT_REVISION'
+      conflict.cause = error
+      throw conflict
+    }
+    throw error
+  }
+  if (result?.contract !== 'c3-v1' || !result?.packet?.id || !result?.version?.id) {
+    throw new Error('The editable document restore contract returned an invalid result.')
+  }
+  return result
+}
+
+export async function freezeEditableDocumentRevisionForRender({ packetId, versionId, expectedEditSequence = 0 } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const { data: result, error } = await client.rpc('bridge_freeze_editable_revision_for_render_c4', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_expected_edit_sequence: Math.max(0, Math.trunc(Number(expectedEditSequence) || 0)),
+  })
+  if (error) {
+    if (normalizeText(error?.details).includes('STALE_EDITABLE_DOCUMENT_REVISION') || error?.code === '40001') {
+      const conflict = new Error('A newer document revision exists. Reload before generating the PDF.')
+      conflict.code = 'STALE_EDITABLE_DOCUMENT_REVISION'
+      conflict.cause = error
+      throw conflict
+    }
+    throw error
+  }
+  if (result?.contract !== 'c4-v1' || !result?.freezeId || !result?.sourceVersionId || !result?.contentFingerprint) {
+    throw new Error('The editable render-freeze contract returned an invalid result.')
+  }
+  return result
+}
+
+export async function completeEditableDocumentRenderFreeze({
+  packetId,
+  freezeId,
+  generatedVersionId = null,
+  success = true,
+  failureMessage = '',
+} = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(freezeId)) throw new Error('freezeId is required.')
+  const { data: result, error } = await client.rpc('bridge_complete_editable_render_freeze_c4', {
+    p_packet_id: packetId,
+    p_freeze_id: freezeId,
+    p_generated_version_id: normalizeNullableUuid(generatedVersionId),
+    p_success: Boolean(success),
+    p_failure_message: normalizeNullableText(failureMessage),
+  })
+  if (error) throw error
+  if (result?.contract !== 'c4-v1' || !result?.freezeId) {
+    throw new Error('The editable render-freeze completion contract returned an invalid result.')
+  }
+  return result
+}
+
+export async function verifyFrozenEditableRenderOutput({ packetId, freezeId, generatedVersionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(freezeId)) throw new Error('freezeId is required.')
+  if (!normalizeNullableUuid(generatedVersionId)) throw new Error('generatedVersionId is required.')
+  const { data: result, error } = await client.rpc('bridge_verify_frozen_render_output_d1', {
+    p_packet_id: packetId,
+    p_freeze_id: freezeId,
+    p_generated_version_id: generatedVersionId,
+  })
+  if (error) {
+    if (normalizeText(error?.details).includes('FROZEN_RENDER_PROVENANCE_MISMATCH')) {
+      const mismatch = new Error('The generated PDF does not match the frozen editable revision. Regenerate the document before sending it.')
+      mismatch.code = 'FROZEN_RENDER_PROVENANCE_MISMATCH'
+      mismatch.cause = error
+      throw mismatch
+    }
+    throw error
+  }
+  if (result?.contract !== 'd1-v1' || result?.verified !== true) {
+    throw new Error('Frozen PDF verification returned an invalid result.')
+  }
+  return result
+}
+
+export async function verifyServerAttestedNativePdfRender({ packetId, freezeId, generatedVersionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(freezeId)) throw new Error('freezeId is required.')
+  if (!normalizeNullableUuid(generatedVersionId)) throw new Error('generatedVersionId is required.')
+  const { data: result, error } = await client.rpc('bridge_verify_native_pdf_render_d2', {
+    p_packet_id: packetId,
+    p_freeze_id: freezeId,
+    p_generated_version_id: generatedVersionId,
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('D2_RENDER_INPUT_NOT_VERIFIED') || detail.includes('D2_NATIVE_PDF_ATTESTATION_MISMATCH')) {
+      const mismatch = new Error('The generated file is not a verified native PDF from the frozen document. Regenerate it before sending for signature.')
+      mismatch.code = detail.includes('D2_RENDER_INPUT_NOT_VERIFIED')
+        ? 'D2_RENDER_INPUT_NOT_VERIFIED'
+        : 'D2_NATIVE_PDF_ATTESTATION_MISMATCH'
+      mismatch.cause = error
+      throw mismatch
+    }
+    throw error
+  }
+  if (result?.contract !== 'd2-v1' || result?.verified !== true) {
+    throw new Error('Native PDF verification returned an invalid result.')
+  }
+  return result
+}
+
+export async function persistGeneratedPdfToTransaction({ packetId, generatedVersionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(generatedVersionId)) throw new Error('generatedVersionId is required.')
+  const { data: result, error } = await client.rpc('bridge_persist_transaction_pdf_d3', {
+    p_packet_id: packetId,
+    p_generated_version_id: generatedVersionId,
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('D3_')) {
+      const persistenceError = new Error('The generated PDF could not be safely linked to the transaction. Regenerate it before continuing.')
+      persistenceError.code = detail
+      persistenceError.cause = error
+      throw persistenceError
+    }
+    throw error
+  }
+  if (result?.contract !== 'd3-v1' || result?.persisted !== true || !result?.documentId || !result?.path) {
+    throw new Error('Transaction PDF persistence returned an invalid result.')
+  }
+  return result
+}
+
+export async function requestPersistedPdfAccess({ packetId, versionId, purpose = 'preview' } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const normalizedPurpose = normalizeText(purpose).toLowerCase() === 'download' ? 'download' : 'preview'
+  const { data: authorization, error } = await client.rpc('bridge_authorize_persisted_pdf_access_d4', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_purpose: normalizedPurpose,
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('D4_')) {
+      const accessError = new Error('The certified PDF is unavailable or no longer matches its transaction record. Regenerate the document before continuing.')
+      accessError.code = detail
+      accessError.cause = error
+      throw accessError
+    }
+    throw error
+  }
+  if (authorization?.contract !== 'd4-v1' || authorization?.authorized !== true || !authorization?.bucket || !authorization?.path) {
+    throw new Error('Certified PDF access returned an invalid result.')
+  }
+  const options = normalizedPurpose === 'download' && authorization.fileName
+    ? { download: authorization.fileName }
+    : undefined
+  const signedResult = await client.storage
+    .from(authorization.bucket)
+    .createSignedUrl(authorization.path, 15 * 60, options)
+  if (signedResult.error || !signedResult.data?.signedUrl) {
+    const accessError = new Error('The PDF is stored correctly, but a fresh access link could not be created. Please retry.')
+    accessError.code = 'D4_SIGNED_URL_CREATE_FAILED'
+    accessError.cause = signedResult.error || null
+    throw accessError
+  }
+  return {
+    ...authorization,
+    signedUrl: signedResult.data.signedUrl,
+    expiresInSeconds: 15 * 60,
+  }
+}
+
+export async function getFinalDocumentCompletionStatus({ packetId, versionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const { data, error } = await client.rpc('bridge_get_final_completion_status_f5', {
+    p_packet_id: packetId,
+    p_packet_version_id: versionId,
+  })
+  if (error) throw error
+  if (data?.contract !== 'f5-v1') throw new Error('Final completion status returned an invalid result.')
+  return data
+}
+
+export async function retryFinalDocumentCompletion({ packetId, versionId } = {}) {
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const { data, error } = await invokeEdgeFunction('retry-final-document-completion', {
+    body: { packetId, packetVersionId: versionId },
+  })
+  if (error || !data || data.success === false) {
+    const retryError = new Error(data?.error || error?.message || 'The final document completion retry failed.')
+    retryError.code = data?.errorCode || error?.code || 'F5_RETRY_FAILED'
+    retryError.retryable = data?.retryable !== false
+    throw retryError
+  }
+  return data
+}
+
+export async function getDocumentGeneratorLaunchChain({ packetId, versionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const { data, error } = await client.rpc('bridge_get_document_generator_launch_chain_g1', {
+    p_packet_id: packetId,
+    p_packet_version_id: versionId,
+  })
+  if (error) throw error
+  if (data?.contract !== 'g1-v1') throw new Error('Generator launch assurance returned an invalid result.')
+  return data
+}
+
+export async function fetchSigningFieldLayout({ packetId, versionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const { data, error } = await client
+    .from('document_signing_field_layouts')
+    .select('id, organisation_id, packet_id, packet_version_id, revision, status, fields_json, content_fingerprint, pdf_page_count, placement_schema_version, placement_verified, placement_verified_at, applied_at, applied_by, applied_field_count, created_at, updated_at')
+    .eq('packet_id', packetId)
+    .eq('packet_version_id', versionId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+    ? {
+        contract: 'e1-v1',
+        layoutId: data.id,
+        packetId: data.packet_id,
+        versionId: data.packet_version_id,
+        revision: Number(data.revision || 0),
+        status: data.status,
+        fields: Array.isArray(data.fields_json) ? data.fields_json : [],
+        contentFingerprint: data.content_fingerprint,
+        pdfPageCount: Number(data.pdf_page_count || 0) || null,
+        placementSchemaVersion: data.placement_schema_version,
+        placementVerified: data.placement_verified === true,
+        placementVerifiedAt: data.placement_verified_at,
+        appliedAt: data.applied_at,
+        appliedFieldCount: Number(data.applied_field_count || 0),
+        updatedAt: data.updated_at,
+      }
+    : null
+}
+
+export async function saveSigningFieldLayout({ packetId, versionId, fields = [], expectedRevision = 0 } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const normalizedFields = assertSigningFieldLayout(fields)
+  const { data: result, error } = await client.rpc('bridge_save_signing_field_layout_e1', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_fields: normalizedFields,
+    p_expected_revision: Number(expectedRevision || 0),
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('E1_SIGNING_LAYOUT_STALE')) {
+      const stale = new Error('The signature layout changed in another session. Reload it before saving again.')
+      stale.code = 'E1_SIGNING_LAYOUT_STALE'
+      stale.cause = error
+      throw stale
+    }
+    throw error
+  }
+  if (result?.contract !== 'e1-v1' || !result?.layoutId || !Array.isArray(result?.fields)) {
+    throw new Error('Signing field layout save returned an invalid result.')
+  }
+  return result
+}
+
+export async function saveSigningFieldPlacement({ packetId, versionId, fields = [], expectedRevision = 0, pdfPageCount = 1 } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  const normalizedFields = assertSigningFieldLayout(fields)
+  const { data: result, error } = await client.rpc('bridge_save_signing_field_placement_e2', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_fields: normalizedFields,
+    p_expected_revision: Number(expectedRevision || 0),
+    p_pdf_page_count: Math.max(1, Math.trunc(Number(pdfPageCount || 1))),
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    const placementError = new Error(
+      detail.includes('E2_SIGNING_FIELD_COLLISION')
+        ? 'Two signing blocks overlap. Move them apart before saving.'
+        : detail.includes('E2_FIELD_PAGE_OUT_OF_RANGE')
+          ? 'A signing block is assigned to a page that does not exist in this PDF.'
+          : error.message || 'The visual signing layout could not be saved.',
+    )
+    placementError.code = detail || error.code || 'E2_SIGNING_FIELD_PLACEMENT_FAILED'
+    placementError.cause = error
+    throw placementError
+  }
+  if (result?.contract !== 'e2-v1' || result?.placementVerified !== true || !Array.isArray(result?.fields)) {
+    throw new Error('Visual signing-field placement returned an invalid result.')
+  }
+  return result
+}
+
+export async function applySigningFieldLayout({ packetId, versionId, layoutRevision } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  if (!Number.isInteger(Number(layoutRevision)) || Number(layoutRevision) < 1) throw new Error('A saved layout revision is required.')
+  const { data: result, error } = await client.rpc('bridge_apply_signing_field_layout_e3', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_layout_revision: Number(layoutRevision),
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    const mappingError = new Error(
+      detail.includes('E3_SIGNER_FIELD_MAPPING_INCOMPLETE')
+        ? 'Every signer in the layout needs a real name, email address and required signature block. Save signer details and check the agent, seller or buyer blocks.'
+        : detail.includes('E3_LAYOUT_REVISION_STALE')
+          ? 'The visual layout changed before it was applied. Reload and try again.'
+          : error.message || 'The signing layout could not be applied.',
+    )
+    mappingError.code = detail || error.code || 'E3_SIGNER_FIELD_MAPPING_FAILED'
+    mappingError.cause = error
+    throw mappingError
+  }
+  if (result?.contract !== 'e3-v1' || result?.applied !== true || Number(result?.fieldCount || 0) < 1) {
+    throw new Error('Signing layout application returned an invalid result.')
+  }
+  return result
+}
+
+export async function authorizeAppliedEnvelopeDispatch({ packetId, versionId, regenerate = false, targetSignerRole = '' } = {}) {
+  const client = requireClient()
+  const { data: result, error } = await client.rpc('bridge_authorize_applied_envelope_dispatch_e4', {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_regenerate: Boolean(regenerate),
+    p_target_signer_role: normalizeNullableText(targetSignerRole),
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    const dispatchError = new Error(
+      detail.includes('E4_APPLIED_LAYOUT_REQUIRED')
+        ? 'Apply the visual signature layout to the signers before sending.'
+        : detail.includes('E4_APPLIED_LAYOUT_FIELD_MISMATCH')
+          ? 'The active signing fields no longer match the applied visual layout. Apply the layout again before sending.'
+          : error.message || 'The signing envelope could not be authorized for dispatch.',
+    )
+    dispatchError.code = detail || error.code || 'E4_DISPATCH_AUTHORIZATION_FAILED'
+    dispatchError.cause = error
+    throw dispatchError
+  }
+  if (result?.contract !== 'e4-v1' || result?.authorized !== true || !result?.dispatchId) {
+    throw new Error('Signing dispatch authorization returned an invalid result.')
+  }
+  return result
+}
+
+export async function completeAppliedEnvelopeDispatch({ dispatchId, success, deliveryEvidence = {} } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(dispatchId)) throw new Error('dispatchId is required.')
+  const { data: result, error } = await client.rpc('bridge_complete_applied_envelope_dispatch_e4', {
+    p_dispatch_id: dispatchId,
+    p_success: Boolean(success),
+    p_delivery_evidence: deliveryEvidence && typeof deliveryEvidence === 'object' ? deliveryEvidence : {},
+  })
+  if (error) throw error
+  if (result?.contract !== 'e4-v1' || !['delivered', 'failed'].includes(result?.status)) {
+    throw new Error('Signing dispatch completion returned an invalid result.')
+  }
+  return result
+}
+
 export async function uploadFinalSignedPacketArtifact({
   packetId,
   packetVersionId = '',
@@ -1924,6 +2725,17 @@ export async function releaseDocumentPacketGenerationLease({ packetId, generatio
   })
   if (error) throw error
   return data === true
+}
+
+export async function getDocumentPacketGenerationLeaseStatus({ packetId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  const { data, error } = await client.rpc('bridge_get_generation_attempt_status_i4', { p_packet_id: packetId })
+  if (error) throw error
+  if (data?.contract !== 'i4-generator-v1' || data?.internalIdentifiersExcluded !== true) {
+    throw new Error('Generation attempt status returned an invalid result.')
+  }
+  return data
 }
 
 export async function appendDocumentPacketEvent({
@@ -2080,10 +2892,13 @@ export async function archiveDocumentPacket(packetId, { reason = '' } = {}) {
   if (!packetId) throw new Error('packetId is required.')
 
   const archivedAt = new Date().toISOString()
-  const packet = await updateDocumentPacket(packetId, {
-    status: 'archived',
-    archivedAt,
+  const transition = await transitionDocumentPacketLifecycle({
+    packetId,
+    nextState: 'archived',
+    sourceContextPatch: { archiveReason: normalizeText(reason) || null, archivedAt },
+    eventPayload: { reason: normalizeText(reason) || null },
   })
+  const packet = transition.packet
 
   await appendDocumentPacketEvent({
     packetId,
@@ -2714,7 +3529,9 @@ export async function generateDocumentPacketSigningLinks({
   targetSignerRole = '',
 } = {}) {
   const client = requireClient()
-  const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
+  const signingContext = await fetchPacketForSigningContext(client, packetId, organisationId)
+  let packet = signingContext.packet
+  const context = signingContext.context
   if (!canManagePacketSigning(context, packet)) {
     throw new Error('Only the assigned agent, packet creator, or an organisation admin can generate signing links.')
   }
@@ -2743,9 +3560,9 @@ export async function generateDocumentPacketSigningLinks({
     versionError.code = 'NO_GENERATED_VERSION'
     throw versionError
   }
-  assertDraftReviewApproval({ packet, version: targetVersion })
-  assertDraftLock({ packet, version: targetVersion })
-
+  if (!regenerate && ['draft', 'ready_for_generation', 'generated'].includes(normalizeText(packet?.status).toLowerCase())) {
+    packet = await promotePacketToSigningPrep(packet)
+  }
   const signers = await listDocumentPacketSigners({
     packetId: packet.id,
     packetVersionId: targetVersion.id,
@@ -2761,6 +3578,12 @@ export async function generateDocumentPacketSigningLinks({
     organisationId: packet.organisation_id,
   })
   assertSigningEnvelopeReady({ packet, version: targetVersion, signers, fields: signingFields })
+  const dispatchAuthorization = await authorizeAppliedEnvelopeDispatch({
+    packetId: packet.id,
+    versionId: targetVersion.id,
+    regenerate,
+    targetSignerRole,
+  })
   const spouseFields = signingFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
   const mandateSecondarySigner = isMandatePacket
     ? resolveMandateSecondarySignerConfig({ packet })
@@ -2928,11 +3751,11 @@ export async function generateDocumentPacketSigningLinks({
   const signingStatus = isMandatePacket
     ? (linkSignerRole === 'agent' ? 'sent_to_agent' : linkSignerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
     : 'sent_for_signature'
-  const packetUpdate = {
-    status: 'sent',
-    sent_at: packet.status === 'sent' ? undefined : nowIso,
-    source_context_json: {
-      ...sourceContext,
+  await transitionDocumentPacketLifecycle({
+    packetId: packet.id,
+    nextState: 'sent',
+    versionId: targetVersion.id,
+    sourceContextPatch: {
       signing_method: sourceContext.signing_method || 'digital',
       signingMethod: sourceContext.signingMethod || 'digital',
       signing_status: signingStatus,
@@ -2943,15 +3766,12 @@ export async function generateDocumentPacketSigningLinks({
       signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,
       lastSigningRecipientRole: linkSignerRole || sourceContext.lastSigningRecipientRole || null,
     },
-  }
-  Object.keys(packetUpdate).forEach((key) => {
-    if (packetUpdate[key] === undefined) delete packetUpdate[key]
+    eventPayload: {
+      signingStatus,
+      dispatchReference,
+      regenerate: Boolean(regenerate),
+    },
   })
-  const { error: packetUpdateError } = await client
-    .from('document_packets')
-    .update(packetUpdate)
-    .eq('id', packet.id)
-  if (packetUpdateError) throw packetUpdateError
 
   return {
     packetId: packet.id,
@@ -2960,6 +3780,10 @@ export async function generateDocumentPacketSigningLinks({
     targetSignerRole: normalizedTargetSignerRole || linkSignerRole || null,
     signingStatus,
     dispatchReference,
+    dispatchId: dispatchAuthorization.dispatchId,
+    dispatchAlreadyDelivered: dispatchAuthorization.alreadyDelivered === true,
+    appliedLayoutId: dispatchAuthorization.layoutId,
+    appliedLayoutRevision: dispatchAuthorization.layoutRevision,
     issuedAt,
     signers: updates,
   }

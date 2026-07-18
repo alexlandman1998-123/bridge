@@ -118,6 +118,7 @@ export const ATTORNEY_LEAD_ROLE_ACCESS = Object.freeze({
   conveyancer: PRACTITIONER_ACCESS,
   transfer_attorney: PRACTITIONER_ACCESS,
   bond_attorney: PRACTITIONER_ACCESS,
+  attorney_conveyancer: PRACTITIONER_ACCESS,
   candidate_attorney: PRACTITIONER_ACCESS,
   paralegal: ASSIGNED_CONTRIBUTOR_ACCESS,
   conveyancing_secretary: ASSIGNED_CONTRIBUTOR_ACCESS,
@@ -206,4 +207,3 @@ export function getAttorneyLeadLifecycleStatusForStage(stage, currentStatus = ''
 export function getAttorneyLeadRoleAccess(role) {
   return ATTORNEY_LEAD_ROLE_ACCESS[normalizeKey(role)] || null
 }
-

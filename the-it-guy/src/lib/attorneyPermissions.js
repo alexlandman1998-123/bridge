@@ -1,6 +1,5 @@
 import {
   getAuthenticatedUser,
-  isPermissionDeniedError,
   isMissingTableError,
   normalizeText,
   requireClient,
@@ -11,17 +10,42 @@ import {
   buildAttorneyDemoMembership,
   isAttorneyDemoContextEnabled,
 } from './attorneyDemoContext'
+import {
+  ATTORNEY_FIRM_ADMIN_ROLES,
+  ATTORNEY_FIRM_MANAGER_ROLES,
+  ATTORNEY_FIRM_ROLE_VALUES,
+  ATTORNEY_LANE_ROLES,
+  ATTORNEY_PERMISSION_KEYS,
+  ATTORNEY_ROLE_PERMISSION_MAP,
+  attorneyRoleHasPermission,
+  getAttorneyProfessionalProfilePermissions,
+  getAttorneyRolePermissions,
+  hasAttorneyProfessionalPermission,
+  hasAttorneyPermission,
+  isAttorneyProfessionalAdministrator,
+  isAttorneyProfessionalManagementRole,
+  normalizeAttorneyFirmRole,
+  normalizeAttorneyLaneRole,
+  deriveAttorneyProfessionalProfile,
+} from '../constants/attorneyRoleCatalog.js'
 
-export const ATTORNEY_FIRM_ROLE_VALUES = [
-  'firm_admin',
-  'director_partner',
-  'transfer_attorney',
-  'bond_attorney',
-  'conveyancing_secretary',
-  'admin_staff',
-  'reception_scheduling',
-  'candidate_attorney',
-]
+export {
+  ATTORNEY_FIRM_ADMIN_ROLES,
+  ATTORNEY_FIRM_MANAGER_ROLES,
+  ATTORNEY_FIRM_ROLE_VALUES,
+  ATTORNEY_LANE_ROLES,
+  ATTORNEY_PERMISSION_KEYS,
+  ATTORNEY_ROLE_PERMISSION_MAP,
+  attorneyRoleHasPermission,
+  getAttorneyProfessionalProfilePermissions,
+  getAttorneyRolePermissions,
+  hasAttorneyProfessionalPermission,
+  hasAttorneyPermission,
+  isAttorneyProfessionalAdministrator,
+  isAttorneyProfessionalManagementRole,
+  normalizeAttorneyFirmRole,
+  normalizeAttorneyLaneRole,
+}
 
 export const ATTORNEY_FIRM_MEMBER_STATUS_VALUES = ['invited', 'active', 'suspended', 'removed']
 
@@ -29,147 +53,6 @@ export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'admin', 'man
 
 export const ATTORNEY_INVITATION_STATUS_VALUES = ['pending', 'accepted', 'expired', 'cancelled']
 
-export const ATTORNEY_FIRM_ADMIN_ROLES = new Set(['firm_admin'])
-export const ATTORNEY_FIRM_MANAGER_ROLES = new Set(['firm_admin', 'director_partner'])
-export const ATTORNEY_LANE_ROLES = ['transfer', 'bond', 'cancellation']
-
-export const ATTORNEY_PERMISSION_KEYS = [
-  'can_view_firm_dashboard',
-  'can_manage_firm_settings',
-  'can_manage_branding',
-  'can_invite_firm_members',
-  'can_manage_members',
-  'can_manage_departments',
-  'can_view_all_firm_matters',
-  'can_view_assigned_matters',
-  'can_view_transfer_matters',
-  'can_view_bond_matters',
-  'can_create_attorney_assignments',
-  'can_update_attorney_assignments',
-  'can_remove_attorney_assignments',
-  'can_edit_transfer_workflow',
-  'can_edit_bond_workflow',
-  'can_request_documents',
-  'can_review_documents',
-  'can_upload_documents',
-  'can_reject_documents',
-  'can_mark_documents_complete',
-  'can_comment_shared',
-  'can_comment_internal',
-  'can_view_internal_comments',
-  'can_manage_signing_appointments',
-  'can_generate_otp',
-  'can_export_reports',
-  'can_view_client_visible_updates',
-  'can_publish_client_visible_updates',
-]
-
-function buildPermissionRecord(enabledKeys = []) {
-  const enabledSet = new Set(enabledKeys)
-  return ATTORNEY_PERMISSION_KEYS.reduce((accumulator, key) => {
-    accumulator[key] = enabledSet.has(key)
-    return accumulator
-  }, {})
-}
-
-const FULL_ACCESS = buildPermissionRecord(ATTORNEY_PERMISSION_KEYS)
-
-export const ATTORNEY_ROLE_PERMISSION_MAP = {
-  firm_admin: FULL_ACCESS,
-  director_partner: buildPermissionRecord([
-    'can_view_firm_dashboard',
-    'can_view_all_firm_matters',
-    'can_view_transfer_matters',
-    'can_view_bond_matters',
-    'can_create_attorney_assignments',
-    'can_update_attorney_assignments',
-    'can_remove_attorney_assignments',
-    'can_request_documents',
-    'can_review_documents',
-    'can_upload_documents',
-    'can_reject_documents',
-    'can_mark_documents_complete',
-    'can_comment_shared',
-    'can_comment_internal',
-    'can_view_internal_comments',
-    'can_manage_signing_appointments',
-    'can_generate_otp',
-    'can_export_reports',
-    'can_view_client_visible_updates',
-    'can_publish_client_visible_updates',
-  ]),
-  transfer_attorney: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_view_transfer_matters',
-    'can_edit_transfer_workflow',
-    'can_request_documents',
-    'can_review_documents',
-    'can_upload_documents',
-    'can_reject_documents',
-    'can_mark_documents_complete',
-    'can_comment_shared',
-    'can_comment_internal',
-    'can_view_internal_comments',
-    'can_manage_signing_appointments',
-    'can_generate_otp',
-    'can_view_client_visible_updates',
-    'can_publish_client_visible_updates',
-  ]),
-  bond_attorney: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_view_bond_matters',
-    'can_edit_bond_workflow',
-    'can_request_documents',
-    'can_review_documents',
-    'can_upload_documents',
-    'can_reject_documents',
-    'can_mark_documents_complete',
-    'can_comment_shared',
-    'can_comment_internal',
-    'can_view_internal_comments',
-    'can_manage_signing_appointments',
-    'can_view_client_visible_updates',
-    'can_publish_client_visible_updates',
-  ]),
-  conveyancing_secretary: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_request_documents',
-    'can_review_documents',
-    'can_upload_documents',
-    'can_reject_documents',
-    'can_mark_documents_complete',
-    'can_comment_shared',
-    'can_comment_internal',
-    'can_view_internal_comments',
-    'can_manage_signing_appointments',
-    'can_view_client_visible_updates',
-    'can_publish_client_visible_updates',
-  ]),
-  admin_staff: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_request_documents',
-    'can_review_documents',
-    'can_upload_documents',
-    'can_comment_internal',
-    'can_view_internal_comments',
-  ]),
-  reception_scheduling: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_comment_internal',
-    'can_manage_signing_appointments',
-  ]),
-  candidate_attorney: buildPermissionRecord([
-    'can_view_assigned_matters',
-    'can_upload_documents',
-    'can_comment_internal',
-    'can_view_internal_comments',
-  ]),
-}
-
-export function normalizeAttorneyFirmRole(value, fallback = 'candidate_attorney') {
-  const normalized = String(value || '').trim().toLowerCase()
-  return ATTORNEY_FIRM_ROLE_VALUES.includes(normalized) ? normalized : fallback
-}
 
 export function normalizeAttorneyFirmMemberStatus(value, fallback = 'active') {
   const normalized = String(value || '').trim().toLowerCase()
@@ -186,27 +69,6 @@ export function normalizeAttorneyInvitationStatus(value, fallback = 'pending') {
   return ATTORNEY_INVITATION_STATUS_VALUES.includes(normalized) ? normalized : fallback
 }
 
-export function getAttorneyRolePermissions(role) {
-  const normalizedRole = normalizeAttorneyFirmRole(role)
-  return ATTORNEY_ROLE_PERMISSION_MAP[normalizedRole] || ATTORNEY_ROLE_PERMISSION_MAP.candidate_attorney
-}
-
-export function hasAttorneyPermission(role, permissionKey) {
-  if (!ATTORNEY_PERMISSION_KEYS.includes(permissionKey)) {
-    return false
-  }
-  return Boolean(getAttorneyRolePermissions(role)[permissionKey])
-}
-
-export function attorneyRoleHasPermission(role, permissionKey) {
-  return hasAttorneyPermission(role, permissionKey)
-}
-
-export function normalizeAttorneyLaneRole(value, fallback = 'transfer') {
-  const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
-  if (normalized === 'transfer_and_bond') return 'transfer'
-  return ATTORNEY_LANE_ROLES.includes(normalized) ? normalized : fallback
-}
 
 function isMissingColumnLikeError(error, columnName) {
   if (!error) return false
@@ -229,50 +91,25 @@ function assignmentCoversLane(assignmentType, laneRole) {
 
 function normalizeMembershipRow(row) {
   if (!row) return null
+  const professionalProfile = deriveAttorneyProfessionalProfile({
+    role: row.role,
+    professionalRole: row.professional_role,
+    practiceQualifications: row.practice_qualifications,
+  })
   return {
     id: row.id,
     firmId: row.firm_id,
     userId: row.user_id,
     departmentId: row.department_id || null,
-    role: normalizeAttorneyFirmRole(row.role, 'candidate_attorney'),
+    role: normalizeAttorneyFirmRole(row.role, ''),
+    professionalRole: professionalProfile.professionalRole,
+    practiceQualifications: professionalProfile.practiceQualifications,
     status: normalizeAttorneyFirmMemberStatus(row.status, 'active'),
     invitedBy: row.invited_by || null,
     joinedAt: row.joined_at || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
   }
-}
-
-function buildOwnerAdminMembership({ firmId, userId } = {}) {
-  const nowIso = new Date().toISOString()
-  return {
-    id: `owner-admin-${firmId}-${userId}`,
-    firmId,
-    userId,
-    departmentId: null,
-    role: 'firm_admin',
-    status: 'active',
-    invitedBy: userId,
-    joinedAt: nowIso,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-    isActive: true,
-  }
-}
-
-async function resolveOwnerAdminMembershipFallback(client, firmId, userId) {
-  const firmLookup = await client
-    .from('attorney_firms')
-    .select('id, created_by')
-    .eq('id', firmId)
-    .eq('created_by', userId)
-    .maybeSingle()
-
-  if (firmLookup.error || !firmLookup.data?.id) {
-    return null
-  }
-
-  return buildOwnerAdminMembership({ firmId, userId })
 }
 
 async function resolveAuthenticatedUserId(client, userId) {
@@ -322,7 +159,7 @@ export async function getCurrentUserAttorneyMembership(firmId = null, userId = n
 
   const query = await client
     .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, status, invited_by, joined_at, created_at, updated_at')
     .eq('firm_id', resolvedFirmId)
     .eq('user_id', resolvedUserId)
     .maybeSingle()
@@ -341,17 +178,11 @@ export async function getCurrentUserAttorneyMembership(firmId = null, userId = n
       }
       return null
     }
-    if (isPermissionDeniedError(query.error)) {
-      const ownerFallback = await resolveOwnerAdminMembershipFallback(client, resolvedFirmId, resolvedUserId)
-      if (ownerFallback) return ownerFallback
-    }
     throw query.error
   }
 
   const membership = normalizeMembershipRow(query.data)
   if (!membership) {
-    const ownerFallback = await resolveOwnerAdminMembershipFallback(client, resolvedFirmId, resolvedUserId)
-    if (ownerFallback) return ownerFallback
     if (isAttorneyDemoContextEnabled()) {
       return {
         ...buildAttorneyDemoMembership({
@@ -482,12 +313,12 @@ async function getAttorneyFirmOverrideSetting(client, firmId) {
 
 export async function isAttorneyFirmAdmin(userId, firmId) {
   const membership = await getCurrentUserAttorneyMembership(firmId, userId)
-  return Boolean(membership?.isActive && ATTORNEY_FIRM_ADMIN_ROLES.has(membership.role))
+  return Boolean(membership?.isActive && isAttorneyProfessionalAdministrator(membership))
 }
 
 export async function isAttorneyFirmManager(userId, firmId) {
   const membership = await getCurrentUserAttorneyMembership(firmId, userId)
-  return Boolean(membership?.isActive && ATTORNEY_FIRM_MANAGER_ROLES.has(membership.role))
+  return Boolean(membership?.isActive && isAttorneyProfessionalManagementRole(membership))
 }
 
 export async function getAttorneyLaneAccessContext({ userId = null, transactionId, attorneyRole = 'transfer', firmId = null } = {}) {
@@ -500,6 +331,7 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
       canAssignLane: false,
       canActAsAttorney: false,
       isAssignedAttorney: false,
+      isAssignedParticipant: false,
       isManagementUser: false,
       managementOverrideEnabled: false,
       laneRole: normalizeAttorneyLaneRole(attorneyRole),
@@ -522,12 +354,22 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     Object.values(membershipsByFirmId)[0] ||
     null
   const activeMembership = primaryMembership?.isActive ? primaryMembership : null
-  const permissions = activeMembership ? getAttorneyRolePermissions(activeMembership.role) : {}
-  const isManagementUser = Boolean(activeMembership && ATTORNEY_FIRM_MANAGER_ROLES.has(activeMembership.role))
+  const permissions = activeMembership ? getAttorneyProfessionalProfilePermissions(activeMembership) : {}
+  const isManagementUser = Boolean(activeMembership && isAttorneyProfessionalManagementRole(activeMembership))
   const isAssignedAttorney = Boolean(
     activeLaneAssignment &&
       isAssignmentActive(activeLaneAssignment) &&
       String(activeLaneAssignment.attorney_user_id || activeLaneAssignment.primary_attorney_id || '') === resolvedUserId,
+  )
+  const isAssignedParticipant = Boolean(
+    activeLaneAssignment &&
+      isAssignmentActive(activeLaneAssignment) &&
+      [
+        activeLaneAssignment.attorney_user_id,
+        activeLaneAssignment.primary_attorney_id,
+        activeLaneAssignment.secretary_id,
+        activeLaneAssignment.admin_handler_id,
+      ].some((candidate) => candidate && String(candidate) === String(resolvedUserId)),
   )
   const canViewMatter = await canAccessAttorneyMatter(resolvedTransactionId, firmId, resolvedUserId)
   const canManageMatter = Boolean(canViewMatter && isManagementUser && permissions.can_view_all_firm_matters)
@@ -548,11 +390,12 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     canUpdateLane: canActAsAttorney,
     canActAsAttorney,
     isAssignedAttorney,
+    isAssignedParticipant,
     isManagementUser,
     managementOverrideEnabled,
     laneRole,
     firmId: overrideFirmId || null,
-    firmRole: activeMembership?.role || null,
+    firmRole: activeMembership?.professionalRole || null,
     assignment: activeLaneAssignment,
     reason: canActAsAttorney
       ? isAssignedAttorney
@@ -687,7 +530,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
 
   const membershipsQuery = await client
     .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, status, invited_by, joined_at, created_at, updated_at')
     .eq('user_id', resolvedUserId)
     .in('firm_id', scopedFirmIds)
     .eq('status', 'active')
@@ -711,7 +554,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     const membership = membershipsByFirmId[assignment.attorney_firm_id || assignment.firm_id]
     if (!membership) continue
 
-    const permissions = getAttorneyRolePermissions(membership.role)
+    const permissions = getAttorneyProfessionalProfilePermissions(membership)
     if (permissions.can_view_all_firm_matters) {
       return true
     }
@@ -751,7 +594,7 @@ export async function canEditAttorneyAssignment(assignmentId, firmId = null, use
   const membership = await getCurrentUserAttorneyMembership(resolvedFirmId, userId)
   if (!membership?.isActive) return false
 
-  const permissions = getAttorneyRolePermissions(membership.role)
+  const permissions = getAttorneyProfessionalProfilePermissions(membership)
   if (!permissions.can_update_attorney_assignments) {
     return false
   }
@@ -782,7 +625,7 @@ export async function canViewInternalAttorneyNotes(transactionId, firmId = null,
   if (!access) return false
   const membership = await getCurrentUserAttorneyMembership(firmId, userId)
   if (!membership?.isActive) return false
-  return hasAttorneyPermission(membership.role, 'can_view_internal_comments')
+  return hasAttorneyProfessionalPermission(membership, 'can_view_internal_comments')
 }
 
 export async function canPublishClientVisibleAttorneyUpdate(transactionId, firmId = null, userId = null) {
@@ -790,5 +633,5 @@ export async function canPublishClientVisibleAttorneyUpdate(transactionId, firmI
   if (!access) return false
   const membership = await getCurrentUserAttorneyMembership(firmId, userId)
   if (!membership?.isActive) return false
-  return hasAttorneyPermission(membership.role, 'can_publish_client_visible_updates')
+  return hasAttorneyProfessionalPermission(membership, 'can_publish_client_visible_updates')
 }

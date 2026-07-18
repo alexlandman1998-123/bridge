@@ -161,3 +161,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/attorney-quote-decision/deno.json"
 entrypoint = "./functions/attorney-quote-decision/index.ts"
+
+[functions.retry-final-document-completion]
+enabled = true
+verify_jwt = false
+import_map = "./functions/retry-final-document-completion/deno.json"
+entrypoint = "./functions/retry-final-document-completion/index.ts"

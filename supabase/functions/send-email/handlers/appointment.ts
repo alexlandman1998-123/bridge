@@ -49,13 +49,23 @@ function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   const organizerName = normalizeText(payload.organizerName || 'Arch9')
   const attendeeEmail = normalizeText(payload.to)
   const attendeeName = normalizeText(payload.recipientName || payload.to || 'Participant')
+  const timezone = normalizeText(payload.timezone || 'Africa/Johannesburg')
+  const normalizedStatus = normalizeText(payload.status).toLowerCase()
+  const isCancellation = normalizeText(payload.type).toLowerCase() === 'appointment_cancelled' || normalizedStatus.includes('cancel')
+  const method = isCancellation ? 'CANCEL' : 'REQUEST'
+  const eventStatus = isCancellation
+    ? 'CANCELLED'
+    : normalizedStatus.includes('pending') || normalizedStatus.includes('request')
+      ? 'TENTATIVE'
+      : 'CONFIRMED'
 
   const content = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Arch9//Appointments//EN',
     'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
+    `METHOD:${method}`,
+    `X-WR-TIMEZONE:${escapeIcsText(timezone)}`,
     'BEGIN:VEVENT',
     `UID:${escapeIcsText(uid)}`,
     `DTSTAMP:${formatUtcIcsDate(new Date().toISOString())}`,
@@ -64,7 +74,8 @@ function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     `SUMMARY:${escapeIcsText(title)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `LOCATION:${escapeIcsText(location)}`,
-    'STATUS:CONFIRMED',
+    `STATUS:${eventStatus}`,
+    'SEQUENCE:0',
     `ORGANIZER;CN=${escapeIcsText(organizerName)}:MAILTO:${escapeIcsText(organizerEmail)}`,
     attendeeEmail ? `ATTENDEE;CN=${escapeIcsText(attendeeName)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:MAILTO:${escapeIcsText(attendeeEmail)}` : '',
     normalizeText(payload.actionLink) ? `URL:${escapeIcsText(normalizeText(payload.actionLink))}` : '',
@@ -73,9 +84,9 @@ function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   ].filter(Boolean).join('\r\n')
 
   return {
-    filename: 'bridge-appointment.ics',
+    filename: normalizeText(payload.appointmentId) ? `arch9-appointment-${normalizeText(payload.appointmentId)}.ics` : 'arch9-appointment.ics',
     content: btoa(content),
-    content_type: 'text/calendar; method=REQUEST; charset=UTF-8',
+    content_type: `text/calendar; method=${method}; charset=UTF-8`,
   }
 }
 

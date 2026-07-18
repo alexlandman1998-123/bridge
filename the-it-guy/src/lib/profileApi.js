@@ -1,4 +1,5 @@
 import { DEFAULT_APP_ROLE, normalizeCanonicalAppRole } from '../constants/appRoles'
+import { ATTORNEY_FIRM_ROLE_VALUES } from '../constants/attorneyRoleCatalog.js'
 import { resolveSystemRole } from '../services/roleResolutionService'
 import { clearSupabaseLocalAuthState, isUserFromSubClaimMissingError, supabase } from './supabaseClient'
 
@@ -6,17 +7,6 @@ const PROFILE_SELECT_COLUMNS =
   'id, email, first_name, last_name, full_name, company_name, phone_number, avatar_url, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at'
 const LEGACY_PROFILE_SELECT_COLUMNS =
   'id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at'
-
-const ATTORNEY_FIRM_ROLE_VALUES = [
-  'firm_admin',
-  'director_partner',
-  'transfer_attorney',
-  'bond_attorney',
-  'conveyancing_secretary',
-  'admin_staff',
-  'reception_scheduling',
-  'candidate_attorney',
-]
 
 function requireClient() {
   if (!supabase) {

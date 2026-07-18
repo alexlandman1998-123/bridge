@@ -5,13 +5,15 @@ import {
   normalizeAttorneyVisibility,
 } from '../../constants/attorneyPermissions'
 import {
+  getAttorneyProfessionalProfilePermissions,
+  isAttorneyProfessionalManagementRole,
+} from '../../constants/attorneyRoleCatalog.js'
+import {
   canAccessAttorneyMatter,
   canAssignAttorneyToLane,
-  canViewInternalAttorneyNotes,
   getAttorneyLaneAccessContext,
   getCurrentUserAttorneyMembership,
   getUserAttorneyRolesForTransaction,
-  hasAttorneyPermission,
 } from '../../lib/attorneyPermissions'
 import {
   getAuthenticatedUser,
@@ -22,8 +24,6 @@ import {
 } from '../attorneyFirmServiceShared'
 
 const PROFESSIONAL_APP_ROLES = new Set(['agent', 'developer', 'bond_originator'])
-const ATTORNEY_FIRM_MANAGER_ROLES = new Set(['firm_admin', 'director_partner', 'attorney_admin', 'attorney_manager'])
-const PHASE_ONE_SHARED_WORKFLOW_EDITING = true
 
 function normalizeAppRole(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -38,6 +38,74 @@ function roleToParticipantTypes(role) {
   if (normalized === 'bond_originator') return ['bond_originator']
   if (normalized === 'attorney') return ['attorney']
   return []
+}
+
+function assignmentAllows(assignment = null, snakeCaseKey, camelCaseKey) {
+  if (!assignment) return false
+  return assignment[snakeCaseKey] !== false && assignment[camelCaseKey] !== false
+}
+
+function roleCanEditLane(permissions = {}, attorneyRole = 'transfer_attorney') {
+  const normalizedRole = normalizeAttorneyTransactionRole(attorneyRole)
+  if (normalizedRole === 'bond_attorney') return Boolean(permissions.can_edit_bond_workflow)
+  return Boolean(permissions.can_edit_transfer_workflow)
+}
+
+export function resolveAttorneyActionPermissions({
+  appRole = '',
+  membership = null,
+  attorneyRole = 'transfer_attorney',
+  attorneyAccess = null,
+  canViewAsAttorney = false,
+} = {}) {
+  const isAttorneyAppUser = normalizeAppRole(appRole) === 'attorney'
+  const hasActiveMembership = Boolean(membership?.isActive && membership?.professionalRole)
+  const permissions = hasActiveMembership
+    ? getAttorneyProfessionalProfilePermissions(membership)
+    : getAttorneyProfessionalProfilePermissions({})
+  const assignment = attorneyAccess?.assignment || null
+  const isAssignedParticipant = Boolean(attorneyAccess?.isAssignedParticipant)
+  const managementOverrideEnabled = Boolean(
+    attorneyAccess?.isManagementUser &&
+      attorneyAccess?.managementOverrideEnabled &&
+      attorneyAccess?.canViewMatter,
+  )
+  const hasLaneAuthority = Boolean(isAssignedParticipant || managementOverrideEnabled)
+  const actionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && hasLaneAuthority)
+  const documentsAllowed = assignmentAllows(assignment, 'can_manage_documents', 'canManageDocuments')
+  const signingAllowed = assignmentAllows(assignment, 'can_manage_signing', 'canManageSigning')
+  const laneUpdateAllowed = assignmentAllows(assignment, 'can_update_workflow_lane', 'canUpdateWorkflowLane')
+  const internalNotesAllowed = assignmentAllows(assignment, 'can_add_internal_notes', 'canAddInternalNotes')
+  const sharedUpdatesAllowed = assignmentAllows(assignment, 'can_add_shared_updates', 'canAddSharedUpdates')
+  const canAddSharedUpdate = Boolean(actionBase && sharedUpdatesAllowed && permissions.can_comment_shared)
+
+  return {
+    permissions,
+    hasActiveMembership,
+    isAssignedParticipant,
+    managementOverrideEnabled,
+    hasLaneAuthority,
+    canUpdateLane: Boolean(
+      actionBase &&
+        laneUpdateAllowed &&
+        (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled),
+    ),
+    canRequestDocuments: Boolean(actionBase && documentsAllowed && permissions.can_request_documents),
+    canUploadDocuments: Boolean(actionBase && documentsAllowed && permissions.can_upload_documents),
+    canReviewDocuments: Boolean(actionBase && documentsAllowed && permissions.can_review_documents),
+    canManageSigning: Boolean(actionBase && signingAllowed && permissions.can_manage_signing_appointments),
+    canAddInternalNote: Boolean(actionBase && internalNotesAllowed && permissions.can_comment_internal),
+    canAddSharedUpdate,
+    canPublishClientVisibleUpdate: Boolean(
+      canAddSharedUpdate && permissions.can_publish_client_visible_updates,
+    ),
+    canViewInternalNotes: Boolean(
+      isAttorneyAppUser &&
+        hasActiveMembership &&
+        canViewAsAttorney &&
+        permissions.can_view_internal_comments,
+    ),
+  }
 }
 
 async function getProfileForUser(client, userId) {
@@ -201,8 +269,8 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
   const membership = isAttorneyAppUser
     ? await resolveAttorneyMembershipForTransaction(actor.client, actor.userId, transactionId, role).catch(() => null)
     : null
-  const membershipRole = String(membership?.role || attorneyAccess?.firmRole || '').trim().toLowerCase()
-  const isFirmManagement = ATTORNEY_FIRM_MANAGER_ROLES.has(membershipRole)
+  const membershipRole = String(membership?.professionalRole || attorneyAccess?.firmRole || '').trim().toLowerCase()
+  const isFirmManagement = isAttorneyProfessionalManagementRole(membership || { professionalRole: membershipRole })
   const assignedRoles = isAttorneyAppUser ? await getUserAttorneyRolesForTransaction(actor.userId, transactionId).catch(() => []) : []
   const hasProfessionalParticipantAccess = isProfessionalAppUser
     ? await userIsTransactionParticipant(actor.client, {
@@ -220,28 +288,21 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
       }).catch(() => false)
     : false
 
-  const canViewAsAttorney = Boolean(attorneyAccess?.canViewMatter || (isAttorneyAppUser && await canAccessAttorneyMatter(transactionId, null, actor.userId).catch(() => false)))
+  const canViewAsAttorney = Boolean(
+    membership?.isActive &&
+      (attorneyAccess?.canViewMatter ||
+        (isAttorneyAppUser && await canAccessAttorneyMatter(transactionId, null, actor.userId).catch(() => false))),
+  )
   const canViewAsProfessional = Boolean(hasProfessionalParticipantAccess || hasLegacyProfessionalAccess)
   const canViewLegalWorkspace = Boolean(canViewAsAttorney || canViewAsProfessional)
-  const canActOnLane = Boolean(isAttorneyAppUser && attorneyAccess?.canActAsAttorney)
-  const canManageMatter = Boolean(isAttorneyAppUser && attorneyAccess?.canManageMatter)
   const canAssignLane = Boolean(isAttorneyAppUser && attorneyAccess?.canAssignLane)
-  const canViewInternal = Boolean(
-    isAttorneyAppUser &&
-      (await canViewInternalAttorneyNotes(transactionId, attorneyAccess?.firmId || membership?.firmId || null, actor.userId).catch(() => false)),
-  )
-  const canEditAllWorkflowLanesInPhaseOne = Boolean(
-    PHASE_ONE_SHARED_WORKFLOW_EDITING &&
-      isAttorneyAppUser &&
-      canViewAsAttorney &&
-      (canActOnLane || canManageMatter || assignedRoles.length || membership),
-  )
-  const canPublishClientVisible = Boolean(
-    isAttorneyAppUser &&
-      membership &&
-      hasAttorneyPermission(membership.role, 'can_publish_client_visible_updates') &&
-      (canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
-  )
+  const actionPermissions = resolveAttorneyActionPermissions({
+    appRole: actor.appRole,
+    membership,
+    attorneyRole: role,
+    attorneyAccess,
+    canViewAsAttorney,
+  })
 
   return {
     userId: actor.userId,
@@ -254,20 +315,21 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     isProfessionalAppUser,
     isFirmManagement,
     isAssignedAttorney: Boolean(attorneyAccess?.isAssignedAttorney),
+    isAssignedParticipant: Boolean(attorneyAccess?.isAssignedParticipant),
     managementOverrideEnabled: Boolean(attorneyAccess?.managementOverrideEnabled),
     canViewLegalWorkspace,
     canViewLane: canViewLegalWorkspace,
-    canUpdateLane: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canRequestDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canUploadDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canReviewDocuments: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canManageSigning: Boolean(canActOnLane || canEditAllWorkflowLanesInPhaseOne),
-    canAddInternalNote: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
-    canAddSharedUpdate: Boolean(canActOnLane || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
-    canPublishClientVisibleUpdate: canPublishClientVisible,
+    canUpdateLane: actionPermissions.canUpdateLane,
+    canRequestDocuments: actionPermissions.canRequestDocuments,
+    canUploadDocuments: actionPermissions.canUploadDocuments,
+    canReviewDocuments: actionPermissions.canReviewDocuments,
+    canManageSigning: actionPermissions.canManageSigning,
+    canAddInternalNote: actionPermissions.canAddInternalNote,
+    canAddSharedUpdate: actionPermissions.canAddSharedUpdate,
+    canPublishClientVisibleUpdate: actionPermissions.canPublishClientVisibleUpdate,
     canAssignAttorney: canAssignLane,
     canReassignAttorney: canAssignLane,
-    canViewInternalNotes: Boolean(canViewInternal || canManageMatter || canEditAllWorkflowLanesInPhaseOne),
+    canViewInternalNotes: actionPermissions.canViewInternalNotes,
     canViewProfessionalUpdates: canViewLegalWorkspace,
     viewReason: canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
   }
@@ -333,7 +395,7 @@ export async function canReassignAttorney(userId, transactionId, attorneyRole) {
 
 export async function canViewFirmAttorneyMatters(userId, attorneyFirmId) {
   const membership = await getCurrentUserAttorneyMembership(attorneyFirmId, userId)
-  return Boolean(membership?.isActive && ATTORNEY_FIRM_MANAGER_ROLES.has(String(membership.role || '').toLowerCase()))
+  return Boolean(membership?.isActive && isAttorneyProfessionalManagementRole(membership))
 }
 
 export function canSeeAttorneyUpdateVisibility(context = {}, visibility = ATTORNEY_VISIBILITY_SCOPES.internal) {

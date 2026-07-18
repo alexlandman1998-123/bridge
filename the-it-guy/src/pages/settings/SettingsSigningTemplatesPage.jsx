@@ -59,14 +59,19 @@ import {
 } from '../../core/documents/mandateTemplateLaunchReadiness'
 import {
   archiveDocumentPacket,
+  archiveDocumentPacketTemplate,
   appendDocumentPacketEvent,
+  cloneDocumentPacketTemplate,
   createDocumentPacket,
+  createEditableDocumentDraftFromTemplate,
   createDocumentPacketTemplate,
+  createDocumentPacketTemplateRevision,
   fetchDocumentPacket,
   fetchDocumentPacketTemplate,
   listDocumentPackets,
   listDocumentPacketTemplates,
   listDocumentPlaceholderDefinitions,
+  publishDocumentPacketTemplateRevision,
   updateDocumentPacketTemplate,
   uploadDocumentPacketTemplateAsset,
   upsertDocumentPlaceholderDefinition,
@@ -7325,7 +7330,7 @@ export default function SettingsSigningTemplatesPage({
         )
     })
 
-    if (existingAgencyVersion) {
+    if (source === 'auto' && existingAgencyVersion) {
       setSelectedTemplateId(existingAgencyVersion.id)
       setHasUnsavedChanges(false)
       setMessage(successMessage || 'Editing your agency version of this template.')
@@ -7336,52 +7341,19 @@ export default function SettingsSigningTemplatesPage({
       setCloning(true)
       setError('')
       setMessage('')
-      const sourceForm = (form.sections || []).length ? form : toTemplateForm(templateDetail)
-      const sourceMetadata = templateDetail?.metadata_json && typeof templateDetail.metadata_json === 'object' ? templateDetail.metadata_json : {}
-      const renderMode = normalizeText(sourceForm.renderMode || normalizeTemplateRenderMode(templateDetail, packetType) || getDefaultRenderMode(packetType))
-        || getDefaultRenderMode(packetType)
-      const draftForm = {
-        ...sourceForm,
-        renderMode,
-        templateStatus: 'draft',
-        isDefault: false,
-        isActive: false,
-      }
-      const metadataJson = buildTemplateMetadata(
-        { ...draftForm, packetType, validationSummary },
-        {
-          ...sourceMetadata,
-          source_template_id: sourceTemplateId || null,
-          base_template_id: sourceTemplateId || null,
-          source_template_label: normalizeText(templateDetail.template_label || selectedTemplate.template_label || ''),
-          agency_version_created_from: 'shared_base',
-          agency_version_created_via: source,
-        },
-        null,
-      )
-
-      const cloned = await createDocumentPacketTemplate({
-        packetType,
-        moduleType: normalizedModuleType,
-        templateKey: `${normalizeText(templateDetail.template_key || selectedTemplate.template_key || packetType)}_agency_${Date.now()}`,
-        templateLabel: normalizeText(sourceForm.templateLabel || templateDetail.template_label || selectedTemplate.template_label || templateTypeConfig.label) || templateTypeConfig.label,
-        description: sourceForm.description || templateDetail.description || '',
-        versionTag: normalizeText(sourceForm.versionTag || templateDetail.version_tag || selectedTemplate.version_tag || 'v1') || 'v1',
-        templateStatus: 'draft',
-        templateFormat: getTemplateFormatForMode(renderMode),
-        templateStorageBucket: normalizeText(sourceForm.templateStorageBucket || templateDetail.template_storage_bucket || ''),
-        templateStoragePath: normalizeText(sourceForm.templateStoragePath || templateDetail.template_storage_path || ''),
-        templateFileName: normalizeText(sourceForm.templateFileName || templateDetail.template_file_name || ''),
-        isDefault: false,
-        isActive: false,
-        metadataJson,
-        sections: (sourceForm.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
+      const sourceLabel = normalizeText(templateDetail.template_label || selectedTemplate.template_label || templateTypeConfig.label) || templateTypeConfig.label
+      const isExplicitDuplicate = source !== 'auto'
+      const cloned = await cloneDocumentPacketTemplate({
+        sourceTemplateId,
+        templateLabel: isExplicitDuplicate ? `${sourceLabel} Copy` : sourceLabel,
+        description: templateDetail.description || '',
+        variantLabel: isExplicitDuplicate ? 'copy' : 'company',
       })
 
       await refreshAll()
       setSelectedTemplateId(cloned?.id || '')
       setHasUnsavedChanges(false)
-      setMessage(successMessage || (quiet ? 'Editing your agency version of this template.' : 'Agency template ready to edit.'))
+      setMessage(successMessage || (quiet ? 'Editing your agency version of this template.' : 'Company template copy created and ready to edit.'))
       return cloned
     } catch (cloneError) {
       setError(cloneError?.message || 'Unable to create editable copy.')
@@ -7390,16 +7362,12 @@ export default function SettingsSigningTemplatesPage({
       setCloning(false)
     }
   }, [
-    form,
-    normalizedModuleType,
-    packetType,
     refreshAll,
     selectedList,
     selectedTemplate,
     selectedTemplateId,
     templateDetail,
     templateTypeConfig.label,
-    validationSummary,
   ])
 
   useEffect(() => {
@@ -7440,6 +7408,8 @@ export default function SettingsSigningTemplatesPage({
           placeholderKeysText: '',
           isRequired: true,
           conditionJson: {},
+          custom: true,
+          metadataJson: { custom: true },
           requiresInitial: false,
           initialPlaceholderKey: '',
           signingFields: [],
@@ -7459,6 +7429,24 @@ export default function SettingsSigningTemplatesPage({
         sectionIndex === index ? { ...section, ...patch } : section
       )),
     }))
+  }
+
+  function moveSection(index, direction) {
+    const targetIndex = index + direction
+    const sectionCount = (form.sections || []).length
+    if (index < 0 || targetIndex < 0 || index >= sectionCount || targetIndex >= sectionCount) return
+
+    setHasUnsavedChanges(true)
+    setForm((previous) => {
+      const sections = [...(previous.sections || [])]
+      const [moved] = sections.splice(index, 1)
+      sections.splice(targetIndex, 0, moved)
+      return {
+        ...previous,
+        sections: sections.map((section, sortOrder) => ({ ...section, sortOrder })),
+      }
+    })
+    setSelectedSectionIndex(targetIndex)
   }
 
   function removeSection(index) {
@@ -7547,32 +7535,32 @@ export default function SettingsSigningTemplatesPage({
       setMessage('')
 
       const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
-      await updateDocumentPacketTemplate(selectedTemplateId, {
+      const saveUpdates = {
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
-        templateStatus: form.templateStatus,
+        templateStatus: 'draft',
         templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
         templateFileName: form.templateFileName,
-        isActive: form.isActive,
-        isDefault: form.isDefault,
+        isActive: false,
+        isDefault: false,
         metadataJson,
         sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
-      })
-
-      if (form.isDefault) {
-        const orgTemplates = (templatesByType[packetType] || []).filter((row) => row.organisation_id && row.id !== selectedTemplateId && row.is_default)
-        for (const row of orgTemplates) {
-          // keep one active default template per packet type
-          await updateDocumentPacketTemplate(row.id, { isDefault: false })
-        }
       }
 
-      await refreshAll()
+      const selectedStatus = normalizeTemplateStatus(selectedTemplate)
+      const savedTemplate = isLiveTemplateStatus(selectedStatus) || selectedStatus === 'archived' || Boolean(selectedTemplate.is_default)
+        ? await createDocumentPacketTemplateRevision({ sourceTemplateId: selectedTemplateId, ...saveUpdates })
+        : await updateDocumentPacketTemplate(selectedTemplateId, saveUpdates)
+
+      await refreshAll({ preferredTemplateId: savedTemplate?.id || selectedTemplateId })
+      if (savedTemplate?.id) setSelectedTemplateId(savedTemplate.id)
       setHasUnsavedChanges(false)
-      setMessage('Legal template saved.')
+      setMessage(savedTemplate?.id !== selectedTemplateId
+        ? `Draft ${savedTemplate.version_tag || 'revision'} created. The live version remains unchanged.`
+        : 'Legal template draft saved.')
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save legal template.')
     } finally {
@@ -7597,35 +7585,22 @@ export default function SettingsSigningTemplatesPage({
       setMessage('')
 
       const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
-      await updateDocumentPacketTemplate(selectedTemplateId, {
+      const publishedTemplate = await publishDocumentPacketTemplateRevision(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
-        versionTag: form.versionTag,
-        templateStatus: 'active',
         templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
         templateFileName: form.templateFileName,
-        isActive: true,
-        isDefault: true,
         metadataJson,
         sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index, packetType)),
+        makeDefault: true,
       })
 
-      const orgTemplates = (templatesByType[packetType] || []).filter((row) => row.organisation_id)
-      for (const row of orgTemplates) {
-        const shouldBeDefault = row.id === selectedTemplateId
-        if (Boolean(row.is_default) !== shouldBeDefault) {
-          await updateDocumentPacketTemplate(row.id, {
-            isDefault: shouldBeDefault,
-            isActive: shouldBeDefault ? true : row.is_active,
-          })
-        }
-      }
-
-      await refreshAll()
+      await refreshAll({ preferredTemplateId: publishedTemplate?.id || selectedTemplateId })
+      if (publishedTemplate?.id) setSelectedTemplateId(publishedTemplate.id)
       setHasUnsavedChanges(false)
-      setMessage('Default template updated for this document type.')
+      setMessage(`Published ${publishedTemplate?.version_tag || 'template'} as the default. Existing transaction documents retain their original version.`)
     } catch (defaultError) {
       setError(defaultError?.message || 'Unable to set template as default.')
     } finally {
@@ -7770,7 +7745,7 @@ export default function SettingsSigningTemplatesPage({
         validationSummary,
         templateTypeConfig,
       })
-      const packet = await createDocumentPacket({
+      const packetInput = {
         packetType,
         templateId: selectedTemplateId,
         templateKeySnapshot: selectedTemplate.template_key || selectedTemplate.templateKey || '',
@@ -7791,7 +7766,14 @@ export default function SettingsSigningTemplatesPage({
           documentKind: runPayload.documentKind,
           documentKindLabel: runPayload.documentKindLabel,
         },
-      })
+      }
+      const selectedTemplateStatus = normalizeTemplateStatus(selectedTemplate)
+      const packet = isLiveTemplateStatus(selectedTemplateStatus) && selectedTemplate.is_active !== false
+        ? await createEditableDocumentDraftFromTemplate({
+            ...packetInput,
+            placeholders: runPayload.context?.placeholders || runPayload.context?.mandateData?.placeholders || {},
+          })
+        : await createDocumentPacket(packetInput)
       if (autoGenerate && packet?.id) {
         await generatePacketVersion({
           packetId: packet.id,
@@ -8104,6 +8086,23 @@ export default function SettingsSigningTemplatesPage({
         source: 'save',
         successMessage: 'Agency template saved.',
       })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleArchiveSelectedTemplate() {
+    if (!selectedTemplateId || !selectedIsOrgOwned || !canEdit || form.isDefault) return
+    const confirmed = window.confirm(`Archive "${form.templateLabel || selectedTemplate?.template_label || 'this template'}"? Existing transaction documents will remain available.`)
+    if (!confirmed) return
+    try {
+      setSaving(true)
+      setError('')
+      await archiveDocumentPacketTemplate(selectedTemplateId)
+      await refreshAll()
+      setMessage('Template archived. Existing documents and their template revision were not changed.')
+    } catch (archiveError) {
+      setError(archiveError?.message || 'Unable to archive template.')
     } finally {
       setSaving(false)
     }
@@ -8756,6 +8755,26 @@ export default function SettingsSigningTemplatesPage({
                 <button
                   type="button"
                   className={studioSecondaryButtonClass}
+                  onClick={() => void handleCreateEditableCopy({ source: 'duplicate' })}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning || hasUnsavedChanges}
+                  title={hasUnsavedChanges ? 'Save changes before duplicating this template.' : 'Create another independent company template variant.'}
+                >
+                  <CopyPlus size={14} />
+                  <span>{cloning ? 'Copying...' : 'Duplicate'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={() => void handleArchiveSelectedTemplate()}
+                  disabled={!selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || cloning || Boolean(form.isDefault)}
+                  title={form.isDefault ? 'Publish another default before archiving this template.' : 'Archive this template without removing existing documents.'}
+                >
+                  <Trash2 size={14} />
+                  <span>Archive</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
                   onClick={(event) => void handleSaveDraftAction(event)}
                   disabled={!selectedTemplate || !canEdit || saving || cloning}
                 >
@@ -8837,18 +8856,46 @@ export default function SettingsSigningTemplatesPage({
                             <span className={outlineCollapsed ? 'sr-only' : 'min-w-0 truncate font-semibold'}>{label}</span>
                           </button>
                           {canEdit && !outlineCollapsed ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                removeSection(index)
-                              }}
-                              className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-transparent text-[#9c5a50] opacity-0 transition hover:border-[#f1d2cb] hover:bg-[#fff6f4] hover:text-[#ba3f2d] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[#f1d2cb] group-hover:opacity-100"
-                              aria-label={`Remove ${label}`}
-                              title={`Remove ${label}`}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  moveSection(index, -1)
+                                }}
+                                disabled={index === 0}
+                                className="grid h-8 w-8 place-items-center rounded-[8px] border border-transparent text-[#607387] transition hover:border-[#dbe7f3] hover:bg-[#f8fbff] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-30"
+                                aria-label={`Move ${label} up`}
+                                title={`Move ${label} up`}
+                              >
+                                <ChevronDown size={14} className="rotate-180" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  moveSection(index, 1)
+                                }}
+                                disabled={index === (form.sections || []).length - 1}
+                                className="grid h-8 w-8 place-items-center rounded-[8px] border border-transparent text-[#607387] transition hover:border-[#dbe7f3] hover:bg-[#f8fbff] hover:text-[#128642] disabled:cursor-not-allowed disabled:opacity-30"
+                                aria-label={`Move ${label} down`}
+                                title={`Move ${label} down`}
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  removeSection(index)
+                                }}
+                                className="grid h-8 w-8 place-items-center rounded-[8px] border border-transparent text-[#9c5a50] transition hover:border-[#f1d2cb] hover:bg-[#fff6f4] hover:text-[#ba3f2d] focus:outline-none focus:ring-2 focus:ring-[#f1d2cb]"
+                                aria-label={`Remove ${label}`}
+                                title={`Remove ${label}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </span>
                           ) : null}
                         </div>
                       )

@@ -640,7 +640,7 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   )
   const lifecycleStatus = toLifecycleStatus(listing)
   const resolvedSellerType = resolveSellerType(onboarding, listing)
-  const sellerBranch = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_branch || 'individual'
+  const sellerBranch = flow.seller_branch || 'individual'
   const propertyBranch = flow.property_branch || 'residential'
   const sellerType = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)

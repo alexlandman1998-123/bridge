@@ -9,7 +9,6 @@ import {
   Clock3,
   Flag,
   FileText,
-  Mail,
   MoreHorizontal,
   Plus,
   Save,
@@ -579,12 +578,6 @@ function RowActions({ row }) {
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-xl">
         <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={row.actionHref} state={{ matterPreview: preview }}>Open Matter</Link>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Reassign</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Generate Document</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Document</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Schedule Appointment</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-red-600 hover:bg-red-50">Archive</button>
       </div>
     </details>
   )
@@ -641,14 +634,7 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
         ) : null}
         {row.isPreInstruction ? (
           <p className="px-3 py-2 text-xs font-medium leading-5 text-slate-500">Formal instruction actions unlock after an accepted OTP.</p>
-        ) : (
-          <>
-            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Follow Up OTP</button>
-            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Request Documents</button>
-            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Assign Attorney</button>
-            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Email Client</button>
-          </>
-        )}
+        ) : null}
       </div>
     </details>
   )
@@ -809,12 +795,6 @@ function IncomingMattersTable({
                           {row.isPreInstruction ? 'Open Mandate' : 'Open Transfer'}
                         </Link>
                       ) : null}
-                      {!row.isPreInstruction ? (
-                        <>
-                          <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
-                          <button type="button" onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
-                        </>
-                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -873,36 +853,12 @@ function IncomingMattersTable({
   )
 }
 
-function BulkActionBar({ selectedCount, onClear, incoming = false }) {
+function BulkActionBar({ selectedCount, onClear }) {
   if (!selectedCount) return null
-
-  const actions = incoming
-    ? [
-        { label: 'Assign Attorney', Icon: UserRound },
-        { label: 'Request Documents', Icon: FileText },
-        { label: 'Follow Up OTP', Icon: Mail },
-        { label: 'Mark Reviewed', Icon: ClipboardCheck },
-        { label: 'Email Clients', Icon: Mail },
-      ]
-    : [
-        { label: 'Assign Attorney' },
-        { label: 'Assign Assistant' },
-        { label: 'Generate Documents' },
-        { label: 'Request Documents' },
-        { label: 'Schedule Appointment' },
-        { label: 'Archive' },
-        { label: 'Export' },
-        { label: 'Email Clients' },
-      ]
   return (
     <section className="flex flex-wrap items-center gap-2 rounded-xl border border-[#00614f]/20 bg-emerald-50 p-3 text-sm shadow-sm">
       <strong className="mr-2 text-[#00463d]">{selectedCount} selected</strong>
-      {actions.map(({ label, Icon }) => (
-        <button key={label} type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm transition hover:text-[#00614f]">
-          {Icon ? <Icon size={15} /> : null}
-          {label}
-        </button>
-      ))}
+      <span className="text-slate-600">Bulk actions are unavailable until a supported operation is selected.</span>
       <button type="button" onClick={onClear} className="ml-auto rounded-lg px-3 py-2 font-semibold text-slate-500 hover:bg-white">
         Clear
       </button>
@@ -1000,10 +956,6 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                       >
                         Open
                       </Link>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Timeline</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Documents</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Generate Letter</button>
-                      <button type="button" className="text-xs font-semibold text-slate-500 hover:text-[#00614f]">Email Client</button>
                     </div>
                   </td>
                   <td className={classNames('px-4 py-3 font-semibold', dueTone(row.expectedDue, row.status))}>{formatDue(row.expectedDue)}</td>
@@ -1400,7 +1352,7 @@ function AttorneyMattersPage() {
           </section>
         ) : null}
 
-        <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} incoming={usesIncomingQueue} />
+        <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} />
 
         {workspace.tableRows.length ? (
           usesIncomingQueue ? (

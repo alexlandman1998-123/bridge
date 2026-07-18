@@ -388,10 +388,8 @@ Deno.serve(async (req: Request) => {
     if (versionResult.error) throw versionResult.error;
     const version = versionResult.data as JsonRecord | null;
     if (!version) return response(400, { success: false, error: "Generated OTP version not found.", errorCode: "NO_GENERATED_VERSION" });
-    const validation = version.validation_summary_json && typeof version.validation_summary_json === "object" ? version.validation_summary_json as JsonRecord : {};
-    const lock = validation.lock_snapshot && typeof validation.lock_snapshot === "object" ? validation.lock_snapshot as JsonRecord : {};
-    const finalVersionBindingValid = text(version.organisation_id) === text(packet.organisation_id) && Number(version.version_number) === Number(packet.current_version_number) && text(version.render_status).toLowerCase() === "generated" && validation.content_locked === true && text(validation.review_state).toLowerCase() === "locked" && text(lock.lockDecision).toLowerCase() === "locked" && text(lock.packetId) === packetId && text(lock.versionId) === requestedVersionId;
-    if (!finalVersionBindingValid) return response(409, { success: false, error: "Finalisation is not bound to the exact current locked OTP version.", errorCode: "FINAL_VERSION_BINDING_INVALID" });
+    const finalVersionBindingValid = text(version.organisation_id) === text(packet.organisation_id) && Number(version.version_number) === Number(packet.current_version_number) && text(version.render_status).toLowerCase() === "generated" && ["sent", "partially_signed", "completed"].includes(text(packet.status).toLowerCase());
+    if (!finalVersionBindingValid) return response(409, { success: false, error: "Finalisation is not bound to the exact current generated OTP version.", errorCode: "FINAL_VERSION_BINDING_INVALID" });
     if (text(version.final_signed_file_path)) {
       const existingEvidenceResult = await supabase.from("legal_final_artifact_evidence").select("bucket, path, file_name, media_type, sha256, byte_length, generated_at").eq("packet_version_id", requestedVersionId).maybeSingle();
       if (existingEvidenceResult.error) throw existingEvidenceResult.error;

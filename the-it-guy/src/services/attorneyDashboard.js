@@ -1,4 +1,7 @@
-import { attorneyRoleHasPermission } from '../lib/attorneyPermissions'
+import {
+  attorneyRoleHasPermission,
+  getCurrentUserAttorneyMembership,
+} from '../lib/attorneyPermissions'
 import { getFirmAttorneyAssignments } from './transactionAttorneyAssignments'
 import {
   getAttorneyFirmById,
@@ -975,22 +978,6 @@ export function calculateMatterHealth({ uniqueMatters = [] } = {}) {
   }
 }
 
-function buildOwnerDashboardMember(firm = {}, user = {}) {
-  const nowIso = new Date().toISOString()
-  return {
-    id: `owner-admin-${firm.id}-${user.id}`,
-    firmId: firm.id,
-    userId: user.id,
-    departmentId: null,
-    role: 'firm_admin',
-    status: 'active',
-    invitedBy: user.id,
-    joinedAt: firm.createdAt || nowIso,
-    createdAt: firm.createdAt || nowIso,
-    updatedAt: firm.updatedAt || nowIso,
-  }
-}
-
 async function readDashboardDependency(label, promise, fallback) {
   try {
     return await promise
@@ -1029,6 +1016,33 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     }
   }
 
+  const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, authUser.id).catch(() => null)
+  const currentUserRole = currentMembership?.isActive ? currentMembership.role : null
+  const canViewFirmDashboard = attorneyRoleHasPermission(currentUserRole, 'can_view_firm_dashboard')
+  if (!currentMembership?.isActive || !canViewFirmDashboard) {
+    return {
+      firm: null,
+      currentUserRole,
+      canViewFirmDashboard: false,
+      departments: [],
+      members: [],
+      kpis: {
+        activeMatters: 0,
+        transferMatters: 0,
+        bondMatters: 0,
+        lodgedThisWeek: 0,
+        registeredThisMonth: 0,
+        delayedMatters: 0,
+        awaitingFica: 0,
+        awaitingSignatures: 0,
+      },
+      departmentOverview: [],
+      staffWorkload: [],
+      mattersRequiringAttention: [],
+      recentActivity: [],
+    }
+  }
+
   const [departmentsRaw, membersRaw, invitesRaw, transactionsRaw, assignmentRows] = await Promise.all([
     readDashboardDependency('departments', getAttorneyFirmDepartments(resolvedFirm.id), []),
     readDashboardDependency('members', getAttorneyFirmMembers(resolvedFirm.id), []),
@@ -1037,11 +1051,9 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     readDashboardDependency('assignments', getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }), []),
   ])
 
-  const ownerFallbackMembers =
-    resolvedFirm.createdBy === authUser.id && !(membersRaw || []).some((member) => member.userId === authUser.id)
-      ? [buildOwnerDashboardMember(resolvedFirm, authUser)]
-      : []
-  const dashboardMembers = [...(membersRaw || []), ...ownerFallbackMembers]
+  const dashboardMembers = (membersRaw || []).some((member) => member.userId === authUser.id)
+    ? membersRaw
+    : [...(membersRaw || []), currentMembership]
 
   const departments = departmentsRaw.filter((department) => department.isActive)
   const members = dashboardMembers.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
@@ -1165,10 +1177,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const uniqueTransactionIds = [...new Set(matterUnits.map((item) => item.transactionId).filter(Boolean))]
   const uniqueMatters = uniqueTransactionIds.map((id) => matterUnits.find((item) => item.transactionId === id)).filter(Boolean)
   const todayAppointments = await readDashboardDependency('today appointments', fetchTodayAppointments(client, uniqueTransactionIds), [])
-
-  const currentMemberRecord = activeMembers.find((member) => member.userId === authUser.id) || null
-  const currentUserRole = currentMemberRecord?.role || null
-  const canViewFirmDashboard = attorneyRoleHasPermission(currentUserRole, 'can_view_firm_dashboard')
 
   const transferAssignments = matterUnits.filter((item) => item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond')
   const bondAssignments = matterUnits.filter((item) => item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond')

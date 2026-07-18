@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const core=fs.readFileSync('src/core/documents/finalCompletionRecovery.js','utf8')
+const api=fs.readFileSync('src/lib/documentPacketsApi.js','utf8')
+const workspace=fs.readFileSync('src/components/documents/LegalDocumentWorkspace.jsx','utf8')
+const edge=fs.readFileSync('../supabase/functions/retry-final-document-completion/index.ts','utf8')
+const migration=fs.readFileSync('../supabase/migrations/202607180022_final_completion_status_recovery_f5.sql','utf8')
+const config=fs.readFileSync('../supabase/config.toml','utf8')
+assert.match(core,/assessFinalCompletionRecovery/)
+assert.match(api,/getFinalDocumentCompletionStatus/)
+assert.match(api,/retryFinalDocumentCompletion/)
+assert.match(workspace,/Completed everywhere/)
+assert.match(workspace,/Retry completion/)
+assert.match(edge,/F5_RETRY_IN_PROGRESS/)
+assert.match(edge,/dispatch-final-signed-document/)
+assert.match(migration,/bridge_get_final_completion_status_f5/)
+assert.match(migration,/legal_final_completion_retry_attempts/)
+assert.match(migration,/completed_everywhere/)
+assert.match(config,/\[functions\.retry-final-document-completion\]/)
+console.log('Document generator Phase F5 completion recovery contract passed.')

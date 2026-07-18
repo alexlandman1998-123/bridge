@@ -19,6 +19,10 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const SIGNING_SESSION_CONTRACT = "arch9-signing-session-v1";
+const SIGNING_DOCUMENT_BINDING_CONTRACT = "exact-pdf-version-v1";
+const SIGNING_COMPLETION_CONTRACT = "arch9-signing-completion-v1";
+
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
     status,
@@ -28,6 +32,44 @@ function jsonResponse(status: number, body: JsonRecord) {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSigningRole(value: unknown) {
+  const role = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const aliases: Record<string, string> = {
+    agency_representative: "agent",
+    estate_agent: "agent",
+    listing_agent: "agent",
+    buyer: "purchaser_1",
+    client: "purchaser_1",
+    purchaser: "purchaser_1",
+    primary_purchaser: "purchaser_1",
+    secondary_purchaser: "purchaser_2",
+    co_purchaser: "purchaser_2",
+    spouse: "seller_spouse",
+    co_seller: "seller_spouse",
+    seller_2: "seller_spouse",
+    buyer_spouse: "purchaser_spouse",
+  };
+  return aliases[role] || role || "signer";
+}
+
+function signingRoleLabel(value: unknown) {
+  const role = normalizeSigningRole(value);
+  const labels: Record<string, string> = {
+    agent: "Agency representative",
+    seller: "Seller",
+    seller_spouse: "Seller's spouse or co-seller",
+    purchaser_1: "First purchaser",
+    purchaser_2: "Second purchaser",
+    purchaser_spouse: "Purchaser's spouse",
+    witness_1: "First witness",
+    witness_2: "Second witness",
+    attorney: "Attorney",
+    other: "Other signer",
+    signer: "Signer",
+  };
+  return labels[role] || role.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function isAbsoluteUrl(value: string) {
@@ -400,15 +442,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const nowIso = new Date().toISOString();
+    const signerStatus = normalizeText(signer?.status).toLowerCase();
+    const signerAlreadyCompleted = signerStatus === "signed";
     const tokenExpiry = normalizeText(signer?.token_expires_at);
-    if (!tokenExpiry) {
+    if (!tokenExpiry && !signerAlreadyCompleted) {
       return jsonResponse(410, {
         success: false,
         error: "This signing link is no longer active.",
         errorCode: "SIGNER_SESSION_INACTIVE",
       });
     }
-    if (tokenExpiry) {
+    if (tokenExpiry && !signerAlreadyCompleted) {
       const expiryDate = new Date(tokenExpiry);
       if (Number.isNaN(expiryDate.getTime()) || expiryDate.getTime() <= Date.now()) {
         if (normalizeText(signer?.status).toLowerCase() !== "expired") {
@@ -421,7 +465,7 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
-    if (!["sent", "viewed"].includes(normalizeText(signer?.status).toLowerCase())) {
+    if (!["sent", "viewed", "signed"].includes(signerStatus)) {
       return jsonResponse(409, {
         success: false,
         error: "This signing link is no longer active.",
@@ -447,7 +491,7 @@ Deno.serve(async (req: Request) => {
     const versionQuery = await supabase
       .from("document_packet_versions")
       .select(
-        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
+        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, rendered_sha256, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
       )
       .eq("id", String(signer.packet_version_id || ""))
       .eq("packet_id", String(packet.id || ""))
@@ -461,29 +505,87 @@ Deno.serve(async (req: Request) => {
       });
     }
     const version = versionQuery.data as Record<string, unknown>;
-    const validation = version.validation_summary_json && typeof version.validation_summary_json === "object"
-      ? version.validation_summary_json as Record<string, unknown>
-      : {};
-    const lock = validation.lock_snapshot && typeof validation.lock_snapshot === "object"
-      ? validation.lock_snapshot as Record<string, unknown>
-      : {};
+    let finalArtifactEvidence: Record<string, unknown> | null = null;
+    let finalTransactionPublication: Record<string, unknown> | null = null;
+    let finalCompletionReceipt: Record<string, unknown> | null = null;
+    let finalSignerDelivery: Record<string, unknown> | null = null;
+    let finalPortalPublication: Record<string, unknown> | null = null;
+    if (signerAlreadyCompleted && normalizeText(version.final_signed_file_path)) {
+      const [evidenceResult, publicationResult, receiptResult, deliveryResult, portalPublicationResult] = await Promise.all([
+        supabase
+          .from("legal_final_artifact_evidence")
+          .select("bucket, path, file_name, sha256, byte_length, generated_at")
+          .eq("packet_version_id", String(version.id || ""))
+          .maybeSingle(),
+        supabase
+          .from("legal_final_transaction_publications")
+          .select("transaction_id, document_id, artifact_sha256, artifact_path, published_at")
+          .eq("packet_version_id", String(version.id || ""))
+          .maybeSingle(),
+        supabase
+          .from("legal_final_completion_receipts")
+          .select("transaction_id, document_id, transaction_visible, client_visible, canonical_satisfied, completed_at")
+          .eq("packet_version_id", String(version.id || ""))
+          .maybeSingle(),
+        supabase
+          .from("legal_final_artifact_deliveries")
+          .select("status, attempted_at, attempt_number")
+          .eq("packet_version_id", String(version.id || ""))
+          .eq("signer_id", String(signer.id || ""))
+          .order("attempt_number", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("legal_final_artifact_publications")
+          .select("portal_surface, verified_at, artifact_sha256, artifact_path")
+          .eq("packet_version_id", String(version.id || ""))
+          .maybeSingle(),
+      ]);
+      for (const result of [evidenceResult, publicationResult, receiptResult, deliveryResult, portalPublicationResult]) {
+        if (result.error) throw result.error;
+      }
+      finalArtifactEvidence = evidenceResult.data as Record<string, unknown> | null;
+      finalTransactionPublication = publicationResult.data as Record<string, unknown> | null;
+      finalCompletionReceipt = receiptResult.data as Record<string, unknown> | null;
+      finalSignerDelivery = deliveryResult.data as Record<string, unknown> | null;
+      finalPortalPublication = portalPublicationResult.data as Record<string, unknown> | null;
+    }
+    const packetStatus = normalizeText(packet.status).toLowerCase();
     const runtimeBindingValid =
       normalizeText(packet.organisation_id) === normalizeText(signer.organisation_id) &&
       normalizeText(version.organisation_id) === normalizeText(signer.organisation_id) &&
       Number(packet.current_version_number) === Number(version.version_number) &&
       normalizeText(version.render_status).toLowerCase() === "generated" &&
-      validation.content_locked === true &&
-      normalizeText(validation.review_state).toLowerCase() === "locked" &&
-      normalizeText(lock.lockDecision).toLowerCase() === "locked" &&
-      normalizeText(lock.packetId) === normalizeText(packet.id) &&
-      normalizeText(lock.versionId) === normalizeText(version.id);
+      ["signing_prep", "sent", "partially_signed", "completed"].includes(packetStatus);
     if (!runtimeBindingValid) {
       return jsonResponse(409, {
         success: false,
-        error: "This signing session is not bound to the current locked document version.",
+        error: "This signing session is not bound to the current generated document version.",
         errorCode: "SIGNER_SESSION_BINDING_INVALID",
       });
     }
+
+    const signerSessionAuthorization = signerAlreadyCompleted
+      ? { data: { contract: SIGNING_DOCUMENT_BINDING_CONTRACT, certified: true, completed: true }, error: null }
+      : await supabase.rpc(
+        "bridge_open_applied_envelope_signer_session_f1",
+        { p_token: token },
+      );
+    if (signerSessionAuthorization.error || !signerSessionAuthorization.data) {
+      console.warn("F1 signer session authorization rejected", {
+        packetId: String(packet.id || ""),
+        versionId: String(version.id || ""),
+        signerId: String(signer.id || ""),
+        code: signerSessionAuthorization.error?.code || "F1_SESSION_NOT_AUTHORIZED",
+        detail: signerSessionAuthorization.error?.details || null,
+      });
+      return jsonResponse(409, {
+        success: false,
+        error: "This signing link is not bound to the delivered certified document. Please request a new link.",
+        errorCode: "F1_SESSION_NOT_AUTHORIZED",
+      });
+    }
+    const signerSessionBinding = signerSessionAuthorization.data as Record<string, unknown>;
 
     if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && normalizeText(signer.signer_role).toLowerCase() === "seller") {
       const agentSignerQuery = await supabase
@@ -590,27 +692,38 @@ Deno.serve(async (req: Request) => {
       bucketCandidates,
     });
     const documentPreviewUrl = freshSignedPreviewUrl || normalizeText(documentPreviewVersion.rendered_file_url);
+    const finalSignedFilePath = normalizeText(version.final_signed_file_path);
+    const finalSignedUrl = finalSignedFilePath
+      ? await resolveSignedPreviewUrl({
+        supabase,
+        filePath: finalSignedFilePath,
+        bucketCandidates: parseBucketCandidates(
+          normalizeText(version.final_signed_file_bucket),
+          ...bucketCandidates,
+        ),
+      }) || normalizeText(version.final_signed_file_url)
+      : normalizeText(version.final_signed_file_url);
 
-    const nextStatus = ["pending", "ready_to_send", "sent"].includes(normalizeText(signer.status).toLowerCase())
-      ? "viewed"
-      : signer.status;
-    const signerUpdatePayload: Record<string, unknown> = {
-      status: nextStatus,
-    };
-    if (!normalizeText(signer.viewed_at)) signerUpdatePayload.viewed_at = nowIso;
-    if (!normalizeText(signer.token_used_at)) signerUpdatePayload.token_used_at = nowIso;
-
-    const updateResult = await supabase
-      .from("document_packet_signers")
-      .update(signerUpdatePayload)
-      .eq("id", String(signer.id || ""))
-      .select(
-        "id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, token_expires_at, token_used_at, viewed_at, signed_at",
-      )
-      .single();
-    if (updateResult.error) throw updateResult.error;
-    const updatedSigner = updateResult.data as Record<string, unknown>;
-    if (!normalizeText(signer.viewed_at)) {
+    let updatedSigner = signer;
+    if (!signerAlreadyCompleted) {
+      const nextStatus = ["pending", "ready_to_send", "sent"].includes(normalizeText(signer.status).toLowerCase())
+        ? "viewed"
+        : signer.status;
+      const signerUpdatePayload: Record<string, unknown> = { status: nextStatus };
+      if (!normalizeText(signer.viewed_at)) signerUpdatePayload.viewed_at = nowIso;
+      if (!normalizeText(signer.token_used_at)) signerUpdatePayload.token_used_at = nowIso;
+      const updateResult = await supabase
+        .from("document_packet_signers")
+        .update(signerUpdatePayload)
+        .eq("id", String(signer.id || ""))
+        .select(
+          "id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, token_expires_at, token_used_at, viewed_at, signed_at",
+        )
+        .single();
+      if (updateResult.error) throw updateResult.error;
+      updatedSigner = updateResult.data as Record<string, unknown>;
+    }
+    if (!signerAlreadyCompleted && !normalizeText(signer.viewed_at)) {
       await supabase.from("document_packet_events").insert({
         packet_id: String(packet.id || ""),
         organisation_id: String(packet.organisation_id || ""),
@@ -643,24 +756,233 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    await supabase
-      .from("document_packets")
-      .update({
-        source_context_json: {
-          ...sourceContext,
-          signing_status: "viewed",
-          signingStatus: "viewed",
-          mandateStatus: "viewed",
-          viewedAt: sourceContext.viewedAt || nowIso,
-          lastViewedAt: nowIso,
+    if (!signerAlreadyCompleted) {
+      await supabase
+        .from("document_packets")
+        .update({
+          source_context_json: {
+            ...sourceContext,
+            signing_status: "viewed",
+            signingStatus: "viewed",
+            mandateStatus: "viewed",
+            viewedAt: sourceContext.viewedAt || nowIso,
+            lastViewedAt: nowIso,
+          },
+        })
+        .eq("id", String(packet.id || ""));
+    }
+
+    const signingOrderResult = await supabase
+      .from("document_packet_signers")
+      .select("id, signer_role, signing_order, status")
+      .eq("packet_id", String(packet.id || ""))
+      .eq("packet_version_id", String(version.id || ""))
+      .order("signing_order", { ascending: true, nullsFirst: false });
+    if (signingOrderResult.error) throw signingOrderResult.error;
+
+    const normalizedSignerRole = normalizeSigningRole(updatedSigner.signer_role);
+    const requiredFields = fields.filter((field) => field.required !== false);
+    const completedRequiredFields = requiredFields.filter((field) => normalizeText(field.status).toLowerCase() === "completed");
+    const versionPlaceholders = resolveVersionPlaceholders(version);
+    const propertyLabel = normalizeText(
+      versionPlaceholders.property_full_address ||
+        versionPlaceholders.property_address ||
+        versionPlaceholders.property_description ||
+        sourceContext.propertyAddress ||
+        sourceContext.property_address,
+    );
+    const renderAttestation = normalizeJsonObject(
+      validationSummary.renderAttestation ||
+        validationSummary.render_attestation ||
+        validationSummary.render_provenance,
+    );
+    const pdfSha256 = normalizeText(
+      renderAttestation.sha256 ||
+        renderAttestation.renderedSha256 ||
+        validationSummary.renderedSha256 ||
+        validationSummary.rendered_sha256,
+    );
+    const finalEvidenceSha256 = normalizeText(finalArtifactEvidence?.sha256);
+    const transactionPublicationValid = Boolean(finalTransactionPublication) &&
+      normalizeText(finalTransactionPublication?.artifact_sha256) === finalEvidenceSha256 &&
+      normalizeText(finalTransactionPublication?.artifact_path) === finalSignedFilePath;
+    const completionReceiptValid = transactionPublicationValid && Boolean(finalCompletionReceipt) &&
+      finalCompletionReceipt?.transaction_visible === true &&
+      finalCompletionReceipt?.client_visible === true &&
+      finalCompletionReceipt?.canonical_satisfied === true;
+    const portalPublicationValid = Boolean(finalPortalPublication) &&
+      normalizeText(finalPortalPublication?.artifact_sha256) === finalEvidenceSha256 &&
+      normalizeText(finalPortalPublication?.artifact_path) === finalSignedFilePath;
+    const finalEmailStatus = normalizeText(finalSignerDelivery?.status).toLowerCase() || "not_confirmed";
+    const completionDeliveryStatus = finalEmailStatus === "sent" && completionReceiptValid && portalPublicationValid
+      ? "delivered"
+      : completionReceiptValid && portalPublicationValid && Boolean(finalSignedFilePath || finalSignedUrl)
+        ? "available"
+        : "preparing";
+    const completion = signerAlreadyCompleted
+      ? {
+        contract: SIGNING_COMPLETION_CONTRACT,
+        status: "completed",
+        completedAt: normalizeText(updatedSigner.signed_at) || normalizeText(version.finalised_at) || nowIso,
+        alreadyCompleted: true,
+        document: {
+          id: String(packet.id || ""),
+          packetId: String(packet.id || ""),
+          type: packetType || "document",
+          title: normalizeText(packet.title) || "Document",
+          transactionId: normalizeText(sourceContext.transactionId || sourceContext.transaction_id) || null,
+          transactionReference: normalizeText(sourceContext.transactionReference || sourceContext.transaction_reference) || null,
+          propertyLabel: propertyLabel || null,
         },
-      })
-      .eq("id", String(packet.id || ""));
+        version: {
+          id: String(version.id || ""),
+          number: Number(version.version_number) || 1,
+          locked: true,
+          finalisedAt: normalizeText(version.finalised_at) || null,
+          finalSha256: finalEvidenceSha256 || null,
+        },
+        signer: {
+          id: String(updatedSigner.id || ""),
+          name: normalizeText(updatedSigner.signer_name) || "Signer",
+          email: normalizeText(updatedSigner.signer_email).toLowerCase() || null,
+          role: normalizedSignerRole,
+          signedAt: normalizeText(updatedSigner.signed_at) || null,
+        },
+        finalArtifact: {
+          ready: Boolean(finalSignedFilePath || finalSignedUrl),
+          documentId: normalizeText(version.final_signed_document_id) || null,
+          fileName: normalizeText(version.final_signed_file_name) || null,
+          bucket: normalizeText(version.final_signed_file_bucket) || null,
+          path: finalSignedFilePath || null,
+          url: finalSignedUrl || null,
+          sha256: finalEvidenceSha256 || null,
+          byteLength: Number(finalArtifactEvidence?.byte_length) || null,
+        },
+        transactionSaved: completionReceiptValid,
+        access: {
+          transactionVisible: finalCompletionReceipt?.transaction_visible === true,
+          clientVisible: finalCompletionReceipt?.client_visible === true,
+          canonicalSatisfied: finalCompletionReceipt?.canonical_satisfied === true,
+          portalSurface: normalizeText(finalPortalPublication?.portal_surface) || null,
+          verifiedAt: normalizeText(finalPortalPublication?.verified_at) || null,
+        },
+        delivery: {
+          status: completionDeliveryStatus,
+          emailStatus: finalEmailStatus,
+          attemptedAt: normalizeText(finalSignerDelivery?.attempted_at) || null,
+        },
+        deliveryStatus: completionDeliveryStatus,
+      }
+      : null;
+    const signingSession = {
+      contract: SIGNING_SESSION_CONTRACT,
+      sessionId: `${String(packet.id || "")}:${String(version.id || "")}:${String(updatedSigner.id || "")}`,
+      document: {
+        id: String(packet.id || ""),
+        packetId: String(packet.id || ""),
+        type: packetType || "document",
+        title: normalizeText(packet.title) || "Document",
+        transactionId: normalizeText(sourceContext.transactionId || sourceContext.transaction_id) || null,
+        transactionReference: normalizeText(sourceContext.transactionReference || sourceContext.transaction_reference) || null,
+        propertyLabel: propertyLabel || null,
+        organisationId: normalizeText(packet.organisation_id) || null,
+        senderName: normalizeText(sourceContext.agentName || sourceContext.agent_name || sourceContext.senderName || sourceContext.sender_name) || null,
+        senderEmail: normalizeText(sourceContext.agentEmail || sourceContext.agent_email || sourceContext.senderEmail || sourceContext.sender_email).toLowerCase() || null,
+      },
+      version: {
+        id: String(version.id || ""),
+        number: Number(version.version_number) || 1,
+        status: normalizeText(version.render_status).toLowerCase() || "generated",
+        documentId: normalizeText(version.rendered_document_id) || null,
+        fileName: normalizeText(version.rendered_file_name) || null,
+        pdfPath: normalizeText(version.rendered_file_path) || null,
+        pdfUrl: documentPreviewUrl || null,
+        pdfSha256: pdfSha256 || null,
+      },
+      signer: {
+        id: String(updatedSigner.id || ""),
+        name: normalizeText(updatedSigner.signer_name) || "Signer",
+        email: normalizeText(updatedSigner.signer_email).toLowerCase() || null,
+        role: normalizedSignerRole,
+        roleLabel: signingRoleLabel(normalizedSignerRole),
+        order: Number(updatedSigner.signing_order) || 1,
+        status: normalizeText(updatedSigner.status).toLowerCase() || "pending",
+        expiresAt: normalizeText(updatedSigner.token_expires_at) || null,
+        viewedAt: normalizeText(updatedSigner.viewed_at) || null,
+        signedAt: normalizeText(updatedSigner.signed_at) || null,
+      },
+      fields: fields.map((field) => ({
+        id: String(field.id || ""),
+        signerRole: normalizedSignerRole,
+        signerRoleLabel: signingRoleLabel(normalizedSignerRole),
+        type: normalizeText(field.field_type).toLowerCase() || "signature",
+        pageNumber: Number(field.page_number) || 1,
+        x: Number(field.x_position) || 0,
+        y: Number(field.y_position) || 0,
+        width: Number(field.width) || 0,
+        height: Number(field.height) || 0,
+        required: field.required !== false,
+        status: normalizeText(field.status).toLowerCase() || "pending",
+        completedAt: normalizeText(field.completed_at) || null,
+      })),
+      fieldSummary: {
+        requiredCount: requiredFields.length,
+        completedCount: completedRequiredFields.length,
+        remainingCount: requiredFields.length - completedRequiredFields.length,
+        requiredInitials,
+        requiredSignatures,
+      },
+      signingOrder: (signingOrderResult.data || []).map((row: Record<string, unknown>) => {
+        const role = normalizeSigningRole(row.signer_role);
+        return {
+          signerId: String(row.id || ""),
+          role,
+          roleLabel: signingRoleLabel(role),
+          order: Number(row.signing_order) || 1,
+          status: normalizeText(row.status).toLowerCase() || "pending",
+        };
+      }),
+      session: {
+        status: normalizeText(updatedSigner.status).toLowerCase() || "pending",
+        expiresAt: normalizeText(updatedSigner.token_expires_at) || null,
+        consentStatus: "not_recorded",
+      },
+      binding: {
+        contract: SIGNING_DOCUMENT_BINDING_CONTRACT,
+        packetId: String(packet.id || ""),
+        versionId: String(version.id || ""),
+        documentId: normalizeText(version.rendered_document_id) || null,
+        pdfPath: normalizeText(version.rendered_file_path) || null,
+        pdfSha256: pdfSha256 || null,
+        bindingKey: `${String(packet.id || "")}:${String(version.id || "")}:${normalizeText(version.rendered_file_path)}`,
+        exactVersionBound: true,
+        certified: true,
+      },
+      presentation: {
+        instructions: packetType === "otp" ? "Review the Offer to Purchase and complete every required field." : "Review the mandate and complete every required field.",
+        branding: documentPreviewBranding,
+        previewHtml: resolveVersionPreviewHtml(previewDataVersion) || resolveVersionPreviewHtml(documentPreviewVersion) || null,
+        sectionManifest: normalizeSectionManifest(previewDataVersion.section_manifest_json),
+        placeholders: versionPlaceholders,
+      },
+    };
 
     return jsonResponse(200, {
       success: true,
+      signingSession,
+      completion,
       session: {
-        signer: updatedSigner,
+        completion,
+        signer: {
+          id: updatedSigner.id,
+          signer_name: updatedSigner.signer_name,
+          signer_email: updatedSigner.signer_email,
+          signer_role: updatedSigner.signer_role,
+          status: updatedSigner.status,
+          token_expires_at: updatedSigner.token_expires_at,
+          viewed_at: updatedSigner.viewed_at,
+          signed_at: updatedSigner.signed_at,
+        },
         packet: {
           id: packet.id,
           packet_type: packet.packet_type,
@@ -672,14 +994,14 @@ Deno.serve(async (req: Request) => {
           id: version.id,
           version_number: version.version_number,
           render_status: version.render_status,
+          rendered_document_id: version.rendered_document_id,
+          rendered_file_path: version.rendered_file_path,
           rendered_file_name: version.rendered_file_name,
         },
         previewVersion: {
-          id: documentPreviewVersion.id,
           version_number: documentPreviewVersion.version_number,
           render_status: documentPreviewVersion.render_status,
           rendered_file_name: documentPreviewVersion.rendered_file_name,
-          rendered_file_path: documentPreviewVersion.rendered_file_path,
           has_preview_url: Boolean(documentPreviewUrl),
         },
         previewData: {
@@ -690,13 +1012,32 @@ Deno.serve(async (req: Request) => {
           sectionManifest: normalizeSectionManifest(previewDataVersion.section_manifest_json),
           branding: documentPreviewBranding,
         },
-        fields,
+        fields: fields.map((field) => ({
+          id: field.id,
+          field_type: field.field_type,
+          page_number: field.page_number,
+          x_position: field.x_position,
+          y_position: field.y_position,
+          width: field.width,
+          height: field.height,
+          required: field.required,
+          status: field.status,
+          completed_at: field.completed_at,
+        })),
         fieldSummary: {
           requiredCount,
           requiredInitials,
           requiredSignatures,
         },
         documentPreviewUrl: documentPreviewUrl || null,
+        sessionBinding: {
+          contract: signerSessionBinding.contract,
+          layoutRevision: signerSessionBinding.layoutRevision,
+          signerRole: signerSessionBinding.signerRole,
+          fieldCount: signerSessionBinding.fieldCount,
+          openedAt: signerSessionBinding.openedAt,
+          certified: true,
+        },
       },
     });
   } catch (error) {

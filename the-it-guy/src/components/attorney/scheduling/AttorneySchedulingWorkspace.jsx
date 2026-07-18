@@ -26,6 +26,19 @@ import {
   upsertAttorneyAppointmentParticipant,
 } from '../../../services/attorneyOperations'
 import { getAppointmentTypeTemplate, getAppointmentRequiredPrep } from '../../../services/appointmentTemplateService'
+import {
+  ATTORNEY_INVITE_LOCATION_MODES,
+  ATTORNEY_INVITE_LOCATION_OPTIONS,
+  ATTORNEY_INVITE_TYPES,
+  DEFAULT_ATTORNEY_INVITE_DRAFT,
+  buildAttorneyInviteContract,
+  getAttorneyInviteTypeDefinition,
+} from '../../../core/appointments/attorneyInviteContract'
+import { buildAttorneyInviteOutcome } from '../../../core/appointments/attorneyInviteDelivery'
+import {
+  APPOINTMENT_RESCHEDULE_TIMEZONE,
+  buildAppointmentRescheduleProposalContract,
+} from '../../../core/appointments/appointmentRescheduleContract'
 
 const BUSINESS_DAY_START = 8
 const BUSINESS_DAY_END = 18
@@ -79,47 +92,6 @@ const STATUS_TONES = {
 }
 
 const VIEW_MODES = ['Day', 'Week', 'Month', 'Agenda']
-
-const ATTORNEY_INVITE_TYPES = [
-  {
-    value: 'transfer_signing',
-    label: 'Transfer Signing',
-    helper: 'Buyer or seller transfer document signing.',
-    participantRole: 'Client',
-  },
-  {
-    value: 'bond_signing',
-    label: 'Bond Signing',
-    helper: 'Buyer bond registration document signing.',
-    participantRole: 'Buyer',
-  },
-  {
-    value: 'attorney_consultation',
-    label: 'Attorney Consultation',
-    helper: 'Legal process questions, readiness, or next steps.',
-    participantRole: 'Client',
-  },
-  {
-    value: 'internal_meeting',
-    label: 'Internal Prep',
-    helper: 'Firm-only coordination before a signing.',
-    participantRole: 'Attorney',
-    visibility: 'internal_only',
-  },
-]
-
-const DEFAULT_INVITE_DRAFT = {
-  appointmentType: 'transfer_signing',
-  matterId: '',
-  recipientName: '',
-  recipientEmail: '',
-  date: '',
-  startTime: '',
-  locationType: 'video_call',
-  location: '',
-  resourceId: '',
-  notes: '',
-}
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -197,6 +169,31 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatJohannesburgDateTimeInput(value) {
+  const parsed = new Date(value || '')
+  if (Number.isNaN(parsed.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APPOINTMENT_RESCHEDULE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(parsed).reduce((accumulator, part) => {
+    accumulator[part.type] = part.value
+    return accumulator
+  }, {})
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+function johannesburgDateTimeInputToIso(value = '') {
+  const normalized = normalizeText(value)
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) return ''
+  const parsed = new Date(`${normalized}:00+02:00`)
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString()
 }
 
 function formatRangeLabel(start, end) {
@@ -528,7 +525,7 @@ function metricSubtitle(key, value) {
 }
 
 function getInviteType(value = '') {
-  return ATTORNEY_INVITE_TYPES.find((item) => item.value === value) || ATTORNEY_INVITE_TYPES[0]
+  return getAttorneyInviteTypeDefinition(value) || ATTORNEY_INVITE_TYPES[0]
 }
 
 function buildMatterOptions(matterRows = []) {
@@ -911,13 +908,73 @@ function ReschedulePanel({ rows, onPropose, onResolve, onSelect }) {
               <div className="reschedule-actions">
                 <button type="button" onClick={() => onResolve(row, 'accepted')}>Approve</button>
                 <button type="button" onClick={() => onResolve(row, 'rejected')}>Decline</button>
-                <button type="button" onClick={() => onPropose(row)}>Reschedule</button>
+                <button type="button" onClick={() => onPropose(row)}>Counter time</button>
               </div>
             </article>
           ))}
         </div>
       )}
     </section>
+  )
+}
+
+function RescheduleProposalDrawer({ request, draft, setDraft, busyId, onClose, onSubmit }) {
+  if (!request) return null
+
+  function updateDraft(key, value) {
+    setDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  return (
+    <aside className="invite-drawer" aria-label="Propose appointment reschedule">
+      <form className="invite-drawer-card" onSubmit={onSubmit}>
+        <div className="appointment-drawer-header">
+          <span>Counter proposal</span>
+          <button type="button" onClick={onClose} aria-label="Close reschedule proposal"><X size={17} /></button>
+        </div>
+        <div>
+          <h2>Propose another time</h2>
+          <p>{request.matterReference} · {request.clientName || 'Client'} · Times use {APPOINTMENT_RESCHEDULE_TIMEZONE}.</p>
+        </div>
+        <div className="invite-form-grid">
+          <label className="drawer-field invite-field-wide">
+            <span>Proposed start</span>
+            <input
+              type="datetime-local"
+              value={draft.preferredStart}
+              onChange={(event) => updateDraft('preferredStart', event.target.value)}
+              required
+            />
+          </label>
+          <label className="drawer-field invite-field-wide">
+            <span>Proposed end</span>
+            <input
+              type="datetime-local"
+              value={draft.preferredEnd}
+              onChange={(event) => updateDraft('preferredEnd', event.target.value)}
+              required
+            />
+          </label>
+          <label className="drawer-field invite-field-wide">
+            <span>Coordination note</span>
+            <textarea
+              value={draft.reason}
+              onChange={(event) => updateDraft('reason', event.target.value)}
+              maxLength={1000}
+              rows={4}
+              placeholder="Explain the proposed alternative."
+            />
+          </label>
+        </div>
+        <div className="invite-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="submit" disabled={Boolean(busyId)}>
+            <RefreshCw size={15} />
+            Send counter proposal
+          </button>
+        </div>
+      </form>
+    </aside>
   )
 }
 
@@ -991,7 +1048,7 @@ function CreateInviteDrawer({
   if (!open) return null
   const selectedInviteType = getInviteType(draft.appointmentType)
   const selectedMatter = matterOptions.find((matter) => matter.matterId === draft.matterId)
-  const isBoardroomInvite = draft.locationType === 'boardroom'
+  const isBoardroomInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.boardroom
 
   function updateDraft(key, value) {
     setDraft((previous) => ({ ...previous, [key]: value }))
@@ -1076,18 +1133,17 @@ function CreateInviteDrawer({
 
           <label className="drawer-field">
             <span>Location type</span>
-            <select value={draft.locationType} onChange={(event) => updateDraft('locationType', event.target.value)}>
-              <option value="video_call">Video call</option>
-              <option value="boardroom">Firm boardroom</option>
-              <option value="office">Office / address</option>
-              <option value="phone_call">Phone call</option>
+            <select value={draft.locationMode} onChange={(event) => updateDraft('locationMode', event.target.value)} required>
+              {ATTORNEY_INVITE_LOCATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
 
           {isBoardroomInvite ? (
             <label className="drawer-field">
               <span>Boardroom</span>
-              <select value={draft.resourceId} onChange={(event) => updateDraft('resourceId', event.target.value)}>
+              <select value={draft.resourceId} onChange={(event) => updateDraft('resourceId', event.target.value)} required>
                 <option value="">Choose boardroom</option>
                 {resources.map((resource) => (
                   <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
@@ -1096,11 +1152,12 @@ function CreateInviteDrawer({
             </label>
           ) : (
             <label className="drawer-field">
-              <span>{draft.locationType === 'video_call' ? 'Meeting link' : 'Location'}</span>
+              <span>{draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Meeting link' : 'Location'}</span>
               <input
                 value={draft.location}
                 onChange={(event) => updateDraft('location', event.target.value)}
-                placeholder={draft.locationType === 'video_call' ? 'Teams or Meet link' : 'Address or phone details'}
+                placeholder={draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Teams or Meet link' : 'Address or phone details'}
+                required
               />
             </label>
           )}
@@ -2194,8 +2251,10 @@ function AttorneySchedulingWorkspace({
   const [viewMode, setViewMode] = useState('Week')
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [selectedAppointment, setSelectedAppointment] = useState(null)
+  const [rescheduleProposal, setRescheduleProposal] = useState(null)
+  const [rescheduleDraft, setRescheduleDraft] = useState({ preferredStart: '', preferredEnd: '', reason: '' })
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteDraft, setInviteDraft] = useState(DEFAULT_INVITE_DRAFT)
+  const [inviteDraft, setInviteDraft] = useState(DEFAULT_ATTORNEY_INVITE_DRAFT)
   const [filters, setFilters] = useState({
     query: '',
     attorney: 'all',
@@ -2244,8 +2303,13 @@ function AttorneySchedulingWorkspace({
     setError('')
     setMessage('')
     try {
-      await callback()
-      setMessage(successMessage)
+      const outcome = await callback()
+      const outcomeMessage = normalizeText(outcome?.message)
+      if (outcomeMessage && outcome?.tone === 'error') {
+        setError(outcomeMessage)
+      } else {
+        setMessage(outcomeMessage || successMessage)
+      }
       await onWorkspaceChanged?.()
     } catch (actionError) {
       setError(actionError?.message || 'Unable to update scheduling workspace.')
@@ -2272,15 +2336,45 @@ function AttorneySchedulingWorkspace({
   })
 
   const handleResendCommunication = (row, kind) => withBusy(`notify-${row.id}-${kind}`, async () => {
-    await resendAttorneyAppointmentCommunication(row.id, kind)
+    const result = await resendAttorneyAppointmentCommunication(row.id, kind)
+    if (result.failedCount > 0) {
+      return { tone: 'error', message: 'The appointment remains saved, but the communication could not be delivered.' }
+    }
+    if (result.deliveredCount > 0) {
+      return { tone: 'success', message: 'Appointment communication sent.' }
+    }
+    return { tone: 'error', message: 'No eligible external recipient was available for this communication.' }
   })
 
-  const handleProposeReschedule = (row) => withBusy(`propose-${row.requestId}`, async () => {
-    await proposeAttorneyAppointmentReschedule(row.requestId, {
-      preferredStart: row.preferredStart || row.appointment?.dateTime,
-      reason: 'Attorney scheduling coordination proposal.',
+  const handleOpenRescheduleProposal = (row) => {
+    const fallbackStart = row.preferredStart || row.appointment?.dateTime
+    const fallbackEnd = row.preferredEnd || (fallbackStart ? new Date(new Date(fallbackStart).getTime() + (45 * 60 * 1000)).toISOString() : '')
+    setRescheduleProposal(row)
+    setRescheduleDraft({
+      preferredStart: formatJohannesburgDateTimeInput(fallbackStart),
+      preferredEnd: formatJohannesburgDateTimeInput(fallbackEnd),
+      reason: row.reason || '',
     })
-  })
+  }
+
+  const handleSubmitRescheduleProposal = (event) => {
+    event.preventDefault()
+    if (!rescheduleProposal?.requestId) return
+    const proposal = buildAppointmentRescheduleProposalContract({
+      preferredStart: johannesburgDateTimeInputToIso(rescheduleDraft.preferredStart),
+      preferredEnd: johannesburgDateTimeInputToIso(rescheduleDraft.preferredEnd),
+      reason: rescheduleDraft.reason,
+    })
+    if (!proposal.isValid) {
+      setError(proposal.errors[0]?.message || 'Choose a valid counter-proposal time.')
+      return
+    }
+    void withBusy(`propose-${rescheduleProposal.requestId}`, async () => {
+      await proposeAttorneyAppointmentReschedule(rescheduleProposal.requestId, proposal.value)
+      setRescheduleProposal(null)
+      return { tone: 'success', message: 'Counter proposal recorded and queued for delivery.' }
+    })
+  }
 
   const handleResolveReschedule = (row, decision) => withBusy(`resolve-${row.requestId}-${decision}`, async () => {
     await resolveAttorneyAppointmentReschedule(row.requestId, {
@@ -2292,7 +2386,6 @@ function AttorneySchedulingWorkspace({
   const handleCreateInvite = (event) => {
     event.preventDefault()
     const selectedMatter = matterOptions.find((matter) => matter.matterId === inviteDraft.matterId)
-    const selectedInviteType = getInviteType(inviteDraft.appointmentType)
     if (!selectedMatter) {
       setError('Choose a matter before creating the invite.')
       return
@@ -2300,31 +2393,27 @@ function AttorneySchedulingWorkspace({
 
     const selectedResource = resources.find((resource) => String(resource.resourceId || '') === String(inviteDraft.resourceId || ''))
     const boardroomLocation = selectedResource?.resourceName || ''
-    const isVideoInvite = inviteDraft.locationType === 'video_call'
-    const inviteLocation = inviteDraft.locationType === 'boardroom' ? boardroomLocation : inviteDraft.location
+    const inviteContract = buildAttorneyInviteContract({
+      ...inviteDraft,
+      recipientName: inviteDraft.recipientName || selectedMatter.clientName,
+      organisationId: organisationId || selectedMatter.organisationId,
+      transactionId: selectedMatter.matterId,
+      resourceName: boardroomLocation,
+      attorneyName: currentUser?.name || currentUser?.email || '',
+      attorneyEmail: currentUser?.email || '',
+    })
+
+    if (!inviteContract.isValid) {
+      setError(inviteContract.errors[0]?.message || 'Attorney invite details are invalid.')
+      return
+    }
 
     void withBusy('create-invite', async () => {
-      await createAttorneyAppointmentInvite({
-        organisationId: organisationId || selectedMatter.organisationId,
-        transactionId: selectedMatter.matterId,
-        appointmentType: selectedInviteType.value,
-        recipientName: inviteDraft.recipientName || selectedMatter.clientName,
-        recipientEmail: inviteDraft.recipientEmail,
-        participantRole: selectedInviteType.participantRole,
-        date: inviteDraft.date,
-        startTime: inviteDraft.startTime,
-        locationType: inviteDraft.locationType,
-        location: inviteLocation,
-        meetingUrl: isVideoInvite ? inviteDraft.location : '',
-        resourceId: inviteDraft.locationType === 'boardroom' ? inviteDraft.resourceId : '',
-        notes: inviteDraft.notes,
-        visibility: selectedInviteType.visibility,
-        attorneyName: currentUser?.name || currentUser?.email || '',
-        attorneyEmail: currentUser?.email || '',
-      })
+      const created = await createAttorneyAppointmentInvite(inviteContract.value)
       setInviteOpen(false)
-      setInviteDraft(DEFAULT_INVITE_DRAFT)
-    }, 'Attorney invite created and sent.')
+      setInviteDraft(DEFAULT_ATTORNEY_INVITE_DRAFT)
+      return buildAttorneyInviteOutcome(created.delivery)
+    })
   }
 
   return (
@@ -2354,7 +2443,7 @@ function AttorneySchedulingWorkspace({
       <section className="scheduling-secondary-grid">
         <ReschedulePanel
           rows={visibleRescheduleRows.length ? visibleRescheduleRows : rescheduleRows}
-          onPropose={handleProposeReschedule}
+          onPropose={handleOpenRescheduleProposal}
           onResolve={handleResolveReschedule}
           onSelect={setSelectedAppointment}
         />
@@ -2381,6 +2470,14 @@ function AttorneySchedulingWorkspace({
         busyId={busyId}
         onClose={() => setInviteOpen(false)}
         onSubmit={handleCreateInvite}
+      />
+      <RescheduleProposalDrawer
+        request={rescheduleProposal}
+        draft={rescheduleDraft}
+        setDraft={setRescheduleDraft}
+        busyId={busyId}
+        onClose={() => setRescheduleProposal(null)}
+        onSubmit={handleSubmitRescheduleProposal}
       />
     </section>
   )

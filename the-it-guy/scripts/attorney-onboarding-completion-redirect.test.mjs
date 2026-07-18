@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const onboardingSource = readFileSync(new URL('../src/pages/AttorneyOnboardingPage.jsx', import.meta.url), 'utf8')
+const postDashboardSetupSource = readFileSync(new URL('../src/pages/PostDashboardSetup.jsx', import.meta.url), 'utf8')
+const mattersSource = readFileSync(new URL('../src/pages/AttorneyMattersPage.jsx', import.meta.url), 'utf8')
 
 assert.match(
   onboardingSource,
@@ -32,5 +34,34 @@ assert.doesNotMatch(
   /completedOnboarding|Firm setup complete|Open Attorney Dashboard/,
   'Attorney onboarding should not stop on a completion card after setup succeeds.',
 )
+
+assert.match(
+  postDashboardSetupSource,
+  /const canOpenActiveWorkspace = hasActiveMembership && !hasBlockingRecoveryReason/,
+  'An authoritative active membership should be able to open its workspace when no genuine setup blocker remains.',
+)
+
+assert.match(
+  postDashboardSetupSource,
+  /reason !== ONBOARDING_REQUIRED_REASONS\.noActiveMembership/,
+  'A stale no-active-membership recovery reason should not override an active backend membership.',
+)
+
+for (const inertLabel of [
+  'Assign Attorney',
+  'Assign Assistant',
+  'Generate Document',
+  'Request Documents',
+  'Schedule Appointment',
+  'Follow Up OTP',
+  'Email Client',
+  'Generate Letter',
+]) {
+  assert.doesNotMatch(
+    mattersSource,
+    new RegExp(`>${inertLabel}<`),
+    `Attorney matter lists should not expose the inert ${inertLabel} action.`,
+  )
+}
 
 console.log('attorney onboarding completion redirect contract passed')

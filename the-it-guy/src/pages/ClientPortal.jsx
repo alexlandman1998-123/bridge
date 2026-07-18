@@ -35,6 +35,7 @@ import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transac
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
+import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
 import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
@@ -49,9 +50,12 @@ import {
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
+  fetchClientPortalMatterFinancialAccounts,
   respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
   submitClientPortalComment,
+  uploadClientPortalMatterFinancialRequestDocument,
+  uploadClientPortalMatterFinancialProof,
   uploadClientPortalDocument,
   submitAlterationRequest,
   submitClientIssue,
@@ -105,6 +109,7 @@ const SELLER_PORTAL_MENU = [
   { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
   { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
   { key: 'documents', label: 'Documents', icon: FileText },
+  { key: 'account', label: 'Account', icon: HandCoins },
   { key: 'details', label: 'My Details', icon: User },
 ]
 
@@ -134,6 +139,7 @@ const SELLER_PORTAL_NAV_GROUPS = [
   {
     label: 'Account',
     items: [
+      { key: 'account', label: 'Account', icon: HandCoins },
       { key: 'details', label: 'My Details', icon: User },
     ],
   },
@@ -1158,6 +1164,7 @@ const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'details', label: 'My Details', icon: User },
+  { key: 'account', label: 'Account', icon: HandCoins },
   { key: 'bond_application', label: 'Bond Application', icon: FileSignature },
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'handover', label: 'Handover', icon: KeyRound },
@@ -4261,6 +4268,18 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const [workspaceData, setWorkspaceData] = useState(null)
+  const [matterAccountsState, setMatterAccountsState] = useState({
+    accounts: [],
+    summary: null,
+    loading: false,
+    error: '',
+    unavailable: false,
+    message: '',
+  })
+  const [uploadingMatterProofAccountId, setUploadingMatterProofAccountId] = useState('')
+  const [matterProofUploadFeedback, setMatterProofUploadFeedback] = useState({ accountId: '', tone: '', message: '' })
+  const [uploadingMatterRequestId, setUploadingMatterRequestId] = useState('')
+  const [matterRequestUploadFeedback, setMatterRequestUploadFeedback] = useState({ requestId: '', tone: '', message: '' })
   const [sellerRequestForm, setSellerRequestForm] = useState({
     propertyAddress: '',
     message: '',
@@ -4276,6 +4295,7 @@ function ClientPortal() {
     if (location.pathname.endsWith('/bond-application')) return 'bond_application'
     if (location.pathname.endsWith('/appointments')) return 'appointments'
     if (location.pathname.endsWith('/offers')) return 'offers'
+    if (location.pathname.endsWith('/account')) return 'account'
     if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
     if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
     if (location.pathname.endsWith('/handover')) return 'handover'
@@ -5360,6 +5380,7 @@ function ClientPortal() {
     appointments: true,
     offers: true,
     details: true,
+    account: true,
     bond_application: isOriginatorManagedPortalFinance,
     documents: true,
     handover: true,
@@ -5387,6 +5408,172 @@ function ClientPortal() {
   const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
   const canSwitchJourney = hasSellingContext
   const workspaceNavigationScope = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMatterAccounts() {
+      if (!token || !portal?.transaction?.id) {
+        setMatterAccountsState({
+          accounts: [],
+          summary: null,
+          loading: false,
+          error: '',
+          unavailable: false,
+          message: '',
+        })
+        return
+      }
+
+      try {
+        setMatterAccountsState((previous) => ({
+          ...previous,
+          loading: true,
+          error: '',
+        }))
+        const result = await fetchClientPortalMatterFinancialAccounts({
+          token,
+          workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        })
+        if (!active) return
+        setMatterAccountsState({
+          accounts: result.accounts || [],
+          summary: result.summary || null,
+          loading: false,
+          error: '',
+          unavailable: result.unavailable === true,
+          message: result.message || '',
+        })
+      } catch (accountError) {
+        if (!active) return
+        setMatterAccountsState({
+          accounts: [],
+          summary: null,
+          loading: false,
+          error: accountError?.message || 'Account details are not available right now.',
+          unavailable: false,
+          message: '',
+        })
+      }
+    }
+
+    void loadMatterAccounts()
+
+    return () => {
+      active = false
+    }
+  }, [effectiveWorkspace, portal?.transaction?.id, token])
+
+  const handleUploadMatterAccountProof = useCallback(async ({ account, file, amount, paidOn, reference, notes, requestId } = {}) => {
+    const accountId = account?.id || ''
+    if (!accountId) {
+      setMatterProofUploadFeedback({ accountId: '', tone: 'error', message: 'Choose the account this payment proof belongs to.' })
+      return { ok: false }
+    }
+    if (!file) {
+      setMatterProofUploadFeedback({ accountId, tone: 'error', message: 'Select a proof of payment file to upload.' })
+      return { ok: false }
+    }
+
+    try {
+      setUploadingMatterProofAccountId(accountId)
+      setMatterProofUploadFeedback({ accountId, tone: '', message: '' })
+      const result = await uploadClientPortalMatterFinancialProof({
+        token,
+        workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        accountId,
+        file,
+        amount,
+        paidOn,
+        reference,
+        notes,
+        requestId,
+      })
+      const refreshed = await fetchClientPortalMatterFinancialAccounts({
+        token,
+        workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+      })
+      setMatterAccountsState({
+        accounts: refreshed.accounts || [],
+        summary: refreshed.summary || null,
+        loading: false,
+        error: '',
+        unavailable: refreshed.unavailable === true,
+        message: refreshed.message || '',
+      })
+      setMatterProofUploadFeedback({
+        accountId,
+        tone: 'success',
+        message: result?.message || 'Proof of payment uploaded for attorney review.',
+      })
+      return { ok: true }
+    } catch (proofError) {
+      setMatterProofUploadFeedback({
+        accountId,
+        tone: 'error',
+        message: proofError?.message || 'Unable to upload this proof of payment right now.',
+      })
+      return { ok: false }
+    } finally {
+      setUploadingMatterProofAccountId('')
+    }
+  }, [effectiveWorkspace, token])
+
+  const handleUploadMatterRequestDocument = useCallback(async ({ account, request, file, amount, documentDate, reference, notes } = {}) => {
+    const accountId = account?.id || ''
+    const requestId = request?.id || ''
+    if (!accountId || !requestId) {
+      setMatterRequestUploadFeedback({ requestId: requestId || '', tone: 'error', message: 'Choose the finance request you are submitting against.' })
+      return { ok: false }
+    }
+    if (!file) {
+      setMatterRequestUploadFeedback({ requestId, tone: 'error', message: 'Select the requested finance document to upload.' })
+      return { ok: false }
+    }
+
+    try {
+      setUploadingMatterRequestId(requestId)
+      setMatterRequestUploadFeedback({ requestId, tone: '', message: '' })
+      const result = await uploadClientPortalMatterFinancialRequestDocument({
+        token,
+        workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        accountId,
+        requestId,
+        file,
+        amount,
+        documentDate,
+        reference,
+        notes,
+      })
+      const refreshed = await fetchClientPortalMatterFinancialAccounts({
+        token,
+        workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+      })
+      setMatterAccountsState({
+        accounts: refreshed.accounts || [],
+        summary: refreshed.summary || null,
+        loading: false,
+        error: '',
+        unavailable: refreshed.unavailable === true,
+        message: refreshed.message || '',
+      })
+      setMatterRequestUploadFeedback({
+        requestId,
+        tone: 'success',
+        message: result?.message || 'Document uploaded against the request for attorney review.',
+      })
+      return { ok: true }
+    } catch (requestUploadError) {
+      setMatterRequestUploadFeedback({
+        requestId,
+        tone: 'error',
+        message: requestUploadError?.message || 'Unable to upload this requested finance document right now.',
+      })
+      return { ok: false }
+    } finally {
+      setUploadingMatterRequestId('')
+    }
+  }, [effectiveWorkspace, token])
 
   const handleJourneyChange = useCallback((value) => {
     if (value === 'seller' && !hasSellingContext) {
@@ -5554,6 +5741,7 @@ function ClientPortal() {
   const isAppointments = workspaceSection === 'appointments'
   const isOffers = workspaceSection === 'offers'
   const isDetails = workspaceSection === 'details'
+  const isAccount = workspaceSection === 'account'
   const isBondApplication = workspaceSection === 'bond_application'
   const isDocuments = workspaceSection === 'documents'
   const isHandover = workspaceSection === 'handover'
@@ -5562,7 +5750,7 @@ function ClientPortal() {
   const isTeam = workspaceSection === 'team'
   const isAlterations = workspaceSection === 'alterations'
   const isReview = workspaceSection === 'review'
-  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'progress', 'appointments', 'offers', 'documents', 'details'].includes(workspaceSection)
+  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'progress', 'appointments', 'offers', 'documents', 'details', 'account'].includes(workspaceSection)
 
   const handoverStatus = portal?.handover?.status || 'not_started'
   const handoverCompleted = handoverStatus === 'completed'
@@ -6655,6 +6843,13 @@ function ClientPortal() {
   }).length
   const sidebarStatusByKey = {
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
+    account: matterAccountsState.loading
+      ? 'Loading'
+      : matterAccountsState.summary?.documentCount
+        ? `${matterAccountsState.summary.documentCount} docs`
+        : matterAccountsState.accounts?.length
+          ? 'Published'
+          : null,
     appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : null,
     offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount}` : null,
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
@@ -9485,6 +9680,23 @@ function ClientPortal() {
                   </section>
                 ) : null}
               </section>
+            ) : null}
+
+            {isAccount ? (
+              <ClientPortalMatterAccountsPanel
+                accounts={matterAccountsState.accounts}
+                summary={matterAccountsState.summary || {}}
+                loading={matterAccountsState.loading}
+                error={matterAccountsState.error}
+                unavailable={matterAccountsState.unavailable}
+                workspace={effectiveWorkspace === 'seller' ? 'seller' : 'buyer'}
+                uploadingProofAccountId={uploadingMatterProofAccountId}
+                proofUploadFeedback={matterProofUploadFeedback}
+                onUploadProof={handleUploadMatterAccountProof}
+                uploadingRequestId={uploadingMatterRequestId}
+                requestUploadFeedback={matterRequestUploadFeedback}
+                onUploadRequestDocument={handleUploadMatterRequestDocument}
+              />
             ) : null}
 
       {isDocuments ? (

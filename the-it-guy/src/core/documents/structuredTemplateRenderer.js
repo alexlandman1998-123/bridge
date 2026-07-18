@@ -504,7 +504,7 @@ function normalizeTemplateSection(section = {}, index = 0) {
         return [placeholderKey, toTitleCase(placeholderKey)]
       })
       .filter(([placeholderKey]) => placeholderKey),
-    legalText: normalizeText(section?.legalText || section?.legal_text || metadata?.legal_text || ''),
+    legalText: String(section?.content ?? section?.legalText ?? section?.legal_text ?? metadata?.legal_text ?? ''),
     metadata,
   }
 }

@@ -4,7 +4,11 @@ function text(value) { return typeof value === 'string' ? value.trim() : '' }
 
 export function assessSignerSession({ packet = {}, version = {}, signers = [], fields = [], signer = {}, issuedAt = '' } = {}) {
   const dispatch = assessSigningDispatch({ packet, version, signers, fields, issuedAt })
-  const reasons = dispatch.ready ? [] : ['F1_E4_DISPATCH_INVALID']
+  const validation = version?.validation_summary_json && typeof version.validation_summary_json === 'object'
+    ? version.validation_summary_json
+    : {}
+  const legacyLockedEnvelope = validation.review_state === 'locked' && validation.content_locked === true && validation.lock_snapshot
+  const reasons = dispatch.ready || legacyLockedEnvelope ? [] : ['F1_E4_DISPATCH_INVALID']
   const role = text(signer.signer_role || signer.signerRole).toLowerCase()
   const email = text(signer.signer_email || signer.signerEmail).toLowerCase()
   if (!text(signer.id)) reasons.push('F1_SIGNER_MISSING')

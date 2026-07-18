@@ -6,6 +6,10 @@ import {
   notifyAppointmentParticipants,
   scheduleAppointmentReminders,
 } from './appointmentNotificationService'
+import {
+  buildAppointmentRescheduleProposalContract,
+  buildAppointmentRescheduleResolutionContract,
+} from '../core/appointments/appointmentRescheduleContract'
 
 const RESCHEDULE_REQUEST_STATUSES = new Set(['pending', 'proposed', 'accepted', 'rejected', 'cancelled', 'completed'])
 
@@ -19,13 +23,6 @@ function normalizeLower(value = '') {
 
 function isUuidLike(value = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
-}
-
-function isMissingColumnError(error, columnName = '') {
-  const message = String(error?.message || error?.details || '').toLowerCase()
-  const normalizedColumn = normalizeText(columnName).toLowerCase()
-  if (normalizedColumn && message.includes(normalizedColumn)) return true
-  return error?.code === '42703' || /column .* does not exist/i.test(message)
 }
 
 function normalizeRequestStatus(value = 'pending') {
@@ -64,10 +61,21 @@ function deriveDateAndTimeParts(dateTimeValue) {
   if (!dateTimeValue) return { date: '', time: '' }
   const date = new Date(dateTimeValue)
   if (Number.isNaN(date.getTime())) return { date: '', time: '' }
-  const iso = date.toISOString()
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Johannesburg',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date).reduce((accumulator, part) => {
+    accumulator[part.type] = part.value
+    return accumulator
+  }, {})
   return {
-    date: iso.slice(0, 10),
-    time: iso.slice(11, 16),
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
   }
 }
 
@@ -358,11 +366,6 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
   const scopedRequestId = normalizeText(requestId)
   if (!scopedRequestId) throw new Error('Reschedule request is required.')
 
-  const preferredStart = payload?.preferredStart ? new Date(payload.preferredStart) : null
-  if (!preferredStart || Number.isNaN(preferredStart.getTime())) {
-    throw new Error('Please provide a valid proposed start time.')
-  }
-
   const requestRowQuery = await supabase
     .from('appointment_reschedule_requests')
     .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
@@ -374,17 +377,33 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
   if (!appointmentRow) throw new Error('Linked appointment could not be loaded.')
 
   const durationMinutes = computeDurationMinutes(appointmentRow)
-  const proposedEnd = new Date(preferredStart.getTime() + (durationMinutes * 60 * 1000))
+  const preferredStart = payload?.preferredStart ? new Date(payload.preferredStart) : null
+  const proposedEnd = payload?.preferredEnd
+    ? new Date(payload.preferredEnd)
+    : preferredStart && !Number.isNaN(preferredStart.getTime())
+      ? new Date(preferredStart.getTime() + (durationMinutes * 60 * 1000))
+      : null
+  const proposal = buildAppointmentRescheduleProposalContract({
+    preferredStart,
+    preferredEnd: proposedEnd,
+    reason: payload?.reason,
+    suggestedSlots: payload?.suggestedSlots,
+  })
+  if (!proposal.isValid) {
+    throw new Error(proposal.errors[0]?.message || 'Please provide a valid proposed appointment time.')
+  }
+  const proposalStartParts = deriveDateAndTimeParts(proposal.value.preferredStart)
+  const proposalEndParts = deriveDateAndTimeParts(proposal.value.preferredEnd)
 
   const integrity = await checkAppointmentSchedulingIntegrityAsync(
     appointmentRow.organisation_id,
     {
       appointmentId: appointmentRow.appointment_id,
       appointmentType: appointmentRow.appointment_type,
-      date: preferredStart.toISOString().slice(0, 10),
-      startTime: preferredStart.toISOString().slice(11, 16),
-      endTime: proposedEnd.toISOString().slice(11, 16),
-      dateTime: preferredStart.toISOString(),
+      date: proposalStartParts.date,
+      startTime: proposalStartParts.time,
+      endTime: proposalEndParts.time,
+      dateTime: proposal.value.preferredStart,
       transactionId: appointmentRow.transaction_id,
       resourceId: appointmentRow.resource_id || null,
       allowOutsideBusinessHours: appointmentRow.allow_outside_business_hours === true,
@@ -406,44 +425,41 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
     throw error
   }
 
-  const nowIso = new Date().toISOString()
-  const update = await supabase
-    .from('appointment_reschedule_requests')
-    .update({
-      preferred_start: preferredStart.toISOString(),
-      preferred_end: proposedEnd.toISOString(),
-      reason: normalizeText(payload?.reason) || requestRowQuery.data?.reason || null,
-      status: 'proposed',
-      reviewed_by: isUuidLike(payload?.reviewedBy) ? payload.reviewedBy : null,
-      reviewed_at: nowIso,
-      suggested_slots: Array.isArray(payload?.suggestedSlots) ? payload.suggestedSlots : (integrity?.suggestedSlots || []),
-      updated_at: nowIso,
-    })
-    .eq('id', scopedRequestId)
-    .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
-    .single()
-  if (update.error) throw update.error
-
-  await supabase
-    .from('appointments')
-    .update({
-      status: 'Proposed',
-      updated_at: nowIso,
-    })
-    .eq('appointment_id', appointmentRow.appointment_id)
+  const mutation = await supabase.rpc('propose_attorney_appointment_reschedule', {
+    p_request_id: scopedRequestId,
+    p_preferred_start: proposal.value.preferredStart,
+    p_preferred_end: proposal.value.preferredEnd,
+    p_reason: proposal.value.reason,
+    p_suggested_slots: proposal.value.suggestedSlots.length
+      ? proposal.value.suggestedSlots
+      : (integrity?.suggestedSlots || []),
+  })
+  if (mutation.error) throw mutation.error
+  const result = Array.isArray(mutation.data) ? mutation.data[0] : null
+  if (!result?.request_id) throw new Error('Reschedule proposal could not be saved.')
 
   await runRescheduleNotificationTask('reschedule_proposed', async () => {
     await notifyAppointmentParticipants(appointmentRow.appointment_id, 'appointment_reschedule_proposed', {
       visibility: appointmentRow?.visibility_scope || 'shared_role_players',
       metadata: {
-        preferredStart: preferredStart.toISOString(),
-        preferredEnd: proposedEnd.toISOString(),
-        reason: normalizeText(payload?.reason) || normalizeText(requestRowQuery.data?.reason),
+        preferredStart: proposal.value.preferredStart,
+        preferredEnd: proposal.value.preferredEnd,
+        reason: proposal.value.reason || normalizeText(requestRowQuery.data?.reason),
+        requestId: scopedRequestId,
+        source: 'attorney_calendar_phase5',
       },
     })
   })
 
-  return normalizeRescheduleRequestRow(update.data || {})
+  return normalizeRescheduleRequestRow({
+    ...requestRowQuery.data,
+    id: result.request_id,
+    appointment_id: result.appointment_id,
+    status: result.request_status,
+    preferred_start: result.preferred_start,
+    preferred_end: result.preferred_end,
+    reviewed_at: result.reviewed_at,
+  })
 }
 
 export async function resolveAppointmentRescheduleRequest(requestId, payload = {}) {
@@ -451,10 +467,11 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
   const scopedRequestId = normalizeText(requestId)
   if (!scopedRequestId) throw new Error('Reschedule request is required.')
 
-  const decision = normalizeRequestStatus(payload?.status || 'accepted')
-  if (!['accepted', 'rejected', 'cancelled', 'completed'].includes(decision)) {
-    throw new Error('Invalid reschedule resolution status.')
+  const resolution = buildAppointmentRescheduleResolutionContract(payload)
+  if (!resolution.isValid) {
+    throw new Error(resolution.errors[0]?.message || 'Invalid reschedule resolution.')
   }
+  const decision = resolution.value.decision
 
   const requestQuery = await supabase
     .from('appointment_reschedule_requests')
@@ -466,31 +483,31 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
   const appointmentRow = await fetchAppointmentById(requestQuery.data?.appointment_id)
   if (!appointmentRow) throw new Error('Linked appointment could not be loaded.')
 
-  const nowIso = new Date().toISOString()
-  const reviewedBy = isUuidLike(payload?.reviewedBy) ? payload.reviewedBy : null
-
-  const requestUpdate = await supabase
-    .from('appointment_reschedule_requests')
-    .update({
-      status: decision,
-      reviewed_by: reviewedBy,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    })
-    .eq('id', scopedRequestId)
-    .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
-    .single()
-  if (requestUpdate.error) throw requestUpdate.error
-
-  if (decision === 'accepted' || decision === 'completed') {
-    const preferredStartIso = payload?.confirmedStart || requestQuery.data?.preferred_start
+  let confirmedStart = resolution.value.confirmedStart
+  let confirmedEnd = resolution.value.confirmedEnd
+  if (decision === 'accepted' && normalizeRequestStatus(requestQuery.data?.status) !== 'accepted') {
+    const preferredStartIso = confirmedStart || requestQuery.data?.preferred_start
     const preferredStartDate = preferredStartIso ? new Date(preferredStartIso) : null
     if (!preferredStartDate || Number.isNaN(preferredStartDate.getTime())) {
       throw new Error('Accepted reschedule requests require a valid appointment time.')
     }
 
     const durationMinutes = computeDurationMinutes(appointmentRow)
-    const preferredEndDate = new Date(preferredStartDate.getTime() + (durationMinutes * 60 * 1000))
+    const preferredEndDate = confirmedEnd
+      ? new Date(confirmedEnd)
+      : requestQuery.data?.preferred_end
+        ? new Date(requestQuery.data.preferred_end)
+        : new Date(preferredStartDate.getTime() + (durationMinutes * 60 * 1000))
+    const confirmed = buildAppointmentRescheduleResolutionContract({
+      ...resolution.value,
+      confirmedStart: preferredStartDate,
+      confirmedEnd: preferredEndDate,
+    })
+    if (!confirmed.isValid) {
+      throw new Error(confirmed.errors[0]?.message || 'Accepted reschedule requires a valid future slot.')
+    }
+    confirmedStart = confirmed.value.confirmedStart
+    confirmedEnd = confirmed.value.confirmedEnd
     const partsStart = deriveDateAndTimeParts(preferredStartDate.toISOString())
     const partsEnd = deriveDateAndTimeParts(preferredEndDate.toISOString())
 
@@ -523,99 +540,43 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
       throw error
     }
 
-    let appointmentUpdate = await supabase
-      .from('appointments')
-      .update({
-        appointment_date: partsStart.date,
-        start_time: partsStart.time,
-        end_time: partsEnd.time,
-        date_time: preferredStartDate.toISOString(),
-        status: 'Confirmed',
-        external_calendar_status: 'not_synced',
-        ics_generated_at: null,
-        updated_at: nowIso,
-      })
-      .eq('appointment_id', appointmentRow.appointment_id)
-    if (
-      appointmentUpdate.error &&
-      (isMissingColumnError(appointmentUpdate.error, 'external_calendar_status') ||
-        isMissingColumnError(appointmentUpdate.error, 'ics_generated_at'))
-    ) {
-      appointmentUpdate = await supabase
-        .from('appointments')
-        .update({
-          appointment_date: partsStart.date,
-          start_time: partsStart.time,
-          end_time: partsEnd.time,
-          date_time: preferredStartDate.toISOString(),
-          status: 'Confirmed',
-          updated_at: nowIso,
-        })
-        .eq('appointment_id', appointmentRow.appointment_id)
-    }
-    if (appointmentUpdate.error) throw appointmentUpdate.error
-
-    await supabase
-      .from('appointment_reschedule_requests')
-      .update({
-        status: 'cancelled',
-        reviewed_by: reviewedBy,
-        reviewed_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq('appointment_id', appointmentRow.appointment_id)
-      .in('status', ['pending', 'proposed'])
-      .neq('id', scopedRequestId)
-
-    await runRescheduleNotificationTask('reschedule_accepted', async () => {
-      await notifyAppointmentParticipants(appointmentRow.appointment_id, 'appointment_rescheduled', {
-        visibility: appointmentRow?.visibility_scope || 'shared_role_players',
-        metadata: {
-          confirmedStart: preferredStartDate.toISOString(),
-          confirmedEnd: preferredEndDate.toISOString(),
-          reason: normalizeText(requestQuery.data?.reason),
-        },
-      })
-      await cancelAppointmentReminders(appointmentRow.appointment_id)
-      await scheduleAppointmentReminders(appointmentRow.appointment_id)
-    })
-  } else {
-    let appointmentResetResult = await supabase
-      .from('appointments')
-      .update({
-        status: 'Confirmed',
-        external_calendar_status: 'not_synced',
-        ics_generated_at: null,
-        updated_at: nowIso,
-      })
-      .eq('appointment_id', appointmentRow.appointment_id)
-      .in('status', ['Reschedule Requested', 'Needs Reschedule', 'Proposed'])
-    if (
-      appointmentResetResult.error &&
-      (isMissingColumnError(appointmentResetResult.error, 'external_calendar_status') ||
-        isMissingColumnError(appointmentResetResult.error, 'ics_generated_at'))
-    ) {
-      appointmentResetResult = await supabase
-        .from('appointments')
-        .update({
-          status: 'Confirmed',
-          updated_at: nowIso,
-        })
-        .eq('appointment_id', appointmentRow.appointment_id)
-        .in('status', ['Reschedule Requested', 'Needs Reschedule', 'Proposed'])
-    }
-    if (appointmentResetResult.error) throw appointmentResetResult.error
-
-    await runRescheduleNotificationTask('reschedule_rejected', async () => {
-      await notifyAppointmentParticipants(appointmentRow.appointment_id, 'appointment_reschedule_rejected', {
-        visibility: appointmentRow?.visibility_scope || 'shared_role_players',
-        metadata: {
-          resolution: decision,
-          reason: normalizeText(payload?.reason) || normalizeText(requestQuery.data?.reason),
-        },
-      })
-    })
   }
 
-  return normalizeRescheduleRequestRow(requestUpdate.data || {})
+  const mutation = await supabase.rpc('resolve_attorney_appointment_reschedule', {
+    p_request_id: scopedRequestId,
+    p_decision: decision,
+    p_confirmed_start: confirmedStart,
+    p_confirmed_end: confirmedEnd,
+    p_reason: resolution.value.reason,
+  })
+  if (mutation.error) throw mutation.error
+  const result = Array.isArray(mutation.data) ? mutation.data[0] : null
+  if (!result?.request_id) throw new Error('Reschedule resolution could not be saved.')
+
+  await runRescheduleNotificationTask(`reschedule_${decision}`, async () => {
+    const eventType = decision === 'accepted' ? 'appointment_rescheduled' : 'appointment_reschedule_rejected'
+    await notifyAppointmentParticipants(appointmentRow.appointment_id, eventType, {
+      visibility: appointmentRow?.visibility_scope || 'shared_role_players',
+      metadata: {
+        requestId: scopedRequestId,
+        resolution: decision,
+        confirmedStart: result.confirmed_start,
+        confirmedEnd: result.confirmed_end,
+        reason: resolution.value.reason || normalizeText(requestQuery.data?.reason),
+        source: 'attorney_calendar_phase5',
+      },
+    })
+    if (decision === 'accepted') {
+      await cancelAppointmentReminders(appointmentRow.appointment_id)
+      await scheduleAppointmentReminders(appointmentRow.appointment_id)
+    }
+  })
+
+  return normalizeRescheduleRequestRow({
+    ...requestQuery.data,
+    id: result.request_id,
+    appointment_id: result.appointment_id,
+    status: result.request_status,
+    reviewed_at: result.reviewed_at,
+  })
 }

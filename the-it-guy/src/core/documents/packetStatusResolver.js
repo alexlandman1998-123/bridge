@@ -1,9 +1,15 @@
 import {
   fetchDocumentPacket,
+  getFinalDocumentCompletionStatus,
+  getDocumentGeneratorLaunchChain,
   getDocumentPacketSigningSummary,
   listDocumentPacketVersions,
   listDocumentPackets,
 } from '../../lib/documentPacketsApi'
+import { normalizeDocumentLifecycleState } from './documentLifecycle'
+import { resolveSigningOperationalStatus } from './signingOperationalStatus'
+import { buildSigningActivityHistory } from './signingActivityHistory'
+import { buildSigningCompletionCertificate } from './signingCompletionCertificate'
 
 const PACKET_STATUS_CACHE_TTL_MS = 1500
 const cachedPacketStatuses = new Map()
@@ -123,6 +129,7 @@ function resolveLifecycleStateFromPacket({
   packet = null,
   versions = [],
   signingSummary = null,
+  finalCompletion = null,
 } = {}) {
   if (!packet?.id) {
     return {
@@ -139,12 +146,12 @@ function resolveLifecycleStateFromPacket({
   const signedCount = signerStatuses.filter((row) => row === 'signed').length
   const activeCount = signerStatuses.filter((row) => ['pending', 'ready_to_send', 'sent', 'viewed'].includes(row)).length
   const hasPartialSignerProgress = signedCount > 0 && activeCount > 0
-  const reviewState =
+  const explicitLifecycleState =
+    normalizeKey(packet?.source_context_json?.lifecycle_state) ||
+    normalizeKey(packet?.source_context_json?.editableDraftReviewState) ||
     normalizeKey(latestVersion?.validation_summary_json?.review_state) ||
     normalizeKey(latestVersion?.validation_summary_json?.editable_draft?.review_state)
-  const lifecycleState =
-    normalizeKey(packet?.source_context_json?.lifecycle_state) ||
-    normalizeKey(packet?.source_context_json?.editableDraftReviewState)
+  const lifecycleState = normalizeDocumentLifecycleState(explicitLifecycleState || status)
 
   const hasFinalSignedVersion = versionRows.some(
     (version) =>
@@ -155,10 +162,31 @@ function resolveLifecycleStateFromPacket({
   const hasGeneratedVersion = versionRows.some((version) => normalizeKey(version?.render_status) === 'generated')
   const allSignersSigned = signingSummary?.allSignersSigned === true
 
-  if (allSignersSigned || hasFinalSignedVersion || status === 'completed' || normalizeText(packet?.completed_at)) {
+  if (status === 'archived' || status === 'voided' || lifecycleState === 'archived') {
     return {
-      state: 'SIGNED',
-      reason: 'All signers completed and final signed artifact is available.',
+      state: 'ARCHIVED',
+      reason: 'Packet is archived.',
+    }
+  }
+
+  if (finalCompletion?.ready === true) {
+    return {
+      state: 'COMPLETED',
+      reason: 'The final signed artifact is verified across the transaction, portal and recipient delivery.',
+    }
+  }
+
+  if (hasFinalSignedVersion) {
+    return {
+      state: 'PUBLISHING',
+      reason: 'The final signed artifact is safe while transaction, portal or recipient completion is pending.',
+    }
+  }
+
+  if (allSignersSigned || status === 'completed' || normalizeText(packet?.completed_at)) {
+    return {
+      state: 'FINALISING',
+      reason: 'All signers completed and the immutable final signed artifact is still being generated.',
     }
   }
 
@@ -176,77 +204,21 @@ function resolveLifecycleStateFromPacket({
     }
   }
 
-  if (status === 'signing_prep') {
-    if (lifecycleState === 'locked' || normalizeText(packet?.source_context_json?.lockedAt)) {
-      return {
-        state: 'LOCKED',
-        reason: 'Document is locked and ready for signature sending.',
-      }
-    }
+  if (status === 'signing_prep' || lifecycleState === 'ready_to_send') {
     return {
-      state: 'APPROVED',
-      reason: 'Packet draft is generated and ready to send.',
+      state: 'READY_TO_SEND',
+      reason: 'PDF and signing preparation are ready to send.',
     }
   }
 
-  if (status === 'generated' || hasGeneratedVersion) {
-    if (lifecycleState === 'locked') {
-      return {
-        state: 'LOCKED',
-        reason: 'Document is locked and cannot be edited.',
-      }
-    }
-    if (lifecycleState === 'approved' || reviewState === 'approved') {
-      return {
-        state: 'APPROVED',
-        reason: 'Document has been approved and is ready to lock/send.',
-      }
-    }
-    if (reviewState === 'in_review') {
-      return {
-        state: 'IN_REVIEW',
-        reason: 'Draft is in legal review and remains editable.',
-      }
-    }
+  if (status === 'generated' || hasGeneratedVersion || lifecycleState === 'pdf_generated') {
     return {
-      state: 'DRAFT',
-      reason: 'Draft exists and can be reviewed or edited before sending.',
-    }
-  }
-
-  if (status === 'archived') {
-    return {
-      state: 'ARCHIVED',
-      reason: 'Packet is archived.',
-    }
-  }
-
-  if (status === 'voided') {
-    return {
-      state: 'VOIDED',
-      reason: 'Packet is voided.',
+      state: 'PDF_GENERATED',
+      reason: 'A generated PDF is available and the document remains editable.',
     }
   }
 
   if (['draft', 'ready_for_generation'].includes(status) || packet?.id) {
-    if (lifecycleState === 'locked') {
-      return {
-        state: 'LOCKED',
-        reason: 'Document is locked and cannot be edited.',
-      }
-    }
-    if (lifecycleState === 'approved' || reviewState === 'approved') {
-      return {
-        state: 'APPROVED',
-        reason: 'Document has been approved and is ready to lock/send.',
-      }
-    }
-    if (reviewState === 'in_review') {
-      return {
-        state: 'IN_REVIEW',
-        reason: 'Draft is in legal review and remains editable.',
-      }
-    }
     return {
       state: 'DRAFT',
       reason: 'Packet draft exists.',
@@ -332,6 +304,7 @@ function resolvePacketStatusCacheKey({
   transactionId = '',
   leadId = '',
   organisationId = null,
+  viewerRole = '',
 } = {}) {
   return [
     normalizeKey(packetType),
@@ -339,6 +312,7 @@ function resolvePacketStatusCacheKey({
     normalizeText(transactionId),
     normalizeLeadUuid(leadId),
     normalizeNullableUuid(organisationId) || '',
+    normalizeKey(viewerRole),
   ].join(':')
 }
 
@@ -398,6 +372,7 @@ export async function resolveDocumentPacketStatus({
   transactionId = '',
   leadId = '',
   organisationId = null,
+  viewerRole = '',
 } = {}) {
   const cacheKey = resolvePacketStatusCacheKey({
     packetType,
@@ -405,6 +380,7 @@ export async function resolveDocumentPacketStatus({
     transactionId,
     leadId,
     organisationId,
+    viewerRole,
   })
   const cached = cachedPacketStatuses.get(cacheKey)
   const now = Date.now()
@@ -425,6 +401,8 @@ export async function resolveDocumentPacketStatus({
     let packet = null
     let versions = []
     let signingSummary = null
+    let finalCompletion = null
+    let launchChain = null
     let packetLookupFailed = false
 
     if (!['mandate', 'otp'].includes(normalizedPacketType)) {
@@ -441,7 +419,7 @@ export async function resolveDocumentPacketStatus({
 
     try {
       if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
+        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
         if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
           warnings.push('The packet in the link belongs to another lead, so it was ignored.')
           packet = null
@@ -480,6 +458,16 @@ export async function resolveDocumentPacketStatus({
     }
 
     if (packet?.id) {
+      if (!Array.isArray(packet.events)) {
+        try {
+          const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
+          packet = packetWithEvents || packet
+        } catch (error) {
+          if (isPermissionDeniedError(error)) warnings.push('Signing activity is restricted by RLS for this role.')
+          else if (isMissingSchemaOrTableError(error)) warnings.push('Signing activity is unavailable in this project.')
+          else warnings.push(normalizeText(error?.message || 'Unable to load signing activity.'))
+        }
+      }
       try {
         versions = await listDocumentPacketVersions(packet.id)
       } catch (error) {
@@ -509,24 +497,77 @@ export async function resolveDocumentPacketStatus({
           }
         }
       }
+
+      const remindersByRole = packet?.source_context_json?.signingRemindersByRole
+      if (signingSummary?.signers?.length && remindersByRole && typeof remindersByRole === 'object') {
+        signingSummary = {
+          ...signingSummary,
+          signers: signingSummary.signers.map((signer) => {
+            const reminder = remindersByRole[normalizeKey(signer?.signer_role)]
+            return reminder && typeof reminder === 'object'
+              ? { ...signer, reminder_sent_at: normalizeText(reminder.sentAt), reminder_count: Number(reminder.count || 0) }
+              : signer
+          }),
+        }
+      }
+
+      const finalVersion = versions.find((version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url))
+      if (finalVersion?.id && isUuidLike(packet.id) && isUuidLike(finalVersion.id)) {
+        try {
+          finalCompletion = await getFinalDocumentCompletionStatus({ packetId: packet.id, versionId: finalVersion.id })
+          launchChain = await getDocumentGeneratorLaunchChain({ packetId: packet.id, versionId: finalVersion.id })
+        } catch (error) {
+          if (isPermissionDeniedError(error)) warnings.push('Final publication status is restricted for this role.')
+          else if (isMissingSchemaOrTableError(error)) warnings.push('Final publication status is unavailable in this project.')
+          else warnings.push(normalizeText(error?.message || 'Unable to resolve final publication status.'))
+        }
+      }
     }
 
     const lifecycle = resolveLifecycleStateFromPacket({
       packet,
       versions,
       signingSummary,
+      finalCompletion,
     })
     const signingStatus = normalizedPacketType === 'mandate'
       ? normalizeMandateSigningStatus({ packet, versions, signingSummary })
       : null
+    const operationalStatus = resolveSigningOperationalStatus({
+      packetType: normalizedPacketType,
+      packet,
+      versions,
+      signingSummary,
+      finalCompletion,
+      viewerRole,
+    })
+    const signingActivity = buildSigningActivityHistory({
+      signers: signingSummary?.signers || [],
+      events: Array.isArray(packet?.events) ? packet.events : [],
+      limit: 100,
+    })
+    const completionCertificate = buildSigningCompletionCertificate({
+      packet,
+      version: versions.find((version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url)) || null,
+      signers: signingSummary?.signers || [],
+      finalCompletion,
+      launchChain,
+      signingActivity,
+    })
+    const safePacket = packet ? { ...packet } : null
+    if (safePacket) delete safePacket.events
 
     return {
       packetType: normalizedPacketType,
       state: lifecycle.state,
       signingStatus,
-      packet,
+      packet: safePacket,
       versions,
       signingSummary,
+      signingActivity,
+      completionCertificate,
+      finalCompletion,
+      operationalStatus,
       warnings,
       actionHint: lifecycle.reason,
     }
@@ -560,22 +601,25 @@ export function resolveDocumentPacketActionState({
   if (normalizedState === 'draft') {
     return { actionKey: 'edit', label: `Edit ${labelBase}` }
   }
-  if (normalizedState === 'in_review') {
+  if (normalizedState === 'pdf_generated') {
     return { actionKey: 'edit', label: `Edit ${labelBase}` }
   }
-  if (normalizedState === 'approved') {
-    return { actionKey: 'send', label: `Send ${labelBase}` }
-  }
-  if (normalizedState === 'locked') {
+  if (normalizedState === 'ready_to_send') {
     return { actionKey: 'send', label: `Send ${labelBase}` }
   }
   if (['sent', 'partially_signed'].includes(normalizedState)) {
     return { actionKey: 'view', label: `View ${labelBase}` }
   }
-  if (normalizedState === 'signed') {
+  if (normalizedState === 'completed') {
     return { actionKey: 'view_signed', label: `View Signed ${labelBase}` }
   }
-  if (['archived', 'voided'].includes(normalizedState)) {
+  if (normalizedState === 'finalising') {
+    return { actionKey: 'view', label: `Finalising ${labelBase}` }
+  }
+  if (normalizedState === 'publishing') {
+    return { actionKey: 'view_signed', label: `View Signed ${labelBase}` }
+  }
+  if (normalizedState === 'archived') {
     return { actionKey: 'open', label: `Open ${labelBase}` }
   }
   if (isBusy) {

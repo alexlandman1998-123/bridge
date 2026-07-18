@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import { assessDocumentGeneratorBrowserUsability } from '../documentGeneratorBrowserUsability.js'
+const row=(packetType,viewport)=>({packetType,viewport,finalStateVisible:true,completedEverywhereVisible:true,downloadVisible:true,downloadVerifiedPdf:true,accessibleControls:true,horizontalOverflowPx:0,unexpectedRetryVisible:false})
+const journeys=['otp','mandate'].flatMap((type)=>['desktop','mobile'].map((viewport)=>row(type,viewport)))
+test('accepts both completed documents on desktop and mobile',()=>assert.equal(assessDocumentGeneratorBrowserUsability({g1:{status:'READY_FOR_G2',ready:true},journeys,telemetry:{pageErrors:[],http5xx:[]}}).ready,true))
+test('rejects a missing mobile journey',()=>assert.ok(assessDocumentGeneratorBrowserUsability({g1:{status:'READY_FOR_G2',ready:true},journeys:journeys.filter((item)=>!(item.packetType==='otp'&&item.viewport==='mobile'))}).blockers.some((item)=>item.code==='G2_JOURNEY_MISSING')))
+test('rejects a non-PDF download',()=>assert.ok(assessDocumentGeneratorBrowserUsability({g1:{status:'READY_FOR_G2',ready:true},journeys:journeys.map((item)=>item.packetType==='mandate'?{...item,downloadVerifiedPdf:false}:item)}).blockers.some((item)=>item.code==='G2_DOWNLOAD_INVALID')))

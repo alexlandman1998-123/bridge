@@ -35,8 +35,9 @@ assertIncludes(auditLogService, 'security_audit_events_workspace_id_fkey', 'audi
 
 assertIncludes(attorneyFirms, 'bootstrap_attorney_firm_admin_membership', 'attorney membership bootstrap RPC')
 assertIncludes(attorneyFirms, 'attorney_membership_bootstrap_unavailable', 'membership bootstrap hard failure code')
-assertIncludes(attorneyFirms, 'loadCurrentUserAttorneyFirmAdminMembership', 'real membership verification')
 assertIncludes(attorneyFirms, 'message.includes(\'no_active_membership\')', 'specific no active membership user message')
-assertIncludes(attorneyFirms, 'if (!isUnsafeFallbackAllowed())', 'production synthetic membership guard')
+assert(!attorneyFirms.includes('buildSyntheticFirmAdminMembership'), 'Synthetic firm-admin membership must not be available')
+assert(!attorneyFirms.includes('owner-admin-'), 'Synthetic owner-admin identifiers must not be available')
+assert(!/\.from\('attorney_firm_members'\)\s*\.upsert\(membershipPayload/.test(attorneyFirms), 'Firm-admin bootstrap must not use a direct client upsert')
 
 console.log('attorney onboarding FK safety tests passed')

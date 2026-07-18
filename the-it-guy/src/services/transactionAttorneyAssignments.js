@@ -10,19 +10,23 @@ import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
 import { prepareBondAssignmentPayload } from './bondAssignmentService'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
+import {
+  ATTORNEY_TRANSACTION_ROLES,
+  deriveAttorneyProfessionalProfile,
+  getAttorneyRoleLabel as getCatalogAttorneyRoleLabel,
+  normalizeAttorneyTransactionRole,
+} from '../constants/attorneyRoleCatalog.js'
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
-export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
+export const TRANSACTION_ATTORNEY_ROLES = ATTORNEY_TRANSACTION_ROLES
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run the attorney assignment migrations and refresh.'
 const ASSIGNMENT_SELECT =
   'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
 
-const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
-const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
-const CANCELLATION_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
-const SECRETARY_ALLOWED_ROLES = new Set(['conveyancing_secretary', 'admin_staff', 'candidate_attorney'])
-const ADMIN_ALLOWED_ROLES = new Set(['admin_staff', 'conveyancing_secretary', 'candidate_attorney'])
+const MANAGEMENT_PROFESSIONAL_ROLES = new Set(['firm_admin', 'director_partner'])
+const SECRETARY_PROFESSIONAL_ROLES = new Set(['conveyancing_secretary', 'admin_staff', 'candidate_attorney'])
+const ADMIN_HANDLER_PROFESSIONAL_ROLES = new Set(['admin_staff', 'conveyancing_secretary', 'candidate_attorney'])
 
 function normalizeType(value) {
   const normalized = normalizeText(value).toLowerCase()
@@ -47,9 +51,7 @@ function attorneyRoleToType(value) {
 }
 
 function normalizeAttorneyRole(value, fallbackType = 'transfer') {
-  const normalized = normalizeText(value).toLowerCase()
-  if (TRANSACTION_ATTORNEY_ROLES.includes(normalized)) return normalized
-  return typeToAttorneyRole(fallbackType)
+  return normalizeAttorneyTransactionRole(value, typeToAttorneyRole(fallbackType))
 }
 
 function normalizeStatus(value, fallback = 'active') {
@@ -102,11 +104,7 @@ function mapAssignmentRow(row) {
 }
 
 export function getAttorneyRoleLabel(role) {
-  const normalized = normalizeAttorneyRole(role)
-  if (normalized === 'transfer_attorney') return 'Transfer Attorney'
-  if (normalized === 'bond_attorney') return 'Bond Attorney'
-  if (normalized === 'cancellation_attorney') return 'Cancellation Attorney'
-  return 'Attorney'
+  return getCatalogAttorneyRoleLabel(normalizeAttorneyRole(role), { fallback: 'Attorney' })
 }
 
 export function getAssignmentTypeLabel(type) {
@@ -180,36 +178,58 @@ async function assertActorCanManageAssignment(client, { actorId, firmId }) {
   }
 }
 
-function assertRoleAllowed({ assignmentType, field, memberRole }) {
-  const normalizedRole = String(memberRole || '').trim().toLowerCase()
-  if (!normalizedRole) return
+function assignmentTypeQualifications(assignmentType) {
+  if (assignmentType === 'bond') return ['bond']
+  if (assignmentType === 'cancellation') return ['cancellation']
+  if (assignmentType === 'transfer_and_bond') return ['transfer', 'bond']
+  return ['transfer']
+}
 
-  if (field === 'supporting') {
-    return
-  }
+export function getAttorneyAssignmentEligibility(member = {}, assignmentType = 'transfer', field = 'primary') {
+  const normalizedAssignmentType = normalizeType(assignmentType)
+  const profile = deriveAttorneyProfessionalProfile({
+    role: member.role,
+    professionalRole: member.professionalRole || member.professional_role,
+    practiceQualifications: member.practiceQualifications || member.practice_qualifications,
+  })
+  const professionalRole = profile.professionalRole
+  const qualifications = profile.practiceQualifications
+  const requiredQualifications = assignmentTypeQualifications(normalizedAssignmentType)
+  let eligible = false
 
   if (field === 'primary') {
-    if (assignmentType === 'transfer' && !TRANSFER_PRIMARY_ROLES.has(normalizedRole)) {
-      throw new Error('Primary transfer attorney role is not valid for this assignment.')
-    }
-    if (assignmentType === 'bond' && !BOND_PRIMARY_ROLES.has(normalizedRole)) {
-      throw new Error('Primary bond attorney role is not valid for this assignment.')
-    }
-    if (assignmentType === 'transfer_and_bond' && !TRANSFER_PRIMARY_ROLES.has(normalizedRole) && !BOND_PRIMARY_ROLES.has(normalizedRole)) {
-      throw new Error('Primary attorney role is not valid for a transfer and bond assignment.')
-    }
-    if (assignmentType === 'cancellation' && !CANCELLATION_PRIMARY_ROLES.has(normalizedRole)) {
-      throw new Error('Primary cancellation attorney role is not valid for this assignment.')
-    }
+    eligible = MANAGEMENT_PROFESSIONAL_ROLES.has(professionalRole) || (
+      professionalRole === 'attorney_conveyancer' &&
+      requiredQualifications.some((qualification) => qualifications.includes(qualification))
+    )
+  } else if (field === 'supporting') {
+    eligible = professionalRole === 'candidate_attorney' ||
+      MANAGEMENT_PROFESSIONAL_ROLES.has(professionalRole) || (
+        professionalRole === 'attorney_conveyancer' &&
+        requiredQualifications.some((qualification) => qualifications.includes(qualification))
+      )
+  } else if (field === 'secretary') {
+    eligible = SECRETARY_PROFESSIONAL_ROLES.has(professionalRole)
+  } else if (field === 'admin') {
+    eligible = ADMIN_HANDLER_PROFESSIONAL_ROLES.has(professionalRole)
   }
 
-  if (field === 'secretary' && !SECRETARY_ALLOWED_ROLES.has(normalizedRole)) {
-    throw new Error('Selected secretary role is not valid for attorney assignments.')
+  return {
+    eligible,
+    professionalRole,
+    practiceQualifications: qualifications,
+    requiredQualifications,
+    reason: eligible
+      ? ''
+      : field === 'primary' || field === 'supporting'
+        ? `This member is not qualified for the ${normalizedAssignmentType.replaceAll('_', ' ')} attorney lane.`
+        : `This member's professional role is not valid for the ${field} assignment slot.`,
   }
+}
 
-  if (field === 'admin' && !ADMIN_ALLOWED_ROLES.has(normalizedRole)) {
-    throw new Error('Selected admin handler role is not valid for attorney assignments.')
-  }
+function assertMemberAssignmentEligible({ assignmentType, field, member }) {
+  const result = getAttorneyAssignmentEligibility(member, assignmentType, field)
+  if (!result.eligible) throw new Error(result.reason)
 }
 
 async function resolveTransactionFinanceType(client, transactionId) {
@@ -480,26 +500,26 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
   assertUserBelongsToFirm({ userId: adminHandlerId, membersByUserId, label: 'Admin handler' })
 
   if (attorneyUserId) {
-    assertRoleAllowed({
+    assertMemberAssignmentEligible({
       assignmentType,
       field: isPrimary ? 'primary' : 'supporting',
-      memberRole: membersByUserId[attorneyUserId]?.role,
+      member: membersByUserId[attorneyUserId],
     })
   }
 
   if (secretaryId) {
-    assertRoleAllowed({
+    assertMemberAssignmentEligible({
       assignmentType,
       field: 'secretary',
-      memberRole: membersByUserId[secretaryId]?.role,
+      member: membersByUserId[secretaryId],
     })
   }
 
   if (adminHandlerId) {
-    assertRoleAllowed({
+    assertMemberAssignmentEligible({
       assignmentType,
       field: 'admin',
-      memberRole: membersByUserId[adminHandlerId]?.role,
+      member: membersByUserId[adminHandlerId],
     })
   }
 
@@ -1021,33 +1041,40 @@ export async function getAssignableAttorneyFirmMembers(firmId, assignmentType = 
     profile: profilesById[member.userId] || { id: member.userId, name: 'Team Member', email: '' },
   }))
 
-  const primaryRoleSet =
-    normalizedAssignmentType === 'bond'
-      ? BOND_PRIMARY_ROLES
-      : normalizedAssignmentType === 'cancellation'
-        ? CANCELLATION_PRIMARY_ROLES
-      : normalizedAssignmentType === 'transfer'
-        ? TRANSFER_PRIMARY_ROLES
-        : new Set([...TRANSFER_PRIMARY_ROLES, ...BOND_PRIMARY_ROLES])
-
   const toOption = (member) => ({
     userId: member.userId,
     memberId: member.id,
     role: member.role,
+    professionalRole: member.professionalRole,
+    practiceQualifications: member.practiceQualifications,
     departmentId: member.departmentId || null,
-    label: member.profile?.email ? `${member.profile.name} (${member.profile.email})` : member.profile.name,
+    label: `${member.profile?.email ? `${member.profile.name} (${member.profile.email})` : member.profile.name}${
+      member.practiceQualifications?.length
+        ? ` — ${member.practiceQualifications.map((qualification) => qualification[0].toUpperCase() + qualification.slice(1)).join(', ')}`
+        : ''
+    }`,
     name: member.profile.name,
     email: member.profile.email,
   })
 
-  const primaryAttorneys = enrichedMembers.filter((member) => primaryRoleSet.has(member.role)).map(toOption)
-  const secretaries = enrichedMembers.filter((member) => SECRETARY_ALLOWED_ROLES.has(member.role)).map(toOption)
-  const adminHandlers = enrichedMembers.filter((member) => ADMIN_ALLOWED_ROLES.has(member.role)).map(toOption)
+  const primaryAttorneys = enrichedMembers
+    .filter((member) => getAttorneyAssignmentEligibility(member, normalizedAssignmentType, 'primary').eligible)
+    .map(toOption)
+  const supportingAttorneys = enrichedMembers
+    .filter((member) => getAttorneyAssignmentEligibility(member, normalizedAssignmentType, 'supporting').eligible)
+    .map(toOption)
+  const secretaries = enrichedMembers
+    .filter((member) => getAttorneyAssignmentEligibility(member, normalizedAssignmentType, 'secretary').eligible)
+    .map(toOption)
+  const adminHandlers = enrichedMembers
+    .filter((member) => getAttorneyAssignmentEligibility(member, normalizedAssignmentType, 'admin').eligible)
+    .map(toOption)
 
   return {
     assignmentType: normalizedAssignmentType,
     members: enrichedMembers.map(toOption),
     primaryAttorneys,
+    supportingAttorneys,
     secretaries,
     adminHandlers,
   }

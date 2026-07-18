@@ -29,7 +29,7 @@ import {
   isValidEmail,
   isValidWebsite,
 } from './attorneyFirmServiceShared'
-import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
+import { inviteAttorneyTeamMember } from './attorneyTeamService'
 import { completeOnboarding } from './onboarding/onboardingEngine'
 
 const ATTORNEY_FIRM_SELECT_COLUMNS =
@@ -170,21 +170,6 @@ function shouldFallbackFromDepartmentActivationRpc(error) {
     message.includes('could not identify') ||
     message.includes('operator does not exist')
   )
-}
-
-function buildSyntheticFirmAdminMembership({ firmId, userId, joinedAt = null } = {}) {
-  return mapMemberRow({
-    id: `owner-admin-${firmId}-${userId}`,
-    firm_id: firmId,
-    user_id: userId,
-    department_id: null,
-    role: 'firm_admin',
-    status: 'active',
-    invited_by: userId,
-    joined_at: joinedAt || new Date().toISOString(),
-    created_at: joinedAt || new Date().toISOString(),
-    updated_at: joinedAt || new Date().toISOString(),
-  })
 }
 
 function buildMembershipBootstrapError(message, cause = null) {
@@ -340,7 +325,7 @@ async function ensureAttorneyFirmBackingOrganisation(client, firmId) {
   return normalizeText(result.data)
 }
 
-async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
+async function bootstrapFirmAdminMembershipWithRpc(client, firmId) {
   const rpcResult = await client.rpc('bootstrap_attorney_firm_admin_membership', {
     target_firm_id: firmId,
   })
@@ -353,93 +338,21 @@ async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
     throw rpcResult.error
   }
 
-  if (!isUnsafeFallbackAllowed()) {
-    throw buildMembershipBootstrapError('Attorney firm membership bootstrap is not available in this environment.', rpcResult.error)
-  }
-
-  const firmLookup = await client
-    .from('attorney_firms')
-    .select('id, created_by')
-    .eq('id', firmId)
-    .eq('created_by', userId)
-    .maybeSingle()
-
-  if (firmLookup.error) {
-    throw firmLookup.error
-  }
-  if (!firmLookup.data?.id) {
-    throw rpcResult.error
-  }
-
-  console.warn('[Attorney Onboarding] bootstrap membership RPC unavailable; using owner-admin route fallback.')
-  return buildSyntheticFirmAdminMembership({ firmId, userId })
-}
-
-async function loadCurrentUserAttorneyFirmAdminMembership(client, firmId, userId) {
-  const membershipQuery = await client
-    .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
-    .eq('firm_id', firmId)
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .maybeSingle()
-
-  if (membershipQuery.error) {
-    if (isMissingTableError(membershipQuery.error, 'attorney_firm_members') && isUnsafeFallbackAllowed()) {
-      return buildSyntheticFirmAdminMembership({ firmId, userId })
-    }
-    throw membershipQuery.error
-  }
-
-  return mapMemberRow(membershipQuery.data)
+  throw buildMembershipBootstrapError(
+    'Attorney firm membership bootstrap is not available in this environment.',
+    rpcResult.error,
+  )
 }
 
 export async function ensureCurrentUserAttorneyFirmAdminMembership(firmId) {
   const client = requireClient()
-  const user = await getAuthenticatedUser(client)
+  await getAuthenticatedUser(client)
   const normalizedFirmId = normalizeText(firmId)
   if (!normalizedFirmId) {
     throw new Error('Firm id is required.')
   }
 
-  const nowIso = new Date().toISOString()
-  const membershipPayload = {
-    firm_id: normalizedFirmId,
-    user_id: user.id,
-    role: 'firm_admin',
-    status: 'active',
-    invited_by: user.id,
-    joined_at: nowIso,
-  }
-
-  const membershipResult = await client
-    .from('attorney_firm_members')
-    .upsert(membershipPayload, { onConflict: 'firm_id,user_id' })
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
-    .maybeSingle()
-
-  if (!membershipResult.error) {
-    const directMembership = mapMemberRow(membershipResult.data)
-    if (directMembership?.id) return directMembership
-
-    const visibleMembership = await loadCurrentUserAttorneyFirmAdminMembership(client, normalizedFirmId, user.id)
-    if (visibleMembership?.id) return visibleMembership
-
-    return bootstrapFirmAdminMembershipWithRpc(client, normalizedFirmId, user.id)
-  }
-
-  if (isMissingTableError(membershipResult.error, 'attorney_firm_members')) {
-    if (!isUnsafeFallbackAllowed()) {
-      throw buildMembershipBootstrapError('Attorney firm membership storage is not available.', membershipResult.error)
-    }
-    return buildSyntheticFirmAdminMembership({ firmId: normalizedFirmId, userId: user.id, joinedAt: nowIso })
-  }
-
-  if (isPermissionDeniedError(membershipResult.error)) {
-    return bootstrapFirmAdminMembershipWithRpc(client, normalizedFirmId, user.id)
-  }
-
-  throw membershipResult.error
+  return bootstrapFirmAdminMembershipWithRpc(client, normalizedFirmId)
 }
 
 export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' } = {}) {
@@ -866,7 +779,7 @@ export async function getCurrentUserAttorneyFirms() {
 
   const membershipsQuery = await client
     .from('attorney_firm_members')
-    .select('firm_id, role, status, joined_at')
+    .select('firm_id, professional_role, practice_qualifications, status, joined_at')
     .eq('user_id', user.id)
     .in('status', ['active', 'invited'])
 
@@ -985,7 +898,8 @@ export async function getCurrentUserAttorneyFirms() {
 
   const roleByFirmId = rows.reduce((accumulator, item) => {
     accumulator[item.firm_id] = {
-      role: item.role,
+      role: item.professional_role,
+      practiceQualifications: item.practice_qualifications || [],
       status: item.status,
       joinedAt: item.joined_at || null,
     }
@@ -1003,6 +917,7 @@ export async function getCurrentUserAttorneyFirms() {
     return {
       ...firmWithBranding,
       membershipRole: membership.role || null,
+      membershipPracticeQualifications: membership.practiceQualifications || [],
       membershipStatus: membership.status || null,
       membershipJoinedAt: membership.joinedAt || null,
     }
@@ -1136,7 +1051,7 @@ export async function completeAttorneyFirmOnboarding({
         continue
       }
       try {
-        const invitation = await inviteAttorneyFirmMember({
+        const invitation = await inviteAttorneyTeamMember({
           firmId: createdFirm.id,
           email: invite.email,
           role: invite.role,

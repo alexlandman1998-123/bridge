@@ -170,6 +170,20 @@ export function deriveAuthBootOnboardingState({
   }
 }
 
+export function shouldIgnoreStaleMembershipRecovery({
+  appRole = '',
+  activeMemberships = [],
+  currentMembership = null,
+  currentWorkspace = null,
+  onboardingState = null,
+} = {}) {
+  if (appRole === 'client') return false
+  if (!activeMemberships.length || !currentMembership?.id || !currentWorkspace?.id) return false
+
+  const recoveryReason = normalizeText(onboardingState?.recoveryReason || onboardingState?.validation?.reason)
+  return recoveryReason === ONBOARDING_REQUIRED_REASONS.noActiveMembership
+}
+
 export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
@@ -456,10 +470,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     }
   }
 
-  const engineRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
+  const staleMembershipRecovery = shouldIgnoreStaleMembershipRecovery({
+    appRole,
+    activeMemberships,
+    currentMembership,
+    currentWorkspace,
+    onboardingState,
+  })
+  const engineRequiresSetup = (!staleMembershipRecovery && Boolean(onboardingState?.recoveryReason)) || (
     onboarding.onboardingComplete &&
     onboardingState?.validation &&
-    onboardingState.validation.ok === false
+    onboardingState.validation.ok === false &&
+    !staleMembershipRecovery
   )
   const engineRequiredReason =
     onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval

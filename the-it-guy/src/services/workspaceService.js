@@ -826,10 +826,12 @@ export async function requestWorkspaceAccess(intentInput, user, payload = {}) {
       requested_workspace_id: normalizeText(payload.workspaceId) || null,
       requested_workspace_name: normalizeText(payload.workspaceName) || null,
       intended_org_role: intent.intended_org_role,
+      requested_attorney_professional_role: intent.workspace_type === WORKSPACE_TYPES.attorneyFirm ? 'viewer' : null,
+      requested_attorney_practice_qualifications: [],
       status: 'pending',
       message: normalizeText(payload.message) || null,
     })
-    .select('id, requester_user_id, requester_email, app_role, workspace_type, requested_workspace_id, requested_workspace_name, intended_org_role, status, message, created_at, updated_at')
+    .select('id, requester_user_id, requester_email, app_role, workspace_type, requested_workspace_id, requested_workspace_name, intended_org_role, requested_attorney_professional_role, requested_attorney_practice_qualifications, status, message, created_at, updated_at')
     .single()
 
   if (result.error) {

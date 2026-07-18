@@ -1,4 +1,5 @@
 import { normalizeWebsite } from '../../../services/attorneyFirmServiceShared.js'
+import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
 import { getAllowedDepartmentsForRole } from './teamInviteUtils.js'
 
 export const ONBOARDING_STEPS = [
@@ -74,16 +75,6 @@ const DEPARTMENT_LABELS = {
   bond: 'Bond Department',
   admin: 'Admin Department',
   management: 'Management',
-}
-
-const ROLE_LABELS = {
-  director_partner: 'Director / Partner',
-  transfer_attorney: 'Transfer Attorney',
-  bond_attorney: 'Bond Attorney',
-  conveyancing_secretary: 'Conveyancing Secretary',
-  admin_staff: 'Admin Staff',
-  reception_scheduling: 'Reception / Scheduling',
-  candidate_attorney: 'Candidate Attorney',
 }
 
 export function buildInviteId() {
@@ -317,7 +308,7 @@ export function buildLaunchPacket({
   const activeInviteRows = invites
     .filter((invite) => String(invite.email || '').trim())
     .map((invite) => {
-      const role = ROLE_LABELS[invite.role] || invite.role || 'Team member'
+      const role = getAttorneyRoleLabel(invite.role, { fallback: 'Team member' })
       const department = DEPARTMENT_LABELS[invite.departmentType] || invite.departmentType || 'Unassigned'
       return `${String(invite.email || '').trim()} - ${role} / ${department}`
     })

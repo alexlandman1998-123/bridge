@@ -8,7 +8,9 @@ import {
   MapPin,
   Plus,
   Search,
+  Save,
   ShieldUser,
+  Trash2,
   UserPlus,
   Users,
   Wallet,
@@ -17,24 +19,32 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { inviteOrganisationUser, listOrganisationCommissionStructures, listOrganisationUsers } from '../lib/settingsApi'
+import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import { createBranch, getBranches } from '../services/agencyBranchService'
+import { getAttorneyProfessionalRoleLabel } from '../constants/attorneyRoleCatalog.js'
+import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
+import {
+  getAllowedAttorneyTeamDepartments,
+  getAttorneyTeamDepartments,
+  getAttorneyTeamRoleOptions,
+  getAttorneyTeamRoster,
+  inviteAttorneyTeamMember,
+  removeAttorneyTeamMember,
+  updateAttorneyTeamMember,
+} from '../services/attorneyTeamService'
 
-const ATTORNEY_ROLE_OPTIONS = [
-  { value: 'attorney', label: 'Attorney / Conveyancer' },
-  { value: 'assistant', label: 'Legal Assistant' },
-  { value: 'branch_manager', label: 'Branch Manager' },
-  { value: 'admin', label: 'Firm Admin' },
-  { value: 'owner', label: 'Firm Owner' },
-  { value: 'viewer', label: 'Viewer' },
+const ATTORNEY_ROLE_OPTIONS = getAttorneyTeamRoleOptions()
+const PRACTICE_QUALIFICATION_OPTIONS = [
+  { value: 'transfer', label: 'Transfers' },
+  { value: 'bond', label: 'Bonds' },
+  { value: 'cancellation', label: 'Cancellations' },
 ]
 
 const DEFAULT_INVITE = {
-  firstName: '',
-  lastName: '',
   email: '',
-  role: 'attorney',
-  branchId: '',
+  professionalRole: 'attorney_conveyancer',
+  practiceQualifications: ['transfer'],
+  departmentId: '',
 }
 
 const DEFAULT_BRANCH = {
@@ -53,7 +63,13 @@ function normalize(value = '') {
 }
 
 function formatRoleLabel(value = '') {
-  const normalized = normalize(value)
+  const roleValue = typeof value === 'object'
+    ? value.professionalRole || value.attorneyProfessionalRole || value.role
+    : value
+  const normalized = normalize(roleValue)
+  if (typeof value === 'object' && (value.professionalRole || value.attorneyProfessionalRole)) {
+    return getAttorneyProfessionalRoleLabel(value.professionalRole || value.attorneyProfessionalRole, normalized.replaceAll('_', ' '))
+  }
   return ATTORNEY_ROLE_OPTIONS.find((option) => option.value === normalized)?.label || normalized.replaceAll('_', ' ') || 'Viewer'
 }
 
@@ -120,7 +136,33 @@ function Notice({ tone = 'info', children }) {
   )
 }
 
-function InviteMemberPanel({ branches, canInvite, draft, setDraft, saving, onSubmit }) {
+function QualificationSelector({ value, onChange, disabled = false }) {
+  const selected = new Set(value || [])
+  return (
+    <fieldset className="grid gap-2" disabled={disabled}>
+      <legend className="text-xs font-semibold text-slate-600">Practice qualifications</legend>
+      <div className="flex flex-wrap gap-2">
+        {PRACTICE_QUALIFICATION_OPTIONS.map((option) => (
+          <label key={option.value} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={selected.has(option.value)}
+              onChange={() => onChange(selected.has(option.value)
+                ? [...selected].filter((item) => item !== option.value)
+                : [...selected, option.value])}
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+function InviteMemberPanel({ departments, canInvite, draft, setDraft, saving, onSubmit }) {
+  const allowedDepartments = getAllowedAttorneyTeamDepartments(draft, departments)
+  const showQualifications = draft.professionalRole === 'attorney_conveyancer'
+
   return (
     <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start gap-3">
@@ -129,22 +171,11 @@ function InviteMemberPanel({ branches, canInvite, draft, setDraft, saving, onSub
         </span>
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-slate-950">Add a firm member</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Send an invite, choose their role, and optionally place them in a branch.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Use the same professional role, qualifications, and department contract used during onboarding.</p>
         </div>
       </div>
 
       <form className="mt-5 grid min-w-0 gap-3" onSubmit={onSubmit}>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="grid min-w-0 gap-1.5">
-            <span className="text-xs font-semibold text-slate-600">First name</span>
-            <input className="h-10 min-w-0 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.firstName} onChange={(event) => setDraft((previous) => ({ ...previous, firstName: event.target.value }))} />
-          </label>
-          <label className="grid min-w-0 gap-1.5">
-            <span className="text-xs font-semibold text-slate-600">Last name</span>
-            <input className="h-10 min-w-0 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.lastName} onChange={(event) => setDraft((previous) => ({ ...previous, lastName: event.target.value }))} />
-          </label>
-        </div>
-
         <label className="grid min-w-0 gap-1.5">
           <span className="text-xs font-semibold text-slate-600">Email address</span>
           <input className="h-10 min-w-0 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" type="email" value={draft.email} onChange={(event) => setDraft((previous) => ({ ...previous, email: event.target.value }))} placeholder="name@firm.co.za" />
@@ -153,18 +184,20 @@ function InviteMemberPanel({ branches, canInvite, draft, setDraft, saving, onSub
         <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <label className="grid min-w-0 gap-1.5">
             <span className="text-xs font-semibold text-slate-600">Role</span>
-            <select className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.role} onChange={(event) => setDraft((previous) => ({ ...previous, role: event.target.value }))}>
+            <select className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.professionalRole} onChange={(event) => setDraft((previous) => ({ ...previous, professionalRole: event.target.value, practiceQualifications: event.target.value === 'attorney_conveyancer' ? ['transfer'] : [], departmentId: '' }))}>
               {ATTORNEY_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label className="grid min-w-0 gap-1.5">
-            <span className="text-xs font-semibold text-slate-600">Branch</span>
-            <select className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.branchId} onChange={(event) => setDraft((previous) => ({ ...previous, branchId: event.target.value }))}>
-              <option value="">No branch</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            <span className="text-xs font-semibold text-slate-600">Department</span>
+            <select className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50" value={draft.departmentId} onChange={(event) => setDraft((previous) => ({ ...previous, departmentId: event.target.value }))}>
+              <option value="">No department</option>
+              {allowedDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
             </select>
           </label>
         </div>
+
+        {showQualifications ? <QualificationSelector value={draft.practiceQualifications} onChange={(practiceQualifications) => setDraft((previous) => ({ ...previous, practiceQualifications, departmentId: '' }))} /> : null}
 
         <button type="submit" disabled={!canInvite || saving} className="mt-1 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#0f3558] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,53,88,0.18)] transition hover:bg-[#173f66] disabled:cursor-not-allowed disabled:bg-slate-300">
           <UserPlus size={17} />
@@ -176,19 +209,97 @@ function InviteMemberPanel({ branches, canInvite, draft, setDraft, saving, onSub
   )
 }
 
-function UsersPanel({ users, branches, searchTerm, setSearchTerm, canInvite, inviteDraft, setInviteDraft, savingInvite, onInvite }) {
-  const branchById = useMemo(() => new Map(branches.map((branch) => [branch.id, branch])), [branches])
+function MemberAccessEditor({ member, departments, canManage, onSaved, onRemoved, onError }) {
+  const protectedAdministrator = member.professionalRole === 'firm_admin' || member.role === 'firm_admin'
+  const [draft, setDraft] = useState({
+    professionalRole: member.professionalRole || 'viewer',
+    practiceQualifications: member.practiceQualifications || [],
+    departmentId: member.departmentId || '',
+    status: member.status || 'active',
+  })
+  const [saving, setSaving] = useState(false)
+  const allowedDepartments = getAllowedAttorneyTeamDepartments(draft, departments)
+
+  async function handleSave() {
+    try {
+      setSaving(true)
+      onError('')
+      await updateAttorneyTeamMember(member.id, draft)
+      await onSaved(`${getUserName(member)} access was updated.`)
+    } catch (error) {
+      onError(error?.message || 'Unable to update this member.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    if (!window.confirm(`Remove ${getUserName(member)} from this firm?`)) return
+    try {
+      setSaving(true)
+      onError('')
+      await removeAttorneyTeamMember(member.id)
+      await onRemoved(`${getUserName(member)} was removed from the firm.`)
+    } catch (error) {
+      onError(error?.message || 'Unable to remove this member.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!canManage || protectedAdministrator) {
+    return protectedAdministrator
+      ? <p className="text-xs font-semibold text-slate-500">Protected administrator access</p>
+      : null
+  }
+
+  return (
+    <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="grid gap-1.5 text-xs font-semibold text-slate-600">
+          Professional role
+          <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={draft.professionalRole} onChange={(event) => setDraft((previous) => ({ ...previous, professionalRole: event.target.value, practiceQualifications: event.target.value === 'attorney_conveyancer' ? ['transfer'] : [], departmentId: '' }))}>
+            {ATTORNEY_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1.5 text-xs font-semibold text-slate-600">
+          Department
+          <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={draft.departmentId} onChange={(event) => setDraft((previous) => ({ ...previous, departmentId: event.target.value }))}>
+            <option value="">No department</option>
+            {allowedDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1.5 text-xs font-semibold text-slate-600">
+          Access status
+          <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={draft.status} onChange={(event) => setDraft((previous) => ({ ...previous, status: event.target.value }))}>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </label>
+      </div>
+      {draft.professionalRole === 'attorney_conveyancer' ? <QualificationSelector value={draft.practiceQualifications} onChange={(practiceQualifications) => setDraft((previous) => ({ ...previous, practiceQualifications, departmentId: '' }))} /> : null}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={saving} onClick={handleSave} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#0f3558] px-3 text-xs font-semibold text-white disabled:bg-slate-300"><Save size={14} /> Save access</button>
+        <button type="button" disabled={saving} onClick={handleRemove} className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 disabled:text-slate-400"><Trash2 size={14} /> Remove member</button>
+      </div>
+    </div>
+  )
+}
+
+function UsersPanel({ users, departments, searchTerm, setSearchTerm, canManage, inviteDraft, setInviteDraft, savingInvite, onInvite, onReload, onError, onMessage }) {
+  const departmentById = useMemo(() => new Map(departments.map((department) => [department.id, department])), [departments])
   const filteredUsers = useMemo(() => {
     const query = normalize(searchTerm)
     if (!query) return users
     return users.filter((user) => [
       getUserName(user),
       user.email,
-      user.role,
+      user.professionalRole,
+      ...(user.practiceQualifications || []),
       user.status,
-      branchById.get(user.branchId || user.branch_id)?.name,
+      departmentById.get(user.departmentId)?.name,
     ].some((value) => normalize(value).includes(query)))
-  }, [branchById, searchTerm, users])
+  }, [departmentById, searchTerm, users])
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -206,32 +317,38 @@ function UsersPanel({ users, branches, searchTerm, setSearchTerm, canInvite, inv
 
         <div className="mt-5 grid gap-3">
           {filteredUsers.length ? filteredUsers.map((user) => {
-            const status = normalize(user.status || 'invited')
-            const branchName = branchById.get(user.branchId || user.branch_id)?.name || 'No branch'
+            const status = normalize(user.status || 'pending')
+            const departmentName = departmentById.get(user.departmentId)?.name || 'No department'
             return (
-              <article key={user.id || user.email} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1fr_auto] md:items-center">
-                <div className="flex min-w-0 items-start gap-3">
+              <article key={user.id || user.email} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+                <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+                  <div className="flex min-w-0 items-start gap-3">
                   <span className="inline-grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0f3558] text-sm font-semibold text-white">{getInitials(user)}</span>
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold text-slate-950">{getUserName(user)}</h3>
                     <p className="mt-1 flex items-center gap-2 truncate text-sm text-slate-500"><Mail size={14} /> {user.email || 'No email'}</p>
-                    <p className="mt-1 flex items-center gap-2 truncate text-sm text-slate-500"><MapPin size={14} /> {branchName}</p>
+                    <p className="mt-1 flex items-center gap-2 truncate text-sm text-slate-500"><MapPin size={14} /> {departmentName}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                  <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{formatRoleLabel(user.role)}</span>
+                  <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{formatRoleLabel(user)}</span>
                   <span className={classNames(
                     'rounded-lg border px-3 py-1 text-xs font-semibold',
                     status === 'active'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : status === 'invited'
+                      : status === 'pending'
                         ? 'border-amber-200 bg-amber-50 text-amber-700'
                         : 'border-slate-200 bg-white text-slate-600',
                   )}>
                     {formatStatusLabel(user.status)}
                   </span>
-                  <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">Last active: {formatDate(user.lastActiveAt)}</span>
+                  {user.isPendingInvitation
+                    ? <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">Expires: {formatDate(user.expiresAt)}</span>
+                    : <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">Last active: {formatDate(user.lastActiveAt)}</span>}
                 </div>
+                </div>
+                {(user.practiceQualifications || []).length ? <div className="mt-3 flex flex-wrap gap-2">{user.practiceQualifications.map((qualification) => <span key={qualification} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold capitalize text-blue-700">{qualification}</span>)}</div> : null}
+                {!user.isPendingInvitation ? <MemberAccessEditor member={user} departments={departments} canManage={canManage} onSaved={async (message) => { onMessage(message); await onReload() }} onRemoved={async (message) => { onMessage(message); await onReload() }} onError={onError} /> : null}
               </article>
             )
           }) : (
@@ -244,7 +361,7 @@ function UsersPanel({ users, branches, searchTerm, setSearchTerm, canInvite, inv
         </div>
       </section>
 
-      <InviteMemberPanel branches={branches} canInvite={canInvite} draft={inviteDraft} setDraft={setInviteDraft} saving={savingInvite} onSubmit={onInvite} />
+      <InviteMemberPanel departments={departments} canInvite={canManage} draft={inviteDraft} setDraft={setInviteDraft} saving={savingInvite} onSubmit={onInvite} />
     </section>
   )
 }
@@ -385,7 +502,7 @@ function AttorneyBranchWorkspace({ branch, loading, onBack }) {
             {branch.members?.length ? branch.members.map((member) => (
               <div key={member.id || member.email} className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3">
                 <p className="font-semibold text-slate-900">{getUserName(member)}</p>
-                <p className="mt-1 text-sm text-slate-500">{member.email || formatRoleLabel(member.role)}</p>
+                <p className="mt-1 text-sm text-slate-500">{member.email || formatRoleLabel(member)}</p>
               </div>
             )) : <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">No members are assigned to this branch yet.</p>}
           </div>
@@ -432,7 +549,9 @@ export default function AttorneyFirmPage() {
   )
   const canManageBranches = typeof workspaceContext.can === 'function' && workspaceContext.can(PERMISSIONS.manageBranches)
 
+  const [firm, setFirm] = useState(null)
   const [users, setUsers] = useState([])
+  const [departments, setDepartments] = useState([])
   const [branches, setBranches] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [inviteDraft, setInviteDraft] = useState(DEFAULT_INVITE)
@@ -450,7 +569,9 @@ export default function AttorneyFirmPage() {
     setError('')
     setBranchMessage('')
     if (isDevAuthBypass) {
+      setFirm(null)
       setUsers([])
+      setDepartments([])
       setBranches([])
       setCommissionStructures([])
       setLoading(false)
@@ -458,16 +579,27 @@ export default function AttorneyFirmPage() {
     }
 
     try {
-      const [userResult, branchResult, financeResult] = await Promise.allSettled([
-        listOrganisationUsers(),
+      const resolvedFirm = await getCurrentUserPrimaryAttorneyFirm()
+      setFirm(resolvedFirm)
+      if (!resolvedFirm?.id) throw new Error('No active attorney firm could be found for this workspace.')
+
+      const [teamResult, departmentResult, branchResult, financeResult] = await Promise.allSettled([
+        getAttorneyTeamRoster(resolvedFirm.id),
+        getAttorneyTeamDepartments(resolvedFirm.id),
         getBranches(),
         listOrganisationCommissionStructures(),
       ])
 
-      if (userResult.status === 'fulfilled') {
-        setUsers(userResult.value || [])
+      if (teamResult.status === 'fulfilled') {
+        setUsers(teamResult.value?.roster || [])
       } else {
-        throw userResult.reason
+        throw teamResult.reason
+      }
+
+      if (departmentResult.status === 'fulfilled') {
+        setDepartments(departmentResult.value || [])
+      } else {
+        setDepartments([])
       }
 
       if (branchResult.status === 'fulfilled') {
@@ -497,8 +629,8 @@ export default function AttorneyFirmPage() {
 
   const stats = useMemo(() => {
     const activeUsers = users.filter((user) => normalize(user.status) === 'active')
-    const invitedUsers = users.filter((user) => ['invited', 'pending'].includes(normalize(user.status)))
-    const admins = users.filter((user) => ['owner', 'super_admin', 'admin', 'principal', 'partner', 'branch_manager'].includes(normalize(user.role)))
+    const invitedUsers = users.filter((user) => user.isPendingInvitation || normalize(user.status) === 'pending')
+    const admins = users.filter((user) => ['firm_admin', 'director_partner'].includes(normalize(user.professionalRole)))
     return {
       activeUsers: activeUsers.length,
       invitedUsers: invitedUsers.length,
@@ -518,7 +650,8 @@ export default function AttorneyFirmPage() {
 
     try {
       setSavingInvite(true)
-      await inviteOrganisationUser(inviteDraft)
+      if (!firm?.id) throw new Error('No active attorney firm could be found for this workspace.')
+      await inviteAttorneyTeamMember({ firmId: firm.id, ...inviteDraft })
       setInviteDraft(DEFAULT_INVITE)
       setMessage(`Invite sent to ${inviteDraft.email}.`)
       await loadFirm()
@@ -584,14 +717,17 @@ export default function AttorneyFirmPage() {
               <>
                 <UsersPanel
                   users={users}
-                  branches={branches}
+                  departments={departments}
                   searchTerm={searchTerm}
                   setSearchTerm={setSearchTerm}
-                  canInvite={canManageUsers}
+                  canManage={canManageUsers}
                   inviteDraft={inviteDraft}
                   setInviteDraft={setInviteDraft}
                   savingInvite={savingInvite}
                   onInvite={handleInvite}
+                  onReload={loadFirm}
+                  onError={setError}
+                  onMessage={setMessage}
                 />
                 <FinanceIntro commissionStructures={commissionStructures} />
               </>

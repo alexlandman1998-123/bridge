@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { deriveAttorneyProfessionalProfile } from '../constants/attorneyRoleCatalog.js'
 
 export const DEFAULT_ATTORNEY_DEPARTMENTS = [
   { name: 'Transfer Department', department_type: 'transfer' },
@@ -182,12 +183,20 @@ export function mapDepartmentRow(row) {
 
 export function mapMemberRow(row) {
   if (!row) return null
+  const professionalProfile = deriveAttorneyProfessionalProfile({
+    role: row.role,
+    professionalRole: row.professional_role || row.professionalRole,
+    practiceQualifications: row.practice_qualifications || row.practiceQualifications,
+  })
   return {
     id: row.id,
     firmId: row.firm_id,
     userId: row.user_id,
     departmentId: row.department_id || null,
     role: row.role || '',
+    professionalRole: professionalProfile.professionalRole,
+    practiceQualifications: professionalProfile.practiceQualifications,
+    organisationUserId: row.organisation_user_id || row.organisationUserId || null,
     status: row.status || 'active',
     invitedBy: row.invited_by || null,
     joinedAt: row.joined_at || null,
@@ -198,11 +207,18 @@ export function mapMemberRow(row) {
 
 export function mapInvitationRow(row) {
   if (!row) return null
+  const professionalProfile = deriveAttorneyProfessionalProfile({
+    role: row.role,
+    professionalRole: row.professional_role || row.professionalRole,
+    practiceQualifications: row.practice_qualifications || row.practiceQualifications,
+  })
   return {
     id: row.id,
     firmId: row.firm_id,
     email: row.email || '',
     role: row.role || '',
+    professionalRole: professionalProfile.professionalRole,
+    practiceQualifications: professionalProfile.practiceQualifications,
     departmentId: row.department_id || null,
     invitedBy: row.invited_by || null,
     token: row.token || '',

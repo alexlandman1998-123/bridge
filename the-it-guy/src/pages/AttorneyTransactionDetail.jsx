@@ -36,6 +36,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
@@ -50,6 +51,12 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
+import { buildAttorneyMatterToday } from '../core/transactions/attorneyMatterToday'
+import {
+  buildAttorneyDocumentControl,
+  CONVEYANCING_DOCUMENT_SHORTCUTS,
+} from '../core/transactions/attorneyDocumentControl'
+import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   buildTransactionLifecycleSummaryFromRollup,
@@ -139,14 +146,15 @@ import {
 } from '../modules/bond/utils/bondApplicationViewModel'
 
 const ATTORNEY_WORKSPACE_TABS = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'today', label: 'Today' },
+  { id: 'overview', label: 'Full overview' },
   { id: 'parties', label: 'Parties' },
   { id: 'stakeholders', label: 'Roleplayers' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Transfer' },
   { id: 'tasks', label: 'Tasks' },
-  { id: 'activity', label: 'Activity' },
+  { id: 'activity', label: 'Communications' },
 ]
 
 const AGENT_WORKSPACE_TABS = [
@@ -1721,10 +1729,13 @@ function buildAttorneyDailyActionQueueItems(workflows = []) {
 function getAttorneyBriefComposerSelection(lane = {}, audience = 'professional') {
   if (!lane?.laneKey) return null
   const options = getAttorneyLaneActionOptions(lane)
-  const preferredVisibility = audience === 'client' ? 'client_visible' : 'shared'
+  const preferredVisibility = audience === 'client' ? 'client_visible' : audience === 'internal' ? 'internal' : 'shared'
   const preferredAction = audience === 'client'
     ? options.find((option) => option.clientVisibleAllowed && getAttorneyActionVisibilityOptions(lane, option).some((item) => item.key === preferredVisibility))
-    : options.find((option) => option.key === 'quick_professional_update') ||
+    : audience === 'internal'
+      ? options.find((option) => option.key === 'quick_internal_note') ||
+        options.find((option) => getAttorneyActionVisibilityOptions(lane, option).some((item) => item.key === preferredVisibility))
+      : options.find((option) => option.key === 'quick_professional_update') ||
       options.find((option) => getAttorneyActionVisibilityOptions(lane, option).some((item) => item.key === preferredVisibility))
   if (!preferredAction) return null
   const visibilityOptions = getAttorneyActionVisibilityOptions(lane, preferredAction)
@@ -2444,6 +2455,136 @@ function AttorneyStatusBriefPanel({
             </div>
           </article>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function AttorneyCommunicationCentre({
+  model = null,
+  onDraftTemplate = null,
+  onHandleFollowUp = null,
+  onShowFullLog = null,
+}) {
+  if (!model) return null
+  const audienceOrder = ['client', 'professional', 'internal']
+
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex size-9 items-center justify-center rounded-[12px] bg-primarySoft text-primary ring-1 ring-primary/10">
+                <Send size={16} />
+              </span>
+              <h3 className="text-base font-semibold text-textStrong">Matter Communication Centre</h3>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+              See who is waiting for a response, send the next update, and check what each audience last received.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${model.counts.needsAttention ? 'border-danger/30 bg-dangerSoft text-danger' : 'border-success/30 bg-successSoft text-success'}`}>
+              {model.counts.needsAttention ? `${model.counts.needsAttention} need attention` : 'No overdue responses'}
+            </span>
+            <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-xs font-semibold text-textMuted">
+              {model.counts.awaitingResponse} awaiting response
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {model.templates.map((template) => (
+            <article
+              key={template.key}
+              className={`flex min-h-full flex-col rounded-[14px] border px-4 py-4 ${template.key === model.recommendedTemplateKey ? 'border-primary/30 bg-primarySoft' : 'border-borderSoft bg-surfaceAlt'}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{template.label}</span>
+                  <h4 className="mt-1 text-sm font-semibold text-textStrong">{template.title}</h4>
+                </div>
+                {template.key === model.recommendedTemplateKey ? (
+                  <span className="rounded-full bg-primary px-2 py-1 text-[0.62rem] font-semibold text-white">Suggested</span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-textMuted">{template.description}</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-4 justify-center" onClick={() => onDraftTemplate?.(template)}>
+                Draft update
+              </Button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Waiting for a response</h3>
+              <p className="mt-1 text-xs text-textMuted">Structured document and workflow follow-ups, ordered by urgency.</p>
+            </div>
+            {model.counts.overdue ? <span className="text-xs font-semibold text-danger">{model.counts.overdue} overdue</span> : null}
+          </div>
+          <div className="mt-4 grid gap-2">
+            {model.followUps.slice(0, 6).map((followUp) => (
+              <article key={followUp.id} className={`rounded-[13px] border px-3 py-3 ${followUp.needsAttention ? 'border-danger/25 bg-dangerSoft' : 'border-borderSoft bg-surfaceAlt'}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-sm text-textStrong">{followUp.title}</strong>
+                      <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${followUp.needsAttention ? 'border-danger/30 bg-white text-danger' : 'border-borderSoft bg-white text-textMuted'}`}>
+                        {followUp.statusLabel}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-textMuted">{followUp.description}</p>
+                    <p className="mt-2 text-[0.68rem] font-semibold text-textMuted">
+                      Waiting on {followUp.audienceLabel}{followUp.laneLabel ? ` · ${followUp.laneLabel}` : ''}{followUp.dueDate ? ` · Due ${formatShortDayMonth(followUp.dueDate)}` : ''}
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => onHandleFollowUp?.(followUp)}>
+                    Handle follow-up
+                  </Button>
+                </div>
+              </article>
+            ))}
+            {!model.followUps.length ? (
+              <div className="rounded-[13px] border border-dashed border-success/30 bg-successSoft px-4 py-6 text-center">
+                <CheckCircle2 size={20} className="mx-auto text-success" />
+                <strong className="mt-2 block text-sm text-textStrong">Nothing is awaiting a response</strong>
+                <p className="mt-1 text-xs text-textMuted">New workflow and document follow-ups will appear here automatically.</p>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-textStrong">Last update by audience</h3>
+              <p className="mt-1 text-xs text-textMuted">A quick check before you contact anyone again.</p>
+            </div>
+            <Button type="button" size="sm" variant="ghost" onClick={onShowFullLog}>Full activity log</Button>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {audienceOrder.map((audience) => {
+              const entry = model.latestByAudience[audience]
+              const meta = model.audiences[audience]
+              return (
+                <article key={audience} className="rounded-[13px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="text-xs text-textStrong">{meta.label}</strong>
+                    <span className="text-[0.66rem] text-textMuted">{entry ? formatShortDayMonth(entry.createdAt || entry.timestamp) : 'No update yet'}</span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-textMuted">
+                    {entry?.body || entry?.message || entry?.title || 'No communication has been recorded for this audience.'}
+                  </p>
+                </article>
+              )
+            })}
+          </div>
+        </section>
       </div>
     </section>
   )
@@ -5868,6 +6009,388 @@ function BondMatterConversationPanel({
   )
 }
 
+function AttorneyMatterTodayView({ model, onOpenWorkspace, onExecuteWorkflowAction, onOpenWorkflow }) {
+  const escalationTone = {
+    overdue: 'border-danger/30 bg-dangerSoft text-danger',
+    attention: 'border-warning/30 bg-warningSoft text-warning',
+    watch: 'border-warning/30 bg-warningSoft text-warning',
+    clear: 'border-success/30 bg-successSoft text-success',
+  }[model.escalation.state]
+  const visibleMissingDocuments = model.missingDocuments.slice(0, 5)
+  const [selectedGuideKey, setSelectedGuideKey] = useState(model.guidance.recommendedWorkflowKey)
+  const selectedGuide = model.guidance.workstreams.find((item) => item.key === selectedGuideKey) || model.guidance.workstreams[0] || null
+
+  useEffect(() => {
+    if (model.guidance.workstreams.some((item) => item.key === selectedGuideKey)) return
+    setSelectedGuideKey(model.guidance.recommendedWorkflowKey)
+  }, [model.guidance.recommendedWorkflowKey, model.guidance.workstreams, selectedGuideKey])
+
+  return (
+    <section className="space-y-5" aria-labelledby="matter-today-heading">
+      <section className="overflow-hidden rounded-[22px] border border-borderDefault bg-white shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+        <div className="border-b border-borderSoft px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-primarySoft px-3 py-1 text-xs font-semibold text-primary">
+                  Stage {model.currentStage.number} of 10
+                </span>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${escalationTone}`}>
+                  {model.escalation.label}
+                </span>
+              </div>
+              <h2 id="matter-today-heading" className="mt-3 text-2xl font-bold tracking-[-0.03em] text-textStrong">Today</h2>
+              <p className="mt-1 text-sm leading-6 text-textMuted">One clear next action, with the dependencies that could hold this transfer up.</p>
+            </div>
+            <Button type="button" onClick={() => onOpenWorkspace(model.nextAction.target)}>
+              {model.nextAction.label}
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+          <div className="border-b border-borderSoft px-5 py-6 sm:px-6 xl:border-b-0 xl:border-r">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Next required action</span>
+            <h3 className="mt-2 text-xl font-bold tracking-[-0.02em] text-textStrong">{model.nextAction.title}</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-textBody">{model.nextAction.description}</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => onOpenWorkspace('tasks')} className="rounded-[15px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-left transition hover:border-borderStrong hover:bg-white">
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted"><UsersRound size={14} /> Waiting on</span>
+                <strong className="mt-2 block text-sm text-textStrong">{model.waitingOn.label}</strong>
+                <span className="mt-1 block text-xs leading-5 text-textMuted">{model.waitingOn.detail}</span>
+              </button>
+              <button type="button" onClick={() => onOpenWorkspace('tasks')} className="rounded-[15px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-left transition hover:border-borderStrong hover:bg-white">
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-textMuted"><CalendarDays size={14} /> Due date</span>
+                <strong className="mt-2 block text-sm text-textStrong">{model.dueDate ? formatDate(model.dueDate) : 'No due date set'}</strong>
+                <span className="mt-1 block text-xs leading-5 text-textMuted">{model.escalation.detail}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="px-5 py-6 sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Blockers</span>
+                <strong className="mt-1 block text-2xl text-textStrong">{model.blockers.length}</strong>
+              </div>
+              <span className={`inline-flex size-10 items-center justify-center rounded-[13px] ${model.blockers.length ? 'bg-warningSoft text-warning' : 'bg-successSoft text-success'}`}>
+                {model.blockers.length ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+              </span>
+            </div>
+            <div className="mt-4 space-y-2">
+              {model.blockers.slice(0, 3).map((blocker) => (
+                <button key={blocker} type="button" onClick={() => onOpenWorkspace('tasks')} className="block w-full rounded-[12px] border border-warning/20 bg-warningSoft px-3 py-2.5 text-left text-xs leading-5 text-warning">
+                  {blocker}
+                </button>
+              ))}
+              {!model.blockers.length ? <p className="text-sm leading-6 text-textMuted">No active blockers. Keep the next action moving.</p> : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6" aria-labelledby="guided-stage-heading">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full bg-primarySoft px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-primary">Guided stage</span>
+              <span className="text-xs font-medium text-textMuted">{model.guidance.outstandingCount} readiness item{model.guidance.outstandingCount === 1 ? '' : 's'} outstanding</span>
+            </div>
+            <h3 id="guided-stage-heading" className="mt-3 text-lg font-bold tracking-[-0.02em] text-textStrong">What needs to happen next?</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">Work through the checks in order. Arch9 opens the right action without exposing the full workflow unless you need it.</p>
+          </div>
+          {selectedGuide ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenWorkflow(selectedGuide.workflow)}>
+              Open full workflow
+              <ChevronRight size={14} />
+            </Button>
+          ) : null}
+        </div>
+
+        {model.guidance.workstreams.length > 1 ? (
+          <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Required legal workstreams">
+            {model.guidance.workstreams.map((workstream) => (
+              <button
+                key={workstream.key}
+                type="button"
+                role="tab"
+                aria-selected={selectedGuide?.key === workstream.key}
+                onClick={() => setSelectedGuideKey(workstream.key)}
+                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${selectedGuide?.key === workstream.key ? 'border-primary bg-primarySoft text-primary' : 'border-borderDefault bg-surfaceAlt text-textMuted hover:border-borderStrong hover:bg-white'}`}
+              >
+                {workstream.title}
+                {workstream.readiness.some((item) => !item.complete) ? ` · ${workstream.readiness.filter((item) => !item.complete).length}` : ' · Ready'}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {selectedGuide ? (
+          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.75fr)_minmax(360px,0.55fr)]">
+            <div className="min-w-0 rounded-[17px] border border-borderSoft bg-surfaceAlt p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current checkpoint</span>
+                  <h4 className="mt-1 text-base font-semibold text-textStrong">{selectedGuide.currentStageLabel}</h4>
+                  <p className="mt-2 text-sm leading-6 text-textBody">{selectedGuide.attentionSummary}</p>
+                </div>
+                <span className="shrink-0 rounded-full border border-borderDefault bg-white px-3 py-1 text-xs font-semibold text-textMuted">{selectedGuide.statusLabel}</span>
+              </div>
+
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                {selectedGuide.readiness.map((item) => (
+                  <div key={item.id} className={`flex items-start gap-3 rounded-[13px] border px-3 py-3 ${item.complete ? 'border-success/20 bg-successSoft' : item.severity === 'critical' || item.severity === 'high' ? 'border-warning/25 bg-warningSoft' : 'border-borderDefault bg-white'}`}>
+                    <span className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full ${item.complete ? 'bg-white text-success' : 'bg-white text-warning'}`}>
+                      {item.complete ? <CheckCircle2 size={15} /> : <Clock3 size={15} />}
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block text-xs leading-5 text-textStrong">{item.label}</strong>
+                      <span className="mt-0.5 block text-xs text-textMuted">{item.statusLabel}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {selectedGuide.evidence.length ? (
+                <div className="mt-4 rounded-[13px] border border-borderSoft bg-white px-4 py-3">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">To finish this checkpoint</span>
+                  <ul className="mt-2 space-y-2">
+                    {selectedGuide.evidence.slice(0, 3).map((item) => (
+                      <li key={item.id} className="flex items-start gap-2 text-xs leading-5 text-textBody">
+                        {item.complete ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-success" /> : <Clock3 size={14} className="mt-0.5 shrink-0 text-warning" />}
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="min-w-0">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Do these next</span>
+              <div className="mt-2 space-y-2">
+                {selectedGuide.nextActions.map((action, index) => {
+                  const meta = getActionPriorityMeta(action.priority)
+                  return (
+                    <article key={action.id} className={`rounded-[14px] border px-4 py-3 ${meta.border} ${meta.bg}`}>
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-textStrong">{index + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <strong className={`block text-sm ${meta.text}`}>{action.label}</strong>
+                          <p className={`mt-1 text-xs leading-5 ${meta.text}`}>{action.description || 'Open the guided action and record the outcome.'}</p>
+                          <Button type="button" size="sm" className="mt-3" onClick={() => onExecuteWorkflowAction(selectedGuide.workflow, action)}>
+                            Start action
+                            <ChevronRight size={14} />
+                          </Button>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+                {!selectedGuide.nextActions.length ? (
+                  <div className="rounded-[14px] border border-success/20 bg-successSoft px-4 py-4 text-sm text-success">This workstream has no outstanding guided actions.</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-[15px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-5 text-sm text-textMuted">
+            Workflow guidance will appear after the legal workstream has been created. <button type="button" className="font-semibold text-primary underline" onClick={() => onOpenWorkspace('transfer')}>Open Transfer</button>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-textStrong">Transfer journey</h3>
+            <p className="mt-1 text-sm text-textMuted">The ten checkpoints from instruction to closure.</p>
+          </div>
+          <span className="text-xs font-semibold text-textMuted">{model.stages.filter((stage) => stage.state === 'completed').length} completed</span>
+        </div>
+        <ol className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {model.stages.map((stage) => {
+            const stageClass = stage.state === 'completed'
+              ? 'border-success/25 bg-successSoft text-success'
+              : stage.state === 'current'
+                ? 'border-primary/35 bg-primarySoft text-primary ring-2 ring-primary/10'
+                : 'border-borderSoft bg-surfaceAlt text-textMuted'
+            return (
+              <li key={stage.key}>
+                <button type="button" onClick={() => onOpenWorkspace(stage.target)} className={`flex min-h-[78px] w-full items-start gap-3 rounded-[14px] border px-3 py-3 text-left transition hover:border-borderStrong ${stageClass}`} aria-current={stage.state === 'current' ? 'step' : undefined}>
+                  <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-white/80 text-xs font-bold">{stage.state === 'completed' ? <CheckCircle2 size={15} /> : stage.number}</span>
+                  <span className="text-xs font-semibold leading-5">{stage.label}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-textStrong">Missing documents</h3>
+              <p className="mt-1 text-sm text-textMuted">Outstanding FICA and matter documents.</p>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace('documents')}>View documents</Button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {visibleMissingDocuments.map((document) => (
+              <button key={document.id} type="button" onClick={() => onOpenWorkspace('documents')} className="flex w-full items-center justify-between gap-3 rounded-[13px] border border-borderSoft bg-surfaceAlt px-3.5 py-3 text-left transition hover:border-borderStrong hover:bg-white">
+                <span className="min-w-0">
+                  <strong className="block truncate text-sm text-textStrong">{document.displayName}</strong>
+                  <span className="mt-0.5 block text-xs text-textMuted">{document.requiredParty || 'Matter'} · {document.statusLabel || 'Outstanding'}</span>
+                </span>
+                {document.blocksStage ? <span className="shrink-0 rounded-full bg-warningSoft px-2 py-1 text-[0.65rem] font-semibold text-warning">Blocking</span> : <ChevronRight size={15} className="shrink-0 text-textMuted" />}
+              </button>
+            ))}
+            {!model.missingDocuments.length ? <p className="rounded-[13px] border border-success/20 bg-successSoft px-4 py-4 text-sm text-success">All currently required documents are accounted for.</p> : null}
+          </div>
+        </article>
+
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-textStrong">Latest communication</h3>
+              <p className="mt-1 text-sm text-textMuted">Most recent client or matter-team contact.</p>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace('activity')}>View activity</Button>
+          </div>
+          {model.latestCommunication ? (
+            <button type="button" onClick={() => onOpenWorkspace('activity')} className="mt-4 block w-full rounded-[15px] border border-borderSoft bg-surfaceAlt px-4 py-4 text-left transition hover:border-borderStrong hover:bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <strong className="text-sm text-textStrong">{model.latestCommunication.title || 'Matter update'}</strong>
+                <span className="text-xs text-textMuted">{formatDateTime(model.latestCommunication.createdAt)}</span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-textBody">{model.latestCommunication.body || 'Activity recorded.'}</p>
+              <span className="mt-3 block text-xs font-medium text-textMuted">{model.latestCommunication.authorName || 'Matter team'} · {model.latestCommunication.categoryLabel || 'Update'}</span>
+            </button>
+          ) : (
+            <p className="mt-4 rounded-[13px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">No communication has been recorded yet.</p>
+          )}
+        </article>
+      </section>
+    </section>
+  )
+}
+
+function AttorneyDocumentControl({
+  control,
+  showDetailed,
+  onToggleDetailed,
+  onUploadGeneral,
+  onRequestGeneral,
+  onUploadShortcut,
+  onRequestShortcut,
+  onUploadRequirement,
+  onRequestRow,
+}) {
+  const [activePurposeKey, setActivePurposeKey] = useState('attention')
+  const visibleRows = activePurposeKey === 'attention'
+    ? control.attentionRows
+    : control.groups.find((group) => group.key === activePurposeKey)?.items || []
+
+  return (
+    <section className="space-y-5" aria-labelledby="document-control-heading">
+      <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full bg-primarySoft px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-primary">Document control</span>
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${control.blockerCount ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/30 bg-successSoft text-success'}`}>
+                {control.blockerCount ? `${control.blockerCount} blocking` : 'No document blockers'}
+              </span>
+            </div>
+            <h3 id="document-control-heading" className="mt-3 text-xl font-bold tracking-[-0.02em] text-textStrong">What documents need attention?</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">Upload a document already received, request it from the responsible person, or open the detailed register for review and replacement controls.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={onRequestGeneral}><Send size={14} /> Request document</Button>
+            <Button type="button" onClick={onUploadGeneral}><Upload size={14} /> Upload document</Button>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            ['Missing', control.counts.missing, AlertTriangle, 'bg-dangerSoft text-danger'],
+            ['Requested', control.counts.requested, Send, 'bg-blue-50 text-blue-700'],
+            ['Review needed', control.counts.pending_review, Clock3, 'bg-warningSoft text-warning'],
+            ['Rejected', control.counts.rejected, X, 'bg-dangerSoft text-danger'],
+            ['Verified', control.counts.verified, CheckCircle2, 'bg-successSoft text-success'],
+          ].map(([label, value, Icon, tone]) => (
+            <article key={label} className="flex items-center gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3.5 py-3">
+              <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[11px] ${tone}`}>{createElement(Icon, { size: 16 })}</span>
+              <span><strong className="block text-lg text-textStrong">{value}</strong><span className="block text-xs text-textMuted">{label}</span></span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
+        <div>
+          <h3 className="text-base font-semibold text-textStrong">Common conveyancing documents</h3>
+          <p className="mt-1 text-sm text-textMuted">Start a correctly classified request or upload without working out categories and workflow codes.</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {CONVEYANCING_DOCUMENT_SHORTCUTS.map((shortcut) => (
+            <article key={shortcut.key} className="rounded-[15px] border border-borderSoft bg-surfaceAlt p-4">
+              <FileCheck2 size={18} className="text-primary" />
+              <strong className="mt-3 block text-sm text-textStrong">{shortcut.label}</strong>
+              <span className="mt-1 block text-xs leading-5 text-textMuted">{shortcut.notes}</span>
+              <div className="mt-3 flex gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => onRequestShortcut(shortcut)}>Request</Button>
+                <Button type="button" size="sm" onClick={() => onUploadShortcut(shortcut)}>Upload</Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-textStrong">Matter document register</h3>
+            <p className="mt-1 text-sm text-textMuted">Grouped by conveyancing purpose, with blocking items first.</p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={onToggleDetailed}>{showDetailed ? 'Hide detailed register' : 'Show detailed register'}</Button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Document purpose filters">
+          <button type="button" role="tab" aria-selected={activePurposeKey === 'attention'} onClick={() => setActivePurposeKey('attention')} className={`rounded-full border px-3 py-2 text-xs font-semibold ${activePurposeKey === 'attention' ? 'border-primary bg-primarySoft text-primary' : 'border-borderDefault bg-surfaceAlt text-textMuted'}`}>
+            Needs attention · {control.attentionRows.length}
+          </button>
+          {control.groups.map((group) => (
+            <button key={group.key} type="button" role="tab" aria-selected={activePurposeKey === group.key} onClick={() => setActivePurposeKey(group.key)} className={`rounded-full border px-3 py-2 text-xs font-semibold ${activePurposeKey === group.key ? 'border-primary bg-primarySoft text-primary' : 'border-borderDefault bg-surfaceAlt text-textMuted'}`}>
+              {group.label} · {group.totalCount}
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 space-y-2">
+          {visibleRows.slice(0, 12).map((row) => (
+            <article key={row.registerId} className="flex flex-col gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong className="text-sm text-textStrong">{row.displayName}</strong>
+                  {row.blocksStage && row.needsAttention ? <span className="rounded-full bg-warningSoft px-2 py-0.5 text-[0.65rem] font-semibold text-warning">Blocking</span> : null}
+                </div>
+                <p className="mt-1 text-xs text-textMuted">{row.requiredParty || 'Matter team'} · {row.statusLabel}</p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-borderDefault bg-white px-3 text-xs font-semibold text-primary">View</a> : null}
+                {row.status !== 'verified' ? <Button type="button" variant="secondary" size="sm" onClick={() => onRequestRow(row)}>Request</Button> : null}
+                {row.status !== 'verified' || !row.fileUrl ? <Button type="button" size="sm" onClick={() => onUploadRequirement(row)}>Upload</Button> : null}
+              </div>
+            </article>
+          ))}
+          {!visibleRows.length ? <p className="rounded-[14px] border border-success/20 bg-successSoft px-4 py-5 text-sm text-success">Nothing in this group needs attention.</p> : null}
+        </div>
+      </section>
+    </section>
+  )
+}
+
 function MatterOverviewHeader({
   title,
   statusLabel,
@@ -7075,7 +7598,7 @@ function AttorneyTransactionDetail() {
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
-  const [workspaceMenu, setWorkspaceMenu] = useState('overview')
+  const [workspaceMenu, setWorkspaceMenu] = useState('today')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -7083,6 +7606,8 @@ function AttorneyTransactionDetail() {
   const [discussionActionKey, setDiscussionActionKey] = useState('quick_professional_update')
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
   const [documentLibrarySearch, setDocumentLibrarySearch] = useState('')
+  const [showDetailedDocumentRegister, setShowDetailedDocumentRegister] = useState(false)
+  const [showDetailedCommunicationLog, setShowDetailedCommunicationLog] = useState(false)
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
   const [requestDocumentModalOpen, setRequestDocumentModalOpen] = useState(false)
@@ -7527,7 +8052,11 @@ function AttorneyTransactionDetail() {
     : isAgentTransactionView
       ? AGENT_WORKSPACE_TABS
       : ATTORNEY_WORKSPACE_TABS
-  const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+  const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu)
+    ? requestedWorkspaceMenu
+    : workspaceRole === 'attorney'
+      ? 'today'
+      : 'overview'
 
   const loadPartnerInvitations = useCallback(async () => {
     if (!transaction?.id || !canViewPartnerInvitations) {
@@ -8649,6 +9178,13 @@ function AttorneyTransactionDetail() {
     documentReadiness,
     requiredDocumentRows,
   ])
+  const attorneyDocumentControl = useMemo(
+    () => buildAttorneyDocumentControl({
+      requiredDocumentRows,
+      additionalRequests: additionalDocumentRequests,
+    }),
+    [additionalDocumentRequests, requiredDocumentRows],
+  )
   const documentLibraryRows = useMemo(() => {
     const activeFilter = String(activeDocumentLibraryCategory || 'all').trim().toLowerCase()
     const search = String(documentLibrarySearch || '').trim().toLowerCase()
@@ -10169,6 +10705,47 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.filter((item) => item.required),
     [legalWorkflowModels],
   )
+  const attorneyCommunicationControl = useMemo(
+    () =>
+      buildAttorneyCommunicationControl({
+        activityFeed,
+        workflows: transferHubWorkflows,
+        matterReference: workspaceReference,
+        stageLabel: transferStageLabel,
+        nextActionLabel: overviewPrimaryNextAction?.label || overviewPrimaryNextAction?.title || '',
+      }),
+    [activityFeed, overviewPrimaryNextAction, transferHubWorkflows, transferStageLabel, workspaceReference],
+  )
+  const attorneyMatterToday = useMemo(
+    () =>
+      buildAttorneyMatterToday({
+        transaction,
+        lifecycleStage: displayedLifecycleProgress.currentStage,
+        transferStage: transferStageKey,
+        requiredDocumentRows,
+        activityFeed,
+        workflows: transferHubWorkflows,
+        primaryAction: overviewPrimaryNextAction,
+        blockers: [
+          ...(transactionRollup?.blockers || []).map((blocker) => blocker?.message || blocker?.label || ''),
+          !usingTransactionRollupOverview && displayedLifecycleProgress.status === 'blocked'
+            ? displayedLifecycleProgress.blockerReason || 'The current workflow is blocked.'
+            : '',
+        ].filter(Boolean),
+      }),
+    [
+      activityFeed,
+      displayedLifecycleProgress.blockerReason,
+      displayedLifecycleProgress.currentStage,
+      overviewPrimaryNextAction,
+      requiredDocumentRows,
+      transaction,
+      transactionRollup?.blockers,
+      transferHubWorkflows,
+      transferStageKey,
+      usingTransactionRollupOverview,
+    ],
+  )
   const activeLegalWorkflowModel = useMemo(
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
@@ -10185,6 +10762,21 @@ function AttorneyTransactionDetail() {
     setDiscussionVisibility(nextTarget.visibility)
     setDiscussionType(audience === 'client' ? 'client_update' : 'workflow')
     setDiscussionBody(String(body || '').trim())
+  }, [legalWorkflowModels])
+  const handleDraftCommunicationTemplate = useCallback((template = {}) => {
+    const audience = template.audience || 'professional'
+    const target = getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
+    if (!target?.laneKey || !target?.actionKey || !target?.visibility) {
+      setError(`No permitted ${audience} update action is available for this matter.`)
+      return
+    }
+    setDiscussionLaneKey(target.laneKey)
+    setDiscussionActionKey(target.actionKey)
+    setDiscussionVisibility(target.visibility)
+    setDiscussionType(audience === 'client' ? 'client_update' : audience === 'internal' ? 'internal_note' : 'workflow')
+    setDiscussionBody(String(template.body || '').trim())
+    setShowDetailedCommunicationLog(true)
+    setWorkspaceMenu('activity')
   }, [legalWorkflowModels])
   const transactionContactRows = [
     {
@@ -11294,6 +11886,53 @@ function AttorneyTransactionDetail() {
     setUploadDocumentModalOpen(true)
   }
 
+  function openConveyancingDocumentRequest(source = {}) {
+    const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredParty || '')
+    const requestedFrom = ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.some((option) => option.value === rawParty)
+      ? rawParty
+      : rawParty.includes('buyer') && rawParty.includes('seller')
+        ? 'buyer_and_seller'
+        : rawParty.includes('buyer')
+          ? 'buyer'
+          : rawParty.includes('seller')
+            ? 'seller'
+            : rawParty.includes('bond')
+              ? 'bond_originator'
+              : rawParty.includes('attorney')
+                ? 'attorney'
+                : 'other'
+    setDocumentRequestForm({
+      title: source.label || source.displayName || source.title || '',
+      requestedFrom,
+      visibility: source.visibility || 'client_visible',
+      notes: source.notes || `Please provide ${source.displayName || source.label || 'the requested document'} for this transfer matter.`,
+      priority: source.blocksStage ? 'urgent' : 'normal',
+      dueDate: '',
+    })
+    setRequestDocumentModalOpen(true)
+  }
+
+  function openConveyancingDocumentUpload(shortcut = {}) {
+    setUploadDraft((previous) => ({
+      ...previous,
+      file: null,
+      fileName: '',
+      category: shortcut.category || 'Internal Working Documents',
+      documentType: shortcut.documentType || '',
+      visibility: shortcut.visibility === 'internal_only' ? 'internal' : 'shared',
+      relatedWorkflow: shortcut.relatedWorkflow || 'transfer',
+      satisfiesRequiredDocument: 'no',
+      requiredDocumentKey: '',
+      requiredDocumentId: '',
+      canonicalRequirementInstanceId: '',
+      documentRequestId: '',
+      notes: shortcut.notes || '',
+      requestTitle: shortcut.label || '',
+    }))
+    setUploadInputVersion((previous) => previous + 1)
+    setUploadDocumentModalOpen(true)
+  }
+
   async function handleUploadDocument(event) {
     event.preventDefault()
     if (!transaction?.id || !uploadDraft.file) {
@@ -11711,6 +12350,15 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
+        {!isAgentTransactionView && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (
+          <AttorneyMatterTodayView
+            model={attorneyMatterToday}
+            onOpenWorkspace={handleOverviewActionTarget}
+            onExecuteWorkflowAction={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+            onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow?.detailKey)}
+          />
+        ) : null}
+
         {workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
           <>
             <section className="space-y-5">
@@ -12047,6 +12695,36 @@ function AttorneyTransactionDetail() {
               </div>
             </header>
 
+            {!isAgentTransactionView && workspaceRole !== 'bond_originator' ? (
+              <AttorneyDocumentControl
+                control={attorneyDocumentControl}
+                showDetailed={showDetailedDocumentRegister}
+                onToggleDetailed={() => setShowDetailedDocumentRegister((current) => !current)}
+                onUploadGeneral={() => openDocumentUploadModal({ category: 'all' })}
+                onRequestGeneral={() => openConveyancingDocumentRequest()}
+                onUploadShortcut={openConveyancingDocumentUpload}
+                onRequestShortcut={openConveyancingDocumentRequest}
+                onRequestRow={openConveyancingDocumentRequest}
+                onUploadRequirement={(row) => {
+                  if (row.requirement) {
+                    openDocumentUploadModal({ requirement: row.requirement })
+                  } else if (row.rawRequest) {
+                    openDocumentRequestUploadModal({
+                      displayName: row.displayName,
+                      category: row.purposeKey,
+                      relatedWorkflow: row.relatedWorkflow,
+                      documentRequestId: row.id,
+                      requiredDocumentKey: row.requiredDocumentKey,
+                    })
+                  } else {
+                    openConveyancingDocumentUpload(row)
+                  }
+                }}
+              />
+            ) : null}
+
+            {showDetailedDocumentRegister || isAgentTransactionView || workspaceRole === 'bond_originator' ? (
+              <>
             <section className="rounded-[18px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
               <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-center">
                 <div className="flex items-center justify-center">
@@ -12184,9 +12862,6 @@ function AttorneyTransactionDetail() {
                                       </Button>
                                     </>
                                   ) : null}
-                                  <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
-                                    <MoreHorizontal size={15} />
-                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -12446,9 +13121,6 @@ function AttorneyTransactionDetail() {
                                     Replace
                                   </Button>
                                 ) : null}
-                                <button type="button" className="ui-icon-button h-8 w-8" aria-label={`More actions for ${row.displayName}`}>
-                                  <MoreHorizontal size={15} />
-                                </button>
                               </div>
                             </td>
                           </tr>
@@ -12468,6 +13140,9 @@ function AttorneyTransactionDetail() {
                 Showing {documentLibraryRows.length} document{documentLibraryRows.length === 1 ? '' : 's'}
               </p>
             </section>
+
+              </>
+            ) : null}
 
             <Modal
               open={requestDocumentModalOpen}
@@ -13115,7 +13790,16 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'finance' ? (
-          financeCommandCenterPanel
+          <section className="space-y-5">
+            {workspaceRole === 'attorney' && transaction?.id ? (
+              <AttorneyMatterAccountsPanel
+                transactionId={transaction.id}
+                buyerName={buyerDisplayName}
+                sellerName={sellerDisplayName}
+              />
+            ) : null}
+            {financeCommandCenterPanel}
+          </section>
         ) : null}
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
@@ -13278,7 +13962,17 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'activity' ? (
           <section className="space-y-5">
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            {workspaceRole === 'attorney' ? (
+              <AttorneyCommunicationCentre
+                model={attorneyCommunicationControl}
+                onDraftTemplate={handleDraftCommunicationTemplate}
+                onHandleFollowUp={(followUp) => handleWorkflowFollowUpCommand(followUp.workflow?.lane, followUp.item)}
+                onShowFullLog={() => setShowDetailedCommunicationLog(true)}
+              />
+            ) : null}
+
+            {workspaceRole !== 'attorney' || showDetailedCommunicationLog ? (
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
               <section className="rounded-[16px] border border-borderDefault bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                 <div className="border-b border-borderSoft px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -13489,7 +14183,14 @@ function AttorneyTransactionDetail() {
                   })()}
                 </OverviewSidePanel>
               </aside>
-            </section>
+              </section>
+            ) : (
+              <div className="flex justify-center">
+                <Button type="button" variant="secondary" onClick={() => setShowDetailedCommunicationLog(true)}>
+                  View full activity and write a custom update
+                </Button>
+              </div>
+            )}
           </section>
         ) : null}
 

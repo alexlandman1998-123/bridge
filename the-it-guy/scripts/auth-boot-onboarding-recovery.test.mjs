@@ -11,6 +11,7 @@ try {
   const {
     deriveAuthBootOnboardingState,
     shouldAutoClaimWorkspaceMembership,
+    shouldIgnoreStaleMembershipRecovery,
     shouldAutoRepairWorkspaceOnboarding,
   } = await server.ssrLoadModule('/src/lib/authBoot.js')
   const { deriveStatusFromRuntime } = await server.ssrLoadModule('/src/services/onboarding/onboardingState.js')
@@ -44,6 +45,26 @@ try {
 
   assert.equal(recovered.onboardingComplete, true)
   assert.equal(recovered.onboardingRequiredReason, '')
+  assert.equal(
+    shouldIgnoreStaleMembershipRecovery({
+      appRole: 'attorney',
+      activeMemberships: [membership],
+      currentMembership: membership,
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'no_active_membership' },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreStaleMembershipRecovery({
+      appRole: 'attorney',
+      activeMemberships: [membership],
+      currentMembership: membership,
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'missing_department' },
+    }),
+    false,
+  )
   assert.equal(
     shouldAutoClaimWorkspaceMembership({
       profile: staleProfile,

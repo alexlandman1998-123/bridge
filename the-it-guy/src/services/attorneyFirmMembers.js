@@ -5,9 +5,12 @@ import {
   normalizeAttorneyFirmRole,
 } from '../lib/attorneyPermissions'
 import {
+  deriveAttorneyProfessionalProfile,
+  resolveAttorneyCompatibilityRole,
+} from '../constants/attorneyRoleCatalog.js'
+import {
   getAuthenticatedUser,
   isMissingColumnError,
-  isPermissionDeniedError,
   isMissingTableError,
   mapMemberRow,
   normalizeText,
@@ -34,6 +37,14 @@ function assertStatus(value) {
     throw new Error('Status must be one of invited, active, suspended, or removed.')
   }
   return normalized
+}
+
+function resolveProfessionalWriteProfile({ role, professionalRole, practiceQualifications } = {}) {
+  const profile = deriveAttorneyProfessionalProfile({ role, professionalRole, practiceQualifications })
+  return {
+    ...profile,
+    role: resolveAttorneyCompatibilityRole(profile, normalizeAttorneyFirmRole(role, 'viewer')),
+  }
 }
 
 async function ensureActiveFirmAdminRemaining(client, firmId, excludingMemberId = null) {
@@ -92,7 +103,7 @@ export async function getAttorneyFirmMembers(firmId) {
 
   const query = await client
     .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, organisation_user_id, status, invited_by, joined_at, created_at, updated_at')
     .eq('firm_id', normalizedFirmId)
     .order('created_at', { ascending: true })
 
@@ -120,28 +131,6 @@ export async function getAttorneyFirmMembers(firmId) {
       }
       return []
     }
-    if (isPermissionDeniedError(query.error)) {
-      console.warn('[Attorney Firm] member lookup blocked by RLS; using current user firm-admin recovery membership.', query.error)
-      const authUser = await getAuthenticatedUser(client).catch(() => null)
-      if (authUser?.id) {
-        const nowIso = new Date().toISOString()
-        return [
-          mapMemberRow({
-            id: `recovery-admin-${normalizedFirmId}-${authUser.id}`,
-            firm_id: normalizedFirmId,
-            user_id: authUser.id,
-            department_id: null,
-            role: 'firm_admin',
-            status: 'active',
-            invited_by: authUser.id,
-            joined_at: nowIso,
-            created_at: nowIso,
-            updated_at: nowIso,
-          }),
-        ]
-      }
-      return []
-    }
     throw query.error
   }
 
@@ -157,7 +146,7 @@ export async function updateAttorneyFirmMember(memberId, payload = {}) {
 
   const existingQuery = await client
     .from('attorney_firm_members')
-    .select('id, firm_id, role, status')
+    .select('id, firm_id, role, professional_role, practice_qualifications, status')
     .eq('id', normalizedMemberId)
     .maybeSingle()
 
@@ -174,16 +163,30 @@ export async function updateAttorneyFirmMember(memberId, payload = {}) {
 
   const role = payload.role !== undefined ? assertRole(payload.role) : existingQuery.data.role
   const status = payload.status !== undefined ? assertStatus(payload.status) : existingQuery.data.status
+  const professionalProfile = resolveProfessionalWriteProfile({
+    role,
+    professionalRole: payload.professionalRole !== undefined
+      ? payload.professionalRole
+      : existingQuery.data.professional_role,
+    practiceQualifications: payload.practiceQualifications !== undefined
+      ? payload.practiceQualifications
+      : existingQuery.data.practice_qualifications,
+  })
+  const compatibilityRole = payload.professionalRole !== undefined || payload.practiceQualifications !== undefined
+    ? professionalProfile.role
+    : role
 
   const existingWasActiveAdmin = existingQuery.data.role === 'firm_admin' && existingQuery.data.status === 'active'
-  const stillActiveAdmin = role === 'firm_admin' && status === 'active'
+  const stillActiveAdmin = compatibilityRole === 'firm_admin' && status === 'active'
 
   if (existingWasActiveAdmin && !stillActiveAdmin) {
     await ensureActiveFirmAdminRemaining(client, existingQuery.data.firm_id, existingQuery.data.id)
   }
 
   const updatePayload = {
-    role,
+    role: compatibilityRole,
+    professional_role: professionalProfile.professionalRole,
+    practice_qualifications: professionalProfile.practiceQualifications,
     status,
   }
 
@@ -198,7 +201,7 @@ export async function updateAttorneyFirmMember(memberId, payload = {}) {
     .from('attorney_firm_members')
     .update(updatePayload)
     .eq('id', normalizedMemberId)
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, organisation_user_id, status, invited_by, joined_at, created_at, updated_at')
     .single()
 
   if (query.error) {
@@ -281,6 +284,8 @@ export async function createOrActivateAttorneyFirmMember({
   departmentId = null,
   status = 'active',
   invitedBy = null,
+  professionalRole = '',
+  practiceQualifications = [],
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -292,7 +297,12 @@ export async function createOrActivateAttorneyFirmMember({
   }
 
   const nowIso = new Date().toISOString()
-  const roleValue = assertRole(role)
+  const roleValue = assertRole(role || 'viewer')
+  const professionalProfile = resolveProfessionalWriteProfile({
+    role: roleValue,
+    professionalRole,
+    practiceQualifications,
+  })
   const statusValue = assertStatus(status)
 
   const query = await client
@@ -302,14 +312,16 @@ export async function createOrActivateAttorneyFirmMember({
         firm_id: normalizedFirmId,
         user_id: normalizedUserId,
         department_id: departmentId || null,
-        role: roleValue,
+        role: professionalProfile.role,
+        professional_role: professionalProfile.professionalRole,
+        practice_qualifications: professionalProfile.practiceQualifications,
         status: statusValue,
         invited_by: invitedBy || actor.id,
         joined_at: statusValue === 'active' ? nowIso : null,
       },
       { onConflict: 'firm_id,user_id' },
     )
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .select('id, firm_id, user_id, department_id, role, professional_role, practice_qualifications, organisation_user_id, status, invited_by, joined_at, created_at, updated_at')
     .single()
 
   if (query.error) {

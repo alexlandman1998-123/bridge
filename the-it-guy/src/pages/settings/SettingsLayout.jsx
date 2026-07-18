@@ -1,4 +1,4 @@
-import { Menu, SlidersHorizontal, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -73,21 +73,17 @@ export default function SettingsLayout() {
   const membershipLabel = membershipRole.replaceAll('_', ' ')
 
   return (
-    <section className="min-h-[calc(100vh-96px)] pb-10 pt-1">
-      <div className="mx-auto grid w-full max-w-[1420px] gap-5">
-        <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe8ef] bg-[linear-gradient(135deg,#ffffff_0%,#f5faf7_100%)] px-5 py-5 shadow-[0_14px_38px_rgba(15,23,42,0.055)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex min-w-0 items-center gap-3.5">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#123c2f] text-white shadow-[0_8px_18px_rgba(18,60,47,0.18)]">
-              <SlidersHorizontal size={19} strokeWidth={1.9} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-[#718499]">Settings</p>
-              <h1 className="truncate text-xl font-semibold tracking-[-0.02em] text-[#142234]">{workspaceName}</h1>
-            </div>
+    <section className="settings-shell min-h-[calc(100vh-96px)] pb-10 pt-1">
+      <div className="mx-auto grid w-full max-w-[1420px] gap-6">
+        <header className="settings-shell-heading flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#718499]">Settings</p>
+            <h1 className="mt-1 truncate text-[2rem] font-semibold leading-tight tracking-[-0.035em] text-[#111827]">{workspaceName}</h1>
+            <p className="mt-1 text-sm text-[#6b7280]">Manage your personal preferences and workspace configuration.</p>
           </div>
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <span className="rounded-full border border-[#d7e4dc] bg-white/80 px-3 py-1.5 capitalize text-[#365647]">{membershipLabel}</span>
-            <span className="rounded-full border border-[#dfe7ef] bg-white/80 px-3 py-1.5 capitalize text-[#607387]">{resolvedWorkspaceType.replaceAll('_', ' ') || 'workspace'}</span>
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <span className="rounded-full bg-[#eaf6f0] px-3 py-1.5 capitalize text-[#176c4b]">{membershipLabel}</span>
+            <span className="rounded-full bg-[#f0f3f6] px-3 py-1.5 capitalize text-[#667085]">{resolvedWorkspaceType.replaceAll('_', ' ') || 'workspace'}</span>
           </div>
         </header>
 
@@ -109,14 +105,14 @@ export default function SettingsLayout() {
           </aside>
         ) : null}
 
-        <div className="grid gap-5 lg:grid-cols-[248px_minmax(0,1fr)]">
+        <div className="grid gap-8 lg:grid-cols-[248px_minmax(0,1fr)]">
           <aside className="hidden lg:block">
-            <div className="sticky top-4 rounded-[20px] border border-[#dde7f0] bg-[#f8fafc] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+            <div className="settings-secondary-nav sticky top-4 border-r border-[#e8edf2] py-2 pr-5">
               <SettingsNavigation groups={navGroups} />
             </div>
           </aside>
 
-          <main className="min-w-0 rounded-[22px] border border-[#e1e8ef] bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-7 lg:p-8">
+          <main className="settings-content min-w-0">
             <Outlet />
           </main>
         </div>

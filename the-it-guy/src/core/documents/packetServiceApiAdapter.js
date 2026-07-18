@@ -8,6 +8,7 @@ export {
   createDocumentPacketVersion,
   claimDocumentPacketGenerationLease,
   generateFinalSignedDocument,
+  getDocumentPacketGenerationLeaseStatus,
   generateDocumentPacketSigningLinks,
   deleteDocumentPacketSigners,
   deleteDocumentSigningFields,

@@ -139,7 +139,6 @@ const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal
 const SellerOfferReviewPage = lazy(() => import('./pages/SellerOfferReviewPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
-const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
@@ -2939,7 +2938,7 @@ function AppRoutes() {
           <Route path="/seller/:token/progress" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/appointments" element={<SellerLegacyRedirect />} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><SignerPortal sessionSource="legacy-otp" /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
           <Route path="/offers/session/:token" element={<AppErrorBoundary scope="post-viewing-offer-route" title="Offer portal failed to load"><PostViewingOfferPortal /></AppErrorBoundary>} />
           <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />

@@ -15,6 +15,7 @@ export const ROLE_CONTRACT_KEYS = Object.freeze({
   agencyOwner: 'agency_owner',
   developerOwner: 'developer_owner',
   attorneyOwner: 'attorney_owner',
+  attorneyOperational: 'attorney_operational',
   bondOwner: 'bond_owner',
   bondOperational: 'bond_operational',
   clientInvited: 'client_invited',
@@ -58,6 +59,25 @@ export const ROLE_CONTRACTS = Object.freeze({
     intendedOrgRole: ORG_ROLES.owner,
     ...PROFESSIONAL_OWNER,
     branchScope: BRANCH_SCOPES.allBranches,
+    attorneyProfessionalRole: 'firm_admin',
+    attorneyPracticeQualifications: Object.freeze([]),
+    requiresInvitationOrApproval: false,
+  }),
+  [ROLE_CONTRACT_KEYS.attorneyOperational]: Object.freeze({
+    key: ROLE_CONTRACT_KEYS.attorneyOperational,
+    profileRole: APP_ROLES.attorney,
+    workspaceType: WORKSPACE_TYPES.attorneyFirm,
+    defaultWorkspaceKind: WORKSPACE_TYPES.attorneyFirm,
+    intendedOrgRole: ORG_ROLES.attorney,
+    systemRole: SYSTEM_ROLES.professional,
+    membershipRole: ORG_ROLES.attorney,
+    workspaceRole: ORG_ROLES.attorney,
+    organisationRole: ORG_ROLES.attorney,
+    branchScope: BRANCH_SCOPES.own,
+    isPrimaryOwner: false,
+    attorneyProfessionalRole: 'viewer',
+    attorneyPracticeQualifications: Object.freeze([]),
+    requiresInvitationOrApproval: true,
   }),
   [ROLE_CONTRACT_KEYS.bondOwner]: Object.freeze({
     key: ROLE_CONTRACT_KEYS.bondOwner,
@@ -129,7 +149,11 @@ export function resolveSignupRoleContract(input = null) {
   }
   if (appRole === APP_ROLES.agent && workspaceType === WORKSPACE_TYPES.agency) return ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.agencyOwner]
   if (appRole === APP_ROLES.developer && workspaceType === WORKSPACE_TYPES.developerCompany) return ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.developerOwner]
-  if (appRole === APP_ROLES.attorney && workspaceType === WORKSPACE_TYPES.attorneyFirm) return ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.attorneyOwner]
+  if (appRole === APP_ROLES.attorney && workspaceType === WORKSPACE_TYPES.attorneyFirm) {
+    return intendedOrgRole === ORG_ROLES.owner || intendedOrgRole === ORG_ROLES.partner || intendedOrgRole === ORG_ROLES.director
+      ? ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.attorneyOwner]
+      : ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.attorneyOperational]
+  }
   if (appRole === APP_ROLES.client) return ROLE_CONTRACTS[ROLE_CONTRACT_KEYS.clientInvited]
   return null
 }
@@ -155,7 +179,7 @@ export function getRoleContractSnapshot(contract = null, overrides = {}) {
     ? overrides.scopeLevel || contract.scopeLevel || getDefaultBondScope(workspaceRole, { appRole: profileRole, workspaceType })
     : null
 
-  return {
+  const snapshot = {
     key: contract.key,
     profile_role: profileRole,
     system_role: normalizeSystemRole(overrides.systemRole || contract.systemRole, contract.systemRole),
@@ -169,5 +193,12 @@ export function getRoleContractSnapshot(contract = null, overrides = {}) {
     branch_scope: overrides.branchScope || contract.branchScope || getDefaultBranchScope(workspaceRole, { appRole: profileRole, workspaceType }),
     is_primary_owner: Boolean(overrides.isPrimaryOwner ?? contract.isPrimaryOwner),
   }
+  if (workspaceType === WORKSPACE_TYPES.attorneyFirm) {
+    snapshot.attorney_professional_role = overrides.attorneyProfessionalRole || contract.attorneyProfessionalRole || 'viewer'
+    snapshot.attorney_practice_qualifications = Object.freeze([
+      ...(overrides.attorneyPracticeQualifications || contract.attorneyPracticeQualifications || []),
+    ])
+    snapshot.requires_invitation_or_approval = Boolean(contract.requiresInvitationOrApproval)
+  }
+  return snapshot
 }
-
