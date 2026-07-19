@@ -36,7 +36,9 @@
     "mvp:phase7:audit": "node scripts/mvp-pilot-batch-audit.mjs",
     "test:mvp:phase7": "node scripts/mvp-pilot-controls.test.mjs",
     "mvp:phase8:scale": "node scripts/mvp-scale-progression.mjs",
-    "test:mvp:phase8": "node scripts/mvp-scale-progression.test.mjs"
+    "test:mvp:phase8": "node scripts/mvp-scale-progression.test.mjs",
+    "mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.mjs",
+    "test:mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

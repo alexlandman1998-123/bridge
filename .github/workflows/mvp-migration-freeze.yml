@@ -1,0 +1,29 @@
+name: Arch9 MVP migration freeze
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'docs/arch9-mvp-release-manifest.json'
+      - 'scripts/mvp-migration-freeze-check.mjs'
+  push:
+    branches: [main, 'codex/arch9-mvp-release']
+    paths:
+      - 'supabase/migrations/**'
+      - 'docs/arch9-mvp-release-manifest.json'
+      - 'scripts/mvp-migration-freeze-check.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  enforce-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/mvp-migration-freeze-check.mjs --base=origin/main --branch="${{ github.head_ref || github.ref_name }}"
