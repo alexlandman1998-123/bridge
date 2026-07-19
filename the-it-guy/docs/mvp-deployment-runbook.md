@@ -15,10 +15,14 @@ Use this sequence for staging first, then production. It is designed for the MVP
 
    - `supabase/migrations/202607180046_mvp_atomic_transaction_creation_phase2a.sql`
    - `supabase/migrations/202607190001_mvp_seller_acceptance_canonical_creation_phase1.sql`
-3. Verify the deployed RPC without creating data:
+3. Verify the deployed RPC without creating data, capture the fresh applied-migration list, and validate the Phase 3D deployment evidence before starting any UI journey:
 
    ```bash
-   SUPABASE_URL=... SUPABASE_ANON_KEY=... node scripts/mvp-deployment-contract-check.mjs
+   SUPABASE_URL=... SUPABASE_ANON_KEY=... node the-it-guy/scripts/mvp-deployment-contract-check.mjs
+   ```
+
+   ```bash
+   npm run mvp:staging:deployment-evidence -- --evidence=/secure-local-path/staging-deployment-evidence.json
    ```
 
 4. Create one controlled pilot transaction through the normal accepted-offer path.
@@ -26,7 +30,7 @@ Use this sequence for staging first, then production. It is designed for the MVP
 
    ```bash
    SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
-   node scripts/mvp-postdeploy-transaction-check.mjs --transaction-id=<uuid>
+   node the-it-guy/scripts/mvp-postdeploy-transaction-check.mjs --transaction-id=<uuid>
    ```
 
 6. Run `node scripts/mvp-pilot-session-check.mjs` before accepting the next pilot batch. Keep batches to ten transactions and use the batch audit before progressing further.

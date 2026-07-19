@@ -1,6 +1,6 @@
 # Arch9 MVP — Phase 4 staging UI journeys
 
-Run this only after the Phase 3 migration gate is clear and the deployed RPC check passes. Use fresh, non-production staging records and complete every action through the UI.
+Run this only after Phase 3D deployment evidence validates and the deployed RPC check passes. Use fresh, non-production staging records and complete every action through the UI.
 
 ## Required journeys
 
