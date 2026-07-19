@@ -1,0 +1,35 @@
+{
+  "environment": "staging",
+  "collectedAt": "<ISO-8601 timestamp>",
+  "operator": {
+    "name": "<accountable operator>"
+  },
+  "deployment": {
+    "contractCheckPassed": false,
+    "atomicCreationMigrationApplied": false
+  },
+  "notificationSafety": {
+    "testDataSuppressionPassed": false,
+    "outboxSmokePassed": false
+  },
+  "scenarios": [
+    {
+      "key": "cash_individual",
+      "leadToRegistrationPassed": false,
+      "postDeployCheck": {
+        "passed": false,
+        "transactionId": "<staging transaction UUID>",
+        "batchRecord": {
+          "transactionId": "<staging transaction UUID>",
+          "idempotencyKey": "<creation idempotency key>",
+          "participantBootstrapComplete": false,
+          "documentBootstrapComplete": false,
+          "workflowBootstrapComplete": false
+        }
+      }
+    },
+    { "key": "bond_company", "leadToRegistrationPassed": false, "postDeployCheck": { "passed": false, "batchRecord": {} } },
+    { "key": "hybrid_trust", "leadToRegistrationPassed": false, "postDeployCheck": { "passed": false, "batchRecord": {} } },
+    { "key": "development_company", "leadToRegistrationPassed": false, "postDeployCheck": { "passed": false, "batchRecord": {} } }
+  ]
+}

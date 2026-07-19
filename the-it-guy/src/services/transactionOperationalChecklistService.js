@@ -1,5 +1,6 @@
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import {
+  OPERATIONAL_STEP_DEFINITIONS,
   getOperationalStepDefinition,
   getOperationalStepsForLane,
   isClientVisibleOperationalStep,
@@ -10,6 +11,7 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { processWorkflowEvidence } from '../../server/services/workflowEvidenceMapper.js'
+import { publishTransactionSharedProgress } from './transactionSharedProgressService.js'
 
 const WARNING_PREFIX = '[operational-checklist]'
 const LEGACY_TRANSFER_STEP_ALIASES = {
@@ -900,7 +902,35 @@ async function fetchChecklistItemById(client, itemId) {
   return query.data ? mapChecklistRow(query.data) : null
 }
 
-async function completeLinkedSubprocessStepFromChecklist(client, checklistRow) {
+async function reconcileLinkedSubprocessStatus(client, subprocessId) {
+  const steps = await client
+    .from('transaction_subprocess_steps')
+    .select('status')
+    .eq('subprocess_id', subprocessId)
+  if (steps.error) return null
+  const statuses = (steps.data || []).map((step) => normalizeSubprocessStepStatus(step.status))
+  const nextStatus = statuses.length && statuses.every((status) => status === 'completed')
+    ? 'completed'
+    : statuses.includes('blocked')
+      ? 'blocked'
+      : statuses.some((status) => ['in_progress', 'completed'].includes(status))
+        ? 'in_progress'
+        : 'not_started'
+  let update = await client
+    .from('transaction_subprocesses')
+    .update({ status: nextStatus, lane_status: nextStatus, updated_at: nowIso() })
+    .eq('id', subprocessId)
+  if (update.error && isMissingColumnError(update.error, 'lane_status')) {
+    update = await client
+      .from('transaction_subprocesses')
+      .update({ status: nextStatus, updated_at: nowIso() })
+      .eq('id', subprocessId)
+  }
+  if (update.error) console.warn(WARNING_PREFIX, 'Failed to reconcile linked subprocess status', update.error)
+  return nextStatus
+}
+
+async function updateLinkedSubprocessStepFromChecklist(client, checklistRow, status) {
   const parsed = parseOperationalDedupeKey(checklistRow?.autoRuleKey || '')
   if (!parsed?.lane || !parsed?.stepKey) return null
   if (!['finance', 'transfer', 'bond'].includes(parsed.lane)) return null
@@ -932,15 +962,17 @@ async function completeLinkedSubprocessStepFromChecklist(client, checklistRow) {
   }
 
   const step = stepQuery.data[0]
-  if (normalizeSubprocessStepStatus(step.status) === 'completed') {
+  const normalizedStatus = normalizeSubprocessStepStatus(status)
+  if (normalizeSubprocessStepStatus(step.status) === normalizedStatus) {
+    await reconcileLinkedSubprocessStatus(client, step.subprocess_id)
     return step.id
   }
 
   const update = await client
     .from('transaction_subprocess_steps')
     .update({
-      status: 'completed',
-      completed_at: nowIso(),
+      status: normalizedStatus,
+      completed_at: normalizedStatus === 'completed' ? nowIso() : null,
       updated_at: nowIso(),
     })
     .eq('id', step.id)
@@ -949,7 +981,32 @@ async function completeLinkedSubprocessStepFromChecklist(client, checklistRow) {
     console.warn(WARNING_PREFIX, 'Failed to update linked subprocess step', update.error)
     return null
   }
+  await reconcileLinkedSubprocessStatus(client, step.subprocess_id)
   return step.id
+}
+
+function getNextOperationalStepLabel(lane, stepKey) {
+  const steps = OPERATIONAL_STEP_DEFINITIONS[lane] || []
+  const index = steps.findIndex((step) => step.stepKey === stepKey)
+  return index >= 0 && index < steps.length - 1 ? steps[index + 1].label : ''
+}
+
+async function publishOperationalSharedProgress(client, item, parsed, definition, status, options = {}) {
+  if (!parsed || !definition?.sharedProgress) return null
+  const safeExplanation = String(options.safeExplanation || '').trim() || (
+    status === 'blocked' ? 'This step is blocked while the responsible team resolves the issue.' : ''
+  )
+  return publishTransactionSharedProgress({
+    client,
+    definition: definition.sharedProgress,
+    transactionId: item.transactionId,
+    status,
+    visibility: definition.sharedProgress.defaultVisibility,
+    safeExplanation,
+    expectedNextStep: getNextOperationalStepLabel(parsed.lane, parsed.stepKey),
+    sourceType: options.sourceType || 'operational_checklist',
+    sourceId: item.id,
+  })
 }
 
 export async function completeOperationalChecklistItem(itemId, payload = {}) {
@@ -981,7 +1038,7 @@ export async function completeOperationalChecklistItem(itemId, payload = {}) {
     throw update.error
   }
 
-  await completeLinkedSubprocessStepFromChecklist(client, item)
+  await updateLinkedSubprocessStepFromChecklist(client, item, 'completed')
   const parsed = parseOperationalDedupeKey(item.autoRuleKey || '')
   const definition = parsed ? getOperationalStepDefinition(parsed.lane, parsed.stepKey) : null
   await logOperationalChecklistEvent(client, {
@@ -1004,11 +1061,14 @@ export async function completeOperationalChecklistItem(itemId, payload = {}) {
       source: 'operational_checklist_completed',
     },
   })
+  await publishOperationalSharedProgress(client, item, parsed, definition, 'completed', {
+    sourceType: 'operational_checklist_completed',
+  })
 
   return (await fetchChecklistItemById(client, itemId)) || item
 }
 
-export async function blockOperationalChecklistItem(itemId, reason = '') {
+export async function blockOperationalChecklistItem(itemId, reason = '', options = {}) {
   const client = requireClient()
   if (!itemId) throw new Error('Checklist item id is required.')
 
@@ -1033,6 +1093,17 @@ export async function blockOperationalChecklistItem(itemId, reason = '') {
 
   const parsed = parseOperationalDedupeKey(item.autoRuleKey || '')
   const definition = parsed ? getOperationalStepDefinition(parsed.lane, parsed.stepKey) : null
+  await updateLinkedSubprocessStepFromChecklist(client, item, 'blocked')
+  await logOperationalChecklistEvent(client, {
+    transactionId: item.transactionId,
+    eventData: {
+      source: 'operational_checklist_blocked',
+      checklistItemId: item.id,
+      lane: parsed?.lane || item.stage,
+      stepKey: parsed?.stepKey || '',
+    },
+    visibilityScope: 'internal',
+  })
   await processChecklistEvidenceIfPossible(client, item, {
     parsed,
     definition,
@@ -1041,6 +1112,10 @@ export async function blockOperationalChecklistItem(itemId, reason = '') {
       source: 'operational_checklist_blocked',
       reason,
     },
+  })
+  await publishOperationalSharedProgress(client, item, parsed, definition, 'blocked', {
+    sourceType: 'operational_checklist_blocked',
+    safeExplanation: options.safeExplanation,
   })
 
   return fetchChecklistItemById(client, itemId)
@@ -1051,6 +1126,8 @@ export async function linkChecklistItemToDocument(itemId, documentId) {
   if (!itemId) throw new Error('Checklist item id is required.')
   if (!documentId) throw new Error('Document id is required.')
 
+  const item = await fetchChecklistItemById(client, itemId)
+  if (!item) throw new Error('Checklist item not found.')
   const now = nowIso()
   const update = await client
     .from('transaction_checklist_items')
@@ -1065,6 +1142,24 @@ export async function linkChecklistItemToDocument(itemId, documentId) {
   if (update.error) {
     throw update.error
   }
+
+  const parsed = parseOperationalDedupeKey(item.autoRuleKey || '')
+  const definition = parsed ? getOperationalStepDefinition(parsed.lane, parsed.stepKey) : null
+  await updateLinkedSubprocessStepFromChecklist(client, item, 'completed')
+  await logOperationalChecklistEvent(client, {
+    transactionId: item.transactionId,
+    eventData: {
+      source: 'operational_checklist_document_linked',
+      checklistItemId: item.id,
+      documentId,
+      lane: parsed?.lane || item.stage,
+      stepKey: parsed?.stepKey || '',
+    },
+    visibilityScope: definition?.clientVisible ? 'client_visible' : 'internal',
+  })
+  await publishOperationalSharedProgress(client, item, parsed, definition, 'completed', {
+    sourceType: 'operational_checklist_document_linked',
+  })
 
   return fetchChecklistItemById(client, itemId)
 }

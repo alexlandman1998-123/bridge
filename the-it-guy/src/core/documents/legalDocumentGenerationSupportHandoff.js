@@ -15,6 +15,10 @@ export function buildLegalDocumentGenerationSupportEvent({ policy = {}, packetTy
     surface: ALLOWED_SURFACES.has(surface) ? surface : 'workspace',
     failureCount: Math.max(1, Math.min(99, Number(policy?.failureCount || 1))),
     escalationType: actionKey === 'contact_admin' ? 'administrator' : 'support',
+    diagnosticIssueCodes: Array.isArray(policy?.diagnostics?.issueCodes)
+      ? policy.diagnostics.issueCodes.map((code) => normalizeText(code).replace(/[^A-Z0-9_]/gi, '_').toUpperCase()).filter(Boolean).slice(0, 8)
+      : [],
+    resultAmbiguous: Boolean(policy?.diagnostics?.resultAmbiguous),
     rawDetailsIncluded: false,
   }
 }

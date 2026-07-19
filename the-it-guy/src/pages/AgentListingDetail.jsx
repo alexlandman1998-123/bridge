@@ -57,6 +57,21 @@ import {
   listAppointmentsAsync,
 } from '../lib/agencyPipelineService'
 import {
+  fetchAgencyCrmLeadWorkspace,
+  listAgencyCrmLeadContacts,
+  updateAgencyCrmContactRecord,
+  updateAgencyCrmLeadRecord,
+} from '../lib/agencyCrmRepository'
+import {
+  buildLeadListingLinkPatch,
+  getBuyerLeadOptions,
+  isLeadLinkedToListing,
+  mapAgencyLeadSelectionRows,
+} from '../lib/agencyLeadSelection'
+import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
+import { buildAgentAssistedOfferEntry } from '../lib/agentAssistedOfferEntry'
+import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
+import {
   buildSellerOnboardingLink,
   buildSellerClientPortalLink,
   deleteAgentPrivateListingCascade,
@@ -119,7 +134,22 @@ import {
 } from '../services/privateListingService'
 import { listListingLeadInterests } from '../services/leadListingInterestService'
 import { listListingPropertyShares } from '../services/leadPropertySharingService'
-import { listCommunicationDeliveries } from '../services/communicationDeliveryService'
+import {
+  buildDefaultLeadCommunicationPreferences,
+  getLeadCommunicationPreferences,
+  getNotificationModeLabel,
+  NOTIFICATION_MODE,
+  NOTIFICATION_MODE_OPTIONS,
+  resolveNotificationDispatchPlan,
+  updateLeadCommunicationPreferences,
+  listCommunicationDeliveries,
+} from '../services/communicationDeliveryService'
+import {
+  listNotificationOutbox,
+  prepareNotificationOutbox,
+  summarizeNotificationOutbox,
+  updateNotificationOutboxStatus,
+} from '../services/notificationOutboxService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
@@ -739,10 +769,13 @@ function getSellerDocumentSlaPresentation(reviewSla = null) {
 
 function resolveSellerEmailFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
+  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
   return toCleanText(
     formData.sellerEmail ||
       formData.email ||
       formData.contactEmail ||
+      canonicalFacts.email ||
+      canonicalFacts.sellerEmail ||
       listing?.sellerEmail ||
       listing?.seller_email ||
       listing?.seller?.email,
@@ -751,11 +784,15 @@ function resolveSellerEmailFromListing(listing = {}) {
 
 function resolveSellerPhoneFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
+  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
   return toCleanText(
     formData.sellerPhone ||
       formData.phone ||
       formData.contactNumber ||
       formData.mobile ||
+      canonicalFacts.phone ||
+      canonicalFacts.sellerPhone ||
+      canonicalFacts.mobile ||
       listing?.sellerPhone ||
       listing?.seller_phone ||
       listing?.seller?.phone,
@@ -764,10 +801,15 @@ function resolveSellerPhoneFromListing(listing = {}) {
 
 function resolveSellerNameFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
+  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
   return toCleanText(
     [formData.sellerFirstName || formData.firstName, formData.sellerSurname || formData.lastName].filter(Boolean).join(' ') ||
       formData.sellerName ||
       formData.fullName ||
+      canonicalFacts.fullName ||
+      canonicalFacts.sellerName ||
+      canonicalFacts.name ||
+      [canonicalFacts.firstName, canonicalFacts.lastName].filter(Boolean).join(' ') ||
       listing?.sellerName ||
       listing?.seller_name ||
       listing?.seller?.name,
@@ -1816,6 +1858,10 @@ function AgentListingDetail() {
     buyerLeadId: '',
     expiresInDays: 7,
     clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+    offerAmount: '',
+    depositAmount: '',
+    financeType: 'cash',
+    specialConditions: '',
   })
   const [offerActionMessage, setOfferActionMessage] = useState('')
   const [offerActionError, setOfferActionError] = useState('')
@@ -1841,6 +1887,9 @@ function AgentListingDetail() {
   const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+  const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
+  const [sellerContactSaving, setSellerContactSaving] = useState(false)
+  const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
@@ -1867,6 +1916,11 @@ function AgentListingDetail() {
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
   const [sentPropertyRows, setSentPropertyRows] = useState([])
   const [communicationDeliveryRows, setCommunicationDeliveryRows] = useState([])
+  const [sellerNotificationMode, setSellerNotificationMode] = useState(NOTIFICATION_MODE.EMAIL)
+  const [sellerNotificationModeSaving, setSellerNotificationModeSaving] = useState(false)
+  const [sellerOutboxRows, setSellerOutboxRows] = useState([])
+  const [sellerOutboxLoading, setSellerOutboxLoading] = useState(false)
+  const [sellerOutboxAction, setSellerOutboxAction] = useState('')
   const [sentPropertiesLoading, setSentPropertiesLoading] = useState(false)
   const [sentPropertiesError, setSentPropertiesError] = useState('')
   const [interestedLeadsLoading, setInterestedLeadsLoading] = useState(false)
@@ -1908,7 +1962,9 @@ function AgentListingDetail() {
     setLoading(true)
     setDetailError('')
     const runtimeListings = readAgentPrivateListings()
-    setPipelineLeads(readPipelineLeads())
+    if (!isSupabaseConfigured) {
+      setPipelineLeads(readPipelineLeads())
+    }
 
     let nextListings = runtimeListings
     if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
@@ -1952,6 +2008,11 @@ function AgentListingDetail() {
   const listingOrganisationId = useMemo(
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
+  )
+
+  const sellerLeadId = useMemo(
+    () => resolveSellerLeadIdFromListing(listingRecord),
+    [listingRecord],
   )
 
   const listingActor = useMemo(() => {
@@ -2120,6 +2181,33 @@ function AgentListingDetail() {
     void refreshSentProperties()
   }, [refreshSentProperties])
 
+  const refreshSellerNotificationDelivery = useCallback(async () => {
+    if (!listingOrganisationId || !sellerLeadId || !listingRecord?.id || !isSupabaseConfigured) {
+      setSellerOutboxRows([])
+      setSellerOutboxLoading(false)
+      return
+    }
+    try {
+      setSellerOutboxLoading(true)
+      const [preferences, outbox] = await Promise.all([
+        getLeadCommunicationPreferences({ organisationId: listingOrganisationId, leadId: sellerLeadId }).catch(() => null),
+        listNotificationOutbox({ organisationId: listingOrganisationId, leadId: sellerLeadId, listingId: listingRecord.id }),
+      ])
+      const fallbackPreferences = buildDefaultLeadCommunicationPreferences({ organisationId: listingOrganisationId, leadId: sellerLeadId })
+      setSellerNotificationMode(preferences?.notificationMode || fallbackPreferences.notificationMode || NOTIFICATION_MODE.EMAIL)
+      setSellerOutboxRows(Array.isArray(outbox) ? outbox : [])
+    } catch (error) {
+      console.warn('[AgentListingDetail] seller notification outbox load failed', error)
+      setSellerOutboxRows([])
+    } finally {
+      setSellerOutboxLoading(false)
+    }
+  }, [listingOrganisationId, listingRecord?.id, sellerLeadId])
+
+  useEffect(() => {
+    void refreshSellerNotificationDelivery()
+  }, [refreshSellerNotificationDelivery])
+
   const refreshListingSuggestions = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
       setSuggestedLeadRows([])
@@ -2257,6 +2345,23 @@ function AgentListingDetail() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!listingOrganisationId || !isSupabaseConfigured) return undefined
+    let cancelled = false
+    listAgencyCrmLeadContacts(listingOrganisationId, { includeLocalFallback: false })
+      .then((snapshot) => {
+        if (!cancelled) {
+          setPipelineLeads(mapAgencyLeadSelectionRows(snapshot))
+        }
+      })
+      .catch((error) => {
+        console.warn('[AgentListingDetail] CRM lead selector load failed', error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [listingOrganisationId])
 
   function patchListing(updater) {
     if (!listingRecord) return null
@@ -2688,26 +2793,78 @@ function AgentListingDetail() {
     if (!listingRecord) return
     setOfferActionError('')
     setOfferActionMessage('')
-    const selectedLead = listingLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || ''))
+    const selectedLead = buyerOfferLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || ''))
     if (!selectedLead) {
       setOfferActionError('Select a buyer lead before generating an offer link.')
+      return
+    }
+    const buyerOfferIntegrity = assessBuyerOfferIntegrity({
+      organisationId: listingOrganisationId,
+      listing: listingRecord,
+      buyerLead: selectedLead,
+    })
+    if (!buyerOfferIntegrity.ok) {
+      setOfferActionError(buyerOfferIntegrity.message)
+      return
+    }
+    const buyerOfferEligibility = assessBuyerOfferEligibility({
+      organisationId: listingOrganisationId,
+      listing: listingRecord,
+      buyerLead: selectedLead,
+    })
+    if (!buyerOfferEligibility.eligible) {
+      setOfferActionError(buyerOfferEligibility.message)
+      return
+    }
+    const clientIntakePreference = normalizeClientIntakePreference(
+      offerInviteDraft.clientIntakePreference || selectedLead?.clientIntakePreference,
+    )
+    const agentAssistedEntry = clientIntakePreference === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED
+      ? buildAgentAssistedOfferEntry({ buyer: selectedLead, draft: offerInviteDraft })
+      : null
+    if (agentAssistedEntry && !agentAssistedEntry.ok) {
+      setOfferActionError(agentAssistedEntry.blockers.join(' '))
       return
     }
 
     try {
       setSendingOfferLink(true)
+      const buyerEmail = String(selectedLead?.email || '').trim().toLowerCase()
+      const buyerPhone = formatSouthAfricanWhatsAppNumber(selectedLead?.phone)
+      const buyerPreferences = clientIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
+        ? await getLeadCommunicationPreferences({
+            organisationId: listingOrganisationId,
+            leadId: selectedLead.leadId || selectedLead.id,
+          })
+        : null
+      const deliveryPlan = resolveOfferLinkDeliveryPlan({
+        clientIntakePreference,
+        notificationMode: buyerPreferences?.notificationMode || NOTIFICATION_MODE.EMAIL,
+        email: buyerEmail,
+        phone: buyerPhone,
+        recipientName: selectedLead?.name || '',
+      })
+      if (deliveryPlan.blockers.length) {
+        throw new Error(deliveryPlan.blockers.join(' '))
+      }
+      const listingLinkPatch = buildLeadListingLinkPatch(listingRecord)
+      await updateAgencyCrmLeadRecord(listingOrganisationId, selectedLead.leadId || selectedLead.id, listingLinkPatch)
+      setPipelineLeads((previous) => previous.map((lead) => (
+        String(lead?.leadId || lead?.id || '') === String(selectedLead.leadId || selectedLead.id)
+          ? { ...lead, ...listingLinkPatch }
+          : lead
+      )))
       const canonicalOffer = await createCanonicalOffer({
         organisationId: listingOrganisationId,
         buyerLeadId: selectedLead.leadId || selectedLead.id,
         buyerContactId: selectedLead.contactId,
         listingId: listingRecord.id,
         agentId: profile?.id || listingRecord?.agentId,
-        status: 'draft',
-        conditionsJson: {
-          clientIntakePreference: normalizeClientIntakePreference(
-            offerInviteDraft.clientIntakePreference || selectedLead?.clientIntakePreference,
-          ),
-        },
+        status: agentAssistedEntry ? 'agent_review' : 'draft',
+        offerAmount: agentAssistedEntry?.payload.offerAmount,
+        depositAmount: agentAssistedEntry?.payload.depositAmount,
+        financeType: agentAssistedEntry?.payload.financeType,
+        conditionsJson: agentAssistedEntry?.payload.conditionsJson || { clientIntakePreference },
       }, {
         actor: {
           id: profile?.id || listingRecord?.agentId || '',
@@ -2715,6 +2872,48 @@ function AgentListingDetail() {
           email: String(profile?.email || listingRecord?.assignedAgentEmail || '').trim(),
         },
       })
+
+      if (agentAssistedEntry) {
+        setOfferActionMessage('Agent-assisted offer captured for internal review. No buyer link was sent.')
+        setShowSendOfferLinkForm(false)
+        setOfferInviteDraft({
+          buyerLeadId: '',
+          expiresInDays: 7,
+          clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+          offerAmount: '',
+          depositAmount: '',
+          financeType: 'cash',
+          specialConditions: '',
+        })
+        setOffersRefreshTick((value) => value + 1)
+        return
+      }
+      const buyerName = String(selectedLead?.name || 'Buyer').trim()
+      const propertyLabel = String(listingRecord?.listingTitle || listingRecord?.propertyAddress || 'property').trim()
+      if (!deliveryPlan.deliversLink && !deliveryPlan.suppressed) {
+        const prepared = await prepareNotificationOutbox({
+          organisationId: listingOrganisationId,
+          assignedUserId: profile?.id || listingRecord?.agentId,
+          leadId: selectedLead.leadId || selectedLead.id,
+          listingId: listingRecord.id,
+          offerId: canonicalOffer?.offerId || canonicalOffer?.id || '',
+          communicationType: 'buyer_offer_hard_copy_handoff',
+          notificationMode: NOTIFICATION_MODE.AGENT_ASSISTED,
+          recipientName: buyerName,
+          recipientRole: 'buyer',
+          email: buyerEmail,
+          phone: buyerPhone,
+          subject: `Hard-copy offer pack: ${propertyLabel}`,
+          message: `Prepare the hard-copy offer pack for ${buyerName}. No portal link may be sent.`,
+          dedupeKey: `buyer-offer-hard-copy:${canonicalOffer?.offerId || canonicalOffer?.id || ''}`,
+          metadata: { clientIntakePreference, controlledDelivery: true },
+        })
+        setOfferActionMessage(`Hard-copy offer handoff prepared (${prepared.items.length} internal task). No buyer link was sent.`)
+        setShowSendOfferLinkForm(false)
+        setOfferInviteDraft({ buyerLeadId: '', expiresInDays: 7, clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, offerAmount: '', depositAmount: '', financeType: 'cash', specialConditions: '' })
+        setOffersRefreshTick((value) => value + 1)
+        return
+      }
       const { invite, link } = createOfferInvite({
         listingId: listingRecord.id,
         buyerLeadId: selectedLead.id,
@@ -2729,43 +2928,79 @@ function AgentListingDetail() {
         expiresInDays: Math.max(1, Number(offerInviteDraft.expiresInDays || 7)),
       })
 
-      const buyerName = String(selectedLead?.name || 'Buyer').trim()
-      const propertyLabel = String(listingRecord?.listingTitle || listingRecord?.propertyAddress || 'property').trim()
-      if (String(selectedLead?.email || '').trim()) {
+      const prepared = await prepareNotificationOutbox({
+        organisationId: listingOrganisationId,
+        assignedUserId: profile?.id || listingRecord?.agentId,
+        leadId: selectedLead.leadId || selectedLead.id,
+        listingId: listingRecord.id,
+        offerId: canonicalOffer?.offerId || canonicalOffer?.id || '',
+        communicationType: 'buyer_offer_link',
+        notificationMode: deliveryPlan.notificationMode,
+        recipientName: buyerName,
+        recipientRole: 'buyer',
+        email: buyerEmail,
+        phone: buyerPhone,
+        subject: `Secure offer link: ${propertyLabel}`,
+        message: `Secure offer link prepared for ${buyerName}.`,
+        dedupeKey: `buyer-offer-link:${canonicalOffer?.offerId || canonicalOffer?.id || ''}`,
+        metadata: { offerLink: link, expiresAt: invite?.expiresAt || '', controlledDelivery: true },
+      })
+      const outboxItems = prepared.items || []
+      const updateOfferOutbox = async (channel, status, errorMessage = '', provider = '') => {
+        const item = outboxItems.find((entry) => entry.channel === channel)
+        if (!item?.id) return
+        await updateNotificationOutboxStatus({ eventId: item.id, status, errorMessage, provider }).catch((error) => {
+          console.warn('[Offers] offer-link outbox status update failed', error)
+        })
+      }
+      const deliveryFailures = []
+      if (deliveryPlan.channels.includes('email')) {
         try {
           await invokeEdgeFunction('send-email', {
             body: {
               type: 'buyer_offer_link',
-              to: String(selectedLead.email || '').trim(),
+              to: buyerEmail,
               buyerName,
               propertyTitle: propertyLabel,
               offerLink: link,
               expiresAt: invite?.expiresAt || '',
             },
           })
+          await updateOfferOutbox('email', 'sent', '', 'send-email')
         } catch (error) {
-          console.error('[Offers] buyer offer email notification failed', error)
+          await updateOfferOutbox('email', 'failed', error?.message || 'Email delivery failed', 'send-email').catch(() => null)
+          deliveryFailures.push('email')
         }
       }
 
-      if (String(selectedLead?.phone || '').trim()) {
+      if (deliveryPlan.channels.includes('whatsapp')) {
         try {
           await sendWhatsAppNotification({
-            to: formatSouthAfricanWhatsAppNumber(selectedLead.phone),
+            to: buyerPhone,
             role: 'buyer',
             message: `Hi ${buyerName},\n\nYour viewing for ${propertyLabel} is complete.\n\nSubmit your secure offer here:\n${link}\n\nThis link expires on ${formatDate(invite?.expiresAt)}.\n\n- Arch9`,
           })
+          await updateOfferOutbox('whatsapp', 'sent', '', 'whatsapp')
         } catch (error) {
-          console.error('[Offers] buyer offer WhatsApp notification failed', error)
+          await updateOfferOutbox('whatsapp', 'failed', error?.message || 'WhatsApp delivery failed', 'whatsapp').catch(() => null)
+          deliveryFailures.push('WhatsApp')
         }
       }
 
-      setOfferActionMessage('Secure offer link generated and sent to the buyer.')
+      setOfferActionMessage(deliveryFailures.length
+        ? `Secure offer link generated, but ${deliveryFailures.join(' and ')} delivery failed. Check the notification outbox before retrying.`
+        : deliveryPlan.suppressed
+          ? 'Secure offer link generated for the controlled test. External delivery was suppressed and recorded in the notification outbox.'
+          : `Secure offer link sent via ${deliveryPlan.label}.`)
       setShowSendOfferLinkForm(false)
       setOfferInviteDraft({
         buyerLeadId: '',
         expiresInDays: 7,
         clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+        offerAmount: '',
+        depositAmount: '',
+        financeType: 'cash',
+        specialConditions: '',
       })
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
@@ -2899,6 +3134,10 @@ function AgentListingDetail() {
       setResendingSellerPortalLink(true)
       if (!isSupabaseConfigured) {
         throw new Error('Email sending requires Supabase to be configured.')
+      }
+      if (!resolveSellerPortalTokenFromListing(listingRecord)) {
+        await handleSendSellerOnboardingFollowUp()
+        return
       }
       const { token, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
       const invitation = await issueSellerPortalInvite(token)
@@ -3094,6 +3333,31 @@ function AgentListingDetail() {
     }
   }
 
+  async function handleSellerNotificationModeChange(nextMode) {
+    const mode = String(nextMode || '').trim()
+    setSellerNotificationMode(mode || NOTIFICATION_MODE.EMAIL)
+    if (!isSupabaseConfigured || !listingOrganisationId || !sellerLeadId) {
+      setDetailError('Save the seller lead before changing its notification delivery mode.')
+      return
+    }
+    try {
+      setSellerNotificationModeSaving(true)
+      setDetailError('')
+      const preferences = await updateLeadCommunicationPreferences({
+        organisationId: listingOrganisationId,
+        leadId: sellerLeadId,
+        updates: { notificationMode: mode },
+      }, { actor: profile })
+      setSellerNotificationMode(preferences.notificationMode)
+      setDetailMessage(`Seller notification mode set to ${getNotificationModeLabel(preferences.notificationMode)}.`)
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to update the seller notification mode.')
+      await refreshSellerNotificationDelivery()
+    } finally {
+      setSellerNotificationModeSaving(false)
+    }
+  }
+
   async function handleSendSellerOnboardingFollowUp() {
     if (!listingRecord?.id) return
     setDetailError('')
@@ -3101,7 +3365,23 @@ function AgentListingDetail() {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
     const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
+    const selectedNotificationPlan = resolveNotificationDispatchPlan({
+      mode: sellerNotificationMode,
+      email: sellerEmail,
+      phone: formatSouthAfricanWhatsAppNumber(sellerPhone),
+      recipientName: resolveSellerNameFromListing(listingRecord),
+    })
     const existingOnboardingLink = String(listingRecord?.sellerOnboarding?.link || '').trim()
+    if (isSupabaseConfigured) {
+      const sellerOnboardingIntegrity = assessSellerOnboardingIntegrity({
+        organisationId: listingOrganisationId,
+        listing: listingRecord,
+      })
+      if (!sellerOnboardingIntegrity.ok) {
+        setDetailError(sellerOnboardingIntegrity.message)
+        return
+      }
+    }
     if (!hasSellerContact) {
       if (existingOnboardingLink) {
         if (typeof navigator !== 'undefined') {
@@ -3111,6 +3391,10 @@ function AgentListingDetail() {
         return
       }
       openSellerWorkspaceSection('seller', 'Add a seller email or phone number before sending the onboarding link.')
+      return
+    }
+    if (selectedNotificationPlan.blockers.length) {
+      setDetailError(selectedNotificationPlan.blockers.join(' '))
       return
     }
 
@@ -3168,7 +3452,47 @@ function AgentListingDetail() {
       const propertyLabel = listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || 'your property'
       const agentDisplayName = getCanonicalOfferActor().name || 'your agent'
       if (isSupabaseConfigured && onboardingLink) {
-        if (isValidEmail(sellerEmail)) {
+        let outboxItems = []
+        try {
+          setSellerOutboxAction('seller_onboarding')
+          const prepared = await prepareNotificationOutbox({
+            organisationId: listingOrganisationId,
+            branchId: listingActor.branchId,
+            assignedUserId: listingActor.id,
+            leadId: sellerLeadId,
+            listingId: listingRecord.id,
+            communicationType: 'seller_onboarding_link',
+            notificationMode: selectedNotificationPlan.mode,
+            recipientName: sellerDisplayName,
+            recipientRole: 'seller',
+            email: sellerEmail,
+            phone: formatSouthAfricanWhatsAppNumber(sellerPhone),
+            subject: `Seller onboarding: ${propertyLabel}`,
+            message: `Seller onboarding link prepared for ${sellerDisplayName}.`,
+            dedupeKey: `seller-onboarding:${listingRecord.id}:${onboardingToken}`,
+            metadata: { onboardingLink, listingReference: listingRecord?.listingReference || '' },
+          })
+          outboxItems = prepared.items || []
+        } catch (error) {
+          console.warn('[AgentListingDetail] seller onboarding outbox preparation failed', error)
+          deliveryWarning = ' Delivery was sent, but could not be recorded in the outbox.'
+        }
+
+        const updateOutboxItem = async (channel, status, errorMessage = '', provider = '') => {
+          const item = outboxItems.find((entry) => entry.channel === channel)
+          if (!item?.id) return
+          await updateNotificationOutboxStatus({ eventId: item.id, status, errorMessage, provider }).catch((error) => {
+            console.warn('[AgentListingDetail] seller onboarding outbox status update failed', error)
+          })
+        }
+
+        if (selectedNotificationPlan.handoffRequired) {
+          deliveryWarning = `${deliveryWarning} Delivery is prepared for agent handoff; no external message was sent.`
+        }
+        if (selectedNotificationPlan.suppressed) {
+          deliveryWarning = `${deliveryWarning} Controlled test recipient: external delivery was suppressed and recorded in the notification outbox.`
+        }
+        if (selectedNotificationPlan.channels.includes('email') && isValidEmail(sellerEmail)) {
           try {
             const emailResponse = await invokeEdgeFunction('send-email', {
               body: {
@@ -3187,27 +3511,39 @@ function AgentListingDetail() {
               },
             })
             if (emailResponse?.error || emailResponse?.data?.error) {
-              deliveryWarning = ' Email delivery needs attention.'
+              await updateOutboxItem('email', 'failed', 'Email delivery needs attention.', 'resend')
+              deliveryWarning = `${deliveryWarning} Email delivery needs attention.`
+            } else {
+              await updateOutboxItem('email', 'sent', '', 'resend')
             }
           } catch (error) {
             console.warn('[AgentListingDetail] seller onboarding email failed', error)
-            deliveryWarning = ' Email delivery needs attention.'
+            await updateOutboxItem('email', 'failed', error?.message || 'Email delivery needs attention.', 'resend')
+            deliveryWarning = `${deliveryWarning} Email delivery needs attention.`
           }
         }
         const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(sellerPhone)
-        if (normalizedSellerPhone) {
+        if (selectedNotificationPlan.channels.includes('whatsapp') && normalizedSellerPhone) {
           try {
             const whatsappResult = await sendWhatsAppNotification({
               to: normalizedSellerPhone,
               role: 'seller',
               message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Arch9`,
             })
-            if (!whatsappResult?.ok) deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
+            if (!whatsappResult?.ok) {
+              await updateOutboxItem('whatsapp', 'failed', 'WhatsApp delivery needs attention.', 'meta')
+              deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
+            } else {
+              await updateOutboxItem('whatsapp', 'sent', '', 'meta')
+            }
           } catch (error) {
             console.warn('[AgentListingDetail] seller onboarding WhatsApp failed', error)
+            await updateOutboxItem('whatsapp', 'failed', error?.message || 'WhatsApp delivery needs attention.', 'meta')
             deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
           }
         }
+        await refreshSellerNotificationDelivery()
+        setSellerOutboxAction('')
       }
 
       if (onboardingLink && typeof navigator !== 'undefined') {
@@ -3222,6 +3558,7 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to create the seller onboarding link.')
     } finally {
       setFollowUpActionId('')
+      setSellerOutboxAction('')
     }
   }
 
@@ -3786,6 +4123,7 @@ function AgentListingDetail() {
       sentToSellerAt: offer.sentToSellerAt,
       sellerViewedAt: offer.sellerViewedAt,
       sellerReviewSession: offer.sellerReviewSession,
+      conversionCandidate: offer.conditions?.conversionCandidate || null,
       conditionsJson: offer.conditions || {},
     }))
   }, [canonicalListingOffers])
@@ -3823,10 +4161,27 @@ function AgentListingDetail() {
 
   const listingLeads = useMemo(() => {
     if (!listingRecord) return []
-    return pipelineLeads.filter((lead) => {
-      return String(lead?.unitId || '') === String(listingRecord.id) || String(lead?.unitNumber || '') === String(listingRecord.listingTitle || '')
-    })
+    return pipelineLeads.filter((lead) => isLeadLinkedToListing(lead, listingRecord))
   }, [listingRecord, pipelineLeads])
+
+  const buyerOfferLeads = useMemo(
+    () => getBuyerLeadOptions(pipelineLeads, listingRecord),
+    [listingRecord, pipelineLeads],
+  )
+  const selectedBuyerOfferLead = useMemo(
+    () => buyerOfferLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || '')) || null,
+    [buyerOfferLeads, offerInviteDraft.buyerLeadId],
+  )
+  const selectedBuyerOfferEligibility = useMemo(
+    () => selectedBuyerOfferLead
+      ? assessBuyerOfferEligibility({
+          organisationId: listingOrganisationId,
+          listing: listingRecord,
+          buyerLead: selectedBuyerOfferLead,
+        })
+      : null,
+    [listingOrganisationId, listingRecord, selectedBuyerOfferLead],
+  )
 
   const dynamicSellerRequirements = useMemo(() => {
     if (!listingRecord) return []
@@ -5207,13 +5562,148 @@ function AgentListingDetail() {
     [communicationDeliveryRows],
   )
 
+  const sellerOutboxSummary = useMemo(
+    () => summarizeNotificationOutbox(sellerOutboxRows),
+    [sellerOutboxRows],
+  )
+
   function handleEditSellerProfile() {
-    const portalLink = String(listingRecord?.sellerOnboarding?.link || listingRecord?.sellerOnboarding?.clientPortalLink || '').trim()
-    if (portalLink && typeof window !== 'undefined') {
-      window.open(portalLink, '_blank', 'noopener,noreferrer')
+    const canonicalFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const nameParts = resolveSellerNameFromListing(listingRecord).split(/\s+/).filter(Boolean)
+    setSellerContactDraft({
+      firstName: toCleanText(canonicalFacts.firstName || sellerFormData?.sellerFirstName || sellerFormData?.firstName || nameParts[0]),
+      lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
+      email: resolveSellerEmailFromListing(listingRecord),
+      phone: resolveSellerPhoneFromListing(listingRecord),
+    })
+    setSellerContactEditorOpen(true)
+    setDetailError('')
+    setDetailMessage('Edit the seller contact below. Saving does not require a portal link.')
+  }
+
+  async function handleSaveSellerContact(event) {
+    event.preventDefault()
+    if (!listingRecord?.id) return
+    const firstName = toCleanText(sellerContactDraft.firstName)
+    const lastName = toCleanText(sellerContactDraft.lastName)
+    const email = toCleanText(sellerContactDraft.email).toLowerCase()
+    const phone = toCleanText(sellerContactDraft.phone)
+    if (!isValidEmail(email) && !phone) {
+      setDetailError('Add a valid seller email or phone number before saving.')
       return
     }
-    setDetailMessage('No seller portal link is linked yet. Send the seller portal link first, then edit the seller profile from the onboarding record.')
+
+    const fullName = [firstName, lastName].filter(Boolean).join(' ')
+    const now = new Date().toISOString()
+    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const sellerCanonicalFacts = {
+      ...currentFacts,
+      firstName,
+      lastName,
+      sellerName: fullName,
+      name: fullName,
+      fullName,
+      email,
+      sellerEmail: email,
+      phone,
+      sellerPhone: phone,
+      mobile: phone,
+    }
+    const sellerCanonicalFactReadiness = {
+      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
+      sellerName: Boolean(fullName),
+      sellerEmail: Boolean(email),
+      sellerPhone: Boolean(phone),
+    }
+
+    setSellerContactSaving(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        const sellerOnboardingIntegrity = assessSellerOnboardingIntegrity({
+          organisationId: listingOrganisationId,
+          listing: listingRecord,
+        })
+        if (!sellerOnboardingIntegrity.ok) {
+          throw new Error(sellerOnboardingIntegrity.message)
+        }
+        await updatePrivateListing(listingRecord.id, {
+          sellerCanonicalFacts,
+          sellerCanonicalFactReadiness,
+          sellerCanonicalFactsUpdatedAt: now,
+        }, { includeRequirementsAndDocuments: false })
+        await updatePrivateListingOnboardingFormData(listingRecord.id, {
+          sellerFirstName: firstName,
+          firstName,
+          sellerSurname: lastName,
+          lastName,
+          sellerName: fullName,
+          fullName,
+          sellerEmail: email,
+          email,
+          sellerPhone: phone,
+          phone,
+        }, {
+          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
+          sellerType: listingRecord?.sellerType || 'individual',
+          syncRequirements: false,
+        })
+
+        const sellerLeadId = toCleanText(listingRecord?.sellerLeadId || listingRecord?.originatingCrmLeadId)
+        if (listingOrganisationId && sellerLeadId) {
+          const workspace = await fetchAgencyCrmLeadWorkspace(listingOrganisationId, sellerLeadId)
+          const contact = workspace?.contacts?.[0]
+          if (contact?.contactId) {
+            await updateAgencyCrmContactRecord(listingOrganisationId, contact.contactId, {
+              firstName,
+              lastName,
+              email,
+              phone,
+              contactType: 'Seller',
+            })
+          }
+        }
+      }
+
+      patchListing((row) => ({
+        ...row,
+        sellerName: fullName,
+        sellerEmail: email,
+        sellerPhone: phone,
+        sellerCanonicalFacts,
+        sellerCanonicalFactReadiness,
+        seller: {
+          ...(row?.seller || {}),
+          name: fullName,
+          email,
+          phone,
+        },
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: {
+            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+            sellerFirstName: firstName,
+            firstName,
+            sellerSurname: lastName,
+            lastName,
+            sellerName: fullName,
+            fullName,
+            sellerEmail: email,
+            email,
+            sellerPhone: phone,
+            phone,
+          },
+        },
+        updatedAt: now,
+      }))
+      setSellerContactEditorOpen(false)
+      setDetailMessage('Seller contact saved. You can now send the seller onboarding link.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save seller contact details.')
+    } finally {
+      setSellerContactSaving(false)
+    }
   }
 
   function handleDownloadSellerProfilePdf() {
@@ -7354,7 +7844,7 @@ function AgentListingDetail() {
                     <span className="text-sm font-semibold text-[#2d445e]">Buyer lead</span>
                     <Field as="select" value={offerInviteDraft.buyerLeadId} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, buyerLeadId: event.target.value }))}>
                       <option value="">Select buyer lead</option>
-                      {listingLeads.map((lead) => (
+                      {buyerOfferLeads.map((lead) => (
                         <option key={lead.id} value={lead.id}>
                           {lead.name || 'Buyer'} • {lead.email || lead.phone || 'No contact'}
                         </option>
@@ -7386,14 +7876,64 @@ function AgentListingDetail() {
                     </Field>
                   </label>
                 </div>
+                {selectedBuyerOfferEligibility ? (
+                  <div className={`mt-3 rounded-[12px] border px-3 py-2 text-sm ${
+                    selectedBuyerOfferEligibility.eligible
+                      ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                      : 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
+                  }`}>
+                    <p className="font-semibold">
+                      {selectedBuyerOfferEligibility.eligible ? 'Buyer eligible to receive an offer' : 'Buyer needs attention before an offer can be created'}
+                    </p>
+                    {selectedBuyerOfferEligibility.blockers.map((item) => <p key={item.code} className="mt-1">{item.message}</p>)}
+                    {selectedBuyerOfferEligibility.warnings.map((item) => <p key={item.code} className="mt-1 opacity-90">Note: {item.message}</p>)}
+                  </div>
+                ) : null}
+                {normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED ? (
+                  <div className="mt-3 grid gap-4 rounded-[14px] border border-[#d8e6f2] bg-white p-3 md:grid-cols-2">
+                    <p className="md:col-span-2 text-sm font-semibold text-[#2d445e]">Capture the buyer’s offer now. This stays internal until you send it to the seller.</p>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Offer amount *</span>
+                      <Field type="number" min="1" step="1000" value={offerInviteDraft.offerAmount} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, offerAmount: event.target.value }))} placeholder="0" />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Deposit amount</span>
+                      <Field type="number" min="0" step="1000" value={offerInviteDraft.depositAmount} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, depositAmount: event.target.value }))} placeholder="0" />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Finance</span>
+                      <Field as="select" value={offerInviteDraft.financeType} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, financeType: event.target.value }))}>
+                        <option value="cash">Cash</option>
+                        <option value="bond">Bond</option>
+                        <option value="hybrid">Hybrid</option>
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Special conditions</span>
+                      <Field value={offerInviteDraft.specialConditions} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, specialConditions: event.target.value }))} placeholder="Optional conditions" />
+                    </label>
+                  </div>
+                ) : null}
                 <p className="mt-3 text-sm text-[#6b7d93]">
-                  Keep this aligned with how the buyer wants to work: portal, agent-assisted capture, or a hard-copy pack.
+                  {normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED
+                    ? 'No buyer link will be sent. You will capture the offer above and then review it before sending it to the seller.'
+                    : normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.HARD_COPY
+                      ? 'No buyer link will be sent. Arch9 will prepare an internal hard-copy handoff for the agent.'
+                      : 'Delivery will use the buyer’s saved notification mode and be recorded in the notification outbox.'}
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={() => setShowSendOfferLinkForm(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={sendingOfferLink}>{sendingOfferLink ? 'Sending...' : 'Generate & Send Link'}</Button>
+                  <Button type="submit" disabled={sendingOfferLink || Boolean(selectedBuyerOfferLead && !selectedBuyerOfferEligibility?.eligible)}>
+                    {sendingOfferLink
+                      ? 'Saving...'
+                      : normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED
+                        ? 'Capture Agent-Assisted Offer'
+                        : normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference) === CLIENT_INTAKE_PREFERENCE.HARD_COPY
+                          ? 'Prepare Hard-Copy Handoff'
+                          : 'Generate & Send Link'}
+                  </Button>
                 </div>
               </form>
             ) : null}
@@ -7472,6 +8012,19 @@ function AgentListingDetail() {
                           {offer.viewingAppointmentId ? (
                             <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#35546c]">
                               Viewing linked
+                            </span>
+                          ) : null}
+                          {offer.conversionCandidate && [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(statusKey) ? (
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
+                              offer.conversionCandidate.status === 'ready'
+                                ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                                : 'border-[#f5d6a8] bg-[#fff8ed] text-[#9a5b11]'
+                            }`}>
+                              {offer.conversionCandidate.status === 'converted'
+                                ? 'Transaction linked'
+                                : offer.conversionCandidate.status === 'ready'
+                                  ? 'Conversion ready'
+                                  : 'Conversion needs attention'}
                             </span>
                           ) : null}
                         </div>
@@ -8392,7 +8945,7 @@ function AgentListingDetail() {
                   </Button>
                   <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />
-                    {resendingSellerPortalLink ? 'Sending...' : 'Send Seller Portal Link'}
+                    {resendingSellerPortalLink ? 'Sending...' : (resolveSellerPortalTokenFromListing(listingRecord) ? 'Send Seller Portal Link' : 'Send Seller Onboarding')}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
                     <ShieldCheck size={15} />
@@ -8400,6 +8953,111 @@ function AgentListingDetail() {
                   </Button>
                 </div>
               </div>
+
+              {sellerContactEditorOpen ? (
+                <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-[#142132]">Seller contact details</h3>
+                      <p className="mt-1 text-sm text-[#607387]">Save contact details before onboarding. A seller email or phone number is required to send the link.</p>
+                    </div>
+                    <span className="rounded-full border border-[#cfe0ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">No portal link required</span>
+                  </div>
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Contact first name
+                      <Field
+                        value={sellerContactDraft.firstName}
+                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, firstName: event.target.value }))}
+                        placeholder="Jane"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Contact surname
+                      <Field
+                        value={sellerContactDraft.lastName}
+                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, lastName: event.target.value }))}
+                        placeholder="Smith"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Email address
+                      <Field
+                        type="email"
+                        value={sellerContactDraft.email}
+                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, email: event.target.value }))}
+                        placeholder="seller@example.com"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Mobile or phone
+                      <Field
+                        type="tel"
+                        value={sellerContactDraft.phone}
+                        onChange={(event) => setSellerContactDraft((previous) => ({ ...previous, phone: event.target.value }))}
+                        placeholder="082 000 0000"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-5 flex flex-wrap justify-end gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setSellerContactEditorOpen(false)} disabled={sellerContactSaving}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" size="sm" disabled={sellerContactSaving}>
+                      {sellerContactSaving ? 'Saving...' : 'Save Seller Contact'}
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+
+              <article className="rounded-[24px] border border-[#d7e5f1] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Notification delivery</h3>
+                    <p className="mt-1 text-sm text-[#607387]">Choose exactly how seller updates are delivered. Sending seller onboarding follows this choice and records the result in the outbox.</p>
+                  </div>
+                  <div className="min-w-[220px]">
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Seller delivery mode
+                      <Field
+                        as="select"
+                        value={sellerNotificationMode}
+                        onChange={(event) => void handleSellerNotificationModeChange(event.target.value)}
+                        disabled={sellerNotificationModeSaving || !isSupabaseConfigured || !sellerLeadId}
+                      >
+                        {NOTIFICATION_MODE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    {!sellerLeadId ? <p className="mt-2 text-xs font-medium text-[#9a5b11]">Save the seller lead to persist a delivery preference.</p> : null}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#cfe0ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{getNotificationModeLabel(sellerNotificationMode)}</span>
+                  <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{sellerOutboxSummary.queued} queued</span>
+                  <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{sellerOutboxSummary.agentHandoffs} handoff{sellerOutboxSummary.agentHandoffs === 1 ? '' : 's'}</span>
+                  {sellerOutboxSummary.failed ? <span className="rounded-full border border-[#f6d7d7] bg-[#fff5f5] px-3 py-1 text-xs font-semibold text-[#b42318]">{sellerOutboxSummary.failed} failed</span> : null}
+                </div>
+                {sellerNotificationMode === NOTIFICATION_MODE.AGENT_ASSISTED ? (
+                  <p className="mt-4 rounded-[12px] border border-[#f2dfb4] bg-[#fffaf0] px-3 py-2 text-xs font-medium text-[#835c13]">Agent-assisted mode prepares a visible handoff task and does not send an external message automatically.</p>
+                ) : null}
+                <div className="mt-4 space-y-2">
+                  {sellerOutboxLoading ? <p className="text-xs text-[#607387]">Loading notification outbox…</p> : null}
+                  {!sellerOutboxLoading && sellerOutboxRows.length ? sellerOutboxRows.slice(0, 4).map((item) => (
+                    <div key={item.id} className="flex flex-col gap-2 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-[#2d445e]">{item.subject || formatStatusLabel(item.communicationType || 'Notification')}</p>
+                        <p className="mt-0.5 truncate text-xs text-[#6b7d93]">{item.handoffRequired ? 'Agent handoff' : item.recipient || 'Recipient pending'} • {formatStatusLabel(item.channel)}</p>
+                        {item.errorMessage ? <p className="mt-0.5 truncate text-xs text-[#b42318]">{item.errorMessage}</p> : null}
+                      </div>
+                      <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(item.status)}`}>{formatStatusLabel(item.status)}</span>
+                    </div>
+                  )) : null}
+                  {!sellerOutboxLoading && !sellerOutboxRows.length ? <p className="text-xs text-[#607387]">No pending seller notifications. The next seller onboarding action will make delivery explicit here.</p> : null}
+                </div>
+                {sellerOutboxAction === 'seller_onboarding' ? <p className="mt-3 text-xs font-semibold text-[#35546c]">Preparing notification outbox…</p> : null}
+              </article>
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

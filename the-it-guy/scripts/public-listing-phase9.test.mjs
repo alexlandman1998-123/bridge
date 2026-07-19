@@ -37,7 +37,7 @@ for (const marker of [
 }
 
 includes(readinessTest, 'createPublicListingLaunchPlan', 'Readiness tests should cover launch plan creation')
-includes(readinessTest, 'https://app.bridgenine.co.za/buy/old-listing', 'Readiness tests should guard canonical public URLs')
+includes(readinessTest, 'https://legacy-app.example.test/buy/old-listing', 'Readiness tests should guard canonical public URLs')
 
 assert.equal(
   packageJson.scripts['publish:public-listing'],

@@ -46,6 +46,7 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
 import { useWorkspace } from '../context/WorkspaceContext'
+import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
   FINANCE_MANAGED_BY_OPTIONS,
   ONBOARDING_STATUSES,
@@ -3047,6 +3048,13 @@ function UnitDetail() {
   useEffect(() => {
     void loadDetail()
   }, [loadDetail])
+
+  useTransactionLiveRefresh({
+    transactionId: detail?.transaction?.id,
+    onRefresh: () => loadDetail(),
+    includeNotifications: true,
+    pollingIntervalMs: 45_000,
+  })
 
   useEffect(() => {
     const requestedMenu = searchParams.get('tab') || searchParams.get('menu')

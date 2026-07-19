@@ -250,7 +250,6 @@ function getConfiguredInviteOrigin() {
     const shouldForceAppArch9 =
       hostname === 'admin.arch9.co.za' ||
       hostname === 'www.arch9.co.za' ||
-      hostname.endsWith('bridgenine.co.za') ||
       hostname.endsWith('bridge9.app')
 
     if (shouldForceAppArch9) return FALLBACK_TRANSACTION_INVITE_ORIGIN

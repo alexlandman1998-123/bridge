@@ -46,7 +46,7 @@ if (!liveMode) {
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_KEY
-const email = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@bridgenine.co.za'
+const email = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@arch9.co.za'
 const password = process.env.ATTORNEY_DEMO_PASSWORD
 
 assert(url, 'SUPABASE_URL or VITE_SUPABASE_URL is required for live verification')

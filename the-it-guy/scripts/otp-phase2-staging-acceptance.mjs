@@ -549,7 +549,7 @@ async function main() {
           packetId: packet.id,
           packetVersionId: regenerated.version.id,
           expiresInHours: 1,
-          baseUrl: 'https://app.staging.bridgenine.co.za',
+          baseUrl: 'https://legacy-app.example.test',
           organisationId,
           regenerate: true,
         })

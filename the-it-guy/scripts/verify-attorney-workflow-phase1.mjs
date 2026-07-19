@@ -3,6 +3,7 @@ import {
   getAttorneyDataRequirementsForLane,
   getAttorneyEvidenceRequirementsForStage,
   getAttorneyReadinessGatesForLane,
+  getAttorneyStageDefinition,
   getAttorneyStageDefinitionsForLane,
   getAttorneyWorkflowStatusBucket,
   normalizeAttorneyStageKey,
@@ -104,6 +105,7 @@ for (const laneKey of ['transfer', 'bond', 'cancellation']) {
 assert.equal(normalizeAttorneyStageKey('fica_requested', 'transfer'), 'buyer_fica_requested')
 assert.equal(normalizeAttorneyStageKey('fica_received', 'transfer'), 'seller_fica_received')
 assert.equal(normalizeAttorneyStageKey('rates_clearance_requested', 'transfer'), 'rates_figures_requested')
+assert.equal(getAttorneyStageDefinition('rates_figures_requested', 'transfer')?.defaultVisibility, 'client_visible')
 assert.equal(normalizeAttorneyStageKey('bank_conditions_reviewed', 'bond'), 'bank_requirements_confirmed')
 assert.equal(normalizeAttorneyStageKey('cancellation_complete', 'cancellation'), 'cancellation_close_out_complete')
 assert.equal(getAttorneyUpdateType('cancellation_complete')?.id, 'cancellation_close_out_complete')

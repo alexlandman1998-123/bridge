@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { createSystemEvent } from './leadCommunicationService'
+import { assessMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -8,6 +9,36 @@ export const COMMUNICATION_DELIVERY_CHANNELS = ['email', 'whatsapp', 'sms']
 export const COMMUNICATION_DELIVERY_PROVIDERS = ['sendgrid', 'mailgun', 'twilio', 'meta', 'internal', 'resend']
 export const COMMUNICATION_FREQUENCIES = ['immediate', 'daily', 'weekly', 'monthly']
 export const COMMUNICATION_OPT_OUT_MESSAGE = 'Buyer has opted out of this communication channel.'
+export const NOTIFICATION_MODE = {
+  EMAIL: 'email',
+  WHATSAPP: 'whatsapp',
+  EMAIL_AND_WHATSAPP: 'email_and_whatsapp',
+  AGENT_ASSISTED: 'agent_assisted',
+}
+
+export const CONTROLLED_TEST_NOTIFICATION_SUPPRESSION_REASON = 'controlled_test_recipient'
+
+export const NOTIFICATION_MODE_OPTIONS = [
+  { value: NOTIFICATION_MODE.EMAIL, label: 'Email' },
+  { value: NOTIFICATION_MODE.WHATSAPP, label: 'WhatsApp' },
+  { value: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP, label: 'Email and WhatsApp' },
+  { value: NOTIFICATION_MODE.AGENT_ASSISTED, label: 'Agent assisted' },
+]
+
+const NOTIFICATION_MODE_ALIASES = {
+  email: NOTIFICATION_MODE.EMAIL,
+  mail: NOTIFICATION_MODE.EMAIL,
+  whatsapp: NOTIFICATION_MODE.WHATSAPP,
+  whats_app: NOTIFICATION_MODE.WHATSAPP,
+  both: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  email_and_whatsapp: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  email_whatsapp: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  multi_channel: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  agent: NOTIFICATION_MODE.AGENT_ASSISTED,
+  assisted: NOTIFICATION_MODE.AGENT_ASSISTED,
+  agent_assisted: NOTIFICATION_MODE.AGENT_ASSISTED,
+  manual: NOTIFICATION_MODE.AGENT_ASSISTED,
+}
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -79,6 +110,113 @@ function normalizeFrequency(value = 'immediate') {
   return COMMUNICATION_FREQUENCIES.includes(normalized) ? normalized : 'immediate'
 }
 
+export function normalizeNotificationMode(value = '') {
+  const normalized = normalizeLower(value).replace(/[-\s]+/g, '_')
+  return NOTIFICATION_MODE_ALIASES[normalized] || NOTIFICATION_MODE.EMAIL
+}
+
+export function getNotificationModeLabel(value = '') {
+  const mode = normalizeNotificationMode(value)
+  return NOTIFICATION_MODE_OPTIONS.find((option) => option.value === mode)?.label || 'Email'
+}
+
+/**
+ * A controlled pilot actor may be recorded in the outbox, but must never be
+ * handed to an external delivery provider. The role bootstrap reserves the
+ * `.invalid` domain and the TEST — DO NOT ACTION marker for this purpose.
+ */
+export function assessNotificationRecipientSafety({ email = '', recipientName = '', metadata = {} } = {}) {
+  const normalizedEmail = normalizeLower(email)
+  const normalizedName = normalizeLower(recipientName)
+  const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}
+  const controlledTestRoleSet = normalizeText(safeMetadata.controlledTestRoleSet || safeMetadata.controlled_test_role_set)
+  const testDataProtection = assessMvpTestDataProtection({
+    payload: { email, recipientName },
+    metadata: safeMetadata,
+  })
+  const blocked = normalizedEmail.endsWith('.invalid') ||
+    normalizedName.includes('test — do not action') ||
+    normalizedName.includes('test - do not action') ||
+    Boolean(controlledTestRoleSet) ||
+    testDataProtection.isTestData
+
+  return {
+    safe: !blocked,
+    suppressed: blocked,
+    reason: blocked ? CONTROLLED_TEST_NOTIFICATION_SUPPRESSION_REASON : '',
+    message: blocked ? 'Controlled test recipient: external notification delivery is suppressed.' : '',
+  }
+}
+
+export function buildNotificationModePreferencePatch(mode = '') {
+  const normalizedMode = normalizeNotificationMode(mode)
+  if (normalizedMode === NOTIFICATION_MODE.WHATSAPP) {
+    return { emailEnabled: false, whatsappEnabled: true, preferredChannel: 'whatsapp' }
+  }
+  if (normalizedMode === NOTIFICATION_MODE.EMAIL_AND_WHATSAPP) {
+    return { emailEnabled: true, whatsappEnabled: true, preferredChannel: 'email' }
+  }
+  if (normalizedMode === NOTIFICATION_MODE.AGENT_ASSISTED) {
+    return { emailEnabled: false, whatsappEnabled: false, preferredChannel: 'email' }
+  }
+  return { emailEnabled: true, whatsappEnabled: false, preferredChannel: 'email' }
+}
+
+export function resolveNotificationModeFromPreferences(row = {}) {
+  const explicitMode = normalizeText(row.notificationMode || row.notification_mode)
+  if (explicitMode) return normalizeNotificationMode(explicitMode)
+  const emailEnabled = boolDefault(row.emailEnabled ?? row.email_enabled, true)
+  const whatsappEnabled = boolDefault(row.whatsappEnabled ?? row.whatsapp_enabled, false)
+  if (emailEnabled && whatsappEnabled) return NOTIFICATION_MODE.EMAIL_AND_WHATSAPP
+  if (whatsappEnabled) return NOTIFICATION_MODE.WHATSAPP
+  if (emailEnabled) return NOTIFICATION_MODE.EMAIL
+  return NOTIFICATION_MODE.AGENT_ASSISTED
+}
+
+/**
+ * Turns a recipient's selected notification mode into an explicit dispatch
+ * plan. Manual modes become a visible handoff, never a silent failed send.
+ */
+export function resolveNotificationDispatchPlan({ mode = '', email = '', phone = '', recipientName = '', metadata = {} } = {}) {
+  const notificationMode = normalizeNotificationMode(mode)
+  const recipientSafety = assessNotificationRecipientSafety({ email, recipientName, metadata })
+  if (recipientSafety.suppressed) {
+    return {
+      mode: notificationMode,
+      label: getNotificationModeLabel(notificationMode),
+      channels: [],
+      autoDispatch: false,
+      handoffRequired: false,
+      blockers: [],
+      suppressed: true,
+      suppressionReason: recipientSafety.reason,
+      suppressionMessage: recipientSafety.message,
+    }
+  }
+  const hasEmail = Boolean(normalizeText(email))
+  const hasPhone = Boolean(normalizeText(phone))
+  const requiresEmail = [NOTIFICATION_MODE.EMAIL, NOTIFICATION_MODE.EMAIL_AND_WHATSAPP].includes(notificationMode)
+  const requiresWhatsApp = [NOTIFICATION_MODE.WHATSAPP, NOTIFICATION_MODE.EMAIL_AND_WHATSAPP].includes(notificationMode)
+  const blockers = []
+  if (requiresEmail && !hasEmail) blockers.push('Add an email address for this notification mode.')
+  if (requiresWhatsApp && !hasPhone) blockers.push('Add a mobile number for this notification mode.')
+
+  return {
+    mode: notificationMode,
+    label: getNotificationModeLabel(notificationMode),
+    channels: [
+      ...(requiresEmail && hasEmail ? ['email'] : []),
+      ...(requiresWhatsApp && hasPhone ? ['whatsapp'] : []),
+    ],
+    autoDispatch: notificationMode !== NOTIFICATION_MODE.AGENT_ASSISTED && blockers.length === 0,
+    handoffRequired: notificationMode === NOTIFICATION_MODE.AGENT_ASSISTED,
+    blockers,
+    suppressed: false,
+    suppressionReason: '',
+    suppressionMessage: '',
+  }
+}
+
 function boolDefault(value, fallback) {
   return value === undefined || value === null ? fallback : Boolean(value)
 }
@@ -95,7 +233,7 @@ function createLocalId(prefix = 'delivery') {
 
 export function normalizeLeadCommunicationPreferences(row = {}) {
   const leadId = readId(row, ['lead_id', 'leadId'])
-  return {
+  const preferences = {
     leadId,
     organisationId: readId(row, ['organisation_id', 'organisationId']),
     emailEnabled: boolDefault(row.emailEnabled ?? row.email_enabled, true),
@@ -108,6 +246,10 @@ export function normalizeLeadCommunicationPreferences(row = {}) {
     createdAt: readDate(row, ['createdAt', 'created_at']),
     updatedAt: readDate(row, ['updatedAt', 'updated_at']),
     raw: row,
+  }
+  return {
+    ...preferences,
+    notificationMode: resolveNotificationModeFromPreferences(preferences),
   }
 }
 
@@ -134,6 +276,14 @@ function buildPreferenceDbPayload({ organisationId = '', leadId = '', updates = 
   const payload = {
     organisation_id: organisationUuid,
     lead_id: leadUuid,
+  }
+  const modePatch = updates.notificationMode !== undefined || updates.notification_mode !== undefined
+    ? buildNotificationModePreferencePatch(updates.notificationMode || updates.notification_mode)
+    : null
+  if (modePatch) {
+    payload.email_enabled = modePatch.emailEnabled
+    payload.whatsapp_enabled = modePatch.whatsappEnabled
+    payload.preferred_channel = modePatch.preferredChannel
   }
   if (updates.emailEnabled !== undefined || updates.email_enabled !== undefined) payload.email_enabled = Boolean(updates.emailEnabled ?? updates.email_enabled)
   if (updates.whatsappEnabled !== undefined || updates.whatsapp_enabled !== undefined) payload.whatsapp_enabled = Boolean(updates.whatsappEnabled ?? updates.whatsapp_enabled)
@@ -227,6 +377,15 @@ export async function unsubscribeLeadCommunications({ organisationId = '', leadI
 
 export function validateCommunicationPreferences(preferences = null, { channel = 'email', communicationType = '' } = {}) {
   if (!preferences) return { ok: false, reason: 'missing_consent', message: COMMUNICATION_OPT_OUT_MESSAGE }
+  const notificationMode = resolveNotificationModeFromPreferences(preferences)
+  if (notificationMode === NOTIFICATION_MODE.AGENT_ASSISTED) {
+    return {
+      ok: false,
+      reason: 'agent_assisted',
+      message: 'This recipient uses agent-assisted notifications. Prepare the communication for agent handoff instead.',
+      preferences,
+    }
+  }
   const normalizedChannel = normalizeChannel(channel)
   if (normalizedChannel === 'email' && !preferences.emailEnabled) return { ok: false, reason: 'email_disabled', message: COMMUNICATION_OPT_OUT_MESSAGE }
   if (normalizedChannel === 'whatsapp' && !preferences.whatsappEnabled) return { ok: false, reason: 'whatsapp_disabled', message: COMMUNICATION_OPT_OUT_MESSAGE }
@@ -558,14 +717,20 @@ export function buildCommunicationDeliveryTimeline(deliveries = []) {
 export const __communicationDeliveryServiceTestUtils = {
   buildCommunicationDeliveryPayload,
   buildDefaultLeadCommunicationPreferences,
+  buildNotificationModePreferencePatch,
   buildPreferenceDbPayload,
+  getNotificationModeLabel,
   getCommunicationPerformanceMetrics,
   getListingDeliveryStatistics,
   normalizeChannel,
   normalizeCommunicationDelivery,
   normalizeFrequency,
   normalizeLeadCommunicationPreferences,
+  normalizeNotificationMode,
   normalizeProvider,
   normalizeStatus,
+  resolveNotificationDispatchPlan,
+  assessNotificationRecipientSafety,
+  resolveNotificationModeFromPreferences,
   validateCommunicationPreferences,
 }

@@ -1059,7 +1059,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   const members = dashboardMembers.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
   const activeMembers = members.filter((member) => member.status === 'active')
   const isDalawyerDemo = toLower(resolvedFirm.name).includes('dalawyer') && toLower(authUser.email) === 'info@yakstack.co'
-  const isShowcaseDemo = isDalawyerDemo || toLower(authUser.email) === 'attorney.demo@bridgenine.co.za'
+  const isShowcaseDemo = isDalawyerDemo || toLower(authUser.email) === 'attorney.demo@arch9.co.za'
 
   const transactionsById = (transactionsRaw || []).reduce((accumulator, row) => {
     accumulator[row.id] = row

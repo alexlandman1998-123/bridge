@@ -27,7 +27,7 @@ for (const marker of [
 }
 
 includes(publicListingsService, "const publicUrl = `${host.replace(/\\/+$/g, '')}/buy/${slug}`", 'Public listing contract should always return the canonical public URL')
-includes(publicListingsTest, 'https://app.bridgenine.co.za/buy/old-listing', 'Public listing test should guard against stale stored public URLs')
+includes(publicListingsTest, 'https://legacy-app.example.test/buy/old-listing', 'Public listing test should guard against stale stored public URLs')
 includes(viteConfig, "server.middlewares.use('/api/public/listings'", 'Vite dev server should expose the public listings API')
 
 assert.equal(

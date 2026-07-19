@@ -23,6 +23,7 @@ import { captureLegalDocumentGenerationBaseline, findReconciledLegalDocumentVers
 import { resolveLegalDocumentRetryPolicy } from '../../core/documents/legalDocumentGenerationRetryPolicy'
 import { recordLegalDocumentGenerationSupportHandoff } from '../../core/documents/legalDocumentGenerationSupportHandoff'
 import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
+import { findLatestPilotDocumentFallback, isPilotDocumentFallbackVersion } from '../../core/documents/pilotDocumentFallback'
 import { appendDocumentPacketEvent, getFinalDocumentCompletionStatus } from '../../lib/documentPacketsApi'
 
 function normalizeText(value) {
@@ -238,6 +239,7 @@ function buildConditionalPackAuditSignalRows(signals = {}) {
 }
 
 function resolveVersionStatus(version = {}) {
+  if (isPilotDocumentFallbackVersion(version)) return 'pilot review draft — not for signature'
   const renderStatus = normalizeText(version?.render_status).toLowerCase()
   if (renderStatus === 'generated') return 'document generated'
   if (renderStatus === 'failed') return 'generation failed'
@@ -605,6 +607,7 @@ export default function DocumentPacketWorkflowPanel({
 
   const sectionManifest = previewState?.sectionManifest || []
   const previewHtml = previewState?.previewHtml || ''
+  const pilotFallbackVersion = findLatestPilotDocumentFallback(versions)
   const latestFinalVersion = (versions || []).find(
     (version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url),
   )
@@ -708,8 +711,8 @@ export default function DocumentPacketWorkflowPanel({
       })
       setPacketState(result.packet)
       setPreviewState(result.validation)
-      setStatusLabel('Document generated')
-      setStatusMessage(regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.')
+      setStatusLabel(result.pilotFallback ? 'Pilot review draft ready' : 'Document generated')
+      setStatusMessage(result.pilotFallback?.message || (regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.'))
       setGenerationRecovery(null)
       generationFailureCountsRef.current.clear()
       await refreshSigningSummary(result.packet?.id)
@@ -753,7 +756,7 @@ export default function DocumentPacketWorkflowPanel({
       setGenerationRecovery({ ...policy, displayMessage, baseline: generationBaseline, packetId: recoveryPacketId })
       setStatusLabel(policy.label)
       setErrorMessage(displayMessage)
-      if (policy.escalated) void ensureGenerationSupportHandoff({ ...policy, packetId: recoveryPacketId })
+      if (policy.escalated || policy.autoHandoff) void ensureGenerationSupportHandoff({ ...policy, packetId: recoveryPacketId })
     } finally {
       setLoadingAction('')
     }
@@ -1020,6 +1023,12 @@ export default function DocumentPacketWorkflowPanel({
         </div>
 
         <ValidationSummary validation={previewState} showAuditDetails={canManagePacketAdminActions} />
+        {pilotFallbackVersion ? (
+          <div className="rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs text-[#7d520d]">
+            <p className="font-semibold">Pilot review draft — not for signature</p>
+            <p className="mt-1">Correct the document issue and generate a verified version before preparing signers or sending links.</p>
+          </div>
+        ) : null}
         <SigningFieldsSummary
           summary={signingSummary}
           canManage={canManagePacketAdminActions}

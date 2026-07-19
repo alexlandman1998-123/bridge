@@ -32,12 +32,23 @@ if (!participants.length) missing.push('participants')
 if (!documents.length) missing.push('document_requirements')
 if (!lanes.length) missing.push('workflow_lanes')
 
+const passed = missing.length === 0
+const laneTypes = new Set(lanes.map((lane) => String(lane.lane_type || '').trim().toLowerCase()))
+const batchRecord = {
+  transactionId,
+  idempotencyKey: transaction?.creation_idempotency_key || null,
+  participantBootstrapComplete: participants.length >= 2,
+  documentBootstrapComplete: documents.length > 0,
+  workflowBootstrapComplete: ['main', 'finance', 'transfer'].every((laneType) => laneTypes.has(laneType)),
+}
+
 console.log(JSON.stringify({
   version: 'arch9_mvp_postdeploy_transaction_check_v1',
   transactionId,
-  passed: missing.length === 0,
+  passed,
   counts: { participants: participants.length, documents: documents.length, workflowLanes: lanes.length },
   missing,
+  batchRecord,
 }, null, 2))
 
-if (missing.length) process.exit(1)
+if (!passed) process.exit(1)

@@ -38,6 +38,7 @@ import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
+import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
 import FinanceReadinessDashboard from '../components/finance/FinanceReadinessDashboard'
@@ -67,6 +68,7 @@ import {
 } from '../core/transactions/transactionLifecycle'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
   addAttorneyTransactionUpdate,
   getAttorneyWorkflowOperationsForTransaction,
@@ -117,6 +119,7 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
+import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
@@ -7737,6 +7740,9 @@ function AttorneyTransactionDetail() {
   const [workflowNoteDraft, setWorkflowNoteDraft] = useState(null)
   const [workflowDocumentDraft, setWorkflowDocumentDraft] = useState(null)
   const [workflowSaving, setWorkflowSaving] = useState(false)
+  const [notificationResendBusyId, setNotificationResendBusyId] = useState('')
+  const [notificationResendFeedback, setNotificationResendFeedback] = useState('')
+  const [notificationResendError, setNotificationResendError] = useState('')
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
@@ -7894,6 +7900,23 @@ function AttorneyTransactionDetail() {
   const buyer = data?.buyer || null
   const development = data?.development || null
   const unit = data?.unit || null
+
+  const transactionLiveState = useTransactionLiveRefresh({
+    transactionId: transaction?.id || transactionId,
+    enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
+    includeNotifications: true,
+    pollingIntervalMs: 30_000,
+    onRefresh: async () => {
+      const operationsPromise = transaction?.id
+        ? getAttorneyWorkflowOperationsForTransaction(transaction.id, { initialize: false }).catch(() => null)
+        : Promise.resolve(null)
+      const [, operations] = await Promise.all([
+        loadData({ background: true }),
+        operationsPromise,
+      ])
+      if (operations) setWorkflowOperations(operations)
+    },
+  })
 
   useEffect(() => {
     let active = true
@@ -8978,6 +9001,11 @@ function AttorneyTransactionDetail() {
     () => (Array.isArray(workflowOperations?.lanes) ? workflowOperations.lanes : EMPTY_ARRAY),
     [workflowOperations?.lanes],
   )
+  const notificationDeliveries = useMemo(
+    () => (Array.isArray(workflowOperations?.notificationDeliveries) ? workflowOperations.notificationDeliveries : EMPTY_ARRAY),
+    [workflowOperations?.notificationDeliveries],
+  )
+  const notificationSummary = workflowOperations?.notificationSummary || {}
   const structuredDiscussionComposer = workspaceRole === 'attorney'
   const discussionLaneOptions = useMemo(
     () =>
@@ -9432,6 +9460,27 @@ function AttorneyTransactionDetail() {
     await loadData({ background: true })
   }
 
+  async function handleResendProgressNotification(delivery) {
+    if (!delivery?.id || notificationResendBusyId) return
+    setNotificationResendBusyId(delivery.id)
+    setNotificationResendFeedback('')
+    setNotificationResendError('')
+    try {
+      const result = await resendTransactionProgressNotification(delivery.id)
+      setNotificationResendFeedback(
+        result?.queued ? 'The resend is queued and will retry automatically if needed.' : 'The email resend was submitted.',
+      )
+      if (transaction?.id) {
+        const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id, { initialize: false })
+        setWorkflowOperations(operations)
+      }
+    } catch (resendError) {
+      setNotificationResendError(resendError?.message || 'Unable to resend this email right now.')
+    } finally {
+      setNotificationResendBusyId('')
+    }
+  }
+
   function openRoutingProfileModal() {
     setRoutingProfileDraft(buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}))
     setRoutingProfileError('')
@@ -9712,7 +9761,7 @@ function AttorneyTransactionDetail() {
         stepKey: getWorkflowStepSubmitKey(draft.step),
         status: draft.status,
         note: draft.note,
-        visibility: 'internal',
+        visibility: draft.visibility || null,
         workPacket: draft.workPacket || null,
       })
       setWorkflowStepDraft(null)
@@ -14069,6 +14118,16 @@ function AttorneyTransactionDetail() {
               </section>
 
               <aside className="space-y-4">
+                <TransactionNotificationDeliveryPanel
+                  deliveries={notificationDeliveries}
+                  summary={notificationSummary}
+                  connectionState={transactionLiveState.connectionState}
+                  lastRefreshAt={transactionLiveState.lastRefreshAt}
+                  busyEventId={notificationResendBusyId}
+                  feedback={notificationResendFeedback}
+                  error={notificationResendError}
+                  onResend={handleResendProgressNotification}
+                />
                 <form onSubmit={handleAddDiscussion} className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <h3 className="text-sm font-semibold text-textStrong">Add Update</h3>
                   <div className="mt-4 grid gap-3">

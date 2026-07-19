@@ -1,0 +1,95 @@
+{
+  "generatedAt": "2026-07-19T10:33:09.893Z",
+  "projectRef": "isdowlnollckzvltkasn",
+  "mode": "apply",
+  "status": "applied",
+  "authCoverage": {
+    "reported": 161,
+    "scanned": 152,
+    "errors": [
+      {
+        "page": 153,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 154,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 155,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 156,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 157,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 158,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 159,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 160,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 161,
+        "error": "500 Internal Server Error: HTTP 500"
+      }
+    ]
+  },
+  "authOperations": {
+    "total": 24,
+    "toArch9": 4,
+    "toExampleTest": 20
+  },
+  "databaseOperations": {
+    "total": 973,
+    "byRelation": {
+      "appointment_participants": 4,
+      "attorney_firms": 1,
+      "buyers": 4,
+      "contacts": 4,
+      "demo_seed_manifests": 1,
+      "document_packet_signers": 5,
+      "document_signing_fields": 5,
+      "lead_activities": 5,
+      "leads": 6,
+      "offers": 2,
+      "organisation_branches": 3,
+      "organisation_settings": 2,
+      "organisation_users": 37,
+      "organisations": 3,
+      "organization_branches": 2,
+      "partner_routing_rules": 1,
+      "private_listing_seller_onboarding": 3,
+      "private_listings": 2,
+      "profiles": 16,
+      "signup_intents": 2,
+      "transaction_participants": 385,
+      "transaction_role_players": 240,
+      "transactions": 240
+    }
+  },
+  "preservedHistoryRelations": [
+    "communication_deliveries",
+    "documents",
+    "document_packet_events",
+    "document_packet_versions",
+    "document_packets",
+    "private_listing_activity",
+    "security_audit_events",
+    "telemetry_events",
+    "transaction_events",
+    "transaction_workflow_events"
+  ],
+  "completedDatabaseOperations": 973,
+  "completedAuthOperations": 24
+}

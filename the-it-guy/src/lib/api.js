@@ -1,6 +1,11 @@
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import {
+  createDocumentGenerationContractError,
+  normalizeDocumentGenerationResponseContract,
+  validateDocumentGenerationRequestContract,
+} from './documentGenerationContract'
+import {
   MAIN_PROCESS_STAGES,
   STAGES,
   getDetailedStageFromMainStage,
@@ -128,6 +133,10 @@ import {
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import {
+  OPERATIONAL_STEP_DEFINITIONS,
+  getOperationalStepDefinition,
+} from '../core/workflows/operationalStepMapping.js'
+import {
   blockOperationalChecklistItem as blockOperationalChecklistItemService,
   completeOperationalChecklistItem as completeOperationalChecklistItemService,
   getOperationalChecklistForRole as getOperationalChecklistForRoleService,
@@ -170,6 +179,7 @@ import {
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 import {
   inferUniversalPartnerRoutingRoleTypes,
@@ -14439,8 +14449,8 @@ export async function completeOperationalChecklistItem(itemId, payload = {}) {
   return completeOperationalChecklistItemService(itemId, payload)
 }
 
-export async function blockOperationalChecklistItem(itemId, reason = '') {
-  return blockOperationalChecklistItemService(itemId, reason)
+export async function blockOperationalChecklistItem(itemId, reason = '', options = {}) {
+  return blockOperationalChecklistItemService(itemId, reason, options)
 }
 
 export async function linkChecklistItemToDocument(itemId, documentId) {
@@ -34967,13 +34977,21 @@ export async function updateTransactionSubprocessStep({
     const hasStarted = steps.some((step) => ['in_progress', 'completed'].includes(step.status))
     const nextStatus = allCompleted ? 'completed' : hasBlocked ? 'blocked' : hasStarted ? 'in_progress' : 'not_started'
 
-    const updateProcessResult = await client
+    let updateProcessResult = await client
       .from('transaction_subprocesses')
       .update({
         status: nextStatus,
+        lane_status: nextStatus,
         updated_at: new Date().toISOString(),
       })
       .eq('id', process.id)
+
+    if (updateProcessResult.error && isMissingColumnError(updateProcessResult.error, 'lane_status')) {
+      updateProcessResult = await client
+        .from('transaction_subprocesses')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', process.id)
+    }
 
     if (updateProcessResult.error && !isMissingSchemaError(updateProcessResult.error)) {
       throw updateProcessResult.error
@@ -35066,6 +35084,29 @@ export async function updateTransactionSubprocessStep({
       status: normalizedStatus,
     },
   })
+
+  const progressLane = resolvedSubprocessType === 'attorney' ? 'transfer' : resolvedSubprocessType
+  const progressStepKey = updateResult.data?.step_key || null
+  const progressDefinition = getOperationalStepDefinition(progressLane, progressStepKey)
+  if (progressDefinition?.sharedProgress) {
+    const laneSteps = OPERATIONAL_STEP_DEFINITIONS[progressLane] || []
+    const progressIndex = laneSteps.findIndex((step) => step.stepKey === progressStepKey)
+    await publishTransactionSharedProgress({
+      client,
+      definition: progressDefinition.sharedProgress,
+      transactionId,
+      status: normalizedStatus,
+      visibility: progressDefinition.sharedProgress.defaultVisibility,
+      safeExplanation: normalizedStatus === 'blocked'
+        ? 'This step is blocked while the responsible team resolves the issue.'
+        : '',
+      expectedNextStep: progressIndex >= 0 && progressIndex < laneSteps.length - 1
+        ? laneSteps[progressIndex + 1].label
+        : '',
+      sourceType: 'transaction_subprocess_step',
+      sourceId: updateResult.data?.id || stepId,
+    })
+  }
 
   return {
     step: updateResult.data,
@@ -39293,32 +39334,35 @@ export async function generateMandateDocumentFromTemplate({
   generatedByUserId = '',
   clientVisible = false,
 } = {}) {
-  const normalizedPacketId = String(packetId || '').trim()
-  if (!normalizedPacketId) {
-    throw new Error('Packet is required.')
+  const request = validateDocumentGenerationRequestContract({
+    packetId,
+    transactionId,
+    leadId,
+    renderMode,
+    templatePath,
+    templateBucket,
+    templateBase64,
+    templateFilename,
+    outputBucket,
+    outputPath,
+    placeholders,
+    sectionManifest,
+    generationPayload,
+    sourceContext,
+    branding,
+    templateVersion,
+    generatedByRole,
+    generatedByUserId,
+    clientVisible,
+  })
+  if (!request.ok) {
+    throw createDocumentGenerationContractError(
+      'GENERATION_CONTRACT_REQUEST_INVALID',
+      request.issues.map((item) => item.message).join(' '),
+      { issues: request.issues },
+    )
   }
-
-  const payload = {
-    packetId: normalizedPacketId,
-    transactionId: String(transactionId || '').trim() || undefined,
-    leadId: String(leadId || '').trim() || undefined,
-    renderMode: String(renderMode || '').trim() || undefined,
-    templatePath: String(templatePath || '').trim() || undefined,
-    templateBucket: String(templateBucket || '').trim() || undefined,
-    templateBase64: String(templateBase64 || '').trim() || undefined,
-    templateFilename: String(templateFilename || '').trim() || undefined,
-    outputBucket: String(outputBucket || '').trim() || undefined,
-    outputPath: String(outputPath || '').trim() || undefined,
-    placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
-    sectionManifest: Array.isArray(sectionManifest) ? sectionManifest : [],
-    generationPayload: generationPayload && typeof generationPayload === 'object' ? generationPayload : undefined,
-    sourceContext: sourceContext && typeof sourceContext === 'object' ? sourceContext : undefined,
-    branding: branding && typeof branding === 'object' ? branding : undefined,
-    templateVersion: String(templateVersion || '').trim() || undefined,
-    generatedByRole: String(generatedByRole || '').trim() || undefined,
-    generatedByUserId: String(generatedByUserId || '').trim() || undefined,
-    clientVisible: Boolean(clientVisible),
-  }
+  const payload = request.payload
 
   const { data, error } = await invokeEdgeFunction('generate-mandate', {
     body: payload,
@@ -39340,7 +39384,7 @@ export async function generateMandateDocumentFromTemplate({
     throw edgeError
   }
 
-  return data
+  return normalizeDocumentGenerationResponseContract(data, { packetId: payload.packetId })
 }
 
 export async function updateDocumentClientVisibility(documentId, isClientVisible) {

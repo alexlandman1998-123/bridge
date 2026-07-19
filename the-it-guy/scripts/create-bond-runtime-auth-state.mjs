@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export const BOND_RUNTIME_AUTH_DEFAULT_PATH = process.env.BOND_RUNTIME_AUTH_STATE_PATH || '/tmp/bond-runtime-auth-state.json'
 export const BOND_RUNTIME_FIXTURE_NAMESPACE = 'bond_runtime_phase5h'
-export const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@bridgenine.co.za'
+export const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@arch9.co.za'
 const ATTORNEY_AUTH_STATE_PATH = path.join('playwright', '.auth', 'staging-internal.json')
 const DEFAULT_APP_URL = 'https://app.arch9.co.za'
 

@@ -1,0 +1,494 @@
+{
+  "generatedAt": "2026-07-19T10:11:06.890Z",
+  "projectRef": "isdowlnollckzvltkasn",
+  "auth": {
+    "usersReported": 161,
+    "usersScanned": 152,
+    "matchingUsers": 24,
+    "scanErrors": [
+      {
+        "page": 153,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 154,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 155,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 156,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 157,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 158,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 159,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 160,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 161,
+        "error": "500 Internal Server Error: HTTP 500"
+      }
+    ]
+  },
+  "database": {
+    "textMatches": [
+      {
+        "relation": "appointment_participants",
+        "rowCount": 4,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "attorney_firms",
+        "rowCount": 1,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "buyers",
+        "rowCount": 4,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "communication_deliveries",
+        "rowCount": 17,
+        "matchingPaths": [
+          "recipient"
+        ]
+      },
+      {
+        "relation": "contacts",
+        "rowCount": 4,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "demo_seed_manifests",
+        "rowCount": 1,
+        "matchingPaths": [
+          "account_email"
+        ]
+      },
+      {
+        "relation": "document_packet_signers",
+        "rowCount": 5,
+        "matchingPaths": [
+          "signer_email"
+        ]
+      },
+      {
+        "relation": "document_signing_fields",
+        "rowCount": 5,
+        "matchingPaths": [
+          "completed_by_email",
+          "signer_email"
+        ]
+      },
+      {
+        "relation": "documents",
+        "rowCount": 19,
+        "matchingPaths": [
+          "uploaded_by_email"
+        ]
+      },
+      {
+        "relation": "lead_activities",
+        "rowCount": 5,
+        "matchingPaths": [
+          "activity_note"
+        ]
+      },
+      {
+        "relation": "leads",
+        "rowCount": 6,
+        "matchingPaths": [
+          "assigned_agent_email"
+        ]
+      },
+      {
+        "relation": "organisation_branches",
+        "rowCount": 2,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "organisation_users",
+        "rowCount": 37,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "organisations",
+        "rowCount": 3,
+        "matchingPaths": [
+          "company_email",
+          "support_email"
+        ]
+      },
+      {
+        "relation": "organization_branches",
+        "rowCount": 2,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "partner_routing_rules",
+        "rowCount": 1,
+        "matchingPaths": [
+          "source_scope_name"
+        ]
+      },
+      {
+        "relation": "profiles",
+        "rowCount": 16,
+        "matchingPaths": [
+          "email",
+          "full_name"
+        ]
+      },
+      {
+        "relation": "signup_intents",
+        "rowCount": 2,
+        "matchingPaths": [
+          "email"
+        ]
+      },
+      {
+        "relation": "transaction_participants",
+        "rowCount": 385,
+        "matchingPaths": [
+          "participant_email",
+          "participant_name"
+        ]
+      },
+      {
+        "relation": "transaction_role_players",
+        "rowCount": 240,
+        "matchingPaths": [
+          "contact_person",
+          "email_address",
+          "snapshot_json.email",
+          "snapshot_json.partner.email",
+          "snapshot_json.targetUserLabel"
+        ]
+      },
+      {
+        "relation": "transactions",
+        "rowCount": 240,
+        "matchingPaths": [
+          "assigned_agent_email",
+          "assigned_attorney_email",
+          "assigned_bond_originator_email",
+          "seller_email"
+        ]
+      }
+    ],
+    "jsonMatches": [
+      {
+        "relation": "document_packet_events",
+        "rowCount": 341,
+        "matchingPaths": [
+          "event_payload_json.actor_name",
+          "event_payload_json.completedByEmail",
+          "event_payload_json.signerEmail",
+          "event_payload_json.source_context.generatedDataSnapshot.agent.email",
+          "event_payload_json.source_context.generatedDataSnapshot.placeholders.agent_email",
+          "event_payload_json.source_context.generatedDataSnapshot.placeholders.seller_email",
+          "event_payload_json.source_context.generatedDataSnapshot.placeholders.seller_parties[0].email",
+          "event_payload_json.source_context.generatedDataSnapshot.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.agent.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.assignedAgentEmail",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerEmail",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.link",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboardingLink",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.onboarding.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "event_payload_json.source_context.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.link",
+          "event_payload_json.source_context.generationPayload.mandateData.agent.email",
+          "event_payload_json.source_context.generationPayload.mandateData.placeholders.agent_email",
+          "event_payload_json.source_context.generationPayload.mandateData.placeholders.seller_email",
+          "event_payload_json.source_context.generationPayload.mandateData.placeholders.seller_parties[0].email",
+          "event_payload_json.source_context.generationPayload.mandateData.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.agent.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.assignedAgentEmail",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerEmail",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.link",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboardingLink",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.onboarding.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "event_payload_json.source_context.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.link",
+          "event_payload_json.source_context.signerEmails[0]",
+          "event_payload_json.source_context.signerEmails[1]"
+        ]
+      },
+      {
+        "relation": "document_packet_versions",
+        "rowCount": 70,
+        "matchingPaths": [
+          "placeholders_resolved_json.agency.logo_url",
+          "placeholders_resolved_json.agent.email",
+          "placeholders_resolved_json.agent_email",
+          "placeholders_resolved_json.bridge.logo_dark_url",
+          "placeholders_resolved_json.bridge.logo_light_url",
+          "placeholders_resolved_json.bridgeLogoDarkUrl",
+          "placeholders_resolved_json.bridgeLogoLightUrl",
+          "placeholders_resolved_json.bridge_legal_logo_dark_url",
+          "placeholders_resolved_json.bridge_legal_logo_light_url",
+          "placeholders_resolved_json.conveyancer.email",
+          "placeholders_resolved_json.conveyancer_email",
+          "placeholders_resolved_json.organisation.email",
+          "placeholders_resolved_json.organisation.logo_dark_url",
+          "placeholders_resolved_json.organisation.logo_light_url",
+          "placeholders_resolved_json.organisation.logo_url",
+          "placeholders_resolved_json.organisationLogoDarkUrl",
+          "placeholders_resolved_json.organisationLogoUrl",
+          "placeholders_resolved_json.organisation_email",
+          "placeholders_resolved_json.organisation_logo_dark_url",
+          "placeholders_resolved_json.organisation_logo_url",
+          "placeholders_resolved_json.seller.email",
+          "placeholders_resolved_json.sellerEmail",
+          "placeholders_resolved_json.seller_email",
+          "placeholders_resolved_json.seller_parties[0].email",
+          "placeholders_resolved_json.vendor_email",
+          "validation_summary_json.generatedDataSnapshot.agent.email",
+          "validation_summary_json.generatedDataSnapshot.placeholders.agent_email",
+          "validation_summary_json.generatedDataSnapshot.placeholders.seller_email",
+          "validation_summary_json.generatedDataSnapshot.placeholders.seller_parties[0].email",
+          "validation_summary_json.generatedDataSnapshot.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.agent.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.assignedAgentEmail",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerEmail",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.link",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboardingLink",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.mandateDraft.sellerEmail",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.onboarding.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "validation_summary_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.link",
+          "validation_summary_json.generationPayload.mandateData.agent.email",
+          "validation_summary_json.generationPayload.mandateData.placeholders.agent_email",
+          "validation_summary_json.generationPayload.mandateData.placeholders.seller_email",
+          "validation_summary_json.generationPayload.mandateData.placeholders.seller_parties[0].email",
+          "validation_summary_json.generationPayload.mandateData.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.agent.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.assignedAgentEmail",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerEmail",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.link",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboardingLink",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.mandateDraft.sellerEmail",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.onboarding.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "validation_summary_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.link"
+        ]
+      },
+      {
+        "relation": "document_packets",
+        "rowCount": 14,
+        "matchingPaths": [
+          "branding_snapshot_json.email",
+          "branding_snapshot_json.organisationEmail",
+          "source_context_json.generatedDataSnapshot.agent.email",
+          "source_context_json.generatedDataSnapshot.placeholders.agent_email",
+          "source_context_json.generatedDataSnapshot.placeholders.seller_email",
+          "source_context_json.generatedDataSnapshot.placeholders.seller_parties[0].email",
+          "source_context_json.generatedDataSnapshot.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.agent.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.assignedAgentEmail",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerEmail",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.lead.sellerOnboarding.link",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.mandateDraft.sellerEmail",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.onboarding.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "source_context_json.generatedDataSnapshot.sourceSnapshot.privateListing.sellerOnboarding.link",
+          "source_context_json.generationPayload.mandateData.agent.email",
+          "source_context_json.generationPayload.mandateData.placeholders.agent_email",
+          "source_context_json.generationPayload.mandateData.placeholders.seller_email",
+          "source_context_json.generationPayload.mandateData.placeholders.seller_parties[0].email",
+          "source_context_json.generationPayload.mandateData.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.agent.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.assignedAgentEmail",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerEmail",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.formData.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.form_data.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.lead.sellerOnboarding.link",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.mandateDraft.sellerEmail",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.onboarding.canonicalSellerFacts.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.onboarding.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.readinessSummary.requirementProfile.listingData.sellerOnboarding.link",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.canonicalSellerFacts.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.formData.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.canonicalSellerFacts.seller.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.form_data.email",
+          "source_context_json.generationPayload.mandateData.sourceSnapshot.privateListing.sellerOnboarding.link",
+          "source_context_json.mandateDraft.sellerEmail",
+          "source_context_json.signerEmails[0]",
+          "source_context_json.signerEmails[1]"
+        ]
+      },
+      {
+        "relation": "offers",
+        "rowCount": 2,
+        "matchingPaths": [
+          "conditions_json.agentEmail",
+          "conditions_json.buyerEmail"
+        ]
+      },
+      {
+        "relation": "organisation_branches",
+        "rowCount": 1,
+        "matchingPaths": [
+          "metadata_json.raw.email"
+        ]
+      },
+      {
+        "relation": "organisation_settings",
+        "rowCount": 2,
+        "matchingPaths": [
+          "settings_json.agencyOnboarding.agencyInformation.mainEmailAddress",
+          "settings_json.agencyOnboarding.principalInformation.emailAddress",
+          "settings_json.preferredPartners[0].email"
+        ]
+      },
+      {
+        "relation": "private_listing_activity",
+        "rowCount": 3,
+        "matchingPaths": [
+          "metadata.sellerContactEmail"
+        ]
+      },
+      {
+        "relation": "private_listing_seller_onboarding",
+        "rowCount": 3,
+        "matchingPaths": [
+          "canonical_facts_json.seller.email",
+          "form_data.canonicalSellerFacts.seller.email",
+          "form_data.email"
+        ]
+      },
+      {
+        "relation": "private_listings",
+        "rowCount": 2,
+        "matchingPaths": [
+          "seller_canonical_facts_json.seller.email"
+        ]
+      },
+      {
+        "relation": "security_audit_events",
+        "rowCount": 150,
+        "matchingPaths": [
+          "metadata.metadata.participantEmail",
+          "metadata.metadata.participantName",
+          "metadata.metadata.partner.email",
+          "metadata.metadata.targetUserLabel",
+          "metadata.recipientEmail",
+          "metadata.targetEmail"
+        ]
+      },
+      {
+        "relation": "telemetry_events",
+        "rowCount": 3,
+        "matchingPaths": [
+          "metadata.message"
+        ]
+      },
+      {
+        "relation": "transaction_events",
+        "rowCount": 141,
+        "matchingPaths": [
+          "event_data.clientPortalLink",
+          "event_data.email",
+          "event_data.rolePlayers[0].email",
+          "event_data.rolePlayers[1].email",
+          "event_data.roleplayers[0].email",
+          "event_data.roleplayers[1].email"
+        ]
+      },
+      {
+        "relation": "transaction_role_players",
+        "rowCount": 91,
+        "matchingPaths": [
+          "snapshot_json.email",
+          "snapshot_json.partner.email",
+          "snapshot_json.targetUserLabel"
+        ]
+      },
+      {
+        "relation": "transaction_workflow_events",
+        "rowCount": 15,
+        "matchingPaths": [
+          "payload_json.payload.roleplayers[0].email",
+          "payload_json.payload.roleplayers[1].email"
+        ]
+      }
+    ],
+    "scanErrors": []
+  }
+}

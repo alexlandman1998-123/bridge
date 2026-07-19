@@ -6,13 +6,8 @@ additional_redirect_urls = [
   "https://app.arch9.co.za/auth/callback",
   "https://app.arch9.co.za/auth",
   "https://app.arch9.co.za/onboarding/profile",
-  "https://app.bridgenine.co.za/auth/callback",
-  "https://app.bridgenine.co.za/auth",
-  "https://app.bridgenine.co.za/onboarding/profile",
   "https://admin.arch9.co.za",
   "https://admin.arch9.co.za/",
-  "https://admin.bridgenine.co.za",
-  "https://admin.bridgenine.co.za/",
   "http://localhost:5173/auth/callback",
   "http://127.0.0.1:5173/auth/callback",
   "http://localhost:5175/auth/callback",
@@ -101,6 +96,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/send-whatsapp/deno.json"
 entrypoint = "./functions/send-whatsapp/index.ts"
+
+[functions.resend-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/resend-webhook/index.ts"
 
 [functions.inbound-lead-email]
 enabled = true

@@ -3,11 +3,13 @@ import fs from 'node:fs'
 import { buildLegalDocumentGenerationSupportEvent, recordLegalDocumentGenerationSupportHandoff } from '../src/core/documents/legalDocumentGenerationSupportHandoff.js'
 import { assessLegalDocumentGenerationSupportReadiness } from '../src/core/documents/legalDocumentGenerationSupportReadiness.js'
 
-const policy = { supportReference: 'LD-OTP-12345678-PDFRENDERF', code: 'PDF_RENDER_FAILED', failureCount: 2, actionKey: 'contact_support', rawError: 'customer@example.com postgres stack trace' }
+const policy = { supportReference: 'LD-OTP-12345678-PDFRENDERF', code: 'PDF_RENDER_FAILED', failureCount: 2, actionKey: 'contact_support', diagnostics: { issueCodes: ['template_source_missing'], resultAmbiguous: true }, rawError: 'customer@example.com postgres stack trace' }
 const payload = buildLegalDocumentGenerationSupportEvent({ policy, packetType: 'otp', surface: 'workspace' })
-assert.deepEqual(Object.keys(payload).sort(), ['contract', 'escalationType', 'failureCode', 'failureCount', 'packetType', 'rawDetailsIncluded', 'supportReference', 'surface'].sort())
+assert.deepEqual(Object.keys(payload).sort(), ['contract', 'diagnosticIssueCodes', 'escalationType', 'failureCode', 'failureCount', 'packetType', 'rawDetailsIncluded', 'resultAmbiguous', 'supportReference', 'surface'].sort())
 assert.equal(payload.contract, 'j4-v1')
 assert.equal(payload.rawDetailsIncluded, false)
+assert.deepEqual(payload.diagnosticIssueCodes, ['TEMPLATE_SOURCE_MISSING'])
+assert.equal(payload.resultAmbiguous, true)
 assert.doesNotMatch(JSON.stringify(payload), /customer@example\.com|postgres stack trace/)
 
 let writeArgs = null

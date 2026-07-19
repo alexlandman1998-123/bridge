@@ -35,6 +35,12 @@ import {
 import { getWorkspaceBrandingIntegrityDiagnostics } from '../services/workspaceBrandingIntegrityService'
 import { listLegalDocumentGenerationSupportHandoffs, transitionLegalDocumentGenerationSupportHandoff } from '../lib/documentPacketsApi'
 import { LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
+import {
+  getTransactionProgressPropagationHealth,
+  getTransactionProgressRolloutState,
+  runTransactionProgressRolloutAssurance,
+  setTransactionProgressRollout,
+} from '../services/transactionSharedProgressService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -223,6 +229,14 @@ export default function PlatformDiagnosticsPage() {
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [notificationDispatchLoading, setNotificationDispatchLoading] = useState(false)
   const [notificationDispatchResult, setNotificationDispatchResult] = useState(null)
+  const [propagationHealth, setPropagationHealth] = useState(null)
+  const [propagationLoading, setPropagationLoading] = useState(false)
+  const [propagationRepairLoading, setPropagationRepairLoading] = useState(false)
+  const [propagationRepairResult, setPropagationRepairResult] = useState(null)
+  const [propagationRollout, setPropagationRollout] = useState(null)
+  const [propagationRolloutLoading, setPropagationRolloutLoading] = useState(false)
+  const [propagationRolloutReason, setPropagationRolloutReason] = useState('')
+  const [propagationCanaryPercent, setPropagationCanaryPercent] = useState(10)
   const [mandateContinuity, setMandateContinuity] = useState(null)
   const [mandateContinuityLoading, setMandateContinuityLoading] = useState(false)
   const [mandateInviteBackfill, setMandateInviteBackfill] = useState(null)
@@ -437,6 +451,72 @@ export default function PlatformDiagnosticsPage() {
       setError(notificationError?.message || 'Notification automation diagnostics failed.')
     } finally {
       setNotificationLoading(false)
+    }
+  }
+
+  async function loadTransactionPropagationHealth() {
+    try {
+      setPropagationLoading(true)
+      setError('')
+      const [health, rollout] = await Promise.all([
+        getTransactionProgressPropagationHealth(),
+        getTransactionProgressRolloutState(),
+      ])
+      setPropagationHealth(health)
+      setPropagationRollout(rollout)
+      setPropagationCanaryPercent(Number(rollout?.canaryPercent || 10))
+    } catch (propagationError) {
+      setError(propagationError?.message || 'Transaction propagation diagnostics failed.')
+    } finally {
+      setPropagationLoading(false)
+    }
+  }
+
+  async function applyTransactionPropagationRepairs() {
+    const confirmed = window.confirm(
+      `Run transaction assurance in ${String(propagationRollout?.rolloutMode || 'audit_only').replaceAll('_', ' ')} mode? Client-visible wording will not be rewritten.`,
+    )
+    if (!confirmed) return
+
+    try {
+      setPropagationRepairLoading(true)
+      setError('')
+      const repairResult = await runTransactionProgressRolloutAssurance()
+      setPropagationRepairResult(repairResult)
+      setPropagationHealth(repairResult?.postHealth || await getTransactionProgressPropagationHealth())
+      setPropagationRollout(await getTransactionProgressRolloutState())
+    } catch (propagationError) {
+      setError(propagationError?.message || 'Transaction propagation repair failed.')
+    } finally {
+      setPropagationRepairLoading(false)
+    }
+  }
+
+  async function changeTransactionProgressRollout(nextMode) {
+    if (propagationRolloutReason.trim().length < 8) {
+      setError('Enter a rollout change reason of at least 8 characters.')
+      return
+    }
+    const currentMode = propagationRollout?.rolloutMode || 'audit_only'
+    const confirmed = window.confirm(
+      `Change transaction propagation rollout from ${currentMode.replaceAll('_', ' ')} to ${nextMode.replaceAll('_', ' ')}?`,
+    )
+    if (!confirmed) return
+    try {
+      setPropagationRolloutLoading(true)
+      setError('')
+      const rollout = await setTransactionProgressRollout({
+        rolloutMode: nextMode,
+        canaryPercent: propagationCanaryPercent,
+        changeReason: propagationRolloutReason,
+      })
+      setPropagationRollout(rollout)
+      setPropagationRolloutReason('')
+      setPropagationHealth(await getTransactionProgressPropagationHealth())
+    } catch (rolloutError) {
+      setError(rolloutError?.message || 'Transaction propagation rollout change failed.')
+    } finally {
+      setPropagationRolloutLoading(false)
     }
   }
 
@@ -669,6 +749,12 @@ export default function PlatformDiagnosticsPage() {
   }
 
   const notificationIssues = notificationHealth?.issues || []
+  const propagationCounts = propagationHealth?.counts || {}
+  const propagationRepairableCount = Number(propagationCounts.missingBaseline || 0)
+    + Number(propagationCounts.missingLaneProgress || 0)
+    + Number(propagationCounts.staleProfessional || 0)
+  const propagationGaps = Array.isArray(propagationHealth?.gaps) ? propagationHealth.gaps : []
+  const propagationAudits = Array.isArray(propagationHealth?.recentAudits) ? propagationHealth.recentAudits : []
   const notificationQueueResult = asDiagnosticObject(notificationDispatchResult?.queueResult)
   const notificationAutomationCounts = Object.entries(notificationHealth?.countsByAutomation || {}).slice(0, 8)
   const notificationRunRows = notificationHealth?.recentRuns || []
@@ -767,6 +853,100 @@ export default function PlatformDiagnosticsPage() {
             ) : null}
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Transaction propagation assurance</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#60758d]">
+                Detect missing or stale shared progress across transaction modules. Automated repairs are limited to deterministic professional data; client-visible wording always requires explicit review.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="header-secondary-cta" onClick={loadTransactionPropagationHealth} disabled={propagationLoading || propagationRepairLoading}>
+                {propagationLoading ? 'Checking propagation...' : 'Run propagation check'}
+              </button>
+              <button type="button" className="header-primary-cta" onClick={applyTransactionPropagationRepairs} disabled={propagationRepairLoading || !propagationRollout}>
+                {propagationRepairLoading ? 'Running...' : `Run rollout assurance${propagationRepairableCount ? ` (${propagationRepairableCount} safe gaps)` : ''}`}
+              </button>
+            </div>
+          </div>
+
+          {propagationHealth ? (
+            <div className="grid gap-4">
+              {propagationRollout ? (
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <StatCard label="Rollout mode" value={String(propagationRollout.rolloutMode || 'audit_only').replaceAll('_', ' ')} tone={propagationRollout.rolloutMode === 'full' ? 'success' : 'warning'} />
+                    <StatCard label="Canary exposure" value={`${propagationRollout.canaryPercent || 10}%`} />
+                    <StatCard label="Automatic repair" value={propagationRollout.autoRepairEnabled ? 'enabled' : 'disabled'} tone={propagationRollout.autoRepairEnabled ? 'success' : 'neutral'} />
+                    <StatCard label="Recent runs" value={propagationRollout.recentRuns?.length || 0} />
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[140px_minmax(0,1fr)]">
+                    <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">
+                      Canary percentage
+                      <input type="number" min="1" max="50" value={propagationCanaryPercent} onChange={(event) => setPropagationCanaryPercent(Number(event.target.value || 10))} className="rounded-[10px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm font-normal text-[#31485e]" />
+                    </label>
+                    <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">
+                      Change reason
+                      <input value={propagationRolloutReason} onChange={(event) => setPropagationRolloutReason(event.target.value)} placeholder="Why is this rollout mode changing?" className="rounded-[10px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm font-normal text-[#31485e]" />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="header-secondary-cta" onClick={() => changeTransactionProgressRollout('off')} disabled={propagationRolloutLoading}>Pause</button>
+                    <button type="button" className="header-secondary-cta" onClick={() => changeTransactionProgressRollout('audit_only')} disabled={propagationRolloutLoading}>Audit only</button>
+                    <button type="button" className="header-secondary-cta" onClick={() => changeTransactionProgressRollout('canary')} disabled={propagationRolloutLoading}>Start canary</button>
+                    <button type="button" className="header-primary-cta" onClick={() => changeTransactionProgressRollout('full')} disabled={propagationRolloutLoading}>Promote to full</button>
+                  </div>
+                  <p className="mt-3 text-xs text-[#60758d]">Full rollout requires zero gaps and three clean canary runs within 24 hours. Pause and audit-only changes remain available as immediate rollback controls.</p>
+                </div>
+              ) : null}
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Propagation health" value={propagationHealth.status || 'unknown'} tone={getDiagnosticStatusTone(propagationHealth.status)} />
+                <StatCard label="Total gaps" value={propagationHealth.gapCount || 0} tone={propagationHealth.gapCount ? 'warning' : 'success'} />
+                <StatCard label="Missing shared records" value={Number(propagationCounts.missingBaseline || 0) + Number(propagationCounts.missingLaneProgress || 0)} tone={(propagationCounts.missingBaseline || propagationCounts.missingLaneProgress) ? 'warning' : 'success'} />
+                <StatCard label="Client review" value={propagationCounts.staleClientVisible || 0} tone={propagationCounts.staleClientVisible ? 'critical' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Active transactions" value={propagationCounts.activeTransactions || 0} />
+                <StatCard label="Shared progress rows" value={propagationCounts.sharedProgressRows || 0} />
+                <StatCard label="Stale professional" value={propagationCounts.staleProfessional || 0} tone={propagationCounts.staleProfessional ? 'warning' : 'success'} />
+                <StatCard label="Exhausted emails" value={propagationCounts.exhaustedEmailNotifications || 0} tone={propagationCounts.exhaustedEmailNotifications ? 'critical' : 'success'} />
+              </div>
+              {propagationRepairResult ? (
+                <p className="rounded-[14px] border border-[#cfe8d8] bg-[#effaf3] px-4 py-3 text-sm text-[#236340]" role="status">
+                  Assurance completed in {String(propagationRepairResult.rolloutMode || 'audit_only').replaceAll('_', ' ')} mode: {propagationRepairResult.repairedCount || 0} record{Number(propagationRepairResult.repairedCount || 0) === 1 ? '' : 's'} repaired.
+                </p>
+              ) : null}
+              {propagationGaps.length ? (
+                <div className="overflow-x-auto rounded-[14px] border border-[#dde4ee]">
+                  <table className="w-full min-w-[680px] text-left text-sm">
+                    <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                      <tr><th className="px-4 py-3">Gap</th><th className="px-4 py-3">Process</th><th className="px-4 py-3">Transaction</th><th className="px-4 py-3">Action</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf1f6]">
+                      {propagationGaps.slice(0, 12).map((gap, index) => (
+                        <tr key={`${gap.transactionId}-${gap.processKey}-${gap.gapType}-${index}`}>
+                          <td className="px-4 py-3 font-semibold text-[#31485e]">{String(gap.gapType || 'unknown').replaceAll('_', ' ')}</td>
+                          <td className="px-4 py-3 text-[#60758d]">{gap.processKey || 'transaction'}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-[#60758d]">{gap.transactionId || '-'}</td>
+                          <td className="px-4 py-3 text-[#60758d]">{gap.gapType === 'stale_client_visible' ? 'Review wording' : 'Safe repair available'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="rounded-[14px] border border-[#cfe8d8] bg-[#effaf3] px-4 py-3 text-sm text-[#236340]">All active transaction modules agree with shared progress.</p>
+              )}
+              {propagationAudits.length ? (
+                <p className="text-xs text-[#60758d]">
+                  Last scheduled assurance run: {formatDiagnosticDate(propagationAudits[0]?.createdAt)} · {propagationAudits[0]?.repairedCount || 0} repaired · {propagationAudits[0]?.gapCount || 0} remaining.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">

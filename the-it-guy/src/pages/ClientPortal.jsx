@@ -64,6 +64,7 @@ import {
   submitServiceReview,
 } from '../lib/api'
 import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
+import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
   clearSellerPortalAccessToken,
   completeSellerPortalPasswordRecovery,
@@ -4597,6 +4598,13 @@ function ClientPortal() {
   useEffect(() => {
     void loadPortal()
   }, [loadPortal])
+
+  useTransactionLiveRefresh({
+    transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
+    onRefresh: () => loadPortal({ background: true }),
+    includeNotifications: false,
+    pollingIntervalMs: 30_000,
+  })
 
   useEffect(() => {
     if (!portal) {

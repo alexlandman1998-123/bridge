@@ -79,7 +79,7 @@ assert.equal(
 )
 
 const contract = mapPublicListingContract({
-  listing: { ...validListing, bridge_listing_public_url: 'https://app.bridgenine.co.za/buy/old-listing' },
+  listing: { ...validListing, bridge_listing_public_url: 'https://legacy-app.example.test/buy/old-listing' },
   publication: validPublication,
   media: validMedia,
   host: 'https://www.arch9.co.za',

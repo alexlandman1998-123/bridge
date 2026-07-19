@@ -71,7 +71,7 @@ const unauthorized = await anon.rpc('resolve_attorney_appointment_reschedule', {
 })
 assert.ok(unauthorized.error, 'Anonymous callers must not be able to resolve attorney reschedules')
 
-const demoEmail = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@bridgenine.co.za'
+const demoEmail = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@arch9.co.za'
 const actorProfile = await db.from('profiles').select('id').eq('email', demoEmail).maybeSingle()
 assert.equal(actorProfile.error, null, `Unable to resolve Phase 5 actor: ${actorProfile.error?.message || ''}`)
 const actorId = actorProfile.data?.id

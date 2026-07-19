@@ -1317,6 +1317,98 @@ export async function createCanonicalOffer(payload = {}, { actor = null, waitFor
   return mapOfferDbRow(data)
 }
 
+/**
+ * Persists the accepted-offer facts that a transaction conversion must use.
+ * It is intentionally small and idempotent: the offer remains the source of
+ * truth, while the candidate gives every conversion surface the same snapshot
+ * and a clear readiness result.
+ */
+export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Date().toISOString() } = {}) {
+  const conditions = jsonObject(offer.conditions || offer.conditions_json)
+  const candidate = jsonObject(conditions.conversionCandidate)
+  const organisationId = normalizeText(offer.organisationId || offer.organisation_id)
+  const offerId = normalizeText(offer.offerId || offer.id)
+  const listingId = normalizeText(offer.listingId || offer.listing_id)
+  const buyerLeadId = normalizeText(offer.buyerLeadId || offer.buyer_lead_id)
+  const buyerContactId = normalizeText(offer.buyerContactId || offer.buyer_contact_id)
+  const transactionId = normalizeText(offer.transactionId || offer.transaction_id)
+  const offerAmount = Number(offer.offerAmount || offer.offer_amount || 0)
+  const blockers = []
+  if (!organisationId) blockers.push('organisation_missing')
+  if (!offerId) blockers.push('offer_missing')
+  if (!listingId) blockers.push('listing_missing')
+  if (!buyerLeadId && !buyerContactId) blockers.push('buyer_missing')
+  if (!Number.isFinite(offerAmount) || offerAmount <= 0) blockers.push('offer_amount_missing')
+  const converted = normalizeOfferStatus(offer.status) === OFFER_STATUS.CONVERTED_TO_TRANSACTION && Boolean(transactionId)
+  return {
+    contract: 'arch9-accepted-offer-conversion-candidate-v1',
+    candidateKey: organisationId && offerId ? `${organisationId}:${offerId}` : '',
+    acceptedOfferId: offerId || null,
+    organisationId: organisationId || null,
+    listingId: listingId || null,
+    buyerLeadId: buyerLeadId || null,
+    buyerContactId: buyerContactId || null,
+    offerAmount: Number.isFinite(offerAmount) && offerAmount > 0 ? offerAmount : null,
+    financeType: normalizeText(offer.financeType || offer.finance_type || conditions.financeType) || null,
+    clientIntakePreference: normalizeClientIntakePreference(conditions.clientIntakePreference || conditions.deliveryMode),
+    status: converted ? 'converted' : blockers.length ? 'needs_attention' : 'ready',
+    blockers,
+    transactionId: transactionId || null,
+    acceptedAt: normalizeDate(offer.acceptedAt || offer.accepted_at) || now,
+    createdAt: normalizeDate(candidate.createdAt) || now,
+    updatedAt: now,
+  }
+}
+
+export async function ensureAcceptedOfferConversionCandidate({ organisationId = '', offerId = '', offer = null } = {}) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Accepted-offer conversion candidates require the canonical Supabase offers table.')
+  const scopedOrganisationId = toNullableUuid(organisationId || offer?.organisationId || offer?.organisation_id)
+  const scopedOfferId = toNullableUuid(offerId || offer?.offerId || offer?.id)
+  if (!scopedOrganisationId || !scopedOfferId) throw new Error('Accepted offer id and organisation id are required before preparing conversion.')
+
+  let canonicalOffer = offer
+  if (!canonicalOffer) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('id', scopedOfferId)
+      .eq('organisation_id', scopedOrganisationId)
+      .maybeSingle()
+    if (error) throw error
+    canonicalOffer = mapOfferDbRow(data)
+  }
+  if (!canonicalOffer) throw new Error('Accepted offer not found.')
+  if (!['accepted', 'converted_to_transaction'].includes(normalizeOfferStatus(canonicalOffer.status))) {
+    throw new Error('Only an accepted offer can prepare a transaction conversion candidate.')
+  }
+
+  const conversionCandidate = buildAcceptedOfferConversionCandidate(canonicalOffer)
+  const currentCandidate = jsonObject(canonicalOffer.conditions?.conversionCandidate)
+  const unchanged = currentCandidate.contract === conversionCandidate.contract &&
+    currentCandidate.candidateKey === conversionCandidate.candidateKey &&
+    currentCandidate.status === conversionCandidate.status &&
+    JSON.stringify(currentCandidate.blockers || []) === JSON.stringify(conversionCandidate.blockers || []) &&
+    Number(currentCandidate.offerAmount || 0) === Number(conversionCandidate.offerAmount || 0) &&
+    normalizeText(currentCandidate.transactionId) === normalizeText(conversionCandidate.transactionId)
+  if (unchanged) return { offer: canonicalOffer, candidate: currentCandidate, persisted: true }
+
+  const { data, error } = await supabase
+    .from('offers')
+    .update({
+      conditions_json: {
+        ...jsonObject(canonicalOffer.conditions),
+        conversionCandidate,
+      },
+    })
+    .eq('id', scopedOfferId)
+    .eq('organisation_id', scopedOrganisationId)
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Accepted-offer conversion candidate could not be persisted. Refresh and try again.')
+  return { offer: mapOfferDbRow(data), candidate: conversionCandidate, persisted: true }
+}
+
 export async function updateCanonicalOfferStatus(offerId, status, { organisationId = '', actor = null, patch = {} } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Offer updates require the canonical Supabase offers table.')
@@ -1352,6 +1444,16 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
 
   if (error) throw error
 
+  let mappedOffer = mapOfferDbRow(data)
+  if (data && [OFFER_STATUS.ACCEPTED, OFFER_STATUS.CONVERTED_TO_TRANSACTION].includes(nextStatus)) {
+    const candidateResult = await ensureAcceptedOfferConversionCandidate({
+      organisationId: scopedOrganisationId,
+      offerId: data.id,
+      offer: mappedOffer,
+    })
+    mappedOffer = candidateResult.offer
+  }
+
   const event = statusToEvent(nextStatus)
   if (event && data?.buyer_lead_id) {
     await applyBuyerLifecycleEvent({
@@ -1383,7 +1485,7 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
       .catch((recommendationError) => console.warn('[buyerLifecycleService] offer recommendation skipped', recommendationError))
   }
 
-  return mapOfferDbRow(data)
+  return mappedOffer
 }
 
 export async function createOfferSellerReviewSession(payload = {}, { actor = null } = {}) {
@@ -2403,6 +2505,19 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     throw new Error('Only an accepted offer can be converted to a transaction.')
   }
 
+  const candidateResult = await ensureAcceptedOfferConversionCandidate({
+    organisationId: scopedOrganisationId,
+    offerId: scopedOfferId,
+    offer: canonicalOffer,
+  })
+  canonicalOffer = candidateResult.offer
+  if (candidateResult.candidate?.status !== 'ready') {
+    const error = new Error('The accepted offer needs attention before a transaction can be created.')
+    error.code = 'ACCEPTED_OFFER_CONVERSION_CANDIDATE_BLOCKED'
+    error.details = candidateResult.candidate
+    throw error
+  }
+
   let canonicalListing = listing
   const canonicalListingId = toNullableUuid(canonicalOffer.listingId || payload?.listingId || listing?.id)
   if (canonicalListingId) {
@@ -2475,17 +2590,21 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   })
 
   const transactionId = normalizeText(created?.transactionId || created?.transactionRow?.transaction?.id)
-  if (transactionId) {
-    await finalizeAcceptedOfferTransactionLinkage({
-      organisationId: scopedOrganisationId,
-      offerId: scopedOfferId,
-      offer: canonicalOffer,
-      listing,
-      transactionId,
-      actor,
-      payload,
-    })
+  if (!transactionId) {
+    const error = new Error('Arch9 could not confirm that the transaction was persisted. No further conversion steps were started.')
+    error.code = 'ACCEPTED_OFFER_TRANSACTION_CREATE_UNCONFIRMED'
+    error.details = { acceptedOfferId: scopedOfferId, conversionCandidate: candidateResult.candidate }
+    throw error
   }
+  await finalizeAcceptedOfferTransactionLinkage({
+    organisationId: scopedOrganisationId,
+    offerId: scopedOfferId,
+    offer: canonicalOffer,
+    listing,
+    transactionId,
+    actor,
+    payload,
+  })
 
   return attachLegalHandoff(created, transactionId)
 }

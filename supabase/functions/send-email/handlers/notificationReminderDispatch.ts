@@ -7,6 +7,7 @@ import {
 } from "../content/bridgeEmailLayout.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendNotificationReminderDispatchPayload } from "../types.ts";
+import { assessControlledTestRecipient } from "../utils/controlledTestRecipient.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
@@ -825,6 +826,11 @@ export async function handleNotificationReminderDispatchEmail(
 
     const recipientEmail = normalizeText(event.recipient_email).toLowerCase();
     const content = buildReminderEmail(event, req);
+    const recipientSafety = assessControlledTestRecipient({
+      email: recipientEmail,
+      recipientName: asRecord(event.payload_json).recipientName,
+      metadata: event.metadata_json,
+    });
 
     if (dryRun) {
       results.push({
@@ -833,6 +839,8 @@ export async function handleNotificationReminderDispatchEmail(
         recipientEmail,
         subject: content.subject,
         dryRun: true,
+        suppressed: recipientSafety.suppressed,
+        suppressionReason: recipientSafety.reason || null,
       });
       continue;
     }
@@ -866,6 +874,32 @@ export async function handleNotificationReminderDispatchEmail(
         automationKey,
         ok: false,
         error: "missing_recipient_email",
+      });
+      continue;
+    }
+
+    if (recipientSafety.suppressed) {
+      const metadata = asRecord(event.metadata_json);
+      await supabase
+        .from("notification_events")
+        .update({
+          status: "skipped",
+          error_message: null,
+          last_dispatch_error: null,
+          metadata_json: {
+            ...metadata,
+            notificationSuppressed: true,
+            notificationSuppressionReason: recipientSafety.reason,
+            notificationSuppressedAt: new Date().toISOString(),
+          },
+        })
+        .eq("id", event.id);
+      results.push({
+        eventId: event.id,
+        automationKey,
+        ok: true,
+        skipped: true,
+        reason: recipientSafety.reason,
       });
       continue;
     }

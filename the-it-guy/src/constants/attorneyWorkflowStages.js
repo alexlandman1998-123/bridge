@@ -1,3 +1,7 @@
+import {
+  createTransactionProgressDefinition,
+} from '../core/transactions/sharedTransactionProgressContract.js'
+
 export const ATTORNEY_WORKFLOW_LANES = {
   transfer: {
     laneKey: 'transfer',
@@ -109,9 +113,29 @@ function stage({
   requiredData = [],
   requiredDocuments = [],
   requiresNote = false,
+  professionalProgressText = '',
+  clientProgressTitle = '',
+  clientProgressText = '',
 }) {
   const lane = normalizeLaneKey(laneKey)
   const laneMeta = ATTORNEY_WORKFLOW_LANES[lane]
+  const processLabel = lane === 'transfer'
+    ? 'Property transfer'
+    : lane === 'bond'
+      ? 'Bond registration'
+      : 'Bond cancellation'
+  const sharedProgress = createTransactionProgressDefinition({
+    processKey: lane,
+    processLabel,
+    stepKey: key,
+    ownerRole: ownerRole || laneMeta.role,
+    defaultVisibility,
+    clientVisibleAllowed,
+    professionalTitle: updateLabel || label,
+    professionalDescription: professionalProgressText || description,
+    clientTitle: clientProgressTitle || `${processLabel} update`,
+    clientDescription: clientProgressText || `${processLabel} is currently at: ${label}.`,
+  })
   return {
     key,
     label,
@@ -130,6 +154,7 @@ function stage({
     requiredData,
     requiredDocuments,
     requiresNote,
+    sharedProgress,
   }
 }
 
@@ -407,6 +432,10 @@ export const ATTORNEY_WORKFLOW_STAGE_DEFINITIONS = {
       label: 'Rates Figures Requested',
       description: 'Municipal rates figures have been requested.',
       actionLabel: 'Request Rates Figures',
+      defaultVisibility: 'client_visible',
+      professionalProgressText: 'Municipal rates clearance figures have been requested and the transaction is awaiting the municipality.',
+      clientProgressTitle: 'Rates clearance requested',
+      clientProgressText: 'The attorneys have requested the municipal rates clearance figures and are awaiting the municipality.',
       aliases: ['rates_clearance_requested', 'clearances_requested'],
       statusBucket: ATTORNEY_WORKFLOW_STATUS_BUCKETS.waitingOnParty,
       requiredData: [
@@ -1256,6 +1285,7 @@ export function getAttorneyWorkflowUpdateOptions(laneKey) {
     requiresNote: definition.requiresNote || false,
     statusBucket: definition.statusBucket,
     readinessGate: definition.readinessGate,
+    sharedProgress: definition.sharedProgress,
   }))
 }
 
@@ -1273,7 +1303,12 @@ export function getAttorneyWorkflowStageTemplates(laneKey) {
     evidenceRequirements: [...(definition.evidenceRequirements || [])],
     requiredData: (definition.requiredData || []).map(cloneWithoutAppliesWhen),
     requiredDocuments: [...(definition.requiredDocuments || [])],
+    sharedProgress: definition.sharedProgress,
   }))
+}
+
+export function getAttorneySharedProgressDefinition(stageKey, laneKey = null) {
+  return getAttorneyStageDefinition(stageKey, laneKey)?.sharedProgress || null
 }
 
 export function getAttorneyDataRequirementsForLane(laneKey, facts = {}) {

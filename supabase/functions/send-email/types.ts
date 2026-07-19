@@ -214,6 +214,16 @@ export type SendNotificationReminderDispatchPayload = {
   now?: string;
 };
 
+export type SendTransactionProgressDispatchPayload = {
+  type: "transaction_progress_dispatch" | "transaction_progress_resend";
+  transactionId?: string;
+  transaction_id?: string;
+  eventId?: string;
+  event_id?: string;
+  resend?: boolean;
+  limit?: number;
+};
+
 export type SendTransactionPartnerInvitationPayload = {
   type: "transaction_partner_invitation" | "partner_transaction_invite";
   transactionId?: string;

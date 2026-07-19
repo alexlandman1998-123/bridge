@@ -1947,6 +1947,14 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
     ? canonicalSellerFacts.property
     : {}
+  const canonicalSellerName = pickFirstText(
+    canonicalSellerFacts.fullName,
+    canonicalSellerFacts.sellerName,
+    canonicalSellerFacts.name,
+    [canonicalSellerFacts.firstName, canonicalSellerFacts.lastName].filter(Boolean).join(' '),
+  )
+  const canonicalSellerEmail = pickFirstText(canonicalSellerFacts.email, canonicalSellerFacts.sellerEmail).toLowerCase()
+  const canonicalSellerPhone = pickFirstText(canonicalSellerFacts.phone, canonicalSellerFacts.sellerPhone, canonicalSellerFacts.mobile)
   const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
   const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
   const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
@@ -1999,6 +2007,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     sectional_title_number: sectionalTitleNumber,
     sectionalTitleScheme: sectionalTitleNumber,
     sellerType: row.seller_type || '',
+    sellerName: canonicalSellerName,
+    sellerEmail: canonicalSellerEmail,
+    sellerPhone: canonicalSellerPhone,
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
     mandateStatus: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
@@ -2145,9 +2156,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     mandatePacket: mandatePacket || null,
     commission: commissionTerms,
     seller: {
-      name: '',
-      email: '',
-      phone: '',
+      name: canonicalSellerName,
+      email: canonicalSellerEmail,
+      phone: canonicalSellerPhone,
     },
     sellerOnboarding: onboarding
       ? {
@@ -5053,6 +5064,21 @@ export async function sendSellerOnboarding(
   const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
     ? existingQuery.data.form_data
     : {}
+  const listingSellerFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+    ? listing.sellerCanonicalFacts
+    : {}
+  const sellerFirstName = pickFirstText(
+    existingFormData.sellerFirstName,
+    existingFormData.firstName,
+    listingSellerFacts.firstName,
+  )
+  const sellerSurname = pickFirstText(
+    existingFormData.sellerSurname,
+    existingFormData.lastName,
+    listingSellerFacts.lastName,
+  )
+  const resolvedSellerEmail = normalizeText(sellerContactEmail || existingFormData.sellerEmail || existingFormData.email || listingSellerFacts.email || listingSellerFacts.sellerEmail).toLowerCase()
+  const resolvedSellerPhone = normalizeText(sellerContactPhone || existingFormData.sellerPhone || existingFormData.phone || listingSellerFacts.phone || listingSellerFacts.sellerPhone || listingSellerFacts.mobile)
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
@@ -5065,6 +5091,15 @@ export async function sendSellerOnboarding(
     marital_regime: normalizeNullableText(maritalRegime),
     form_data: {
       ...existingFormData,
+      sellerFirstName,
+      firstName: sellerFirstName,
+      sellerSurname,
+      lastName: sellerSurname,
+      sellerName: pickFirstText(existingFormData.sellerName, listingSellerFacts.fullName, listingSellerFacts.sellerName, [sellerFirstName, sellerSurname].filter(Boolean).join(' ')),
+      sellerEmail: resolvedSellerEmail,
+      email: resolvedSellerEmail,
+      sellerPhone: resolvedSellerPhone,
+      phone: resolvedSellerPhone,
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',

@@ -4,6 +4,7 @@ import { evaluateMvpOnboardingGate } from './mvpOnboardingGate.js'
 import { evaluateMvpOtpGate } from './mvpOtpGate.js'
 import { evaluateMvpFinanceGate } from './mvpFinanceGate.js'
 import { evaluateMvpTransferGate } from './mvpTransferGate.js'
+import { buildMvpWorkflowGateBoard } from './mvpWorkflowGateBoard.js'
 
 export const MVP_TRANSACTION_TRUTH_VERSION = 'arch9_mvp_transaction_truth_v1'
 
@@ -206,6 +207,9 @@ export function buildMvpTransactionTruth({
   const otpGate = evaluateMvpOtpGate({ routingProfile, participants, documentRequirements })
   const financeGate = evaluateMvpFinanceGate({ routingProfile, participants, documentRequirements })
   const transferGate = evaluateMvpTransferGate({ routingProfile, participants, documentRequirements })
+  const workflowGateBoard = buildMvpWorkflowGateBoard({ routingProfile, participants, documentRequirements, workflowLanes })
+  const currentGateKey = stageMeta.rank === 0 ? 'onboarding' : stageMeta.rank === 1 ? 'otp' : stageMeta.rank === 2 ? 'finance' : 'transfer'
+  const currentGate = workflowGateBoard.gates.find((gate) => gate.key === currentGateKey) || null
   const workflowBlockers = buildWorkflowBlockers(workflowLanes)
   const scopeBlockers = launchScope.issues.map((item) => ({
     key: `scope:${item.field}:${item.code}`,
@@ -272,10 +276,12 @@ export function buildMvpTransactionTruth({
     nextAction,
     documents,
     participants: participantSummary,
+    workflow: workflowGateBoard,
+    gates: workflowGateBoard.gates,
     recentActivity,
     readiness: {
       status: summaryStatus,
-      canProgress: launchScope.supported && blockers.length === 0,
+      canProgress: launchScope.supported && blockers.length === 0 && currentGate?.satisfied === true,
       launchScopeStatus: launchScope.status,
       outstandingDocumentCount: documents.outstandingCount,
       missingParticipantCount: participantSummary.missing.length,

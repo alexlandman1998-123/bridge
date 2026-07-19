@@ -204,7 +204,7 @@ function createFixturePassword() {
 
 function createFixtureEmail() {
   const token = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
-  return `qa.agency.runtime.unrelated+${token}@bridgenine.co.za`
+  return `qa.agency.runtime.unrelated+${token}@example.test`
 }
 
 async function persistIsolationEnvIfNeeded(report, config, options) {

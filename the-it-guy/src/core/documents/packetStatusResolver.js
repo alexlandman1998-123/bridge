@@ -10,6 +10,7 @@ import { normalizeDocumentLifecycleState } from './documentLifecycle'
 import { resolveSigningOperationalStatus } from './signingOperationalStatus'
 import { buildSigningActivityHistory } from './signingActivityHistory'
 import { buildSigningCompletionCertificate } from './signingCompletionCertificate'
+import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
 
 const PACKET_STATUS_CACHE_TTL_MS = 1500
 const cachedPacketStatuses = new Map()
@@ -159,7 +160,8 @@ function resolveLifecycleStateFromPacket({
       normalizeText(version?.final_signed_file_path) ||
       normalizeText(version?.final_signed_file_url),
   )
-  const hasGeneratedVersion = versionRows.some((version) => normalizeKey(version?.render_status) === 'generated')
+  const hasGeneratedVersion = Boolean(findLatestSignableGeneratedVersion(versionRows))
+  const latestIsPilotFallback = isPilotDocumentFallbackVersion(latestVersion)
   const allSignersSigned = signingSummary?.allSignersSigned === true
 
   if (status === 'archived' || status === 'voided' || lifecycleState === 'archived') {
@@ -208,6 +210,13 @@ function resolveLifecycleStateFromPacket({
     return {
       state: 'READY_TO_SEND',
       reason: 'PDF and signing preparation are ready to send.',
+    }
+  }
+
+  if (latestIsPilotFallback && !hasGeneratedVersion) {
+    return {
+      state: 'PILOT_FALLBACK',
+      reason: 'A pilot review draft is available, but it cannot be sent or signed until a verified document is generated.',
     }
   }
 
@@ -284,7 +293,7 @@ export function normalizeMandateSigningStatus({
   }
   const latestRenderStatus = normalizeKey(versionRows[0]?.render_status)
   if (latestRenderStatus === 'failed') return 'failed'
-  if (versionRows.some((version) => normalizeKey(version?.render_status) === 'generated') || normalizeKey(packet?.status) === 'generated') return 'generated'
+  if (findLatestSignableGeneratedVersion(versionRows) || (normalizeKey(packet?.status) === 'generated' && !isPilotDocumentFallbackVersion(versionRows[0]))) return 'generated'
   return 'draft'
 }
 
@@ -342,7 +351,7 @@ function shouldLoadSigningSummary(packet = null, versions = []) {
 
 function selectSigningSummaryVersionId(packet = null, versions = []) {
   const rows = Array.isArray(versions) ? versions : []
-  const generatedVersion = rows.find((version) => normalizeKey(version?.render_status) === 'generated')
+  const generatedVersion = findLatestSignableGeneratedVersion(rows)
   if (generatedVersion?.id) return generatedVersion.id
 
   const finalSignedVersion = rows.find(

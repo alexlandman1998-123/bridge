@@ -18,6 +18,8 @@ import {
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { listAgencyCrmLeadContacts } from '../lib/agencyCrmRepository'
+import { getBuyerLeadOptions, mapAgencyLeadSelectionRows } from '../lib/agencyLeadSelection'
 import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
 import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingForTransaction } from '../services/universalPartnerRoutingService'
 import Button from './ui/Button'
@@ -904,6 +906,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             isSupabaseConfigured ? fetchDevelopmentOptions() : Promise.resolve([]),
           ])
           const organisationId = normalizeText(settingsContext?.organisation?.id || workspace?.id)
+          if (isSupabaseConfigured && organisationId) {
+            try {
+              const leadSnapshot = await listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false })
+              setPipelineRows(getBuyerLeadOptions(mapAgencyLeadSelectionRows(leadSnapshot)))
+            } catch (error) {
+              console.warn('[Transactions] CRM buyer lead selector load failed.', error)
+            }
+          }
           const partnerFallbackContext = {
             organisationId,
             role: normalizeKey(currentMembership?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role || profile?.role),

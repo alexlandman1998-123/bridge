@@ -15,10 +15,15 @@ export function buildMvpTransactionControlBoard(truth = {}) {
     stage: truth.stage || { key: 'UNKNOWN', label: 'Stage not set', rank: 0 },
     status: truth.readiness?.status || 'incomplete',
     nextAction: truth.nextAction || null,
-    gates: GATES.map(([key, label, readinessKey]) => ({
-      key, label, satisfied: truth.readiness?.[readinessKey] === true,
-      blockers: blockers.filter((blocker) => blocker.type === key || blocker.type === 'onboarding' && key === 'onboarding' || blocker.type === 'otp' && key === 'otp' || blocker.type === 'finance' && key === 'finance' || blocker.type === 'transfer' && key === 'transfer'),
-    })),
+    gates: GATES.map(([key, label, readinessKey]) => {
+      const evaluated = Array.isArray(truth.gates) ? truth.gates.find((gate) => gate.key === key) : null
+      return {
+        key,
+        label,
+        satisfied: evaluated ? evaluated.satisfied : truth.readiness?.[readinessKey] === true,
+        blockers: evaluated?.blockers || blockers.filter((blocker) => blocker.type === key),
+      }
+    }),
     blockers,
     counts: {
       blockers: blockers.length,

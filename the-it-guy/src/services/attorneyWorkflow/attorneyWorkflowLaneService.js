@@ -32,6 +32,10 @@ import {
   normalizeAttorneyWorkflowWorkPacket,
 } from '../../constants/attorneyWorkflowUsability.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
+import {
+  getTransactionProgressNotifications,
+  publishTransactionSharedProgress,
+} from '../transactionSharedProgressService.js'
 
 const LANE_META = {
   transfer: {
@@ -137,6 +141,41 @@ function getLaneStages(laneKey) {
   return getAttorneyStageKeysForLane(laneKey)
 }
 
+function getNextAttorneyStageLabel(laneKey, stepKey) {
+  const stages = getLaneStages(laneKey)
+  const index = stages.indexOf(normalizeAttorneyStageKey(stepKey, laneKey))
+  return index >= 0 && index < stages.length - 1 ? getStageLabel(stages[index + 1], laneKey) : ''
+}
+
+function getSafeAttorneyProgressExplanation(status) {
+  if (status === 'blocked') return 'This step is blocked while the responsible team resolves the issue.'
+  if (status === 'waiting') return 'Awaiting action from the responsible party.'
+  return ''
+}
+
+async function publishAttorneySharedProgress(client, {
+  transactionId,
+  laneKey,
+  stepKey,
+  status,
+  sourceType,
+  sourceId,
+}) {
+  const definition = getAttorneyStageDefinition(stepKey, laneKey)?.sharedProgress
+  if (!definition) return null
+  return publishTransactionSharedProgress({
+    client,
+    definition,
+    transactionId,
+    status,
+    visibility: definition.defaultVisibility,
+    safeExplanation: getSafeAttorneyProgressExplanation(status),
+    expectedNextStep: getNextAttorneyStageLabel(laneKey, stepKey),
+    sourceType,
+    sourceId,
+  })
+}
+
 const STEP_STATUS_RANK = {
   completed: 5,
   blocked: 4,
@@ -232,6 +271,7 @@ function mapStep(row, laneKey = null) {
     ownerType: row.owner_type || 'attorney',
     sortOrder: row.sort_order || 0,
     visibilityScope: row.visibility_scope || 'internal',
+    sharedProgress: definition?.sharedProgress || null,
     updatedAt: row.updated_at || null,
   }
 }
@@ -761,11 +801,12 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   }
 
   const laneIds = laneRows.map((row) => row.id).filter(Boolean)
-  let [steps, updates, history, documentRequests] = await Promise.all([
+  let [steps, updates, history, documentRequests, notificationDeliveries] = await Promise.all([
     fetchSteps(client, laneIds),
     fetchLaneUpdates(client, normalizedTransactionId),
     fetchLaneHistory(client, normalizedTransactionId),
     fetchLaneDocumentRequests(client, normalizedTransactionId),
+    getTransactionProgressNotifications(normalizedTransactionId, { client, limit: 100 }).catch(() => []),
   ])
   let stepsBySubprocessId = steps.reduce((accumulator, step) => {
     if (!accumulator[step.subprocess_id]) accumulator[step.subprocess_id] = []
@@ -907,6 +948,14 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     lanes,
     missingRequiredRoles: workflow.missingRequiredRoles,
     assignments,
+    notificationDeliveries,
+    notificationSummary: {
+      total: notificationDeliveries.length,
+      queued: notificationDeliveries.filter((item) => ['prepared', 'queued', 'processing'].includes(item.status)).length,
+      sent: notificationDeliveries.filter((item) => ['sent', 'delivered'].includes(item.status)).length,
+      failed: notificationDeliveries.filter((item) => item.status === 'failed').length,
+      whatsappPending: notificationDeliveries.filter((item) => item.channel === 'whatsapp' && item.status === 'skipped').length,
+    },
     permissions: {
       canViewLegalWorkspace: true,
       canViewInternalNotes: Boolean(baselineContext?.canViewInternalNotes),
@@ -1233,6 +1282,15 @@ export async function updateAttorneyWorkflowLaneStage({
     },
   })
 
+  await publishAttorneySharedProgress(client, {
+    transactionId: normalizedTransactionId,
+    laneKey: normalizedLaneKey,
+    stepKey: normalizedStageKey,
+    status: nextLaneStatus,
+    sourceType: 'attorney_workflow_lane',
+    sourceId: lane.id,
+  })
+
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }
 
@@ -1243,7 +1301,7 @@ export async function updateAttorneyWorkflowStepStatus({
   stepKey = null,
   status = 'in_progress',
   note = '',
-  visibility = 'internal',
+  visibility = null,
   workPacket = null,
 } = {}) {
   const client = requireClient()
@@ -1253,19 +1311,11 @@ export async function updateAttorneyWorkflowStepStatus({
   const normalizedStepKey = normalizeAttorneyStageKey(stepKey, normalizedLaneKey)
   const normalizedStatus = normalizeStepStatus(status, 'not_started')
   const normalizedNote = String(note || '').trim()
-  const normalizedVisibility = normalizeVisibility(visibility)
   const workPacketMetadata = buildWorkPacketMetadata(workPacket)
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
   if (!stepId && !normalizedStepKey) throw new Error('Workflow step is required.')
 
   await assertCanUpdateLane({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
-  const permissionContext = await getAttorneyLegalPermissionContext({
-    userId: actor.id,
-    transactionId: normalizedTransactionId,
-    attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
-  })
-  assertCanPublishVisibility(permissionContext, normalizedVisibility)
-
   const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
   let stepQuery = client
     .from('transaction_subprocess_steps')
@@ -1279,6 +1329,21 @@ export async function updateAttorneyWorkflowStepStatus({
     throw stepResult.error
   }
   if (!stepResult.data) throw new Error('Workflow step not found.')
+
+  const resolvedStepKey = normalizeAttorneyStageKey(
+    normalizedStepKey || stepResult.data.step_key,
+    normalizedLaneKey,
+  )
+  const stageDefinition = getAttorneyStageDefinition(resolvedStepKey, normalizedLaneKey)
+  const normalizedVisibility = normalizeVisibility(
+    visibility || stageDefinition?.defaultVisibility || 'professional_shared',
+  )
+  const permissionContext = await getAttorneyLegalPermissionContext({
+    userId: actor.id,
+    transactionId: normalizedTransactionId,
+    attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+  })
+  assertCanPublishVisibility(permissionContext, normalizedVisibility)
 
   const atomicUpdate = await client.rpc('bridge_update_attorney_workflow_step', {
     p_transaction_id: normalizedTransactionId,
@@ -1301,6 +1366,15 @@ export async function updateAttorneyWorkflowStepStatus({
     }
     throw atomicUpdate.error
   }
+
+  await publishAttorneySharedProgress(client, {
+    transactionId: normalizedTransactionId,
+    laneKey: normalizedLaneKey,
+    stepKey: resolvedStepKey,
+    status: normalizedStatus,
+    sourceType: 'attorney_workflow_step',
+    sourceId: stepResult.data.id,
+  })
 
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }

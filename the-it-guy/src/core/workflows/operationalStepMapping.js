@@ -1,4 +1,8 @@
-import { normalizeFinanceType } from '../transactions/financeType'
+import { normalizeFinanceType } from '../transactions/financeType.js'
+import {
+  createTransactionProgressDefinition,
+  TRANSACTION_PROGRESS_VISIBILITY,
+} from '../transactions/sharedTransactionProgressContract.js'
 
 export const OPERATIONAL_ACTION_TYPES = [
   'confirmation',
@@ -402,6 +406,33 @@ export const OPERATIONAL_STEP_DEFINITIONS = {
   ],
 }
 
+const OPERATIONAL_PROCESS_LABELS = Object.freeze({
+  finance: 'Finance and bond origination',
+  transfer: 'Property transfer',
+  bond: 'Bond registration',
+  agent_oversight: 'Transaction coordination',
+})
+
+for (const [laneKey, definitions] of Object.entries(OPERATIONAL_STEP_DEFINITIONS)) {
+  for (const definition of definitions) {
+    const processLabel = OPERATIONAL_PROCESS_LABELS[laneKey] || laneKey
+    definition.sharedProgress = createTransactionProgressDefinition({
+      processKey: laneKey,
+      processLabel,
+      stepKey: definition.stepKey,
+      ownerRole: definition.ownerRole,
+      defaultVisibility: definition.clientVisible
+        ? TRANSACTION_PROGRESS_VISIBILITY.client
+        : TRANSACTION_PROGRESS_VISIBILITY.professional,
+      clientVisibleAllowed: definition.clientVisible,
+      professionalTitle: definition.label,
+      professionalDescription: definition.professionalProgressText || `${definition.label}.`,
+      clientTitle: `${processLabel} update`,
+      clientDescription: definition.clientUpdateText || '',
+    })
+  }
+}
+
 export function getOperationalStepDefinition(laneKey, stepKey) {
   const lane = String(laneKey || '')
     .trim()
@@ -438,4 +469,8 @@ export function getOperationalStepsForLane(
 
 export function isClientVisibleOperationalStep(step = null) {
   return Boolean(step?.clientVisible)
+}
+
+export function getOperationalSharedProgressDefinition(laneKey, stepKey) {
+  return getOperationalStepDefinition(laneKey, stepKey)?.sharedProgress || null
 }

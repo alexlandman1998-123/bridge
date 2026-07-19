@@ -6,8 +6,16 @@ const migrationSource = readFileSync(
   new URL('../../supabase/migrations/202607160021_attorney_workflow_phase1_foundation.sql', import.meta.url),
   'utf8',
 )
+const crossModuleVisibilityMigrationSource = readFileSync(
+  new URL('../../supabase/migrations/202607190001_transaction_workflow_cross_module_visibility.sql', import.meta.url),
+  'utf8',
+)
 const serviceSource = readFileSync(
   new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url),
+  'utf8',
+)
+const pageSource = readFileSync(
+  new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url),
   'utf8',
 )
 
@@ -51,6 +59,8 @@ function verifyAtomicCompletionContract() {
 
   assert.match(serviceSource, /client\.rpc\('bridge_update_attorney_workflow_step'/)
   assert.match(serviceSource, /p_work_packet:\s*workPacketMetadata\.workPacket \|\| null/)
+  assert.match(serviceSource, /stageDefinition\?\.defaultVisibility \|\| 'professional_shared'/)
+  assert.match(pageSource, /visibility:\s*draft\.visibility \|\| null/)
   assert.match(serviceSource, /Phase 1 database foundation is deployed/)
 
   const stepUpdateStart = serviceSource.indexOf('export async function updateAttorneyWorkflowStepStatus')
@@ -60,8 +70,18 @@ function verifyAtomicCompletionContract() {
   assert.doesNotMatch(stepUpdateSource, /insertTransactionEvent\(/)
 }
 
+function verifyCrossModuleVisibilityContract() {
+  assert.match(crossModuleVisibilityMigrationSource, /transaction_subprocesses_select_cross_module/)
+  assert.match(crossModuleVisibilityMigrationSource, /transaction_subprocess_steps_select_cross_module/)
+  assert.match(crossModuleVisibilityMigrationSource, /'professional_shared'/)
+  assert.match(crossModuleVisibilityMigrationSource, /transaction_subprocess_steps_select_client_portal/)
+  assert.match(crossModuleVisibilityMigrationSource, /visibility_scope = 'client_visible'/)
+  assert.match(crossModuleVisibilityMigrationSource, /transaction_events_select_client_portal/)
+}
+
 verifyCanonicalBackfill()
 verifyExtensibleEventContract()
 verifyAtomicCompletionContract()
+verifyCrossModuleVisibilityContract()
 
 console.log('Attorney workflow Phase 1 foundation verification passed.')

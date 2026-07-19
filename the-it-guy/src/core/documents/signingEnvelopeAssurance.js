@@ -1,5 +1,6 @@
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile.js'
 import { resolveMandateSecondarySignerConfig } from '../../lib/mandateSignatureRules.js'
+import { isPilotDocumentFallbackVersion } from './pilotDocumentFallback.js'
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : ''
@@ -40,6 +41,7 @@ export function assessSigningEnvelope({ packet = {}, version = {}, signers = [],
     Number(packet.current_version_number || packet.currentVersionNumber) !== Number(version.version_number || version.versionNumber) ||
     key(version.render_status || version.renderStatus) !== 'generated'
   ) reasons.push('E3_VERSION_BINDING_INVALID')
+  if (isPilotDocumentFallbackVersion(version)) reasons.push('E3_PILOT_FALLBACK_NOT_SIGNABLE')
   if (!['signing_prep', 'sent', 'partially_signed', 'completed'].includes(packetStatus)) {
     reasons.push('E3_PACKET_NOT_READY_TO_SEND')
   }

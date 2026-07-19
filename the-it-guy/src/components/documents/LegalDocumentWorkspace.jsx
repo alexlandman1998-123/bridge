@@ -82,6 +82,7 @@ import {
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
+import { findLatestPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from '../../core/documents/pilotDocumentFallback'
 import { buildDocumentRoleGuidance } from '../../core/documents/documentRoleGuidance'
 import { buildDocumentRoleActions } from '../../core/documents/documentRoleActions'
 import { buildDocumentResponsibility } from '../../core/documents/documentResponsibility'
@@ -133,6 +134,7 @@ function hasLoadedWorkspaceSnapshot(status = null) {
 
 function hasUsablePacketVersionForSigning(version = null) {
   if (!normalizeText(version?.id)) return false
+  if (isPilotDocumentFallbackVersion(version)) return false
   const renderStatus = normalizeKey(version?.render_status)
   return !renderStatus || ['generated', 'draft'].includes(renderStatus)
 }
@@ -143,8 +145,7 @@ function getUsablePacketVersionForSigning(versions = []) {
 }
 
 function getGeneratedPacketVersionForSigning(versions = []) {
-  const rows = Array.isArray(versions) ? versions : []
-  return rows.find((version) => normalizeKey(version?.render_status) === 'generated') || null
+  return findLatestSignableGeneratedVersion(versions)
 }
 
 function getSigningVersionSnapshot(status = null, fallbackVersion = null) {
@@ -6015,6 +6016,7 @@ export default function LegalDocumentWorkspace({
           ? 'Send for Signature'
           : primaryLabel
   const hasGeneratedMandateVersion = Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id)
+  const pilotFallbackVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
   const showGeneratePdfButton =
     legalPermissions.canGenerate &&
     typeof onGenerate === 'function' &&
@@ -6130,7 +6132,8 @@ export default function LegalDocumentWorkspace({
           }
         }
       }
-      setActionFeedback(generationResult?.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
+      const generatedPilotFallback = generationResult?.pilotFallback || findLatestPilotDocumentFallback(generationResult?.status?.versions || [])
+      setActionFeedback(generatedPilotFallback?.message || generationResult?.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
       generationFailureCountsRef.current.clear()
     } catch (error) {
       if (renderFreeze?.freezeId) {
@@ -6176,7 +6179,7 @@ export default function LegalDocumentWorkspace({
       const displayMessage = `${policy.message} Next step: ${policy.nextAction}`
       setGenerationRecovery({ ...policy, displayMessage, packetId: recoveryPacketId })
       setLoadError(displayMessage)
-      if (policy.escalated) void ensureGenerationSupportHandoff({ ...policy, displayMessage, packetId: recoveryPacketId })
+      if (policy.escalated || policy.autoHandoff) void ensureGenerationSupportHandoff({ ...policy, displayMessage, packetId: recoveryPacketId })
     } finally {
       setActionProgressMessage('')
       actionBusyRef.current = false
@@ -6443,6 +6446,12 @@ export default function LegalDocumentWorkspace({
               <div className="mb-5">
                 <DocumentOutcomeNotice model={outcomeFeedback} onDismiss={() => setActionFeedback('')} />
               </div>
+            ) : null}
+            {pilotFallbackVersion ? (
+              <article className="mb-5 rounded-[18px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
+                <p className="font-semibold">Pilot review draft — not for signature</p>
+                <p className="mt-1">This preview is internal review material only. Correct the issue and generate a verified document before preparing signatures, downloading a signing copy, or sending anything to a client.</p>
+              </article>
             ) : null}
             {loadError ? (
               <article className="mb-5 rounded-[20px] border border-[#f6ddd7] bg-[#fff6f3] px-4 py-4 text-sm text-[#973824]">

@@ -8,7 +8,7 @@ import {
   getAttorneyStageLabel,
 } from '../src/constants/attorneyWorkflowStages.js'
 
-const TARGET_EMAIL = String(process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@bridgenine.co.za').trim().toLowerCase()
+const TARGET_EMAIL = String(process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@arch9.co.za').trim().toLowerCase()
 const SEED_KEY = 'attorney-demo-full-workflows-v1'
 const ENVIRONMENT = String(process.env.ATTORNEY_DEMO_ENVIRONMENT || 'staging').trim() || 'staging'
 const UUID_NAMESPACE = 'bridge9-attorney-demo-seed-v1'
@@ -256,13 +256,13 @@ const scenarios = [
     },
     buyer: {
       name: 'Mia van der Merwe',
-      email: 'mia.vdm.demo@bridgenine.co.za',
+      email: 'mia.vdm.demo@example.test',
       phone: '+27 82 555 0142',
       ageGroup: '35-44',
     },
     seller: {
       name: 'Johan and Elna Pretorius',
-      email: 'pretorius.sellers.demo@bridgenine.co.za',
+      email: 'pretorius.sellers.demo@example.test',
       phone: '+27 72 555 0188',
     },
     agent: {
@@ -332,13 +332,13 @@ const scenarios = [
     },
     buyer: {
       name: 'Thabo Mokoena',
-      email: 'thabo.mokoena.demo@bridgenine.co.za',
+      email: 'thabo.mokoena.demo@example.test',
       phone: '+27 83 555 0197',
       ageGroup: '45-54',
     },
     seller: {
       name: 'Grant and Nicola Fraser',
-      email: 'fraser.sellers.demo@bridgenine.co.za',
+      email: 'fraser.sellers.demo@example.test',
       phone: '+27 71 555 0104',
     },
     agent: {
@@ -644,13 +644,13 @@ const scenarios = [
     },
     buyer: {
       name: 'Aisha Khan',
-      email: 'aisha.khan.demo@bridgenine.co.za',
+      email: 'aisha.khan.demo@example.test',
       phone: '+27 84 555 0172',
       ageGroup: '25-34',
     },
     seller: {
       name: 'Sipho Ndlovu',
-      email: 'sipho.ndlovu.demo@bridgenine.co.za',
+      email: 'sipho.ndlovu.demo@example.test',
       phone: '+27 73 555 0168',
     },
     agent: {

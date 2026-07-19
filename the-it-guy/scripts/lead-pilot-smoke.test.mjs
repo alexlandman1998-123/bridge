@@ -89,7 +89,7 @@ assert.equal(outboundSmoke.payload.to, 'pilot@arch9.co.za')
 assert.match(outboundSmoke.payload.subject, /Lead module email smoke outbound-web/)
 assert.match(outboundSmoke.payload.html, /Lead module property-share email path/)
 
-assert.equal(isAllowedSmokeRecipient('pilot@arch9.co.za', ['arch9.co.za', 'bridgenine.co.za']), true)
+assert.equal(isAllowedSmokeRecipient('pilot@arch9.co.za', ['arch9.co.za']), true)
 assert.equal(isAllowedSmokeRecipient('pilot@app.arch9.co.za', ['arch9.co.za']), true)
 assert.equal(isAllowedSmokeRecipient('client@example.com', ['arch9.co.za']), false)
 

@@ -215,7 +215,7 @@ function requireConfig(env, report, options) {
     actorPassword: normalizeText(env.AGENCY_RUNTIME_AGENT_PASSWORD || env.STAGING_INTERNAL_PASSWORD),
     inboundSecret: normalizeText(env.INBOUND_LEAD_EMAIL_WEBHOOK_SECRET),
     outboundRecipient: normalizeEmail(options.recipient || env.LEAD_PILOT_SMOKE_TO_EMAIL),
-    allowedRecipientDomains: normalizeText(env.LEAD_PILOT_SMOKE_ALLOWED_EMAIL_DOMAINS || 'arch9.co.za,bridgenine.co.za')
+    allowedRecipientDomains: normalizeText(env.LEAD_PILOT_SMOKE_ALLOWED_EMAIL_DOMAINS || 'arch9.co.za')
       .split(',')
       .map((item) => normalizeLower(item))
       .filter(Boolean),

@@ -1,17 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "admin.bridgenine.co.za"
-        }
-      ],
-      "destination": "https://admin.arch9.co.za/:path*",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     {
       "source": "/((?!assets/).*)",

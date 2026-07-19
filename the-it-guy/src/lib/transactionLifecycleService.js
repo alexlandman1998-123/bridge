@@ -1,12 +1,14 @@
 import { generateId } from './agentListingStorage'
 import { isUnsafeFallbackAllowed } from './envValidation'
+import { assertMvpAtomicTransactionCreation } from '../core/transactions/mvpAtomicTransactionCreation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { WorkspaceContextError, logUnsafeFallbackBlocked } from '../services/workspaceResolutionService'
 import { prepareMvpTransactionCreationCommand } from '../core/transactions/mvpTransactionCreationCommand.js'
-import { buildMvpTransactionParticipantBootstrap } from '../core/transactions/mvpTransactionParticipantBootstrap.js'
+import { buildMvpTransactionParticipantBootstrap, MVP_CONTROLLED_TEST_ROLE_SET } from '../core/transactions/mvpTransactionParticipantBootstrap.js'
 import { buildMvpTransactionDocumentBootstrap } from '../core/transactions/mvpTransactionDocumentBootstrap.js'
 import { buildMvpTransactionWorkflowBootstrap } from '../core/transactions/mvpTransactionWorkflowBootstrap.js'
+import { assessMvpTestDataProtection, assertMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -862,7 +864,16 @@ export async function createTransactionFromLeadOverride({
     throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
 
-  const routingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
+  const resolvedRoutingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
+  const testDataProtection = assessMvpTestDataProtection({ payload, listing, lead })
+  assertMvpTestDataProtection(testDataProtection, {
+    testMode: payload?.testMode === true || payload?.test_mode === true,
+    controlledTestRoleSet: payload?.controlledTestRoleSet || payload?.controlled_test_role_set,
+  })
+  const routingProfile = {
+    ...resolvedRoutingProfile,
+    testDataProtection,
+  }
   const creationCommand = prepareMvpTransactionCreationCommand({
     routingProfile,
     organisationId: nextOrganisationId,
@@ -1052,6 +1063,9 @@ export async function createTransactionFromLeadOverride({
         name: baseInsertPayload.assigned_agent,
         email: nextAssignedAgentEmail,
       },
+      controlledTestRoleSet: payload?.testMode === true && payload?.controlledTestRoleSet === MVP_CONTROLLED_TEST_ROLE_SET
+        ? MVP_CONTROLLED_TEST_ROLE_SET
+        : null,
     })
     baseInsertPayload.document_bootstrap = buildMvpTransactionDocumentBootstrap(routingProfile)
     baseInsertPayload.workflow_bootstrap = buildMvpTransactionWorkflowBootstrap(routingProfile)
@@ -1060,6 +1074,15 @@ export async function createTransactionFromLeadOverride({
       p_payload: baseInsertPayload,
     })
     if (atomicResult.error) throw atomicResult.error
+
+    assertMvpAtomicTransactionCreation({
+      result: atomicResult.data,
+      organisationId: nextOrganisationId,
+      listingId: nextListingId,
+      leadId: nextLeadId,
+      acceptedOfferId,
+      idempotencyKey: creationCommand.idempotencyKey,
+    })
 
     const insertedRow = atomicResult.data?.transaction || null
     if (!insertedRow?.id) {

@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-07-19T10:10:50Z",
+  "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+  "projects": [
+    {
+      "id": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "name": "bridge",
+      "bridgenineDomains": ["app.bridgenine.co.za"],
+      "arch9Domains": ["app.arch9.co.za"]
+    },
+    {
+      "id": "prj_RuTSG3dagotAizJUQcGqN1GwuJCx",
+      "name": "bridge-website",
+      "bridgenineDomains": ["bridgenine.co.za", "www.bridgenine.co.za"],
+      "arch9Domains": ["arch9.co.za", "www.arch9.co.za"]
+    },
+    {
+      "id": "prj_JBkQScGdF2GAWmSY9LUCuHbnAeC4",
+      "name": "bridge-listings",
+      "bridgenineDomains": ["bridgenine.co.za", "www.bridgenine.co.za"],
+      "arch9Domains": []
+    }
+  ],
+  "staleLocalProjectLink": {
+    "id": "prj_UBUboNzbfFH5vNfaWgKE6heEgrK7",
+    "name": "bridge-admin",
+    "result": "404 Not Found and absent from the connected team project list"
+  }
+}

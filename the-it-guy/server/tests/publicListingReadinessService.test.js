@@ -80,7 +80,7 @@ assert.deepEqual(
 assert.equal(buildPublicListingPublicationPayload(listing, {}).title, 'Modern Family Home')
 assert.equal(buildPublicListingPublicationPayload(listing, {}).asking_price, 3250000)
 assert.equal(
-  buildPublicListingUrl({ ...listing, bridge_listing_public_url: 'https://app.bridgenine.co.za/buy/old-listing' }, publication),
+  buildPublicListingUrl({ ...listing, bridge_listing_public_url: 'https://legacy-app.example.test/buy/old-listing' }, publication),
   'https://www.arch9.co.za/buy/modern-family-home-bedfordview-gauteng-11111111',
 )
 

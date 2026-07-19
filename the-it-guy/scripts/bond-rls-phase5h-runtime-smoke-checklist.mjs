@@ -3,7 +3,7 @@ import fs from 'node:fs'
 const DEFAULT_METADATA_PATH = process.env.BOND_RUNTIME_FIXTURE_METADATA || '/tmp/bond-runtime-fixtures.json'
 const DEFAULT_AUTH_STATE_PATH = process.env.BOND_RUNTIME_AUTH_STATE_PATH || '/tmp/bond-runtime-auth-state.json'
 const BOND_RUNTIME_FIXTURE_NAMESPACE = 'bond_runtime_phase5h'
-const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@bridgenine.co.za'
+const ATTORNEY_FIXTURE_EMAIL = 'qa.attorney+canonical@arch9.co.za'
 
 const REQUIRED_ROLE_KEYS = [
   'personal_originator_owner',

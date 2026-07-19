@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+const migration = await readFile('../supabase/migrations/202607190005_transaction_progress_propagation_assurance_phase6.sql', 'utf8')
+const cron = await readFile('api/cron/transaction-progress-notifications.js', 'utf8')
+const service = await readFile('src/services/transactionSharedProgressService.js', 'utf8')
+const diagnosticsPage = await readFile('src/pages/PlatformDiagnosticsPage.jsx', 'utf8')
+const auditScript = await readFile('scripts/transaction-cross-module-propagation-audit.mjs', 'utf8')
+const vercel = JSON.parse(await readFile('vercel.json', 'utf8'))
+
+assert.match(migration, /create table if not exists public\.transaction_progress_propagation_audits/i)
+assert.match(migration, /bridge_transaction_progress_propagation_health_phase6/i)
+assert.match(migration, /bridge_reconcile_transaction_progress_phase6/i)
+assert.match(migration, /missing_baseline/i)
+assert.match(migration, /missing_lane_progress/i)
+assert.match(migration, /stale_client_visible/i)
+assert.match(migration, /progress\.visibility = 'professional_shared'/i)
+assert.match(migration, /phase6_reconciliation/i)
+assert.match(migration, /Platform administrator access is required/i)
+assert.match(migration, /grant execute on function public\.bridge_reconcile_transaction_progress_phase6[\s\S]*authenticated, service_role/i)
+
+assert.equal(vercel.crons?.length, 1)
+assert.equal(vercel.crons[0].path, '/api/cron/transaction-progress-notifications')
+assert.equal(vercel.crons[0].schedule, '*/5 * * * *')
+assert.match(cron, /bridge_run_transaction_progress_assurance_phase7/)
+assert.match(cron, /Promise\.all/)
+assert.match(cron, /Transaction progress assurance run started/)
+assert.match(cron, /durationMs/)
+assert.match(cron, /gapCount/)
+assert.match(cron, /repairedCount/)
+
+assert.match(service, /getTransactionProgressPropagationHealth/)
+assert.match(service, /reconcileTransactionProgressPropagation/)
+assert.match(service, /transaction_progress_propagation_audits/)
+assert.match(diagnosticsPage, /Transaction propagation assurance/)
+assert.match(diagnosticsPage, /Run rollout assurance/)
+assert.match(diagnosticsPage, /Client-visible wording will not be rewritten/)
+assert.match(diagnosticsPage, /stale_client_visible/)
+
+assert.match(auditScript, /transaction_shared_progress/)
+assert.match(auditScript, /transaction_progress_propagation_audits/)
+assert.match(auditScript, /sharedProgressPropagation/)
+assert.match(auditScript, /activeMissingBaseline/)
+assert.match(auditScript, /progressedLanesMissingSharedProgress/)
+
+console.log('Transaction progress Phase 6 propagation audit, safe reconciliation, scheduling, logging, and operator controls passed.')

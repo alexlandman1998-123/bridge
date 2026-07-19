@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-07-19T10:27:57.244Z",
+  "files": [
+    {
+      "path": "migration-evidence/2026-07-19-bridgenine-removal-phase3/backups/auth-users.json",
+      "bytes": 19517,
+      "sha256": "717a92559d80300fc4f8311dee11471ba3bec2853a9d6dacc71b337fbdefd68e"
+    },
+    {
+      "path": "migration-evidence/2026-07-19-bridgenine-removal-phase3/backups/database-records.json",
+      "bytes": 43005294,
+      "sha256": "6455f0160110c121161c26edd09b4dca7d202fc89f3120b4acc08312ea390bb8"
+    },
+    {
+      "path": "migration-evidence/2026-07-19-bridgenine-removal-phase3/backups/database-schema-candidates.json",
+      "bytes": 39327,
+      "sha256": "f56eed4ce5096be96664921aae887b5e512f2a390c137685094b04d1747df565"
+    },
+    {
+      "path": "migration-evidence/2026-07-19-bridgenine-removal-phase3/backups/scan-errors.json",
+      "bytes": 922,
+      "sha256": "589f753f8de5139f076aecc32b7b5849092b32a73c4af283d142f4203cc61954"
+    }
+  ]
+}

@@ -30,6 +30,7 @@ import {
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import { handleNotificationReminderDispatchEmail } from "./handlers/notificationReminderDispatch.ts";
 import { handleAttorneyQuoteEmail } from "./handlers/attorneyQuote.ts";
+import { handleTransactionProgressDispatchEmail } from "./handlers/transactionProgressDispatch.ts";
 import type {
   SendAppointmentEmailPayload,
   SendAttorneyQuotePayload,
@@ -58,9 +59,11 @@ import type {
   SendTransactionPartnerInvitationPayload,
   SendTransactionRoleplayerHandoffPayload,
   SendTransactionRoleplayerIntroPayload,
+  SendTransactionProgressDispatchPayload,
   SendWorkspaceInvitePayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
+import { assessControlledTestRecipient } from "./utils/controlledTestRecipient.ts";
 import { normalizeText } from "./utils/text.ts";
 
 type EmailRequestEnvelope = Record<string, unknown>;
@@ -118,6 +121,11 @@ Deno.serve(async (req: Request) => {
     const transactionId = resolveTransactionId(payload);
     const recipient = normalizeText(payload.to).toLowerCase();
     const payloadKeys = Object.keys(payload || {});
+    const recipientSafety = assessControlledTestRecipient({
+      email: recipient,
+      recipientName: payload.recipientName ?? payload.recipient_name ?? payload.buyerName ?? payload.sellerName,
+      metadata: payload.metadata,
+    });
 
     console.log("[send-email] incoming request", {
       resolvedType: type || null,
@@ -126,6 +134,21 @@ Deno.serve(async (req: Request) => {
       transactionId: transactionId || null,
       payloadKeys,
     });
+
+    if (recipientSafety.suppressed) {
+      console.log("[send-email] controlled test recipient suppressed", {
+        resolvedType: type || null,
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+        reason: recipientSafety.reason,
+      });
+      return jsonResponse(202, {
+        ok: true,
+        suppressed: true,
+        reason: recipientSafety.reason,
+        message: recipientSafety.message,
+      });
+    }
 
     if (
       ["attorney_quote", "attorney_quote_email"].includes(type)
@@ -540,6 +563,23 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
+      ["transaction_progress_dispatch", "transaction_progress_resend"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "transaction_progress_dispatch",
+        transactionId: transactionId || null,
+      });
+      return await handleTransactionProgressDispatchEmail(
+        req,
+        {
+          ...(payload as SendTransactionProgressDispatchPayload),
+          type: type as SendTransactionProgressDispatchPayload["type"],
+          transactionId,
+        },
+      );
+    }
+
+    if (
       ["workspace_invite", "team_invite", "branch_invite", "agent_invite", "developer_access_invite"]
         .includes(type) &&
       (payload as SendWorkspaceInvitePayload).to
@@ -635,6 +675,8 @@ Deno.serve(async (req: Request) => {
           "agent_invite",
           "developer_access_invite",
           "notification_reminder_dispatch",
+          "transaction_progress_dispatch",
+          "transaction_progress_resend",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -682,6 +724,8 @@ Deno.serve(async (req: Request) => {
         "agent_invite",
         "developer_access_invite",
         "notification_reminder_dispatch",
+        "transaction_progress_dispatch",
+        "transaction_progress_resend",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",

@@ -779,7 +779,7 @@ Status:
 
 Runtime fixture findings:
 
-- Saved staging auth state resolves to `qa.attorney+canonical@bridgenine.co.za`, the canonical-document QA fixture account, not a Bond role matrix account.
+- Saved staging auth state resolves to `qa.attorney+canonical@arch9.co.za`, the canonical-document QA fixture account, not a Bond role matrix account.
 - Saved staging auth token expires at `2026-05-26T10:58:05.000Z`, so the stored browser session is stale for runtime verification.
 - Direct Supabase password sign-in with the current `.env.staging.local` credentials returns `Invalid login credentials`.
 - `scripts/export-bond-assignment-staging.mjs` still reports `No live bond organisations were found in staging export. Synthetic fixtures were used for Phase 4D smoke coverage.`

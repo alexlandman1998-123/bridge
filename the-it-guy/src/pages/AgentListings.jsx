@@ -19,6 +19,10 @@ import {
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
+import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
+import { buildListingSellerLeadPayload } from '../lib/listingSellerLeadPayload'
 import {
   buildSellerOnboardingLink,
   createAgentSellerLead,
@@ -2703,10 +2707,59 @@ function AgentListings({ initialTab = null } = {}) {
         setError('Organisation context is missing. Reload and try again.')
         return
       }
+      const persistedSellerLead = await createAgencyCrmLeadRecord(
+        listingOrganisationId,
+        buildListingSellerLeadPayload({
+          seller: {
+            firstName: sellerName,
+            lastName: sellerSurname,
+            email: sellerEmail,
+            phone: sellerPhone,
+          },
+          property: {
+            title: listingTitle,
+            propertyType: form.propertyType,
+            propertyAddress,
+            formattedAddress,
+            streetAddress,
+            suburb: form.suburb.trim(),
+            city: form.city.trim(),
+            province: form.province.trim(),
+            country,
+            postalCode,
+            latitude,
+            longitude,
+            googlePlaceId,
+            askingPrice: estimatedPrice,
+          },
+          assignment: {
+            id: String(profile?.id || '').trim(),
+            name: String(form.assignedAgent || profile?.fullName || profile?.name || '').trim(),
+            email: String(profile?.email || '').trim(),
+            createdBy: String(profile?.id || '').trim(),
+          },
+          source: form.leadSource.trim() || 'Manual Entry',
+          notes: form.notes.trim(),
+        }),
+        { actor: profile },
+      )
+      if (!persistedSellerLead?.leadId || !persistedSellerLead?.contactId) {
+        throw new Error('Seller contact could not be persisted. The listing was not created.')
+      }
+      const sellerLeadIntegrity = assessSellerLeadPersistence({
+        organisationId: listingOrganisationId,
+        sellerLead: persistedSellerLead,
+        expectedSeller: { email: sellerEmail, phone: sellerPhone },
+      })
+      if (!sellerLeadIntegrity.ok) {
+        throw new Error(sellerLeadIntegrity.message)
+      }
       const created = await createPrivateListing({
         organisationId: listingOrganisationId,
         assignedAgentId: String(profile?.id || '').trim() || null,
         assignedAgentEmail: String(profile?.email || '').trim(),
+        sellerLeadId: persistedSellerLead.leadId,
+        originatingCrmLeadId: persistedSellerLead.leadId,
         listingStatus: 'seller_lead',
         sellerOnboardingStatus: 'not_started',
         mandateStatus: 'not_started',
@@ -2742,6 +2795,19 @@ function AgentListings({ initialTab = null } = {}) {
       if (!created?.listing?.id) {
         throw new Error('Unable to create private listing intake record.')
       }
+      const listingLinkIntegrity = assessListingSellerLink({
+        organisationId: listingOrganisationId,
+        listing: created.listing,
+        sellerLead: persistedSellerLead,
+      })
+      if (!listingLinkIntegrity.ok) {
+        throw new Error(`${listingLinkIntegrity.message} The listing needs review before it can be used.`)
+      }
+      await updateAgencyCrmLeadRecord(
+        listingOrganisationId,
+        persistedSellerLead.leadId,
+        buildLeadListingLinkPatch(created.listing),
+      )
     } else {
       const token = generateSellerOnboardingToken()
       onboardingLink = buildSellerOnboardingLink(token)

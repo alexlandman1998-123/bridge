@@ -889,8 +889,15 @@ function buildWorkflowSummary({
 
   const waitingOn = dedupeByKey(waitingOnKeys.map(mapWaitingOnKeyToSummary), (item) => item.key)
 
+  const sharedProgressMilestones = (workflowReadModel?.sharedProgress || []).map((progress, index) => ({
+    id: progress?.id || `shared-progress-${progress?.processKey || 'process'}-${progress?.stepKey || index}`,
+    key: progress?.stepKey || 'transaction_updated',
+    title: progress?.title || 'Transaction update',
+    summary: progress?.safeExplanation || progress?.description || 'Your transaction has progressed.',
+    updatedAt: progress?.lastUpdated || progress?.updatedAt || null,
+  }))
   const clientVisibleMilestones = dedupeByKey(
-    (workflowReadModel?.clientVisibleMilestones || []).map((milestone, index) => ({
+    [...sharedProgressMilestones, ...(workflowReadModel?.clientVisibleMilestones || [])].map((milestone, index) => ({
       id: milestone?.id || `milestone_${milestone?.key || 'update'}_${index}`,
       key: milestone?.key || 'transaction_updated',
       title: milestone?.title || 'Transaction update',
@@ -1811,7 +1818,8 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
       readiness: portalData?.buyerReadiness?.finance || null,
     },
     workflowSummary,
-    mvpControlBoard: workflowReadModel?.mvpControlBoard || null,
+    mvpControlBoard: null,
+    mvpTransactionHealth: null,
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary,
@@ -1914,7 +1922,10 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   let workflowReadModel = null
   try {
     if (portalData?.transaction?.id) {
-      workflowReadModel = await getTransactionWorkflowReadModel(portalData.transaction.id).catch((error) => {
+      workflowReadModel = await getTransactionWorkflowReadModel(portalData.transaction.id, {
+        viewerRole: clientRole,
+        canViewPrivate: false,
+      }).catch((error) => {
         console.warn('[client-portal-workflow] Read-model unavailable', {
           transactionId: portalData?.transaction?.id || null,
           error,
@@ -2070,6 +2081,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       readiness: portalData?.buyerReadiness?.finance || null,
     },
     workflowSummary,
+    mvpControlBoard: workflowReadModel?.mvpControlBoard || null,
+    mvpTransactionHealth: workflowReadModel?.mvpTransactionHealth || null,
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary: activityFeedModel.summary,

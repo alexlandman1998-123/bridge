@@ -1,4 +1,6 @@
 import { generateMandateDocumentFromTemplate, generateOtpDocumentFromTemplate } from '../../lib/api'
+import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
+import { buildPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
 import { assertGeneratedDraftVersion, buildDraftLegalProvenance } from './draftGenerationAssurance'
 import { assertGeneratedDraftArtifact, buildDraftArtifactProvenance } from './draftArtifactAssurance'
 import {
@@ -1226,6 +1228,8 @@ function toFriendlyGenerationMessage(code = '', fallback = '') {
   switch (code) {
     case 'VALIDATION_BLOCKED':
       return 'The mandate is missing required information. Complete the highlighted fields before generating it.'
+    case 'GENERATION_PREFLIGHT_BLOCKED':
+      return 'The mandate is not ready to render. Review the legal template setup and the required document information.'
     case 'GENERATION_TIMEOUT':
       return 'The mandate data was valid, but the PDF is taking too long to generate. Please try again.'
     case 'GENERATION_LEASE_FENCE_REJECTED':
@@ -2883,6 +2887,7 @@ export async function generatePacketVersion({
     let renderStatus = 'generated'
     let previewOnlyGeneration = false
     let previewOnlyReason = ''
+    let previewOnlyFailureCode = ''
     const useEditableNativeRenderer = Array.isArray(context?.editableSections) && context.editableSections.length > 0
 
     try {
@@ -2930,6 +2935,55 @@ export async function generatePacketVersion({
                 : 'The mandate template could not be rendered. Please check the template setup.',
           )
         }
+        const outputPath = buildGenerationOutputPath({
+          packet,
+          context,
+          generatedAt,
+        })
+        const rendererPreflight = validateDocumentGenerationPreflight({
+          request: {
+            packetId: packet.id,
+            transactionId: normalizeNullableUuid(context?.transaction?.id || context?.transactionId),
+            leadId: normalizeNullableUuid(context?.lead?.lead_id || context?.lead?.id || context?.leadId),
+            renderMode,
+            templatePath: templateConfig.templatePath,
+            templateBucket: templateConfig.templateBucket,
+            templateFilename: templateConfig.templateFilename,
+            outputBucket: templateConfig.outputBucket,
+            outputPath,
+            placeholders: pdfPlaceholders,
+            sectionManifest: validation.sectionManifest || [],
+            generationPayload,
+            sourceContext: sourceContextSnapshot,
+            branding: validation.branding || {},
+            templateVersion,
+            generatedByRole: context?.generatedByRole || 'agent',
+            generatedByUserId: context?.generatedByUserId || '',
+            clientVisible: false,
+          },
+          packetType: validation.packetType,
+          templateConfig,
+          useNativeRenderer: useNativeRenderer || useEditableNativeRenderer,
+          allowTemplateFallback: shouldAllowMandateTemplateFallback(effectiveTemplate, validation.packetType),
+        })
+        if (!rendererPreflight.ok) {
+          await addPacketEvent({
+            packetId: packet.id,
+            organisationId: packet.organisation_id,
+            eventType: 'generation_preflight_blocked',
+            eventPayload: {
+              packetType: validation.packetType,
+              generationAttemptId,
+              issues: rendererPreflight.issues,
+              message: 'Document generation was stopped before the renderer was invoked.',
+            },
+          }).catch(() => null)
+          throw createPacketError(
+            'GENERATION_PREFLIGHT_BLOCKED',
+            rendererPreflight.issues.map((item) => item.message).join(' '),
+            { issues: rendererPreflight.issues },
+          )
+        }
         const mandateResult = await withPacketTimeout(
           withPacketRetries(
             () =>
@@ -2941,11 +2995,7 @@ export async function generatePacketVersion({
                 templateBucket: templateConfig.templateBucket,
                 templateFilename: templateConfig.templateFilename,
                 outputBucket: templateConfig.outputBucket,
-                outputPath: buildGenerationOutputPath({
-                  packet,
-                  context,
-                  generatedAt,
-                }),
+                outputPath,
                 renderMode,
                 placeholders: pdfPlaceholders,
                 sectionManifest: validation.sectionManifest || [],
@@ -3008,6 +3058,16 @@ export async function generatePacketVersion({
         throw error
       }
 
+      if (failureCode === 'GENERATION_PREFLIGHT_BLOCKED') {
+        const error = createPacketError(failureCode, failureMessage, {
+          safeToRetry: false,
+          issues: rawError?.details?.issues || [],
+        })
+        error.validation = validation
+        error.packetId = packet.id
+        throw error
+      }
+
       if (validation.packetType === 'mandate' || (validation.packetType === 'otp' && useEditableNativeRenderer)) {
         console.warn('[PACKETS] mandate render failed; continuing with a generated preview-only draft.', {
           packetId: packet.id,
@@ -3016,6 +3076,7 @@ export async function generatePacketVersion({
         })
         previewOnlyGeneration = true
         previewOnlyReason = failureMessage
+        previewOnlyFailureCode = failureCode
       } else {
         await releaseDocumentPacketGenerationLease({
           packetId: packet.id,
@@ -3047,9 +3108,13 @@ export async function generatePacketVersion({
       }
     }
 
-    if (previewOnlyGeneration) {
-      renderStatus = 'generated'
-    }
+    const pilotFallback = previewOnlyGeneration
+      ? buildPilotDocumentFallback({
+          packetType: validation.packetType,
+          reason: previewOnlyReason,
+          failureCode: previewOnlyFailureCode,
+        })
+      : null
 
     const renderProvenance = buildRenderProvenance({
       packetType: validation.packetType,
@@ -3101,6 +3166,7 @@ export async function generatePacketVersion({
         generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
         previewOnly: previewOnlyGeneration,
         previewOnlyReason: previewOnlyReason || null,
+        pilotFallback,
         generationPayload,
         templateVersion,
         templateResolution: prepared.templateResolution || null,
@@ -3128,6 +3194,7 @@ export async function generatePacketVersion({
         lastGeneratedVersion: version.version_number,
         previewOnlyGeneration,
         previewOnlyReason: previewOnlyReason || null,
+        pilotFallback,
         generationPayload,
         templateVersion,
         generatedAt,
@@ -3179,6 +3246,7 @@ export async function generatePacketVersion({
         renderedFilePath: version.rendered_file_path,
         previewOnly: previewOnlyGeneration,
         previewOnlyReason: previewOnlyReason || null,
+        pilotFallback,
         templateResolutionSource: generationPayload.templateResolutionSource || null,
         mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
         mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
@@ -3224,6 +3292,7 @@ export async function generatePacketVersion({
       version,
       validation,
       previewHtml: prepared.previewHtml,
+      pilotFallback,
       template: effectiveTemplate,
       templateResolution: prepared.templateResolution || null,
     }
@@ -3339,7 +3408,7 @@ export async function updatePacketSigningFieldStatus({
 }
 
 function getLatestGeneratedVersion(versions = []) {
-  return (versions || []).find((item) => String(item?.render_status || '').toLowerCase() === 'generated') || null
+  return findLatestSignableGeneratedVersion(versions)
 }
 
 export async function prepareSigningFields({
@@ -3580,6 +3649,9 @@ export async function resetSigningFields({ packetId, packetVersionId = null, org
   if (!targetVersion?.id) {
     throw createPacketError('NO_SIGNING_VERSION', 'No generated packet version found for signing reset.')
   }
+  if (isPilotDocumentFallbackVersion(targetVersion)) {
+    throw createPacketError('PILOT_FALLBACK_REVIEW_REQUIRED', 'This pilot review draft cannot be used for signing. Generate a verified document first.')
+  }
 
   const summary = await getPacketSigningSummaryRecord({
     packetId: resolvedPacketId,
@@ -3644,9 +3716,20 @@ export async function generateSigningLinks({
   regenerate = false,
   targetSignerRole = '',
 } = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  if (!resolvedPacketId) throw new Error('packetId is required.')
+  const packet = await fetchDocumentPacket(resolvedPacketId, { includeVersions: true, includeEvents: false })
+  if (!packet) throw new Error('Document packet not found.')
+  const targetVersion = packetVersionId
+    ? (packet.versions || []).find((item) => String(item?.id || '') === String(packetVersionId))
+    : getLatestGeneratedVersion(packet.versions || [])
+  if (!targetVersion?.id) throw createPacketError('NO_GENERATED_VERSION', 'Generate a verified packet version before creating signing links.')
+  if (isPilotDocumentFallbackVersion(targetVersion)) {
+    throw createPacketError('PILOT_FALLBACK_REVIEW_REQUIRED', 'This pilot review draft cannot be sent for signature. Generate a verified document first.')
+  }
   return generatePacketSigningLinksRecord({
-    packetId,
-    packetVersionId,
+    packetId: resolvedPacketId,
+    packetVersionId: targetVersion.id,
     expiresInHours,
     baseUrl,
     organisationId,
@@ -3677,6 +3760,9 @@ export async function generateFinalSignedPacketDocument({
 
   if (!targetVersion?.id) {
     throw createPacketError('NO_GENERATED_VERSION', 'No generated packet version found for finalisation.')
+  }
+  if (isPilotDocumentFallbackVersion(targetVersion)) {
+    throw createPacketError('PILOT_FALLBACK_REVIEW_REQUIRED', 'This pilot review draft cannot be finalised. Generate a verified document first.')
   }
 
   const signingSummary = await getPacketSigningSummaryRecord({

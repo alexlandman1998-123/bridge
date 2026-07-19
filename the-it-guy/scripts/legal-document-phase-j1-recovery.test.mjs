@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { formatLegalDocumentGenerationRecovery, resolveLegalDocumentGenerationRecovery } from '../src/core/documents/legalDocumentGenerationRecovery.js'
+import { buildSafeLegalDocumentGenerationDiagnostics, formatLegalDocumentGenerationRecovery, resolveLegalDocumentGenerationRecovery } from '../src/core/documents/legalDocumentGenerationRecovery.js'
 import { assessLegalDocumentGenerationRecoveryReadiness } from '../src/core/documents/legalDocumentGenerationRecoveryReadiness.js'
 
 const secret = 'postgres provider stack trace customer@example.com'
@@ -28,6 +28,19 @@ for (const packetType of ['otp', 'mandate']) {
     assert.match(formatted, packetType === 'otp' ? /OTP/i : /mandate/i)
   }
 }
+
+const preflight = resolveLegalDocumentGenerationRecovery({
+  code: 'GENERATION_PREFLIGHT_BLOCKED',
+  details: { issues: [{ code: 'template_source_missing', message: secret }] },
+}, { packetType: 'mandate' })
+assert.equal(preflight.actionKey, 'contact_admin')
+assert.equal(preflight.diagnostics.issueCodes[0], 'TEMPLATE_SOURCE_MISSING')
+assert.doesNotMatch(JSON.stringify(preflight), /stack trace|customer@example\.com|postgres provider/i)
+
+const contractFailure = resolveLegalDocumentGenerationRecovery({ code: 'GENERATION_CONTRACT_ARTIFACT_INVALID' }, { packetType: 'otp' })
+assert.equal(contractFailure.actionKey, 'contact_support')
+assert.equal(contractFailure.autoHandoff, true)
+assert.equal(buildSafeLegalDocumentGenerationDiagnostics({ code: 'GENERATION_CONTRACT_ARTIFACT_INVALID' }).failureCode, 'GENERATION_CONTRACT_ARTIFACT_INVALID')
 
 const fixtureCases = cases.slice(0, 8).map(() => ({ safe: true, actionable: true, packetSpecific: true }))
 const fixture = { i3: { status: 'READY_FOR_J1' }, cases: fixtureCases, surfaces: ['workspace', 'packet_panel', 'agency_pipeline', 'unit_detail', 'document_builder'], busyReleaseCovered: true }

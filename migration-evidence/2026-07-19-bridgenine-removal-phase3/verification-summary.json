@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-07-19T11:05:14.276Z",
+  "projectRef": "isdowlnollckzvltkasn",
+  "mode": "verify",
+  "status": "verified_clean",
+  "authCoverage": {
+    "reported": 161,
+    "scanned": 152,
+    "errors": [
+      {
+        "page": 153,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 154,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 155,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 156,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 157,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 158,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 159,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 160,
+        "error": "500 Internal Server Error: HTTP 500"
+      },
+      {
+        "page": 161,
+        "error": "500 Internal Server Error: HTTP 500"
+      }
+    ]
+  },
+  "authOperations": {
+    "total": 0,
+    "toArch9": 0,
+    "toExampleTest": 0
+  },
+  "databaseOperations": {
+    "total": 0,
+    "byRelation": {}
+  },
+  "preservedHistoryRelations": [
+    "communication_deliveries",
+    "documents",
+    "document_packet_events",
+    "document_packet_versions",
+    "document_packets",
+    "private_listing_activity",
+    "security_audit_events",
+    "telemetry_events",
+    "transaction_events",
+    "transaction_workflow_events"
+  ]
+}

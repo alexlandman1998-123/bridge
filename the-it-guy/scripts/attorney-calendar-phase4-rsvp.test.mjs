@@ -83,7 +83,7 @@ const invalidSubmit = await anon.rpc('submit_appointment_rsvp', {
 assert.equal(invalidSubmit.error, null, `Public RSVP submit RPC failed: ${invalidSubmit.error?.message || ''}`)
 assert.deepEqual(invalidSubmit.data, [])
 
-const demoEmail = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@bridgenine.co.za'
+const demoEmail = process.env.ATTORNEY_DEMO_EMAIL || 'attorney.demo@arch9.co.za'
 const actorProfile = await service.from('profiles').select('id').eq('email', demoEmail).maybeSingle()
 assert.equal(actorProfile.error, null, `Unable to resolve Phase 4 actor: ${actorProfile.error?.message || ''}`)
 const actorId = actorProfile.data?.id

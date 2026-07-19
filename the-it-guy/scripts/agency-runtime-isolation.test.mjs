@@ -8,7 +8,7 @@ const appRoot = new URL('../', import.meta.url)
 const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
 const FIXTURE_NAMESPACE = 'agency_runtime_phase8'
 const DEFAULT_UNRELATED_EMAIL_PREFIX = 'qa.agency.runtime.unrelated'
-const DEFAULT_UNRELATED_EMAIL_DOMAIN = 'bridgenine.co.za'
+const DEFAULT_UNRELATED_EMAIL_DOMAIN = 'example.test'
 
 function normalizeText(value = '') {
   return String(value || '').trim()

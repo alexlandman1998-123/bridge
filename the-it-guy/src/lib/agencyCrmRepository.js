@@ -739,11 +739,18 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
       contact_type: normalizeText(contact.contactType) || 'Lead',
       notes: normalizeText(contact.notes) || null,
       updated_at: contact.updatedAt,
-    }, { onConflict: 'contact_id' })
+    }, { onConflict: 'contact_id' }).select('contact_id, email, phone').single()
     if (contactResult.error) throw contactResult.error
+    if (
+      normalizeText(contactResult.data?.contact_id) !== normalizeText(contact.contactId) ||
+      normalizeLowerText(contactResult.data?.email) !== normalizeLowerText(contact.email) ||
+      normalizeText(contactResult.data?.phone) !== normalizeText(contact.phone)
+    ) {
+      throw new Error('Contact persistence could not be verified.')
+    }
 
     const leadPayloadForRemote = buildRemoteLeadCreatePayload(lead, workspaceId, actor)
-    let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' })
+    let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' }).select('lead_id, contact_id').single()
     if (leadResult.error && isMissingColumnError(leadResult.error)) {
       const fallbackLeadPayload = { ...leadPayloadForRemote }
       const optionalColumns = [
@@ -764,7 +771,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
       for (const column of optionalColumns) {
         if (!Object.prototype.hasOwnProperty.call(fallbackLeadPayload, column)) continue
         delete fallbackLeadPayload[column]
-        leadResult = await supabase.from('leads').upsert(fallbackLeadPayload, { onConflict: 'lead_id' })
+        leadResult = await supabase.from('leads').upsert(fallbackLeadPayload, { onConflict: 'lead_id' }).select('lead_id, contact_id').single()
         if (!leadResult.error) {
           recovered = true
           break
@@ -788,10 +795,16 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         delete legacyLeadPayload.enquired_property_price
         delete legacyLeadPayload.source_reference_id
         delete legacyLeadPayload.raw_enquiry_payload
-        leadResult = await supabase.from('leads').upsert(legacyLeadPayload, { onConflict: 'lead_id' })
+        leadResult = await supabase.from('leads').upsert(legacyLeadPayload, { onConflict: 'lead_id' }).select('lead_id, contact_id').single()
       }
     }
     if (leadResult.error) throw leadResult.error
+    if (
+      normalizeText(leadResult.data?.lead_id) !== normalizeText(lead.leadId) ||
+      normalizeText(leadResult.data?.contact_id) !== normalizeText(contact.contactId)
+    ) {
+      throw new Error('Lead persistence could not be verified.')
+    }
 
     const reconciled = reconcileAgencyPipelineSnapshot(workspaceId, {
       contacts: [contact],
@@ -811,6 +824,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
 export const __agencyCrmRepositoryTestUtils = {
   buildLocalLeadAndContactRows,
   buildRemoteLeadCreatePayload,
+  buildRemoteLeadUpdatePayload,
   resolveLeadScopeContext,
 }
 
@@ -979,6 +993,16 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
       for (const column of LEAD_LOCATION_DB_COLUMNS) {
         delete compatibleCorePayload[column]
       }
+      for (const column of [
+        'enquired_listing_id',
+        'enquired_property_title',
+        'enquired_property_address',
+        'enquired_property_price',
+        'source_reference_id',
+        'raw_enquiry_payload',
+      ]) {
+        delete compatibleCorePayload[column]
+      }
       updateResult = await supabase
         .from('leads')
         .update({
@@ -1005,6 +1029,12 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
 
     if (updateResult.error) {
       throw updateResult.error
+    }
+    const updatedLeadIds = Array.isArray(updateResult.data)
+      ? updateResult.data.map((row) => normalizeText(row?.lead_id))
+      : []
+    if (!updatedLeadIds.includes(dbLeadId)) {
+      throw new Error('Lead update could not be verified. Reload the lead and try again.')
     }
   } catch (error) {
     console.error('[agencyCrmRepository] update lead failed without local fallback', error)

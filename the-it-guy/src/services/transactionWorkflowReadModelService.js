@@ -28,6 +28,12 @@ import {
 import { resolveTransactionParticipantShape } from './roleResolutionService'
 import { buildMvpTransactionTruth } from '../core/transactions/mvpTransactionTruth.js'
 import { buildMvpTransactionControlBoard } from '../core/transactions/mvpTransactionControlBoard.js'
+import { buildMvpTransactionHealthPanel } from '../core/transactions/mvpTransactionHealthPanel.js'
+import { buildMvpParticipantRoster } from '../core/transactions/mvpParticipantRoster.js'
+import { buildMvpDocumentRoster } from '../core/transactions/mvpDocumentRoster.js'
+import { assessMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
+import { buildMvpTransactionAuditRecovery } from '../core/transactions/mvpTransactionAuditRecovery.js'
+import { getTransactionSharedProgress } from './transactionSharedProgressService.js'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'transaction_attorney_assignments table missing. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
@@ -83,11 +89,16 @@ function createEmptyReadModel(transactionId = null, warnings = []) {
     lanes: [],
     checklistItems: [],
     documentRequests: [],
+    transactionRequiredDocuments: [],
+    documentRoster: buildMvpDocumentRoster(),
     rolePlayers: [],
+    participantRequirements: [],
+    participantRoster: buildMvpParticipantRoster(),
     blockers: [],
     clientVisibleMilestones: [],
     nextInternalActions: [],
     nextClientActions: [],
+    sharedProgress: [],
     coordination: {
       status: 'not_ready',
       hasBondLane: false,
@@ -111,8 +122,10 @@ function mapTransactionRow(row = {}) {
   const detailedStage = normalizeStageLabel(row.stage || 'Available')
   const mainStage = normalizeMainStage(row.current_main_stage || getMainStageFromDetailedStage(detailedStage))
 
+  const routingProfile = row.routing_profile_json && typeof row.routing_profile_json === 'object' ? row.routing_profile_json : null
   return {
     id: row.id,
+    organisationId: row.organisation_id || null,
     transactionReference: row.transaction_reference || null,
     stage: detailedStage,
     currentMainStage: mainStage,
@@ -124,7 +137,8 @@ function mapTransactionRow(row = {}) {
     propertyTenure: row.property_tenure || null,
     sellerEntityType: row.seller_type || null,
     sellerHasExistingBond: Boolean(row.seller_has_existing_bond || row.existing_bond),
-    routingProfile: row.routing_profile_json && typeof row.routing_profile_json === 'object' ? row.routing_profile_json : null,
+    routingProfile,
+    testDataProtection: assessMvpTestDataProtection({ transaction: { ...row, routingProfile } }),
     lifecycleState: row.lifecycle_state || null,
     riskStatus: row.risk_status || null,
     updatedAt: row.updated_at || null,
@@ -240,6 +254,25 @@ function mapParticipantRows(rows = []) {
       createdAt: row.created_at || null,
     }
   })
+}
+
+function mapParticipantRequirementRows(rows = []) {
+  return (rows || []).map((row) => ({
+    id: row.id,
+    transactionId: row.transaction_id,
+    roleKey: row.role_key,
+    roleType: row.role_type,
+    legalRole: row.legal_role || 'none',
+    transactionRole: row.transaction_role,
+    requiredBy: row.required_by,
+    requiredAtCreation: Boolean(row.required_at_creation),
+    status: row.status || 'pending_assignment',
+    label: row.label || row.role_key || 'Transaction participant',
+    reason: row.reason || '',
+    participantId: row.participant_id || null,
+    updatedAt: row.updated_at || null,
+    createdAt: row.created_at || null,
+  }))
 }
 
 function mapEventRows(rows = []) {
@@ -771,6 +804,25 @@ async function fetchDocumentRequests(client, transactionId, warnings = []) {
   return mapDocumentRequestRows(query.data)
 }
 
+async function fetchTransactionRequiredDocuments(client, transactionId, warnings = []) {
+  const query = await client
+    .from('transaction_required_documents')
+    .select('id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, sort_order, created_at, updated_at')
+    .eq('transaction_id', transactionId)
+    .order('sort_order', { ascending: true })
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_required_documents')) {
+      appendWarning(warnings, 'transaction_required_documents table missing. Atomic document roster unavailable.')
+      return []
+    }
+    appendWarning(warnings, `Failed to load transaction required documents: ${query.error.message || 'Unknown error'}`)
+    return []
+  }
+
+  return query.data || []
+}
+
 async function fetchParticipants(client, transactionId, warnings = []) {
   const query = await client
     .from('transaction_participants')
@@ -802,6 +854,25 @@ async function fetchParticipants(client, transactionId, warnings = []) {
   }
 
   return mapParticipantRows(query.data)
+}
+
+async function fetchParticipantRequirements(client, transactionId, warnings = []) {
+  const query = await client
+    .from('transaction_participant_requirements')
+    .select('id, transaction_id, role_key, role_type, legal_role, transaction_role, required_by, required_at_creation, status, label, reason, participant_id, updated_at, created_at')
+    .eq('transaction_id', transactionId)
+    .order('created_at', { ascending: true })
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_participant_requirements')) {
+      appendWarning(warnings, 'transaction_participant_requirements table missing. MVP participant roster unavailable.')
+      return []
+    }
+    appendWarning(warnings, `Failed to load participant requirements: ${query.error.message || 'Unknown error'}`)
+    return []
+  }
+
+  return mapParticipantRequirementRows(query.data)
 }
 
 async function fetchEvents(client, transactionId, warnings = []) {
@@ -860,6 +931,23 @@ async function fetchAttorneyAssignments(client, transactionId, warnings = []) {
   return query.data || []
 }
 
+async function fetchSharedProgress(client, transactionId, warnings = [], viewer = {}) {
+  try {
+    return await getTransactionSharedProgress(transactionId, {
+      client,
+      viewerRole: viewer.viewerRole || null,
+      canViewPrivate: Boolean(viewer.canViewPrivate),
+    })
+  } catch (error) {
+    if (isMissingTableError(error, 'transaction_shared_progress')) {
+      appendWarning(warnings, 'Shared transaction progress is not deployed yet. Run the Phase 2 migration.')
+      return []
+    }
+    appendWarning(warnings, `Failed to load shared transaction progress: ${error?.message || 'Unknown error'}`)
+    return []
+  }
+}
+
 export async function getTransactionWorkflowReadModel(transactionId, options = {}) {
   const client = options.client || requireClient()
   const warnings = []
@@ -881,13 +969,16 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
   }
   const subprocessIds = subprocesses.map((item) => item.id).filter(Boolean)
 
-  const [subprocessSteps, checklistItems, documentRequests, participants, events, attorneyAssignments] = await Promise.all([
+  const [subprocessSteps, checklistItems, documentRequests, transactionRequiredDocuments, participants, participantRequirements, events, attorneyAssignments, sharedProgress] = await Promise.all([
     fetchSubprocessSteps(client, subprocessIds, warnings),
     fetchChecklistItems(client, normalizedTransactionId, warnings),
     fetchDocumentRequests(client, normalizedTransactionId, warnings),
+    fetchTransactionRequiredDocuments(client, normalizedTransactionId, warnings),
     fetchParticipants(client, normalizedTransactionId, warnings),
+    fetchParticipantRequirements(client, normalizedTransactionId, warnings),
     fetchEvents(client, normalizedTransactionId, warnings),
     fetchAttorneyAssignments(client, normalizedTransactionId, warnings),
+    fetchSharedProgress(client, normalizedTransactionId, warnings, options),
   ])
 
   const lanes = buildLanes({
@@ -907,8 +998,30 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     participants,
     attorneyAssignments,
   })
+  const participantRoster = buildMvpParticipantRoster({ requirements: participantRequirements, participants })
+  const documentRoster = buildMvpDocumentRoster({ requiredDocuments: transactionRequiredDocuments, documentRequests })
+  const participantCreationBlockers = participantRoster.creationBlockers.map((blocker) => ({
+    id: `missing-${blocker.key}`,
+    type: 'missing_role_assignment',
+    title: `${blocker.roleKey.replace(/_/g, ' ')} assignment missing`,
+    description: blocker.reason,
+    blockingRole: blocker.ownerRole,
+    visibility: 'internal',
+    relatedEntityType: 'transaction_participant_requirement',
+    relatedEntityId: blocker.roleKey,
+  }))
+  const documentRequirementBlockers = documentRoster.blockers.map((blocker) => ({
+    id: `missing-${blocker.key}`,
+    type: 'document_missing',
+    title: blocker.documentKey.replace(/_/g, ' '),
+    description: blocker.reason,
+    blockingRole: blocker.ownerRole,
+    visibility: 'shared_role_players',
+    relatedEntityType: 'transaction_required_document',
+    relatedEntityId: blocker.documentKey,
+  }))
 
-  const blockers = [...laneBlockers, ...assignmentBlockers]
+  const blockers = [...laneBlockers, ...assignmentBlockers, ...participantCreationBlockers, ...documentRequirementBlockers]
 
   const milestones = buildClientVisibleMilestones({
     transaction,
@@ -928,12 +1041,30 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
       requiresCancellationAttorney: transaction.sellerHasExistingBond,
     },
     participants,
-    documentRequirements: documentRequests,
+    documentRequirements: documentRoster.requirements,
     workflowLanes: lanes,
     events,
   })
-  const mvpControlBoard = buildMvpTransactionControlBoard(mvpTruth)
-
+  const gatedLanes = mvpTruth.workflow?.lanes || lanes
+  const mvpTransactionHealth = buildMvpTransactionHealthPanel({
+    truth: mvpTruth,
+    transaction,
+    participantRoster,
+    documentRoster,
+  })
+  const mvpAudit = buildMvpTransactionAuditRecovery({
+    transaction,
+    truth: mvpTruth,
+    health: mvpTransactionHealth,
+    participantRoster,
+    documentRoster,
+    warnings,
+  })
+  const mvpControlBoard = {
+    ...buildMvpTransactionControlBoard(mvpTruth),
+    health: mvpTransactionHealth,
+    audit: mvpAudit,
+  }
   return {
     transaction,
     mainStage: {
@@ -944,18 +1075,25 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
       key: normalizeDetailedStage(transaction.stage),
       label: normalizeDetailedStage(transaction.stage),
     },
-    lanes,
+    lanes: gatedLanes,
     checklistItems,
     documentRequests,
+    transactionRequiredDocuments,
+    documentRoster,
     rolePlayers: participants,
+    participantRequirements,
+    participantRoster,
     blockers,
     clientVisibleMilestones: milestones,
     nextInternalActions,
     nextClientActions,
+    sharedProgress,
     warnings,
     coordination,
     mvpTruth,
     mvpControlBoard,
+    mvpTransactionHealth,
+    mvpAudit,
     meta: {
       generatedAt: toIsoString(new Date()),
       schemaWarnings: warnings.length,
