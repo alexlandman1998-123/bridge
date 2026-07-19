@@ -9,12 +9,16 @@ Run the pilot session check using the same evidence passed to Phase 6:
 ```bash
 npm run mvp:phase7:session -- \
   --staging-ledger=docs/staging-migration-ledger.json \
+  --deployment-evidence=/secure-local-path/staging-deployment-evidence.json \
+  --rollback-evidence=/secure-local-path/staging-rollback-evidence.json \
   --journey-evidence=docs/staging-mvp-journeys.json \
   --review-evidence=docs/staging-mvp-review.json \
-  --decision-evidence=docs/production-pilot-decision.json
+  --decision-evidence=docs/production-pilot-decision.json \
+  --support-evidence=/secure-local-path/production-pilot-support-evidence.json \
+  --session-evidence=/secure-local-path/production-pilot-session-01.json
 ```
 
-Only `go_for_batch_of_10` permits the next batch. Do not create more than ten production transactions in the batch.
+The session evidence must be prepared by the approved pilot owner, list unique non-secret planned transaction references, nominate the approved stop authority, and contain no more than ten references. Only `go_for_batch_of_10` permits the next batch. Do not create more than ten production transactions in the batch.
 
 ## After each batch
 
