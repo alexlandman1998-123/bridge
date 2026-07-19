@@ -15,6 +15,8 @@ Log every issue with an id, severity, summary, owner, and recorded time. `p0`, `
 
 After the review, record a `stagingAcceptance` object with `decision: "accepted_for_pilot_consideration"`, the non-developer decider and time, `scope: "all_four_mvp_scenarios"`, and the complete `deferredFindingIds` list. This is an operational acceptance of the staging result—not production authorisation. Phase 6 remains the separate controlled-pilot decision.
 
+Set `projectRef` on the review evidence. The validator also enforces one evidence timeline for that project: deployment → UI journey → operational review → staging acceptance. Finding capture must fall in that window; a deferred finding's next review must be after acceptance. This prevents a previous deployment or an out-of-date review from being attached to the current release.
+
 Validate the evidence after Phase 4 passes:
 
 ```bash

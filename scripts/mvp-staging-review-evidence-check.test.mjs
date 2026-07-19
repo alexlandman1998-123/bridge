@@ -28,7 +28,7 @@ try {
   }))
   writeFileSync(journeyPath, JSON.stringify({ environment: 'staging', projectRef, executedBy: 'operations.tester@arch9.test', completedAt: '2026-07-19T01:00:00.000Z', executionMethod: 'ui', scenarios: ids.map((id, index) => ({ id, transactionId: `tx-${index}`, acceptedOfferId: `offer-${index}`, createdThrough: 'accepted_offer_ui', checks })) }))
   const reviewEvidence = {
-    environment: 'staging', reviewedBy: 'conveyancer.reviewer@arch9.test', reviewedAt: '2026-07-19T02:00:00.000Z', reviewerRole: 'conveyancing', reviewerIsDeveloper: false, reviewedIndependently: true,
+    environment: 'staging', projectRef, reviewedBy: 'conveyancer.reviewer@arch9.test', reviewedAt: '2026-07-19T02:00:00.000Z', reviewerRole: 'conveyancing', reviewerIsDeveloper: false, reviewedIndependently: true,
     findings: [{ id: 'MVP-UX-001', severity: 'p2', summary: 'Clarify one supporting-document next action.', owner: 'operations.owner@arch9.test', recordedAt: '2026-07-19T02:00:00.000Z', status: 'deferred', resolved: false, nextReviewAt: '2026-08-01T00:00:00.000Z' }],
     stagingAcceptance: { decision: 'accepted_for_pilot_consideration', decidedBy: 'operations.lead@arch9.test', decidedAt: '2026-07-19T03:00:00.000Z', deciderIsDeveloper: false, scope: 'all_four_mvp_scenarios', deferredFindingIds: ['MVP-UX-001'] },
     scenarioReviews: ids.map((id) => ({ id, completedWithoutDeveloperGuidance: true, nextActionClear: true, errorsActionable: true, postDeployDataReviewed: true })),
@@ -46,6 +46,9 @@ try {
   writeFileSync(reviewPath, JSON.stringify({ ...reviewEvidence, stagingAcceptance: { ...reviewEvidence.stagingAcceptance, deferredFindingIds: [] } }))
   const unacknowledgedDeferred = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
   assert.equal(unacknowledgedDeferred.status, 1, 'Staging acceptance must acknowledge each deferred finding.')
+  writeFileSync(reviewPath, JSON.stringify({ ...reviewEvidence, stagingAcceptance: { ...reviewEvidence.stagingAcceptance, decidedAt: '2026-07-19T01:30:00.000Z' } }))
+  const invalidTimeline = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
+  assert.equal(invalidTimeline.status, 1, 'Staging acceptance must not precede its operational review.')
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }

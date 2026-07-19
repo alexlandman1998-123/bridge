@@ -15,6 +15,8 @@ if (!options['journey-evidence'] || !options['review-evidence'] || !options['dep
 
 const journeyPath = path.resolve(repoRoot, options['journey-evidence'])
 const journey = JSON.parse(readFileSync(journeyPath, 'utf8'))
+const deploymentEvidencePath = path.resolve(repoRoot, options['deployment-evidence'])
+const deployment = JSON.parse(readFileSync(deploymentEvidencePath, 'utf8'))
 const phase4 = spawnSync(process.execPath, [
   'scripts/mvp-staging-journey-evidence-check.mjs',
   `--evidence=${journeyPath}`,
@@ -35,6 +37,8 @@ const requiredScenarioIds = [
 ]
 
 assert.equal(review.environment, 'staging', 'Review evidence must be from staging.')
+assert.equal(review.projectRef, journey.projectRef, 'Review evidence must use the Phase 4 staging project.')
+assert.equal(deployment.projectRef, journey.projectRef, 'Deployment and journey evidence must use the same staging project.')
 assert.ok(String(review.reviewedBy || '').trim(), 'A named operational reviewer is required.')
 assert.ok(String(review.reviewedAt || '').trim(), 'reviewedAt is required.')
 assert.equal(review.reviewerIsDeveloper, false, 'The Phase 5 reviewer must not be a developer.')
@@ -96,6 +100,33 @@ assert.equal(acceptance.deciderIsDeveloper, false, 'The staging acceptance decid
 assert.equal(acceptance.scope, 'all_four_mvp_scenarios', 'Staging acceptance must cover all four MVP scenarios.')
 assert.deepEqual([...(acceptance.deferredFindingIds || [])].map(String).sort(), deferredFindingIds, 'Staging acceptance must acknowledge every deferred finding.')
 
+function timestamp(value, field) {
+  const parsed = Date.parse(String(value || ''))
+  assert.equal(Number.isNaN(parsed), false, `${field} must be an ISO-compatible timestamp.`)
+  return parsed
+}
+
+const deployedAt = timestamp(deployment.deployedAt, 'deployment.deployedAt')
+const journeyCompletedAt = timestamp(journey.completedAt, 'journey.completedAt')
+const reviewedAt = timestamp(review.reviewedAt, 'review.reviewedAt')
+const acceptanceDecidedAt = timestamp(acceptance.decidedAt, 'stagingAcceptance.decidedAt')
+assert.ok(deployedAt <= journeyCompletedAt, 'The deployment evidence must precede the UI journey.')
+assert.ok(journeyCompletedAt <= reviewedAt, 'The UI journey must precede the operational review.')
+assert.ok(reviewedAt <= acceptanceDecidedAt, 'The operational review must precede staging acceptance.')
+for (const finding of findings) {
+  const id = String(finding.id)
+  const recordedAt = timestamp(finding.recordedAt, `${id}.recordedAt`)
+  assert.ok(journeyCompletedAt <= recordedAt && recordedAt <= acceptanceDecidedAt, `${id}: recordedAt must fall between journey completion and staging acceptance.`)
+  if (String(finding.status).toLowerCase() === 'resolved') {
+    const resolvedAt = timestamp(finding.resolvedAt, `${id}.resolvedAt`)
+    assert.ok(recordedAt <= resolvedAt && resolvedAt <= acceptanceDecidedAt, `${id}: resolvedAt must fall between finding capture and staging acceptance.`)
+  }
+  if (String(finding.status).toLowerCase() === 'deferred') {
+    const nextReviewAt = timestamp(finding.nextReviewAt, `${id}.nextReviewAt`)
+    assert.ok(acceptanceDecidedAt < nextReviewAt, `${id}: nextReviewAt must follow staging acceptance.`)
+  }
+}
+
 console.log(JSON.stringify({
   version: 'arch9_mvp_staging_review_evidence_v1',
   passed: true,
@@ -107,5 +138,6 @@ console.log(JSON.stringify({
   deferredFindingCount: findings.filter((finding) => String(finding.status || '').toLowerCase() === 'deferred').length,
   stagingAcceptance: acceptance.decision,
   stagingAcceptanceDecider: acceptance.decidedBy,
+  evidenceTimeline: 'deployment_then_ui_then_review_then_acceptance',
   unresolvedReleaseBlockingFindings: 0,
 }, null, 2))
