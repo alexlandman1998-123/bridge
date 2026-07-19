@@ -14,6 +14,7 @@ if (!options['journey-evidence'] || !options['review-evidence'] || !options['dep
 }
 
 const journeyPath = path.resolve(repoRoot, options['journey-evidence'])
+const journey = JSON.parse(readFileSync(journeyPath, 'utf8'))
 const phase4 = spawnSync(process.execPath, [
   'scripts/mvp-staging-journey-evidence-check.mjs',
   `--evidence=${journeyPath}`,
@@ -35,6 +36,11 @@ const requiredScenarioIds = [
 
 assert.equal(review.environment, 'staging', 'Review evidence must be from staging.')
 assert.ok(String(review.reviewedBy || '').trim(), 'A named operational reviewer is required.')
+assert.ok(String(review.reviewedAt || '').trim(), 'reviewedAt is required.')
+assert.equal(review.reviewerIsDeveloper, false, 'The Phase 5 reviewer must not be a developer.')
+assert.equal(review.reviewedIndependently, true, 'The Phase 5 review must be independent.')
+assert.notEqual(review.reviewedBy, journey.executedBy, 'The operational reviewer must be different from the Phase 4 journey operator.')
+assert.equal(['operations', 'conveyancing', 'administration'].includes(String(review.reviewerRole || '').toLowerCase()), true, 'reviewerRole must be operations, conveyancing, or administration.')
 assert.equal(Array.isArray(review.scenarioReviews), true, 'scenarioReviews is required.')
 const scenarioReviews = new Map(review.scenarioReviews.map((entry) => [entry.id, entry]))
 assert.deepEqual([...scenarioReviews.keys()].sort(), [...requiredScenarioIds].sort(), 'All four MVP scenarios require an operations review.')
@@ -55,6 +61,8 @@ console.log(JSON.stringify({
   version: 'arch9_mvp_staging_review_evidence_v1',
   passed: true,
   reviewer: review.reviewedBy,
+  reviewerRole: review.reviewerRole,
+  journeyOperator: journey.executedBy,
   scenarioCount: requiredScenarioIds.length,
   findingCount: findings.length,
   unresolvedReleaseBlockingFindings: 0,

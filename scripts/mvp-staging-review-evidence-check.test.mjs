@@ -27,13 +27,17 @@ try {
     rpcCheck: { rpc: 'bridge_create_mvp_transaction', passed: true, result: 'deployed', httpStatus: 401 },
   }))
   writeFileSync(journeyPath, JSON.stringify({ environment: 'staging', projectRef, executedBy: 'operations.tester@arch9.test', completedAt: '2026-07-19T01:00:00.000Z', executionMethod: 'ui', scenarios: ids.map((id, index) => ({ id, transactionId: `tx-${index}`, acceptedOfferId: `offer-${index}`, createdThrough: 'accepted_offer_ui', checks })) }))
-  writeFileSync(reviewPath, JSON.stringify({
-    environment: 'staging', reviewedBy: 'operations.tester@arch9.test', findings: [{ severity: 'p2', resolved: false }],
+  const reviewEvidence = {
+    environment: 'staging', reviewedBy: 'conveyancer.reviewer@arch9.test', reviewedAt: '2026-07-19T02:00:00.000Z', reviewerRole: 'conveyancing', reviewerIsDeveloper: false, reviewedIndependently: true, findings: [{ severity: 'p2', resolved: false }],
     scenarioReviews: ids.map((id) => ({ id, completedWithoutDeveloperGuidance: true, nextActionClear: true, errorsActionable: true, postDeployDataReviewed: true })),
-  }))
+  }
+  writeFileSync(reviewPath, JSON.stringify(reviewEvidence))
   const result = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).passed, true)
+  writeFileSync(reviewPath, JSON.stringify({ ...reviewEvidence, reviewedBy: 'operations.tester@arch9.test' }))
+  const selfCertified = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
+  assert.equal(selfCertified.status, 1, 'A journey operator must not self-certify Phase 5 review evidence.')
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }
