@@ -28,7 +28,8 @@ try {
   }))
   writeFileSync(journeyPath, JSON.stringify({ environment: 'staging', projectRef, executedBy: 'operations.tester@arch9.test', completedAt: '2026-07-19T01:00:00.000Z', executionMethod: 'ui', scenarios: ids.map((id, index) => ({ id, transactionId: `tx-${index}`, acceptedOfferId: `offer-${index}`, createdThrough: 'accepted_offer_ui', checks })) }))
   const reviewEvidence = {
-    environment: 'staging', reviewedBy: 'conveyancer.reviewer@arch9.test', reviewedAt: '2026-07-19T02:00:00.000Z', reviewerRole: 'conveyancing', reviewerIsDeveloper: false, reviewedIndependently: true, findings: [{ severity: 'p2', resolved: false }],
+    environment: 'staging', reviewedBy: 'conveyancer.reviewer@arch9.test', reviewedAt: '2026-07-19T02:00:00.000Z', reviewerRole: 'conveyancing', reviewerIsDeveloper: false, reviewedIndependently: true,
+    findings: [{ id: 'MVP-UX-001', severity: 'p2', summary: 'Clarify one supporting-document next action.', owner: 'operations.owner@arch9.test', recordedAt: '2026-07-19T02:00:00.000Z', status: 'deferred', resolved: false, nextReviewAt: '2026-08-01T00:00:00.000Z' }],
     scenarioReviews: ids.map((id) => ({ id, completedWithoutDeveloperGuidance: true, nextActionClear: true, errorsActionable: true, postDeployDataReviewed: true })),
   }
   writeFileSync(reviewPath, JSON.stringify(reviewEvidence))
@@ -38,6 +39,9 @@ try {
   writeFileSync(reviewPath, JSON.stringify({ ...reviewEvidence, reviewedBy: 'operations.tester@arch9.test' }))
   const selfCertified = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
   assert.equal(selfCertified.status, 1, 'A journey operator must not self-certify Phase 5 review evidence.')
+  writeFileSync(reviewPath, JSON.stringify({ ...reviewEvidence, findings: [{ ...reviewEvidence.findings[0], severity: 'p1' }] }))
+  const unresolvedBlocking = spawnSync(process.execPath, ['scripts/mvp-staging-review-evidence-check.mjs', `--journey-evidence=${journeyPath}`, `--deployment-evidence=${deploymentEvidencePath}`, `--review-evidence=${reviewPath}`], { cwd: repoRoot, encoding: 'utf8' })
+  assert.equal(unresolvedBlocking.status, 1, 'A release-blocking finding may not be deferred.')
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }

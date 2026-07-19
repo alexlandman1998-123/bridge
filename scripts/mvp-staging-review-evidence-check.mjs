@@ -54,7 +54,35 @@ for (const scenarioId of requiredScenarioIds) {
 }
 
 const findings = Array.isArray(review.findings) ? review.findings : []
-const releaseBlocking = findings.filter((finding) => ['p0', 'p1', 'critical', 'high'].includes(String(finding.severity || '').toLowerCase()) && finding.resolved !== true)
+const findingIds = new Set()
+const blockingSeverities = new Set(['p0', 'p1', 'critical', 'high'])
+for (const finding of findings) {
+  const id = String(finding.id || '').trim()
+  const severity = String(finding.severity || '').toLowerCase()
+  const status = String(finding.status || '').toLowerCase()
+  assert.ok(id, 'Each finding requires an id.')
+  assert.equal(findingIds.has(id), false, `Duplicate finding id: ${id}`)
+  findingIds.add(id)
+  assert.equal(['p0', 'p1', 'p2', 'p3', 'critical', 'high', 'medium', 'low'].includes(severity), true, `${id}: severity is invalid.`)
+  assert.ok(String(finding.summary || '').trim(), `${id}: summary is required.`)
+  assert.ok(String(finding.owner || '').trim(), `${id}: owner is required.`)
+  assert.ok(String(finding.recordedAt || '').trim(), `${id}: recordedAt is required.`)
+  assert.equal(['resolved', 'deferred'].includes(status), true, `${id}: status must be resolved or deferred.`)
+  if (blockingSeverities.has(severity)) {
+    assert.equal(status, 'resolved', `${id}: release-blocking findings must be resolved.`)
+    assert.equal(finding.resolved, true, `${id}: release-blocking finding must be marked resolved.`)
+  }
+  if (status === 'resolved') {
+    assert.equal(finding.resolved, true, `${id}: resolved findings must set resolved to true.`)
+    assert.ok(String(finding.resolution || '').trim(), `${id}: resolved findings require a resolution.`)
+    assert.ok(String(finding.resolvedAt || '').trim(), `${id}: resolved findings require resolvedAt.`)
+  }
+  if (status === 'deferred') {
+    assert.equal(finding.resolved, false, `${id}: deferred findings must set resolved to false.`)
+    assert.ok(String(finding.nextReviewAt || '').trim(), `${id}: deferred findings require nextReviewAt.`)
+  }
+}
+const releaseBlocking = findings.filter((finding) => blockingSeverities.has(String(finding.severity || '').toLowerCase()) && finding.resolved !== true)
 assert.deepEqual(releaseBlocking, [], 'Critical or high review findings must be resolved before pilot.')
 
 console.log(JSON.stringify({
@@ -65,5 +93,6 @@ console.log(JSON.stringify({
   journeyOperator: journey.executedBy,
   scenarioCount: requiredScenarioIds.length,
   findingCount: findings.length,
+  deferredFindingCount: findings.filter((finding) => String(finding.status || '').toLowerCase() === 'deferred').length,
   unresolvedReleaseBlockingFindings: 0,
 }, null, 2))

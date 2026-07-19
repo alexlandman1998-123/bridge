@@ -11,7 +11,7 @@ For each of the four Phase 4 staging transactions, an operational reviewer—not
 
 The review evidence must include `reviewedBy`, `reviewedAt`, `reviewerRole` (`operations`, `conveyancing`, or `administration`), `reviewerIsDeveloper: false`, and `reviewedIndependently: true`. This keeps the usability decision with the people who will operate the MVP.
 
-Log every issue with severity and resolution. `p0`, `p1`, `critical`, and `high` findings must be resolved; lower-priority usability work can be deferred with an owner.
+Log every issue with an id, severity, summary, owner, and recorded time. `p0`, `p1`, `critical`, and `high` findings must be `resolved`, with a resolution and resolved time. Lower-priority usability work may be `deferred`, but must retain an owner and `nextReviewAt`; it cannot silently disappear from the MVP backlog.
 
 Validate the evidence after Phase 4 passes:
 
