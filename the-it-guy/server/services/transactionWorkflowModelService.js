@@ -26,7 +26,7 @@ const ROLLUP_SELECT =
   'transaction_id, parent_stage, parent_status, progress_percent, active_workflow_key, active_step_key, completed_stages_json, blocked_stages_json, blockers_json, next_action_json, derived_from_json, derived_at, created_at, updated_at'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, updated_at, created_at'
+  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, routing_profile_json, routing_profile_version, creation_idempotency_key, updated_at, created_at'
 
 const TRANSACTION_SELECT_FALLBACK =
   'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, updated_at, created_at'

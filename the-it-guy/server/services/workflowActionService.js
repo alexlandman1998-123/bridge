@@ -23,6 +23,7 @@ import {
 } from './transactionStageCompatibilityService.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
 import { publishWorkflowChanged } from './workflowRecomputeService.js'
+import { collectMvpStageTransitionBlockers } from './mvpWorkflowGateEnforcementService.js'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -392,7 +393,7 @@ export async function runWorkflowAction({
   const outOfSequenceWarning = !gateAction
     ? buildOutOfSequenceWarning(incompletePredecessors)
     : null
-  const blockers = validateWorkflowAction(
+  const workflowBlockers = validateWorkflowAction(
     descriptor,
     state,
     currentRollup,
@@ -400,6 +401,13 @@ export async function runWorkflowAction({
     normalizeRoleType(actorRole || 'developer'),
     { gateAction },
   )
+  const mvpGateBlockers = await collectMvpStageTransitionBlockers({
+    transactionId,
+    actionKey,
+    transaction: state.transaction,
+    client,
+  })
+  const blockers = dedupeBlockers([...workflowBlockers, ...mvpGateBlockers])
   if (blockers.length) {
     await logTransactionWorkflowEvent(
       {
