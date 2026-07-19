@@ -47,7 +47,6 @@
     "the-it-guy/src/core/transactions/__tests__/mvp"
   ],
   "deployBlockedUntil": [
-    "phase_2_local_contract_verification_passes",
     "phase_3_staging_migration_plan_approved"
   ]
 }
