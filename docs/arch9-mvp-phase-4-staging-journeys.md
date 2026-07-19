@@ -28,11 +28,16 @@ Create a local, non-secret JSON file using this structure. Do not commit real co
 ```json
 {
   "environment": "staging",
+  "projectRef": "staging-project-ref",
+  "executedBy": "operations.tester@arch9.example",
+  "completedAt": "2026-07-19T00:00:00.000Z",
+  "executionMethod": "ui",
   "scenarios": [
     {
       "id": "cash_individual_resale",
       "transactionId": "uuid",
       "acceptedOfferId": "uuid",
+      "createdThrough": "accepted_offer_ui",
       "checks": {
         "leadCreated": true,
         "offerAccepted": true,
@@ -55,7 +60,9 @@ Create a local, non-secret JSON file using this structure. Do not commit real co
 Validate the completed evidence:
 
 ```bash
-npm run mvp:phase4:verify -- --evidence=docs/staging-mvp-journeys.json
+npm run mvp:phase4:verify -- \
+  --evidence=docs/staging-mvp-journeys.json \
+  --deployment-evidence=/secure-local-path/staging-deployment-evidence.json
 ```
 
 Any failed gate, duplicate transaction, missing seeded record, or failed smoke check is a stop condition for staging and production.

@@ -23,7 +23,7 @@ function readJsonOption(name) {
   return JSON.parse(readFileSync(target, 'utf8'))
 }
 
-const requiredFiles = ['staging-ledger', 'journey-evidence', 'review-evidence', 'decision-evidence']
+const requiredFiles = ['staging-ledger', 'deployment-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence']
 const missingInputs = requiredFiles.filter((name) => !options[name])
 const checks = []
 
@@ -32,10 +32,12 @@ checks.push({ name: 'local_phase_2', ...runNode(['scripts/mvp-lifecycle-atomic-c
 
 if (!missingInputs.length) {
   checks.push({ name: 'staging_migration_plan', ...runNode(['scripts/mvp-staging-migration-plan.mjs', `--ledger=${options['staging-ledger']}`]) })
-  checks.push({ name: 'staging_journeys', ...runNode(['scripts/mvp-staging-journey-evidence-check.mjs', `--evidence=${options['journey-evidence']}`]) })
+  checks.push({ name: 'staging_deployment', ...runNode(['scripts/mvp-staging-deployment-evidence-check.mjs', `--evidence=${options['deployment-evidence']}`]) })
+  checks.push({ name: 'staging_journeys', ...runNode(['scripts/mvp-staging-journey-evidence-check.mjs', `--evidence=${options['journey-evidence']}`, `--deployment-evidence=${options['deployment-evidence']}`]) })
   checks.push({ name: 'staging_review', ...runNode([
     'scripts/mvp-staging-review-evidence-check.mjs',
     `--journey-evidence=${options['journey-evidence']}`,
+    `--deployment-evidence=${options['deployment-evidence']}`,
     `--review-evidence=${options['review-evidence']}`,
   ]) })
 }

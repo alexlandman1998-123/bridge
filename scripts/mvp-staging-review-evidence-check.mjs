@@ -9,12 +9,16 @@ const options = Object.fromEntries(process.argv.slice(2).map((arg) => {
   const [key, value] = arg.replace(/^--/, '').split('=')
   return [key, value || '']
 }))
-if (!options['journey-evidence'] || !options['review-evidence']) {
-  throw new Error('Use --journey-evidence=<path> --review-evidence=<path>.')
+if (!options['journey-evidence'] || !options['review-evidence'] || !options['deployment-evidence']) {
+  throw new Error('Use --journey-evidence=<path> --deployment-evidence=<path> --review-evidence=<path>.')
 }
 
 const journeyPath = path.resolve(repoRoot, options['journey-evidence'])
-const phase4 = spawnSync(process.execPath, ['scripts/mvp-staging-journey-evidence-check.mjs', `--evidence=${journeyPath}`], {
+const phase4 = spawnSync(process.execPath, [
+  'scripts/mvp-staging-journey-evidence-check.mjs',
+  `--evidence=${journeyPath}`,
+  `--deployment-evidence=${options['deployment-evidence']}`,
+], {
   cwd: repoRoot,
   encoding: 'utf8',
 })

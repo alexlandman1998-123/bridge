@@ -16,6 +16,7 @@ Validate the evidence after Phase 4 passes:
 ```bash
 npm run mvp:phase5:verify -- \
   --journey-evidence=docs/staging-mvp-journeys.json \
+  --deployment-evidence=/secure-local-path/staging-deployment-evidence.json \
   --review-evidence=docs/staging-mvp-review.json
 ```
 

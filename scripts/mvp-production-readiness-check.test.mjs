@@ -9,6 +9,7 @@ assert.equal(result.status, 1, 'Production must be blocked without real staging 
 const report = JSON.parse(result.stdout)
 assert.equal(report.decision, 'no_go')
 assert.equal(report.blockers.includes('missing_staging-ledger'), true)
+assert.equal(report.blockers.includes('missing_deployment-evidence'), true)
 assert.equal(report.blockers.includes('missing_journey-evidence'), true)
 assert.equal(report.blockers.includes('missing_review-evidence'), true)
 assert.equal(report.blockers.includes('missing_decision-evidence'), true)

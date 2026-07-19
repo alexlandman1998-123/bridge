@@ -6,7 +6,7 @@ The production gate requires:
 
 1. Phase 1 and Phase 2 local contracts passing.
 2. A reconciled staging migration-plan result.
-3. Four passing staging UI journeys.
+3. Phase 3D deployment evidence for the same staging project and four passing UI journeys.
 4. A passing operations/data review with no unresolved high-severity finding.
 5. A decision-evidence JSON file with named release, pilot, support, and rollback owners; reviewed rollback procedure; and accepted MVP limitations.
 
@@ -28,6 +28,7 @@ Run the check:
 ```bash
 npm run mvp:phase6:readiness -- \
   --staging-ledger=docs/staging-migration-ledger.json \
+  --deployment-evidence=/secure-local-path/staging-deployment-evidence.json \
   --journey-evidence=docs/staging-mvp-journeys.json \
   --review-evidence=docs/staging-mvp-review.json \
   --decision-evidence=docs/production-pilot-decision.json
