@@ -49,6 +49,8 @@
     "scripts/mvp-staging-review-evidence-check.test.mjs",
     "scripts/mvp-production-readiness-check.mjs",
     "scripts/mvp-production-readiness-check.test.mjs",
+    "scripts/mvp-production-decision-evidence-check.mjs",
+    "scripts/mvp-production-decision-evidence-check.test.mjs",
     "scripts/mvp-pilot-session-check.mjs",
     "scripts/mvp-pilot-batch-audit.mjs",
     "scripts/mvp-pilot-controls.test.mjs",

@@ -1,8 +1,6 @@
-import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const options = Object.fromEntries(process.argv.slice(2).map((arg) => {
@@ -12,15 +10,10 @@ const options = Object.fromEntries(process.argv.slice(2).map((arg) => {
 
 function runNode(args) {
   const result = spawnSync(process.execPath, args, { cwd: repoRoot, encoding: 'utf8' })
-  return { passed: result.status === 0, output: result.stdout || result.stderr || '' }
-}
-
-function readJsonOption(name) {
-  const supplied = options[name]
-  if (!supplied) return null
-  const target = path.resolve(repoRoot, supplied)
-  if (!existsSync(target)) throw new Error(`${name} file not found: ${supplied}`)
-  return JSON.parse(readFileSync(target, 'utf8'))
+  const output = result.stdout || result.stderr || ''
+  let report = null
+  try { report = JSON.parse(result.stdout) } catch { /* Exit status remains the source of truth. */ }
+  return { passed: result.status === 0, output, report }
 }
 
 const requiredFiles = ['staging-ledger', 'deployment-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence']
@@ -40,16 +33,11 @@ if (!missingInputs.length) {
     `--deployment-evidence=${options['deployment-evidence']}`,
     `--review-evidence=${options['review-evidence']}`,
   ]) })
-}
-
-let decisionEvidence = null
-if (!missingInputs.length) {
-  decisionEvidence = readJsonOption('decision-evidence')
-  for (const field of ['releaseOwner', 'pilotOwner', 'supportOwner', 'rollbackOwner']) {
-    assert.ok(String(decisionEvidence?.[field] || '').trim(), `decision-evidence requires ${field}.`)
-  }
-  assert.equal(decisionEvidence?.rollbackProcedureReviewed, true, 'Rollback procedure must be reviewed.')
-  assert.equal(decisionEvidence?.knownMvpLimitationsAccepted, true, 'Known MVP limitations must be accepted.')
+  checks.push({ name: 'production_decision', ...runNode([
+    'scripts/mvp-production-decision-evidence-check.mjs',
+    `--evidence=${options['decision-evidence']}`,
+    `--deployment-evidence=${options['deployment-evidence']}`,
+  ]) })
 }
 
 const failedChecks = checks.filter((check) => !check.passed).map((check) => check.name)
@@ -64,12 +52,7 @@ const report = {
   checks: checks.map(({ name, passed }) => ({ name, passed })),
   monthlyTransactionLimit: 100,
   permittedInitialBatchSize: 10,
-  owners: decisionEvidence ? {
-    releaseOwner: decisionEvidence.releaseOwner,
-    pilotOwner: decisionEvidence.pilotOwner,
-    supportOwner: decisionEvidence.supportOwner,
-    rollbackOwner: decisionEvidence.rollbackOwner,
-  } : null,
+  owners: checks.find((check) => check.name === 'production_decision')?.report?.owners || null,
 }
 
 console.log(JSON.stringify(report, null, 2))

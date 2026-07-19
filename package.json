@@ -53,7 +53,9 @@
     "mvp:staging:apply-preflight": "node scripts/mvp-staging-apply-preflight.mjs",
     "test:mvp:staging:apply-preflight": "node scripts/mvp-staging-apply-preflight.test.mjs",
     "mvp:staging:deployment-evidence": "node scripts/mvp-staging-deployment-evidence-check.mjs",
-    "test:mvp:staging:deployment-evidence": "node scripts/mvp-staging-deployment-evidence-check.test.mjs"
+    "test:mvp:staging:deployment-evidence": "node scripts/mvp-staging-deployment-evidence-check.test.mjs",
+    "mvp:production:decision-evidence": "node scripts/mvp-production-decision-evidence-check.mjs",
+    "test:mvp:production:decision-evidence": "node scripts/mvp-production-decision-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
