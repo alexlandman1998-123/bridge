@@ -1,0 +1,47 @@
+{
+  "version": "arch9_mvp_release_manifest_v1",
+  "baseBranch": "main",
+  "releaseBranchPattern": "^codex/arch9-mvp-release(?:[-/][a-z0-9._-]+)?$",
+  "monthlyTransactionLimit": 100,
+  "supportedScenarios": [
+    "cash_individual_resale",
+    "bond_company_private_sale",
+    "hybrid_trust_resale",
+    "development_company_development_sale"
+  ],
+  "requiredFiles": [
+    "the-it-guy/docs/mvp-launch-boundary.md",
+    "the-it-guy/docs/mvp-deployment-runbook.md",
+    "the-it-guy/scripts/mvp-launch-readiness.mjs",
+    "the-it-guy/scripts/mvp-release-certification.mjs",
+    "the-it-guy/scripts/mvp-schema-contract-check.mjs",
+    "supabase/migrations/202607180046_mvp_atomic_transaction_creation_phase2a.sql"
+  ],
+  "allowedPaths": [
+    ".github/workflows/mvp-release-certification.yml",
+    "docs/arch9-mvp-phase-0-release-lane.md",
+    "docs/arch9-mvp-release-manifest.json",
+    "package.json",
+    "scripts/arch9-mvp-release-lane-check.mjs",
+    "scripts/arch9-mvp-release-lane-check.test.mjs",
+    "supabase/migrations/202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+    "the-it-guy/src/components/TransactionProgressPanel.jsx",
+    "the-it-guy/src/components/transaction/MvpTransactionControlBoard.jsx",
+    "the-it-guy/src/lib/transactionLifecycleService.js",
+    "the-it-guy/src/pages/ClientPortal.jsx",
+    "the-it-guy/src/services/clientPortalWorkspaceService.js",
+    "the-it-guy/src/services/transactionRoutingProfileService.js",
+    "the-it-guy/src/services/transactionWorkflowReadModelService.js"
+  ],
+  "allowedPathPrefixes": [
+    "the-it-guy/docs/mvp-",
+    "the-it-guy/scripts/mvp-",
+    "the-it-guy/src/core/transactions/mvp",
+    "the-it-guy/src/core/transactions/__tests__/mvp"
+  ],
+  "deployBlockedUntil": [
+    "phase_1_transaction_spine_bypasses_closed",
+    "phase_2_local_contract_verification_passes",
+    "phase_3_staging_migration_plan_approved"
+  ]
+}

@@ -18,7 +18,10 @@
     "supabase:phase7": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --apply --write",
     "supabase:phase7:plan": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --write",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
-    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
+    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked",
+    "mvp:phase0:report": "node scripts/arch9-mvp-release-lane-check.mjs",
+    "mvp:phase0:check": "node scripts/arch9-mvp-release-lane-check.mjs --strict",
+    "test:mvp:phase0": "node scripts/arch9-mvp-release-lane-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
