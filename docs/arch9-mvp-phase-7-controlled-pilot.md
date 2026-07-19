@@ -32,4 +32,14 @@ npm run mvp:phase7:audit -- \
 
 Each batch transaction must include its declared `plannedTransactionReference`; the completed references must match the session charter exactly.
 
+After a passing audit, the approved pilot owner must record batch closeout and the approved support owner must acknowledge it. A closeout can permit a new session check only when the audit has no issues, no stop condition was triggered, and `incidentCount` is zero:
+
+```bash
+npm run mvp:pilot:batch-closeout -- \
+  --evidence=/secure-local-path/production-pilot-batch-01-closeout.json \
+  --batch-audit=/secure-local-path/production-pilot-batch-01-audit.json \
+  --session-evidence=/secure-local-path/production-pilot-session-01.json \
+  --support-evidence=/secure-local-path/production-pilot-support-evidence.json
+```
+
 Any failure is a stop condition. Pause new production work, preserve transaction IDs and evidence, resolve the affected issue, re-run Phase 6, then start a new batch only after a new passing session check.
