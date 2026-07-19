@@ -40,7 +40,9 @@
     "mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.mjs",
     "test:mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.test.mjs",
     "mvp:staging-ledger:capture": "node scripts/mvp-staging-ledger-capture.mjs",
-    "test:mvp:staging-ledger": "node scripts/mvp-staging-ledger-capture.test.mjs"
+    "test:mvp:staging-ledger": "node scripts/mvp-staging-ledger-capture.test.mjs",
+    "mvp:staging-ledger:classify": "node scripts/mvp-migration-ledger-classify.mjs",
+    "test:mvp:staging-ledger:classify": "node scripts/mvp-migration-ledger-classify.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
