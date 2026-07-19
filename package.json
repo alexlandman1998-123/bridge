@@ -29,7 +29,9 @@
     "mvp:phase4:verify": "node scripts/mvp-staging-journey-evidence-check.mjs",
     "test:mvp:phase4": "node scripts/mvp-staging-journey-evidence-check.test.mjs",
     "mvp:phase5:verify": "node scripts/mvp-staging-review-evidence-check.mjs",
-    "test:mvp:phase5": "node scripts/mvp-staging-review-evidence-check.test.mjs"
+    "test:mvp:phase5": "node scripts/mvp-staging-review-evidence-check.test.mjs",
+    "mvp:phase6:readiness": "node scripts/mvp-production-readiness-check.mjs",
+    "test:mvp:phase6": "node scripts/mvp-production-readiness-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
