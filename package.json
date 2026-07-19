@@ -47,7 +47,9 @@
     "test:mvp:migrations:plan": "node scripts/mvp-canonical-migration-plan.test.mjs",
     "mvp:release:certify": "node the-it-guy/scripts/mvp-release-certification.mjs",
     "mvp:staging:environment": "node scripts/mvp-staging-environment-check.mjs",
-    "test:mvp:staging:environment": "node scripts/mvp-staging-environment-check.test.mjs"
+    "test:mvp:staging:environment": "node scripts/mvp-staging-environment-check.test.mjs",
+    "mvp:staging:change-evidence": "node scripts/mvp-staging-change-evidence-check.mjs",
+    "test:mvp:staging:change-evidence": "node scripts/mvp-staging-change-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
