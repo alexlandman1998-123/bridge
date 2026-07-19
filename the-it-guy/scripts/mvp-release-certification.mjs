@@ -36,6 +36,7 @@ const checks = [
   ['pilot batch closeout safety', repoRoot, ['scripts/mvp-pilot-batch-closeout-evidence-check.test.mjs']],
   ['pilot continuation evidence safety', repoRoot, ['scripts/mvp-pilot-continuation-evidence-check.test.mjs']],
   ['scale entry evidence safety', repoRoot, ['scripts/mvp-scale-entry-evidence-check.test.mjs']],
+  ['monthly capacity evidence safety', repoRoot, ['scripts/mvp-monthly-capacity-evidence-check.test.mjs']],
   ['pilot controls', repoRoot, ['scripts/mvp-pilot-controls.test.mjs']],
   ['scale progression', repoRoot, ['scripts/mvp-scale-progression.test.mjs']],
   ['staging ledger capture', repoRoot, ['scripts/mvp-staging-ledger-capture.test.mjs']],

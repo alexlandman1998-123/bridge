@@ -67,7 +67,9 @@
     "mvp:pilot:continuation-evidence": "node scripts/mvp-pilot-continuation-evidence-check.mjs",
     "test:mvp:pilot:continuation-evidence": "node scripts/mvp-pilot-continuation-evidence-check.test.mjs",
     "mvp:scale:entry-evidence": "node scripts/mvp-scale-entry-evidence-check.mjs",
-    "test:mvp:scale:entry-evidence": "node scripts/mvp-scale-entry-evidence-check.test.mjs"
+    "test:mvp:scale:entry-evidence": "node scripts/mvp-scale-entry-evidence-check.test.mjs",
+    "mvp:scale:monthly-capacity": "node scripts/mvp-monthly-capacity-evidence-check.mjs",
+    "test:mvp:scale:monthly-capacity": "node scripts/mvp-monthly-capacity-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

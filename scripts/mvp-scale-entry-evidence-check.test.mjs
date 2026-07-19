@@ -13,7 +13,7 @@ const transactions = Array.from({ length: 10 }, (_, index) => ({
   participantBootstrapComplete: true, documentBootstrapComplete: true, workflowBootstrapComplete: true,
 }))
 const input = {
-  environment: 'production', currentCapacity: 10, transactions, completedBatchAudits: 1,
+  environment: 'production', currentCapacity: 10, transactions, completedBatchAudits: 1, reportingMonth: '2026-07', recordedAt: '2026-07-19T10:00:00.000Z', monthlyTransactionReferences: transactions.map((transaction) => transaction.transactionId), monthlyTransactionCount: 10, productionCredentialsUsed: false,
   pilotCloseouts: [{ sessionId: 'pilot-session-001', batchNumber: 1, auditPassed: true, closeoutDecision: 'allow_next_session_check', incidentCount: 0, stopConditionsTriggered: false }],
   scaleApproval: { approvedBy: 'operations.lead@arch9.test', approvedAt: '2026-07-19T10:00:00.000Z', approvedByRole: 'operations', decision: 'approved_to_next_mvp_capacity', fromCapacity: 10, toCapacity: 25, productionCredentialsUsed: false },
 }
