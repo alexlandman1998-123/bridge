@@ -27,7 +27,9 @@
     "mvp:phase3:plan": "node scripts/mvp-staging-migration-plan.mjs",
     "test:mvp:phase3": "node scripts/mvp-staging-migration-plan.test.mjs",
     "mvp:phase4:verify": "node scripts/mvp-staging-journey-evidence-check.mjs",
-    "test:mvp:phase4": "node scripts/mvp-staging-journey-evidence-check.test.mjs"
+    "test:mvp:phase4": "node scripts/mvp-staging-journey-evidence-check.test.mjs",
+    "mvp:phase5:verify": "node scripts/mvp-staging-review-evidence-check.mjs",
+    "test:mvp:phase5": "node scripts/mvp-staging-review-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
