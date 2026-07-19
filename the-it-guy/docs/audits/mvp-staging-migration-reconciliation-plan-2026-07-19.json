@@ -1,0 +1,66 @@
+{
+  "version": "arch9_mvp_staging_migration_reconciliation_plan_v1",
+  "recordedAt": "2026-07-19T19:25:00.000Z",
+  "scope": "Planning only. This plan does not apply, rewrite, repair, rename, delete, or mark any database migration; it does not create business data.",
+  "sourceBaseline": {
+    "repositoryCommit": "cf710f8e5141f9884d9a8e2140c70e769e20e0d2",
+    "migrationTreeObject": "ab2e480169845a8b315fc1c4b56a2942721a1b1d",
+    "highestRepositoryMigrationVersion": "20260719130913",
+    "stagingLedgerMigrationCount": 431,
+    "repositoryMigrationCount": 494,
+    "historicalMissingMigrationCount": 63
+  },
+  "governingRules": [
+    "Do not alter, delete, rename, re-date, squash, or retroactively push any historical migration file.",
+    "Do not write directly to Supabase's migration ledger or mark a missing migration as applied.",
+    "Allocate one new migration version greater than every repository and staging version at the moment it is authored.",
+    "Keep the reconciliation migration additive and idempotent, and execute its DDL in one transaction where PostgreSQL permits it.",
+    "Do not replay the 63 historical gaps as a batch. Reconcile only the MVP atomic-creation contract proven necessary for pilot operation.",
+    "If a preflight finds a conflicting object shape or legacy duplicate data, abort before DDL and prepare a later correction migration; do not weaken or rewrite history."
+  ],
+  "reconciliationTarget": {
+    "purpose": "Expose one durable and idempotent lead/accepted-offer to transaction creation boundary for the controlled MVP pilot.",
+    "function": "public.bridge_create_mvp_transaction(p_payload jsonb)",
+    "minimumSchema": [
+      "transactions.mandate_packet_id prerequisite",
+      "ten missing transaction fields identified in Phase 1B",
+      "transactions organisation/idempotency partial unique index",
+      "transaction_participant_requirements table",
+      "participant, document, and workflow bootstrap helpers",
+      "explicit privilege hardening for every security-definer helper and the atomic RPC"
+    ],
+    "excluded": [
+      "Replaying unrelated document-generator, calendar, notification, or attorney migrations from the missing ranges",
+      "Backfilling historical transactions unless a separate approved migration requires it",
+      "Changing production exposure, notification modes, or user data"
+    ]
+  },
+  "requiredPreflightBeforeAuthoring": [
+    "Re-read the linked staging ledger and assert the selected new version is monotonic.",
+    "Inspect actual staging constraints/indexes for transaction_participants(transaction_id, role_type, legal_role), transaction_required_documents(transaction_id, document_key), and transaction_workflow_lanes(transaction_id, lane_type). Do not assume the historical conflict targets are valid.",
+    "Check for duplicate existing rows that would prevent any required unique index or constraint from being added.",
+    "Assert expected column data types and nullable/default behaviour for every existing object consumed by the helper functions.",
+    "Reconfirm the named RPC remains absent and that no conflicting function overload exists.",
+    "Capture a schema/ledger backup and record the before-state in an audit artifact."
+  ],
+  "authoringSequence": [
+    "Create a new timestamped reconciliation migration after the current highest version; leave 202607180046 untouched.",
+    "Start a transaction and run explicit preflight assertions with clear failure messages.",
+    "Add the missing mandate_packet_id prerequisite and atomic transaction fields using additive, idempotent DDL.",
+    "Create only indexes/constraints whose exact compatibility and duplicate checks passed; otherwise abort and split the corrective work into a later migration.",
+    "Create transaction_participant_requirements additively.",
+    "Create or replace only the three atomic bootstrap helpers and the single p_payload jsonb RPC after their schema prerequisites exist.",
+    "Revoke public execution for every security-definer helper and the target RPC; grant authenticated execution only for the target RPC.",
+    "Commit. Any later correction must be a new migration, never an edit of this one."
+  ],
+  "postApplyAcceptance": [
+    "The linked ledger contains the new reconciliation version while every historical version remains unchanged.",
+    "The named RPC resolves; an invalid empty payload must return a validation/access error, never PGRST202.",
+    "Run the authenticated staging atomic-creation smoke transaction only after the RPC contract check passes.",
+    "Verify idempotency, lead and offer linkage, participants, documents, lanes, and no partial transaction after a forced validation failure.",
+    "Keep pilot exposure paused until those checks have passed and been recorded."
+  ],
+  "recoveryRule": "If application or verification fails, stop exposure and add a new forward correction migration after diagnosis. Do not delete the reconciliation migration, roll back the migration ledger, or rewrite applied SQL history.",
+  "decision": "append_only_reconciliation_required",
+  "nextPhase": "Phase 2B — perform the prerequisite constraint/index and duplicate-data preflight against staging, then decide whether one reconciliation migration can safely be authored."
+}

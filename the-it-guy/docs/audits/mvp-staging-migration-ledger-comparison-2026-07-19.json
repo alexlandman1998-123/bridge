@@ -1,0 +1,52 @@
+{
+  "version": "arch9_mvp_staging_migration_ledger_comparison_v1",
+  "recordedAt": "2026-07-19T19:00:17.000Z",
+  "environment": {
+    "name": "staging",
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "supabaseHost": "isdowlnollckzvltkasn.supabase.co"
+  },
+  "scope": "Read-only comparison of repository migration version IDs with the linked staging Supabase migration ledger. No migration, transaction, notification, user, document, or database record was created, updated, or deleted.",
+  "sources": {
+    "repository": {
+      "directory": "supabase/migrations",
+      "migrationFileCount": 494,
+      "versionExtraction": "Leading numeric prefix before the first underscore in each .sql filename."
+    },
+    "stagingLedger": {
+      "command": "npx --yes supabase@2.109.1 migration list --linked",
+      "migrationCount": 431,
+      "comparisonKey": "Migration version ID only; the Supabase ledger does not provide repository file hashes."
+    }
+  },
+  "atomicCreationMigration": {
+    "version": "202607180046",
+    "filename": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+    "repositorySha256": "61aa1e241e08bd9379b79f094f61c8f3f08c8d41d2dbb97b66b01682643349f4",
+    "presentInStagingLedger": false,
+    "impact": "public.bridge_create_mvp_transaction(p_payload jsonb) is absent in staging, as separately recorded in the atomic-RPC blocker evidence."
+  },
+  "comparison": {
+    "repositoryMigrationCount": 494,
+    "stagingMigrationCount": 431,
+    "missingFromStagingCount": 63,
+    "missingFromStagingRanges": [
+      "202607170016–202607170031",
+      "202607180001–202607180023",
+      "202607180026–202607180031",
+      "202607180033–202607180043",
+      "202607180046–202607180052"
+    ],
+    "presentOnlyInStagingCount": 0,
+    "presentOnlyInStagingRanges": []
+  },
+  "orderingFinding": {
+    "laterStagingMigrationsPresent": "202607190001–202607190006",
+    "earlierRepositoryMigrationsAbsent": "Multiple 20260717 and 20260718 ranges, including 202607180046.",
+    "result": "out_of_order_or_selectively_applied_history",
+    "risk": "Applying only the atomic-creation migration would bypass required history analysis and could make the staging schema state harder to recover."
+  },
+  "decision": "migration_history_reconciliation_required",
+  "deploymentRule": "Do not apply 202607180046 or any other missing migration to staging until the missing ranges are classified, dependencies are reviewed, and one safe ordered reconciliation plan is approved.",
+  "requiredNextPhase": "Phase 1B — classify each missing range and its dependencies against the live staging schema before preparing a reconciliation migration plan."
+}

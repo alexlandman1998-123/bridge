@@ -1,0 +1,46 @@
+{
+  "version": "arch9_mvp_staging_migration_worktree_review_v1",
+  "recordedAt": "2026-07-19T19:07:41.000Z",
+  "scope": "Read-only review of the repository migration worktree, Git HEAD migration tree, and the previously captured linked staging ledger comparison. No migration, transaction, notification, user, document, or database record was created, updated, or deleted.",
+  "repositoryBaseline": {
+    "headCommit": "cf710f8e5141f9884d9a8e2140c70e769e20e0d2",
+    "branch": "main",
+    "remoteTrackingState": "main is aligned with origin/main",
+    "migrationTreeObject": "ab2e480169845a8b315fc1c4b56a2942721a1b1d",
+    "migrationDirectory": "supabase/migrations",
+    "sqlFileCount": 494,
+    "trackedMigrationFileCount": 494,
+    "firstVersion": "202605090001",
+    "lastVersion": "20260719130913"
+  },
+  "worktreeReview": {
+    "modifiedMigrationFiles": [],
+    "stagedMigrationFiles": [],
+    "deletedTrackedMigrationFiles": [],
+    "untrackedMigrationFiles": [],
+    "invalidMigrationFilenames": [],
+    "duplicateMigrationVersionIds": [],
+    "result": "clean_and_internally_ordered"
+  },
+  "nonMigrationWorktreeItems": {
+    "present": true,
+    "description": "Untracked audit reports and their local validation scripts under the nested application directory were created during the read-only staging investigation. None are SQL migration files and none change the repository migration chain."
+  },
+  "stagingHistoryConstraint": {
+    "repositoryMigrationCount": 494,
+    "stagingLedgerMigrationCount": 431,
+    "missingFromStagingCount": 63,
+    "missingFromStagingRanges": [
+      "202607170016–202607170031",
+      "202607180001–202607180023",
+      "202607180026–202607180031",
+      "202607180033–202607180043",
+      "202607180046–202607180052"
+    ],
+    "laterStagingMigrationsAlreadyApplied": "202607190001–202607190006 and 20260719130913",
+    "ledgerLimitation": "The Supabase migration ledger records version IDs, not the repository content hash for each historical SQL file. Schema preflight checks remain required before any reconciliation deployment."
+  },
+  "decision": "freeze_current_repository_migration_tree_and_do_not_push_historical_gaps",
+  "safeChainRule": "Treat Git tree ab2e480169845a8b315fc1c4b56a2942721a1b1d as the fixed source baseline. Do not rename, delete, edit, or individually push historical missing migrations. Any staging repair must be a newly versioned, additive, idempotent reconciliation migration created after 20260719130913 and validated against the staging schema.",
+  "requiredNextPhase": "Phase 1D — prepare the reconciliation migration specification and preflight checklist; it must include the atomic creation contract and the missing transactions.mandate_packet_id prerequisite."
+}

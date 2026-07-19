@@ -1,0 +1,52 @@
+{
+  "version": "arch9_mvp_staging_atomic_rpc_conflict_review_v1",
+  "recordedAt": "2026-07-19T19:20:00.000Z",
+  "scope": "Read-only review of all reachable Git history, the current repository migration chain, and staging's generated REST API schema. No migration, transaction, notification, user, document, or database record was created, updated, or deleted.",
+  "targetFunction": {
+    "qualifiedName": "public.bridge_create_mvp_transaction",
+    "requiredSignature": "public.bridge_create_mvp_transaction(p_payload jsonb)",
+    "currentDefinition": {
+      "migration": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+      "line": 145,
+      "gitBlob": "12d0ffd8de1669870644de8512afa3de4cceaf68"
+    }
+  },
+  "repositoryReview": {
+    "currentMigrationFilesReferencingTarget": [
+      "202607180046_mvp_atomic_transaction_creation_phase2a.sql"
+    ],
+    "reachableGitHistoryChangesContainingTarget": [
+      {
+        "commit": "0b9f33d6583fe106774775030e644170f20d9ae5",
+        "subject": "feat: enforce MVP transaction spine",
+        "change": "add",
+        "gitBlob": "12d0ffd8de1669870644de8512afa3de4cceaf68"
+      },
+      {
+        "commit": "d17282724ea33f2ec32fe07b130d9214d016e36d",
+        "subject": "agg",
+        "change": "add",
+        "gitBlob": "12d0ffd8de1669870644de8512afa3de4cceaf68"
+      }
+    ],
+    "differentImplementationFound": false,
+    "historicalRenameOrDeleteFound": false,
+    "interpretation": "The two Git additions are an integration-history artifact: both contain the same immutable SQL blob. There is one implementation, not two conflicting versions."
+  },
+  "stagingReview": {
+    "namedRpcProbe": {
+      "httpStatus": 404,
+      "code": "PGRST202",
+      "result": "required p_payload jsonb signature absent"
+    },
+    "generatedRestApiSchema": {
+      "httpStatus": 200,
+      "matchingRpcPaths": [],
+      "matchingDefinitions": [],
+      "result": "no exposed RPC variant found"
+    }
+  },
+  "decision": "no_conflicting_rpc_version_detected",
+  "deploymentImplication": "A new reconciliation migration may create or replace public.bridge_create_mvp_transaction(p_payload jsonb) without needing to preserve an earlier competing implementation. It must still include the missing schema prerequisites identified in Phase 1B.",
+  "requiredNextPhase": "Phase 2 — author and review a single additive reconciliation migration with preflight checks; do not apply it until its SQL and deployment order are approved."
+}

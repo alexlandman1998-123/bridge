@@ -1,0 +1,24 @@
+{
+  "version": "arch9_mvp_staging_notification_recovery_blocker_v1",
+  "recordedAt": "2026-07-19T20:00:00.000Z",
+  "scope": "Read-only source and applied-ledger review. No notification event was created, failed, retried, delivered, or changed.",
+  "requestedInvariant": "A controlled failed notification must prepare for human review only and must not resend automatically.",
+  "evidence": {
+    "appliedSchedulerMigration": "20260719130913_transaction_progress_supabase_schedule.sql",
+    "scheduler": "Runs public.bridge_run_transaction_progress_schedule_phase7 every five minutes.",
+    "dispatcher": "Posts transaction_progress_dispatch to the send-email Edge Function.",
+    "claimFunction": "public.bridge_claim_transaction_progress_notifications_phase3",
+    "claimEligibility": "automation_key = transaction_progress_changed; channel = email; status in (queued, failed); dispatch_attempt_count < max_dispatch_attempts; next_dispatch_attempt_at due.",
+    "uiBehaviour": "The existing manual resend UI says a queued resend will retry automatically if needed."
+  },
+  "result": "automatic_retry_present",
+  "risk": "Forcing a failure against a real staging recipient could result in automatic re-dispatch by the scheduled worker, contrary to the requested invariant.",
+  "safeTestDecision": "do_not_force_failure",
+  "requiredForwardChange": [
+    "Introduce an explicit manual-review state or controlled-test metadata flag that the claim/dispatcher path excludes.",
+    "When a controlled notification fails, clear next_dispatch_attempt_at and record a review-required reason rather than leaving it claimable.",
+    "Expose a deliberate operator-only retry action; it must create an auditable new attempt rather than automatically retrying the failed event.",
+    "Deploy and verify that forward change before creating any safe failed-notification rehearsal."
+  ],
+  "decision": "notification_recovery_rehearsal_blocked_until_auto_retry_is_gated"
+}

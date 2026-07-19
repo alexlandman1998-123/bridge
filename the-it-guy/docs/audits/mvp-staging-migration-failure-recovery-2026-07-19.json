@@ -1,0 +1,50 @@
+{
+  "version": "arch9_mvp_staging_migration_failure_recovery_v1",
+  "recordedAt": "2026-07-19T19:45:00.000Z",
+  "scope": "Operational recovery note for the future append-only staging reconciliation migration. It authorizes no database change by itself.",
+  "trigger": "Any non-zero migration command, database SQLSTATE/error, unexpected schema result, missing RPC after deployment, or failed atomic smoke check.",
+  "immediateActions": [
+    "Keep pilot exposure paused; do not create real or additional test transactions.",
+    "Stop the migration command at the first failure. Do not retry with modified SQL in the console.",
+    "Preserve the raw command output, PostgreSQL SQLSTATE, error message, failing migration version, UTC time, and deployed Git commit.",
+    "Capture read-only after-state evidence: migration ledger row status, target RPC resolution result, and affected object existence checks.",
+    "Record whether the database transaction rolled back or the migration completed before a later smoke check failed."
+  ],
+  "prohibitedActions": [
+    "Do not run Supabase migration repair, insert/update/delete migration-ledger rows, or mark the version applied manually.",
+    "Do not manually insert, update, delete, or backfill production-like leads, offers, transactions, participants, documents, workflow lanes, or notifications to make the check pass.",
+    "Do not reset, restore over, truncate, or recreate staging as an incident response.",
+    "Do not edit, delete, rename, or re-date historical migration files.",
+    "Do not expose the pilot while failure evidence is unresolved."
+  ],
+  "failurePaths": {
+    "preflightOrDdlFailure": {
+      "expectedDatabaseState": "The reconciliation migration is transactional. A failure before commit should leave no partial DDL from that migration.",
+      "recovery": "Verify the rollback with read-only schema/ledger probes, diagnose the exact failed precondition, and prepare a new forward migration or corrected preflight before another attempt."
+    },
+    "postCommitContractOrSmokeFailure": {
+      "expectedDatabaseState": "The new migration version may be recorded and its additive schema may exist; do not attempt to undo it manually.",
+      "recovery": "Leave the schema in place, preserve smoke evidence, and prepare one new append-only correction migration. Use only clearly labelled synthetic test data for any subsequent verification."
+    },
+    "unexpectedBusinessDataObservation": {
+      "expectedDatabaseState": "No operator should modify the observed record during triage.",
+      "recovery": "Stop exposure, preserve identifiers in the restricted incident record, and decide whether a separately reviewed forward data-repair migration is required."
+    }
+  },
+  "minimumIncidentRecord": [
+    "environment and Supabase project reference",
+    "migration filename, version, SHA-256, and Git commit",
+    "UTC start/end timestamps and operator",
+    "raw command output and database SQLSTATE/error text, redacted for secrets and unnecessary personal data",
+    "before/after ledger evidence",
+    "read-only schema/RPC probe results",
+    "decision: remain paused, forward correction proposed, or verified recovery"
+  ],
+  "resumeCriteria": [
+    "A reviewed forward correction or verified retry has completed successfully.",
+    "The linked ledger has a comprehensible append-only history with no manual repair.",
+    "The named RPC resolves and the full post-deploy contract smoke checks pass.",
+    "The incident record is complete and pilot exposure is explicitly re-approved."
+  ],
+  "decision": "stop_preserve_evidence_and_recover_forward_only"
+}

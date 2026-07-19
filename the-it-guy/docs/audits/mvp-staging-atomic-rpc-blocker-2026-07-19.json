@@ -1,0 +1,43 @@
+{
+  "version": "arch9_mvp_staging_atomic_rpc_blocker_v1",
+  "recordedAt": "2026-07-19T18:25:00.000Z",
+  "environment": {
+    "name": "staging",
+    "supabaseHost": "isdowlnollckzvltkasn.supabase.co"
+  },
+  "scope": "Read-only deployment verification. No transaction, notification, user, document, or database record was created, updated, or deleted.",
+  "blockingCheck": {
+    "rpc": "public.bridge_create_mvp_transaction(p_payload jsonb)",
+    "request": {
+      "method": "POST",
+      "path": "/rest/v1/rpc/bridge_create_mvp_transaction",
+      "body": {
+        "p_payload": {}
+      }
+    },
+    "observed": {
+      "httpStatus": 404,
+      "code": "PGRST202",
+      "message": "Could not find the function public.bridge_create_mvp_transaction(p_payload) in the schema cache"
+    },
+    "result": "rpc_missing",
+    "impact": "The atomic lead-to-transaction creation path cannot be exercised in staging. Real staging transactions must remain paused."
+  },
+  "supportingChecks": {
+    "tablesReachable": [
+      "transactions",
+      "transaction_participants",
+      "transaction_required_documents",
+      "transaction_workflow_lanes",
+      "notification_events"
+    ],
+    "frontend": {
+      "host": "app.arch9.co.za",
+      "deploymentState": "READY",
+      "deployedCommit": "cf710f8e5141f9884d9a8e2140c70e769e20e0d2",
+      "browserResult": "Sign-in screen loaded without browser console errors."
+    }
+  },
+  "decision": "do_not_expose",
+  "requiredNextPhase": "Phase 1 — reconcile staging migration history and determine why migration 202607180046_mvp_atomic_transaction_creation_phase2a.sql is absent from this project."
+}

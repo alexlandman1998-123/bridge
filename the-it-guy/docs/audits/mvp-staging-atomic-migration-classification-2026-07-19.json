@@ -1,0 +1,78 @@
+{
+  "version": "arch9_mvp_staging_atomic_migration_classification_v1",
+  "recordedAt": "2026-07-19T19:18:00.000Z",
+  "environment": {
+    "name": "staging",
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "supabaseHost": "isdowlnollckzvltkasn.supabase.co"
+  },
+  "scope": "Read-only repository and staging-schema analysis. No migration, transaction, notification, user, document, or database record was created, updated, or deleted.",
+  "migration": {
+    "version": "202607180046",
+    "filename": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+    "repositorySha256": "61aa1e241e08bd9379b79f094f61c8f3f08c8d41d2dbb97b66b01682643349f4",
+    "presentInStagingLedger": false
+  },
+  "classification": {
+    "status": "absent_and_not_standalone_safe",
+    "isLedgerOnlyGap": false,
+    "isSupersededByLaterMigration": false,
+    "isSafeToApplyUnchangedToStaging": false,
+    "reason": "The atomic RPC and essential schema objects are genuinely absent. In addition, the migration inserts into transactions.mandate_packet_id but does not add that column, and staging does not have it."
+  },
+  "stagingEvidence": {
+    "atomicRpc": {
+      "name": "public.bridge_create_mvp_transaction(p_payload jsonb)",
+      "httpStatus": 404,
+      "code": "PGRST202",
+      "result": "absent"
+    },
+    "requiredObjects": {
+      "transactionParticipantRequirements": "absent (PGRST205)",
+      "bridgeIsActiveMember": "present (read-only RPC probe returned HTTP 200 / false for a synthetic organisation UUID)",
+      "transactionParticipantsBootstrapColumns": "present",
+      "transactionRequiredDocumentsBootstrapColumns": "present",
+      "transactionWorkflowLanesBootstrapColumns": "present",
+      "leadConversionColumns": "present",
+      "offerConversionColumns": "present",
+      "buyerInsertColumns": "present",
+      "baseTransactionInsertColumns": "present"
+    },
+    "transactionsColumnsAddedBy046": {
+      "present": [
+        "seller_has_existing_bond",
+        "gross_commission_percentage",
+        "gross_commission_amount",
+        "agent_split_percentage_snapshot",
+        "agency_split_percentage_snapshot",
+        "agent_commission_amount",
+        "agency_commission_amount"
+      ],
+      "absent": [
+        "creation_idempotency_key",
+        "property_tenure",
+        "seller_type",
+        "existing_bond",
+        "cancellation_required",
+        "vat_treatment",
+        "routing_profile_version",
+        "routing_profile_json",
+        "otp_packet_id",
+        "commission_snapshot_id"
+      ]
+    },
+    "externalColumnReferencedBy046": {
+      "column": "transactions.mandate_packet_id",
+      "presentInStaging": false,
+      "createdBy046": false,
+      "effect": "The RPC would fail at execution even if the historical migration were applied, unless the column is added in a reviewed reconciliation change."
+    }
+  },
+  "repositoryEvidence": {
+    "onlyMigrationDefiningAtomicRpc": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+    "laterMigrationsChecked": "202607190001–202607190006 do not define or replace bridge_create_mvp_transaction, its seed helpers, transaction_participant_requirements, or creation_idempotency_key.",
+    "runtimeContract": "src/lib/transactionLifecycleService.js invokes bridge_create_mvp_transaction with the named p_payload parameter and supplies mandate_packet_id when available."
+  },
+  "decision": "prepare_a_new_reconciliation_migration_not_a_historical_push",
+  "requiredNextPhase": "Phase 1C — design and review an additive, idempotent staging reconciliation migration that adds the missing mandate_packet_id prerequisite, atomic schema, helpers, RPC, grants, and explicit preflight checks."
+}

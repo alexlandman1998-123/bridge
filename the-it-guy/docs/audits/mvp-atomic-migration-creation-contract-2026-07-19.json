@@ -1,0 +1,54 @@
+{
+  "version": "arch9_mvp_atomic_migration_creation_contract_v1",
+  "recordedAt": "2026-07-19T19:35:00.000Z",
+  "scope": "Static source-contract confirmation of 202607180046_mvp_atomic_transaction_creation_phase2a.sql. The migration was not applied by this review.",
+  "migration": {
+    "version": "202607180046",
+    "filename": "supabase/migrations/202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+    "sha256": "61aa1e241e08bd9379b79f094f61c8f3f08c8d41d2dbb97b66b01682643349f4"
+  },
+  "createsOrDefines": {
+    "transactionsColumns": [
+      "creation_idempotency_key",
+      "property_tenure",
+      "seller_type",
+      "seller_has_existing_bond",
+      "existing_bond",
+      "cancellation_required",
+      "vat_treatment",
+      "routing_profile_version",
+      "routing_profile_json",
+      "otp_packet_id",
+      "commission_snapshot_id",
+      "gross_commission_percentage",
+      "gross_commission_amount",
+      "agent_split_percentage_snapshot",
+      "agency_split_percentage_snapshot",
+      "agent_commission_amount",
+      "agency_commission_amount"
+    ],
+    "index": "transactions_mvp_creation_idempotency_uidx on (organisation_id, creation_idempotency_key) where creation_idempotency_key is not null",
+    "table": "public.transaction_participant_requirements",
+    "helperFunctions": [
+      "public.bridge_seed_mvp_transaction_participants(uuid, jsonb)",
+      "public.bridge_seed_mvp_transaction_documents(uuid, jsonb)",
+      "public.bridge_seed_mvp_transaction_workflow_lanes(uuid, uuid, jsonb)"
+    ],
+    "atomicRpc": "public.bridge_create_mvp_transaction(p_payload jsonb)",
+    "atomicRpcPrivilege": "revoke public; grant execute to authenticated"
+  },
+  "atomicRpcEffects": [
+    "creates or returns an idempotent transaction",
+    "links the originating lead as converted",
+    "links an accepted offer as converted when supplied",
+    "seeds participants, required documents, and workflow lanes"
+  ],
+  "doesNotCreateOrHarden": {
+    "requiredTransactionsPrerequisite": "transactions.mandate_packet_id",
+    "rowLevelSecurityForParticipantRequirements": false,
+    "participantRequirementsPolicies": false,
+    "explicitPrivilegeRevocationForSecurityDefinerHelpers": false
+  },
+  "reconciliationRequirement": "The new append-only reconciliation migration must add mandate_packet_id and explicitly revoke public execution from all three security-definer helpers before it grants the authenticated caller access to the atomic RPC.",
+  "decision": "historical_contract_confirmed_but_incomplete_for_staging"
+}
