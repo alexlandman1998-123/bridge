@@ -1,4 +1,9 @@
 import { resolveTransactionFacts } from './attorneyWorkflow/transactionFactsResolver.js'
+import {
+  evaluateMvpLaunchScope,
+  formatMvpLaunchScopeIssue,
+} from '../core/transactions/mvpLaunchScope.js'
+import { resolveMvpLaunchRolePlan } from '../core/transactions/mvpLaunchRoles.js'
 
 export const TRANSACTION_ROUTING_PROFILE_VERSION = 'transaction_routing_profile_v1'
 
@@ -449,14 +454,19 @@ export function resolveTransactionRoutingProfile(input = {}) {
     transactionType,
     context,
   })
+  const launchScope = evaluateMvpLaunchScope(baseProfile)
+  const launchScopeWarnings = launchScope.issues.map(formatMvpLaunchScopeIssue)
+  const launchRolePlan = resolveMvpLaunchRolePlan(baseProfile)
 
   return {
     ...baseProfile,
     workflowTemplateKey,
     requiredWorkflowKeys,
     requiredDocumentGroups,
-    warnings: diagnostics.warnings,
+    warnings: compactUnique([...diagnostics.warnings, ...launchScopeWarnings]),
     missingFields: diagnostics.missingFields,
+    launchScope,
+    launchRolePlan,
     sourceSnapshot: {
       transactionId: resolverInput.id || null,
       listingId: resolverInput.listing?.id || resolverInput.listing?.listingId || null,

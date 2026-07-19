@@ -3,6 +3,10 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { WorkspaceContextError, logUnsafeFallbackBlocked } from '../services/workspaceResolutionService'
+import { prepareMvpTransactionCreationCommand } from '../core/transactions/mvpTransactionCreationCommand.js'
+import { buildMvpTransactionParticipantBootstrap } from '../core/transactions/mvpTransactionParticipantBootstrap.js'
+import { buildMvpTransactionDocumentBootstrap } from '../core/transactions/mvpTransactionDocumentBootstrap.js'
+import { buildMvpTransactionWorkflowBootstrap } from '../core/transactions/mvpTransactionWorkflowBootstrap.js'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -503,6 +507,18 @@ export function createTransactionFromAcceptedOffer({
     throw new Error('Offer record not found.')
   }
 
+  const routingProfile = resolveRoutingProfileForTransaction({ listing, offerRecord, payload })
+  prepareMvpTransactionCreationCommand({
+    routingProfile,
+    organisationId: getOrganisationId({ listing, offerRecord, payload }),
+    listingId: listing?.id || payload?.listingId,
+    leadId: offerRecord?.buyerLeadId || payload?.originatingBuyerLeadId,
+    acceptedOfferId: offerRecord?.id || payload?.acceptedOfferId,
+    assignedAgentId: payload?.assignedAgentId || listing?.assignedAgentId || offerRecord?.agentId || actor?.id,
+    assignedAgentEmail: payload?.assignedAgentEmail || listing?.assignedAgentEmail || actor?.email,
+    idempotencyKey: payload?.idempotencyKey,
+  })
+
   const created = buildTransactionRow({
     listing,
     offerRecord,
@@ -839,15 +855,25 @@ export async function createTransactionFromLeadOverride({
   if (!nextOrganisationId) {
     throw new Error('Organisation id is required before converting a lead into a transaction.')
   }
-  if (!nextAssignedAgentId && !nextAssignedAgentEmail) {
-    throw new Error('Assigned agent details are required before converting this lead.')
-  }
   if (!nextListingId) {
     throw new Error('A listing or property context is required for manual override transaction creation.')
   }
   if (!acceptedOfferId && !allowDirectLeadConversion) {
     throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
+
+  const routingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
+  const creationCommand = prepareMvpTransactionCreationCommand({
+    routingProfile,
+    organisationId: nextOrganisationId,
+    listingId: nextListingId,
+    leadId: nextLeadId,
+    acceptedOfferId,
+    assignedAgentId: nextAssignedAgentId,
+    assignedAgentEmail: nextAssignedAgentEmail,
+    idempotencyKey: payload?.idempotencyKey || payload?.idempotency_key,
+    requireAcceptedOffer: !allowDirectLeadConversion,
+  })
 
   if (!canPersistToSupabase) {
     if (!allowRuntimeFallback) {
@@ -939,14 +965,12 @@ export async function createTransactionFromLeadOverride({
       }
     }
 
-    const buyer = await findBuyerForTransaction({
-      buyerName: payload?.buyerName || `${lead?.firstName || ''} ${lead?.lastName || ''}` || lead?.contactName,
-      buyerEmail: payload?.buyerEmail || lead?.email || '',
-      buyerPhone: payload?.buyerPhone || lead?.phone || '',
-    })
+    // Buyer resolution is deliberately performed inside the database command
+    // with the transaction and its source links, so a failed conversion cannot
+    // leave behind an orphaned buyer record.
+    const buyer = null
 
     const nextMainStage = resolveInitialMainStage(created?.transactionRow?.transaction?.stage || payload?.stage || 'Reserved')
-    const routingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
     const routingFields = buildRoutingProfileTransactionFields(routingProfile)
     const clientIntakePreference = normalizeClientIntakePreference(payload?.clientIntakePreference || payload?.deliveryMode)
     const onboardingStatus = resolveOnboardingStatusForPreference(clientIntakePreference)
@@ -957,7 +981,12 @@ export async function createTransactionFromLeadOverride({
       organisation_id: nextOrganisationId,
       development_id: normalize(payload?.developmentId || listing?.developmentId) || null,
       unit_id: nextListingId || null,
-      buyer_id: buyer?.id || (isUuidLike(nextLeadId) ? nextLeadId : null),
+      buyer_id: null,
+      buyer_name: normalize(payload?.buyerName || `${lead?.firstName || ''} ${lead?.lastName || ''}` || lead?.contactName) || 'Buyer pending',
+      buyer_email: normalize(payload?.buyerEmail || lead?.email).toLowerCase() || null,
+      buyer_phone: normalize(payload?.buyerPhone || lead?.phone) || null,
+      seller_name: normalize(payload?.sellerName || listing?.seller?.name || listing?.sellerName) || null,
+      seller_email: normalize(payload?.sellerEmail || listing?.seller?.email || listing?.sellerEmail).toLowerCase() || null,
       transaction_reference: created?.transactionRow?.transaction?.transaction_reference || null,
       transaction_type: routingFields.transaction_type || created?.transactionRow?.transaction?.transaction_type || 'private_sale',
       property_type: routingFields.property_type || normalize(payload?.propertyType || payload?.property_type || listing?.propertyType || listing?.property_type) || null,
@@ -1003,6 +1032,7 @@ export async function createTransactionFromLeadOverride({
       otp_packet_id: normalize(payload?.otpPacketId) || null,
       mandate_packet_id: normalize(payload?.mandatePacketId || listing?.mandatePacketId) || null,
       commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
+      creation_idempotency_key: creationCommand.idempotencyKey,
       gross_commission_percentage: asNumber(payload?.grossCommissionPercentage),
       gross_commission_amount: asNumber(payload?.grossCommissionAmount),
       agent_split_percentage_snapshot: asNumber(payload?.agentSplitPercentage),
@@ -1013,116 +1043,29 @@ export async function createTransactionFromLeadOverride({
       created_at: new Date().toISOString(),
     }
 
-    const variants = [
-      { ...baseInsertPayload },
-      (() => {
-        const fallback = removeRoutingProfileTransactionFields(baseInsertPayload)
-        delete fallback.assigned_agent_id
-        delete fallback.listing_id
-        delete fallback.originating_lead_id
-        delete fallback.originating_buyer_lead_id
-        delete fallback.accepted_offer_id
-        delete fallback.buyer_contact_id
-        delete fallback.seller_contact_id
-        delete fallback.otp_packet_id
-        delete fallback.mandate_packet_id
-        delete fallback.commission_snapshot_id
-        delete fallback.cash_amount
-        delete fallback.bond_amount
-        delete fallback.deposit_amount
-        delete fallback.onboarding_status
-        delete fallback.gross_commission_percentage
-        delete fallback.gross_commission_amount
-        delete fallback.agent_split_percentage_snapshot
-        delete fallback.agency_split_percentage_snapshot
-        delete fallback.agent_commission_amount
-        delete fallback.agency_commission_amount
-        if (!fallback.property_type) delete fallback.property_type
-        return fallback
-      })(),
-      (() => {
-        const fallback = {
-          id: baseInsertPayload.id,
-          organisation_id: baseInsertPayload.organisation_id,
-          development_id: baseInsertPayload.development_id,
-          unit_id: baseInsertPayload.unit_id,
-          buyer_id: baseInsertPayload.buyer_id,
-          transaction_type: baseInsertPayload.transaction_type,
-          sales_price: baseInsertPayload.sales_price,
-          purchase_price: baseInsertPayload.purchase_price,
-          finance_type: baseInsertPayload.finance_type,
-          stage: baseInsertPayload.stage,
-          assigned_agent: baseInsertPayload.assigned_agent,
-          assigned_agent_email: baseInsertPayload.assigned_agent_email,
-          next_action: baseInsertPayload.next_action,
-          comment: baseInsertPayload.comment,
-        }
-        return fallback
-      })(),
-    ]
-
-    let insertedRow = null
-    let lastInsertError = null
-    for (const variant of variants) {
-      const result = await supabase
-        .from('transactions')
-        .insert(variant)
-        .select('id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, transaction_type, finance_type, stage, assigned_agent, assigned_agent_email, created_at, updated_at')
-        .single()
-
-      if (!result.error) {
-        insertedRow = result.data
-        break
-      }
-
-      if (isMissingColumnError(result.error) || isInvalidTextRepresentation(result.error)) {
-        lastInsertError = result.error
-        continue
-      }
-
-      throw result.error
-    }
-
-    if (!insertedRow) {
-      if (allowRuntimeFallback) {
-        return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })
-      }
-      throw lastInsertError || new Error('Unable to create transaction in Supabase.')
-    }
-
-    await insertAgentParticipant({
-      transactionId: insertedRow.id,
-      organisationId: nextOrganisationId,
-      assignedAgentId: nextAssignedAgentId,
-      assignedAgentName: baseInsertPayload.assigned_agent,
-      assignedAgentEmail: nextAssignedAgentEmail,
+    baseInsertPayload.participant_bootstrap = buildMvpTransactionParticipantBootstrap({
+      routingProfile,
+      buyer: { name: baseInsertPayload.buyer_name, email: baseInsertPayload.buyer_email },
+      seller: { name: baseInsertPayload.seller_name, email: baseInsertPayload.seller_email },
+      agent: {
+        id: nextAssignedAgentId,
+        name: baseInsertPayload.assigned_agent,
+        email: nextAssignedAgentEmail,
+      },
     })
+    baseInsertPayload.document_bootstrap = buildMvpTransactionDocumentBootstrap(routingProfile)
+    baseInsertPayload.workflow_bootstrap = buildMvpTransactionWorkflowBootstrap(routingProfile)
 
-    let leadLinkageResult = { updated: false, reason: null }
-    try {
-      leadLinkageResult = await updateLeadConversionLinkage({
-        leadId: nextLeadId,
-        transactionId: insertedRow.id,
-        organisationId: nextOrganisationId,
-      })
-    } catch (linkageError) {
-      leadLinkageResult = {
-        updated: false,
-        reason: normalize(linkageError?.message || linkageError?.code || 'lead_linkage_failed'),
-      }
-    }
+    const atomicResult = await supabase.rpc('bridge_create_mvp_transaction', {
+      p_payload: baseInsertPayload,
+    })
+    if (atomicResult.error) throw atomicResult.error
 
-    if (!leadLinkageResult?.updated) {
-      appendLifecycleEvent({
-        id: generateId('tx_event'),
-        eventType: 'lead_manual_override_linkage_warning',
-        transactionId: insertedRow.id,
-        organisationId: nextOrganisationId,
-        leadId: nextLeadId || null,
-        warning: leadLinkageResult?.reason || 'lead_linkage_not_persisted',
-        createdAt: new Date().toISOString(),
-      })
+    const insertedRow = atomicResult.data?.transaction || null
+    if (!insertedRow?.id) {
+      throw new Error('The transaction creation command did not return a transaction.')
     }
+    const existing = atomicResult.data?.existing === true
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -1136,7 +1079,7 @@ export async function createTransactionFromLeadOverride({
       organisationId: nextOrganisationId,
       leadId: nextLeadId || null,
       listingId: nextListingId || null,
-      warning: 'missing_accepted_offer',
+      warning: existing ? 'existing_transaction_reused' : 'created_by_mvp_transaction_command',
       agentId: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
       createdAt: new Date().toISOString(),
       source: 'supabase',
@@ -1153,10 +1096,8 @@ export async function createTransactionFromLeadOverride({
         buyer,
       }),
       persisted: true,
-      existing: false,
-      warning: !leadLinkageResult?.updated
-        ? leadLinkageResult?.reason || 'lead_linkage_not_persisted'
-        : null,
+      existing,
+      warning: existing ? 'existing_transaction_reused' : null,
     }
   } catch (error) {
     if (allowRuntimeFallback) {

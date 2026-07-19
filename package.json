@@ -22,7 +22,8 @@
     "mvp:phase0:report": "node scripts/arch9-mvp-release-lane-check.mjs",
     "mvp:phase0:check": "node scripts/arch9-mvp-release-lane-check.mjs --strict",
     "test:mvp:phase0": "node scripts/arch9-mvp-release-lane-check.test.mjs",
-    "test:mvp:phase1": "node scripts/mvp-seller-acceptance-contract-check.mjs && node the-it-guy/server/tests/mvpWorkflowGateEnforcementService.test.js"
+    "test:mvp:phase1": "node scripts/mvp-seller-acceptance-contract-check.mjs && node the-it-guy/server/tests/mvpWorkflowGateEnforcementService.test.js",
+    "test:mvp:phase2": "node the-it-guy/src/core/transactions/__tests__/mvpTransactionCreationCommand.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionParticipantBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionDocumentBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionWorkflowBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionTruth.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionIntegrityAudit.test.js && node the-it-guy/scripts/mvp-schema-contract-check.mjs && node scripts/mvp-lifecycle-atomic-contract-check.mjs && node the-it-guy/scripts/mvp-transaction-simulation.mjs && node the-it-guy/scripts/mvp-transaction-load-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
