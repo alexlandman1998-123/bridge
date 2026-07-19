@@ -25,7 +25,11 @@ The session evidence must be prepared by the approved pilot owner, list unique n
 Create non-secret batch evidence with every transaction id, idempotency key, bootstrap result, post-deploy smoke result, and gate-consistency result. Audit it:
 
 ```bash
-npm run mvp:phase7:audit -- --input=docs/production-pilot-batch-01.json
+npm run mvp:phase7:audit -- \
+  --input=/secure-local-path/production-pilot-batch-01.json \
+  --session-evidence=/secure-local-path/production-pilot-session-01.json
 ```
+
+Each batch transaction must include its declared `plannedTransactionReference`; the completed references must match the session charter exactly.
 
 Any failure is a stop condition. Pause new production work, preserve transaction IDs and evidence, resolve the affected issue, re-run Phase 6, then start a new batch only after a new passing session check.
