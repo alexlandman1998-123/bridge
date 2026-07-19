@@ -16,16 +16,23 @@ let monthlyReport = null
 try { entryReport = JSON.parse(entry.stdout) } catch { entryReport = null }
 try { monthlyReport = JSON.parse(monthly.stdout) } catch { monthlyReport = null }
 const progression = evaluateMvpScaleProgression(input)
+const maintenance = progression.decision === 'maintain_mvp_capacity'
+  ? spawnSync(process.execPath, ['scripts/mvp-capacity-maintenance-evidence-check.mjs', `--input=${inputArg.slice('--input='.length)}`], { cwd: repoRoot, encoding: 'utf8' })
+  : { status: 0, stdout: '' }
+let maintenanceReport = null
+try { maintenanceReport = JSON.parse(maintenance.stdout) } catch { maintenanceReport = null }
 const report = {
   ...progression,
-  decision: entry.status === 0 && monthly.status === 0 ? progression.decision : 'pause_rollout',
+  decision: entry.status === 0 && monthly.status === 0 && maintenance.status === 0 ? progression.decision : 'pause_rollout',
   blockers: [...new Set([
     ...progression.blockers,
     ...(entry.status === 0 ? [] : ['scale_entry_evidence_invalid']),
     ...(monthly.status === 0 ? [] : ['monthly_capacity_evidence_invalid']),
+    ...(maintenance.status === 0 ? [] : ['capacity_maintenance_evidence_invalid']),
   ])],
   scaleEntry: entryReport ? { approvedBy: entryReport.approvedBy, completedPilotCloseouts: entryReport.completedPilotCloseouts } : null,
   monthlyCapacity: monthlyReport ? { reportingMonth: monthlyReport.reportingMonth, monthlyTransactionCount: monthlyReport.monthlyTransactionCount, remainingCapacity: monthlyReport.remainingCapacity } : null,
+  capacityMaintenance: maintenanceReport ? { reviewedBy: maintenanceReport.reviewedBy, monthlyTransactionLimit: maintenanceReport.monthlyTransactionLimit } : null,
 }
 console.log(JSON.stringify(report, null, 2))
 if (report.decision === 'pause_rollout') process.exit(1)

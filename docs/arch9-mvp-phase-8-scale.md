@@ -12,6 +12,6 @@ At every level, record production-only, non-secret rollout evidence: the current
 npm run mvp:phase8:scale -- --input=docs/production-rollout-evidence.json
 ```
 
-The check pauses the rollout on a duplicate identity, bootstrap failure, pilot incident, capacity breach, invalid capacity level, missing or inconsistent monthly ledger, missing completed batch audit, missing clean closeout, or missing scale approval. A passing level returns either the next allowed capacity or `maintain_mvp_capacity` at 100/month.
+The check pauses the rollout on a duplicate identity, bootstrap failure, pilot incident, capacity breach, invalid capacity level, missing or inconsistent monthly ledger, missing completed batch audit, missing clean closeout, or missing scale approval. At 100/month it additionally requires a capacity-maintenance review: no new product scope, zero recurring operational blockers, and explicit approval to keep the 100/month ceiling. A passing level returns either the next allowed capacity or `maintain_mvp_capacity` at 100/month.
 
 Do not add product scope while scaling. Fix recurring operational friction before increasing the capacity level.
