@@ -44,7 +44,8 @@
     "mvp:staging-ledger:classify": "node scripts/mvp-migration-ledger-classify.mjs",
     "test:mvp:staging-ledger:classify": "node scripts/mvp-migration-ledger-classify.test.mjs",
     "mvp:migrations:plan": "node scripts/mvp-canonical-migration-plan.mjs",
-    "test:mvp:migrations:plan": "node scripts/mvp-canonical-migration-plan.test.mjs"
+    "test:mvp:migrations:plan": "node scripts/mvp-canonical-migration-plan.test.mjs",
+    "mvp:release:certify": "node the-it-guy/scripts/mvp-release-certification.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
