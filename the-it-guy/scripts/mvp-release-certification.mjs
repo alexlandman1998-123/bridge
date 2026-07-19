@@ -31,6 +31,7 @@ const checks = [
   ['production readiness safety', repoRoot, ['scripts/mvp-production-readiness-check.test.mjs']],
   ['production decision evidence safety', repoRoot, ['scripts/mvp-production-decision-evidence-check.test.mjs']],
   ['staging rollback drill evidence safety', repoRoot, ['scripts/mvp-staging-rollback-evidence-check.test.mjs']],
+  ['pilot support evidence safety', repoRoot, ['scripts/mvp-pilot-support-evidence-check.test.mjs']],
   ['pilot controls', repoRoot, ['scripts/mvp-pilot-controls.test.mjs']],
   ['scale progression', repoRoot, ['scripts/mvp-scale-progression.test.mjs']],
   ['staging ledger capture', repoRoot, ['scripts/mvp-staging-ledger-capture.test.mjs']],

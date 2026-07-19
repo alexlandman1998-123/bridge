@@ -16,7 +16,7 @@ function runNode(args) {
   return { passed: result.status === 0, output, report }
 }
 
-const requiredFiles = ['staging-ledger', 'deployment-evidence', 'rollback-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence']
+const requiredFiles = ['staging-ledger', 'deployment-evidence', 'rollback-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence', 'support-evidence']
 const missingInputs = requiredFiles.filter((name) => !options[name])
 const checks = []
 
@@ -42,6 +42,11 @@ if (!missingInputs.length) {
     'scripts/mvp-production-decision-evidence-check.mjs',
     `--evidence=${options['decision-evidence']}`,
     `--deployment-evidence=${options['deployment-evidence']}`,
+  ]) })
+  checks.push({ name: 'pilot_support_readiness', ...runNode([
+    'scripts/mvp-pilot-support-evidence-check.mjs',
+    `--evidence=${options['support-evidence']}`,
+    `--decision-evidence=${options['decision-evidence']}`,
   ]) })
 }
 
