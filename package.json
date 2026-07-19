@@ -38,7 +38,9 @@
     "mvp:phase8:scale": "node scripts/mvp-scale-progression.mjs",
     "test:mvp:phase8": "node scripts/mvp-scale-progression.test.mjs",
     "mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.mjs",
-    "test:mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.test.mjs"
+    "test:mvp:freeze:migrations": "node scripts/mvp-migration-freeze-check.test.mjs",
+    "mvp:staging-ledger:capture": "node scripts/mvp-staging-ledger-capture.mjs",
+    "test:mvp:staging-ledger": "node scripts/mvp-staging-ledger-capture.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
