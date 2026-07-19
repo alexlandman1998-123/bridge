@@ -13,6 +13,8 @@ The review evidence must include `reviewedBy`, `reviewedAt`, `reviewerRole` (`op
 
 Log every issue with an id, severity, summary, owner, and recorded time. `p0`, `p1`, `critical`, and `high` findings must be `resolved`, with a resolution and resolved time. Lower-priority usability work may be `deferred`, but must retain an owner and `nextReviewAt`; it cannot silently disappear from the MVP backlog.
 
+After the review, record a `stagingAcceptance` object with `decision: "accepted_for_pilot_consideration"`, the non-developer decider and time, `scope: "all_four_mvp_scenarios"`, and the complete `deferredFindingIds` list. This is an operational acceptance of the staging result—not production authorisation. Phase 6 remains the separate controlled-pilot decision.
+
 Validate the evidence after Phase 4 passes:
 
 ```bash

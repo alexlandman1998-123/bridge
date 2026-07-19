@@ -84,6 +84,17 @@ for (const finding of findings) {
 }
 const releaseBlocking = findings.filter((finding) => blockingSeverities.has(String(finding.severity || '').toLowerCase()) && finding.resolved !== true)
 assert.deepEqual(releaseBlocking, [], 'Critical or high review findings must be resolved before pilot.')
+const deferredFindingIds = findings
+  .filter((finding) => String(finding.status || '').toLowerCase() === 'deferred')
+  .map((finding) => String(finding.id))
+  .sort()
+const acceptance = review.stagingAcceptance || {}
+assert.equal(acceptance.decision, 'accepted_for_pilot_consideration', 'Operations must explicitly accept staging for pilot consideration.')
+assert.ok(String(acceptance.decidedBy || '').trim(), 'stagingAcceptance.decidedBy is required.')
+assert.ok(String(acceptance.decidedAt || '').trim(), 'stagingAcceptance.decidedAt is required.')
+assert.equal(acceptance.deciderIsDeveloper, false, 'The staging acceptance decider must not be a developer.')
+assert.equal(acceptance.scope, 'all_four_mvp_scenarios', 'Staging acceptance must cover all four MVP scenarios.')
+assert.deepEqual([...(acceptance.deferredFindingIds || [])].map(String).sort(), deferredFindingIds, 'Staging acceptance must acknowledge every deferred finding.')
 
 console.log(JSON.stringify({
   version: 'arch9_mvp_staging_review_evidence_v1',
@@ -94,5 +105,7 @@ console.log(JSON.stringify({
   scenarioCount: requiredScenarioIds.length,
   findingCount: findings.length,
   deferredFindingCount: findings.filter((finding) => String(finding.status || '').toLowerCase() === 'deferred').length,
+  stagingAcceptance: acceptance.decision,
+  stagingAcceptanceDecider: acceptance.decidedBy,
   unresolvedReleaseBlockingFindings: 0,
 }, null, 2))
