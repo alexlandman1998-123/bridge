@@ -453,8 +453,34 @@ function remoteNameStatus(localName, remoteName, remoteHistoryFound) {
     : 'remote_name_differs'
 }
 
+const REVIEWED_SPLIT_EXCEPTIONS = new Map([
+  ['202606050001', {
+    objectStatus: 'no_static_objects',
+    decision: 'confirmed_live_manual_sql',
+    evidence: 'All five bond_banks relationship columns added by the single ALTER TABLE statement are live.',
+  }],
+  ['202606090010', {
+    objectStatus: 'partial_live',
+    liveCount: 27,
+    objectCount: 30,
+    decision: 'confirmed_superseded_split',
+    evidence: 'The three absent private_listings policies were superseded by the applied scoped policies in 202607090006 and 202607130005.',
+  }],
+])
+
+function reviewedSplitException(row) {
+  const review = REVIEWED_SPLIT_EXCEPTIONS.get(row.version)
+  if (!review || row.remoteNameStatus !== 'remote_name_matches') return null
+  if (review.objectStatus !== row.objectStatus) return null
+  if (review.liveCount !== undefined && review.liveCount !== row.liveCount) return null
+  if (review.objectCount !== undefined && review.objectCount !== row.objectCount) return null
+  return review
+}
+
 function splitDecision(row) {
   if (!row.remoteHistoryFound) return 'remote_history_missing'
+  const reviewed = reviewedSplitException(row)
+  if (reviewed) return reviewed.decision
   if (row.objectStatus === 'partial_live' || row.objectStatus === 'none_live') return 'object_review_required'
   if (row.objectStatus === 'no_static_objects') return 'manual_sql_review'
   if (row.remoteNameStatus === 'remote_name_differs') return 'metadata_name_drift'
@@ -464,6 +490,8 @@ function splitDecision(row) {
 
 function decisionRecommendation(decision) {
   if (decision === 'confirmed_live_split') return 'Do not repair; this split row is already recorded remote and its static objects are live.'
+  if (decision === 'confirmed_live_manual_sql') return 'Do not repair; the manually verified ALTER TABLE outcome is live and the row is already recorded remote.'
+  if (decision === 'confirmed_superseded_split') return 'Do not repair; the missing historical objects were intentionally superseded by later applied migrations.'
   if (decision === 'confirmed_live_name_unavailable') return 'Do not repair; static objects are live, but this project does not expose remote migration names.'
   if (decision === 'metadata_name_drift') return 'Do not repair as local-only; compare local filename with schema_migrations metadata.'
   if (decision === 'manual_sql_review') return 'Manual SQL review needed because no static catalog objects were extracted.'
@@ -503,9 +531,11 @@ function buildSplitRows({ splitVersions, files, historyRows, objectRowsByVersion
       ledgerColumns: history.ledgerColumns,
       ...status,
     }
+    const reviewed = reviewedSplitException(row)
     return {
       ...row,
       decision: splitDecision(row),
+      reviewEvidence: reviewed?.evidence || '',
     }
   })
 }
@@ -525,6 +555,7 @@ function summarizeModules(splitRows) {
       nameUnavailable: 0,
       objectReviewRequired: 0,
       manualSqlReview: 0,
+      reviewedExceptions: 0,
     }
 
     summary.splitRows += 1
@@ -537,6 +568,7 @@ function summarizeModules(splitRows) {
     if (row.remoteNameStatus === 'remote_name_unavailable') summary.nameUnavailable += 1
     if (row.decision === 'object_review_required') summary.objectReviewRequired += 1
     if (row.decision === 'manual_sql_review') summary.manualSqlReview += 1
+    if (['confirmed_live_manual_sql', 'confirmed_superseded_split'].includes(row.decision)) summary.reviewedExceptions += 1
     byModule.set(row.module, summary)
   }
 
@@ -600,6 +632,7 @@ function generateReport({
   const objectReviewRows = splitRows.filter((row) => row.decision === 'object_review_required')
   const metadataRows = splitRows.filter((row) => row.decision === 'metadata_name_drift')
   const manualRows = splitRows.filter((row) => row.decision === 'manual_sql_review')
+  const reviewedExceptionRows = splitRows.filter((row) => ['confirmed_live_manual_sql', 'confirmed_superseded_split'].includes(row.decision))
 
   const lines = []
   lines.push('# Supabase Migration Phase 6 Split Ledger Investigation Report')
@@ -627,6 +660,7 @@ function generateReport({
       ['No static objects extracted', countRows(splitRows, (row) => row.objectStatus === 'no_static_objects')],
       ['Remote migration names matched', countRows(splitRows, (row) => row.remoteNameStatus === 'remote_name_matches')],
       ['Remote migration names unavailable', countRows(splitRows, (row) => row.remoteNameStatus === 'remote_name_unavailable')],
+      ['Reviewed split exceptions', reviewedExceptionRows.length],
       ['Static objects checked', options.fetchRemote ? objectRows.length : 'not fetched'],
     ],
   ))
@@ -635,7 +669,7 @@ function generateReport({
   lines.push('')
   if (moduleSummaries.length) {
     lines.push(markdownTable(
-      ['Module', 'Split Rows', 'All Live', 'Partial Live', 'None Live', 'No Static Objects', 'Name Matches', 'Name Unavailable', 'Review Required'],
+      ['Module', 'Split Rows', 'All Live', 'Partial Live', 'None Live', 'No Static Objects', 'Name Matches', 'Name Unavailable', 'Reviewed Exceptions', 'Review Required'],
       moduleSummaries.map((summary) => [
         summary.module,
         summary.splitRows,
@@ -645,6 +679,7 @@ function generateReport({
         summary.noStaticObjects,
         summary.nameMatches,
         summary.nameUnavailable,
+        summary.reviewedExceptions,
         summary.objectReviewRequired + summary.manualSqlReview,
       ]),
     ))
@@ -685,6 +720,22 @@ function generateReport({
     ))
   } else {
     lines.push('No split rows required manual SQL review because of empty static object extraction.')
+  }
+  lines.push('')
+  lines.push('## Reviewed Split Exceptions')
+  lines.push('')
+  if (reviewedExceptionRows.length) {
+    lines.push(markdownTable(
+      ['Version', 'Module', 'Decision', 'Evidence'],
+      reviewedExceptionRows.map((row) => [
+        row.version,
+        row.module,
+        row.decision,
+        row.reviewEvidence,
+      ]),
+    ))
+  } else {
+    lines.push('No reviewed split exception matched its expected evidence signature.')
   }
   lines.push('')
   lines.push('## Metadata Name Drift')

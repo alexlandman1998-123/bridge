@@ -23,6 +23,18 @@ npm run supabase:db-push
 
 `supabase:db-push` intentionally blocks. It exists so engineers who reach for a package script hit the Phase 0 warning before touching the linked database.
 
+## CI Enforcement
+
+The `Supabase Phase 0 Guard` workflow runs whenever migration files, the database release runbook, the guard, or its package wiring changes. It verifies that `db push`, `db reset`, and `migration repair` remain blocked without the documented override, while read-only diagnostics remain available. Pull requests that add migration files are blocked during the freeze unless a release owner applies the `database-reconciliation` label for reviewed history restoration or a corrective migration.
+
+Run the same regression check locally with:
+
+```bash
+node scripts/supabase-phase0-guard.test.mjs
+```
+
+The workflow also prints the local migration state, including duplicate timestamps and missing onboarding-critical files. It does not connect to Supabase and cannot prove that backups, PITR, or a staging project are configured; those remain release-owner checks before any database write.
+
 ## Allowed Phase 0 Work
 
 Allowed without changing data:

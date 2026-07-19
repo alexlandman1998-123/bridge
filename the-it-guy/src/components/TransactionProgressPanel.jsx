@@ -1,6 +1,7 @@
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, MessageSquare } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import TransactionLifecycleProgress from './TransactionLifecycleProgress'
+import MvpTransactionControlBoard from './transaction/MvpTransactionControlBoard'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 
@@ -175,6 +176,7 @@ function TransactionProgressPanel({
   progressContext = null,
   canEditMainStage = false,
   onOpenWorkflowGroup = null,
+  controlBoard = null,
 }) {
   const normalizedMainStage = normalizeMainStage(mainStage || stages[0] || 'AVAIL')
   const computedProgressModel = useMemo(
@@ -356,6 +358,7 @@ function TransactionProgressPanel({
 
   return (
     <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white/80 p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+      <MvpTransactionControlBoard controlBoard={controlBoard} compact={variant === 'external'} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>

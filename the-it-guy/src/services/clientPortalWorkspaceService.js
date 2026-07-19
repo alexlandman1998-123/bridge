@@ -1811,6 +1811,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
       readiness: portalData?.buyerReadiness?.finance || null,
     },
     workflowSummary,
+    mvpControlBoard: workflowReadModel?.mvpControlBoard || null,
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary,

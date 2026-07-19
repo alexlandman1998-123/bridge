@@ -1,0 +1,47 @@
+name: Supabase Phase 6 Staging Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/supabase-phase5-module-drift-audit.mjs'
+      - 'scripts/supabase-phase6-staging-execution.mjs'
+      - 'scripts/supabase-phase6-staging-execution.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-6-implementation-status.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase6-staging-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/supabase-phase5-module-drift-audit.mjs'
+      - 'scripts/supabase-phase6-staging-execution.mjs'
+      - 'scripts/supabase-phase6-staging-execution.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-6-implementation-status.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase6-staging-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  staging-gate:
+    name: Verify fail-closed staging execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test staging execution gate
+        run: node scripts/supabase-phase6-staging-execution.test.mjs
+
+      - name: Verify manifest coverage
+        run: |
+          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"

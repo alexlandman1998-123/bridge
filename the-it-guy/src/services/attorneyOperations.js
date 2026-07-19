@@ -22,6 +22,10 @@ import {
 } from './appointmentRescheduleService'
 import { requireValidAttorneyInvite } from '../core/appointments/attorneyInviteContract'
 import { summarizeAttorneyInviteDelivery } from '../core/appointments/attorneyInviteDelivery'
+import {
+  recordAttorneyCalendarRolloutEvent,
+  requireAttorneyCalendarRollout,
+} from './attorneyCalendarRolloutService'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -1406,6 +1410,13 @@ export async function createAttorneyAppointmentInvite(input = {}) {
   const recipientEmail = invite.recipientEmail
   const recipientName = invite.recipientName || recipientEmail
 
+  await requireAttorneyCalendarRollout(organisationId, { client })
+  await recordAttorneyCalendarRolloutEvent('invite_attempted', {
+    organisationId,
+    transactionId,
+    metadata: { appointmentType },
+  }, { client })
+
   const user = await getAuthenticatedUser(client).catch(() => null)
   const appointmentId = createUuid()
   const nowIso = new Date().toISOString()
@@ -1463,7 +1474,15 @@ export async function createAttorneyAppointmentInvite(input = {}) {
       .maybeSingle()
   }
 
-  if (appointmentResult.error) throw appointmentResult.error
+  if (appointmentResult.error) {
+    await recordAttorneyCalendarRolloutEvent('persistence_failed', {
+      organisationId,
+      transactionId,
+      appointmentId,
+      metadata: { stage: 'appointment', code: appointmentResult.error.code || null },
+    }, { client })
+    throw appointmentResult.error
+  }
 
   const recipientParticipantId = createUuid()
   const participantRows = [
@@ -1520,6 +1539,16 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     persistenceError.code = 'ATTORNEY_INVITE_PARTICIPANT_PERSISTENCE_FAILED'
     persistenceError.appointmentRolledBack = !rollback.error
     persistenceError.cause = participantResult.error
+    await recordAttorneyCalendarRolloutEvent('persistence_failed', {
+      organisationId,
+      transactionId,
+      appointmentId,
+      metadata: {
+        stage: 'participants',
+        appointmentRolledBack: !rollback.error,
+        code: participantResult.error.code || null,
+      },
+    }, { client })
     throw persistenceError
   }
 
@@ -1558,6 +1587,29 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     reminderError,
     calendarInviteRequested: invite.attachCalendarInvite,
   })
+
+  await recordAttorneyCalendarRolloutEvent('invite_created', {
+    organisationId,
+    transactionId,
+    appointmentId,
+    metadata: { appointmentType, deliveryStatus: delivery.status },
+  }, { client })
+  if (delivery.status === 'failed') {
+    await recordAttorneyCalendarRolloutEvent('delivery_failed', {
+      organisationId,
+      transactionId,
+      appointmentId,
+      metadata: { retryable: delivery.retryable, failureReasons: delivery.failureReasons },
+    }, { client })
+  }
+  if (reminderError) {
+    await recordAttorneyCalendarRolloutEvent('reminder_failed', {
+      organisationId,
+      transactionId,
+      appointmentId,
+      metadata: { message: reminderError.message || 'Reminder scheduling failed' },
+    }, { client })
+  }
 
   return {
     appointmentId,

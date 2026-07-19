@@ -194,6 +194,13 @@
     "verify:attorney-calendar-phase4:staging": "node --env-file=.env --env-file=.env.staging.local scripts/attorney-calendar-phase4-rsvp.test.mjs --live",
     "test:attorney-calendar-phase5": "node src/core/appointments/__tests__/appointmentRescheduleContract.test.js && node scripts/attorney-calendar-phase5-reschedule.test.mjs",
     "verify:attorney-calendar-phase5:staging": "node --env-file=.env --env-file=.env.staging.local scripts/attorney-calendar-phase5-reschedule.test.mjs --live",
+    "test:attorney-calendar-phase6": "vitest run --config vitest.attorney-calendar.config.js && node scripts/attorney-calendar-phase6-suite.test.mjs",
+    "test:attorney-calendar-phase7": "node scripts/attorney-calendar-phase7-staging-certification.mjs",
+    "test:attorney-calendar-phase8": "node scripts/attorney-calendar-phase8-controlled-rollout.test.mjs",
+    "test:attorney-calendar-invite": "npm run test:attorney-calendar-phase1 && npm run test:attorney-calendar-phase2 && npm run test:attorney-calendar-phase3 && npm run test:attorney-calendar-phase4 && npm run test:attorney-calendar-phase5 && npm run test:attorney-calendar-phase6 && npm run test:attorney-calendar-phase7 && npm run test:attorney-calendar-phase8",
+    "certify:attorney-calendar:staging": "npm run test:attorney-calendar-invite && node --env-file-if-exists=.env --env-file-if-exists=.env.staging.local scripts/attorney-calendar-phase1-readiness.test.mjs --live && node --env-file-if-exists=.env --env-file-if-exists=.env.staging.local scripts/attorney-calendar-phase7-staging-certification.mjs --live && node --env-file-if-exists=.env --env-file-if-exists=.env.staging.local scripts/attorney-calendar-phase8-controlled-rollout.test.mjs --live",
+    "verify:attorney-calendar-invite:staging": "npm run certify:attorney-calendar:staging",
+    "report:attorney-calendar-rollout": "node --env-file-if-exists=.env --env-file-if-exists=.env.staging.local scripts/report-attorney-calendar-rollout.mjs",
     "test:attorney-onboarding-rls-classification": "node scripts/attorney-onboarding-rls-classification.test.mjs",
     "test:attorney-onboarding-completion-redirect": "node scripts/attorney-onboarding-completion-redirect.test.mjs",
     "test:attorney-onboarding-phase4": "node scripts/attorney-onboarding-phase4.test.mjs",
@@ -736,6 +743,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
@@ -744,9 +752,11 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.17",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.7"
   }
 }

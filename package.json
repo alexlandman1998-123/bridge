@@ -15,8 +15,12 @@
     "supabase:phase5:local": "node scripts/supabase-phase5-module-drift-audit.mjs --write",
     "supabase:phase6": "node scripts/supabase-phase6-split-ledger-investigation.mjs --fetch-remote --write",
     "supabase:phase6:local": "node scripts/supabase-phase6-split-ledger-investigation.mjs --write",
+    "supabase:phase6:staging": "node scripts/supabase-phase6-staging-execution.mjs --plan",
     "supabase:phase7": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --apply --write",
     "supabase:phase7:plan": "node scripts/supabase-phase7-canonical-ledger-repair.mjs --write",
+    "supabase:phase7:production": "node scripts/supabase-phase7-production-execution.mjs --plan",
+    "supabase:phase8": "node scripts/supabase-phase8-closeout.mjs --verify-live --write",
+    "supabase:phase8:local": "node scripts/supabase-phase8-closeout.mjs --plan",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

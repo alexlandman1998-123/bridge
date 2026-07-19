@@ -1,0 +1,63 @@
+name: Supabase Phase 0 Guard
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-phase0-guard.mjs'
+      - 'scripts/supabase-phase0-guard.test.mjs'
+      - 'docs/supabase-migration-phase-0-stabilization.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase0-guard.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-phase0-guard.mjs'
+      - 'scripts/supabase-phase0-guard.test.mjs'
+      - 'docs/supabase-migration-phase-0-stabilization.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase0-guard.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    name: Verify broad migration commands remain blocked
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test Phase 0 guard
+        run: node scripts/supabase-phase0-guard.test.mjs
+
+      - name: Enforce new-migration freeze
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'database-reconciliation')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          added_migrations="$(git diff --diff-filter=A --name-only "$BASE_SHA" "$HEAD_SHA" -- 'supabase/migrations/*.sql')"
+          if [ -n "$added_migrations" ]; then
+            echo "Phase 0 blocks new migration files while ledger drift is unresolved:"
+            echo "$added_migrations"
+            echo "Use the database-reconciliation label only for a reviewed history restoration or corrective migration."
+            exit 1
+          fi
+
+      - name: Report local migration state
+        run: node scripts/supabase-phase0-guard.mjs --status

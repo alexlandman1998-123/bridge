@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -35,6 +35,10 @@ import {
   getAttorneyInviteTypeDefinition,
 } from '../../../core/appointments/attorneyInviteContract'
 import { buildAttorneyInviteOutcome } from '../../../core/appointments/attorneyInviteDelivery'
+import {
+  getAttorneyCalendarRolloutStatus,
+  resolveAttorneyCalendarEnvironment,
+} from '../../../services/attorneyCalendarRolloutService'
 import {
   APPOINTMENT_RESCHEDULE_TIMEZONE,
   buildAppointmentRescheduleProposalContract,
@@ -545,7 +549,8 @@ function buildMatterOptions(matterRows = []) {
     .filter(Boolean)
 }
 
-function SchedulingPageHeader({ onCreateInvite }) {
+function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
+  const inviteEnabled = rolloutStatus?.enabled === true
   return (
     <section className="scheduling-page-header">
       <div>
@@ -554,7 +559,13 @@ function SchedulingPageHeader({ onCreateInvite }) {
         <p>Signings, consultations, boardrooms, confirmations, and reschedules.</p>
       </div>
       <div className="scheduling-header-actions">
-        <button type="button" className="scheduling-primary-action" onClick={onCreateInvite}>
+        <button
+          type="button"
+          className="scheduling-primary-action"
+          onClick={onCreateInvite}
+          disabled={!inviteEnabled}
+          title={inviteEnabled ? 'Create a calendar invite' : 'Create Invite is outside the active rollout cohort'}
+        >
           <Plus size={16} />
           Create Invite
         </button>
@@ -1035,7 +1046,7 @@ function OperationalFeedPanel({ rows }) {
   )
 }
 
-function CreateInviteDrawer({
+export function CreateInviteDrawer({
   open,
   draft,
   setDraft,
@@ -2255,6 +2266,11 @@ function AttorneySchedulingWorkspace({
   const [rescheduleDraft, setRescheduleDraft] = useState({ preferredStart: '', preferredEnd: '', reason: '' })
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteDraft, setInviteDraft] = useState(DEFAULT_ATTORNEY_INVITE_DRAFT)
+  const [rolloutStatus, setRolloutStatus] = useState(() => ({
+    enabled: resolveAttorneyCalendarEnvironment() !== 'production',
+    environment: resolveAttorneyCalendarEnvironment(),
+    reason: 'loading',
+  }))
   const [filters, setFilters] = useState({
     query: '',
     attorney: 'all',
@@ -2283,6 +2299,26 @@ function AttorneySchedulingWorkspace({
   const staffOptions = useMemo(() => normalizeStaffOptions(memberOptions), [memberOptions])
   const feedRows = useMemo(() => buildOperationalFeed(visibleRows, visibleRescheduleRows), [visibleRows, visibleRescheduleRows])
   const matterOptions = useMemo(() => buildMatterOptions(matterRows), [matterRows])
+
+  useEffect(() => {
+    let active = true
+    const scopedOrganisationId = organisationId || matterOptions.find((matter) => matter.organisationId)?.organisationId
+    if (!scopedOrganisationId) {
+      setRolloutStatus((current) => ({ ...current, enabled: false, reason: 'organisation_required' }))
+      return () => { active = false }
+    }
+
+    getAttorneyCalendarRolloutStatus(scopedOrganisationId)
+      .then((status) => {
+        if (active) setRolloutStatus(status)
+      })
+      .catch(() => {
+        if (active) {
+          setRolloutStatus((current) => ({ ...current, enabled: false, reason: 'decision_unavailable' }))
+        }
+      })
+    return () => { active = false }
+  }, [organisationId, matterOptions])
 
   const metrics = useMemo(() => {
     const boardroomAssigned = activeRows.filter((row) => normalizeText(row.resourceId)).length
@@ -2385,6 +2421,10 @@ function AttorneySchedulingWorkspace({
 
   const handleCreateInvite = (event) => {
     event.preventDefault()
+    if (!rolloutStatus.enabled) {
+      setError('Create Invite is temporarily unavailable for this firm.')
+      return
+    }
     const selectedMatter = matterOptions.find((matter) => matter.matterId === inviteDraft.matterId)
     if (!selectedMatter) {
       setError('Choose a matter before creating the invite.')
@@ -2419,7 +2459,12 @@ function AttorneySchedulingWorkspace({
   return (
     <section className="attorney-scheduling-os">
       <SchedulingStyles />
-      <SchedulingPageHeader onCreateInvite={() => setInviteOpen(true)} />
+      <SchedulingPageHeader onCreateInvite={() => setInviteOpen(true)} rolloutStatus={rolloutStatus} />
+      {!rolloutStatus.enabled && rolloutStatus.reason !== 'loading' ? (
+        <div className="scheduling-alert">
+          Create Invite is paused for this firm. Existing appointments and scheduling actions remain available.
+        </div>
+      ) : null}
       {error ? <div className="scheduling-alert is-error">{error}</div> : null}
       {message ? <div className="scheduling-alert is-success">{message}</div> : null}
       {busyId ? <div className="scheduling-alert">Processing scheduling action...</div> : null}

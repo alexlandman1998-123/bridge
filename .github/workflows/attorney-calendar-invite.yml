@@ -1,0 +1,65 @@
+name: Attorney calendar invite
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/src/components/attorney/scheduling/**'
+      - 'the-it-guy/src/core/appointments/**'
+      - 'the-it-guy/src/services/appointmentNotificationService.js'
+      - 'the-it-guy/src/services/attorneyOperations.js'
+      - 'the-it-guy/supabase-tests/**'
+      - 'the-it-guy/scripts/attorney-calendar-**'
+      - 'supabase/functions/send-email/**'
+      - 'supabase/migrations/*attorney_calendar*'
+      - '.github/workflows/attorney-calendar-invite.yml'
+  workflow_dispatch:
+    inputs:
+      certify_staging:
+        description: Run the disposable Phase 7 staging certification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: the-it-guy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - run: npm run test:attorney-calendar-invite
+
+  certify-staging:
+    if: github.event_name == 'workflow_dispatch' && inputs.certify_staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    defaults:
+      run:
+        working-directory: the-it-guy
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_STAGING_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STAGING_SERVICE_ROLE_KEY }}
+      ATTORNEY_DEMO_EMAIL: ${{ secrets.ATTORNEY_DEMO_EMAIL }}
+      ATTORNEY_DEMO_PASSWORD: ${{ secrets.ATTORNEY_DEMO_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - run: npm run certify:attorney-calendar:staging

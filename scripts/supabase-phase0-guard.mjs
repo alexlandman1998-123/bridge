@@ -108,7 +108,7 @@ const files = getMigrationFiles(repoRoot)
 const normalizedCommand = normalizeCommand(args)
 const overrideEnabled = process.env.BRIDGE_SUPABASE_PHASE0_OVERRIDE === REQUIRED_OVERRIDE
 
-if (!args.length || args.includes('--status')) {
+if (!args.length || (args.length === 1 && args[0] === '--status')) {
   printStatus({ repoRoot, files })
   process.exit(0)
 }

@@ -1,0 +1,47 @@
+name: Supabase Phase 7 Production Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/supabase-phase7-production-execution.mjs'
+      - 'scripts/supabase-phase7-production-execution.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase7-production-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/supabase-phase7-production-execution.mjs'
+      - 'scripts/supabase-phase7-production-execution.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase7-production-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  production-gate:
+    name: Verify fail-closed production execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test production execution gate
+        run: node scripts/supabase-phase7-production-execution.test.mjs
+
+      - name: Verify manifest coverage
+        run: |
+          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"

@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const REPORT_PATH = path.join('docs', 'supabase-migration-phase-5-module-drift-report.md')
+const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 
 const MODULE_RULES = [
   ['bond_finance', /(?:^|_)(?:bond|finance|originator|bank|commission|revenue)(?:_|$)/],
@@ -19,6 +20,29 @@ const MODULE_RULES = [
   ['attorney', /(?:^|_)(?:attorney|matter|transfer|conveyancer|firm)(?:_|$)/],
   ['workspace_platform', /(?:^|_)(?:workspace|onboarding|signup|organisation|organization|profile|avatar|settings|entitlement|billing|module|hierarchy|arch9|hq|demo|admin)(?:_|$)/],
 ]
+
+// These minute-level rows are recorded remotely with matching names. They appear
+// on both sides of the CLI comparison only because an applied second-level
+// migration shares the same filename prefix. Phase 6 owns the evidence review.
+const REVIEWED_SPLIT_BASELINE = new Set([
+  '202606010001',
+  '202606030007',
+  '202606030008',
+  '202606030009',
+  '202606030010',
+  '202606030011',
+  '202606040001',
+  '202606040002',
+  '202606040004',
+  '202606040005',
+  '202606050001',
+  '202606080002',
+  '202606090010',
+  '202606110004',
+  '202606110005',
+  '202606110006',
+  '202606110007',
+])
 
 function findRepoRoot(startDir) {
   let current = startDir
@@ -416,6 +440,74 @@ function buildMigrationDrift({ files, buckets, objectRowsByFile, fetchRemote }) 
     })
 }
 
+const DEPLOYMENT_STREAM_ORDER = [
+  'settings_governance',
+  'legal_review_assurance',
+  'legal_document_runtime',
+  'document_generation',
+  'attorney_accounting',
+  'attorney_calendar',
+  'attorney_identity_access',
+  'transaction_creation',
+  'other',
+]
+
+function deploymentStream(row) {
+  const name = row.file.toLowerCase()
+  if (name.includes('settings_')) return 'settings_governance'
+  if (/legal_(document_counsel|document_review|draft_review|draft_immutable|signing_envelope|signer_session|final_signed|final_delivery)/.test(name)) return 'legal_review_assurance'
+  if (name.includes('document_generator') || name.includes('legal_generation')) return 'document_generation'
+  if (name.includes('attorney_accounting')) return 'attorney_accounting'
+  if (name.includes('attorney_calendar')) return 'attorney_calendar'
+  if (/attorney_(professional|signup|assignment|role)/.test(name)) return 'attorney_identity_access'
+  if (name.includes('mvp_atomic_transaction_creation')) return 'transaction_creation'
+  if (/(canonical_document|legal_document_runtime|immutable_template|editable_|frozen_pdf|pdf_|signature_field|signing_layout|signing_dispatch|signer_surface|applied_envelope|controlled_applied|cross_surface|document_experience|final_|legal_packet|native_legal)/.test(name)) return 'legal_document_runtime'
+  return 'other'
+}
+
+function applicationAction(row) {
+  if (row.objectStatus === 'all_live') return 'repair_only_after_smoke'
+  if (row.objectStatus === 'partial_live') return 'corrective_migration_required'
+  if (row.objectStatus === 'none_live') return 'apply_original_after_dependency_check'
+  if (row.objectStatus === 'no_static_objects') return 'manual_data_review'
+  return 'blocked_missing_evidence'
+}
+
+function applicationGate(action) {
+  if (action === 'repair_only_after_smoke') return 'Run module behavior tests; then record only this version as applied.'
+  if (action === 'corrective_migration_required') return 'Diff live definitions, create an idempotent corrective migration, and verify both outcomes.'
+  if (action === 'apply_original_after_dependency_check') return 'Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.'
+  if (action === 'manual_data_review') return 'Verify the intended data outcome and idempotency manually before deciding apply or repair.'
+  return 'Refresh linked evidence before any action.'
+}
+
+function buildApplicationManifest(driftRows) {
+  const rows = driftRows
+    .filter((row) => row.bucket === 'pure_local_only')
+    .map((row) => {
+      const stream = deploymentStream(row)
+      const action = applicationAction(row)
+      return {
+        ...row,
+        stream,
+        action,
+        gate: applicationGate(action),
+      }
+    })
+    .sort((a, b) => {
+      const streamCompare = DEPLOYMENT_STREAM_ORDER.indexOf(a.stream) - DEPLOYMENT_STREAM_ORDER.indexOf(b.stream)
+      if (streamCompare) return streamCompare
+      return a.version.localeCompare(b.version)
+    })
+
+  const previousByStream = new Map()
+  return rows.map((row) => {
+    const dependsOn = previousByStream.get(row.stream) || 'stream preflight'
+    previousByStream.set(row.stream, row.version)
+    return { ...row, dependsOn }
+  })
+}
+
 function summarizeModules(driftRows) {
   const byModule = new Map()
   for (const row of driftRows) {
@@ -423,6 +515,7 @@ function summarizeModules(driftRows) {
       module: row.module,
       pureLocalOnly: 0,
       splitRows: 0,
+      unreviewedSplitRows: 0,
       allLive: 0,
       partialLive: 0,
       noneLive: 0,
@@ -433,6 +526,7 @@ function summarizeModules(driftRows) {
 
     if (row.bucket === 'pure_local_only') summary.pureLocalOnly += 1
     if (row.bucket === 'split_local_remote') summary.splitRows += 1
+    if (row.bucket === 'split_local_remote' && !REVIEWED_SPLIT_BASELINE.has(row.version)) summary.unreviewedSplitRows += 1
     if (row.objectStatus === 'all_live') summary.allLive += 1
     if (row.objectStatus === 'partial_live') summary.partialLive += 1
     if (row.objectStatus === 'none_live') summary.noneLive += 1
@@ -451,7 +545,7 @@ function summarizeModules(driftRows) {
 }
 
 function moduleRecommendation(summary) {
-  if (summary.splitRows > 0) {
+  if (summary.unreviewedSplitRows > 0) {
     return 'Resolve split ledger rows before any module repair batch.'
   }
   if (summary.pureLocalOnly === 0) return 'No local-only work.'
@@ -502,6 +596,11 @@ function generateReport({
   const rowsNeedingObjectReview = driftRows.filter((row) => {
     return row.bucket === 'pure_local_only' && ['partial_live', 'none_live'].includes(row.objectStatus)
   })
+  const applicationManifest = buildApplicationManifest(driftRows)
+  const actionCounts = new Map()
+  for (const row of applicationManifest) {
+    actionCounts.set(row.action, (actionCounts.get(row.action) || 0) + 1)
+  }
 
   const lines = []
   lines.push('# Supabase Migration Phase 5 Module Drift Report')
@@ -524,8 +623,11 @@ function generateReport({
       ['Remote ledger fetched', options.fetchRemote ? 'yes' : 'no'],
       ['Matched rows', options.fetchRemote ? buckets.matched.length : 'not fetched'],
       ['Split local/remote versions', options.fetchRemote ? buckets.splitVersions.length : 'not fetched'],
+      ['Reviewed split baseline', options.fetchRemote ? buckets.splitVersions.filter((version) => REVIEWED_SPLIT_BASELINE.has(version)).length : 'not fetched'],
+      ['Unreviewed split versions', options.fetchRemote ? buckets.splitVersions.filter((version) => !REVIEWED_SPLIT_BASELINE.has(version)).length : 'not fetched'],
       ['Pure local-only rows', options.fetchRemote ? buckets.pureLocalOnly.length : 'not fetched'],
       ['Pure remote-only rows', options.fetchRemote ? buckets.pureRemoteOnly.length : 'not fetched'],
+      ['Application manifest rows', options.fetchRemote ? applicationManifest.length : 'not fetched'],
       ['Extracted objects checked', options.fetchRemote ? objectRows.length : 'not fetched'],
     ],
   ))
@@ -534,11 +636,12 @@ function generateReport({
   lines.push('')
   if (moduleSummaries.length) {
     lines.push(markdownTable(
-      ['Module', 'Pure Local-Only', 'Split Rows', 'All Live', 'Partial Live', 'None Live', 'No Static Objects', 'Recommendation'],
+      ['Module', 'Pure Local-Only', 'Split Rows', 'Unreviewed Split', 'All Live', 'Partial Live', 'None Live', 'No Static Objects', 'Recommendation'],
       moduleSummaries.map((summary) => [
         summary.module,
         summary.pureLocalOnly,
         summary.splitRows,
+        summary.unreviewedSplitRows,
         summary.allLive,
         summary.partialLive,
         summary.noneLive,
@@ -582,6 +685,33 @@ function generateReport({
     ))
   } else {
     lines.push('No pure local-only migrations had partial or missing static object evidence.')
+  }
+  lines.push('')
+  lines.push('## Application Manifest')
+  lines.push('')
+  if (applicationManifest.length) {
+    lines.push('This is a conservative staging manifest, not authorization to apply SQL. `Depends On` expresses ordering within the inferred deployment stream; every stream still requires a live prerequisite check.')
+    lines.push('')
+    lines.push(markdownTable(
+      ['Action', 'Count'],
+      [...actionCounts.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    ))
+    lines.push('')
+    lines.push(markdownTable(
+      ['Version', 'Stream', 'Depends On', 'Module', 'File', 'Evidence', 'Action', 'Required Gate'],
+      applicationManifest.map((row) => [
+        row.version,
+        row.stream,
+        row.dependsOn,
+        row.module,
+        row.file,
+        row.objectCount ? `${row.objectStatus} (${row.liveCount}/${row.objectCount})` : row.objectStatus,
+        row.action,
+        row.gate,
+      ]),
+    ))
+  } else {
+    lines.push('No pure local-only migrations were available for manifest generation.')
   }
   lines.push('')
   lines.push('## Local-Only Drift Detail')
@@ -638,7 +768,7 @@ function generateReport({
   lines.push('## Next Step')
   lines.push('')
   if (status === 'MODULE_AUDIT_READY') {
-    lines.push('Use this module matrix to choose the next small repair batch. Split ledger rows should be investigated before broad migration operations; pure local-only rows need module smoke evidence before any further `migration repair`.')
+    lines.push('Use this module matrix to choose the next small repair batch. Any unreviewed split ledger row must be investigated first; reviewed baseline rows remain excluded from repair batches. Pure local-only rows need module smoke evidence before any `migration repair`.')
   } else if (status === 'BLOCKED_DUPLICATES') {
     lines.push('Run Phase 4 again before continuing; duplicate local timestamps are still present.')
   } else {
@@ -732,9 +862,29 @@ function main() {
 
   if (options.write) {
     const reportPath = path.join(repoRoot, REPORT_PATH)
+    const applicationManifest = buildApplicationManifest(driftRows).map((row) => ({
+      version: row.version,
+      stream: row.stream,
+      dependsOn: row.dependsOn,
+      module: row.module,
+      file: row.file,
+      objectStatus: row.objectStatus,
+      liveCount: row.liveCount,
+      objectCount: row.objectCount,
+      action: row.action,
+      gate: row.gate,
+    }))
+    const manifestPath = path.join(repoRoot, MANIFEST_PATH)
     mkdirSync(path.dirname(reportPath), { recursive: true })
     writeFileSync(reportPath, report)
+    writeFileSync(manifestPath, `${JSON.stringify({
+      generatedAt,
+      linkedProjectRef: 'isdowlnollckzvltkasn',
+      status,
+      rows: applicationManifest,
+    }, null, 2)}\n`)
     console.log(`Wrote ${REPORT_PATH}`)
+    console.log(`Wrote ${MANIFEST_PATH}`)
   }
 
   if (options.json) {
@@ -748,6 +898,18 @@ function main() {
       pureLocalOnlyRows: buckets.pureLocalOnly.length,
       pureRemoteOnlyRows: buckets.pureRemoteOnly.length,
       splitVersions: buckets.splitVersions.length,
+      applicationManifest: buildApplicationManifest(driftRows).map((row) => ({
+        version: row.version,
+        stream: row.stream,
+        dependsOn: row.dependsOn,
+        module: row.module,
+        file: row.file,
+        objectStatus: row.objectStatus,
+        liveCount: row.liveCount,
+        objectCount: row.objectCount,
+        action: row.action,
+        gate: row.gate,
+      })),
       modules: moduleSummaries.map((summary) => ({
         module: summary.module,
         pureLocalOnly: summary.pureLocalOnly,

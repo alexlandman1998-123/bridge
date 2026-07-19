@@ -1,0 +1,41 @@
+name: MVP release certification
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/src/core/transactions/**'
+      - 'the-it-guy/src/services/transactionWorkflowReadModelService.js'
+      - 'the-it-guy/src/lib/transactionLifecycleService.js'
+      - 'the-it-guy/scripts/mvp-**'
+      - 'the-it-guy/supabase/migrations/*mvp*'
+      - 'the-it-guy/docs/mvp-launch-boundary.md'
+      - '.github/workflows/mvp-release-certification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'the-it-guy/src/core/transactions/**'
+      - 'the-it-guy/src/services/transactionWorkflowReadModelService.js'
+      - 'the-it-guy/src/lib/transactionLifecycleService.js'
+      - 'the-it-guy/scripts/mvp-**'
+      - 'the-it-guy/supabase/migrations/*mvp*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: the-it-guy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - run: node scripts/mvp-release-certification.mjs

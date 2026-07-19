@@ -23,7 +23,7 @@ function formatUtcIcsDate(value = '') {
   return parsed.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
 }
 
-function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
+export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   if (payload.attachCalendarInvite === false) return null
   const date = normalizeText(payload.appointmentDate)
   const time = normalizeText(payload.appointmentTime).slice(0, 5)

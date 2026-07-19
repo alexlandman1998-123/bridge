@@ -40,6 +40,7 @@ import SellerOffersPage from '../components/client-portal/offers/SellerOffersPag
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
+import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
   buildClientJourney,
@@ -8462,6 +8463,7 @@ function ClientPortal() {
                 </section>
 
                 <section className="grid gap-6 xl:grid-cols-2">
+                  <MvpTransactionControlBoard controlBoard={workspaceData?.mvpControlBoard} compact />
                   <PurchaseJourneyCard
                   progressPercent={journeyProgressPercent}
                   currentStageLabel={journeyCurrentStageLabel}

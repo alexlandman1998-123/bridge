@@ -1,0 +1,52 @@
+name: Supabase Phase 8 Closeout Gate
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-phase8-closeout.mjs'
+      - 'scripts/supabase-phase8-closeout.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'docs/supabase-phase-8-closeout-report.md'
+      - 'docs/supabase-phase-8-implementation-status.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase8-closeout-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/supabase-phase8-closeout.mjs'
+      - 'scripts/supabase-phase8-closeout.test.mjs'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'docs/supabase-phase-8-closeout-report.md'
+      - 'docs/supabase-phase-8-implementation-status.md'
+      - 'docs/database-release-runbook.md'
+      - 'package.json'
+      - '.github/workflows/supabase-phase8-closeout-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  closeout-gate:
+    name: Verify reconciliation closeout remains fail-closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test Phase 8 closeout gate
+        run: node scripts/supabase-phase8-closeout.test.mjs
+
+      - name: Print local closeout plan
+        run: node scripts/supabase-phase8-closeout.mjs --plan

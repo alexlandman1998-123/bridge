@@ -26,6 +26,8 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { resolveTransactionParticipantShape } from './roleResolutionService'
+import { buildMvpTransactionTruth } from '../core/transactions/mvpTransactionTruth.js'
+import { buildMvpTransactionControlBoard } from '../core/transactions/mvpTransactionControlBoard.js'
 
 const READ_MODEL_WARNING_PREFIX = '[workflow-read-model]'
 const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'transaction_attorney_assignments table missing. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
@@ -118,6 +120,11 @@ function mapTransactionRow(row = {}) {
     financeType: row.finance_type || null,
     financeManagedBy: row.finance_managed_by || null,
     purchaserType: row.purchaser_type || null,
+    transactionType: row.transaction_type || null,
+    propertyTenure: row.property_tenure || null,
+    sellerEntityType: row.seller_type || null,
+    sellerHasExistingBond: Boolean(row.seller_has_existing_bond || row.existing_bond),
+    routingProfile: row.routing_profile_json && typeof row.routing_profile_json === 'object' ? row.routing_profile_json : null,
     lifecycleState: row.lifecycle_state || null,
     riskStatus: row.risk_status || null,
     updatedAt: row.updated_at || null,
@@ -587,7 +594,7 @@ function buildNextActions({ blockers = [] }) {
 async function fetchTransaction(client, transactionId, warnings) {
   const primary = await client
     .from('transactions')
-    .select('id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, lifecycle_state, risk_status, updated_at, created_at')
+    .select('id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -910,6 +917,22 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
   })
 
   const { nextInternalActions, nextClientActions } = buildNextActions({ blockers })
+  const mvpTruth = buildMvpTransactionTruth({
+    transaction,
+    routingProfile: transaction.routingProfile || {
+      transactionType: transaction.transactionType,
+      financeType: transaction.financeType,
+      propertyTenure: transaction.propertyTenure,
+      buyerEntityType: transaction.purchaserType,
+      sellerEntityType: transaction.sellerEntityType,
+      requiresCancellationAttorney: transaction.sellerHasExistingBond,
+    },
+    participants,
+    documentRequirements: documentRequests,
+    workflowLanes: lanes,
+    events,
+  })
+  const mvpControlBoard = buildMvpTransactionControlBoard(mvpTruth)
 
   return {
     transaction,
@@ -931,6 +954,8 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     nextClientActions,
     warnings,
     coordination,
+    mvpTruth,
+    mvpControlBoard,
     meta: {
       generatedAt: toIsoString(new Date()),
       schemaWarnings: warnings.length,

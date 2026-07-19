@@ -37,6 +37,36 @@ const PHASE4_RENAMES = [
     to: 'supabase/migrations/202607120003_canonical_document_verification_snapshot_scoped.sql',
     reason: 'Kept the already matched 202607120001 migration stable and moved the duplicate after 202607120002.',
   },
+  {
+    from: 'supabase/migrations/202607180025_attorney_calendar_phase4_rsvp_lifecycle.sql',
+    to: 'supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql',
+    reason: 'Kept the remotely recorded attorney accounting migration at 202607180025 and moved calendar Phase 4 after the current minute-level migration range.',
+  },
+  {
+    from: 'supabase/migrations/202607180025_document_generator_recovery_rehearsal_g4.sql',
+    to: 'supabase/migrations/202607180048_document_generator_recovery_rehearsal_g4.sql',
+    reason: 'Kept the remotely recorded attorney accounting migration at 202607180025 and started the moved document-generator sequence after calendar Phase 4.',
+  },
+  {
+    from: 'supabase/migrations/202607180026_document_generator_least_privilege_h2.sql',
+    to: 'supabase/migrations/202607180049_document_generator_least_privilege_h2.sql',
+    reason: 'Kept attorney accounting Phase 1.2 at 202607180026 and preserved document-generator order after G4.',
+  },
+  {
+    from: 'supabase/migrations/202607180027_document_generator_public_signer_surface_h4.sql',
+    to: 'supabase/migrations/202607180050_document_generator_public_signer_surface_h4.sql',
+    reason: 'Kept attorney accounting Phase 3.1 at 202607180027 and preserved document-generator order after H2.',
+  },
+  {
+    from: 'supabase/migrations/202607180028_document_generator_concurrency_i1.sql',
+    to: 'supabase/migrations/202607180051_document_generator_concurrency_i1.sql',
+    reason: 'Kept attorney accounting Phase 3.2 at 202607180028 and preserved document-generator order after H4.',
+  },
+  {
+    from: 'supabase/migrations/202607180032_document_generator_backpressure_i3.sql',
+    to: 'supabase/migrations/202607180052_document_generator_backpressure_i3.sql',
+    reason: 'Kept the remotely recorded attorney calendar Phase 5 migration at 202607180032 and preserved document-generator order after I1.',
+  },
 ]
 
 function findRepoRoot(startDir) {
