@@ -49,7 +49,9 @@
     "mvp:staging:environment": "node scripts/mvp-staging-environment-check.mjs",
     "test:mvp:staging:environment": "node scripts/mvp-staging-environment-check.test.mjs",
     "mvp:staging:change-evidence": "node scripts/mvp-staging-change-evidence-check.mjs",
-    "test:mvp:staging:change-evidence": "node scripts/mvp-staging-change-evidence-check.test.mjs"
+    "test:mvp:staging:change-evidence": "node scripts/mvp-staging-change-evidence-check.test.mjs",
+    "mvp:staging:apply-preflight": "node scripts/mvp-staging-apply-preflight.mjs",
+    "test:mvp:staging:apply-preflight": "node scripts/mvp-staging-apply-preflight.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

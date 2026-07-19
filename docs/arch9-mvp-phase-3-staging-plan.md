@@ -28,14 +28,18 @@ Do not edit either file after it has been applied. Any later correction must be 
 
 ## Human-approved staging apply
 
-Only after the gate passes and the staging project reference is verified:
+Only after the gate, 3A environment confirmation, 3B change evidence, and 3C preflight all pass, the named database owner may apply the separately reviewed forward-only change to staging. A broad `supabase db push` is prohibited while the directory contains duplicate timestamps.
 
 ```bash
-supabase link --project-ref <staging-project-ref>
-supabase migration list --linked
-supabase db push --linked
+MVP_TARGET_ENV=staging MVP_STAGING_PROJECT_REF=<staging-project-ref> \
+SUPABASE_URL=<staging-url> VITE_SUPABASE_URL=<staging-url> \
+SUPABASE_ANON_KEY=<staging-anon-key> VITE_SUPABASE_ANON_KEY=<staging-anon-key> \
+npm run mvp:staging:apply-preflight -- \
+  --ledger=docs/staging-migration-ledger.json \
+  --change-evidence=docs/staging-change-evidence.json \
+  --canonical-plan=docs/staging-canonical-migration-plan.json
 SUPABASE_URL=<staging-url> SUPABASE_ANON_KEY=<staging-anon-key> \
   node the-it-guy/scripts/mvp-deployment-contract-check.mjs
 ```
 
-Capture the migration-list output, deployment timestamp, project reference, and RPC-check result in the release evidence. Do not use production credentials or run `db reset`.
+Capture the migration-list output, deployment timestamp, project reference, and RPC-check result in the release evidence. Do not use production credentials, `db reset`, or migration repair.
