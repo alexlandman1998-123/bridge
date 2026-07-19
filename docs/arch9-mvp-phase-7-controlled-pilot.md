@@ -1,0 +1,27 @@
+# Arch9 MVP — Phase 7 controlled production pilot
+
+Phase 7 starts only after Phase 6 returns `ready_for_controlled_production_pilot`. It does not increase the MVP capacity target; it makes the first production activity observable and recoverable.
+
+## Before each batch
+
+Run the pilot session check using the same evidence passed to Phase 6:
+
+```bash
+npm run mvp:phase7:session -- \
+  --staging-ledger=docs/staging-migration-ledger.json \
+  --journey-evidence=docs/staging-mvp-journeys.json \
+  --review-evidence=docs/staging-mvp-review.json \
+  --decision-evidence=docs/production-pilot-decision.json
+```
+
+Only `go_for_batch_of_10` permits the next batch. Do not create more than ten production transactions in the batch.
+
+## After each batch
+
+Create non-secret batch evidence with every transaction id, idempotency key, bootstrap result, post-deploy smoke result, and gate-consistency result. Audit it:
+
+```bash
+npm run mvp:phase7:audit -- --input=docs/production-pilot-batch-01.json
+```
+
+Any failure is a stop condition. Pause new production work, preserve transaction IDs and evidence, resolve the affected issue, re-run Phase 6, then start a new batch only after a new passing session check.
