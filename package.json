@@ -25,7 +25,9 @@
     "test:mvp:phase1": "node scripts/mvp-seller-acceptance-contract-check.mjs && node the-it-guy/server/tests/mvpWorkflowGateEnforcementService.test.js",
     "test:mvp:phase2": "node the-it-guy/src/core/transactions/__tests__/mvpTransactionCreationCommand.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionParticipantBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionDocumentBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionWorkflowBootstrap.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionTruth.test.js && node the-it-guy/src/core/transactions/__tests__/mvpTransactionIntegrityAudit.test.js && node the-it-guy/scripts/mvp-schema-contract-check.mjs && node scripts/mvp-lifecycle-atomic-contract-check.mjs && node the-it-guy/scripts/mvp-transaction-simulation.mjs && node the-it-guy/scripts/mvp-transaction-load-check.mjs",
     "mvp:phase3:plan": "node scripts/mvp-staging-migration-plan.mjs",
-    "test:mvp:phase3": "node scripts/mvp-staging-migration-plan.test.mjs"
+    "test:mvp:phase3": "node scripts/mvp-staging-migration-plan.test.mjs",
+    "mvp:phase4:verify": "node scripts/mvp-staging-journey-evidence-check.mjs",
+    "test:mvp:phase4": "node scripts/mvp-staging-journey-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
