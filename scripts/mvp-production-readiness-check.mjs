@@ -16,7 +16,7 @@ function runNode(args) {
   return { passed: result.status === 0, output, report }
 }
 
-const requiredFiles = ['staging-ledger', 'deployment-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence']
+const requiredFiles = ['staging-ledger', 'deployment-evidence', 'rollback-evidence', 'journey-evidence', 'review-evidence', 'decision-evidence']
 const missingInputs = requiredFiles.filter((name) => !options[name])
 const checks = []
 
@@ -26,6 +26,11 @@ checks.push({ name: 'local_phase_2', ...runNode(['scripts/mvp-lifecycle-atomic-c
 if (!missingInputs.length) {
   checks.push({ name: 'staging_migration_plan', ...runNode(['scripts/mvp-staging-migration-plan.mjs', `--ledger=${options['staging-ledger']}`]) })
   checks.push({ name: 'staging_deployment', ...runNode(['scripts/mvp-staging-deployment-evidence-check.mjs', `--evidence=${options['deployment-evidence']}`]) })
+  checks.push({ name: 'staging_rollback_drill', ...runNode([
+    'scripts/mvp-staging-rollback-evidence-check.mjs',
+    `--evidence=${options['rollback-evidence']}`,
+    `--deployment-evidence=${options['deployment-evidence']}`,
+  ]) })
   checks.push({ name: 'staging_journeys', ...runNode(['scripts/mvp-staging-journey-evidence-check.mjs', `--evidence=${options['journey-evidence']}`, `--deployment-evidence=${options['deployment-evidence']}`]) })
   checks.push({ name: 'staging_review', ...runNode([
     'scripts/mvp-staging-review-evidence-check.mjs',

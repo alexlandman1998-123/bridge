@@ -55,7 +55,9 @@
     "mvp:staging:deployment-evidence": "node scripts/mvp-staging-deployment-evidence-check.mjs",
     "test:mvp:staging:deployment-evidence": "node scripts/mvp-staging-deployment-evidence-check.test.mjs",
     "mvp:production:decision-evidence": "node scripts/mvp-production-decision-evidence-check.mjs",
-    "test:mvp:production:decision-evidence": "node scripts/mvp-production-decision-evidence-check.test.mjs"
+    "test:mvp:production:decision-evidence": "node scripts/mvp-production-decision-evidence-check.test.mjs",
+    "mvp:staging:rollback-evidence": "node scripts/mvp-staging-rollback-evidence-check.mjs",
+    "test:mvp:staging:rollback-evidence": "node scripts/mvp-staging-rollback-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

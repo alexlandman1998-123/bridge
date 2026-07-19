@@ -8,7 +8,25 @@ The production gate requires:
 2. A reconciled staging migration-plan result.
 3. Phase 3D deployment evidence for the same staging project and four passing UI journeys.
 4. A passing operations/data review with no unresolved high-severity finding.
-5. A time-stamped decision-evidence JSON file approving only a controlled production pilot, with named release, pilot, support, and rollback owners; reviewed rollback procedure; accepted MVP limitations; the Phase 5 staging-acceptance decision; and an initial batch fixed at ten.
+5. A non-destructive staging rollback/recovery drill recorded against the verified staging deployment. It must use only the forward-fix or feature-disable path and confirm an operational state was restored.
+6. A time-stamped decision-evidence JSON file approving only a controlled production pilot, with named release, pilot, support, and rollback owners; reviewed rollback procedure; accepted MVP limitations; the Phase 5 staging-acceptance decision; and an initial batch fixed at ten.
+
+Example rollback drill evidence:
+
+```json
+{
+  "environment": "staging",
+  "projectRef": "staging-project-ref",
+  "performedBy": "engineering.owner@arch9.example",
+  "performedAt": "2026-07-19T00:00:00.000Z",
+  "runbookReference": "docs/mvp-pilot-rollback-runbook.md",
+  "resultSummary": "Feature-disable recovery restored workflow progression.",
+  "drillType": "forward_fix_or_feature_disable",
+  "restoredOperationalState": true,
+  "dataDestructive": false,
+  "productionCredentialsUsed": false
+}
+```
 
 Example decision evidence:
 
@@ -38,6 +56,7 @@ Run the check:
 npm run mvp:phase6:readiness -- \
   --staging-ledger=docs/staging-migration-ledger.json \
   --deployment-evidence=/secure-local-path/staging-deployment-evidence.json \
+  --rollback-evidence=/secure-local-path/staging-rollback-evidence.json \
   --journey-evidence=docs/staging-mvp-journeys.json \
   --review-evidence=docs/staging-mvp-review.json \
   --decision-evidence=docs/production-pilot-decision.json
