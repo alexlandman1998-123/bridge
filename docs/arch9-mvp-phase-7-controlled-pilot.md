@@ -20,6 +20,8 @@ npm run mvp:phase7:session -- \
 
 The session evidence must be prepared by the approved pilot owner, list unique non-secret planned transaction references, nominate the approved stop authority, and contain no more than ten references. Only `go_for_batch_of_10` permits the next batch. Do not create more than ten production transactions in the batch.
 
+For batch 2 and later, add `--prior-closeout-evidence=/secure-local-path/production-pilot-batch-01-closeout.json`. The next session must follow the prior batch immediately and the prior closeout must show zero incidents and no stop condition. An incident requires the pause/recovery path and a fresh Phase 6 review; it cannot be bypassed by opening another session.
+
 ## After each batch
 
 Create non-secret batch evidence with every transaction id, idempotency key, bootstrap result, post-deploy smoke result, and gate-consistency result. Audit it:

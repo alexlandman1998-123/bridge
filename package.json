@@ -63,7 +63,9 @@
     "mvp:pilot:session-evidence": "node scripts/mvp-pilot-session-evidence-check.mjs",
     "test:mvp:pilot:session-evidence": "node scripts/mvp-pilot-session-evidence-check.test.mjs",
     "mvp:pilot:batch-closeout": "node scripts/mvp-pilot-batch-closeout-evidence-check.mjs",
-    "test:mvp:pilot:batch-closeout": "node scripts/mvp-pilot-batch-closeout-evidence-check.test.mjs"
+    "test:mvp:pilot:batch-closeout": "node scripts/mvp-pilot-batch-closeout-evidence-check.test.mjs",
+    "mvp:pilot:continuation-evidence": "node scripts/mvp-pilot-continuation-evidence-check.mjs",
+    "test:mvp:pilot:continuation-evidence": "node scripts/mvp-pilot-continuation-evidence-check.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"
