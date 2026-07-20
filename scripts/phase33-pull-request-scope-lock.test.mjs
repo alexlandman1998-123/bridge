@@ -18,6 +18,7 @@ assert.equal(scope.pullRequest.head, 'codex/mvp-pilot-readiness')
 assert.equal(scope.included.productionLedgerRows, 511)
 assert.equal(scope.controls.newRuntimeFeaturesAllowed, false)
 assert.equal(scope.controls.newMigrationsAllowed, false)
+assert.equal(scope.controls.previewBaselineMigrationAllowed, true)
 assert.equal(scope.controls.scopeAmendmentRequiresExplicitApproval, true)
 assert.equal(scope.approvedRuntimeCorrections.status, 'APPROVED_FOR_RELEASE_CANDIDATE')
 assert.equal(scope.approvedRuntimeCorrections.productionPromotionRequiredAfterMerge, true)
@@ -25,6 +26,7 @@ assert.equal(scope.approvedRuntimeCorrections.paths.length, 8)
 for (const path of scope.approvedRuntimeCorrections.paths) {
   assert.ok(scope.allowedAfterIsolationPaths.includes(path), `${path} must be present in the locked allowlist.`)
 }
+assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202605090000_production_schema_baseline.sql'))
 
 for (const commit of [
   release.productionApplicationCommit,
