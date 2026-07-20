@@ -3666,7 +3666,14 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
 
   const packetType = normalizeText(form.packetType || form.packet_type).toLowerCase()
   if (packetType === 'mandate') {
-    const mandateTemplateVariant = 'default'
+    const mandateTemplateVariant = normalizeMandateTemplateRoute(
+      form.mandateTemplateVariant ||
+        existingMetadata.mandate_template_variant ||
+        existingMetadata.mandateTemplateVariant ||
+        existingMetadata.template_variant ||
+        existingMetadata.templateVariant ||
+        'default',
+    )
     const mandateContentScan = serializeMandateTemplatePublishGateScan(form.mandateContentScan)
     nextMetadata.mandate_template_variant = mandateTemplateVariant
     nextMetadata.mandateTemplateVariant = mandateTemplateVariant

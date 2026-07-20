@@ -223,7 +223,7 @@ function buildMissingRequiredIssue(group = {}, rule = {}) {
 function buildForbiddenIssue(signal = {}, rule = {}) {
   const group = getMandateTemplateSignalGroup(signal.signalGroupKey) || {}
   return {
-    severity: 'blocking',
+    severity: group.severity === 'warning' ? 'warning' : 'blocking',
     code: 'FORBIDDEN_UNCONDITIONAL_SIGNAL',
     routeKey: rule.key,
     routeLabel: rule.label,
