@@ -31,6 +31,7 @@
     "supabase:phase15:batch3:verify": "node scripts/supabase-phase15-batch3.test.mjs",
     "supabase:phase15:batch4:verify": "node scripts/supabase-phase15-batch4.test.mjs",
     "supabase:phase15:batch5:verify": "node scripts/supabase-phase15-batch5.test.mjs",
+    "supabase:phase15:batch6:verify": "node scripts/supabase-phase15-batch6.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

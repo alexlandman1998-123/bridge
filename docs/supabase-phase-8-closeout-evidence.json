@@ -254,6 +254,12 @@
       "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
       "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
       "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 5 instruction)"
+    },
+    {
+      "version": "202607180043",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 6 instruction)"
     }
   ]
 }

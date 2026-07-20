@@ -5,8 +5,8 @@
 Phase 7 has been implemented as a fail-closed production-promotion gate.
 
 - Production project: `isdowlnollckzvltkasn`
-- Production SQL promoted: 35 migrations across five batches
-- Production migration ledger: 468 rows; all Batch 1–5 versions recorded
+- Production SQL promoted: 36 migrations across six batches
+- Production migration ledger: 469 rows; all Batch 1–6 versions recorded
 - Staging manifest coverage: 64 of 64
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
@@ -17,7 +17,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The prerequisite gates pass. Phase 15 Batches 1–5 completed with reviewed production evidence. The remaining 29 manifest versions and unrelated duplicate local version `202607200002` remain final-closeout blockers.
+The prerequisite gates pass. Phase 15 Batches 1–6 completed with reviewed production evidence. The remaining 28 manifest versions and unrelated duplicate local version `202607200002` remain final-closeout blockers.
 
 ## Implemented controls
 
@@ -69,6 +69,7 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - Phase 15 Batch 3 production evidence complete for the seven legal-document runtime-foundation versions.
 - Phase 15 Batch 4 production evidence complete for the eight editable-document and certified-PDF runtime versions.
 - Phase 15 Batch 5 production evidence complete for the nine signing-and-completion runtime versions.
+- Phase 15 Batch 6 production evidence complete for the document-experience runtime enforcement capstone.
 
 ## Required work before the next production batch
 
@@ -85,4 +86,4 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - `docs/supabase-phase-7-implementation-status.md`
 - `docs/database-release-runbook.md`
 
-Phase 15 Batches 1–5 applied 35 reviewed migrations and retained per-version production evidence.
+Phase 15 Batches 1–6 applied 36 reviewed migrations and retained per-version production evidence.
