@@ -34,7 +34,6 @@ import {
   Send,
   Shield,
   SlidersHorizontal,
-  Star,
   Tag,
   Target,
   Trash2,
@@ -86,8 +85,8 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
-import { getSellerOnboardingTransferAttorneys } from '../lib/preferredPartners'
-import { listOrganisationPreferredPartners, listOrganisationUsers } from '../lib/settingsApi'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
+import { listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   buildAgentLeadRows,
@@ -15409,11 +15408,6 @@ function SellerActionsPanel({
   )
 }
 
-function getPreferredAttorneyInitials(attorney = {}) {
-  const words = normalizeText(attorney.companyName || attorney.contactPerson).split(/\s+/).filter(Boolean)
-  return words.length ? words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() : 'TA'
-}
-
 function PreferredAttorneySelectionModal({
   open = false,
   attorneys = [],
@@ -15450,49 +15444,24 @@ function PreferredAttorneySelectionModal({
     >
       {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
       {loading ? (
-        <div className="grid gap-3">
-          {[0, 1].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-slate-100" />)}
-        </div>
+        <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
       ) : attorneys.length ? (
-        <div className="grid max-h-[430px] gap-3 overflow-y-auto pr-1" role="radiogroup" aria-label="Preferred transferring attorneys">
-          {attorneys.map((attorney) => {
-            const selected = String(attorney.id) === String(selectedId)
-            return (
-              <button
-                key={attorney.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onSelect?.(attorney.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-400 bg-blue-50 shadow-[0_8px_24px_rgba(37,99,235,0.08)]' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'}`}
-              >
-                <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-blue-100 bg-gradient-to-br from-blue-50 to-slate-100 text-xs font-bold tracking-wide text-blue-800">
-                  {getPreferredAttorneyInitials(attorney)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-slate-950">{attorney.companyName}</span>
-                    {attorney.isPreferredDefault ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-800">
-                        <Star size={10} fill="currentColor" /> Agency preferred
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
-                    <Building2 size={12} className="shrink-0" />
-                    <span className="truncate">{attorney.contactPerson || attorney.email || attorney.province || 'Transfer attorney'}</span>
-                  </span>
-                </span>
-                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>
-                  <CheckCircle2 size={14} />
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Connected attorney
+          <select
+            value={selectedId}
+            onChange={(event) => onSelect?.(event.target.value)}
+            className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          >
+            <option value="">Select an attorney</option>
+            {attorneys.map((attorney) => (
+              <option key={attorney.id} value={attorney.id}>{attorney.companyName}</option>
+            ))}
+          </select>
+        </label>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No operational transfer attorney is configured. Add the connected firm under Organisation → Partners → Third parties, mark it active, and link it to the attorney organisation before sending seller onboarding.
+          No connected attorney firms were found. Connect an attorney under Organisation → Partners before sending seller onboarding.
         </div>
       )}
     </Modal>
@@ -21170,24 +21139,37 @@ function AgentLeadWorkspace() {
     setSellerAttorneyPickerOpen(true)
     setSellerPreferredAttorneysLoading(true)
     try {
-      const partners = await listOrganisationPreferredPartners()
-      const attorneys = getSellerOnboardingTransferAttorneys(partners)
+      const accessContext = {
+        organisationId,
+        role: actor.workspaceRole || actor.role,
+        profile: workspaceContext.profile,
+        currentMembership: workspaceContext.currentMembership,
+      }
+      const snapshot = await fetchPartnersSnapshot({
+        organisationId,
+        workspaceType: workspaceContext.currentWorkspace?.type || workspaceContext.workspace?.type || 'agency',
+        accessContext,
+        includeDirectory: false,
+      })
+      const attorneys = getPartnerAssignmentOptions(snapshot, 'transfer_attorney', accessContext).map((attorney) => ({
+        id: normalizeText(attorney.organisationId),
+        partnerOrganisationId: normalizeText(attorney.organisationId),
+        companyName: normalizeText(attorney.companyName) || 'Connected attorney',
+        contactPerson: normalizeText(attorney.contactPerson),
+        email: normalizeText(attorney.email),
+      })).filter((attorney) => attorney.id)
       setSellerPreferredAttorneys(attorneys)
       const existingAttorneyId = normalizeText(
-        linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId,
+        linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.partnerOrganisationId,
       )
       const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId)
-        || attorneys.find((attorney) => attorney.isPreferredDefault)
         || attorneys[0]
         || null
       setSelectedSellerAttorneyId(initialAttorney?.id || '')
-      if (!attorneys.length) {
-        setSellerPreferredAttorneysError('A connected firm is not automatically an operational transfer attorney. Add it under Organisation → Partners → Third parties, mark it active, and link it to the attorney organisation before sending onboarding.')
-      }
     } catch (loadError) {
       setSellerPreferredAttorneys([])
       setSelectedSellerAttorneyId('')
-      setSellerPreferredAttorneysError(loadError?.message || 'Preferred transfer attorneys could not be loaded.')
+      setSellerPreferredAttorneysError(loadError?.message || 'Connected attorneys could not be loaded.')
     } finally {
       setSellerPreferredAttorneysLoading(false)
     }
@@ -21265,7 +21247,7 @@ function AgentLeadWorkspace() {
         includePortalBranding: false,
         deferStatusTransition: true,
         performedBy: normalizeText(actor.userId || actor.id),
-        transferAttorneyPreferredPartnerId: preferredAttorneyId,
+        transferAttorneyPartnerOrganisationId: preferredAttorneyId,
       })
       console.info('[Seller onboarding] link ready', {
         ...debugContext,
