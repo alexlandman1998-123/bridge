@@ -1,0 +1,19 @@
+{
+  "version": "202607180042",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "verification": {
+    "certificationTableLive": true,
+    "rlsEnabled": true,
+    "certificationFunctionLive": true,
+    "authenticatedExecuteGranted": true,
+    "anonymousExecuteRevoked": true,
+    "derivedCompatibilityRoleConstraints": 2,
+    "existingCertificationsBeforeRemediation": 0
+  }
+}

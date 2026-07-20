@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-07-20T17:08:00Z",
+  "phase": 24,
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "targetFirmId": "1694cca1-2081-4c58-be8b-88a1e927c0ba",
+  "remediationRunId": "4ae12168-79f3-4f83-b5a8-18a424ceb59c",
+  "repairStrategy": "reassign_to_existing_active_canonical_firm_administrator",
+  "updatedAssignmentCount": 43,
+  "distinctTransactionCount": 43,
+  "auditEventCount": 43,
+  "attorneyIntegrityRowsAfter": 8,
+  "attorneyIntegrityBlockingRowsAfter": 0,
+  "attorneyIntegrityBlockingAssignmentsAfter": 0,
+  "missingOrganisationLinksAfter": 0,
+  "compatibilityMismatchesAfter": 0,
+  "firmCertificationCount": 1,
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "transactionalPostconditionsPassed": true
+}

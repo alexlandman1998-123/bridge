@@ -1,0 +1,20 @@
+{
+  "version": "202607180039",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "verification": {
+    "assignmentEligibilityFunctionLive": true,
+    "assignmentGuardTriggerLive": true,
+    "anonymousExecuteRevoked": true,
+    "openAssignmentSlots": 58,
+    "ineligibleLegacyOpenAssignmentSlotsDetected": 43,
+    "newAndChangedAssignmentsGuarded": true,
+    "legacyRowsMutatedByMigration": false,
+    "reviewedPhase10RemediationRequiredBeforeCloseout": true
+  }
+}

@@ -9,13 +9,13 @@ Phase 1 is a controlled residential-transaction pilot for one organisation. It m
 ## Included production work
 
 - 11 `document_generation` manifest migrations, completed in Phase 23 with one additive least-privilege correction.
-- 6 outstanding `attorney_identity_access` manifest migrations, including separately reviewed corrective work where required.
+- 6 `attorney_identity_access` manifest migrations, completed in Phase 24 with two additive corrections and the reviewed 43-assignment remediation.
 - Repair-only verification and ledger reconciliation for `202607180046` transaction creation.
 - `20260719194500` seller attorney acceptance.
 - The three conditional-master migrations assigned to unique consecutive versions `202607200004`–`202607200006`; they are governed and staging-certified but still require production promotion.
 - A clean, reproducible application deployment followed by one enforced N6 pilot cohort.
 
-Phase 23 completed document-generation promotion and its security correction. Twenty of the 68 governed manifest rows remain without reviewed production evidence.
+Phase 24 completed attorney identity/access promotion and its reviewed data remediation. Fourteen of the 70 governed manifest rows remain without reviewed production evidence.
 
 ## Explicitly deferred
 

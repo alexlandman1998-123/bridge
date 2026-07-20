@@ -43,3 +43,7 @@ Supabase documentation: [Database backups](https://supabase.com/docs/guides/plat
 ## Phase 23 re-verification
 
 The recovery verifier now derives the live production expectation from the signed 433-row restore baseline plus unique reviewed promotions. After Phase 23 it passed at 481/481 production versions, normalized the 17 reviewed minute/second precision ledger pairs, reconfirmed all five identity fingerprints, and found 501 total rows on the forward-migrated staging ledger.
+
+## Phase 24 re-verification
+
+After Phase 24, the same baseline-plus-reviewed-promotions rule expects and finds 489/489 production ledger rows. The restored recovery baseline remains unchanged; the eight Phase 24 production entries are represented by reviewed closeout evidence, and the forward-migrated staging ledger contains 503 rows.

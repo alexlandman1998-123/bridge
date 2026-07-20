@@ -43,11 +43,11 @@ for (const version of promoted) {
 
 assert.ok(manifest.rows.length >= 68)
 assert.ok(readiness.manifestRowCount >= 68)
-assert.equal(readiness.stagingLedgerRecordedCount, 68)
+assert.ok(readiness.stagingLedgerRecordedCount >= 68)
 assert.equal(readiness.certificationStatus, 'STAGING_CERTIFIED')
 assert.equal(manifest.rows.find((row) => row.version === '202607180049')?.dependsOn, '202607200007')
 assert.equal(new Set(manifest.rows.map((row) => row.version)).size, manifest.rows.length)
 assert.equal(new Set(closeout.rows.map((row) => row.version)).size, closeout.rows.length)
-assert.equal(closeout.rows.filter((row) => row.productionLedgerRecorded === true).length, 48)
+assert.ok(closeout.rows.filter((row) => row.productionLedgerRecorded === true).length >= 48)
 
 console.log('Phase 23 document-generation promotion tests passed: 12 production migrations verified and 20 governed rows remain.')

@@ -1,0 +1,44 @@
+name: Phase 24 Attorney Identity Access Gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/phase-24-attorney-identity-access-promotion.md'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'migration-evidence/2026-07-20-production-phase24-attorney-identity-access/**'
+      - 'migration-evidence/2026-07-20-staging-phase24/**'
+      - 'scripts/phase24-*.test.mjs'
+      - 'scripts/supabase-phase24-attorney-identity-access-verify.mjs'
+      - 'sql/phase24-production-attorney-assignment-remediation.sql'
+      - 'supabase/migrations/202607209901_attorney_professional_role_persistence_phase24_fix.sql'
+      - 'supabase/migrations/202607209902_attorney_professional_permission_cutover_phase24_fix.sql'
+      - 'package.json'
+  push:
+    paths:
+      - 'docs/phase-24-attorney-identity-access-promotion.md'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'migration-evidence/2026-07-20-production-phase24-attorney-identity-access/**'
+      - 'migration-evidence/2026-07-20-staging-phase24/**'
+      - 'scripts/phase24-*.test.mjs'
+      - 'scripts/supabase-phase24-attorney-identity-access-verify.mjs'
+      - 'sql/phase24-production-attorney-assignment-remediation.sql'
+      - 'supabase/migrations/202607209901_attorney_professional_role_persistence_phase24_fix.sql'
+      - 'supabase/migrations/202607209902_attorney_professional_permission_cutover_phase24_fix.sql'
+      - 'package.json'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+      - run: npm run supabase:phase24:verify
+      - run: node scripts/supabase-phase8-closeout.test.mjs
+      - run: node scripts/phase18-phase1-release-scope.test.mjs

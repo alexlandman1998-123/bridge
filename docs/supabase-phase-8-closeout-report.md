@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T16:10:37.203Z
+Generated: 2026-07-20T17:17:05.641Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -13,19 +13,19 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 | Check | Result |
 | --- | --- |
-| Local migration files | 503 |
-| Phase 5 manifest rows | 68 |
+| Local migration files | 507 |
+| Phase 5 manifest rows | 70 |
 | Duplicate versions | 0 |
 | Missing manifest files | 0 |
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
 | Human staging-readiness approval | Yes |
-| Complete production evidence rows | 48 |
-| Incomplete production evidence rows | 20 |
+| Complete production evidence rows | 56 |
+| Incomplete production evidence rows | 14 |
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Live verification performed | Yes |
-| Pure local-only versions | 22, including 20 governed incomplete rows and 2 out-of-manifest rows |
+| Pure local-only versions | 18 |
 | Pure remote-only versions | 0 |
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |
@@ -46,12 +46,6 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 - `202607180035`
 - `202607180036`
 - `202607180047`
-- `202607180037`
-- `202607180038`
-- `202607180039`
-- `202607180040`
-- `202607180041`
-- `202607180042`
 - `202607180046`
 - `20260719194500`
 - `202607200004`
@@ -60,4 +54,4 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 68 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 70 manifest versions have reviewed closeout evidence, and production recovery is available and tested.

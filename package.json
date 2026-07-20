@@ -39,6 +39,7 @@
     "application:phase20:verify": "node scripts/phase20-application-source.test.mjs",
     "supabase:phase22:verify": "node scripts/phase22-expanded-staging-certification.test.mjs",
     "supabase:phase23:verify": "node scripts/phase23-document-generation-correction.test.mjs && node scripts/phase23-document-generation-promotion.test.mjs",
+    "supabase:phase24:verify": "node scripts/phase24-attorney-identity-access-correction.test.mjs && node scripts/phase24-production-attorney-remediation.test.mjs && node scripts/phase24-attorney-identity-access-promotion.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
