@@ -81,12 +81,14 @@
       ],
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
-        "createdProjectRef": "kpxwhrfksgubewkypbly",
+        "intermediateProjectRef": "kpxwhrfksgubewkypbly",
+        "createdProjectRef": "qiyhfidehxcpgdivjknk",
         "branch": "codex/mvp-pilot-readiness",
         "withData": false,
         "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
         "productionAffected": false,
-        "stagingAffected": false
+        "stagingAffected": false,
+        "recreatedAfterPrecisionNormalization": true
       },
       "migrationPrecisionNormalization": {
         "status": "SECOND_PRECISION_PREFIX_COLLISIONS_REMOVED",
