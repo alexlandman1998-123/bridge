@@ -117,6 +117,7 @@
     "supabase/migrations/202606110011_seller_offer_authority_phase4.sql",
     "supabase/migrations/202606110012_transaction_conversion_phase5.sql",
     "supabase/migrations/202606280002_development_financials_rls.sql",
+    "supabase/migrations/202607090001_agency_tasks_foundation.sql",
     "the-it-guy/scripts/commercial-phase4.test.mjs",
     "scripts/supabase-phase11-staging-certification.mjs",
     "scripts/supabase-phase11-staging-certification.test.mjs",
