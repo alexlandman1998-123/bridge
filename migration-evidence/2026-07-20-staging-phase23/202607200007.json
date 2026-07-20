@@ -1,0 +1,23 @@
+{
+  "version": "202607200007",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex Phase 23 controlled staging correction",
+  "verification": {
+    "directPipelineWriteGrantCountBefore": 15,
+    "directPipelineWriteGrantCountAfter": 0,
+    "expectedPolicyTableCount": 10,
+    "packetScopedPolicyTableCount": 10,
+    "expectedRlsTableCount": 15,
+    "rlsTableCount": 15,
+    "serviceEvidenceClientGrantCount": 0,
+    "rollbackRehearsal": "pass",
+    "rollbackResidue": "none"
+  },
+  "productionMutated": false
+}
