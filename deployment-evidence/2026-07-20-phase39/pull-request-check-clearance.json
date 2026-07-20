@@ -1,6 +1,6 @@
 {
   "phase": 39,
-  "status": "PULL_REQUEST_SOURCE_CHECKS_CLEARED",
+  "status": "SUPABASE_PREVIEW_PASSED_VERCEL_RATE_LIMITED",
   "verifiedAt": "2026-07-20",
   "pullRequest": {
     "repository": "alexlandman1998-123/bridge",
@@ -53,7 +53,8 @@
   ],
   "externalChecks": {
     "supabasePreview": {
-      "status": "SMTP_REPAIRED_AND_HISTORICAL_BASELINE_RESTORED",
+      "status": "PASS",
+      "firstPassingCommit": "86c06ca0baef54c4127fc711c328dc572ed3c812",
       "previewMailer": "supabase_restricted_development_mailer",
       "productionMailer": "resend_remote_override",
       "productionProjectRef": "isdowlnollckzvltkasn",
@@ -90,7 +91,9 @@
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
         "intermediateProjectRef": "kpxwhrfksgubewkypbly",
-        "createdProjectRef": "qiyhfidehxcpgdivjknk",
+        "previousProjectRef": "qiyhfidehxcpgdivjknk",
+        "createdProjectRef": "plftvjnfgytigdxdgpfy",
+        "createdBranchId": "cd736d71-7091-43cc-b2a5-688bdb33ab23",
         "branch": "codex/mvp-pilot-readiness",
         "withData": false,
         "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
@@ -108,7 +111,15 @@
       }
     },
     "vercelPreview": {
-      "statusAtCertification": "PASS"
+      "statusAtCertification": "RATE_LIMITED",
+      "previouslyPassed": true,
+      "affectedProjects": [
+        "bridge",
+        "bridge-admin"
+      ],
+      "reportedAt": "2026-07-20T22:14:39Z",
+      "providerMessage": "Deployment rate limited — retry in 24 hours.",
+      "applicationSourceChangedSinceLastPass": false
     }
   },
   "safety": {

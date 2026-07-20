@@ -2,7 +2,7 @@
 
 ## Outcome
 
-**Status: SOURCE CHECKS REPAIRED; SUPABASE PREVIEW CONFIGURATION CORRECTED**
+**Status: SUPABASE PREVIEW PASSED; VERCEL RETRY BLOCKED BY PROVIDER RATE LIMIT**
 
 The four failing repository checks shared one cause: the mandate-generation corrections changed the release branch runtime after production commit `333c08eb` was certified. The old tests required the pull-request runtime to remain byte-for-byte identical to production, so they could not represent a tested but not-yet-promoted release candidate.
 
@@ -28,6 +28,8 @@ Once configuration succeeded, Preview exposed a second, older inventory defect: 
 
 The final ledger comparison exposed 17 mixed-precision prefixes where minute-level and second-level filenames sorted ambiguously. Eighteen unpromoted second-precision files were moved to unused minute-level versions later on the same day, preserving their relative dependency order. CI now rejects any remaining mixed-precision prefix. No production or staging ledger was changed by this normalization.
 
-This changes configuration scope, not the production credential. Production project `isdowlnollckzvltkasn` retains the Resend override; the migration inventory and databases are unchanged.
+The data-free preview then completed the full migration inventory successfully at commit `86c06ca0`. Both Vercel projects had passed earlier in Phase 39, but repeated preview rebuilds exhausted the provider's deployment allowance. Vercel now reports `Deployment rate limited — retry in 24 hours` for `bridge` and `bridge-admin`. No application source changed after the earlier Vercel pass, but the PR cannot honestly be called fully green until Vercel reruns the current commit after the limit resets (or the Vercel plan limit is raised).
+
+This changes configuration scope and migration reproducibility, not the production credential. Production project `isdowlnollckzvltkasn` retains the Resend override. Production and staging databases were not mutated; only disposable, data-free preview branches were rebuilt.
 
 Machine-readable evidence is stored in `deployment-evidence/2026-07-20-phase39/pull-request-check-clearance.json`.
