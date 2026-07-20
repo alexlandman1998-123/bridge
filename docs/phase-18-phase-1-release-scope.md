@@ -12,10 +12,10 @@ Phase 1 is a controlled residential-transaction pilot for one organisation. It m
 - 6 outstanding `attorney_identity_access` manifest migrations, including separately reviewed corrective work where required.
 - Repair-only verification and ledger reconciliation for `202607180046` transaction creation.
 - `20260719194500` seller attorney acceptance.
-- The three conditional-master migrations after Phase 19 assigns a new unique consecutive version chain and expands the governed inventory.
+- The three conditional-master migrations now assigned to unique consecutive versions `202607200004`–`202607200006`; they still require governed-manifest inclusion and staging certification.
 - A clean, reproducible application deployment followed by one enforced N6 pilot cohort.
 
-This locks 19 of the existing 28 outstanding manifest rows into pilot preparation. The conditional-master chain adds three pending inventory items after re-versioning.
+This locks 19 of the existing 28 outstanding manifest rows into pilot preparation. Phase 19 repaired the conditional-master inventory; the chain adds three pending items after manifest inclusion and staging certification.
 
 ## Explicitly deferred
 

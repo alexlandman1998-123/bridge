@@ -6,7 +6,7 @@ import {
   getConditionalMasterTemplateDefinition,
 } from '../src/core/documents/conditionalMasterTemplateDefinitions.js'
 
-const migration = await readFile(new URL('../../supabase/migrations/202607200001_conditional_legal_masters_phase4.sql', import.meta.url), 'utf8')
+const migration = await readFile(new URL('../../supabase/migrations/202607200004_conditional_legal_masters_phase4.sql', import.meta.url), 'utf8')
 const settingsEditor = await readFile(new URL('../src/pages/settings/SettingsSigningTemplatesPage.jsx', import.meta.url), 'utf8')
 const resolver = await readFile(new URL('../src/core/documents/legalDocumentScenarioProfile.js', import.meta.url), 'utf8')
 const dataRules = await readFile(new URL('../src/core/documents/conditionalPackDataRules.js', import.meta.url), 'utf8')

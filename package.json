@@ -35,6 +35,7 @@
     "application:phase16:verify": "node scripts/phase16-application-deployment.test.mjs",
     "production:phase17:verify": "node scripts/phase17-production-closeout.test.mjs",
     "release:phase18:verify": "node scripts/phase18-phase1-release-scope.test.mjs",
+    "release:phase19:verify": "node scripts/phase19-migration-inventory-repair.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

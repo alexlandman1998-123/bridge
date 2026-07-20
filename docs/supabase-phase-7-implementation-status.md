@@ -40,7 +40,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production access | Configured: short-lived linked login role |
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production migration history | Reconciled: 0 genuine remote-only versions |
-| Duplicate local migration version | `202607200002` must be resolved |
+| Duplicate local migration version | Resolved in Phase 19; 501 files have 501 unique versions |
 | Production SQL promoted | 36/64 |
 | Production closeout evidence | 36/64 complete |
 | Production ledger | 469 rows after Batch 6 |

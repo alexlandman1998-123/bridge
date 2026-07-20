@@ -53,7 +53,7 @@ assert.equal(migration.canRollback, true)
 assert.equal(migration.canFinalize, false)
 assert.equal(migration.rollbackUntil, rollbackUntil)
 
-const sql = await readFile(new URL('../../supabase/migrations/202607200002_conditional_legal_master_migration_phase10.sql', import.meta.url), 'utf8')
+const sql = await readFile(new URL('../../supabase/migrations/202607200005_conditional_legal_master_migration_phase10.sql', import.meta.url), 'utf8')
 const api = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
 const overview = await readFile(new URL('../src/pages/settings/LegalDocumentOverviewPage.jsx', import.meta.url), 'utf8')
 const adr = await readFile(new URL('../docs/architecture/adr-002-conditional-master-legal-documents.md', import.meta.url), 'utf8')

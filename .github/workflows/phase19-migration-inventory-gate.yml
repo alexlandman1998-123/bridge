@@ -1,0 +1,36 @@
+name: Phase 19 Migration Inventory Gate
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/phase-19-migration-inventory-repair.json'
+      - 'scripts/phase19-migration-inventory-repair.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase19-migration-inventory-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/phase-19-migration-inventory-repair.json'
+      - 'scripts/phase19-migration-inventory-repair.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase19-migration-inventory-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  migration-inventory:
+    name: Verify unique migration inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run release:phase19:verify

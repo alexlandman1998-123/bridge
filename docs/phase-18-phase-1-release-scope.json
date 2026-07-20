@@ -30,11 +30,13 @@
   "includedExistingManifestCount": 19,
   "pendingConditionalMasterInventory": {
     "files": [
-      "202607200001_conditional_legal_masters_phase4.sql",
-      "202607200002_conditional_legal_master_migration_phase10.sql",
-      "202607200003_conditional_legal_master_verification_phase11.sql"
+      "202607200004_conditional_legal_masters_phase4.sql",
+      "202607200005_conditional_legal_master_migration_phase10.sql",
+      "202607200006_conditional_legal_master_verification_phase11.sql"
     ],
-    "requiredAction": "allocate_three_consecutive_unused_versions_and_certify_as_one_dependency_chain",
+    "allocatedVersions": ["202607200004", "202607200005", "202607200006"],
+    "inventoryRepairStatus": "complete",
+    "requiredAction": "add_allocated_chain_to_governed_manifest_and_certify_in_staging",
     "count": 3
   },
   "deferredExistingManifestVersions": {

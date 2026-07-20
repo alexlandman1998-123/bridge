@@ -39,7 +39,7 @@ assert.equal(verification.state, 'verified')
 assert.equal(verification.coverage.caseCount, 216)
 assert.equal(verification.ready, true)
 
-const sql = await readFile(new URL('../../supabase/migrations/202607200003_conditional_legal_master_verification_phase11.sql', import.meta.url), 'utf8')
+const sql = await readFile(new URL('../../supabase/migrations/202607200006_conditional_legal_master_verification_phase11.sql', import.meta.url), 'utf8')
 const api = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
 const overview = await readFile(new URL('../src/pages/settings/LegalDocumentOverviewPage.jsx', import.meta.url), 'utf8')
 const adr = await readFile(new URL('../docs/architecture/adr-002-conditional-master-legal-documents.md', import.meta.url), 'utf8')
