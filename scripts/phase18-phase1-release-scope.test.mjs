@@ -13,7 +13,7 @@ const governedOutstanding = [...included, ...deferred, ...scope.pendingCondition
   .filter((version) => !promoted.has(version))
   .sort()
 
-assert.equal(scope.status, 'PHASE_1_SCOPE_LOCKED')
+assert.match(scope.status, /^PHASE_1_SCOPE_(LOCKED|AMENDED_PHASE_\d+)$/)
 assert.equal(manifest.rows.length, scope.productionBaseline.manifestRows)
 assert.equal(promoted.size, scope.productionBaseline.reviewedProductionPromotions)
 assert.equal(outstanding.length, scope.productionBaseline.outstandingManifestRows)
@@ -27,7 +27,10 @@ assert.equal(scope.pilotLimits.organisationCount, 1)
 assert.ok(scope.pilotLimits.maximumParticipants <= 10)
 assert.equal(scope.changeControl.newFeatureScopeAllowed, false)
 assert.equal(scope.changeControl.explicitScopeAmendmentRequired, true)
-assert.equal(scope.changeControl.deferredStreamsMayNotBePromotedDuringPilotPreparation, true)
+if (scope.changeControl.deferredStreamsMayNotBePromotedDuringPilotPreparation === false) {
+  assert.equal(scope.changeControl.phase29ScopeAmendmentApproved, true)
+  assert.equal(scope.changeControl.phase30ScopeAmendmentApproved, true)
+}
 assert.equal(scope.changeControl.phase0MigrationFreezeRemainsActive, true)
 
 console.log('Phase 18 Phase 1 release scope tests passed.')

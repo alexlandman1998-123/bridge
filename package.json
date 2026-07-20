@@ -45,6 +45,7 @@
     "application:phase27:verify": "node scripts/phase27-controlled-pilot-cohort.test.mjs",
     "application:phase28:verify": "node scripts/phase28-pilot-operations.test.mjs",
     "supabase:phase29:verify": "node scripts/phase29-attorney-accounting-promotion.test.mjs",
+    "supabase:phase30:verify": "node scripts/phase30-attorney-calendar-promotion.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

@@ -5,8 +5,8 @@
 Phase 7 has been implemented as a fail-closed production-promotion gate.
 
 - Production project: `isdowlnollckzvltkasn`
-- Production SQL promoted: 67 migrations across six Phase 15 batches and Phases 23–25 plus Phase 29
-- Production migration ledger: 500 rows
+- Production SQL promoted: 68 migrations across six Phase 15 batches, Phases 23–25 and Phases 29–30
+- Production migration ledger: 501 rows
 - Staging manifest coverage: 71 of 71, recertified during Phase 25
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
@@ -17,7 +17,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The prerequisite gates pass. Phase 29 completed the eight deferred attorney-accounting migrations after repairing the recorded-but-missing canonical prerequisite. The remaining four manifest versions remain final-closeout blockers.
+The prerequisite gates pass. Phase 30 verified and ledgered the repair-only attorney-calendar RSVP lifecycle. The remaining three conditional legal-master versions remain final-closeout blockers.
 
 ## Implemented controls
 
@@ -74,6 +74,7 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - Phase 24 production evidence complete for six attorney identity/access migrations and corrective versions `202607209901` and `202607209902`; 43 reviewed assignments were remediated with zero remaining integrity blockers.
 - Phase 25 production evidence complete for transaction creation, seller completion and corrective version `202607209903`.
 - Phase 29 production evidence complete for the eight attorney-accounting versions; canonical prerequisite `202607180025` was repaired without altering its historical ledger entry.
+- Phase 30 production evidence complete for repair-only attorney-calendar version `202607180047`, with the live behavior suite passing and zero fixture residue.
 
 ## Required work before the next production batch
 

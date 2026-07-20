@@ -55,3 +55,7 @@ After Phase 25, the rule expects and finds 492/492 production ledger rows. The t
 ## Phase 29 re-verification
 
 After Phase 29, the baseline-plus-reviewed-promotions rule expects 500 production ledger rows: the signed 433-row recovery baseline plus 67 unique reviewed promotions. The eight attorney-accounting versions are represented by per-version production evidence; canonical prerequisite `202607180025` retained its existing historical ledger entry.
+
+## Phase 30 re-verification
+
+After Phase 30, the baseline-plus-reviewed-promotions rule expects 501 production ledger rows: the signed 433-row recovery baseline plus 68 unique reviewed promotions. Attorney-calendar version `202607180047` was repair-only because its target state was already live and passed the production behavior suite.
