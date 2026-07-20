@@ -1,0 +1,67 @@
+{
+  "status": "BLOCKED_PENDING_GENUINE_N4_EVIDENCE",
+  "phase": 27,
+  "verifiedAt": "2026-07-20T18:04:21Z",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "applicationRelease": {
+    "commit": "2dabb3def53608519d5962c37f33a0a4a03f5680",
+    "deploymentId": "dpl_8wDQV2UxYamoqkxbto4jzAMgdpda",
+    "status": "READY",
+    "criticalAssetsHealthy": "428_of_428"
+  },
+  "cohort": {
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "organisationName": "Kingstons Real Estate",
+    "organisationType": "agency",
+    "organisationStatus": "active",
+    "organisationCount": 1,
+    "activeMembers": 7,
+    "activeAdmins": 2,
+    "documentPackets": 5,
+    "maximumParticipants": 10,
+    "existingN6Controls": 0,
+    "existingN6Enrolments": 0
+  },
+  "technicalContracts": {
+    "n1CrossRoleModel": "pass",
+    "n2DesktopMobileBrowserModel": "pass",
+    "n3PrivacySafeTelemetry": "pass",
+    "n4LaunchHealthGate": "pass",
+    "n5StagedControl": "pass",
+    "n6RuntimeEnforcement": "pass"
+  },
+  "n4": {
+    "ready": false,
+    "decision": "HOLD_AND_FIX",
+    "eventCount": 2,
+    "coverage": {
+      "packetTypes": ["mandate"],
+      "surfaces": ["workspace"],
+      "viewports": ["desktop"],
+      "audiences": ["agent"]
+    },
+    "blockerCodes": [
+      "N4_DOCUMENT_COVERAGE_MISSING",
+      "N4_SURFACE_COVERAGE_MISSING",
+      "N4_VIEWPORT_COVERAGE_MISSING",
+      "N4_AUDIENCE_COVERAGE_MISSING"
+    ],
+    "missingCoverage": {
+      "packetTypes": ["otp"],
+      "surfaces": ["signer_portal"],
+      "viewports": ["mobile"],
+      "audiences": ["principal", "attorney", "seller", "buyer"]
+    }
+  },
+  "productionMutation": {
+    "n6ControlCreated": false,
+    "vercelEnforcementConfigured": false,
+    "productionRedeployed": false
+  },
+  "safety": {
+    "syntheticTelemetryCreated": false,
+    "userAccountsImpersonated": false,
+    "databaseMutated": false,
+    "phase0MigrationFreezeRemainsActive": true
+  }
+}

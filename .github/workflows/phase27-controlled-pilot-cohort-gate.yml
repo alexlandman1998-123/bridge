@@ -1,0 +1,32 @@
+name: Phase 27 Controlled Pilot Cohort Gate
+
+on:
+  pull_request:
+    paths:
+      - 'deployment-evidence/2026-07-20-phase27/**'
+      - 'docs/phase-27-controlled-pilot-cohort.md'
+      - 'scripts/phase27-controlled-pilot-cohort.mjs'
+      - 'scripts/phase27-controlled-pilot-cohort.test.mjs'
+      - '.github/workflows/phase27-controlled-pilot-cohort-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployment-evidence/2026-07-20-phase27/**'
+      - 'docs/phase-27-controlled-pilot-cohort.md'
+      - 'scripts/phase27-controlled-pilot-cohort.mjs'
+      - 'scripts/phase27-controlled-pilot-cohort.test.mjs'
+      - '.github/workflows/phase27-controlled-pilot-cohort-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run application:phase27:verify
