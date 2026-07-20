@@ -4,6 +4,9 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import pg from 'pg'
+
+const { Client } = pg
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const RECOVERY_CONFIRMATION = 'I_HAVE_A_RECOVERABLE_STAGING_BACKUP'
@@ -61,6 +64,20 @@ function runSupabase(repoRoot, args) {
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     error: result.error?.message || '',
+  }
+}
+
+async function runSqlFile(dbUrl, filePath) {
+  const client = new Client({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 15_000,
+  })
+  try {
+    await client.connect()
+    await client.query(readFileSync(filePath, 'utf8'))
+  } finally {
+    await client.end().catch(() => {})
   }
 }
 
@@ -132,7 +149,7 @@ function printUsage() {
   console.log('  node scripts/supabase-phase6-staging-execution.mjs --record-applied --version <version> --evidence <file> --confirm APPLY_TO_STAGING_ONLY')
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help) {
     printUsage()
@@ -165,8 +182,7 @@ function main() {
     if (migrationRecorded(repoRoot, target, row.version)) {
       throw new Error(`Version ${row.version} is already recorded in the staging ledger.`)
     }
-    const result = runSupabase(repoRoot, ['db', 'query', '--db-url', target.dbUrl, '--file', migrationPath])
-    if (!result.ok) throw new Error(`Staging SQL application failed: ${result.stderr || result.error}`)
+    await runSqlFile(target.dbUrl, migrationPath)
     console.log(`Applied SQL for ${row.version} to staging project ${target.projectRef}.`)
     console.log('The migration ledger was not changed. Run verification and prepare evidence before --record-applied.')
     return
@@ -186,9 +202,7 @@ function main() {
   }
 }
 
-try {
-  main()
-} catch (error) {
+main().catch((error) => {
   console.error(`Phase 6 staging gate blocked: ${error.message}`)
   process.exitCode = 1
-}
+})

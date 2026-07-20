@@ -63,11 +63,13 @@ Use `scripts/supabase-phase6-staging-execution.mjs` for manifest-driven staging 
 
 Use `scripts/supabase-phase7-production-execution.mjs` only after the exact version has passed staging and its staging ledger is recorded. Production mutations require the fixed production project identity, an identity-matching database URL, explicit recovery confirmation, and a live CLI check proving PITR or at least one physical backup exists. The runner handles one exact version per invocation, enforces recorded stream dependencies, and separates SQL application from ledger recording.
 
-Every production invocation requires reviewed staging evidence. Ledger recording additionally requires production evidence proving the target state and catalog, behavior, and rollback/no-residue checks. Corrective and manual-review rows remain outside this runner; `repair_only_after_smoke` can be ledger-recorded with evidence but can never replay SQL.
+Every production invocation requires reviewed staging evidence plus `docs/supabase-phase-7-staging-readiness.json`. The readiness record must prove complete staging manifest coverage and evidence, a passing attorney integrity gate with zero blocking assignments, and explicit human approval. Ledger recording additionally requires production evidence proving the target state and catalog, behavior, and rollback/no-residue checks. Corrective and manual-review rows remain outside this runner; `repair_only_after_smoke` can be ledger-recorded with evidence but can never replay SQL.
 
 ### Reconciliation closeout gate
 
 Use `scripts/supabase-phase8-closeout.mjs` to prove steady-state readiness after production promotion. Add one reviewed row to `docs/supabase-phase-8-closeout-evidence.json` for each Phase 5 manifest version only after staging and production ledger recording, target-state verification, catalog and behavior checks, and rollback/no-residue checks all pass.
+
+Live closeout also requires `docs/supabase-phase-7-staging-readiness.json` to remain approved and passing, plus `SUPABASE_PRODUCTION_RECOVERY_CONFIRMED=I_HAVE_TESTED_PRODUCTION_RECOVERY`. A listed backup without tested-recovery attestation does not make freeze retirement eligible.
 
 The live closeout verifies zero duplicate timestamps, zero missing manifest files, zero pure local-only or remote-only versions, zero divergent or unreviewed split versions, complete evidence, and production PITR or a physical backup. It never removes the Phase 0 guard. A passing result makes guard retirement eligible for a separate reviewed change.
 

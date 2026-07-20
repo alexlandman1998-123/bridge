@@ -47,7 +47,7 @@ create or replace function public.bridge_seed_mvp_transaction_participants(
   p_transaction_id uuid,
   p_bootstrap jsonb
 )
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_item jsonb;
   v_participant_id uuid;
@@ -94,7 +94,7 @@ create or replace function public.bridge_seed_mvp_transaction_documents(
   p_transaction_id uuid,
   p_bootstrap jsonb
 )
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_item jsonb;
   v_position integer := 0;
@@ -123,7 +123,7 @@ create or replace function public.bridge_seed_mvp_transaction_workflow_lanes(
   p_organisation_id uuid,
   p_bootstrap jsonb
 )
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_lane jsonb;
 begin
@@ -146,7 +146,7 @@ create or replace function public.bridge_create_mvp_transaction(p_payload jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_payload jsonb := coalesce(p_payload, '{}'::jsonb);
@@ -296,5 +296,8 @@ begin
 end;
 $$;
 
-revoke all on function public.bridge_create_mvp_transaction(jsonb) from public;
+revoke all on function public.bridge_seed_mvp_transaction_participants(uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.bridge_seed_mvp_transaction_documents(uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.bridge_seed_mvp_transaction_workflow_lanes(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.bridge_create_mvp_transaction(jsonb) from public, anon;
 grant execute on function public.bridge_create_mvp_transaction(jsonb) to authenticated;

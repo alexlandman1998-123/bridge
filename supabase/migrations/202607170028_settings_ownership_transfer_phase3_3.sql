@@ -246,6 +246,7 @@ end;
 $$;
 
 revoke all on function public.bridge_transfer_organisation_ownership(uuid) from public;
+revoke all on function public.bridge_transfer_organisation_ownership(uuid) from anon;
 grant execute on function public.bridge_transfer_organisation_ownership(uuid) to authenticated;
 
 commit;

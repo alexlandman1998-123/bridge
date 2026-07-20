@@ -1,0 +1,25 @@
+{
+  "version": "202607180036",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting staging verification",
+  "verification": {
+    "submissionFunctionLive": true,
+    "securityDefiner": true,
+    "volatileWriteFunction": true,
+    "fixedSearchPath": true,
+    "anonymousTokenSessionExecuteGranted": true,
+    "authenticatedTokenSessionExecuteGranted": true,
+    "publicExecuteRevoked": true,
+    "missingTokenDenied": true,
+    "requestedDocumentTypePreserved": true,
+    "publishedDocumentCreated": true,
+    "requestLinkedAndAwaitingReview": true,
+    "clientVisibleAuditEventCreated": true,
+    "submissionDidNotPostLedgerEntry": true,
+    "rollbackClean": true
+  }
+}

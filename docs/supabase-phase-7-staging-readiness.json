@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-07-20T00:00:00.000Z",
+  "status": "BLOCKED_ATTORNEY_INTEGRITY",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "manifestRowCount": 64,
+  "stagingLedgerRecordedCount": 64,
+  "stagingEvidenceComplete": true,
+  "attorneyIntegrityGate": "blocked",
+  "attorneyIntegrityBlockingAssignments": 43,
+  "productionPitrEnabled": false,
+  "productionPhysicalBackupCount": 8,
+  "productionRecoveryAttestationPresent": false,
+  "productionCredentialsConfigured": false,
+  "approvedBy": "",
+  "decision": "Do not mutate production until the 43 historical attorney assignments are remediated, the staging integrity gate passes, and a human approver signs this readiness record."
+}

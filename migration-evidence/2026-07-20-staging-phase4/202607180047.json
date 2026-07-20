@@ -1,0 +1,33 @@
+{
+  "version": "202607180047",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-calendar staging smoke verification",
+  "applicationMode": "repair_only_after_smoke",
+  "verification": {
+    "originalSqlReplayed": false,
+    "rsvpCapabilityColumnsLive": 3,
+    "rescheduleRequestTableLive": true,
+    "rlsEnabled": true,
+    "scopedPolicies": 4,
+    "requiredIndexesLive": true,
+    "rsvpFunctionsLive": 2,
+    "anonymousDirectRescheduleTablePrivilegesRevoked": true,
+    "authenticatedScopedCrudGranted": true,
+    "publicRsvpFunctionExecutionGrantedToTokenSessions": true,
+    "calendarContractTestsPassed": 7,
+    "invalidTokenReturnsNoRows": true,
+    "revokedTokenReturnsNoRows": true,
+    "expiredTokenReturnsNoRows": true,
+    "acceptedResponseConfirmsAppointment": true,
+    "declinedResponseDeclinesAppointment": true,
+    "futureRescheduleCreatesOnePendingRequest": true,
+    "sameResponseReplayIdempotent": true,
+    "changedCompletedResponseDenied": true,
+    "pastRescheduleProposalDenied": true,
+    "rollbackClean": true
+  }
+}

@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-20T08:05:40.732Z
+Generated: 2026-07-20T09:22:01.207Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -312,7 +312,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-40265.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-59473.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

@@ -1,0 +1,29 @@
+{
+  "version": "202607170027",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging settings-governance verification",
+  "verification": {
+    "authorityFunctionLive": true,
+    "roleGuardFunctionLive": true,
+    "roleSetterFunctionLive": true,
+    "roleGuardTriggerEnabled": true,
+    "authorityLevels": {
+      "owner": 500,
+      "principal": 400,
+      "branchManager": 300,
+      "agent": 100,
+      "unknown": 0
+    },
+    "authenticatedFunctionExecuteGranted": true,
+    "anonymousFunctionExecuteRevoked": true,
+    "publicFunctionExecuteRevoked": true,
+    "unauthenticatedSetterDenied": "42501",
+    "selfRoleChangeDenied": "42501",
+    "peerOrHigherRoleChangeDenied": "42501",
+    "membershipRowsAfterRollbackChecks": 58
+  }
+}

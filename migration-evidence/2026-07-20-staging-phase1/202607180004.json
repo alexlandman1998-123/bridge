@@ -1,0 +1,20 @@
+{
+  "version": "202607180004",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex manual data-outcome verification",
+  "manualReview": {
+    "legacyBefore": {"mandateSections": 8, "otpSections": 7, "addendumPresent": false},
+    "canonicalSeedRehearsedOnStaging": true,
+    "migrationIdempotencyReplay": "pass",
+    "after": {"mandateSections": 10, "otpSections": 12, "addendumSections": 6},
+    "invalidOrScaffoldSections": 0,
+    "definitionsSynchronized": true,
+    "signatureSectionsLast": true,
+    "nativeStarterTests": "pass"
+  },
+  "productionRequirement": "Use the patched self-contained 180004 migration; do not replay 202607120001 in production."
+}

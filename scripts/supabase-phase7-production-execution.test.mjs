@@ -26,7 +26,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 63)
+assert.equal(JSON.parse(plan.stdout).count, 64)
 
 const streamPlan = run(['--plan', '--stream', 'attorney_calendar', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
@@ -62,6 +62,8 @@ assert.match(missingStagingEvidence.stderr, /--staging-evidence is required/)
 
 const tempDir = mkdtempSync(path.join(os.tmpdir(), 'phase7-production-gate-'))
 const stagingEvidencePath = path.join(tempDir, 'staging-evidence.json')
+const phaseEvidencePath = path.join(tempDir, 'phase-evidence.json')
+const stagingReadinessPath = path.join(tempDir, 'staging-readiness.json')
 writeFileSync(stagingEvidencePath, JSON.stringify({
   version: '202607170026',
   stagingProjectRef: 'stagingtestref',
@@ -71,10 +73,55 @@ writeFileSync(stagingEvidencePath, JSON.stringify({
   rollbackOrNoResidue: 'pass',
   approvedBy: 'test reviewer',
 }))
+writeFileSync(phaseEvidencePath, JSON.stringify({
+  version: '202607170026',
+  targetProjectRef: 'stagingtestref',
+  sqlApplied: true,
+  catalogChecks: 'pass',
+  behaviorChecks: 'pass',
+  rollbackOrNoResidue: 'pass',
+  reviewedBy: 'test reviewer',
+}))
+
+const missingStagingReadiness = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(missingStagingReadiness.status, 1)
+assert.match(missingStagingReadiness.stderr, /--staging-readiness is required/)
+
+const blockedStagingReadiness = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+  '--staging-readiness', 'docs/supabase-phase-7-staging-readiness.json',
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(blockedStagingReadiness.status, 1)
+assert.match(blockedStagingReadiness.stderr, /Staging readiness status must equal "READY_FOR_PRODUCTION_PROMOTION"/)
+
+const phaseEvidenceCompatibility = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', phaseEvidencePath,
+  '--staging-readiness', 'docs/supabase-phase-7-staging-readiness.json',
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(phaseEvidenceCompatibility.status, 1)
+assert.match(phaseEvidenceCompatibility.stderr, /Staging readiness status must equal "READY_FOR_PRODUCTION_PROMOTION"/)
+
+writeFileSync(stagingReadinessPath, JSON.stringify({
+  status: 'READY_FOR_PRODUCTION_PROMOTION',
+  productionProjectRef: 'isdowlnollckzvltkasn',
+  stagingProjectRef: 'stagingtestref',
+  manifestRowCount: 64,
+  stagingLedgerRecordedCount: 64,
+  stagingEvidenceComplete: true,
+  attorneyIntegrityGate: 'pass',
+  attorneyIntegrityBlockingAssignments: 0,
+  approvedBy: 'test approver',
+}))
 
 const wrongProject = run(
   [
     '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   { SUPABASE_PRODUCTION_PROJECT_REF: 'wrongprojectref' },
@@ -85,6 +132,7 @@ assert.match(wrongProject.stderr, /SUPABASE_PRODUCTION_PROJECT_REF must equal/)
 const missingRecovery = run(
   [
     '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   {

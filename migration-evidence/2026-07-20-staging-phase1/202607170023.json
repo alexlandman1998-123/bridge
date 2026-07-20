@@ -1,0 +1,1 @@
+{"version":"202607170023","targetProjectRef":"vaszuxjeoajeuhlcnzzf","sqlApplied":true,"catalogChecks":"pass","behaviorChecks":"pass","rollbackOrNoResidue":"pass","reviewedBy":"Codex automated staging verification","checks":{"expectedObjects":8,"liveObjects":8,"rlsTables":1,"rlsPass":true,"evidenceRows":0,"documentTestsPassed":252}}

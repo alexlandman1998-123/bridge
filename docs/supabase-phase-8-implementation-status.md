@@ -1,22 +1,24 @@
 # Supabase Phase 8 Implementation Status
 
-Generated: 2026-07-19
+Generated: 2026-07-20
 Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
 **Status: CLOSEOUT_GATE_READY — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 7 production promotion has not completed, no closeout evidence rows exist, and production recovery is unavailable, so freeze retirement remains blocked.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 7 production promotion has not completed, the staging attorney integrity gate is blocked by 43 historical assignments, no production closeout evidence rows exist, and tested production recovery has not been attested, so freeze retirement remains blocked.
 
 ## Implemented Controls
 
 - Local planning verifies migration timestamp uniqueness, manifest file coverage, evidence completeness, and production identity without connecting to Supabase.
+- Local planning also requires the Phase 7 manifest-wide staging readiness record to pass with zero attorney-integrity blockers and explicit human approval.
 - Live verification refuses to run unless the repository is linked to the fixed production project reference.
 - Live verification compares the linked local/remote migration list while recognizing only the 17 reviewed split-row artifacts.
 - Closeout requires zero pure local-only, pure remote-only, divergent, and unreviewed split versions.
-- Closeout requires all 63 Phase 5 rows to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
-- Closeout rechecks production PITR and physical backups.
+- Closeout requires all 64 Phase 5 rows to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
+- Closeout rechecks production PITR and counts only completed physical backups.
+- A backup alone is insufficient: live closeout also requires explicit tested-recovery attestation.
 - The gate can write a report but cannot alter SQL, the migration ledger, or guard configuration.
 - CI regression-tests the local fail-closed state.
 
@@ -26,10 +28,16 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 | --- | --- |
 | Duplicate local versions | 0 |
 | Missing Phase 5 manifest files | 0 |
-| Complete closeout evidence | 0/63 |
+| Phase 7 staging readiness | Blocked |
+| Attorney integrity blockers | 43 assignments |
+| Human production approval | Not recorded |
+| Complete closeout evidence | 0/64 |
 | Phase 7 production promotion | Not completed |
 | Production PITR | Disabled |
-| Production physical backups | None returned |
+| Completed production physical backups | 8 |
+| Tested recovery attestation | Not configured |
+| Pure local-only versions | 83 |
+| Pure remote-only versions | 17 |
 | Phase 0 guard | Active |
 
 ## Usage

@@ -7,6 +7,7 @@ on:
       - 'scripts/supabase-phase7-production-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/supabase-phase-7-staging-readiness.json'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -18,6 +19,7 @@ on:
       - 'scripts/supabase-phase7-production-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/supabase-phase-7-staging-readiness.json'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -44,4 +46,4 @@ jobs:
 
       - name: Verify manifest coverage
         run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"
+          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==64) throw new Error('Expected 64 manifest rows')"

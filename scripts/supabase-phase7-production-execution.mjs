@@ -29,6 +29,7 @@ function parseArgs(argv) {
     else if (arg === '--stream') options.stream = argv[++index]
     else if (arg === '--version') options.version = argv[++index]
     else if (arg === '--staging-evidence') options.stagingEvidence = argv[++index]
+    else if (arg === '--staging-readiness') options.stagingReadiness = argv[++index]
     else if (arg === '--production-evidence') options.productionEvidence = argv[++index]
     else if (arg === '--confirm') options.confirm = argv[++index]
     else if (arg === '--json') options.json = true
@@ -101,7 +102,6 @@ function validateStagingEvidence(repoRoot, row, filePath) {
   const evidence = evidenceFile(repoRoot, filePath, '--staging-evidence')
   const required = {
     version: row.version,
-    stagingLedgerRecorded: true,
     catalogChecks: 'pass',
     behaviorChecks: 'pass',
     rollbackOrNoResidue: 'pass',
@@ -109,10 +109,35 @@ function validateStagingEvidence(repoRoot, row, filePath) {
   for (const [key, value] of Object.entries(required)) {
     if (evidence[key] !== value) throw new Error(`Staging evidence ${key} must equal ${JSON.stringify(value)}.`)
   }
-  const stagingProjectRef = String(evidence.stagingProjectRef || '').trim()
+  if (evidence.stagingLedgerRecorded !== true && evidence.sqlApplied !== true) {
+    throw new Error('Staging evidence must prove SQL/target-state application or staging ledger recording.')
+  }
+  const stagingProjectRef = String(evidence.stagingProjectRef || evidence.targetProjectRef || '').trim()
   if (!stagingProjectRef) throw new Error('Staging evidence stagingProjectRef is required.')
   if (stagingProjectRef === PRODUCTION_PROJECT_REF) throw new Error('Staging evidence cannot identify the production project.')
-  if (!String(evidence.approvedBy || '').trim()) throw new Error('Staging evidence approvedBy is required.')
+  if (!String(evidence.approvedBy || evidence.reviewedBy || '').trim()) {
+    throw new Error('Staging evidence approvedBy or reviewedBy is required.')
+  }
+}
+
+function validateStagingReadiness(repoRoot, manifest, filePath) {
+  const readiness = evidenceFile(repoRoot, filePath, '--staging-readiness')
+  const required = {
+    status: 'READY_FOR_PRODUCTION_PROMOTION',
+    productionProjectRef: PRODUCTION_PROJECT_REF,
+    manifestRowCount: manifest.rows.length,
+    stagingLedgerRecordedCount: manifest.rows.length,
+    stagingEvidenceComplete: true,
+    attorneyIntegrityGate: 'pass',
+    attorneyIntegrityBlockingAssignments: 0,
+  }
+  for (const [key, value] of Object.entries(required)) {
+    if (readiness[key] !== value) throw new Error(`Staging readiness ${key} must equal ${JSON.stringify(value)}.`)
+  }
+  const stagingProjectRef = String(readiness.stagingProjectRef || '').trim()
+  if (!stagingProjectRef) throw new Error('Staging readiness stagingProjectRef is required.')
+  if (stagingProjectRef === PRODUCTION_PROJECT_REF) throw new Error('Staging readiness cannot identify the production project.')
+  if (!String(readiness.approvedBy || '').trim()) throw new Error('Staging readiness approvedBy is required.')
 }
 
 function validateProductionEvidence(repoRoot, target, row, filePath) {
@@ -173,8 +198,8 @@ function printPlan(rows, options) {
 function printUsage() {
   console.log('Usage:')
   console.log('  node scripts/supabase-phase7-production-execution.mjs --plan [--stream <name>] [--version <version>] [--json]')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --confirm APPLY_TO_PRODUCTION')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --staging-readiness <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --staging-readiness <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
 }
 
 function main() {
@@ -201,6 +226,7 @@ function main() {
   }
 
   validateStagingEvidence(repoRoot, row, options.stagingEvidence)
+  validateStagingReadiness(repoRoot, manifest, options.stagingReadiness)
   const target = productionTarget()
   if (options.mode === 'record_applied') {
     validateProductionEvidence(repoRoot, target, row, options.productionEvidence)

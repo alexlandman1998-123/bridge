@@ -236,6 +236,7 @@ end;
 $$;
 
 revoke all on function public.bridge_set_organisation_user_job_title(uuid, text) from public;
+revoke all on function public.bridge_set_organisation_user_job_title(uuid, text) from anon;
 grant execute on function public.bridge_set_organisation_user_job_title(uuid, text) to authenticated;
 
 create index if not exists organisation_users_job_title_idx

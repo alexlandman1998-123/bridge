@@ -107,6 +107,119 @@ do update set
   published_at = coalesce(public.document_packet_templates.published_at, excluded.published_at, now()),
   updated_at = now();
 
+-- Some early production seed runs contain the older 8-section mandate and
+-- 7-section OTP shapes even though the migration ledger records the canonical
+-- starter seed. Add the minimum canonical keys required by the native contract
+-- without deleting any usable historical wording.
+with starter_templates as (
+  select id, template_key
+  from public.document_packet_templates
+  where organisation_id is null
+    and version_tag = 'v1'
+    and template_key in ('mandate_default_v1', 'otp_default_v1')
+), required_sections as (
+  select * from (values
+    ('mandate_default_v1', 'general_terms', 'General Legal Terms', 'legal_text', 7, true,
+      array['document_reference']::text[],
+      $legal$GENERAL TERMS
+
+This mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.
+
+No amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.$legal$),
+    ('mandate_default_v1', 'popia_fica', 'POPIA and FICA', 'legal_text', 8, true,
+      array['seller_full_name']::text[],
+      $legal$POPIA AND FICA
+
+The Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.$legal$),
+    ('otp_default_v1', 'cover_page', 'Cover Page', 'legal_text', 0, true,
+      array['property_address', 'agent_full_name', 'organisation_name', 'document_reference', 'transaction_reference']::text[],
+      $legal$OFFER TO PURCHASE
+
+Property Address: {{property_address}}
+Agent: {{agent_full_name}}
+Agency: {{organisation_name}}
+Document Reference: {{document_reference}}
+Transaction Reference: {{transaction_reference}}
+
+This Offer to Purchase becomes a deed of sale when accepted by the Seller in writing. The schedules, standard terms, special conditions and annexures form one agreement.$legal$),
+    ('otp_default_v1', 'parties', 'Parties', 'dynamic_fields', 1, true,
+      array['buyer_full_name', 'buyer_id_number', 'buyer_email', 'buyer_phone', 'buyer_entity_type', 'seller_full_name', 'seller_id_number', 'seller_email', 'seller_phone', 'seller_entity_type']::text[],
+      $legal$PURCHASER
+
+Purchaser: {{buyer_full_name}}
+Identity / Registration Number: {{buyer_id_number}}
+Entity Type: {{buyer_entity_type}}
+Email: {{buyer_email}}
+Telephone: {{buyer_phone}}
+
+SELLER
+
+Seller: {{seller_full_name}}
+Identity / Registration Number: {{seller_id_number}}
+Entity Type: {{seller_entity_type}}
+Email: {{seller_email}}
+Telephone: {{seller_phone}}$legal$),
+    ('otp_default_v1', 'purchase_price', 'Purchase Price', 'dynamic_fields', 3, true,
+      array['purchase_price', 'deposit_amount', 'finance_type', 'bond_amount', 'cash_amount']::text[],
+      $legal$PURCHASE PRICE
+
+Purchase Price: {{purchase_price}}
+Deposit: {{deposit_amount}}
+Finance Type: {{finance_type}}
+Bond Amount: {{bond_amount}}
+Cash Contribution: {{cash_amount}}
+
+The Purchase Price is payable in accordance with the accepted offer, guarantees, bond approval, cash undertakings and conveyancer requirements.$legal$),
+    ('otp_default_v1', 'suspensive_conditions', 'Suspensive Conditions', 'dynamic_fields', 5, false,
+      array['suspensive_conditions', 'finance_type', 'bond_amount']::text[],
+      $legal$SUSPENSIVE CONDITIONS
+
+Finance Type: {{finance_type}}
+Bond Amount: {{bond_amount}}
+
+{{suspensive_conditions}}
+
+If a suspensive condition is not fulfilled or waived within the agreed period, the parties must follow the consequence recorded in the agreement.$legal$),
+    ('otp_default_v1', 'general_terms', 'General Legal Terms', 'legal_text', 10, true,
+      array['document_reference']::text[],
+      $legal$GENERAL TERMS
+
+The parties choose their recorded addresses for notices and consent to the jurisdiction recorded in the final agreement. No amendment or cancellation is valid unless reduced to writing and signed or accepted by the parties as required.
+
+The parties consent to processing of personal information required for conveyancing, finance, verification, communication and transaction administration.$legal$)
+  ) as rows(template_key, section_key, section_label, section_type, sort_order, is_required, placeholder_keys, legal_text)
+)
+insert into public.document_template_sections (
+  template_id, section_key, section_label, section_type, sort_order,
+  is_required, is_repeatable, condition_json, placeholder_keys, legal_text, metadata_json
+)
+select
+  template.id, section.section_key, section.section_label, section.section_type,
+  section.sort_order, section.is_required, false, '{}'::jsonb,
+  section.placeholder_keys, section.legal_text,
+  jsonb_build_object('editable', true, 'starter_content_version', 'b2-v1')
+from starter_templates template
+join required_sections section using (template_key)
+on conflict (template_id, section_key)
+do update set
+  section_label = excluded.section_label,
+  section_type = excluded.section_type,
+  sort_order = excluded.sort_order,
+  is_required = excluded.is_required,
+  placeholder_keys = excluded.placeholder_keys,
+  legal_text = excluded.legal_text,
+  metadata_json = coalesce(public.document_template_sections.metadata_json, '{}'::jsonb) || excluded.metadata_json,
+  updated_at = now();
+
+update public.document_template_sections section
+set sort_order = case template.packet_type when 'mandate' then 9 else 11 end,
+    updated_at = now()
+from public.document_packet_templates template
+where section.template_id = template.id
+  and template.organisation_id is null
+  and template.template_key in ('mandate_default_v1', 'otp_default_v1')
+  and section.section_key = 'signature_pages';
+
 with addendum_template as (
   select id
   from public.document_packet_templates

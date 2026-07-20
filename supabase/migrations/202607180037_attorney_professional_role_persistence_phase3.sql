@@ -342,6 +342,11 @@ create index if not exists organisation_users_attorney_professional_role_idx
   on public.organisation_users (organisation_id, attorney_professional_role, status)
   where attorney_professional_role is not null;
 
+revoke all on function public.bridge_sync_attorney_professional_profile() from public, anon, authenticated;
+revoke all on function public.bridge_link_attorney_member_to_organisation_user() from public, anon, authenticated;
+revoke all on function public.bridge_sync_attorney_profile_to_organisation_user() from public, anon, authenticated;
+revoke all on function public.bridge_link_organisation_user_to_attorney_member() from public, anon, authenticated;
+
 comment on column public.attorney_firm_members.role is
   'Phase 3 compatibility role. Authorization remains compatible until the professional-role cutover; write through the professional profile fields.';
 comment on column public.attorney_firm_members.professional_role is

@@ -49,8 +49,7 @@ as $$
   ), false);
 $$;
 
-revoke all on function public.bridge_attorney_member_assignment_eligible(uuid, uuid, text, text, boolean) from public;
-revoke all on function public.bridge_attorney_member_assignment_eligible(uuid, uuid, text, text, boolean) from authenticated;
+revoke all on function public.bridge_attorney_member_assignment_eligible(uuid, uuid, text, text, boolean) from public, anon, authenticated;
 
 create or replace function public.enforce_attorney_assignment_professional_profile_phase6()
 returns trigger
@@ -123,6 +122,8 @@ create trigger trg_attorney_assignment_professional_profile_phase6
 before insert or update on public.transaction_attorney_assignments
 for each row
 execute function public.enforce_attorney_assignment_professional_profile_phase6();
+
+revoke all on function public.enforce_attorney_assignment_professional_profile_phase6() from public, anon, authenticated;
 
 comment on function public.bridge_attorney_member_assignment_eligible(uuid, uuid, text, text, boolean) is
   'Phase 6 canonical professional-role and practice-qualification eligibility boundary for transaction attorney assignment slots.';

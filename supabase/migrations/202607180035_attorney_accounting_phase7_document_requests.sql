@@ -168,6 +168,7 @@ create policy matter_financial_document_requests_update_scoped
     )
   );
 
+revoke all on table public.matter_financial_document_requests from public, anon, authenticated;
 grant select, insert, update on public.matter_financial_document_requests to authenticated;
 
 create or replace function public.bridge_client_portal_matter_financial_accounts(

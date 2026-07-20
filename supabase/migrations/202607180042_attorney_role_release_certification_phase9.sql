@@ -45,7 +45,7 @@ on public.attorney_role_release_certifications
 for select to authenticated
 using (public.attorney_user_is_active_member(firm_id));
 
-revoke insert, update, delete on public.attorney_role_release_certifications from authenticated;
+revoke all on table public.attorney_role_release_certifications from public, anon, authenticated;
 grant select on public.attorney_role_release_certifications to authenticated;
 
 create or replace function public.certify_attorney_role_release_phase9(target_firm_id uuid)
@@ -112,7 +112,7 @@ begin
 end;
 $$;
 
-revoke all on function public.certify_attorney_role_release_phase9(uuid) from public;
+revoke all on function public.certify_attorney_role_release_phase9(uuid) from public, anon;
 grant execute on function public.certify_attorney_role_release_phase9(uuid) to authenticated;
 
 comment on table public.attorney_role_release_certifications is

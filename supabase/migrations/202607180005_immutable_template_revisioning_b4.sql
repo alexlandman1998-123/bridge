@@ -14,6 +14,11 @@ alter table public.document_packet_templates
 alter table public.document_packet_templates
   add constraint document_packet_templates_revision_number_b4_check check (revision_number > 0);
 
+-- The revision-family backfill is a system migration, not a user edit. Avoid
+-- copying historical orphan organisation IDs into the stricter audit table.
+alter table public.document_packet_templates
+  disable trigger document_packet_templates_audit;
+
 update public.document_packet_templates
 set
   revision_root_template_id = coalesce(revision_root_template_id, id),
@@ -23,6 +28,9 @@ set
   )
 where revision_root_template_id is null
    or revision_number is null;
+
+alter table public.document_packet_templates
+  enable trigger document_packet_templates_audit;
 
 create index if not exists document_packet_templates_revision_family_b4_idx
   on public.document_packet_templates (revision_root_template_id, revision_number desc);

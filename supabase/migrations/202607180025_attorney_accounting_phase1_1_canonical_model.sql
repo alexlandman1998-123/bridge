@@ -196,7 +196,6 @@ create table if not exists public.matter_financial_documents (
     foreign key (financial_account_id, transaction_id)
     references public.matter_financial_accounts(id, transaction_id)
     on delete cascade
-  )
 );
 
 create table if not exists public.matter_financial_entries (
@@ -279,7 +278,6 @@ create table if not exists public.matter_financial_account_events (
     foreign key (financial_account_id, transaction_id)
     references public.matter_financial_accounts(id, transaction_id)
     on delete cascade
-  )
 );
 
 create index if not exists matter_financial_accounts_transaction_idx
@@ -655,8 +653,16 @@ create policy matter_financial_account_events_insert_scoped
     )
   );
 
+revoke all on function public.bridge_can_manage_matter_financials(uuid, uuid, uuid) from public, anon;
+revoke all on function public.bridge_can_view_matter_financial_account(uuid, text, text, uuid, uuid, uuid) from public, anon;
 grant execute on function public.bridge_can_manage_matter_financials(uuid, uuid, uuid) to authenticated;
 grant execute on function public.bridge_can_view_matter_financial_account(uuid, text, text, uuid, uuid, uuid) to authenticated;
+
+revoke all on table public.matter_financial_accounts from public, anon, authenticated;
+revoke all on table public.matter_financial_documents from public, anon, authenticated;
+revoke all on table public.matter_financial_entries from public, anon, authenticated;
+revoke all on table public.matter_financial_account_events from public, anon, authenticated;
+revoke all on table public.matter_financial_account_balances from public, anon, authenticated;
 
 grant select, insert, update on public.matter_financial_accounts to authenticated;
 grant select, insert, update on public.matter_financial_documents to authenticated;

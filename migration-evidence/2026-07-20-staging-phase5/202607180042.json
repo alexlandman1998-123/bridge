@@ -1,0 +1,26 @@
+{
+  "version": "202607180042",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access staging verification",
+  "verification": {
+    "derivedCompatibilityConstraintsLive": 2,
+    "derivedCompatibilityConstraintsNotValid": 2,
+    "certificationTableRlsEnabled": true,
+    "certificationPolicyCount": 1,
+    "anonymousTableAccessDenied": true,
+    "authenticatedSelectOnly": true,
+    "anonymousRpcExecutionDenied": true,
+    "authenticatedRpcExecutionGranted": true,
+    "certificationRpcSecurityDefiner": true,
+    "certificationRpcFixedSearchPath": true,
+    "unauthenticatedCertificationDenied": "42501",
+    "blockedFirmCertificationDenied": "P0001",
+    "certificationRowsPersisted": 0,
+    "historicalRowsRewritten": false,
+    "rollbackClean": true
+  }
+}

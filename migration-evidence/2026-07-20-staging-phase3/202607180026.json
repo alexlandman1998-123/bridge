@@ -1,0 +1,22 @@
+{
+  "version": "202607180026",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting staging verification",
+  "verification": {
+    "eligibleParticipantAccounts": 318,
+    "bootstrapEvents": 318,
+    "importedFinancialDocuments": 0,
+    "importedFinancialEntries": 0,
+    "nonZeroOpeningBalances": 0,
+    "incorrectAmountBackfillPolicies": 0,
+    "syncTriggerEnabled": true,
+    "activeParticipantUniqueIndexLive": true,
+    "syncFunctionServiceRoleOnly": true,
+    "anonymousManagementHelperExecuteRevoked": true,
+    "idempotencyReplay": "pass"
+  }
+}

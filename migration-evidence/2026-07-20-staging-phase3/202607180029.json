@@ -1,0 +1,15 @@
+{
+  "version": "202607180029",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting staging verification",
+  "verification": {
+    "uniquePartialIndexLive": true,
+    "predicateRequiresPostedClientProof": true,
+    "duplicatePostedProofDenied": "23505",
+    "rollbackClean": true
+  }
+}

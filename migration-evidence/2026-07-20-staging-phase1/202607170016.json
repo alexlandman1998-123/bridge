@@ -1,0 +1,21 @@
+{
+  "version": "202607170016",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "checks": {
+    "functionExists": true,
+    "securityDefiner": true,
+    "searchPathRestrictedToPublic": true,
+    "anonExecute": false,
+    "authenticatedExecute": false,
+    "serviceRoleExecute": true,
+    "authenticatedInvocationDenied": true,
+    "invalidServiceRoleInputRejected": true,
+    "auditRowsBeforeAndAfter": 3,
+    "templateRowsBeforeAndAfter": 14
+  }
+}

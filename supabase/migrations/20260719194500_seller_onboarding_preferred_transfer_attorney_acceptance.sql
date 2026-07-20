@@ -4,7 +4,7 @@ create or replace function public.bridge_require_seller_preferred_transfer_attor
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_preferred_partner_id text := nullif(trim(new.form_data #>> '{preferredTransferAttorney,preferredPartnerId}'), '');
@@ -145,7 +145,7 @@ begin
 end;
 $$;
 
-revoke all on function public.bridge_require_seller_preferred_transfer_attorney_acceptance() from public;
+revoke all on function public.bridge_require_seller_preferred_transfer_attorney_acceptance() from public, anon, authenticated;
 
 drop trigger if exists private_listing_seller_onboarding_require_preferred_attorney_acceptance
   on public.private_listing_seller_onboarding;

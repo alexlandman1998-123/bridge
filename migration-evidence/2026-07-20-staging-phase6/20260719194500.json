@@ -1,0 +1,29 @@
+{
+  "version": "20260719194500",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex seller onboarding attorney acceptance staging verification",
+  "verification": {
+    "acceptanceGuardFunctionLive": true,
+    "acceptanceGuardTriggerEnabled": true,
+    "triggerFunctionPrivateFromAnonymous": true,
+    "triggerFunctionPrivateFromAuthenticated": true,
+    "triggerFunctionSecurityDefiner": true,
+    "triggerFunctionFixedSearchPath": true,
+    "missingPreferredAttorneyRejected": "23514",
+    "unconnectedPreferredAttorneyRejected": "23514",
+    "nominatedAlternativeCompletionPassed": true,
+    "rollbackConnectedPreferredAcceptancePassed": true,
+    "rollbackAllocationCreated": true,
+    "rollbackAllocationSelectionSource": "agency_recommended",
+    "rollbackAllocationStatus": "awaiting_buyer",
+    "rollbackAllocationAuditSource": "seller_onboarding_acceptance",
+    "persistentOnboardingRows": 28,
+    "persistentRolePlayerRows": 0,
+    "persistentPreferredPartnerRows": 0,
+    "rollbackClean": true
+  }
+}

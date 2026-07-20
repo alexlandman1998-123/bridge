@@ -177,11 +177,22 @@ create trigger trg_sync_template_section_definition_b1
 after insert or update or delete on public.document_template_sections
 for each row execute function public.bridge_sync_template_section_definition_b1();
 
+-- This is a deterministic system backfill, not a user-authored template edit.
+-- Suppress the legacy audit trigger while updating existing definitions because
+-- historical templates can retain an organisation_id after that organisation
+-- was removed, while the audit table correctly enforces a stricter FK. The
+-- surrounding transaction guarantees the trigger is restored on any failure.
+alter table public.document_packet_templates
+  disable trigger document_packet_templates_audit;
+
 update public.document_packet_templates t
 set
   definition_schema_version = 1,
   definition_json = public.bridge_build_template_definition_b1(t.id)
 where t.packet_type in ('mandate', 'otp', 'addendum');
+
+alter table public.document_packet_templates
+  enable trigger document_packet_templates_audit;
 
 update public.document_packet_template_versions v
 set

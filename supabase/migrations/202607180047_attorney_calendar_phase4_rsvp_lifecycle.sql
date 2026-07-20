@@ -55,6 +55,7 @@ create index if not exists appointment_reschedule_requests_appointment_idx
 create index if not exists appointment_reschedule_requests_status_idx
   on public.appointment_reschedule_requests (status);
 alter table if exists public.appointment_reschedule_requests enable row level security;
+revoke all on table public.appointment_reschedule_requests from public, anon, authenticated;
 grant select, insert, update, delete on table public.appointment_reschedule_requests to authenticated;
 grant all on table public.appointment_reschedule_requests to service_role;
 

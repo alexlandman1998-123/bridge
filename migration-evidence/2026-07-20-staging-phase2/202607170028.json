@@ -1,0 +1,25 @@
+{
+  "version": "202607170028",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging settings-governance verification",
+  "verification": {
+    "roleGuardReplacementLive": true,
+    "ownershipTransferFunctionLive": true,
+    "authenticatedFunctionExecuteGranted": true,
+    "anonymousFunctionExecuteRevoked": true,
+    "publicFunctionExecuteRevoked": true,
+    "advisoryTransactionLockPresent": true,
+    "actorAndTargetRowLocksPresent": true,
+    "transactionLocalGuardBypassPresent": true,
+    "ownershipAuditEventPresent": true,
+    "unauthenticatedTransferDenied": "42501",
+    "selfTransferDenied": "22023",
+    "existingOwnerTargetDenied": "22023",
+    "multipleOwnerOrganisationsPreservedForSeparateCleanup": 2,
+    "multiplePrimaryOwnerOrganisationsPreservedForSeparateCleanup": 2
+  }
+}

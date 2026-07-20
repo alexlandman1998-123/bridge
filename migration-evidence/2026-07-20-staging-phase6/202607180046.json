@@ -1,0 +1,32 @@
+{
+  "version": "202607180046",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex transaction creation staging verification",
+  "applicationMode": "repair_only_after_smoke",
+  "verification": {
+    "originalSqlReplayed": false,
+    "reconciledByVersion": "20260719193500",
+    "transactionColumnsLive": 17,
+    "idempotencyIndexLive": true,
+    "participantRequirementsTableLive": true,
+    "participantRequirementsRlsEnabled": true,
+    "participantRequirementsPolicyCount": 1,
+    "anonymousTableAccessDenied": true,
+    "authenticatedTableAccess": "select_only",
+    "seedHelpersPrivate": true,
+    "anonymousCreationDenied": "42501",
+    "authenticatedCreationGranted": true,
+    "creationRpcSecurityDefiner": true,
+    "creationRpcFixedSearchPath": true,
+    "rollbackFirstCallExisting": false,
+    "rollbackSecondCallExisting": true,
+    "rollbackIdempotentTransactionIdentity": true,
+    "persistentTransactionRows": 285,
+    "persistentOfferRows": 2,
+    "rollbackClean": true
+  }
+}

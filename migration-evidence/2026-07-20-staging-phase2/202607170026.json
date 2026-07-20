@@ -1,0 +1,22 @@
+{
+  "version": "202607170026",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging settings-governance verification",
+  "verification": {
+    "membershipRows": 58,
+    "recognisedJobTitlesBackfilled": 50,
+    "unmappedViewerMemberships": 8,
+    "invalidJobTitleLabels": 0,
+    "jobTitleConstraintValidated": true,
+    "functionsLive": 4,
+    "triggersLiveAndEnabled": 3,
+    "partialIndexLive": true,
+    "anonymousFunctionExecuteRevoked": true,
+    "unauthenticatedSetterDenied": "42501",
+    "unauthenticatedDirectUpdateDenied": "42501"
+  }
+}

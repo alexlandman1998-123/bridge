@@ -1,0 +1,18 @@
+{
+  "version": "202607180031",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting staging verification",
+  "verification": {
+    "portalAccountReadModelUpdated": true,
+    "anonymousTokenSessionExecuteGranted": true,
+    "authenticatedTokenSessionExecuteGranted": true,
+    "publicExecuteRevoked": true,
+    "unpublishedPaymentInstructionsHidden": true,
+    "publishedPaymentInstructionsShown": true,
+    "rollbackClean": true
+  }
+}
