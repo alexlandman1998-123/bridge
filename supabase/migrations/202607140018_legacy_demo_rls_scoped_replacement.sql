@@ -114,6 +114,73 @@ as $$
   end
 $$;
 
+create or replace function public.bridge_has_transaction_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when auth.uid() is null then false
+    when public.bridge_is_admin() then true
+    when exists (
+      select 1
+      from public.transaction_participants participant
+      where participant.transaction_id = target_transaction_id
+        and participant.can_view = true
+        and (
+          participant.user_id = auth.uid()
+          or lower(coalesce(participant.participant_email, '')) = public.bridge_current_user_email()
+        )
+    ) then true
+    when exists (
+      select 1
+      from public.transactions transaction_record
+      where transaction_record.id = target_transaction_id
+        and (
+          (
+            public.bridge_current_profile_role() = 'developer'
+            and transaction_record.development_id is not null
+            and public.bridge_has_development_access(transaction_record.development_id)
+          )
+          or (
+            public.bridge_current_profile_role() = 'agent'
+            and lower(coalesce(transaction_record.assigned_agent_email, '')) = public.bridge_current_user_email()
+          )
+          or (
+            public.bridge_current_profile_role() = 'attorney'
+            and lower(coalesce(transaction_record.assigned_attorney_email, '')) = public.bridge_current_user_email()
+          )
+          or (
+            public.bridge_current_profile_role() = 'bond_originator'
+            and lower(coalesce(transaction_record.assigned_bond_originator_email, '')) = public.bridge_current_user_email()
+          )
+        )
+    ) then true
+    when exists (
+      select 1
+      from public.transactions transaction_record
+      join public.buyers buyer on buyer.id = transaction_record.buyer_id
+      where transaction_record.id = target_transaction_id
+        and public.bridge_current_profile_role() = 'client'
+        and lower(coalesce(buyer.email, '')) = public.bridge_current_user_email()
+    ) then true
+    else false
+  end
+$$;
+
+create or replace function public.bridge_can_view_internal_transaction_content(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_has_transaction_access(target_transaction_id)
+    and public.bridge_is_internal_user()
+$$;
+
 create or replace function public.bridge_has_legacy_firm_membership(
   target_firm_id uuid,
   require_admin boolean default false
