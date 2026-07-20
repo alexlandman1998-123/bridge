@@ -784,9 +784,21 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180046",
+      "version": "202607209903",
       "stream": "transaction_creation",
       "dependsOn": "stream preflight",
+      "module": "transaction_network",
+      "file": "202607209903_transaction_participant_requirements_least_privilege_phase25_fix.sql",
+      "objectStatus": "reviewed_privilege_correction",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Revoke direct anonymous and authenticated writes, retain authenticated RLS-scoped reads, and verify the RPC-only creation boundary."
+    },
+    {
+      "version": "202607180046",
+      "stream": "transaction_creation",
+      "dependsOn": "202607209903",
       "module": "transaction_network",
       "file": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
       "objectStatus": "all_live",

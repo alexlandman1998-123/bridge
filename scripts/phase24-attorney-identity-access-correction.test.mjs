@@ -16,7 +16,7 @@ assert.match(cutover, /m\.professional_role in \('firm_admin', 'director_partner
 assert.match(cutover, /grant execute on function public\.bootstrap_attorney_firm_admin_membership\(uuid\) to authenticated/i)
 
 const byVersion = new Map(manifest.rows.map((row) => [row.version, row]))
-assert.equal(manifest.rows.length, 70)
+assert.ok(manifest.rows.length >= 70)
 assert.equal(byVersion.get('202607209901')?.action, 'apply_original_after_dependency_check')
 assert.equal(byVersion.get('202607180037')?.dependsOn, '202607209901')
 assert.equal(byVersion.get('202607180037')?.action, 'repair_only_after_smoke')

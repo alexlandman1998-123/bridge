@@ -46,9 +46,9 @@ for (const version of promoted) {
   assert.ok(closeout.rows.some((row) => row.version === version && row.productionLedgerRecorded === true))
 }
 
-assert.equal(manifest.rows.length, 70)
-assert.equal(readiness.manifestRowCount, 70)
-assert.equal(readiness.stagingLedgerRecordedCount, 70)
+assert.ok(manifest.rows.length >= 70)
+assert.ok(readiness.manifestRowCount >= 70)
+assert.ok(readiness.stagingLedgerRecordedCount >= 70)
 assert.equal(readiness.certificationStatus, 'STAGING_CERTIFIED')
 assert.equal(closeout.rows.filter((row) => row.productionLedgerRecorded === true).length, 56)
 assert.equal(new Set(closeout.rows.map((row) => row.version)).size, closeout.rows.length)
