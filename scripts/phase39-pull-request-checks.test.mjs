@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const evidence = JSON.parse(readFileSync(
   'deployment-evidence/2026-07-20-phase39/pull-request-check-clearance.json',
@@ -52,6 +52,15 @@ assert.equal(previewBaseline.productionLedgerAttestationRequiredBeforeMerge, tru
 assert.equal(evidence.externalChecks.supabasePreview.previewReset.withData, false)
 assert.equal(evidence.externalChecks.supabasePreview.previewReset.productionAffected, false)
 assert.equal(evidence.externalChecks.supabasePreview.previewReset.stagingAffected, false)
+const migrationFiles = readdirSync('supabase/migrations').filter((file) => file.endsWith('.sql'))
+const migrationVersions = migrationFiles.map((file) => file.split('_')[0])
+const minuteVersions = new Set(migrationVersions.filter((version) => version.length === 12))
+const mixedPrecisionPrefixes = migrationVersions
+  .filter((version) => version.length > 12 && minuteVersions.has(version.slice(0, 12)))
+assert.deepEqual(mixedPrecisionPrefixes, [])
+assert.equal(evidence.externalChecks.supabasePreview.migrationPrecisionNormalization.filesRenamed, 18)
+assert.equal(evidence.externalChecks.supabasePreview.migrationPrecisionNormalization.collisionPrefixesAfter, 0)
+assert.equal(evidence.externalChecks.supabasePreview.migrationPrecisionNormalization.productionLedgerMutated, false)
 assert.equal(evidence.externalChecks.vercelPreview.statusAtCertification, 'PASS')
 assert.equal(evidence.safety.productionApplicationPromoted, false)
 assert.equal(evidence.safety.productionDatabaseMutated, false)

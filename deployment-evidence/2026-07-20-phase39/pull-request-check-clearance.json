@@ -87,6 +87,14 @@
         "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
         "productionAffected": false,
         "stagingAffected": false
+      },
+      "migrationPrecisionNormalization": {
+        "status": "SECOND_PRECISION_PREFIX_COLLISIONS_REMOVED",
+        "filesRenamed": 18,
+        "collisionPrefixesBefore": 17,
+        "collisionPrefixesAfter": 0,
+        "productionLedgerMutated": false,
+        "stagingLedgerMutated": false
       }
     },
     "vercelPreview": {
