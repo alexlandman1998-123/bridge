@@ -27,6 +27,7 @@
     "supabase:phase13:access": "node scripts/supabase-phase13-production-access.mjs --verify",
     "supabase:phase14:ledger": "node scripts/supabase-phase14-production-ledger-reconciliation.mjs --plan",
     "supabase:phase15:batch1:verify": "node scripts/supabase-phase15-batch1.test.mjs",
+    "supabase:phase15:batch2:verify": "node scripts/supabase-phase15-batch2.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

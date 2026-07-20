@@ -30,6 +30,86 @@
       "behaviorChecks": "pass",
       "rollbackOrNoResidue": "pass",
       "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)"
+    },
+    {
+      "version": "202607170016",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170017",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170018",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170019",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170020",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170022",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170023",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
+    },
+    {
+      "version": "202607170024",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)"
     }
   ]
 }

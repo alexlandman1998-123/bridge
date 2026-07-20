@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T13:19:39.216Z
+Generated: 2026-07-20T13:36:08.119Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -20,12 +20,12 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
 | Human staging-readiness approval | Yes |
-| Complete production evidence rows | 3 |
-| Incomplete production evidence rows | 61 |
+| Complete production evidence rows | 11 |
+| Incomplete production evidence rows | 53 |
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Live verification performed | Yes |
-| Pure local-only versions | 65 |
+| Pure local-only versions | 57 |
 | Pure remote-only versions | 0 |
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |
@@ -37,14 +37,6 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 ## Incomplete Evidence Versions
 
-- `202607170016`
-- `202607170017`
-- `202607170018`
-- `202607170019`
-- `202607170020`
-- `202607170022`
-- `202607170023`
-- `202607170024`
 - `202607170021`
 - `202607170025`
 - `202607180001`

@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-07-20T13:34:48.000Z",
+  "version": "202607170016",
+  "batch": "phase15_batch2_legal_review_assurance",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)",
+  "verification": {
+    "counselApprovalFunctionLive": true,
+    "anonymousExecuteRevoked": true,
+    "authenticatedExecuteRevoked": true,
+    "serviceRoleExecuteGranted": true,
+    "invalidPayloadDenied": "P0001",
+    "templateRows": 14,
+    "auditRows": 3,
+    "behaviorProbeResidue": false
+  }
+}
