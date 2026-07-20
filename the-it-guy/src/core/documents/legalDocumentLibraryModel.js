@@ -138,7 +138,10 @@ function getPlannedSigningRoles(sections = []) {
 
 function buildDocumentModel(definition = {}, templates = [], migrationRecord = null, verificationReceipt = null) {
   const matchingTemplates = templates.filter((template) => templateMatchesDefinition(template, definition)).sort(compareTemplates)
-  const primaryTemplate = matchingTemplates[0] || null
+  const migrationReadiness = definition.kind !== 'addendum'
+    ? evaluateConditionalMasterMigration({ packetType: definition.packetType, templates: matchingTemplates, migrationRecord })
+    : null
+  const primaryTemplate = migrationReadiness?.candidate || matchingTemplates[0] || null
   const liveTemplate = matchingTemplates.find(isLiveTemplate) || null
   const draftTemplates = matchingTemplates.filter((template) => !isLiveTemplate(template) && getTemplateStatus(template) !== 'archived')
   const sections = getSections(primaryTemplate)
@@ -165,9 +168,6 @@ function buildDocumentModel(definition = {}, templates = [], migrationRecord = n
   const coverageReady = definition.kind === 'addendum'
     ? Boolean(liveTemplate)
     : Boolean(liveTemplate && coverageReadiness?.ready)
-  const migrationReadiness = definition.kind !== 'addendum'
-    ? evaluateConditionalMasterMigration({ packetType: definition.packetType, templates: matchingTemplates, migrationRecord })
-    : null
   const verificationReadiness = definition.kind !== 'addendum'
     ? evaluateConditionalMasterMigrationVerification({
         packetType: definition.packetType,

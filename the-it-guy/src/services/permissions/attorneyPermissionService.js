@@ -45,7 +45,9 @@ function assignmentAllows(assignment = null, snakeCaseKey, camelCaseKey) {
   return assignment[snakeCaseKey] !== false && assignment[camelCaseKey] !== false
 }
 
-function roleCanEditLane(permissions = {}, attorneyRole = 'transfer_attorney') {
+function roleCanEditLane(permissions = {}, attorneyRole = 'transfer_attorney', attorneyAccess = null) {
+  if (attorneyAccess?.isTransferAttorneyController) return Boolean(permissions.can_edit_transfer_workflow)
+
   const normalizedRole = normalizeAttorneyTransactionRole(attorneyRole)
   if (normalizedRole === 'bond_attorney') return Boolean(permissions.can_edit_bond_workflow)
   return Boolean(permissions.can_edit_transfer_workflow)
@@ -65,12 +67,13 @@ export function resolveAttorneyActionPermissions({
     : getAttorneyProfessionalProfilePermissions({})
   const assignment = attorneyAccess?.assignment || null
   const isAssignedParticipant = Boolean(attorneyAccess?.isAssignedParticipant)
+  const isTransferAttorneyController = Boolean(attorneyAccess?.isTransferAttorneyController)
   const managementOverrideEnabled = Boolean(
     attorneyAccess?.isManagementUser &&
       attorneyAccess?.managementOverrideEnabled &&
       attorneyAccess?.canViewMatter,
   )
-  const hasLaneAuthority = Boolean(isAssignedParticipant || managementOverrideEnabled)
+  const hasLaneAuthority = Boolean(isAssignedParticipant || isTransferAttorneyController || managementOverrideEnabled)
   const actionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && hasLaneAuthority)
   const documentsAllowed = assignmentAllows(assignment, 'can_manage_documents', 'canManageDocuments')
   const signingAllowed = assignmentAllows(assignment, 'can_manage_signing', 'canManageSigning')
@@ -83,12 +86,13 @@ export function resolveAttorneyActionPermissions({
     permissions,
     hasActiveMembership,
     isAssignedParticipant,
+    isTransferAttorneyController,
     managementOverrideEnabled,
     hasLaneAuthority,
     canUpdateLane: Boolean(
       actionBase &&
         laneUpdateAllowed &&
-        (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled),
+        (roleCanEditLane(permissions, attorneyRole, attorneyAccess) || managementOverrideEnabled),
     ),
     canRequestDocuments: Boolean(actionBase && documentsAllowed && permissions.can_request_documents),
     canUploadDocuments: Boolean(actionBase && documentsAllowed && permissions.can_upload_documents),
@@ -316,6 +320,14 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     isFirmManagement,
     isAssignedAttorney: Boolean(attorneyAccess?.isAssignedAttorney),
     isAssignedParticipant: Boolean(attorneyAccess?.isAssignedParticipant),
+    isTransferAttorneyController: Boolean(attorneyAccess?.isTransferAttorneyController),
+    assignmentId: attorneyAccess?.assignment?.id || null,
+    controlledAssignmentId: attorneyAccess?.controlledAssignment?.id || null,
+    controllerLaneRole: attorneyAccess?.controllerLaneRole || null,
+    controllerAssignmentId: attorneyAccess?.controllerAssignment?.id || null,
+    authorizingAssignmentId: attorneyAccess?.controllerAssignment?.id || attorneyAccess?.assignment?.id || null,
+    authorizingFirmId: attorneyAccess?.firmId || membership?.firmId || null,
+    permissionReason: attorneyAccess?.reason || null,
     managementOverrideEnabled: Boolean(attorneyAccess?.managementOverrideEnabled),
     canViewLegalWorkspace,
     canViewLane: canViewLegalWorkspace,

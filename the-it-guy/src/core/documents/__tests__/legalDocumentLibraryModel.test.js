@@ -102,3 +102,69 @@ test('summarises live, draft and coverage state across the catalogue', () => {
   assert.equal(model.summary.draftCount, 1)
   assert.equal(model.summary.allCovered, false)
 })
+
+test('selects the prepared organisation conditional master for editing while legacy wording remains live', () => {
+  const mandateMaster = getConditionalMasterTemplateDefinition('mandate')
+  const masterSections = buildConditionalMasterTemplateSections('mandate', [
+    { sectionKey: 'introduction_purpose', sectionLabel: 'Introduction', legalText: 'Master introduction' },
+    { sectionKey: 'signature_pages', sectionLabel: 'Signatures', legalText: 'Master signatures' },
+  ])
+  const templates = [
+    {
+      id: 'mandate-global-master',
+      packet_type: 'mandate',
+      organisation_id: null,
+      status: 'published',
+      is_active: true,
+      is_default: true,
+      metadata_json: {
+        conditional_master: true,
+        conditional_master_version: mandateMaster.masterVersion,
+        default_signer_roles: mandateMaster.defaultSignerRoles,
+      },
+      sections: masterSections,
+    },
+    {
+      id: 'mandate-legacy-live',
+      packet_type: 'mandate',
+      organisation_id: 'org-1',
+      status: 'published',
+      is_active: true,
+      is_default: true,
+      sections: [{ sectionKey: 'introduction_purpose', legalText: 'Legacy wording' }],
+    },
+    {
+      id: 'mandate-migration-candidate',
+      packet_type: 'mandate',
+      organisation_id: 'org-1',
+      status: 'draft',
+      is_active: false,
+      is_default: false,
+      updated_at: '2026-07-20T12:00:00.000Z',
+      metadata_json: {
+        conditional_master: true,
+        conditional_master_version: mandateMaster.masterVersion,
+        default_signer_roles: mandateMaster.defaultSignerRoles,
+      },
+      sections: masterSections,
+    },
+  ]
+
+  const model = buildLegalDocumentLibraryModel({
+    templatesByType: { mandate: templates },
+    migrationsByType: {
+      mandate: {
+        state: 'prepared',
+        source_master_template_id: 'mandate-global-master',
+        candidate_template_id: 'mandate-migration-candidate',
+        previous_default_template_id: 'mandate-legacy-live',
+      },
+    },
+  })
+  const mandate = model.documentsByKey.mandate
+
+  assert.equal(mandate.primaryTemplateId, 'mandate-migration-candidate')
+  assert.equal(mandate.liveTemplateId, 'mandate-legacy-live')
+  assert.equal(mandate.situationClauseCount, 6)
+  assert.equal(mandate.migrationReadiness.candidate.id, 'mandate-migration-candidate')
+})

@@ -164,7 +164,7 @@ export default function LegalDocumentOverviewPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-10" aria-labelledby="document-overview-title">
+    <div className="w-full max-w-none space-y-6 pb-10" aria-labelledby="document-overview-title">
       <nav className="flex flex-wrap items-center gap-3 text-sm font-semibold text-[#6b7d91]" aria-label="Breadcrumb">
         <Link to={buildLegalDocumentsLandingPath()} className="transition hover:text-[#0f7f4f]">Legal Documents</Link>
         <span className="text-[#b0bdc9]" aria-hidden="true">/</span>

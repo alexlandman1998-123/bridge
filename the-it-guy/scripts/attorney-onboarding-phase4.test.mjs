@@ -117,6 +117,7 @@ assert.deepEqual(
   {
     transfer: true,
     bond: false,
+    cancellation: false,
     admin: false,
     management: true,
   },

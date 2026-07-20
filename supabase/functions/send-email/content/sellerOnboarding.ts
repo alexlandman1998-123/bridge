@@ -318,7 +318,10 @@ function buildPremiumSellerOnboardingInvitationHtml({
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" bgcolor="#F6F8FA" style="width: 100%; background: #F6F8FA; border-collapse: collapse;">
       <tr>
         <td align="center" class="arch9-outer" style="padding: 32px 12px;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="arch9-shell" style="width: 600px; max-width: 600px; border-collapse: separate; border-spacing: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <!--[if mso]>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="660" align="center"><tr><td>
+          <![endif]-->
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="arch9-shell" style="width: 100%; max-width: 660px; border-collapse: separate; border-spacing: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
             <tr>
               <td class="arch9-header" bgcolor="#071E1A" height="72" valign="middle" style="height: 72px; padding: 0 32px; background: #071E1A; font-family: Arial, Helvetica, sans-serif;">
                 <p style="margin: 0; font-size: 20px; line-height: 1; letter-spacing: 0.52em; color: #FFFFFF; font-weight: 700;">ARCH9</p>
@@ -377,6 +380,9 @@ function buildPremiumSellerOnboardingInvitationHtml({
               </td>
             </tr>
           </table>
+          <!--[if mso]>
+          </td></tr></table>
+          <![endif]-->
         </td>
       </tr>
     </table>

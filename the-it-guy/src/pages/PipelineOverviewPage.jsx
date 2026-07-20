@@ -423,7 +423,7 @@ export default function PipelineOverviewPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
-      <div className="mx-auto w-full max-w-[1680px] px-0 py-6">
+      <div className="w-full max-w-none px-0 py-6">
         <header className={`${cardClass} mb-5 p-5`}>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">

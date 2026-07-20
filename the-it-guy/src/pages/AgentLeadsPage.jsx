@@ -15211,7 +15211,7 @@ function getSellerNextBestActionMeta({ row = {}, listing = null, journey = null,
     return {
       title: 'Seller onboarding pending',
       copy: 'The seller still needs their portal intake link before the listing pack can move forward.',
-      missing: ['Seller onboarding link'],
+      missing: [],
       actionLabel: 'Send Onboarding Link',
       actionId: 'send_onboarding',
       tone: 'amber',
@@ -17951,16 +17951,6 @@ function SellerProfileTab({
     beginAgentAssistedOnboarding()
   }, [agentOnboardingSignal, beginAgentAssistedOnboarding])
 
-  const viewSubmittedOnboarding = useCallback(() => {
-    setActiveSubmittedDocumentTab('seller_onboarding')
-    setIsEditingSubmittedDetails(false)
-    setMessage('')
-    setError('')
-    if (typeof document === 'undefined') return
-    const target = document.getElementById('seller-onboarding-editor')
-    target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  }, [])
-
   const updateField = useCallback((key, value) => {
     setError('')
     setMessage('')
@@ -18288,101 +18278,6 @@ function SellerProfileTab({
     sellerName,
   ])
 
-  const snapshotAction = (() => {
-    if (agentAssistedMode) {
-      return (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={discardChanges}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={completeAgentAssistedOnboarding}
-            disabled={saving}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            {saving ? 'Saving...' : 'Complete onboarding'}
-          </button>
-        </div>
-      )
-    }
-    if (onboardingState === 'not_sent') {
-      return (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onSendSellerOnboarding}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={!onSendSellerOnboarding || sendingOnboarding}
-          >
-            {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
-          </button>
-          <button
-            type="button"
-            onClick={beginAgentAssistedOnboarding}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            Onboard as agent
-          </button>
-        </div>
-      )
-    }
-    if (onboardingState === 'sent') {
-      return (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={beginAgentAssistedOnboarding}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
-          >
-            Complete as agent
-          </button>
-          <button
-            type="button"
-            onClick={onResendSellerPortalLink}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!onResendSellerPortalLink || !portalLink}
-          >
-            Resend link
-          </button>
-          <button
-            type="button"
-            onClick={onCopySellerPortalLink}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!onCopySellerPortalLink || !portalLink}
-          >
-            Copy portal link
-          </button>
-        </div>
-      )
-    }
-    if (isEditingSubmittedDetails) {
-      return (
-        <button
-          type="button"
-          onClick={saveOverrides}
-          disabled={saving}
-          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {saving ? 'Saving...' : 'Save overrides'}
-        </button>
-      )
-    }
-    return (
-      <button
-        type="button"
-        onClick={viewSubmittedOnboarding}
-        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-      >
-        View submitted onboarding
-      </button>
-    )
-  })()
-
   const snapshotStatusTone = progressMeta.state === 'completed' || progressMeta.state === 'submitted'
     ? 'green'
     : progressMeta.state === 'sent'
@@ -18394,11 +18289,6 @@ function SellerProfileTab({
       <div className="grid gap-5 xl:grid-cols-2">
         <SellerWorkspaceCard
           title="Seller Snapshot"
-          action={(
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {snapshotAction}
-            </div>
-          )}
         >
           <dl className="flex flex-1 flex-col">
             <SellerInfoRow label="Seller" value={sellerName} />
@@ -18491,16 +18381,7 @@ function SellerProfileTab({
                   {saving ? 'Saving...' : 'Complete onboarding'}
                 </button>
               </div>
-            ) : onboardingState === 'not_sent' ? (
-              <button
-                type="button"
-                onClick={onSendSellerOnboarding}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!onSendSellerOnboarding || sendingOnboarding}
-              >
-                {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
-              </button>
-            ) : onboardingState === 'sent' ? (
+            ) : onboardingState === 'not_sent' ? null : onboardingState === 'sent' ? (
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"

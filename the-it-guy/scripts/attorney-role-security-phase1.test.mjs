@@ -62,6 +62,8 @@ function verifyFailClosedSourceContracts() {
   const dashboard = read('src/services/attorneyDashboard.js')
   const membershipPermissions = read('src/lib/attorneyPermissions.js')
   const legalPermissions = read('src/services/permissions/attorneyPermissionService.js')
+  const workflowLanes = read('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js')
+  const workflowPanel = read('src/components/attorney/workflow/AttorneyWorkflowLanesPanel.jsx')
 
   assert.doesNotMatch(hook, /buildBootstrapMembership|role:\s*'firm_admin'/)
   assert.doesNotMatch(operations, /buildBootstrapMembership|user_metadata\?\.attorney_role/)
@@ -73,7 +75,11 @@ function verifyFailClosedSourceContracts() {
   assert.doesNotMatch(membershipPermissions, /owner-admin-|resolveOwnerAdminMembershipFallback/)
   assert.doesNotMatch(legalPermissions, /PHASE_ONE_SHARED_WORKFLOW_EDITING|canEditAllWorkflowLanesInPhaseOne/)
   assert.match(legalPermissions, /membership\?\.isActive/)
-  assert.match(legalPermissions, /isAssignedParticipant \|\| managementOverrideEnabled/)
+  assert.match(legalPermissions, /isAssignedParticipant \|\| isTransferAttorneyController \|\| managementOverrideEnabled/)
+  assert.match(workflowLanes, /isTransferAttorneyController: Boolean\(permissionContext\?\.isTransferAttorneyController\)/)
+  assert.match(workflowPanel, /function getLaneAccessLabel/)
+  assert.match(workflowPanel, /laneCanManageBlockers\(activeLane\)/)
+  assert.match(workflowPanel, /blockerActionLanes\.map/)
 }
 
 const server = await createServer({
@@ -116,6 +122,35 @@ try {
     canViewAsAttorney: true,
   })
   assert.equal(transferAttorneyOnBond.canUpdateLane, false)
+
+  const transferControllerOnBond = resolveAttorneyActionPermissions({
+    appRole: 'attorney',
+    membership: activeMembership('transfer_attorney'),
+    attorneyRole: 'bond_attorney',
+    attorneyAccess: laneAccess({
+      isAssignedAttorney: false,
+      isAssignedParticipant: false,
+      isTransferAttorneyController: true,
+    }),
+    canViewAsAttorney: true,
+  })
+  assert.equal(transferControllerOnBond.canUpdateLane, true)
+  assert.equal(transferControllerOnBond.canReviewDocuments, true)
+  assert.equal(transferControllerOnBond.canManageSigning, true)
+  assert.equal(transferControllerOnBond.isTransferAttorneyController, true)
+
+  const transferControllerOnCancellation = resolveAttorneyActionPermissions({
+    appRole: 'attorney',
+    membership: activeMembership('transfer_attorney'),
+    attorneyRole: 'cancellation_attorney',
+    attorneyAccess: laneAccess({
+      isAssignedAttorney: false,
+      isAssignedParticipant: false,
+      isTransferAttorneyController: true,
+    }),
+    canViewAsAttorney: true,
+  })
+  assert.equal(transferControllerOnCancellation.canUpdateLane, true)
 
   const bondAttorneyOnTransfer = resolveAttorneyActionPermissions({
     appRole: 'attorney',

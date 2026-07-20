@@ -26,7 +26,15 @@ Attorney actions now require:
 5. Firm-role permission for the requested action.
 6. Assignment-level capability not explicitly disabled.
 
-Lane editing additionally requires the matching transfer/bond workflow permission, except for an explicitly enabled management override. Cancellation uses the transfer workflow permission until the canonical qualification model is introduced.
+Lane editing additionally requires the matching transfer/bond workflow permission, except for an explicitly enabled management override or the primary transfer attorney controller path. Cancellation uses the transfer workflow permission until the canonical qualification model is introduced.
+
+## Transfer attorney controller rule
+
+Transfer, bond, and cancellation stay separate transaction legal roles with separate workflow views. The primary transfer attorney is the legal process controller for the transaction and should be able to operate the `transfer`, `bond`, and `cancellation` lanes on that transaction.
+
+This authority is one-way. Bond attorneys and cancellation attorneys can operate their own assigned lanes, but do not receive transfer-lane or cross-lane control by default.
+
+Controller actions should be audited separately from direct lane-assigned attorney actions and management override actions, for example with `actorAuthority: transfer_attorney_controller`.
 
 ## Assignment-level controls enforced
 
@@ -54,11 +62,10 @@ npm run test:attorney-role-security-phase1
 npm run test:attorney-role-governance-phase0
 ```
 
-The Phase 1 suite covers valid transfer operations, cross-lane denial, candidate/reception/admin capabilities, missing and suspended membership, unassigned users, assignment-level restrictions, management override behavior, unknown roles, non-attorney app users, and source-level removal of synthetic fallbacks.
+The Phase 1 suite covers valid transfer operations, cross-lane denial except for the planned primary transfer attorney controller path, candidate/reception/admin capabilities, missing and suspended membership, unassigned users, assignment-level restrictions, management override behavior, unknown roles, non-attorney app users, and source-level removal of synthetic fallbacks.
 
 The production build, targeted ESLint, onboarding safety checks, dashboard checks, attorney workflow phases 1–4, document requirements, readiness, communication control, transaction-role normalization, and incoming-matter queue tests also pass.
 
 ## Deferred work
 
 Phase 1 does not consolidate the duplicate role registries, migrate membership storage, change signup contracts, or replace generic Settings team management. Those remain assigned to the later catalogue, data-model, signup, and Settings phases.
-

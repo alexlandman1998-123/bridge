@@ -29,11 +29,13 @@ The matrix separates:
 
 Default lane behavior:
 
-- transfer attorneys can operate transfer lanes only
+- primary transfer attorneys can operate transfer, bond, and cancellation lanes as the transaction legal process controller
 - bond attorneys can operate bond lanes only
 - cancellation attorneys can operate cancellation lanes only
 - managers/admins can oversee firm matters and assign/reassign where existing permissions allow
 - management lane editing still requires assignment unless management override is enabled by firm policy
+
+The transfer attorney controller rule does not merge the roles. Bond and cancellation attorneys remain separate role assignments and workflow views, but the primary transfer attorney can drive those lanes when coordinating registration readiness.
 
 ## Permission Service
 

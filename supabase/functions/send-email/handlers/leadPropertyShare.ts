@@ -15,7 +15,7 @@ function escapeHtml(value: string) {
 function renderFallbackHtml({ subject, message }: { subject: string; message: string }) {
   return `
     <div style="margin:0;padding:24px;background:#f6f8fb;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;padding:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;">
+      <div style="width:100%;max-width:680px;margin:0 auto;box-sizing:border-box;background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;padding:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;">
         <h1 style="margin:0 0 16px;font-size:26px;line-height:1.2;">${escapeHtml(subject || "Property update")}</h1>
         <div style="font-size:15px;line-height:1.7;color:#334155;white-space:pre-wrap;">${escapeHtml(message)}</div>
       </div>

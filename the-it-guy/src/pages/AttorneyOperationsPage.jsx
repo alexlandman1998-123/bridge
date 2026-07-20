@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { isAttorneyMatterModuleEnabled } from '../services/attorneyMatterModules'
 import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperations'
 
 const PIPELINE_STAGES = [
@@ -538,7 +539,18 @@ function AttorneyOperationsPage() {
     }
   }, [])
 
-  const availableMatterTypes = data?.availableFilters?.matterTypes || []
+  useEffect(() => {
+    if (filters.matterType === 'all') return
+    if (isAttorneyMatterModuleEnabled(permissionsState.matterModules, filters.matterType)) return
+    setFilters((previous) => ({ ...previous, matterType: 'all' }))
+  }, [filters.matterType, permissionsState.matterModules])
+
+  const availableMatterTypes = useMemo(
+    () => (data?.availableFilters?.matterTypes || []).filter((option) =>
+      option.value === 'all' || isAttorneyMatterModuleEnabled(permissionsState.matterModules, option.value),
+    ),
+    [data?.availableFilters?.matterTypes, permissionsState.matterModules],
+  )
   const availableStatuses = data?.availableFilters?.statuses || []
 
   const matterByReference = useMemo(
@@ -551,13 +563,13 @@ function AttorneyOperationsPage() {
   )
 
   const visibleMatterRows = useMemo(() => {
-    let rows = [...(data?.matterQueue || [])]
+    let rows = [...(data?.matterQueue || [])].filter((row) => isAttorneyMatterModuleEnabled(permissionsState.matterModules, row.matterType))
     if (filters.matterType !== 'all') rows = rows.filter((row) => row.matterType === filters.matterType)
     if (filters.status !== 'all') rows = rows.filter((row) => row.status === filters.status)
     if (filters.department !== 'all') rows = rows.filter((row) => row.assignedDepartmentId === filters.department)
     if (filters.member !== 'all') rows = rows.filter((row) => String(row.assignedUserId || '') === String(filters.member))
     return rows.filter((row) => matchesSearch(row, searchTerm))
-  }, [data?.matterQueue, filters.department, filters.matterType, filters.member, filters.status, searchTerm])
+  }, [data?.matterQueue, filters.department, filters.matterType, filters.member, filters.status, permissionsState.matterModules, searchTerm])
 
   const stageFilteredMatterRows = useMemo(() => {
     let rows = visibleMatterRows.filter((row) => rowMatchesPipelineStage(row, pipelineStage))

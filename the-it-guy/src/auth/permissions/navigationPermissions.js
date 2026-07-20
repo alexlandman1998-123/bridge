@@ -1,5 +1,6 @@
 import { can } from './permissionResolver'
 import { PERMISSIONS } from './permissionRegistry'
+import { ATTORNEY_NAV_MODULE_BY_KEY, isAttorneyMatterModuleEnabled } from '../../services/attorneyMatterModules'
 
 export const navPermissionByKey = Object.freeze({
   dashboard: PERMISSIONS.viewDashboard,
@@ -80,7 +81,9 @@ export function filterNavigationItems(items = [], context = {}) {
     .map((item) => {
       const children = Array.isArray(item.children) ? filterNavigationItems(item.children, context) : []
       const permission = navPermissionByKey[item.key]
-      const visible = !permission || can(permission, context) || children.length > 0
+      const moduleKey = ATTORNEY_NAV_MODULE_BY_KEY[item.key]
+      const moduleVisible = !moduleKey || isAttorneyMatterModuleEnabled(context.attorneyMatterModules, moduleKey)
+      const visible = moduleVisible && (!permission || can(permission, context) || children.length > 0)
       if (!visible) return null
       return children.length ? { ...item, children } : { ...item, children: undefined }
     })

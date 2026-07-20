@@ -26,6 +26,10 @@ import {
   getAttorneyMatterWorkspace,
 } from '../services/attorneyMatterWorkspace'
 import {
+  getFallbackAttorneyMatterView,
+  isAttorneyMatterModuleEnabled,
+} from '../services/attorneyMatterModules'
+import {
   acceptAttorneyIncomingMatterInstruction,
   declineAttorneyIncomingMatterInstruction,
 } from '../lib/api'
@@ -1092,24 +1096,6 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
   )
 }
 
-function SavedViewStrip({ savedViews = [], onApply }) {
-  if (!savedViews.length) return null
-  return (
-    <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
-      {savedViews.slice(0, 7).map((view) => (
-        <button
-          key={view.id}
-          type="button"
-          onClick={() => onApply(view)}
-          className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:text-[#00614f]"
-        >
-          {view.name}
-        </button>
-      ))}
-    </section>
-  )
-}
-
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
@@ -1129,11 +1115,15 @@ function AttorneyMattersPage() {
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
 
   const viewKey = normalize(matterType || 'all')
+  const requestedMatterModuleDisabled =
+    ['transfer', 'bond', 'cancellation'].includes(viewKey) &&
+    !isAttorneyMatterModuleEnabled(permissionsState.matterModules, viewKey)
 
   useEffect(() => {
     let active = true
 
     async function load() {
+      if (requestedMatterModuleDisabled) return
       setLoading(true)
       setError('')
       try {
@@ -1152,7 +1142,13 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [viewKey])
+  }, [requestedMatterModuleDisabled, viewKey])
+
+  useEffect(() => {
+    if (permissionsState.loading || !requestedMatterModuleDisabled) return
+    const fallbackView = getFallbackAttorneyMatterView(permissionsState.matterModules)
+    navigate(`/attorney/matters/${fallbackView}`, { replace: true })
+  }, [navigate, permissionsState.loading, permissionsState.matterModules, requestedMatterModuleDisabled])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -1182,13 +1178,14 @@ function AttorneyMattersPage() {
     if (!source) return null
     return buildAttorneyMatterWorkspace(source, {
       view: viewKey,
+      matterModules: permissionsState.matterModules,
       search: searchTerm,
       filters,
       quickFilter,
       page,
       pageSize,
     })
-  }, [filters, page, pageSize, quickFilter, searchTerm, source, viewKey])
+  }, [filters, page, pageSize, permissionsState.matterModules, quickFilter, searchTerm, source, viewKey])
 
   const savedViews = useMemo(() => [...(workspace?.savedViews || []), ...localSavedViews], [localSavedViews, workspace?.savedViews])
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
@@ -1303,6 +1300,7 @@ function AttorneyMattersPage() {
   }
 
   if (permissionsState.loading) return <LoadingState copy="Loading attorney permissions..." />
+  if (requestedMatterModuleDisabled) return <LoadingState copy="Opening an enabled matter view..." />
   if (loading) return <LoadingState />
 
   if (error || permissionsState.error) {
@@ -1326,7 +1324,6 @@ function AttorneyMattersPage() {
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
         <MatterWorkspaceHeader summary={workspace.summary} view={workspace.view} onSaveView={handleSaveView} />
-        <SavedViewStrip savedViews={savedViews} onApply={handleApplySavedView} />
         <UnifiedFilterBar
           workspace={workspace}
           filters={filters}

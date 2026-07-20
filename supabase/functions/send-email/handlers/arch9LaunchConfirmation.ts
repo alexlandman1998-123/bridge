@@ -54,7 +54,7 @@ function renderEmailHtml({
       Thank you for your Arch9 request. We will be in contact shortly.
     </div>
     <div style="margin:0;padding:24px 12px;background:#f3f0ea;">
-      <div style="max-width:560px;margin:0 auto;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
+      <div style="width:100%;max-width:560px;margin:0 auto;box-sizing:border-box;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
         <div style="padding:26px 8px 20px;text-align:center;">
           <p style="margin:0;font-size:24px;line-height:1.1;letter-spacing:0.36em;color:#123a34;font-weight:300;">ARCH9</p>
         </div>
@@ -142,7 +142,7 @@ function renderInternalNotificationHtml({
       ${escapeHtml(hidden)}
     </div>
     <div style="margin:0;padding:24px 12px;background:#f3f0ea;">
-      <div style="max-width:620px;margin:0 auto;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
+      <div style="width:100%;max-width:620px;margin:0 auto;box-sizing:border-box;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
         <div style="padding:24px 8px 18px;text-align:center;">
           <p style="margin:0;font-size:22px;line-height:1.1;letter-spacing:0.34em;color:#123a34;font-weight:300;">ARCH9</p>
         </div>

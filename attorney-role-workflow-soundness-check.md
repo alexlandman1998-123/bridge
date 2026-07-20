@@ -33,6 +33,20 @@ The current default is Option A:
 - Managers/admins may assign or reassign lane attorneys.
 - Managers/admins must assign themselves or another working attorney before editing the lane.
 
+## Product Rule: Transfer Attorney Controls Legal Lanes
+
+Transfer, bond, and cancellation remain separate transaction legal roles and separate workflow views. They should not be collapsed into one person or one assignment by default.
+
+The primary transfer attorney is the legal process controller for the transaction. When a user is assigned as the primary `transfer_attorney` on a transaction, the product should allow that user to operate the `transfer`, `bond`, and `cancellation` workflow lanes for that transaction.
+
+Bond and cancellation attorneys remain lane specialists. They can operate their own assigned lane, but they do not receive reciprocal authority over the transfer lane or each other by default.
+
+This controller rule is distinct from management override:
+
+- Transfer attorney controller authority comes from primary transaction assignment.
+- Management override authority comes from firm management status plus `attorney_firms.allow_management_lane_override`.
+- Audit metadata should distinguish controller actions from direct lane-assigned attorney actions and management override actions.
+
 ## Future Override Setting
 
 The migration adds `attorney_firms.allow_management_lane_override`, defaulting to `false`.
@@ -55,6 +69,7 @@ Future override events should use `management_override_action` when `allow_manag
 - Attorney manager can assign/reassign attorneys: covered by assignment permissions and UI action visibility.
 - Attorney manager can assign self to transfer lane: surfaced through the transaction workspace management action, routed to assignment controls.
 - Attorney manager assigned as transfer attorney can update transfer lane: covered by primary lane assignment check.
+- Primary transfer attorney can operate bond and cancellation lanes as transaction controller: planned controller rule, distinct from same-person bond/cancellation assignment.
 - Attorney manager assigned as bond attorney can update bond lane: helper supports bond lane checks.
 - Attorney manager not assigned cannot update lane by default: enforced in `AttorneyTransactionDetail`.
 - Attorney manager not assigned can add management note if permitted: existing internal note permissions remain separate.

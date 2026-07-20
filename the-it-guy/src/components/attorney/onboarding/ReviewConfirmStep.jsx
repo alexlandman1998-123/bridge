@@ -19,13 +19,9 @@ import {
   Users,
 } from 'lucide-react'
 import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
+import { ATTORNEY_DEPARTMENT_LABELS } from '../../../services/attorneyMatterModules.js'
 
-const DEPARTMENT_LABELS = {
-  transfer: 'Transfer Department',
-  bond: 'Bond Department',
-  admin: 'Admin Department',
-  management: 'Management',
-}
+const DEPARTMENT_LABELS = ATTORNEY_DEPARTMENT_LABELS
 
 const STATE_LABELS = {
   complete: 'Ready',
@@ -43,12 +39,13 @@ const STATE_ICONS = {
   needs_attention: AlertCircle,
 }
 
-function SummaryCard({ title, icon: Icon, children }) {
+function SummaryCard({ title, icon, children }) {
+  const HeaderIcon = icon
   return (
     <article className="attorney-review-card">
       <div className="attorney-review-card-head">
         <span>
-          <Icon size={16} aria-hidden="true" />
+          <HeaderIcon size={16} aria-hidden="true" />
         </span>
         <h4>{title}</h4>
       </div>

@@ -1,10 +1,8 @@
 import { BriefcaseBusiness, CheckCircle2, Circle, Landmark, LockKeyhole, Scale, ShieldCheck, Users } from 'lucide-react'
+import { ATTORNEY_DEPARTMENT_LABELS, ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES } from '../../../services/attorneyMatterModules'
 
 const LABELS = {
-  transfer: 'Transfer Department',
-  bond: 'Bond Department',
-  admin: 'Admin Department',
-  management: 'Management',
+  ...ATTORNEY_DEPARTMENT_LABELS,
   litigation: 'Litigation',
   estates: 'Estates',
   commercial: 'Commercial',
@@ -14,6 +12,7 @@ const LABELS = {
 const DESCRIPTIONS = {
   transfer: 'Transfer matters, registration, and conveyancing workflow.',
   bond: 'Bond registration and mortgage-related workflow.',
+  cancellation: 'Bond cancellation instructions, releases, and follow-up workflow.',
   admin: 'Operations, support, finance handoffs, and coordination tasks.',
   management: 'Leadership, oversight, reporting, and firm governance.',
   litigation: 'Disputes, court process, and legal representation workflow.',
@@ -25,6 +24,7 @@ const DESCRIPTIONS = {
 const METADATA = {
   transfer: { icon: Scale, accent: 'Conveyancing', lanes: ['Sale transfer', 'Documents', 'Registration'] },
   bond: { icon: Landmark, accent: 'Finance', lanes: ['Bond instruction', 'Guarantees', 'Lodgement'] },
+  cancellation: { icon: Scale, accent: 'Cancellation', lanes: ['Instruction', 'Release', 'Registration'] },
   admin: { icon: Users, accent: 'Operations', lanes: ['Intake', 'Billing', 'Scheduling'] },
   management: { icon: BriefcaseBusiness, accent: 'Governance', lanes: ['Oversight', 'Reporting', 'Permissions'] },
 }
@@ -73,7 +73,7 @@ function onToggleDepartmentSafe(onToggle, type) {
 }
 
 function DepartmentsStep({ selectedDepartments = {}, onToggleDepartment }) {
-  const activeCount = ['transfer', 'bond', 'admin', 'management'].filter((departmentType) => Boolean(selectedDepartments[departmentType])).length
+  const activeCount = ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES.filter((departmentType) => Boolean(selectedDepartments[departmentType])).length
 
   return (
     <div className="attorney-step-flow">
@@ -95,7 +95,7 @@ function DepartmentsStep({ selectedDepartments = {}, onToggleDepartment }) {
       </div>
 
       <div className="attorney-departments-grid">
-        {['transfer', 'bond', 'admin', 'management'].map((departmentType) => (
+        {ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES.map((departmentType) => (
           <DepartmentCard
             key={departmentType}
             type={departmentType}

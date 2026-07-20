@@ -85,7 +85,7 @@ function buildHtml(
   const checklist = Array.isArray(copy.checklist) ? copy.checklist : [];
   return `
     <div style="background:#f4f7fb;padding:32px 16px;font-family:Inter,Arial,sans-serif;color:#102236;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #dbe3ee;border-radius:24px;padding:32px;">
+      <div style="width:100%;max-width:680px;margin:0 auto;box-sizing:border-box;background:#ffffff;border:1px solid #dbe3ee;border-radius:24px;padding:32px;">
         <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#6b7d93;">Arch9 Commercial</p>
         <h1 style="margin:0;font-size:28px;line-height:1.15;font-weight:700;color:#102236;">${copy.headline}</h1>
         <p style="margin:16px 0 0;font-size:15px;line-height:1.8;color:#4a5a6f;">${copy.body}</p>

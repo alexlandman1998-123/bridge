@@ -105,7 +105,10 @@ export async function handleWorkspaceInviteEmail(
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0;padding:0;background:#edf3f8;">
       <tr>
         <td align="center" style="padding:32px 14px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:680px;border-collapse:separate;border-spacing:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#142132;">
+          <!--[if mso]>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="680" align="center"><tr><td>
+          <![endif]-->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;max-width:680px;border-collapse:separate;border-spacing:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#142132;">
             <tr>
               <td style="padding:0;">
                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="overflow:hidden;border-radius:28px;background:#ffffff;border:1px solid #dbe6f2;box-shadow:0 28px 80px rgba(15,47,79,0.16);">
@@ -175,6 +178,9 @@ export async function handleWorkspaceInviteEmail(
               </td>
             </tr>
           </table>
+          <!--[if mso]>
+          </td></tr></table>
+          <![endif]-->
         </td>
       </tr>
     </table>

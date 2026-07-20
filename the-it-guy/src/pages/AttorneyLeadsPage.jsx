@@ -28,6 +28,7 @@ import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyLeadRoleAccess } from '../core/leads/attorneyLeadContract'
+import { isAttorneyMatterModuleEnabled } from '../services/attorneyMatterModules'
 import { sendAttorneyQuoteEmail } from '../services/attorneyQuoteEmailService'
 import {
   addAttorneyLeadActivity,
@@ -70,6 +71,12 @@ const SERVICE_OPTIONS = Object.freeze([
   ['bond_cancellation', 'Bond Cancellation'],
   ['property_legal_advice', 'Property Legal Advice'],
   ['general_enquiry', 'General Enquiry'],
+])
+
+const MATTER_TYPE_OPTIONS = Object.freeze([
+  ['transfer', 'Transfer'],
+  ['bond', 'Bond Registration'],
+  ['cancellation', 'Bond Cancellation'],
 ])
 
 const SOURCE_OPTIONS = Object.freeze([
@@ -625,6 +632,7 @@ function LeadDetailDrawer({
   quoteLinks,
   quotesLoading,
   quoteSaving,
+  matterModules,
   error,
   onClose,
   onStageSave,
@@ -655,6 +663,11 @@ function LeadDetailDrawer({
   const [conversionFinanceType, setConversionFinanceType] = useState('cash')
   const [conversionNote, setConversionNote] = useState('')
   const [conversionConfirmed, setConversionConfirmed] = useState(false)
+  const enabledMatterTypeOptions = useMemo(
+    () => MATTER_TYPE_OPTIONS.filter(([value]) => isAttorneyMatterModuleEnabled(matterModules, value)),
+    [matterModules],
+  )
+  const fallbackMatterType = enabledMatterTypeOptions[0]?.[0] || 'transfer'
 
   useEffect(() => {
     if (!lead) return
@@ -668,7 +681,8 @@ function LeadDetailDrawer({
       setActivityOutcome('')
       setFollowUpAt(formatDateTimeLocal(lead.nextFollowUpAt))
       setFollowUpNote('')
-      const nextMatterType = defaultMatterTypeForLead(lead)
+      const preferredMatterType = defaultMatterTypeForLead(lead)
+      const nextMatterType = isAttorneyMatterModuleEnabled(matterModules, preferredMatterType) ? preferredMatterType : fallbackMatterType
       setMatterType(nextMatterType)
       setClientRole(defaultClientRoleForMatter(lead, nextMatterType))
       setConversionAssigneeId(lead.assignedUserId || '')
@@ -678,12 +692,12 @@ function LeadDetailDrawer({
       setConversionNote('')
       setConversionConfirmed(false)
     })
-  }, [lead])
+  }, [fallbackMatterType, lead, matterModules])
 
   if (!lead) return null
   const contact = lead.contact || {}
   const detail = lead.detail || {}
-  const conversionReady = ['qualified', 'quote_sent', 'follow_up', 'won'].includes(lead.stage)
+  const conversionReady = ['qualified', 'quote_sent', 'follow_up', 'won'].includes(lead.stage) && enabledMatterTypeOptions.length > 0
   const conversionAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, matterType))
 
   return (
@@ -775,7 +789,7 @@ function LeadDetailDrawer({
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Matter type" required>
                 <select className={inputClass} value={matterType} onChange={(event) => { const nextType = event.target.value; setMatterType(nextType); setClientRole(defaultClientRoleForMatter(lead, nextType)); setConversionFinanceType(nextType === 'bond' ? 'bond' : 'cash'); setConversionAssigneeId((current) => canOwnConvertedMatter(assignees.find((assignee) => assignee.userId === current), nextType) ? current : '') }} disabled={!conversionReady}>
-                  <option value="transfer">Transfer</option><option value="bond">Bond Registration</option><option value="cancellation">Bond Cancellation</option>
+                  {enabledMatterTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </Field>
               <Field label="Client role" required>
@@ -1360,6 +1374,7 @@ export default function AttorneyLeadsPage() {
         activitySaving={activitySaving}
         followUpSaving={followUpSaving}
         conversionSaving={conversionSaving}
+        matterModules={permissions.matterModules}
         quotes={quotes}
         quoteLinks={quoteLinks}
         quotesLoading={quotesLoading}
