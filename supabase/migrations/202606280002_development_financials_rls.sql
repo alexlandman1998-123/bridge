@@ -1,5 +1,28 @@
 begin;
 
+create table if not exists public.development_participants (
+  id uuid primary key default gen_random_uuid(),
+  development_id uuid not null references public.developments(id) on delete cascade,
+  user_id uuid references public.profiles(id) on delete set null,
+  role_type text not null,
+  participant_name text,
+  participant_email text,
+  organisation_name text,
+  is_primary boolean not null default false,
+  can_view boolean not null default true,
+  can_create_transactions boolean not null default false,
+  assignment_source text not null default 'development_default',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists development_participants_development_id_idx
+  on public.development_participants (development_id);
+create index if not exists development_participants_user_id_idx
+  on public.development_participants (user_id);
+create index if not exists development_participants_email_idx
+  on public.development_participants (participant_email);
+
 create or replace function public.bridge_current_user_email()
 returns text
 language sql
