@@ -59,6 +59,7 @@
     "supabase:phase30:verify": "node scripts/phase30-attorney-calendar-promotion.test.mjs",
     "supabase:phase31:verify": "node scripts/phase31-migration-closeout.test.mjs",
     "production:phase32:verify": "node scripts/phase32-final-production-closeout.test.mjs",
+    "release:phase33:verify": "node scripts/phase33-pull-request-scope-lock.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

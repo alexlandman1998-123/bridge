@@ -1,0 +1,55 @@
+{
+  "phase": 33,
+  "status": "PULL_REQUEST_SCOPE_LOCKED",
+  "repository": "alexlandman1998-123/bridge",
+  "pullRequest": {
+    "number": 1,
+    "base": "main",
+    "head": "codex/mvp-pilot-readiness",
+    "draft": true
+  },
+  "releaseBoundary": {
+    "productionApplicationCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "phase32GovernanceCommit": "3d4888d8941a7cd9f214086f0a7db13f284c6757",
+    "excludedConcurrentCommit": "ae47263888191e8178c7f7ebb7c0824eca628135",
+    "scopeIsolationCommit": "670419e866e0b02cc6e1ff327d6c8735416b83f2",
+    "scopeIsolationStrategy": "revert_excluded_commit_without_rewriting_history"
+  },
+  "included": {
+    "applicationRuntime": "the committed runtime tree deployed from 333c08eb",
+    "database": "78 governed migrations through 202607200013",
+    "productionLedgerRows": 511,
+    "governance": "Phase 32 evidence and Phase 33 scope-lock artifacts"
+  },
+  "excluded": {
+    "categories": [
+      "attorney matter module activation",
+      "attorney workflow transfer-controller changes",
+      "legal-document editor redesign",
+      "responsive email changes",
+      "additional onboarding and role-permission changes"
+    ],
+    "deferredMigrations": [
+      "202607200014_attorney_matter_module_activation.sql",
+      "202607209904_attorney_workflow_transfer_controller_guard_phase4.sql"
+    ],
+    "recovery": "The excluded work remains recoverable from commit ae472638 and may be cherry-picked to a separately governed feature branch."
+  },
+  "allowedAfterIsolationPaths": [
+    ".github/workflows/phase33-pull-request-scope-lock-gate.yml",
+    "docs/phase-33-pull-request-scope-lock.json",
+    "docs/phase-33-pull-request-scope-lock.md",
+    "package.json",
+    "scripts/phase33-pull-request-scope-lock.test.mjs"
+  ],
+  "controls": {
+    "newRuntimeFeaturesAllowed": false,
+    "newMigrationsAllowed": false,
+    "productionDatabaseMutationAllowed": false,
+    "productionDeploymentAllowed": false,
+    "scopeAmendmentRequiresExplicitApproval": true,
+    "phase0MigrationFreezeRemainsActive": true
+  },
+  "approvedBy": "Alexander Landman (explicit Phase 33 instruction)",
+  "decision": "PR #1 contains the certified production runtime, its governed database closeout, and release evidence only. Concurrent feature work is explicitly deferred and recoverable."
+}
