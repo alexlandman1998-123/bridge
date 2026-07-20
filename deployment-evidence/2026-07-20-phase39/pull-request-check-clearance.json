@@ -83,7 +83,8 @@
         "202607090001_agency_tasks_foundation.sql upgrades the legacy tasks table with its canonical identity, transaction, creator, and metadata columns before indexing them",
         "202607140009_private_listing_transfer_attorney_allocation_phase1.sql extends placeholder scope and data-type constraints before registering private-listing attorney fields",
         "202607140018_legacy_demo_rls_scoped_replacement.sql restores the internal transaction-access and external-workspace request helper chains before replacing legacy demo policies",
-        "202607160012_attorney_client_financial_documents_phase1.sql declares firm-membership and transaction-scoped conveyancer access before financial-document policies use it"
+        "202607160012_attorney_client_financial_documents_phase1.sql declares firm-membership and transaction-scoped conveyancer access before financial-document policies use it",
+        "202607170012_seller_document_transaction_continuity_p0_6.sql adds the document-request continuity columns before its synchronization trigger references them"
       ],
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",

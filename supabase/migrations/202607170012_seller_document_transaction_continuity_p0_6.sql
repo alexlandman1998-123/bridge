@@ -1,5 +1,9 @@
 begin;
 
+alter table if exists public.document_requests
+  add column if not exists document_key text,
+  add column if not exists document_id uuid references public.documents(id) on delete set null;
+
 alter table if exists public.documents
   add column if not exists source_requirement_id uuid,
   add column if not exists source_canonical_requirement_instance_id uuid,
