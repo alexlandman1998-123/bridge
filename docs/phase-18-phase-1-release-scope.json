@@ -1,0 +1,69 @@
+{
+  "status": "PHASE_1_SCOPE_LOCKED",
+  "phase": 18,
+  "release": "controlled_residential_transaction_pilot",
+  "lockedAt": "2026-07-20",
+  "approvedBy": "Alexander Landman (explicit Phase 18 instruction)",
+  "productionBaseline": {
+    "manifestRows": 64,
+    "reviewedProductionPromotions": 36,
+    "outstandingManifestRows": 28,
+    "productionLedgerRows": 469
+  },
+  "includedCapabilities": [
+    "seller_onboarding",
+    "attorney_selection_and_assignment",
+    "transaction_creation",
+    "mandate_and_otp_generation",
+    "document_editing_and_autosave",
+    "pdf_generation",
+    "signing_and_final_publication",
+    "conditional_legal_masters",
+    "controlled_organisation_rollout"
+  ],
+  "includedExistingManifestVersions": {
+    "document_generation": ["202607170029", "202607170030", "202607170031", "202607180023", "202607180033", "202607180034", "202607180048", "202607180049", "202607180050", "202607180051", "202607180052"],
+    "attorney_identity_access": ["202607180037", "202607180038", "202607180039", "202607180040", "202607180041", "202607180042"],
+    "transaction_creation": ["202607180046"],
+    "seller_attorney_acceptance": ["20260719194500"]
+  },
+  "includedExistingManifestCount": 19,
+  "pendingConditionalMasterInventory": {
+    "files": [
+      "202607200001_conditional_legal_masters_phase4.sql",
+      "202607200002_conditional_legal_master_migration_phase10.sql",
+      "202607200003_conditional_legal_master_verification_phase11.sql"
+    ],
+    "requiredAction": "allocate_three_consecutive_unused_versions_and_certify_as_one_dependency_chain",
+    "count": 3
+  },
+  "deferredExistingManifestVersions": {
+    "attorney_accounting": ["202607180026", "202607180027", "202607180028", "202607180029", "202607180030", "202607180031", "202607180035", "202607180036"],
+    "attorney_calendar": ["202607180047"]
+  },
+  "deferredExistingManifestCount": 9,
+  "deferredCapabilities": [
+    "attorney_accounting",
+    "client_proof_uploads",
+    "client_account_statements",
+    "attorney_calendar_rsvp",
+    "multi_organisation_rollout",
+    "full_production_rollout"
+  ],
+  "pilotLimits": {
+    "organisationCount": 1,
+    "recommendedUserCountMinimum": 3,
+    "recommendedUserCountMaximum": 5,
+    "maximumParticipants": 10,
+    "controlledTransactionCountMinimum": 2,
+    "controlledTransactionCountMaximum": 3,
+    "observationDays": 7
+  },
+  "changeControl": {
+    "newFeatureScopeAllowed": false,
+    "explicitScopeAmendmentRequired": true,
+    "conditionalMasterChainMustBeInventoriedBeforePromotion": true,
+    "deferredStreamsMayNotBePromotedDuringPilotPreparation": true,
+    "phase0MigrationFreezeRemainsActive": true
+  }
+}

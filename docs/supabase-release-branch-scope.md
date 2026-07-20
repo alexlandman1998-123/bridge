@@ -1,5 +1,7 @@
 # Supabase Release Branch Scope
 
+> Historical Phase 9 snapshot. The current pilot boundary is governed by `docs/phase-18-phase-1-release-scope.json` and its Phase 18 scope gate.
+
 Generated: 2026-07-20
 Branch: `codex/mvp-pilot-readiness`
 
