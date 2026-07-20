@@ -8,8 +8,8 @@ const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const ACCESS_MODE = 'linked_ephemeral'
 const RECOVERY_CONFIRMATION = 'I_HAVE_TESTED_PRODUCTION_RECOVERY'
 const CONFIGURE_CONFIRMATION = 'CONFIGURE_PRODUCTION_ACCESS'
-const EXPECTED_PRODUCTION_LEDGER_COUNT = 433
 const RECOVERY_EVIDENCE_PATH = path.join('migration-evidence', '2026-07-20-production-recovery-phase12', 'production-database-recovery.json')
+const CLOSEOUT_EVIDENCE_PATH = path.join('docs', 'supabase-phase-8-closeout-evidence.json')
 
 function parseArgs(argv) {
   const options = { attest: false, json: false }
@@ -71,6 +71,18 @@ function requireLocalConfiguration() {
   }
 }
 
+function expectedProductionLedgerCount() {
+  const recoveryEvidence = JSON.parse(readFileSync(RECOVERY_EVIDENCE_PATH, 'utf8'))
+  const closeoutEvidence = JSON.parse(readFileSync(CLOSEOUT_EVIDENCE_PATH, 'utf8'))
+  const baseline = Number(recoveryEvidence.productionLedgerCount)
+  const promotedVersions = (closeoutEvidence.rows || [])
+    .filter((row) => row.productionLedgerRecorded === true && row.productionTargetStateVerified === true)
+    .map((row) => String(row.version || '').trim())
+  if (!Number.isInteger(baseline) || baseline < 1) throw new Error('Phase 12 recovery evidence has no valid production ledger baseline.')
+  if (new Set(promotedVersions).size !== promotedVersions.length) throw new Error('Production closeout evidence contains duplicate promoted versions.')
+  return baseline + promotedVersions.length
+}
+
 function verifyPlatformAccess() {
   const projects = parseJsonLoose(runSupabase(['projects', 'list', '--output', 'json']))
   const production = projects.find((project) => project.ref === PRODUCTION_PROJECT_REF)
@@ -85,10 +97,11 @@ function verifyPlatformAccess() {
   const row = query.rows?.[0]
   if (!row) throw new Error('The ephemeral production database probe returned no result.')
   if (row.current_database !== 'postgres') throw new Error('The production database probe reached an unexpected database.')
-  if (row.migration_count !== EXPECTED_PRODUCTION_LEDGER_COUNT) {
-    throw new Error(`Expected ${EXPECTED_PRODUCTION_LEDGER_COUNT} production migrations; found ${row.migration_count}.`)
+  const expectedLedgerCount = expectedProductionLedgerCount()
+  if (row.migration_count !== expectedLedgerCount) {
+    throw new Error(`Expected the Phase 12 baseline plus reviewed promotions (${expectedLedgerCount} production migrations); found ${row.migration_count}.`)
   }
-  return { production, row }
+  return { production, row, expectedLedgerCount }
 }
 
 function main() {
@@ -99,7 +112,7 @@ function main() {
     if (options.confirm !== CONFIGURE_CONFIRMATION) throw new Error(`Access attestation requires --confirm ${CONFIGURE_CONFIRMATION}.`)
   }
   requireLocalConfiguration()
-  const { production, row } = verifyPlatformAccess()
+  const { production, row, expectedLedgerCount } = verifyPlatformAccess()
   const result = {
     generatedAt: new Date().toISOString(),
     status: options.attest ? 'PRODUCTION_ACCESS_CONFIGURED' : 'PRODUCTION_ACCESS_VERIFIED',
@@ -113,6 +126,7 @@ function main() {
     databaseRoleAcquired: Boolean(String(row.current_user || '').trim()),
     transactionReadOnly: row.transaction_read_only === 'on',
     productionLedgerCount: row.migration_count,
+    expectedProductionLedgerCount: expectedLedgerCount,
     staticDatabaseUrlConfigured: false,
     recoveryEvidenceValidated: true,
     runtimeRecoveryConfirmationConfigured: true,

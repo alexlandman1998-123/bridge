@@ -37,3 +37,7 @@ node --env-file=.env.production.local scripts/supabase-phase7-production-executi
 The runner now requires `linked_ephemeral` access and independently verifies that `supabase/.temp/project-ref` identifies the fixed production project. SQL application uses `supabase db query --linked`; ledger recording uses `supabase migration repair --linked`.
 
 Access alone does not authorize a migration. Every production action still requires the exact version, staging evidence, approved staging-readiness record, Phase 12 recovery evidence, explicit `APPLY_TO_PRODUCTION` confirmation, dependency checks, and—before ledger recording—reviewed production evidence.
+
+## Phase 17 re-verification
+
+After the first six Phase 15 batches, the live ledger contains 469 rows. The access verifier now calculates its expected count from the approved 433-row Phase 12 recovery baseline plus 36 unique reviewed production promotions. The live Phase 17 access check passes at 469/469; it no longer treats the historical baseline as the permanent final ledger count.

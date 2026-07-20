@@ -11,6 +11,9 @@ on:
       - 'docs/supabase-phase-8-closeout-evidence.json'
       - 'docs/supabase-phase-8-closeout-report.md'
       - 'docs/supabase-phase-8-implementation-status.md'
+      - 'scripts/phase17-production-closeout.test.mjs'
+      - 'deployment-evidence/2026-07-20-phase17/**'
+      - 'docs/phase-17-production-closeout-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase8-closeout-gate.yml'
@@ -26,6 +29,9 @@ on:
       - 'docs/supabase-phase-8-closeout-evidence.json'
       - 'docs/supabase-phase-8-closeout-report.md'
       - 'docs/supabase-phase-8-implementation-status.md'
+      - 'scripts/phase17-production-closeout.test.mjs'
+      - 'deployment-evidence/2026-07-20-phase17/**'
+      - 'docs/phase-17-production-closeout-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase8-closeout-gate.yml'
@@ -52,3 +58,6 @@ jobs:
 
       - name: Print local closeout plan
         run: node scripts/supabase-phase8-closeout.mjs --plan
+
+      - name: Verify Phase 17 production closeout remains fail-closed
+        run: node scripts/phase17-production-closeout.test.mjs
