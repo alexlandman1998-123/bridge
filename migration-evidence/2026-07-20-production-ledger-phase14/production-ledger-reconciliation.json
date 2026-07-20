@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-07-20T13:04:19.059Z",
+  "status": "PRODUCTION_HISTORY_RECONCILED",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase14_user_instruction",
+  "aliasCount": 17,
+  "initialState": {
+    "legacyOnly": 17,
+    "bothRecorded": 0,
+    "canonicalOnly": 0,
+    "ledgerCount": 433,
+    "pureLocalOnlyVersions": 83,
+    "pureRemoteOnlyVersions": 17
+  },
+  "repair": {
+    "canonicalVersionsRecorded": 17,
+    "legacyVersionsRemoved": 17,
+    "commandType": "supabase_migration_repair_linked",
+    "migrationSqlExecuted": false,
+    "productionSchemaOrDataMutated": false,
+    "productionLedgerMutated": true
+  },
+  "verifiedState": {
+    "canonicalAliasesRecorded": 17,
+    "legacyAliasesRecorded": 0,
+    "ledgerCount": 433,
+    "rawCliLocalOnlyRows": 84,
+    "rawCliRemoteOnlyRows": 17,
+    "reviewedCanonicalSplitRows": 17,
+    "pureLocalOnlyVersions": 67,
+    "pureRemoteOnlyVersions": 0,
+    "divergentVersions": 0,
+    "unreviewedSplitVersions": 0
+  },
+  "verificationRetry": {
+    "required": true,
+    "mutationPerformedOnRetry": false,
+    "reason": "The Supabase CLI renders these 12-digit canonical versions as paired local-only and remote-only rows. Direct ledger verification proved the canonical rows exist, and the closeout classifier recognizes the 17 exact same-version pairs as reviewed display splits."
+  },
+  "aliases": [
+    { "canonicalVersion": "202606010001", "legacyVersion": "20260601000100", "name": "partner_routing_rules_phase1" },
+    { "canonicalVersion": "202606030007", "legacyVersion": "20260603000700", "name": "lead_communication_events" },
+    { "canonicalVersion": "202606030008", "legacyVersion": "20260603000800", "name": "lead_listing_suggestions" },
+    { "canonicalVersion": "202606030009", "legacyVersion": "20260603000900", "name": "lead_recommendations" },
+    { "canonicalVersion": "202606030010", "legacyVersion": "20260603001000", "name": "lead_saved_searches" },
+    { "canonicalVersion": "202606030011", "legacyVersion": "20260603001100", "name": "communication_delivery_preferences" },
+    { "canonicalVersion": "202606040001", "legacyVersion": "20260604000100", "name": "onboarding_role_contract_phase2" },
+    { "canonicalVersion": "202606040002", "legacyVersion": "20260604000200", "name": "workspace_entitlements_phase4" },
+    { "canonicalVersion": "202606040004", "legacyVersion": "20260604000400", "name": "workspace_entitlement_enforcement_phase5" },
+    { "canonicalVersion": "202606040005", "legacyVersion": "20260604000500", "name": "workspace_billing_operations_phase6" },
+    { "canonicalVersion": "202606050001", "legacyVersion": "20260605000100", "name": "bond_bank_relationship_profiles" },
+    { "canonicalVersion": "202606080002", "legacyVersion": "20260608000200", "name": "commercial_listings_foundation" },
+    { "canonicalVersion": "202606090010", "legacyVersion": "20260609001000", "name": "created_by_access_remediation" },
+    { "canonicalVersion": "202606110004", "legacyVersion": "20260611000400", "name": "commercial_transactions_phase2" },
+    { "canonicalVersion": "202606110005", "legacyVersion": "20260611000500", "name": "commercial_crm_foundation_phase3" },
+    { "canonicalVersion": "202606110006", "legacyVersion": "20260611000600", "name": "commercial_supply_side_phase4" },
+    { "canonicalVersion": "202606110007", "legacyVersion": "20260611000700", "name": "commercial_brokerage_os_phase5" }
+  ],
+  "remainingReleaseState": {
+    "productionPromotionEvidenceComplete": 0,
+    "productionPromotionEvidenceTotal": 64,
+    "unrelatedDuplicateLocalVersion": "202607200002",
+    "phase0FreezeRemainsActive": true
+  }
+}

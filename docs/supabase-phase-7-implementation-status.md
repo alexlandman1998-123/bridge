@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: READY_FOR_CONTROLLED_PRODUCTION_PROMOTION**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, Phase 11 certified staging, Phase 12 proved database recovery, and Phase 13 configured short-lived production access. The release is ready for controlled one-version-at-a-time promotion.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, Phase 11 certified staging, Phase 12 proved database recovery, Phase 13 configured short-lived production access, and Phase 14 reconciled 17 production-ledger timestamp aliases without changing schema or application data. The release is ready for controlled one-version-at-a-time promotion after the unrelated duplicate local version is resolved.
 
 ## Implemented Controls
 
@@ -39,8 +39,10 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Human staging-readiness approval | Alexander Landman |
 | Production access | Configured: short-lived linked login role |
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
+| Production migration history | Reconciled: 0 genuine remote-only versions |
+| Duplicate local migration version | `202607200002` must be resolved |
 | Production SQL applied in Phase 7 | No |
-| Production ledger changed in Phase 7 | No |
+| Production ledger changed in Phase 7 | No; Phase 14 changed history metadata only |
 
 ## Usage
 

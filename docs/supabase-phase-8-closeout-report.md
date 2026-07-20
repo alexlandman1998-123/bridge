@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T12:47:56.144Z
+Generated: 2026-07-20T12:59:03.295Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -13,9 +13,9 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 | Check | Result |
 | --- | --- |
-| Local migration files | 499 |
+| Local migration files | 500 |
 | Phase 5 manifest rows | 64 |
-| Duplicate versions | 0 |
+| Duplicate versions | 1 |
 | Missing manifest files | 0 |
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
@@ -25,8 +25,8 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Live verification performed | Yes |
-| Pure local-only versions | 83 |
-| Pure remote-only versions | 17 |
+| Pure local-only versions | 67 |
+| Pure remote-only versions | 0 |
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |
 | Production PITR | Disabled |

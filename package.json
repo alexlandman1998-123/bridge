@@ -25,6 +25,7 @@
     "supabase:phase11:certify": "node scripts/supabase-phase11-staging-certification.mjs --verify",
     "supabase:phase12:recovery": "node scripts/supabase-phase12-production-recovery.mjs --verify",
     "supabase:phase13:access": "node scripts/supabase-phase13-production-access.mjs --verify",
+    "supabase:phase14:ledger": "node scripts/supabase-phase14-production-ledger-reconciliation.mjs --plan",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

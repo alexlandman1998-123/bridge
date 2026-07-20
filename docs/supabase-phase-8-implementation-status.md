@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: CLOSEOUT_GATE_READY — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phases 10–13 cleared the attorney-integrity blocker, certified staging, proved database recovery, and configured production access, but Phase 7 production promotion has not completed and no production closeout evidence rows exist, so freeze retirement remains blocked.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phases 10–14 cleared the attorney-integrity blocker, certified staging, proved database recovery, configured production access, and reconciled the 17 legacy production-ledger aliases. Phase 7 production promotion has not completed and no production closeout evidence rows exist, so freeze retirement remains blocked.
 
 ## Implemented Controls
 
@@ -26,7 +26,7 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 
 | Check | Result |
 | --- | --- |
-| Duplicate local versions | 0 |
+| Duplicate local versions | 1 (`202607200002`, unrelated to Phase 14) |
 | Missing Phase 5 manifest files | 0 |
 | Phase 7 staging readiness | Certified and approved |
 | Attorney integrity blockers | 0 assignments |
@@ -36,8 +36,10 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 | Production PITR | Disabled |
 | Completed production physical backups | 8 |
 | Database recovery evidence | Proven and approved in Phase 12 |
-| Pure local-only versions | 83 |
-| Pure remote-only versions | 17 |
+| Pure local-only versions | 67 |
+| Pure remote-only versions | 0 |
+| Reviewed canonical CLI display splits | 17 |
+| Production history reconciliation | Complete; ledger remains 433 rows |
 | Phase 0 guard | Active |
 
 ## Usage
