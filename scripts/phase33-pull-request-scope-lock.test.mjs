@@ -32,6 +32,7 @@ assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/2026051
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202605110004_organisation_branding_foundation.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202605250020_bond_rls_scoped_policy_rollout_phase5b.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202606020060_transaction_finance_command_centre_phase1.sql'))
+assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202606020070_restore_seller_portal_appointments_payload.sql'))
 
 for (const commit of [
   release.productionApplicationCommit,

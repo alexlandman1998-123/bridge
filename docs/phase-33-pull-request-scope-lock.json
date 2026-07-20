@@ -97,6 +97,7 @@
     "supabase/migrations/202605110004_organisation_branding_foundation.sql",
     "supabase/migrations/202605250020_bond_rls_scoped_policy_rollout_phase5b.sql",
     "supabase/migrations/202606020060_transaction_finance_command_centre_phase1.sql",
+    "supabase/migrations/202606020070_restore_seller_portal_appointments_payload.sql",
     "supabase/migrations/202606010005_transaction_canonical_document_requirement_engine.sql",
     "supabase/migrations/202606030016_bond_application_ownership_history.sql",
     "supabase/migrations/202606030017_bond_routing_rules.sql",
