@@ -75,7 +75,8 @@
       },
       "idempotencyRepairs": [
         "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them",
-        "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults"
+        "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults",
+        "202605250020_bond_rls_scoped_policy_rollout_phase5b.sql adds role-player columns before its access function references them"
       ],
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",

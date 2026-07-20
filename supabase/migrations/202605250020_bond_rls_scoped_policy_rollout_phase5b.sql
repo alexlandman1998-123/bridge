@@ -1,4 +1,7 @@
 begin;
+alter table if exists public.transaction_role_players
+  add column if not exists user_id uuid references public.profiles(id) on delete set null,
+  add column if not exists legal_role text;
 create or replace function public.bridge_is_bond_transaction_canonical_ready(transaction_id uuid)
 returns boolean
 language sql
