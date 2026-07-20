@@ -1,5 +1,5 @@
 {
-  "status": "STAGING_APPLICATION_PENDING",
+  "status": "STAGING_INVENTORY_APPLIED",
   "phase": 22,
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
   "productionProjectRef": "isdowlnollckzvltkasn",
@@ -26,8 +26,17 @@
     "migrationLifecycleObjects": "pass",
     "verificationObjects": "pass"
   },
-  "stagingSqlApplied": false,
-  "stagingLedgerRecorded": false,
+  "stagingSqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "stagingLedgerRowsBefore": 497,
+  "stagingLedgerRowsAfter": 500,
+  "liveVerification": {
+    "recordedVersions": ["202607200004", "202607200005", "202607200006"],
+    "publishedConditionalMasters": 2,
+    "conditionalSections": 19,
+    "migrationAuditRows": 0,
+    "verificationReceiptRows": 0
+  },
   "stagingCertified": false,
   "productionMutated": false,
   "phase0MigrationFreezeRemainsActive": true
