@@ -219,7 +219,6 @@ const DeveloperIntelligencePricingSimulatorPage = lazy(() => import('./pages/dev
 const DevelopmentDetail = lazy(() => import('./pages/DevelopmentDetail'))
 const DeveloperPartnerInvitePage = lazy(() => import('./pages/DeveloperPartnerInvitePage'))
 const DeveloperAccessInvitePage = lazy(() => import('./pages/DeveloperAccessInvitePage'))
-const DeveloperPartnersPage = lazy(() => import('./pages/DeveloperPartnersPage'))
 const Developments = lazy(() => import('./pages/Developments'))
 const Documents = lazy(() => import('./pages/Documents'))
 const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
@@ -1911,9 +1910,7 @@ function AppRoutes() {
                 path="/developer/partners"
                 element={
                   <RoleRoute allowedRoles={['developer']}>
-                    <AppErrorBoundary scope="developer-partners-workspace" title="Developer partners failed to load">
-                      <DeveloperPartnersPage />
-                    </AppErrorBoundary>
+                    <Navigate to="/partners" replace />
                   </RoleRoute>
                 }
               />

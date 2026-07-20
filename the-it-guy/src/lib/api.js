@@ -23336,6 +23336,12 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
       return {
         roleType,
         selectionSource: normalizedSource,
+        partnerRoleConfigurationId: normalizeNullableUuid(
+          item?.partnerRoleConfigurationId ||
+            item?.partner_role_configuration_id ||
+            partner.partnerRoleConfigurationId ||
+            partner.partner_role_configuration_id,
+        ),
         preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
         partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
         partnerConnectionId: normalizeNullableUuid(
@@ -23367,6 +23373,12 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
           ...roleplayerSnapshot,
           roleType,
           selectionSource: normalizedSource,
+          partnerRoleConfigurationId: normalizeNullableUuid(
+            item?.partnerRoleConfigurationId ||
+              item?.partner_role_configuration_id ||
+              partner.partnerRoleConfigurationId ||
+              partner.partner_role_configuration_id,
+          ),
           preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
           partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
           partnerConnectionId: normalizeNullableUuid(
@@ -23505,9 +23517,12 @@ async function persistTransactionRolePlayersIfPossible(
       transaction_id: transactionId,
       role_type: item.roleType,
       selection_source: item.selectionSource,
-      preferred_partner_id: item.preferredPartnerId || null,
-      partner_relationship_id: item.partnerRelationshipId || null,
-      partner_connection_id: item.partnerConnectionId || null,
+      ...(item.partnerRoleConfigurationId
+        ? { partner_role_configuration_id: item.partnerRoleConfigurationId }
+        : {
+            preferred_partner_id: item.preferredPartnerId || null,
+            partner_relationship_id: item.partnerRelationshipId || item.partnerConnectionId || null,
+          }),
       partner_organisation_id: scope.organisationId || item.partnerOrganisationId || null,
       organisation_id: item.partnerOrganisationId || null,
       workspace_unit_id: item.workspaceUnitId || null,
@@ -24350,6 +24365,12 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
   const relationshipId = normalizeNullableUuid(
     item.relationshipId || item.relationship_id || partner.relationshipId || partner.relationship_id,
   )
+  const partnerRoleConfigurationId = normalizeNullableUuid(
+    item.partnerRoleConfigurationId ||
+      item.partner_role_configuration_id ||
+      partner.partnerRoleConfigurationId ||
+      partner.partner_role_configuration_id,
+  )
   const userId = normalizeNullableUuid(item.userId || item.user_id || partner.userId || partner.user_id)
   const workspaceUnitId = normalizeNullableUuid(
     item.workspaceUnitId || item.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id,
@@ -24383,6 +24404,7 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
 
   return {
     roleType,
+    partnerRoleConfigurationId,
     organisationId,
     relationshipId,
     userId,
@@ -24399,6 +24421,7 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
     activationTrigger,
     snapshot: {
       roleType,
+      partnerRoleConfigurationId,
       organisationId,
       relationshipId,
       userId,
@@ -24487,6 +24510,9 @@ function normalizeTransactionRolePlayerRow(row = {}) {
     transactionId: normalizeTextValue(row.transaction_id || row.transactionId),
     roleType: normalizeTransactionRoleplayerRoleType(row.role_type || row.roleType),
     selectionSource: normalizeTextValue(row.selection_source || row.selectionSource || snapshot.selectionSource),
+    partnerRoleConfigurationId: normalizeTextValue(
+      row.partner_role_configuration_id || row.partnerRoleConfigurationId || snapshot.partnerRoleConfigurationId,
+    ),
     preferredPartnerId: normalizeTextValue(row.preferred_partner_id || row.preferredPartnerId),
     partnerRelationshipId: normalizeTextValue(
       row.partner_relationship_id || row.partnerRelationshipId || snapshot.relationshipId,
@@ -24515,13 +24541,14 @@ async function fetchTransactionRolePlayersIfPossible(client, transactionId) {
   let query = await client
     .from('transaction_role_players')
     .select(
-      'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, activated_at, notified_at, assigned_by, snapshot_json, created_at, updated_at',
+      'id, transaction_id, role_type, selection_source, partner_role_configuration_id, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, activated_at, notified_at, assigned_by, snapshot_json, created_at, updated_at',
     )
     .eq('transaction_id', transactionId)
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'partner_relationship_id') ||
+    (isMissingColumnError(query.error, 'partner_role_configuration_id') ||
+      isMissingColumnError(query.error, 'partner_relationship_id') ||
       isMissingColumnError(query.error, 'organisation_id') ||
       isMissingColumnError(query.error, 'status') ||
       isMissingColumnError(query.error, 'assignment_status') ||
@@ -25710,12 +25737,16 @@ async function resolveAttorneyFirmAssignmentPeople(client, { firmId, assignmentT
 
   let departmentId = normalizeNullableUuid(primaryMember?.department_id)
   if (!departmentId) {
-    const departmentType = assignmentType === 'bond' ? 'bond' : 'transfer'
+    const departmentTypes = assignmentType === 'bond'
+      ? ['bond']
+      : assignmentType === 'cancellation'
+        ? ['cancellation', 'transfer', 'admin']
+        : ['transfer']
     let departmentQuery = await client
       .from('attorney_firm_departments')
       .select('id, department_type, is_active')
       .eq('firm_id', normalizedFirmId)
-      .eq('department_type', departmentType)
+      .in('department_type', departmentTypes)
       .eq('is_active', true)
       .limit(1)
       .maybeSingle()
@@ -25724,7 +25755,7 @@ async function resolveAttorneyFirmAssignmentPeople(client, { firmId, assignmentT
         .from('attorney_firm_departments')
         .select('id, department_type')
         .eq('firm_id', normalizedFirmId)
-        .eq('department_type', departmentType)
+        .in('department_type', departmentTypes)
         .limit(1)
         .maybeSingle()
     }
@@ -27751,6 +27782,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       rolePlayers: mergedRolePlayerSelections.map((item) => ({
         roleType: item.roleType,
         selectionSource: item.selectionSource,
+        partnerRoleConfigurationId: item.partnerRoleConfigurationId || null,
         preferredPartnerId: item.preferredPartnerId || null,
         partnerName: item.partnerName || null,
         email: item.email || null,
@@ -30879,12 +30911,13 @@ export async function enrichRowsWithBondIntakeContext(rows = []) {
     let query = await client
       .from('transaction_role_players')
       .select(
-        'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, removed_at, organisation_name, workspace_id, snapshot_json, created_at, updated_at',
+        'id, transaction_id, role_type, selection_source, partner_role_configuration_id, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, removed_at, organisation_name, workspace_id, snapshot_json, created_at, updated_at',
       )
       .in('transaction_id', transactionIds)
     if (
       query.error &&
       (isMissingColumnError(query.error, 'selection_source') ||
+        isMissingColumnError(query.error, 'partner_role_configuration_id') ||
         isMissingColumnError(query.error, 'preferred_partner_id') ||
         isMissingColumnError(query.error, 'partner_relationship_id') ||
         isMissingColumnError(query.error, 'partner_name') ||

@@ -97,6 +97,16 @@ function createMockClient(initialState = {}) {
   return {
     state,
     calls,
+    rpc(name, args = {}) {
+      calls.push({ rpc: name, args })
+      if (name === 'bridge_list_organisation_partner_assignment_options') {
+        const partners = (state.organisation_preferred_partners || [])
+          .filter((partner) => partner.organisation_id === args.p_organisation_id && partner.is_active !== false)
+          .sort((left, right) => Number(Boolean(right.is_preferred_default)) - Number(Boolean(left.is_preferred_default)))
+        return Promise.resolve({ data: { success: true, partners: clone(partners) }, error: null })
+      }
+      return Promise.resolve({ data: null, error: { code: 'PGRST202', message: `Unknown RPC: ${name}` } })
+    },
     from(table) {
       if (!state[table]) state[table] = []
       return {

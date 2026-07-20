@@ -758,6 +758,11 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     ...(onboarding.preferredTransferAttorney && typeof onboarding.preferredTransferAttorney === 'object'
       ? onboarding.preferredTransferAttorney
       : {}),
+    partnerRoleConfigurationId: firstText(
+      mandateDraft.transferAttorneyPartnerRoleConfigurationId,
+      mandateDraft.transfer_attorney_partner_role_configuration_id,
+      onboarding.preferredTransferAttorney?.partnerRoleConfigurationId,
+    ),
     preferredPartnerId: firstText(
       mandateDraft.transferAttorneyPreferredPartnerId,
       mandateDraft.transfer_attorney_preferred_partner_id,

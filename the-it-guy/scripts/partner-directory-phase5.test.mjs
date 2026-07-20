@@ -46,9 +46,9 @@ for (const token of [
   'removeOrganisationPreferredPartner',
   "new Set(['transfer_attorney', 'bond_attorney', 'cancellation_attorney'])",
   'Referral Agency',
-  'Add third party',
+  'Add partner',
 ]) {
-  assert(files.partnersPage.includes(token), `PartnersPage should preserve simplified third-party directory behavior: ${token}`)
+  assert(files.partnersPage.includes(token), `PartnersPage should preserve the unified partner directory behavior: ${token}`)
 }
 
 for (const token of [

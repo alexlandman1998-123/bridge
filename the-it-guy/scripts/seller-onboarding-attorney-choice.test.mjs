@@ -20,7 +20,8 @@ assert.ok(attorneySelector.includes('Search connected attorneys...'), 'the attor
 assert.ok(attorneySelector.includes("isMobile ? 'fixed inset-x-0 bottom-0"), 'the attorney picker must become a bottom sheet on mobile')
 assert.ok(leadWorkspace.includes("getPartnerAssignmentOptions(snapshot, 'transfer_attorney', accessContext)"), 'the dropdown must load accepted connected attorney firms')
 assert.ok(leadWorkspace.includes('transferAttorneyPartnerOrganisationId: preferredAttorneyId'), 'the selected connected organisation must be bound to onboarding creation')
-assert.ok(privateListingService.includes(".eq('id', requestedPreferredAttorneyId)"), 'the service must validate the selected attorney against the agency')
+assert.ok(privateListingService.includes("client.rpc('bridge_list_organisation_partner_assignment_options'"), 'the service must validate the selected attorney through canonical assignment options')
+assert.ok(privateListingService.includes('activeTransferAttorneys.find'), 'the canonical options must be scoped to the selected attorney')
 assert.ok(privateListingService.includes("client.rpc('bridge_resolve_seller_connected_transfer_attorney'"), 'the send path must resolve the connected organisation automatically')
 
 assert.ok(sellerOnboarding.includes('This is our preferred transferring attorney. Do you accept?'), 'seller onboarding must present the agency nomination')

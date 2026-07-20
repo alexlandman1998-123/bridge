@@ -317,7 +317,16 @@ function buildTransactionPartnerAssignment({
     transaction_id: normalizeText(input.transactionId || input.transaction_id),
     agency_organisation_id: normalizeText(input.agencyOrganisationId || input.agencyOrganizationId || input.agency_organisation_id || input.agency_organization_id || input.sourceOrganisationId || input.source_organisation_id),
     partner_organisation_id: partnerOrganisationId || null,
-    partner_connection_id: normalizeText(input.partnerConnectionId || input.partner_connection_id || connection?.id || connection?.connectionId || connection?.connection_id) || null,
+    partner_relationship_id: normalizeText(
+      input.partnerRelationshipId ||
+      input.partner_relationship_id ||
+      input.partnerConnectionId ||
+      input.partner_connection_id ||
+      connection?.relationshipId ||
+      connection?.id ||
+      connection?.connectionId ||
+      connection?.connection_id,
+    ) || null,
     partner_service_type: serviceType,
     partner_role: roleType,
     assigned_person_id: getConnectionPersonId(input) || null,
@@ -438,8 +447,18 @@ export function toPartnerConnection(row = {}) {
       .filter(([, serviceKeys]) => services.some((service) => service?.isActive !== false && serviceKeys.includes(service.key)))
       .map(([roleType]) => roleType),
   ].filter(Boolean).filter((roleType, index, list) => roleType !== 'other' && list.indexOf(roleType) === index)
+  const roleConfigurations = (Array.isArray(row.roleConfigurations) ? row.roleConfigurations : [])
+    .map((configuration) => ({
+      id: normalizeText(configuration?.id),
+      roleType: normalizeRoleType(configuration?.roleType || configuration?.role_type),
+      isDefault: configuration?.isDefault === true || configuration?.is_preferred_default === true,
+      scopeType: normalizeText(configuration?.scopeType || configuration?.scope_type) || 'all_developments',
+      scope: configuration?.scope && typeof configuration.scope === 'object' ? configuration.scope : {},
+    }))
+    .filter((configuration) => configuration.id)
   return {
     id: row.id || row.connection_id || row.connectionId || '',
+    relationshipId: row.relationship_id || row.relationshipId || row.id || row.connection_id || row.connectionId || '',
     sourceOrganizationId: row.source_organization_id || row.sourceOrganizationId || null,
     targetOrganizationId: row.target_organization_id || row.targetOrganizationId || null,
     partnerOrganizationId: row.partner_organization_id || row.partnerOrganizationId || row.id || null,
@@ -449,6 +468,7 @@ export function toPartnerConnection(row = {}) {
     partnerSubtype: normalizeText(row.partner_organization_subtype || row.partnerOrganizationSubtype || row.organization_subtype || row.organizationSubtype),
     partnerRoleType,
     partnerRoleTypes,
+    roleConfigurations,
     services,
     serviceLabels: services.filter((service) => service.isActive !== false).map((service) => service.label),
     relationshipType,
@@ -485,13 +505,19 @@ export function toPartnerCandidate(row = {}) {
   }
 }
 
-export function toTransactionPartnerOption(connection = {}) {
+export function toTransactionPartnerOption(connection = {}, roleType = '') {
   const normalized = connection.partnerName ? connection : toPartnerConnection(connection)
+  const normalizedRoleType = normalizeRoleType(roleType)
+  const roleConfiguration = normalized.roleConfigurations?.find((configuration) =>
+    configuration.roleType === normalizedRoleType ||
+    (normalizedRoleType === 'developer_contact' && configuration.roleType === 'developer'),
+  ) || null
   return {
     id: `partner-connection:${normalized.id}`,
-    source: 'partner_connection',
+    source: 'organisation_partner',
+    partnerRoleConfigurationId: roleConfiguration?.id || null,
     connectionId: normalized.id,
-    relationshipId: null,
+    relationshipId: normalized.relationshipId || normalized.id,
     relationshipType: normalized.isPreferred ? 'preferred' : 'connected',
     companyName: normalized.partnerName,
     email: '',
@@ -511,13 +537,10 @@ export function toTransactionPartnerOption(connection = {}) {
 export async function listPartnerConnections(organizationId) {
   const client = requireClient()
   if (!organizationId) throw new Error('Organization is required.')
-  const result = await client.rpc('bridge_phase4_list_partner_connections', {
-    p_organization_id: organizationId,
+  const result = await client.rpc('bridge_list_partner_connections_canonical', {
+    p_organisation_id: organizationId,
   })
-  if (result.error) {
-    if (result.error.code === '42883') return { connections: [], recommendations: [], canManage: false }
-    throw result.error
-  }
+  if (result.error) throw result.error
   const data = assertRpcSuccess(result, 'Unable to load partner connections.')
   return {
     connections: (Array.isArray(data.connections) ? data.connections : []).map(toPartnerConnection),
@@ -599,7 +622,7 @@ export async function listTransactionPartnerConnectionOptions({ organizationId, 
       if (left.isPreferred !== right.isPreferred) return left.isPreferred ? -1 : 1
       return right.transactionCount - left.transactionCount || left.partnerName.localeCompare(right.partnerName)
     })
-    .map(toTransactionPartnerOption)
+    .map((connection) => toTransactionPartnerOption(connection, roleType))
 }
 
 export const __partnerNetworkServiceTestUtils = {

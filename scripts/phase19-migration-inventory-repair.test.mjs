@@ -24,8 +24,12 @@ const manifestVersions = new Set(manifest.rows.map((row) => row.version))
 const phase22 = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase22/staging-inventory-expansion.json', 'utf8'))
 const authorizedPostBaselineMigrations = [
   '202607200007_document_generator_least_privilege_h2_fix.sql',
+  '202607200008_unified_partner_directory_read_model.sql',
   '202607200009_partner_identity_linking_and_deduplication.sql',
   '202607200010_canonical_partner_relationship_storage.sql',
+  '202607200011_partner_role_configuration_separation.sql',
+  '202607200012_canonical_partner_assignment_ids.sql',
+  '202607200013_retire_legacy_partner_paths.sql',
   '202607209901_attorney_professional_role_persistence_phase24_fix.sql',
   '202607209902_attorney_professional_permission_cutover_phase24_fix.sql',
   '202607209903_transaction_participant_requirements_least_privilege_phase25_fix.sql',

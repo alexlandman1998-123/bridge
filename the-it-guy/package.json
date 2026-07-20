@@ -674,6 +674,7 @@
     "test:transfer-instruction-lifecycle-assurance-phase7": "node scripts/transfer-instruction-lifecycle-assurance-phase7.test.mjs",
     "test:partner-directory-phase5": "node scripts/partner-directory-phase5.test.mjs",
     "test:partner-directory-phase6": "node scripts/partner-directory-phase6.test.mjs",
+    "test:unified-partner-directory-phase2": "node src/services/__tests__/partnerDirectoryService.test.js && node scripts/unified-partner-directory-phase2.test.mjs",
     "test:contract-studio-safety-baseline": "node scripts/contract-studio-safety-baseline.test.mjs",
     "test:addendum-template-phase0": "node scripts/addendum-template-phase0.test.mjs",
     "test:addendum-template-phase1": "node scripts/addendum-template-phase1.test.mjs",

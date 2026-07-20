@@ -8,6 +8,7 @@ export function mapPreferredDirectoryPartnerToTransactionOption(partner = {}) {
   return {
     id: `preferred-partner:${id}`,
     source: 'preferred_partner',
+    partnerRoleConfigurationId: partner.partnerRoleConfigurationId || partner.partner_role_configuration_id || null,
     preferredPartnerId: id,
     relationshipId: partner.developerPartnerRelationshipId || null,
     relationshipType: partner.isPreferredDefault ? 'preferred' : 'operational_partner',
@@ -52,6 +53,8 @@ export function mergePartnerConnectionOptions(connectionOptions = [], legacyOpti
       ...preferredRecord,
       connectionId: preferredRecord.connectionId || secondaryRecord.connectionId || null,
       relationshipId: preferredRecord.relationshipId || secondaryRecord.relationshipId || null,
+      partnerRoleConfigurationId:
+        preferredRecord.partnerRoleConfigurationId || secondaryRecord.partnerRoleConfigurationId || null,
       preferredPartnerId: preferredRecord.preferredPartnerId || secondaryRecord.preferredPartnerId || null,
       organisationId: preferredRecord.organisationId || secondaryRecord.organisationId || null,
       partnerOrganisationId: preferredRecord.partnerOrganisationId || secondaryRecord.partnerOrganisationId || null,
@@ -86,6 +89,8 @@ export function partnerOptionToRolePlayerSelection(roleType, partner, selectionS
     roleType,
     source: resolvedSelectionSource,
     selectionSource: resolvedSelectionSource,
+    partnerRoleConfigurationId:
+      partner.partnerRoleConfigurationId || partner.partner_role_configuration_id || null,
     preferredPartnerId: partner.preferredPartnerId || partner.preferred_partner_id || null,
     partnerRelationshipId: partner.relationshipId || null,
     partnerConnectionId: partner.connectionId || null,

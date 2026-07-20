@@ -5065,47 +5065,35 @@ export async function sendSellerOnboarding(
       throw new Error('The selected attorney is no longer connected to this agency.')
     }
   }
-  let preferredAttorneyBuilder = client
-    .from('organisation_preferred_partners')
-    .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
-    .eq('organisation_id', listing.organisationId)
-    .eq('partner_type', 'transfer_attorney')
-    .eq('is_active', true)
-    .order('is_preferred_default', { ascending: false })
-    .order('company_name', { ascending: true })
-    .limit(1)
-  if (requestedPreferredAttorneyId) preferredAttorneyBuilder = preferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
-  let preferredAttorneyQuery = await preferredAttorneyBuilder.maybeSingle()
-
-  if (preferredAttorneyQuery.error && isMissingColumnError(preferredAttorneyQuery.error, 'partner_organisation_id')) {
-    let legacyPreferredAttorneyBuilder = client
-      .from('organisation_preferred_partners')
-      .select('id, company_name, contact_person, email_address, phone_number, is_preferred_default')
-      .eq('organisation_id', listing.organisationId)
-      .eq('partner_type', 'transfer_attorney')
-      .eq('is_active', true)
-      .order('is_preferred_default', { ascending: false })
-      .order('company_name', { ascending: true })
-      .limit(1)
-    if (requestedPreferredAttorneyId) legacyPreferredAttorneyBuilder = legacyPreferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
-    preferredAttorneyQuery = await legacyPreferredAttorneyBuilder.maybeSingle()
+  const preferredAttorneyOptions = await client.rpc('bridge_list_organisation_partner_assignment_options', {
+    p_organisation_id: listing.organisationId,
+  })
+  if (preferredAttorneyOptions.error) throw preferredAttorneyOptions.error
+  if (preferredAttorneyOptions.data?.success === false) {
+    throw new Error(preferredAttorneyOptions.data.code || 'Unable to load transfer-attorney partners.')
   }
-  if (preferredAttorneyQuery.error) throw preferredAttorneyQuery.error
-  if (!preferredAttorneyQuery.data?.id || !normalizeText(preferredAttorneyQuery.data?.company_name)) {
+  const activeTransferAttorneys = (Array.isArray(preferredAttorneyOptions.data?.partners)
+    ? preferredAttorneyOptions.data.partners
+    : []).filter((partner) => partner.partner_type === 'transfer_attorney' && partner.is_active !== false)
+  const preferredAttorney = requestedPreferredAttorneyId
+    ? activeTransferAttorneys.find((partner) => normalizeText(partner.id) === requestedPreferredAttorneyId)
+    : activeTransferAttorneys[0]
+  if (!preferredAttorney?.id || !normalizeText(preferredAttorney.company_name)) {
     throw new Error(requestedPreferredAttorneyId
       ? 'The selected transfer attorney is no longer active for this agency.'
       : 'Configure an active preferred transfer attorney before sending seller onboarding.')
   }
-  if (!normalizeText(preferredAttorneyQuery.data?.partner_organisation_id)) {
+  if (!normalizeText(preferredAttorney.partner_organisation_id)) {
     throw new Error('The selected transfer attorney must be connected to an attorney organisation before onboarding can be sent.')
   }
   const preferredTransferAttorney = {
-    preferredPartnerId: preferredAttorneyQuery.data.id,
-    partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
-    companyName: normalizeText(preferredAttorneyQuery.data.company_name),
-    contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
-    email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
-    phone: normalizeText(preferredAttorneyQuery.data.phone_number),
+    partnerRoleConfigurationId: preferredAttorney.partner_role_configuration_id || null,
+    preferredPartnerId: preferredAttorney.id,
+    partnerOrganisationId: preferredAttorney.partner_organisation_id || null,
+    companyName: normalizeText(preferredAttorney.company_name),
+    contactPerson: normalizeText(preferredAttorney.contact_person),
+    email: normalizeText(preferredAttorney.email_address).toLowerCase(),
+    phone: normalizeText(preferredAttorney.phone_number),
     selectionSource: 'agency_recommended',
   }
 

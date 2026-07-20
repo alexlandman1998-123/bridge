@@ -10,6 +10,7 @@ const root = resolve(here, '..')
 const listingId = '11111111-1111-4111-8111-111111111111'
 const partnerId = '22222222-2222-4222-8222-222222222222'
 const packetId = '33333333-3333-4333-8333-333333333333'
+const roleConfigurationId = '44444444-4444-4444-8444-444444444444'
 
 const mandateData = mapSellerOnboardingToMandateData({
   onboardingSubmission: { status: 'completed' },
@@ -23,6 +24,7 @@ const mandateData = mapSellerOnboardingToMandateData({
     commissionStructure: 'percentage',
     commissionPercent: '5',
     transferAttorneyPreferredPartnerId: partnerId,
+    transferAttorneyPartnerRoleConfigurationId: roleConfigurationId,
     transferAttorneyCompanyName: 'Example Attorneys Inc.',
     transferAttorneyContactPerson: 'Transfer Department',
     transferAttorneyEmail: 'TRANSFERS@EXAMPLE.CO.ZA',
@@ -48,6 +50,7 @@ const allocationInput = buildPrivateListingAttorneyAllocationInput({
 
 assert.equal(allocationInput.p_private_listing_id, listingId)
 assert.equal(allocationInput.p_preferred_partner_id, partnerId)
+assert.equal(allocationInput.p_partner_role_configuration_id, roleConfigurationId)
 assert.equal(allocationInput.p_company_name, 'Example Attorneys Inc.')
 assert.equal(allocationInput.p_email_address, 'transfers@example.co.za')
 assert.equal(allocationInput.p_selection_source, 'seller_mandate')

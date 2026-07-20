@@ -62,7 +62,8 @@ try {
 
     const option = __partnerNetworkServiceTestUtils.toTransactionPartnerOption(connection)
     assert.equal(option.id, 'partner-connection:connection-1')
-    assert.equal(option.relationshipId, null)
+    assert.equal(option.relationshipId, 'connection-1')
+    assert.equal(option.source, 'organisation_partner')
     assert.equal(option.relationshipType, 'preferred')
     assert.equal(option.organisationId, 'org-tucker')
     assert.deepEqual(option.services.map((service) => service.key), ['property_transfers', 'bond_registrations'])
@@ -94,7 +95,7 @@ try {
       'transaction_id',
       'agency_organisation_id',
       'partner_organisation_id',
-      'partner_connection_id',
+      'partner_relationship_id',
       'partner_service_type',
       'partner_role',
       'assigned_person_id',
@@ -114,7 +115,7 @@ try {
     assert.equal(workflow.assignment.agency_organisation_id, 'agency-1')
     assert.equal(workflow.assignment.assignment_status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.active)
     assert.equal(workflow.assignment.partner_organisation_id, 'org-tucker')
-    assert.equal(workflow.assignment.partner_connection_id, 'connection-1')
+    assert.equal(workflow.assignment.partner_relationship_id, 'connection-1')
     assert.equal(workflow.assignment.partner_service_type, 'property_transfers')
     assert.equal(workflow.assignment.partner_role, 'transfer_attorney')
     assert.equal(workflow.assignment.assigned_person_id, 'user-attorney-1')
@@ -150,7 +151,7 @@ try {
     assert.equal(workflow.assignment.agency_organisation_id, 'agency-1')
     assert.equal(workflow.assignment.assignment_status, TRANSACTION_PARTNER_ASSIGNMENT_STATUSES.pendingOnboarding)
     assert.equal(workflow.assignment.partner_organisation_id, 'org-pending-bond')
-    assert.equal(workflow.assignment.partner_connection_id, null)
+    assert.equal(workflow.assignment.partner_relationship_id, null)
     assert.equal(workflow.assignment.partner_service_type, 'bond_origination')
     assert.equal(workflow.assignment.partner_role, 'bond_originator')
     assert.equal(workflow.assignment.assigned_person_id, null)

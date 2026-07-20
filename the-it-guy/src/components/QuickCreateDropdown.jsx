@@ -86,8 +86,8 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
     label: 'Organisation',
     items: [
       {
-        type: 'third-party',
-        label: 'Third Party',
+        type: 'partner',
+        label: 'Partner',
         helper: 'Add an attorney, bond originator, or referral agency',
         icon: Building2,
         action: 'route',

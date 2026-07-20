@@ -151,6 +151,8 @@ assertContract(
 )
 for (const token of [
   'buildPremiumSellerOnboardingInvitationHtml',
+  'width="100%" class="arch9-shell"',
+  'max-width: 660px',
   'Complete your seller information',
   'Seller information',
   'needs a few details from you before your property sale can move ahead',
