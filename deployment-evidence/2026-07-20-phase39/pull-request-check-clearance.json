@@ -61,13 +61,14 @@
       "previewBaseline": {
         "migration": "202605090000_production_schema_baseline.sql",
         "sourceCommit": "4ee5387b8bbc1540e5545c11c22fedfbd552d4d0",
-        "sha256": "dfc31628fa3aca122414f76bf28ffbf3783fe0f6c10263b988ab4ab0ca042e88",
-        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred and the six missing May 8 document/signing sources restored before their first dependent object",
+        "sha256": "4f359874208b102c3a9c7d96e8733e03ff3b0a2a375caa5078bb8a532aaeb0a9",
+        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred and missing document, signing, and private-listing foundations restored before their first dependent objects",
         "bootstrapRepairs": [
           "defer transaction foreign keys until public.transactions exists",
           "restore the six missing May 8 document and signing sources before their first dependent object",
           "declare public.set_updated_at_timestamp before document triggers use it",
-          "declare tenant-isolation helpers before document policies use them"
+          "declare tenant-isolation helpers before document policies use them",
+          "restore the missing private-listing foundation before activity migrations use it"
         ],
         "productionLedgerAttestationRequiredBeforeMerge": true
       },
