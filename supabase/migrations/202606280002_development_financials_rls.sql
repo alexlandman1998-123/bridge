@@ -1,5 +1,52 @@
 begin;
 
+create or replace function public.bridge_current_user_email()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', ''))
+$$;
+
+create or replace function public.bridge_has_development_access(target_development_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    case
+      when auth.uid() is null then false
+      when public.bridge_is_admin() then true
+      when exists (
+        select 1
+        from public.development_participants dp
+        where dp.development_id = target_development_id
+          and dp.is_active = true
+          and dp.can_view = true
+          and (
+            dp.user_id = auth.uid()
+            or lower(coalesce(dp.participant_email, '')) = public.bridge_current_user_email()
+          )
+      ) then true
+      when exists (
+        select 1
+        from public.transactions t
+        join public.transaction_participants tp on tp.transaction_id = t.id
+        where t.development_id = target_development_id
+          and tp.can_view = true
+          and (
+            tp.user_id = auth.uid()
+            or lower(coalesce(tp.participant_email, '')) = public.bridge_current_user_email()
+          )
+      ) then true
+      else false
+    end
+$$;
+
 alter table if exists public.developments
   add column if not exists organisation_id uuid,
   add column if not exists postal_code text;

@@ -78,7 +78,8 @@
         "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults",
         "202605250020_bond_rls_scoped_policy_rollout_phase5b.sql adds role-player and subprocess visibility columns plus the missing internal-user helpers before its access rules reference them",
         "202606020060_transaction_finance_command_centre_phase1.sql restores client-token helpers before finance policies reference them",
-        "202606020070_restore_seller_portal_appointments_payload.sql adds the document category column before mandate backfill uses it"
+        "202606020070_restore_seller_portal_appointments_payload.sql adds the document category column before mandate backfill uses it",
+        "202606280002_development_financials_rls.sql restores development-access helpers before scoped policies use them"
       ],
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
