@@ -93,6 +93,7 @@
     "scripts/supabase-phase8-closeout.test.mjs",
     "supabase/config.toml",
     "supabase/migrations/202605090000_production_schema_baseline.sql",
+    "supabase/migrations/202605110003_organisation_branches_foundation.sql",
     "scripts/supabase-phase11-staging-certification.mjs",
     "scripts/supabase-phase11-staging-certification.test.mjs",
     "the-it-guy/src/core/documents/__tests__/conditionalMasterMigration.test.js",

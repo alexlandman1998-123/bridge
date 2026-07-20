@@ -70,7 +70,10 @@
           "declare tenant-isolation helpers before document policies use them"
         ],
         "productionLedgerAttestationRequiredBeforeMerge": true
-      }
+      },
+      "idempotencyRepairs": [
+        "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them"
+      ]
     },
     "vercelPreview": {
       "statusAtCertification": "PASS"

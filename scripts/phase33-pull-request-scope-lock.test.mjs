@@ -27,6 +27,7 @@ for (const path of scope.approvedRuntimeCorrections.paths) {
   assert.ok(scope.allowedAfterIsolationPaths.includes(path), `${path} must be present in the locked allowlist.`)
 }
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202605090000_production_schema_baseline.sql'))
+assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202605110003_organisation_branches_foundation.sql'))
 
 for (const commit of [
   release.productionApplicationCommit,
