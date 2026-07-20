@@ -520,9 +520,21 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180049",
+      "version": "202607200007",
       "stream": "document_generation",
       "dependsOn": "202607180048",
+      "module": "canonical_documents",
+      "file": "202607200007_document_generator_least_privilege_h2_fix.sql",
+      "objectStatus": "corrective_privilege_hardening",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the H2 catalogue contract to report zero direct client write grants before continuing document-generation promotion."
+    },
+    {
+      "version": "202607180049",
+      "stream": "document_generation",
+      "dependsOn": "202607200007",
       "module": "canonical_documents",
       "file": "202607180049_document_generator_least_privilege_h2.sql",
       "objectStatus": "none_live",

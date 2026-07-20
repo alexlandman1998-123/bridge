@@ -11,7 +11,7 @@ const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 const PHASE10_EVIDENCE_PATH = path.join('migration-evidence', '2026-07-20-staging-phase10', 'attorney-assignment-remediation.json')
 const PHASE10_COMMIT = 'fd506e46'
-const EXPECTED_MANIFEST_ROWS = 67
+const EXPECTED_MANIFEST_ROWS = 68
 const APPROVAL_CONFIRMATION = 'CERTIFY_STAGING'
 
 function parseArgs(argv) {
