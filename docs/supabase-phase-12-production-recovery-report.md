@@ -47,3 +47,7 @@ The recovery verifier now derives the live production expectation from the signe
 ## Phase 24 re-verification
 
 After Phase 24, the same baseline-plus-reviewed-promotions rule expects and finds 489/489 production ledger rows. The restored recovery baseline remains unchanged; the eight Phase 24 production entries are represented by reviewed closeout evidence, and the forward-migrated staging ledger contains 503 rows.
+
+## Phase 25 re-verification
+
+After Phase 25, the rule expects and finds 492/492 production ledger rows. The three reviewed Phase 25 entries are additive to the signed recovery baseline, and the forward-migrated staging ledger contains 504 rows.

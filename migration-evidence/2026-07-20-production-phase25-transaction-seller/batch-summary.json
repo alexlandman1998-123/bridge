@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-07-20T17:29:00Z",
+  "status": "PRODUCTION_PHASE_25_COMPLETE",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "requestedVersions": ["202607180046", "20260719194500"],
+  "correctiveVersions": ["202607209903"],
+  "productionLedgerCountBefore": 489,
+  "productionLedgerCountAfter": 492,
+  "phase25LedgerRows": 3,
+  "closeoutEvidenceComplete": 59,
+  "closeoutEvidenceTotal": 71,
+  "remainingProductionPromotions": 12,
+  "transactionRows": 285,
+  "offerRows": 2,
+  "sellerOnboardingRows": 29,
+  "sellerIncompleteOnboardingRows": 15,
+  "participantRequirementsAnonymousPrivileges": 0,
+  "participantRequirementsAuthenticatedAccess": "select_only_through_rls",
+  "productionPhysicalBackups": 8,
+  "productionPitrEnabled": false,
+  "phase0FreezeRemainsActive": true,
+  "separateRlsAdvisoryOpen": true
+}

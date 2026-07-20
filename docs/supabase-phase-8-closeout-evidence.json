@@ -380,6 +380,24 @@
       "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
       "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
       "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)"
+    },
+    {
+      "version": "202607209903",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)"
+    },
+    {
+      "version": "202607180046",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)"
+    },
+    {
+      "version": "20260719194500",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)"
     }
   ]
 }

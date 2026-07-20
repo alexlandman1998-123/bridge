@@ -5,10 +5,10 @@
   "lockedAt": "2026-07-20",
   "approvedBy": "Alexander Landman (explicit Phase 18 instruction)",
   "productionBaseline": {
-    "manifestRows": 70,
-    "reviewedProductionPromotions": 56,
-    "outstandingManifestRows": 14,
-    "productionLedgerRows": 489
+    "manifestRows": 71,
+    "reviewedProductionPromotions": 59,
+    "outstandingManifestRows": 12,
+    "productionLedgerRows": 492
   },
   "includedCapabilities": [
     "seller_onboarding",
@@ -39,6 +39,13 @@
     "remediatedAssignmentCount": 43,
     "integrityBlockingAssignmentCount": 0,
     "status": "production_promoted_verified_and_remediated"
+  },
+  "completedPhase25TransactionSeller": {
+    "requestedMigrationCount": 2,
+    "correctiveMigrationCount": 1,
+    "transactionCreationStatus": "production_verified_and_ledgered",
+    "sellerCompletionStatus": "production_promoted_and_verified",
+    "status": "production_promoted_and_verified"
   },
   "pendingConditionalMasterInventory": {
     "files": [

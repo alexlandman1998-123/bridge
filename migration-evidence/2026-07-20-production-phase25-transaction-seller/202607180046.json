@@ -1,0 +1,28 @@
+{
+  "version": "202607180046",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)",
+  "verification": {
+    "applicationMode": "ledger_after_live_smoke_and_privilege_correction",
+    "correctiveVersion": "202607209903",
+    "transactionColumnsLive": 17,
+    "idempotencyIndexLive": true,
+    "participantRequirementsTableLive": true,
+    "participantRequirementsRlsEnabled": true,
+    "participantRequirementsPolicyCount": 1,
+    "anonymousTableAccessDenied": true,
+    "authenticatedTableAccess": "select_only",
+    "seedHelpersPrivate": true,
+    "unauthenticatedCreationDenied": "42501",
+    "authenticatedCreationGranted": true,
+    "creationRpcSecurityDefiner": true,
+    "creationRpcFixedSearchPath": true,
+    "transactionRows": 285,
+    "offerRows": 2
+  }
+}
