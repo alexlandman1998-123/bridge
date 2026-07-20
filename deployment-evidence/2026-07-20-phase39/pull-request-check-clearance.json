@@ -61,8 +61,8 @@
       "previewBaseline": {
         "migration": "202605090000_production_schema_baseline.sql",
         "sourceCommit": "4ee5387b8bbc1540e5545c11c22fedfbd552d4d0",
-        "sha256": "ae036b7decff817686c98c15e518dd4bc84518776a1267db72f0676d02e1353b",
-        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration",
+        "sha256": "f9fbc85edc45a3ed8d314caff3ec590bfbbebf88002ef0940bc3824abc15cfcc",
+        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred until the referenced table exists",
         "productionLedgerAttestationRequiredBeforeMerge": true
       }
     },

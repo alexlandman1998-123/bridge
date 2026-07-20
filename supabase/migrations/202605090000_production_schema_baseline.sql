@@ -1,3 +1,6 @@
+-- Historical schema snapshot from commit 4ee5387b, immediately before the
+-- first incremental migration. Forward transaction foreign keys are declared
+-- after public.transactions so the same final schema can be built from empty.
 create extension if not exists "pgcrypto";
 
 create table if not exists profiles (
@@ -419,7 +422,7 @@ create table if not exists leads (
   property_interest text,
   seller_property_address text,
   estimated_value numeric(14, 2),
-  converted_transaction_id uuid references transactions(id) on delete set null,
+  converted_transaction_id uuid,
   converted_at timestamptz,
   notes text,
   created_at timestamptz not null default now(),
@@ -440,7 +443,7 @@ alter table if exists leads add column if not exists area_interest text;
 alter table if exists leads add column if not exists property_interest text;
 alter table if exists leads add column if not exists seller_property_address text;
 alter table if exists leads add column if not exists estimated_value numeric(14, 2);
-alter table if exists leads add column if not exists converted_transaction_id uuid references transactions(id) on delete set null;
+alter table if exists leads add column if not exists converted_transaction_id uuid;
 alter table if exists leads add column if not exists converted_at timestamptz;
 alter table if exists leads add column if not exists notes text;
 alter table if exists leads add column if not exists created_at timestamptz not null default now();
@@ -540,7 +543,7 @@ create table if not exists appointments (
   location text,
   contact_id uuid references contacts(contact_id) on delete set null,
   listing_id text,
-  transaction_id uuid references transactions(id) on delete set null,
+  transaction_id uuid,
   status text not null default 'Pending Confirmation',
   notes text,
   outcome_summary text,
@@ -566,7 +569,7 @@ alter table if exists appointments add column if not exists date_time timestampt
 alter table if exists appointments add column if not exists location text;
 alter table if exists appointments add column if not exists contact_id uuid references contacts(contact_id) on delete set null;
 alter table if exists appointments add column if not exists listing_id text;
-alter table if exists appointments add column if not exists transaction_id uuid references transactions(id) on delete set null;
+alter table if exists appointments add column if not exists transaction_id uuid;
 alter table if exists appointments add column if not exists status text not null default 'Pending Confirmation';
 alter table if exists appointments add column if not exists notes text;
 alter table if exists appointments add column if not exists outcome_summary text;
@@ -636,7 +639,7 @@ create table if not exists crm_deals (
   organisation_id uuid not null references organisations(id) on delete cascade,
   lead_id uuid references leads(lead_id) on delete set null,
   assigned_agent_id uuid references profiles(id) on delete set null,
-  transaction_id uuid references transactions(id) on delete set null,
+  transaction_id uuid,
   title text not null,
   stage text not null default 'Opportunity Created',
   status text not null default 'Active',
@@ -648,7 +651,7 @@ create table if not exists crm_deals (
 alter table if exists crm_deals add column if not exists organisation_id uuid references organisations(id) on delete cascade;
 alter table if exists crm_deals add column if not exists lead_id uuid references leads(lead_id) on delete set null;
 alter table if exists crm_deals add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
-alter table if exists crm_deals add column if not exists transaction_id uuid references transactions(id) on delete set null;
+alter table if exists crm_deals add column if not exists transaction_id uuid;
 alter table if exists crm_deals add column if not exists title text;
 alter table if exists crm_deals add column if not exists stage text not null default 'Opportunity Created';
 alter table if exists crm_deals add column if not exists status text not null default 'Active';
@@ -692,7 +695,7 @@ create table if not exists billing_invoices (
 
 create table if not exists transaction_financial_records (
   id uuid primary key default gen_random_uuid(),
-  transaction_id uuid not null references transactions(id) on delete cascade,
+  transaction_id uuid not null,
   expected_fee numeric(12, 2),
   invoiced_amount numeric(12, 2),
   payment_status text not null default 'not_invoiced',
@@ -897,6 +900,31 @@ create table if not exists transactions (
   updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'leads_converted_transaction_id_fkey') then
+    alter table public.leads
+      add constraint leads_converted_transaction_id_fkey
+      foreign key (converted_transaction_id) references public.transactions(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'appointments_transaction_id_fkey') then
+    alter table public.appointments
+      add constraint appointments_transaction_id_fkey
+      foreign key (transaction_id) references public.transactions(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'crm_deals_transaction_id_fkey') then
+    alter table public.crm_deals
+      add constraint crm_deals_transaction_id_fkey
+      foreign key (transaction_id) references public.transactions(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'transaction_financial_records_transaction_id_fkey') then
+    alter table public.transaction_financial_records
+      add constraint transaction_financial_records_transaction_id_fkey
+      foreign key (transaction_id) references public.transactions(id) on delete cascade;
+  end if;
+end;
+$$;
 
 alter table if exists transactions alter column unit_id drop not null;
 alter table if exists transactions add column if not exists organisation_id uuid references organisations(id) on delete set null;
