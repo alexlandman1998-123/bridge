@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { getSellerOnboardingTransferAttorneys } from '../src/lib/preferredPartners.js'
 
 const [leadWorkspace, sellerOnboarding, privateListingService, migration] = await Promise.all([
   readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8'),
@@ -12,7 +13,38 @@ assert.ok(leadWorkspace.includes('function PreferredAttorneySelectionModal'), 's
 assert.ok(leadWorkspace.includes('Confirm attorney & send'), 'the picker must require an explicit confirmation')
 assert.ok(leadWorkspace.includes('onSendSellerOnboarding={requestSellerOnboardingSend}'), 'seller workspace send actions must route through the picker')
 assert.ok(leadWorkspace.includes('transferAttorneyPreferredPartnerId: preferredAttorneyId'), 'the selected attorney id must be bound to onboarding creation')
+assert.ok(leadWorkspace.includes('getSellerOnboardingTransferAttorneys(partners)'), 'the seller picker must use the shared operational-attorney eligibility contract')
 assert.ok(privateListingService.includes(".eq('id', requestedPreferredAttorneyId)"), 'the service must validate the selected attorney against the agency')
+
+const connectedRelationshipOnly = {
+  id: 'relationship-young-law',
+  partnerType: 'transfer_attorney',
+  companyName: 'Young Law Inc',
+  isActive: true,
+}
+const linkedOperationalAttorney = {
+  id: 'preferred-young-law',
+  partnerType: 'transfer_attorney',
+  partnerOrganisationId: 'organisation-young-law',
+  companyName: 'Young Law Inc',
+  isActive: true,
+  isPreferredDefault: true,
+}
+const inactiveOperationalAttorney = {
+  ...linkedOperationalAttorney,
+  id: 'preferred-inactive-law',
+  isActive: false,
+}
+
+assert.deepEqual(
+  getSellerOnboardingTransferAttorneys([
+    connectedRelationshipOnly,
+    inactiveOperationalAttorney,
+    linkedOperationalAttorney,
+  ]),
+  [linkedOperationalAttorney],
+  'seller onboarding must include only active operational transfer attorneys linked to an organisation',
+)
 
 assert.ok(sellerOnboarding.includes('This is our preferred transferring attorney. Do you accept?'), 'seller onboarding must present the agency nomination')
 assert.ok(sellerOnboarding.includes("'accept_preferred'"), 'seller onboarding must support accepting the preferred attorney')

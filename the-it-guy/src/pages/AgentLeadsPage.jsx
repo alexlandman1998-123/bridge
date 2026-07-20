@@ -86,6 +86,7 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
+import { getSellerOnboardingTransferAttorneys } from '../lib/preferredPartners'
 import { listOrganisationPreferredPartners, listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -15491,7 +15492,7 @@ function PreferredAttorneySelectionModal({
         </div>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No active transfer attorneys are configured. Add one under Organisation → Partners before sending seller onboarding.
+          No operational transfer attorney is configured. Add the connected firm under Organisation → Partners → Third parties, mark it active, and link it to the attorney organisation before sending seller onboarding.
         </div>
       )}
     </Modal>
@@ -21170,11 +21171,7 @@ function AgentLeadWorkspace() {
     setSellerPreferredAttorneysLoading(true)
     try {
       const partners = await listOrganisationPreferredPartners()
-      const attorneys = (partners || []).filter((partner) => (
-        partner?.isActive &&
-        partner?.partnerType === 'transfer_attorney' &&
-        normalizeText(partner?.partnerOrganisationId)
-      ))
+      const attorneys = getSellerOnboardingTransferAttorneys(partners)
       setSellerPreferredAttorneys(attorneys)
       const existingAttorneyId = normalizeText(
         linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId,
@@ -21185,7 +21182,7 @@ function AgentLeadWorkspace() {
         || null
       setSelectedSellerAttorneyId(initialAttorney?.id || '')
       if (!attorneys.length) {
-        setSellerPreferredAttorneysError('Connect an active transfer-attorney organisation under Organisation → Partners before sending onboarding.')
+        setSellerPreferredAttorneysError('A connected firm is not automatically an operational transfer attorney. Add it under Organisation → Partners → Third parties, mark it active, and link it to the attorney organisation before sending onboarding.')
       }
     } catch (loadError) {
       setSellerPreferredAttorneys([])

@@ -129,3 +129,11 @@ export function getDefaultPreferredPartnerByType(items = [], type) {
   const explicit = scoped.find((item) => item?.isPreferredDefault)
   return explicit || scoped[0]
 }
+
+export function getSellerOnboardingTransferAttorneys(items = []) {
+  return (Array.isArray(items) ? items : []).filter((partner) => (
+    partner?.isActive === true &&
+    normalizePreferredPartnerType(partner?.partnerType) === 'transfer_attorney' &&
+    Boolean(String(partner?.partnerOrganisationId || '').trim())
+  ))
+}
