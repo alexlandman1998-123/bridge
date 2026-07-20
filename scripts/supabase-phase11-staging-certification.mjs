@@ -11,7 +11,6 @@ const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 const PHASE10_EVIDENCE_PATH = path.join('migration-evidence', '2026-07-20-staging-phase10', 'attorney-assignment-remediation.json')
 const PHASE10_COMMIT = 'fd506e46'
-const EXPECTED_MANIFEST_ROWS = 71
 const APPROVAL_CONFIRMATION = 'CERTIFY_STAGING'
 
 function parseArgs(argv) {
@@ -67,9 +66,10 @@ function evidenceFiles() {
 
 function validateManifestEvidence(manifest) {
   if (manifest.linkedProjectRef !== PRODUCTION_PROJECT_REF) throw new Error('Manifest production identity is unexpected.')
-  if (!Array.isArray(manifest.rows) || manifest.rows.length !== EXPECTED_MANIFEST_ROWS) {
-    throw new Error(`Expected ${EXPECTED_MANIFEST_ROWS} manifest rows.`)
-  }
+  if (!Array.isArray(manifest.rows) || manifest.rows.length === 0) throw new Error('The governed manifest must contain rows.')
+  const versions = manifest.rows.map((row) => String(row.version || ''))
+  if (versions.some((version) => !version)) throw new Error('Every governed manifest row must have a version.')
+  if (new Set(versions).size !== versions.length) throw new Error('Governed manifest versions must be unique.')
   const parsed = evidenceFiles().map((file) => ({ file, raw: readFileSync(file, 'utf8') }))
     .map((entry) => ({ ...entry, evidence: JSON.parse(entry.raw) }))
   const selected = []

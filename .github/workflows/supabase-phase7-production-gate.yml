@@ -36,6 +36,7 @@ on:
       - 'migration-evidence/2026-07-20-production-phase15-batch6/**'
       - 'docs/supabase-phase-15-batch-6-production-report.md'
       - 'docs/database-release-runbook.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
   push:
@@ -75,6 +76,7 @@ on:
       - 'migration-evidence/2026-07-20-production-phase15-batch6/**'
       - 'docs/supabase-phase-15-batch-6-production-report.md'
       - 'docs/database-release-runbook.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
 
@@ -99,8 +101,7 @@ jobs:
         run: node scripts/supabase-phase7-production-execution.test.mjs
 
       - name: Verify manifest coverage
-        run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==68) throw new Error('Expected 68 manifest rows')"
+        run: npm run supabase:phase35:verify
 
       - name: Test production ledger reconciliation guard
         run: node scripts/supabase-phase14-production-ledger-reconciliation.test.mjs

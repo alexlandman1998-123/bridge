@@ -24,6 +24,7 @@ Until PR #1 is ready, further commits may only:
 - correct CI tests or workflows that contain stale release counts or fingerprints;
 - diagnose and repair the Supabase Preview environment without broadening application scope;
 - document or verify the controlled pilot release.
+- maintain release gates by deriving migration totals from the governed inventory rather than stale historical constants.
 
 New runtime capability, new migrations, and unrelated UI or email work require an explicit scope amendment and separate certification.
 

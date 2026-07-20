@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: GOVERNED_CLOSEOUT_COMPLETE — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 and Phases 23–25 plus Phases 29–31 completed all 71 governed production promotions with reviewed evidence. Freeze retirement remains a separate reviewed action and also depends on the live inventory having no newer ungoverned migrations.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 and Phases 23–25 plus Phases 29–32 completed every migration in the current governed manifest with reviewed evidence. Freeze retirement remains a separate reviewed action and also depends on the live inventory having no newer ungoverned migrations.
 
 ## Implemented Controls
 
@@ -16,7 +16,7 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 - Live verification refuses to run unless the repository is linked to the fixed production project reference.
 - Live verification compares the linked local/remote migration list while recognizing only the 17 reviewed split-row artifacts.
 - Closeout requires zero pure local-only, pure remote-only, divergent, and unreviewed split versions.
-- Closeout requires all 71 Phase 5 rows to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
+- Closeout derives its expected total from the Phase 5 manifest and requires every row to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
 - Closeout rechecks production PITR and counts only completed physical backups.
 - A backup alone is insufficient: live closeout also requires explicit tested-recovery attestation.
 - The gate can write a report but cannot alter SQL, the migration ledger, or guard configuration.
@@ -31,7 +31,7 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 | Phase 7 staging readiness | Certified and approved |
 | Attorney integrity blockers | 0 assignments |
 | Human staging approval | Alexander Landman |
-| Complete closeout evidence | 71/71 |
+| Complete closeout evidence | Full manifest; 78/78 at Phase 35 |
 | Phase 7 production promotion | Governed manifest complete; 0 versions remain |
 | Production PITR | Disabled |
 | Completed production physical backups | 8 |

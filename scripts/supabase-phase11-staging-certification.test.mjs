@@ -7,7 +7,9 @@ const source = readFileSync(new URL('./supabase-phase11-staging-certification.mj
 
 assert.match(source, /CERTIFY_STAGING/)
 assert.match(source, /--approved-by is required/)
-assert.match(source, /EXPECTED_MANIFEST_ROWS = 71/)
+assert.match(source, /manifest\.rows\.length === 0/)
+assert.match(source, /Governed manifest versions must be unique/)
+assert.doesNotMatch(source, /EXPECTED_MANIFEST_ROWS/)
 assert.match(source, /schema_migrations/)
 assert.match(source, /attorney_role_integrity_v1/)
 assert.match(source, /remediationRunId/)

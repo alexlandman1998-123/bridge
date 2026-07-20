@@ -2,13 +2,15 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase7-production-execution.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
+const governedCount = manifest.rows.length
 
 function run(args, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -26,7 +28,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 71)
+assert.equal(JSON.parse(plan.stdout).count, governedCount)
 
 const streamPlan = run(['--plan', '--stream', 'attorney_calendar', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
@@ -125,8 +127,8 @@ writeFileSync(stagingReadinessPath, JSON.stringify({
   status: 'READY_FOR_PRODUCTION_PROMOTION',
   productionProjectRef: 'isdowlnollckzvltkasn',
   stagingProjectRef: 'stagingtestref',
-  manifestRowCount: 71,
-  stagingLedgerRecordedCount: 71,
+  manifestRowCount: governedCount,
+  stagingLedgerRecordedCount: governedCount,
   stagingEvidenceComplete: true,
   attorneyIntegrityGate: 'pass',
   attorneyIntegrityBlockingAssignments: 0,

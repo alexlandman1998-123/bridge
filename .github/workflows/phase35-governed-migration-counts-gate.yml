@@ -1,0 +1,40 @@
+name: Phase 35 governed migration counts gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase35-governed-migration-counts-gate.yml'
+      - '.github/workflows/supabase-phase6-staging-gate.yml'
+      - '.github/workflows/supabase-phase7-production-gate.yml'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-33-pull-request-scope-lock.md'
+      - 'docs/phase-35-remove-stale-migration-count-assumptions.md'
+      - 'migration-evidence/2026-07-20-production-phase32-final-closeout/batch-summary.json'
+      - 'package.json'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
+      - 'scripts/supabase-phase6-staging-execution.test.mjs'
+      - 'scripts/supabase-phase7-production-execution.test.mjs'
+      - 'scripts/supabase-phase8-closeout.test.mjs'
+      - 'scripts/supabase-phase11-staging-certification.mjs'
+      - 'scripts/supabase-phase11-staging-certification.test.mjs'
+      - 'scripts/phase32-final-production-closeout.test.mjs'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  governed-counts:
+    name: Verify governed migration counts are derived
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run supabase:phase35:verify
