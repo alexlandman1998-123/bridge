@@ -120,6 +120,7 @@
     "supabase/migrations/202607090001_agency_tasks_foundation.sql",
     "supabase/migrations/202607140009_private_listing_transfer_attorney_allocation_phase1.sql",
     "supabase/migrations/202607140018_legacy_demo_rls_scoped_replacement.sql",
+    "supabase/migrations/202607160012_attorney_client_financial_documents_phase1.sql",
     "the-it-guy/scripts/commercial-phase4.test.mjs",
     "scripts/supabase-phase11-staging-certification.mjs",
     "scripts/supabase-phase11-staging-certification.test.mjs",
