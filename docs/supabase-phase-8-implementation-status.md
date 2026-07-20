@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: CLOSEOUT_GATE_READY — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 promoted 36 migrations with complete production evidence. The remaining 28 manifest versions have not completed production promotion, so freeze retirement remains blocked.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 promoted 36 migrations with complete production evidence. The remaining 31 manifest versions have not completed production promotion, so freeze retirement remains blocked.
 
 ## Implemented Controls
 
@@ -16,7 +16,7 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 - Live verification refuses to run unless the repository is linked to the fixed production project reference.
 - Live verification compares the linked local/remote migration list while recognizing only the 17 reviewed split-row artifacts.
 - Closeout requires zero pure local-only, pure remote-only, divergent, and unreviewed split versions.
-- Closeout requires all 64 Phase 5 rows to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
+- Closeout requires all 67 Phase 5 rows to have reviewed staging, production target-state, production ledger, catalog, behavior, and rollback/no-residue evidence.
 - Closeout rechecks production PITR and counts only completed physical backups.
 - A backup alone is insufficient: live closeout also requires explicit tested-recovery attestation.
 - The gate can write a report but cannot alter SQL, the migration ledger, or guard configuration.
@@ -31,12 +31,12 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 | Phase 7 staging readiness | Certified and approved |
 | Attorney integrity blockers | 0 assignments |
 | Human staging approval | Alexander Landman |
-| Complete closeout evidence | 36/64 |
-| Phase 7 production promotion | Batches 1–6 complete; 28 versions remain |
+| Complete closeout evidence | 36/67 |
+| Phase 7 production promotion | Batches 1–6 complete; 31 versions remain |
 | Production PITR | Disabled |
 | Completed production physical backups | 8 |
 | Database recovery evidence | Proven and approved in Phase 12 |
-| Pure local-only versions | 50 |
+| Pure local-only versions | 53 expected before the expanded chain is promoted |
 | Pure remote-only versions | 0 |
 | Reviewed canonical CLI display splits | 17 |
 | Production history reconciliation | Complete; ledger remains 433 rows |

@@ -37,8 +37,8 @@
     "allocatedVersions": ["202607200004", "202607200005", "202607200006"],
     "inventoryRepairStatus": "complete",
     "manifestStatus": "included",
-    "stagingCertificationStatus": "pending",
-    "requiredAction": "certify_allocated_chain_in_staging",
+    "stagingCertificationStatus": "certified",
+    "requiredAction": "promote_certified_chain_through_the_phase_7_gate",
     "count": 3
   },
   "deferredExistingManifestVersions": {

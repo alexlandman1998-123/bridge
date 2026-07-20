@@ -7,7 +7,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Production project: `isdowlnollckzvltkasn`
 - Production SQL promoted: 36 migrations across six batches
 - Production migration ledger: 469 rows; all Batch 1–6 versions recorded
-- Staging manifest coverage: 64 of 64
+- Staging manifest coverage: 67 of 67, recertified in Phase 22
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
 - Production PITR: disabled
@@ -17,14 +17,14 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The prerequisite gates pass. Phase 15 Batches 1–6 completed with reviewed production evidence. The remaining 28 manifest versions and unrelated duplicate local version `202607200002` remain final-closeout blockers.
+The prerequisite gates pass. Phase 15 Batches 1–6 completed with reviewed production evidence. The remaining 31 manifest versions remain final-closeout blockers. The duplicate local version was resolved in Phase 19.
 
 ## Implemented controls
 
 Every production mutation now requires three independent evidence layers:
 
 1. Per-migration staging evidence proving catalogue, behaviour, and rollback/no-residue checks.
-2. A manifest-wide staging readiness record proving all 64 migrations are ledgered and evidenced, with a passing attorney integrity gate and zero blocking assignments.
+2. A manifest-wide staging readiness record proving all 67 migrations are ledgered and evidenced, with a passing attorney integrity gate and zero blocking assignments.
 3. Per-migration production evidence before the production ledger can be recorded.
 
 The manifest-wide readiness record also requires a human `approvedBy` value. Automated migration verification cannot authorize production by itself.
@@ -55,8 +55,8 @@ It stopped before reading production credentials or attempting a mutation becaus
 
 The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness.json` and records:
 
-- 64 manifest rows;
-- 64 staging ledger entries;
+- 67 manifest rows;
+- 67 staging ledger entries;
 - complete staging evidence;
 - zero blocking attorney assignments after the Phase 10 remediation;
 - eight completed production physical backups;
@@ -75,7 +75,7 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 
 1. Select and preflight the next dependency stream.
 2. Continue one migration version at a time, stopping for production verification before each ledger update.
-3. Resolve the unrelated duplicate local migration version `202607200002` before final closeout.
+3. Keep the Phase 0 broad-push guard active until all 67 rows have reviewed production evidence.
 
 ## Files changed
 

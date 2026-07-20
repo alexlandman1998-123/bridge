@@ -1,0 +1,48 @@
+name: Phase 22 Expanded Staging Certification Gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'deployment-evidence/2026-07-20-phase22/**'
+      - 'migration-evidence/2026-07-20-staging-phase22/**'
+      - 'supabase/migrations/202607200004_*'
+      - 'supabase/migrations/202607200005_*'
+      - 'supabase/migrations/202607200006_*'
+      - 'scripts/phase22-expanded-staging-certification.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase22-expanded-staging-certification-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'deployment-evidence/2026-07-20-phase22/**'
+      - 'migration-evidence/2026-07-20-staging-phase22/**'
+      - 'supabase/migrations/202607200004_*'
+      - 'supabase/migrations/202607200005_*'
+      - 'supabase/migrations/202607200006_*'
+      - 'scripts/phase22-expanded-staging-certification.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase22-expanded-staging-certification-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  staging-certification:
+    name: Verify expanded staging certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run supabase:phase22:verify

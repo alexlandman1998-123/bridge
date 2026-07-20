@@ -1,5 +1,5 @@
 {
-  "status": "STAGING_INVENTORY_APPLIED",
+  "status": "STAGING_INVENTORY_RECERTIFIED",
   "phase": 22,
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
   "productionProjectRef": "isdowlnollckzvltkasn",
@@ -37,7 +37,9 @@
     "migrationAuditRows": 0,
     "verificationReceiptRows": 0
   },
-  "stagingCertified": false,
+  "stagingCertified": true,
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase22/staging-release-certification.json",
+  "certifiedReleaseCommit": "63e8a9c44b892d3cf67309b788b576c8067c8de0",
   "productionMutated": false,
   "phase0MigrationFreezeRemainsActive": true
 }

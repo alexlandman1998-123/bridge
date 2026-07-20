@@ -7,18 +7,18 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: READY_FOR_CONTROLLED_PRODUCTION_PROMOTION**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6 have promoted settings governance, legal review assurance, the complete legal-document runtime, editable certified PDFs, signing completion, and governed runtime rollout enforcement with reviewed production evidence.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 67 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6 have promoted settings governance, legal review assurance, the complete legal-document runtime, editable certified PDFs, signing completion, and governed runtime rollout enforcement with reviewed production evidence.
 
 ## Implemented Controls
 
-- Planning is read-only and covers all 64 Phase 5 manifest rows.
+- Planning is read-only and covers all 67 Phase 5 manifest rows.
 - Production mutations require the exact project reference `isdowlnollckzvltkasn`, the `linked_ephemeral` access mode, and a linked-project identity check.
 - A live pre-mutation backup check requires PITR or at least one physical backup.
 - Operators must explicitly attest tested recovery and pass `--confirm APPLY_TO_PRODUCTION`.
 - Every mutation is limited to one exact migration version.
 - Reviewed staging evidence is mandatory for both SQL application and ledger recording.
 - A manifest-wide staging readiness record is mandatory for every production mutation.
-- The readiness record must prove all 64 manifest versions are ledgered, evidence is complete, the attorney integrity gate passes, and the blocking assignment count is zero.
+- The readiness record must prove all 67 manifest versions are ledgered, evidence is complete, the attorney integrity gate passes, and the blocking assignment count is zero.
 - The readiness record requires a human `approvedBy` value; migration-level automated evidence cannot self-authorize production.
 - Stream dependencies represented by migration versions must already be recorded in production.
 - SQL application and ledger recording are separate invocations.
@@ -31,7 +31,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Gate | Current result |
 | --- | --- |
 | Dedicated Arch9 staging target | Healthy: `vaszuxjeoajeuhlcnzzf` |
-| Staging manifest ledger | 64/64 recorded |
+| Staging manifest ledger | 67/67 recorded and recertified in Phase 22 |
 | Staging migration evidence | Complete |
 | Attorney integrity gate | Passed: 0 blocking assignments |
 | Production PITR | Disabled |
@@ -41,8 +41,8 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production migration history | Reconciled: 0 genuine remote-only versions |
 | Duplicate local migration version | Resolved in Phase 19; 501 files have 501 unique versions |
-| Production SQL promoted | 36/64 |
-| Production closeout evidence | 36/64 complete |
+| Production SQL promoted | 36/67 |
+| Production closeout evidence | 36/67 complete |
 | Production ledger | 469 rows after Batch 6 |
 
 ## Usage

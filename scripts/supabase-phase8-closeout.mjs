@@ -320,7 +320,7 @@ ${list(result.evidence.incomplete)}
 
 ## Closeout Rule
 
-Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 64 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all ${result.manifestRowCount} manifest versions have reviewed closeout evidence, and production recovery is available and tested.
 `
 }
 

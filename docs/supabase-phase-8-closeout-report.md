@@ -1,11 +1,11 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T14:39:00.894Z
+Generated: 2026-07-20T15:35:39.784Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: CLOSEOUT_BLOCKED**
+**Status: LOCAL_CLOSEOUT_NOT_READY**
 
 The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`. Even a ready report authorizes a reviewed guard-removal change; it does not remove the guard automatically.
 
@@ -14,24 +14,24 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Check | Result |
 | --- | --- |
 | Local migration files | 501 |
-| Phase 5 manifest rows | 64 |
-| Duplicate versions | 1 |
+| Phase 5 manifest rows | 67 |
+| Duplicate versions | 0 |
 | Missing manifest files | 0 |
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
 | Human staging-readiness approval | Yes |
 | Complete production evidence rows | 36 |
-| Incomplete production evidence rows | 28 |
+| Incomplete production evidence rows | 31 |
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
-| Live verification performed | Yes |
-| Pure local-only versions | 32 |
-| Pure remote-only versions | 0 |
-| Divergent versions | 0 |
-| Unreviewed split versions | 0 |
-| Production PITR | Disabled |
-| Physical backups | 8 |
-| Runtime recovery confirmation configured | Yes |
+| Live verification performed | No — Phase 22 was staging-only |
+| Pure local-only versions | Not checked |
+| Pure remote-only versions | Not checked |
+| Divergent versions | Not checked |
+| Unreviewed split versions | Not checked |
+| Production PITR | Not checked |
+| Physical backups | Not checked |
+| Runtime recovery confirmation configured | Not checked |
 | Phase 12 recovery evidence | Valid — Alexander Landman |
 | Ready for reviewed freeze retirement | No |
 
@@ -65,7 +65,10 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 - `202607180042`
 - `202607180046`
 - `20260719194500`
+- `202607200004`
+- `202607200005`
+- `202607200006`
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 64 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 67 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
