@@ -81,6 +81,12 @@ export const DOCUMENT_PACKET_SIGNER_STATUSES = ['pending', 'ready_to_send', 'sen
 const PACKET_VERSION_SELECT =
   'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, rendered_file_bucket, rendered_media_type, rendered_byte_length, rendered_sha256, transaction_pdf_persisted, transaction_pdf_persisted_at, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, source_template_revision_id, editable_content_schema_version, editable_content_json, edit_status, edit_sequence, render_freeze_id, render_freeze_status, render_frozen_at, render_content_fingerprint, render_source_version_id, render_source_fingerprint, render_input_verified, render_input_verified_at, native_pdf_verified, native_pdf_verified_at, native_pdf_renderer_contract, generated_by, generated_at, created_at, updated_at'
 
+// Keep packet reads usable while the document-generator migration stream is being
+// promoted. These are the original packet-version columns required for mandate
+// generation and preview; newer artifact/editing fields are optional read metadata.
+const PACKET_VERSION_COMPAT_SELECT =
+  'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, generated_by, generated_at, created_at, updated_at'
+
 let organisationBrandingTableAvailable = true
 let cachedPacketAuthUser = null
 let cachedPacketAuthUserAt = 0
@@ -93,6 +99,8 @@ const cachedPacketContexts = new Map()
 const pendingPacketContextPromises = new Map()
 let documentPacketTemplateSelectPlanIndex = 0
 let documentPacketTemplateSelectPlanCachedAt = 0
+let packetVersionCompatibilityWarningLogged = false
+let packetVersionReadUsesCompatibility = false
 
 const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
@@ -350,6 +358,24 @@ function isMissingColumnError(error, columnName = '') {
   return normalizedColumn
     ? message.includes('column') && message.includes(normalizedColumn)
     : message.includes('column')
+}
+
+async function readPacketVersionsWithSchemaCompatibility(buildQuery) {
+  if (packetVersionReadUsesCompatibility) return buildQuery(PACKET_VERSION_COMPAT_SELECT)
+
+  const currentResult = await buildQuery(PACKET_VERSION_SELECT)
+  if (!currentResult?.error || !isMissingColumnError(currentResult.error)) return currentResult
+
+  packetVersionReadUsesCompatibility = true
+  if (!packetVersionCompatibilityWarningLogged) {
+    packetVersionCompatibilityWarningLogged = true
+    console.warn('[PACKETS] optional packet-version columns are unavailable; using the compatible read shape.', {
+      code: currentResult.error?.code || null,
+      message: currentResult.error?.message || null,
+    })
+  }
+
+  return buildQuery(PACKET_VERSION_COMPAT_SELECT)
 }
 
 function isMissingSpecificTableError(error, tableName) {
@@ -2022,11 +2048,13 @@ export async function fetchDocumentPacket(packetId, { includeVersions = true, in
   const result = { ...packet }
 
   if (includeVersions) {
-    const { data, error } = await client
-      .from('document_packet_versions')
-      .select(PACKET_VERSION_SELECT)
-      .eq('packet_id', packetId)
-      .order('version_number', { ascending: false })
+    const { data, error } = await readPacketVersionsWithSchemaCompatibility((selectColumns) =>
+      client
+        .from('document_packet_versions')
+        .select(selectColumns)
+        .eq('packet_id', packetId)
+        .order('version_number', { ascending: false }),
+    )
     if (error) throw error
     result.versions = await Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
   }
@@ -2048,11 +2076,13 @@ export async function listDocumentPacketVersions(packetId) {
   const client = requireClient()
   if (!packetId) throw new Error('packetId is required.')
 
-  const { data, error } = await client
-    .from('document_packet_versions')
-    .select(PACKET_VERSION_SELECT)
-    .eq('packet_id', packetId)
-    .order('version_number', { ascending: false })
+  const { data, error } = await readPacketVersionsWithSchemaCompatibility((selectColumns) =>
+    client
+      .from('document_packet_versions')
+      .select(selectColumns)
+      .eq('packet_id', packetId)
+      .order('version_number', { ascending: false }),
+  )
 
   if (error) throw error
   return Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
