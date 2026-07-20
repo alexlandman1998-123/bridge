@@ -72,7 +72,8 @@
         "productionLedgerAttestationRequiredBeforeMerge": true
       },
       "idempotencyRepairs": [
-        "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them"
+        "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them",
+        "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults"
       ]
     },
     "vercelPreview": {

@@ -13,6 +13,12 @@ create table if not exists public.organisation_branding (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.organisation_branding
+  add column if not exists organisation_display_name text,
+  add column if not exists primary_brand_color text,
+  add column if not exists secondary_brand_color text,
+  add column if not exists accent_brand_color text,
+  add column if not exists created_by uuid references auth.users(id) on delete set null;
 create index if not exists organisation_branding_updated_at_idx
   on public.organisation_branding (updated_at desc);
 create or replace function public.bridge_touch_organisation_branding_updated_at()
