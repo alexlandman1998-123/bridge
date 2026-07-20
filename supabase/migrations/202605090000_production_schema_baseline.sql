@@ -1748,6 +1748,112 @@ create table if not exists client_portal_links (
   updated_at timestamptz not null default now()
 );
 
+-- Restored prerequisite helpers from the May 8 agency RLS source.
+create or replace function public.bridge_current_email()
+returns text
+language sql
+stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', ''));
+$$;
+
+create or replace function public.bridge_membership_role(target_org uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    case lower(trim(coalesce(ou.role, '')))
+      when 'administrator' then 'admin'
+      when 'owner' then 'principal'
+      when 'superadmin' then 'super_admin'
+      when 'branch_admin' then 'branch_manager'
+      when 'branch manager' then 'branch_manager'
+      when 'principal / owner' then 'principal'
+      else lower(trim(coalesce(ou.role, '')))
+    end
+  from public.organisation_users ou
+  where ou.organisation_id = target_org
+    and ou.user_id = auth.uid()
+    and ou.status = 'active'
+  order by ou.created_at asc
+  limit 1;
+$$;
+
+create or replace function public.bridge_is_active_member(target_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organisation_users ou
+    where ou.organisation_id = target_org
+      and ou.user_id = auth.uid()
+      and ou.status = 'active'
+  );
+$$;
+
+create or replace function public.bridge_is_org_admin(target_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    public.bridge_membership_role(target_org) in ('super_admin', 'principal', 'admin', 'developer', 'branch_manager'),
+    false
+  );
+$$;
+
+create or replace function public.bridge_can_access_assignment(target_org uuid, assigned_user uuid, assigned_email text default null)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  role_value text;
+  current_email text;
+begin
+  role_value := public.bridge_membership_role(target_org);
+  if role_value is null then
+    return false;
+  end if;
+
+  if role_value in ('super_admin', 'principal', 'admin', 'developer', 'branch_manager') then
+    return true;
+  end if;
+
+  current_email := public.bridge_current_email();
+
+  if role_value = 'agent' then
+    return coalesce(assigned_user = auth.uid(), false)
+      or (coalesce(assigned_email, '') <> '' and lower(assigned_email) = current_email);
+  end if;
+
+  if role_value in ('attorney', 'bond_originator') then
+    return coalesce(assigned_user = auth.uid(), false)
+      or (coalesce(assigned_email, '') <> '' and lower(assigned_email) = current_email);
+  end if;
+
+  return false;
+end;
+$$;
+
+grant execute on function public.bridge_current_email() to authenticated;
+grant execute on function public.bridge_membership_role(uuid) to authenticated;
+grant execute on function public.bridge_is_active_member(uuid) to authenticated;
+grant execute on function public.bridge_is_org_admin(uuid) to authenticated;
+grant execute on function public.bridge_can_access_assignment(uuid, uuid, text) to authenticated;
+
+
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_foundation.sql
 begin;
 
