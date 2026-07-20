@@ -15,12 +15,27 @@
   },
   "deploymentDrift": {
     "detected": true,
-    "excludedReleaseId": "ae47263888191e8178c7f7ebb7c0824eca628135",
-    "excludedDeploymentId": "dpl_8VwyYjUSw3XCAiQWbcuJSeCdKztg",
-    "excludedDeploymentUrl": "https://bridge-hvfuexarz-alexs-projects-f5496a21.vercel.app",
-    "cause": "an automatic production promotion occurred after the Phase 33 scope boundary",
+    "occurrences": [
+      {
+        "excludedReleaseId": "ae47263888191e8178c7f7ebb7c0824eca628135",
+        "excludedDeploymentId": "dpl_8VwyYjUSw3XCAiQWbcuJSeCdKztg",
+        "excludedDeploymentUrl": "https://bridge-hvfuexarz-alexs-projects-f5496a21.vercel.app"
+      },
+      {
+        "excludedReleaseId": "21c158375da84a47113bab7046bde34f63640a6d",
+        "excludedDeploymentId": "dpl_8q3tSMVQsdZ6bLRKfVYWPh91xBKM",
+        "excludedDeploymentUrl": "https://bridge-2pmt23aub-alexs-projects-f5496a21.vercel.app"
+      }
+    ],
+    "cause": "production promotion actions targeted deployments built from out-of-scope release-branch commits",
     "remediation": "promoted the existing certified 333c08eb deployment back to production",
     "resolved": true
+  },
+  "productionControl": {
+    "gitProvider": "github",
+    "configuredProductionBranch": "main",
+    "releaseBranchDeploymentsExpectedTarget": "preview",
+    "explicitPromotionStillRequiresOperatorControl": true
   },
   "releaseBranchDrift": {
     "detected": true,
@@ -83,6 +98,6 @@
   },
   "advisories": [
     "The unchanged dependency lockfile reports 13 audit findings: 2 low, 4 moderate, and 7 high.",
-    "Automatic production promotion must be restricted before another out-of-scope branch commit can replace the certified artifact."
+    "Production promotion authority must be restricted before another operator or automation can promote an out-of-scope preview."
   ]
 }

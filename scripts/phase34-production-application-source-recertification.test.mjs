@@ -47,8 +47,14 @@ assert.equal(fingerprint(evidence.repository.productionSourceCommit, true), evid
 assert.equal(fingerprint('HEAD', true), evidence.repository.runtimeBuildInputFingerprint)
 
 assert.equal(evidence.deploymentDrift.detected, true)
-assert.notEqual(evidence.deploymentDrift.excludedReleaseId, evidence.repository.productionSourceCommit)
+assert.equal(evidence.deploymentDrift.occurrences.length, 2)
+for (const occurrence of evidence.deploymentDrift.occurrences) {
+  assert.notEqual(occurrence.excludedReleaseId, evidence.repository.productionSourceCommit)
+}
 assert.equal(evidence.deploymentDrift.resolved, true)
+assert.equal(evidence.productionControl.configuredProductionBranch, 'main')
+assert.equal(evidence.productionControl.releaseBranchDeploymentsExpectedTarget, 'preview')
+assert.equal(evidence.productionControl.explicitPromotionStillRequiresOperatorControl, true)
 assert.equal(evidence.releaseBranchDrift.isolationCommit, scope.releaseBoundary.postLockIsolationCommit)
 assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', evidence.releaseBranchDrift.isolationCommit, 'HEAD']))
 assert.equal(evidence.releaseBranchDrift.driftCommitPreserved, true)

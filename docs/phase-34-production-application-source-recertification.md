@@ -10,7 +10,7 @@ The production aliases now serve the previously certified application commit `33
 
 Two independent drifts were found during certification:
 
-1. Vercel had automatically promoted excluded commit `ae472638` to production. Phase 34 restored existing certified deployment `dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT` to all production aliases.
+1. Production promotion actions had targeted excluded commits `ae472638` and `21c15837`. Phase 34 restored existing certified deployment `dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT` to all production aliases after each detected drift.
 2. Commit `21c15837` changed a settings page after the Phase 33 scope lock. Revert commit `94cf6383` preserves that work in Git history while restoring the locked runtime tree on the release branch.
 
 Neither correction changed the production database, migration ledger, environment configuration, or dependency lockfile.
@@ -33,6 +33,6 @@ The machine-readable evidence is in `deployment-evidence/2026-07-20-phase34/prod
 
 ## Remaining operational control
 
-Automatic production promotion must be restricted to the approved production branch or an explicit promotion workflow. Without that control, a later out-of-scope commit can replace the certified artifact even while the PR scope gate remains green.
+The Vercel project correctly names `main` as its production branch, so release-branch pushes are expected to create previews. Explicit production promotion authority still needs tight operator control: a promoted out-of-scope preview can replace the certified artifact even while the PR scope gate remains green.
 
 The unchanged lockfile also retains 13 dependency audit findings (2 low, 4 moderate, 7 high); remediation remains a separate reviewed security phase.
