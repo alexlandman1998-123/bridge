@@ -1,0 +1,25 @@
+{
+  "version": "202607180050",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "publicSignerSurfaceFunctionPresent": true,
+    "serviceRoleExecuteGranted": true,
+    "authenticatedExecuteRevoked": true,
+    "anonymousExecuteRevoked": true,
+    "missingSignerTargetRejected": true,
+    "missingSignerTargetSqlstate": "P0002",
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "signerRows": 21,
+    "signingFieldRows": 20,
+    "ledgerRecordedBeforeRepair": false
+  }
+}

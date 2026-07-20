@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const migration = fs.readFileSync('../supabase/migrations/202607180028_document_generator_concurrency_i1.sql', 'utf8')
+const migration = fs.readFileSync('../supabase/migrations/202607180051_document_generator_concurrency_i1.sql', 'utf8')
 for (const token of ['bridge_guard_document_packet_version_insert_i1', 'trg_guard_document_packet_version_insert_i1', 'bridge_complete_document_packet_version_insert_i1', 'trg_complete_document_packet_version_insert_i1', 'I1_PACKET_VERSION_LOCKED', 'I1_VERSION_SEQUENCE_INVALID', "('sent','partially_signed','completed','voided','archived')", 'bridge_probe_document_generator_concurrency_i1', "'i1-generator-v1'", 'currentPointerMatchesMax', 'duplicateVersionNumberCount', 'versionCreatedEventMismatchCount', 'orphanVersionEventCount', 'document_packet_versions_packet_version_i1_uq', "'mutatedData',false"]) assert.match(migration, new RegExp(token.replace(/[()]/g, '\\$&')))
 assert.match(migration, /for update/i)
 

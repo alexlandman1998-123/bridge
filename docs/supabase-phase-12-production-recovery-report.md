@@ -39,3 +39,7 @@ Accordingly:
 - This evidence must not be described as a complete whole-platform disaster-recovery test.
 
 Supabase documentation: [Database backups](https://supabase.com/docs/guides/platform/backups) and [Restore to a new project](https://supabase.com/blog/restore-to-a-new-project).
+
+## Phase 23 re-verification
+
+The recovery verifier now derives the live production expectation from the signed 433-row restore baseline plus unique reviewed promotions. After Phase 23 it passed at 481/481 production versions, normalized the 17 reviewed minute/second precision ledger pairs, reconfirmed all five identity fingerprints, and found 501 total rows on the forward-migrated staging ledger.

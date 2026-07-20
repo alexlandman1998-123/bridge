@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { documentGeneratorProtectedTables } from '../src/core/documents/documentGeneratorAccessBoundary.js'
 
-const migration = fs.readFileSync('../supabase/migrations/202607180026_document_generator_least_privilege_h2.sql', 'utf8')
+const migration = fs.readFileSync('../supabase/migrations/202607180049_document_generator_least_privilege_h2.sql', 'utf8')
 for (const token of ['bridge_get_document_generator_least_privilege_contract_h2', "'h2-generator-v1'", 'bridge_can_access_legal_packet_h2', 'directPipelineWriteGrantCount', 'serviceEvidenceClientGrantCount', 'document_signer_sessions', 'legal_final_completion_retry_attempts']) assert.match(migration, new RegExp(token))
 assert.match(migration, /revoke insert, update, delete[\s\S]*document_signing_field_layouts/)
 assert.match(migration, /revoke all[\s\S]*legal_final_artifact_evidence/)

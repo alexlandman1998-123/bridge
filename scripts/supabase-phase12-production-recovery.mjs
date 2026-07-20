@@ -3,13 +3,15 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
+import { REVIEWED_SPLIT_BASELINE } from './supabase-reviewed-split-baseline.mjs'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const STAGING_PROJECT_REF = 'vaszuxjeoajeuhlcnzzf'
-const EXPECTED_PRODUCTION_LEDGER_COUNT = 433
 const EXPECTED_FINGERPRINT_RELATIONS = 5
 const ATTEST_CONFIRMATION = 'PRODUCTION_RECOVERY_PROVEN'
 const PHASE11_EVIDENCE = 'migration-evidence/2026-07-20-staging-phase11/staging-release-certification.json'
+const RECOVERY_EVIDENCE_PATH = 'migration-evidence/2026-07-20-production-recovery-phase12/production-database-recovery.json'
+const CLOSEOUT_EVIDENCE_PATH = 'docs/supabase-phase-8-closeout-evidence.json'
 
 const fingerprintSql = `
 select 'auth.users' relation, count(*)::int row_count,
@@ -118,7 +120,19 @@ function productionQuery(sql) {
   return response.rows
 }
 
-async function databaseRecoveryState(client) {
+function expectedProductionLedgerState() {
+  const recoveryEvidence = JSON.parse(readFileSync(RECOVERY_EVIDENCE_PATH, 'utf8'))
+  const closeoutEvidence = JSON.parse(readFileSync(CLOSEOUT_EVIDENCE_PATH, 'utf8'))
+  const baseline = Number(recoveryEvidence.productionLedgerCount)
+  const promotedVersions = (closeoutEvidence.rows || [])
+    .filter((row) => row.productionLedgerRecorded === true && row.productionTargetStateVerified === true)
+    .map((row) => String(row.version || '').trim())
+  if (!Number.isInteger(baseline) || baseline < 1) throw new Error('Phase 12 recovery evidence has no valid production ledger baseline.')
+  if (new Set(promotedVersions).size !== promotedVersions.length) throw new Error('Production closeout evidence contains duplicate promoted versions.')
+  return { baseline, reviewedPromotionCount: promotedVersions.length, expected: baseline + promotedVersions.length }
+}
+
+async function databaseRecoveryState(client, expectedLedger) {
   const productionFingerprints = productionQuery(fingerprintSql)
   const stagingFingerprints = (await client.query(fingerprintSql)).rows
   if (productionFingerprints.length !== EXPECTED_FINGERPRINT_RELATIONS || stagingFingerprints.length !== EXPECTED_FINGERPRINT_RELATIONS) {
@@ -141,15 +155,18 @@ async function databaseRecoveryState(client) {
   }
 
   const productionLedger = productionQuery('select version from supabase_migrations.schema_migrations order by version')
-  if (productionLedger.length !== EXPECTED_PRODUCTION_LEDGER_COUNT) {
-    throw new Error(`Expected ${EXPECTED_PRODUCTION_LEDGER_COUNT} production ledger rows; found ${productionLedger.length}.`)
+  if (productionLedger.length !== expectedLedger.expected) {
+    throw new Error(`Expected the recovery baseline plus reviewed promotions (${expectedLedger.expected} production ledger rows); found ${productionLedger.length}.`)
   }
   const productionVersions = productionLedger.map((row) => String(row.version))
-  const stagingLedger = await client.query(`
-    select version from supabase_migrations.schema_migrations
-    where version = any($1::text[])
-  `, [productionVersions])
-  if (stagingLedger.rowCount !== productionVersions.length) {
+  const stagingLedger = await client.query('select version from supabase_migrations.schema_migrations')
+  const normalizedStagingVersions = new Set(stagingLedger.rows.map((row) => {
+    const version = String(row.version)
+    const minuteVersion = version.length === 14 && version.endsWith('00') ? version.slice(0, -2) : version
+    return REVIEWED_SPLIT_BASELINE.has(minuteVersion) ? minuteVersion : version
+  }))
+  const missingRestoredVersions = productionVersions.filter((version) => !normalizedStagingVersions.has(version))
+  if (missingRestoredVersions.length > 0) {
     throw new Error('The restored staging ledger does not contain the full production ledger baseline.')
   }
 
@@ -158,7 +175,12 @@ async function databaseRecoveryState(client) {
     matchedRelationCount: comparisons.length,
     matchedIdentityRowCount: comparisons.reduce((sum, row) => sum + row.productionRowCount, 0),
     productionLedgerCount: productionLedger.length,
-    restoredProductionLedgerCount: stagingLedger.rowCount,
+    restoredProductionLedgerCount: productionVersions.length,
+    restoredLedgerTotalCount: stagingLedger.rowCount,
+    reviewedSplitVersionCount: REVIEWED_SPLIT_BASELINE.size,
+    recoveryBaselineLedgerCount: expectedLedger.baseline,
+    reviewedPromotionCount: expectedLedger.reviewedPromotionCount,
+    expectedProductionLedgerCount: expectedLedger.expected,
   }
 }
 
@@ -176,10 +198,11 @@ async function main() {
 
   const target = requireTargets()
   const platform = platformRecoveryState()
+  const expectedLedger = expectedProductionLedgerState()
   const client = new pg.Client({ connectionString: target.dbUrl, ssl: { rejectUnauthorized: false } })
   await client.connect()
   try {
-    const database = await databaseRecoveryState(client)
+    const database = await databaseRecoveryState(client, expectedLedger)
     const result = {
       generatedAt: new Date().toISOString(),
       status: options.attest ? 'PRODUCTION_DATABASE_RECOVERY_PROVEN' : 'PRODUCTION_DATABASE_RECOVERY_PROVABLE',

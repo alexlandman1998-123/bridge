@@ -260,6 +260,78 @@
       "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
       "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
       "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 6 instruction)"
+    },
+    {
+      "version": "202607170029",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607170030",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607170031",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180023",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180033",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180034",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180048",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607200007",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180049",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180050",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180051",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
+    },
+    {
+      "version": "202607180052",
+      "stagingLedgerRecorded": true, "productionTargetStateVerified": true, "productionLedgerRecorded": true,
+      "catalogChecks": "pass", "behaviorChecks": "pass", "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)"
     }
   ]
 }

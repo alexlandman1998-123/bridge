@@ -1,0 +1,24 @@
+{
+  "version": "202607180034",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "rendererFenceFunctionCount": 2,
+    "serviceRoleExecuteGranted": true,
+    "authenticatedExecuteRevoked": true,
+    "anonymousExecuteRevoked": true,
+    "invalidFenceStageRejected": true,
+    "invalidFenceStageSqlstate": "22023",
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "ledgerRecordedBeforeRepair": false,
+    "transientControlPlaneRetryObserved": true
+  }
+}

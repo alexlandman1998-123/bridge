@@ -18,7 +18,7 @@ Production database access is configured through the Supabase CLI's short-lived 
 | Credential type | Supabase CLI short-lived login role |
 | Linked project identity | Verified |
 | Database connectivity | Pass |
-| Production ledger rows visible | 433 |
+| Production ledger rows visible | 481 after Phase 23 |
 | Phase 12 recovery evidence | Valid |
 | Runtime recovery confirmation | Configured locally |
 | Static database URL/password | Not configured |
@@ -40,4 +40,4 @@ Access alone does not authorize a migration. Every production action still requi
 
 ## Phase 17 re-verification
 
-After the first six Phase 15 batches, the live ledger contains 469 rows. The access verifier now calculates its expected count from the approved 433-row Phase 12 recovery baseline plus 36 unique reviewed production promotions. The live Phase 17 access check passes at 469/469; it no longer treats the historical baseline as the permanent final ledger count.
+After Phase 23, the live ledger contains 481 rows. The access verifier calculates its expected count from the approved 433-row Phase 12 recovery baseline plus 48 unique reviewed production promotions. The live check passes at 481/481; it does not treat the historical baseline as the permanent final ledger count.
