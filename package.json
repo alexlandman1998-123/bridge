@@ -43,6 +43,7 @@
     "supabase:phase25:verify": "node scripts/phase25-transaction-creation-correction.test.mjs && node scripts/phase25-transaction-seller-promotion.test.mjs",
     "application:phase26:verify": "node scripts/phase26-clean-reproducible-deployment.test.mjs",
     "application:phase27:verify": "node scripts/phase27-controlled-pilot-cohort.test.mjs",
+    "application:phase28:verify": "node scripts/phase28-pilot-operations.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
