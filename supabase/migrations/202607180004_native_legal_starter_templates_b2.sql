@@ -107,6 +107,165 @@ do update set
   published_at = coalesce(public.document_packet_templates.published_at, excluded.published_at, now()),
   updated_at = now();
 
+-- The earliest starter seed created these legacy rows with metadata only. Fill
+-- their empty legal_text from the governed canonical wording so this migration
+-- is self-contained even when the historical seed was ledgered but incomplete.
+with legacy_section_content(template_key, section_key, legal_text) as (
+  values
+    ('mandate_default_v1', 'introduction_purpose', $legal$MANDATE AGREEMENT
+
+This mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.
+
+The Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.$legal$),
+    ('mandate_default_v1', 'parties', $legal$SELLER
+
+Seller: {{seller_full_name}}
+Identity / Registration Number: {{seller_id_number}}
+Entity Type: {{seller_entity_type}}
+Domicilium Address: {{seller_domicilium_address}}
+Email: {{seller_email}}
+Telephone: {{seller_phone}}
+
+AGENCY AND AGENT
+
+Agency: {{organisation_name}}
+Agent: {{agent_full_name}}
+Agent Email: {{agent_email}}
+Agent Phone: {{agent_phone}}$legal$),
+    ('mandate_default_v1', 'property_details', $legal$PROPERTY
+
+Address: {{property_address}}
+Display Address: {{property_display_address}}
+Suburb / City: {{property_suburb}} {{property_city}}
+Property Type: {{property_type}}
+Unit / Section: {{property_unit_number}} {{property_section_number}}
+Scheme / Estate: {{property_complex_name}} {{property_estate_name}}
+Sectional Title Number: {{sectional_title_number}}$legal$),
+    ('mandate_default_v1', 'mandate_terms', $legal$MANDATE TERMS
+
+Mandate Type: {{mandate_type}}
+Start Date: {{mandate_start_date}}
+End Date: {{mandate_end_date}}
+
+The Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.
+
+Authority Granted: {{mandate_authority_granted}}
+Access Instructions: {{mandate_access_instructions}}$legal$),
+    ('mandate_default_v1', 'commission_terms', $legal$COMMISSION
+
+Asking Price: {{asking_price}}
+Commission Structure: {{commission_structure}}
+Commission Percentage: {{mandate_commission_percent}}
+Commission Amount: {{mandate_commission_amount}}
+VAT Treatment: {{vat_handling}}
+
+Commission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.$legal$),
+    ('mandate_default_v1', 'marketing_listing_terms', $legal$MARKETING AND LISTING
+
+Marketing Permissions: {{mandate_marketing_permissions}}
+Viewing / Access Arrangements: {{mandate_access_instructions}}
+
+The Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.$legal$),
+    ('mandate_default_v1', 'special_conditions', $legal$SPECIAL CONDITIONS
+
+{{special_conditions}}
+
+Annexures:
+{{annexures_list}}$legal$),
+    ('mandate_default_v1', 'signature_pages', $legal$SIGNATURES
+
+Seller: {{seller_full_name}}
+Signature: {{seller_signature}}
+Initials: {{seller_initials}}
+Date: {{signed_date}}
+
+Witness: {{witness_signature}}
+
+Agency: {{organisation_name}}
+Agent: {{agent_full_name}}
+FFC Number: {{agent_ffc_number}}$legal$),
+    ('otp_default_v1', 'buyer_details', $legal$PURCHASER
+
+Purchaser: {{buyer_full_name}}
+Identity / Registration Number: {{buyer_id_number}}
+Entity Type: {{buyer_entity_type}}
+Email: {{buyer_email}}
+Telephone: {{buyer_phone}}$legal$),
+    ('otp_default_v1', 'seller_details', $legal$SELLER
+
+Seller: {{seller_full_name}}
+Identity / Registration Number: {{seller_id_number}}
+Entity Type: {{seller_entity_type}}
+Email: {{seller_email}}
+Telephone: {{seller_phone}}$legal$),
+    ('otp_default_v1', 'property_details', $legal$PROPERTY
+
+Address: {{property_address}}
+Display Address: {{property_display_address}}
+Suburb / City: {{property_suburb}} {{property_city}}
+Property Type: {{property_type}}
+Erf Number: {{erf_number}}
+Unit / Section: {{property_unit_number}} {{property_section_number}}
+Scheme / Estate: {{property_complex_name}} {{property_estate_name}}
+Sectional Title Number: {{sectional_title_number}}$legal$),
+    ('otp_default_v1', 'purchase_terms', $legal$PURCHASE PRICE
+
+Purchase Price: {{purchase_price}}
+Deposit: {{deposit_amount}}
+Finance Type: {{finance_type}}
+Bond Amount: {{bond_amount}}
+Cash Contribution: {{cash_amount}}
+
+The Purchase Price is payable in accordance with the accepted offer, guarantees, bond approval, cash undertakings and conveyancer requirements.$legal$),
+    ('otp_default_v1', 'commission_terms', $legal$COMMISSION
+
+Agency: {{organisation_name}}
+Gross Commission Percentage: {{gross_commission_percentage}}
+Gross Commission Amount: {{gross_commission_amount}}
+Agency Commission Amount: {{agency_commission_amount}}
+Agent Commission Amount: {{agent_commission_amount}}
+
+Commission is earned and payable according to the accepted offer, mandate and applicable agency agreement.$legal$),
+    ('otp_default_v1', 'special_conditions', $legal$SPECIAL CONDITIONS
+
+{{special_conditions}}
+
+Annexures:
+{{annexures_list}}$legal$),
+    ('otp_default_v1', 'signature_pages', $legal$SIGNATURES
+
+Purchaser: {{buyer_full_name}}
+Signature: {{buyer_signature}}
+Initials: {{buyer_initials}}
+Date: {{signed_date}}
+
+Seller: {{seller_full_name}}
+Signature: {{seller_signature}}
+Initials: {{seller_initials}}
+Date: {{signed_date}}
+
+Witness: {{witness_signature}}
+
+Agency: {{organisation_name}}
+Agent: {{agent_full_name}}
+FFC Number: {{agent_ffc_number}}$legal$)
+)
+update public.document_template_sections section
+set legal_text = content.legal_text,
+    metadata_json = coalesce(section.metadata_json, '{}'::jsonb) || jsonb_build_object(
+      'editable', true,
+      'starter_content_version', 'b2-v1',
+      'empty_legacy_content_repaired', true
+    ),
+    updated_at = now()
+from public.document_packet_templates template,
+     legacy_section_content content
+where section.template_id = template.id
+  and template.organisation_id is null
+  and template.template_key = content.template_key
+  and section.section_key = content.section_key
+  and nullif(btrim(section.legal_text), '') is null;
+
 -- Some early production seed runs contain the older 8-section mandate and
 -- 7-section OTP shapes even though the migration ledger records the canonical
 -- starter seed. Add the minimum canonical keys required by the native contract

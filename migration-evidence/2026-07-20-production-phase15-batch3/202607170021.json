@@ -1,0 +1,12 @@
+{
+  "version": "202607170021",
+  "batch": "phase15_batch3_legal_document_runtime",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 3 instruction)",
+  "verification": { "uniqueTokenIndexLive": true, "functionLive": true, "triggerEnabled": true, "expiryWithoutTokenDenied": "P0001", "signerRows": 21, "behaviorProbeResidue": false }
+}

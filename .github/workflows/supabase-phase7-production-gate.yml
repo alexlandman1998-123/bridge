@@ -23,6 +23,9 @@ on:
       - 'scripts/supabase-phase15-batch2.test.mjs'
       - 'migration-evidence/2026-07-20-production-phase15-batch2/**'
       - 'docs/supabase-phase-15-batch-2-production-report.md'
+      - 'scripts/supabase-phase15-batch3.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch3/**'
+      - 'docs/supabase-phase-15-batch-3-production-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -50,6 +53,9 @@ on:
       - 'scripts/supabase-phase15-batch2.test.mjs'
       - 'migration-evidence/2026-07-20-production-phase15-batch2/**'
       - 'docs/supabase-phase-15-batch-2-production-report.md'
+      - 'scripts/supabase-phase15-batch3.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch3/**'
+      - 'docs/supabase-phase-15-batch-3-production-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -86,3 +92,6 @@ jobs:
 
       - name: Test Phase 15 Batch 2 production evidence
         run: node scripts/supabase-phase15-batch2.test.mjs
+
+      - name: Test Phase 15 Batch 3 production evidence
+        run: node scripts/supabase-phase15-batch3.test.mjs

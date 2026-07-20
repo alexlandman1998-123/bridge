@@ -1,0 +1,26 @@
+{
+  "version": "202607180004",
+  "batch": "phase15_batch3_legal_document_runtime",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "manualDataReview": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 3 instruction)",
+  "verification": {
+    "initialAttemptRolledBack": true,
+    "initialFailure": "15 legacy sections had empty legal_text",
+    "selfContainedMigrationPatched": true,
+    "historicalMigrationReplayed": false,
+    "mandateSections": 10,
+    "otpSections": 12,
+    "addendumSections": 6,
+    "emptySections": 0,
+    "structuredTemplates": 3,
+    "storageIndependentTemplates": 3,
+    "definitionsSynchronized": true,
+    "signatureSectionsLast": true
+  }
+}
