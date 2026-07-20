@@ -15,6 +15,9 @@ where requirement_key is null
    or document_type is null;
 
 alter table if exists public.documents
+  add column if not exists status text not null default 'uploaded',
+  add column if not exists bucket_key text,
+  add column if not exists updated_at timestamptz not null default now(),
   add column if not exists source_requirement_id uuid,
   add column if not exists source_canonical_requirement_instance_id uuid,
   add column if not exists source_approval_status text,
