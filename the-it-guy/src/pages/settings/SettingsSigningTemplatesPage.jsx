@@ -2966,10 +2966,6 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
-function normalizeObject(value = {}) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-}
-
 function createTemplateKeySegment(value = 'template') {
   return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template'
 }
@@ -3150,10 +3146,9 @@ function normalizeTemplateLegalText(value = '') {
 }
 
 function getDefaultSectionLegalText(packetType = 'otp', section = {}) {
-  const sourceSection = normalizeObject(section)
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
-  const sectionKey = normalizeText(sourceSection.section_key || sourceSection.sectionKey || sourceSection.key).toLowerCase()
-  const sectionLabel = normalizeText(sourceSection.section_label || sourceSection.sectionLabel || sourceSection.label).toLowerCase()
+  const sectionKey = normalizeText(section.section_key || section.sectionKey || section.key).toLowerCase()
+  const sectionLabel = normalizeText(section.section_label || section.sectionLabel || section.label).toLowerCase()
   const lookupKey = sectionKey || sectionLabel
 
   const otpDefaults = {
@@ -3261,8 +3256,7 @@ function detectTemplateTokenIssues(text = '') {
 function sectionsFromTemplate(template = null) {
   const sections = Array.isArray(template?.sections) ? template.sections : []
   const packetType = normalizeText(template?.packet_type || template?.packetType || template?.metadata_json?.packet_type || template?.metadata_json?.packetType || 'otp')
-  return sections.map((sourceSection, index) => {
-    const section = normalizeObject(sourceSection)
+  return sections.map((section, index) => {
     const savedLegalText = normalizeTemplateLegalText(section.legal_text || section.legalText || '')
     const legalText = savedLegalText || normalizeTemplateLegalText(getDefaultSectionLegalText(packetType, section))
     const metadata = section?.metadata_json && typeof section.metadata_json === 'object'
@@ -3371,34 +3365,33 @@ function toTemplateForm(template = null) {
 }
 
 function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
-  const sourceSection = normalizeObject(section)
-  const placeholderKeys = String(sourceSection.placeholderKeysText || '')
+  const placeholderKeys = String(section.placeholderKeysText || '')
     .split(',')
     .map((item) => normalizeText(item))
     .filter(Boolean)
-  const metadataJson = sourceSection.metadataJson && typeof sourceSection.metadataJson === 'object' ? sourceSection.metadataJson : {}
-  const signingRequirement = normalizeSectionSigningRequirement(sourceSection.signingRequirement, {
-    requiresInitial: Boolean(sourceSection.requiresInitial),
-    requiresSignature: Boolean(sourceSection.requiresSignature),
+  const metadataJson = section.metadataJson && typeof section.metadataJson === 'object' ? section.metadataJson : {}
+  const signingRequirement = normalizeSectionSigningRequirement(section.signingRequirement, {
+    requiresInitial: Boolean(section.requiresInitial),
+    requiresSignature: Boolean(section.requiresSignature),
   })
   const requiresInitial = signingRequirement === 'client_initial'
   const requiresSignature = signingRequirement === 'client_signature'
-  const initialPlaceholderKey = normalizeText(sourceSection.initialPlaceholderKey) || (requiresInitial ? getDefaultClientSigningPlaceholderKey(packetType, 'client_initial') : '')
-  const signaturePlaceholderKey = normalizeText(sourceSection.signaturePlaceholderKey) || (requiresSignature ? getDefaultClientSigningPlaceholderKey(packetType, 'client_signature') : '')
-  const signingRole = normalizeText(sourceSection.signingRole || 'client') || 'client'
-  const signingFields = getSigningFieldsFromMetadata(metadataJson, sourceSection)
+  const initialPlaceholderKey = normalizeText(section.initialPlaceholderKey) || (requiresInitial ? getDefaultClientSigningPlaceholderKey(packetType, 'client_initial') : '')
+  const signaturePlaceholderKey = normalizeText(section.signaturePlaceholderKey) || (requiresSignature ? getDefaultClientSigningPlaceholderKey(packetType, 'client_signature') : '')
+  const signingRole = normalizeText(section.signingRole || 'client') || 'client'
+  const signingFields = getSigningFieldsFromMetadata(metadataJson, section)
 
   return {
-    sectionKey: normalizeText(sourceSection.sectionKey || `section_${index + 1}`),
-    sectionLabel: normalizeText(sourceSection.sectionLabel || `Section ${index + 1}`),
-    sectionType: normalizeText(sourceSection.sectionType || 'legal_text') || 'legal_text',
-    legalText: String(sourceSection.legalText || ''),
+    sectionKey: normalizeText(section.sectionKey || `section_${index + 1}`),
+    sectionLabel: normalizeText(section.sectionLabel || `Section ${index + 1}`),
+    sectionType: normalizeText(section.sectionType || 'legal_text') || 'legal_text',
+    legalText: String(section.legalText || ''),
     placeholderKeys,
-    isRequired: sourceSection.isRequired === undefined ? true : Boolean(sourceSection.isRequired),
-    conditionJson: sourceSection.conditionJson && typeof sourceSection.conditionJson === 'object'
-      ? sourceSection.conditionJson
-      : sourceSection.condition_json && typeof sourceSection.condition_json === 'object'
-        ? sourceSection.condition_json
+    isRequired: section.isRequired === undefined ? true : Boolean(section.isRequired),
+    conditionJson: section.conditionJson && typeof section.conditionJson === 'object'
+      ? section.conditionJson
+      : section.condition_json && typeof section.condition_json === 'object'
+        ? section.condition_json
         : {},
     metadataJson: {
       ...metadataJson,
@@ -3421,16 +3414,15 @@ function mapSectionForSave(section = {}, index = 0, packetType = 'otp') {
       signature_placeholder_key: signaturePlaceholderKey,
       planned_signing_fields: signingFields,
     },
-    sortOrder: Number.isFinite(Number(sourceSection.sortOrder)) ? Number(sourceSection.sortOrder) : index,
+    sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index,
   }
 }
 
 function mapSectionForPreview(section = {}, index = 0, packetType = 'otp') {
-  const sourceSection = normalizeObject(section)
-  const savedSection = mapSectionForSave(sourceSection, index, packetType)
+  const savedSection = mapSectionForSave(section, index, packetType)
   return {
     ...savedSection,
-    id: sourceSection.id || null,
+    id: section.id || null,
     section_key: savedSection.sectionKey,
     section_label: savedSection.sectionLabel,
     section_type: savedSection.sectionType,
@@ -3439,7 +3431,7 @@ function mapSectionForPreview(section = {}, index = 0, packetType = 'otp') {
     is_required: savedSection.isRequired,
     metadata_json: savedSection.metadataJson,
     sort_order: savedSection.sortOrder,
-    condition_json: sourceSection.conditionJson || sourceSection.condition_json || null,
+    condition_json: section.conditionJson || section.condition_json || null,
   }
 }
 
@@ -3517,7 +3509,7 @@ function summarizeTemplateValidation({
     warnings.push('DOCX storage path is not configured yet. Generation will fail until a template file path is saved.')
   }
 
-  const sections = (Array.isArray(form.sections) ? form.sections : []).map((section) => normalizeObject(section))
+  const sections = Array.isArray(form.sections) ? form.sections : []
   if (!sections.length) {
     blockers.push('Add at least one template section.')
   }
@@ -5472,12 +5464,11 @@ function resolveSigningFieldPlanCollisions(fields = []) {
 }
 
 function getSigningFieldsFromMetadata(metadata = {}, section = {}) {
-  const sourceSection = normalizeObject(section)
   const signing = metadata?.signing && typeof metadata.signing === 'object' ? metadata.signing : {}
-  const source = Array.isArray(sourceSection.signingFields)
-    ? sourceSection.signingFields
-    : Array.isArray(sourceSection.signing_fields)
-      ? sourceSection.signing_fields
+  const source = Array.isArray(section.signingFields)
+    ? section.signingFields
+    : Array.isArray(section.signing_fields)
+      ? section.signing_fields
       : Array.isArray(signing.planned_fields)
         ? signing.planned_fields
         : Array.isArray(signing.plannedFields)
@@ -5517,8 +5508,6 @@ function hasPublishingAuthority({ appRole = '', membershipRole = '', workspaceMe
 }
 
 function sectionChanged(currentSection = {}, baselineSection = {}) {
-  const current = normalizeObject(currentSection)
-  const baseline = normalizeObject(baselineSection)
   if (!baselineSection) return true
   return [
     'sectionKey',
@@ -5530,15 +5519,14 @@ function sectionChanged(currentSection = {}, baselineSection = {}) {
     'signingRequirement',
     'initialPlaceholderKey',
     'signaturePlaceholderKey',
-  ].some((key) => stableStringify(current[key]) !== stableStringify(baseline[key]))
-    || stableStringify(current.conditionJson || {}) !== stableStringify(baseline.conditionJson || {})
-    || stableStringify(getSigningFieldsFromMetadata(current.metadataJson || {}, current)) !== stableStringify(getSigningFieldsFromMetadata(baseline.metadataJson || {}, baseline))
-    || stableStringify(getSectionGovernance(current)) !== stableStringify(getSectionGovernance(baseline))
+  ].some((key) => stableStringify(currentSection?.[key]) !== stableStringify(baselineSection?.[key]))
+    || stableStringify(currentSection?.conditionJson || {}) !== stableStringify(baselineSection?.conditionJson || {})
+    || stableStringify(getSigningFieldsFromMetadata(currentSection?.metadataJson || {}, currentSection)) !== stableStringify(getSigningFieldsFromMetadata(baselineSection?.metadataJson || {}, baselineSection))
+    || stableStringify(getSectionGovernance(currentSection)) !== stableStringify(getSectionGovernance(baselineSection))
 }
 
 function getFriendlySectionLabel(section = {}, index = 0) {
-  const sourceSection = normalizeObject(section)
-  const current = normalizeText(sourceSection.sectionLabel)
+  const current = normalizeText(section.sectionLabel)
   if (current && !/^parties$/i.test(current) && !/^purchase terms$/i.test(current)) return current
   return SIMPLE_SECTION_LABELS[index] || current || `Section ${index + 1}`
 }
@@ -5550,11 +5538,10 @@ function getSectionDescription(section = {}, index = 0) {
 
 function buildLegalConditionCoverage(sections = []) {
   const normalizedSections = (Array.isArray(sections) ? sections : []).map((section, index) => {
-    const sourceSection = normalizeObject(section)
-    const sectionKey = normalizeText(sourceSection.sectionKey || sourceSection.section_key).toLowerCase()
-    const sectionLabel = getFriendlySectionLabel(sourceSection, index)
-    const legalText = normalizeText(sourceSection.legalText || sourceSection.legal_text).toLowerCase()
-    const placeholderText = normalizeText(sourceSection.placeholderKeysText || '').toLowerCase()
+    const sectionKey = normalizeText(section.sectionKey || section.section_key).toLowerCase()
+    const sectionLabel = getFriendlySectionLabel(section, index)
+    const legalText = normalizeText(section.legalText || section.legal_text).toLowerCase()
+    const placeholderText = normalizeText(section.placeholderKeysText || '').toLowerCase()
     return {
       index,
       section,
@@ -5637,10 +5624,9 @@ function getVariableGroups(fields = []) {
 }
 
 function getSectionVisualState(section = {}, packetType = 'otp') {
-  const sourceSection = normalizeObject(section)
-  const content = normalizeText(sourceSection.legalText)
-  const tokenScan = detectTemplateTokenIssues(sourceSection.legalText)
-  const placeholderKeys = String(sourceSection.placeholderKeysText || '')
+  const content = normalizeText(section.legalText)
+  const tokenScan = detectTemplateTokenIssues(section.legalText)
+  const placeholderKeys = String(section.placeholderKeysText || '')
     .split(',')
     .map((item) => normalizeText(item))
     .filter(Boolean)
@@ -5657,7 +5643,7 @@ function getSectionVisualState(section = {}, packetType = 'otp') {
     }
   }
 
-  if (!content && sourceSection.isRequired === false) {
+  if (!content && section.isRequired === false) {
     return {
       key: 'optional',
       label: 'Optional',
@@ -6454,8 +6440,8 @@ export default function SettingsSigningTemplatesPage({
     })
   }, [conditionalMasterAssessment, form.metadataJson, form.sections, packetType])
   const publishReview = useMemo(() => {
-    const baselineSections = (Array.isArray(baselineForm?.sections) ? baselineForm.sections : []).map((section) => normalizeObject(section))
-    const currentSections = (Array.isArray(form.sections) ? form.sections : []).map((section) => normalizeObject(section))
+    const baselineSections = baselineForm?.sections || []
+    const currentSections = form.sections || []
     const changedSections = currentSections
       .map((section, index) => ({
         section,
@@ -6465,7 +6451,7 @@ export default function SettingsSigningTemplatesPage({
       .filter((item) => item.changed)
     const lockedSections = currentSections.filter((section) => getSectionGovernance(section).locked)
     const signingFieldCount = currentSections.reduce((total, section) => total + getSigningFieldsFromMetadata(section.metadataJson || {}, section).length, 0)
-    const conditionCount = currentSections.filter((section) => normalizeConditionRule(section.conditionJson || {}).enabled).length
+    const conditionCount = currentSections.filter((section) => normalizeConditionRule(section.conditionJson).enabled).length
     const metadataChanged = baselineForm ? [
       'templateLabel',
       'description',
