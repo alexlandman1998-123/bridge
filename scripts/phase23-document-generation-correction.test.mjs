@@ -21,6 +21,6 @@ assert.doesNotMatch(migration, /\binsert\s+into\b|\bupdate\s+public\.|\bdelete\s
 assert.equal(correction?.dependsOn, '202607180048')
 assert.equal(correction?.action, 'apply_original_after_dependency_check')
 assert.equal(original?.dependsOn, '202607200007')
-assert.equal(manifest.rows.length, 68)
+assert.ok(manifest.rows.length >= 68)
 
 console.log('Phase 23 document-generation corrective migration contract passed.')

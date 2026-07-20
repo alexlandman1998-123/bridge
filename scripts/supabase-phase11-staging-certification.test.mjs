@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./supabase-phase11-staging-certification.mj
 
 assert.match(source, /CERTIFY_STAGING/)
 assert.match(source, /--approved-by is required/)
-assert.match(source, /EXPECTED_MANIFEST_ROWS = 68/)
+assert.match(source, /EXPECTED_MANIFEST_ROWS = 70/)
 assert.match(source, /schema_migrations/)
 assert.match(source, /attorney_role_integrity_v1/)
 assert.match(source, /remediationRunId/)

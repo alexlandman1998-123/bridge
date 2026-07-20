@@ -22,15 +22,19 @@ const chainFiles = evidence.conditionalMasterChain.map((row) => row.newFile)
 const chainVersions = evidence.conditionalMasterChain.map((row) => row.version)
 const manifestVersions = new Set(manifest.rows.map((row) => row.version))
 const phase22 = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase22/staging-inventory-expansion.json', 'utf8'))
-const phase23Correction = '202607200007_document_generator_least_privilege_h2_fix.sql'
+const authorizedPostBaselineMigrations = [
+  '202607200007_document_generator_least_privilege_h2_fix.sql',
+  '202607209901_attorney_professional_role_persistence_phase24_fix.sql',
+  '202607209902_attorney_professional_permission_cutover_phase24_fix.sql',
+]
 
 assert.equal(evidence.status, 'MIGRATION_INVENTORY_REPAIRED')
-assert.equal(files.length, evidence.inventory.migrationFiles + 1)
-assert.equal(byVersion.size, evidence.inventory.uniqueVersions + 1)
+assert.equal(files.length, evidence.inventory.migrationFiles + authorizedPostBaselineMigrations.length)
+assert.equal(byVersion.size, evidence.inventory.uniqueVersions + authorizedPostBaselineMigrations.length)
 assert.deepEqual(duplicates, [])
 assert.deepEqual(evidence.inventory.duplicateVersions, [])
 assert.ok(files.includes(evidence.inventory.preservedMigration))
-assert.ok(files.includes(phase23Correction))
+for (const migration of authorizedPostBaselineMigrations) assert.ok(files.includes(migration))
 assert.deepEqual(chainVersions, ['202607200004', '202607200005', '202607200006'])
 assert.deepEqual(scope.pendingConditionalMasterInventory.files, chainFiles)
 assert.deepEqual(scope.pendingConditionalMasterInventory.allocatedVersions, chainVersions)
@@ -51,4 +55,4 @@ assert.equal(evidence.scope.sqlAppliedToProduction, false)
 assert.equal(evidence.scope.productionLedgerChanged, false)
 assert.equal(evidence.scope.phase0MigrationFreezeRemainsActive, true)
 
-console.log('Phase 19 inventory baseline plus the authorized Phase 23 corrective migration passed: 502 unique versions.')
+console.log(`Phase 19 inventory baseline plus ${authorizedPostBaselineMigrations.length} authorized post-baseline migrations passed: ${byVersion.size} unique versions.`)

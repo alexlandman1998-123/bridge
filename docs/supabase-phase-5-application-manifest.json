@@ -688,16 +688,28 @@
       "gate": "Run module behavior tests; then record only this version as applied."
     },
     {
-      "version": "202607180037",
+      "version": "202607209901",
       "stream": "attorney_identity_access",
       "dependsOn": "stream preflight",
       "module": "attorney",
-      "file": "202607180037_attorney_professional_role_persistence_phase3.sql",
-      "objectStatus": "partial_live",
+      "file": "202607209901_attorney_professional_role_persistence_phase24_fix.sql",
+      "objectStatus": "reviewed_partial_live_correction",
       "liveCount": 4,
       "objectCount": 27,
-      "action": "corrective_migration_required",
-      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes."
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the reviewed idempotent Phase 24 correction, verify the complete professional-profile target state, then ledger the historical source version."
+    },
+    {
+      "version": "202607180037",
+      "stream": "attorney_identity_access",
+      "dependsOn": "202607209901",
+      "module": "attorney",
+      "file": "202607180037_attorney_professional_role_persistence_phase3.sql",
+      "objectStatus": "all_live_after_reviewed_correction",
+      "liveCount": 27,
+      "objectCount": 27,
+      "action": "repair_only_after_smoke",
+      "gate": "Record only after 202607209901 is applied and the complete historical target state passes production catalog and behavior checks."
     },
     {
       "version": "202607180038",
@@ -724,16 +736,28 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180040",
+      "version": "202607209902",
       "stream": "attorney_identity_access",
       "dependsOn": "202607180039",
       "module": "attorney",
-      "file": "202607180040_attorney_professional_permission_cutover_phase7.sql",
-      "objectStatus": "partial_live",
+      "file": "202607209902_attorney_professional_permission_cutover_phase24_fix.sql",
+      "objectStatus": "reviewed_partial_live_correction",
       "liveCount": 3,
       "objectCount": 4,
-      "action": "corrective_migration_required",
-      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes."
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the reviewed idempotent Phase 24 permission correction, verify canonical authorization behavior, then ledger the historical source version."
+    },
+    {
+      "version": "202607180040",
+      "stream": "attorney_identity_access",
+      "dependsOn": "202607209902",
+      "module": "attorney",
+      "file": "202607180040_attorney_professional_permission_cutover_phase7.sql",
+      "objectStatus": "all_live_after_reviewed_correction",
+      "liveCount": 4,
+      "objectCount": 4,
+      "action": "repair_only_after_smoke",
+      "gate": "Record only after 202607209902 is applied and canonical permission behavior passes production verification."
     },
     {
       "version": "202607180041",
