@@ -2,6 +2,118 @@ begin;
 
 create extension if not exists "pgcrypto";
 
+-- Restore the client-token helpers before finance policies reference them.
+create or replace function public.bridge_request_headers()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(nullif(current_setting('request.headers', true), '')::jsonb, '{}'::jsonb)
+$$;
+
+create or replace function public.bridge_request_header(header_name text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select lower(coalesce(public.bridge_request_headers() ->> lower(coalesce(header_name, '')), ''))
+$$;
+
+create or replace function public.bridge_client_portal_request_token()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_request_header('x-bridge-client-portal-token')
+$$;
+
+create or replace function public.bridge_onboarding_request_token()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_request_header('x-bridge-onboarding-token')
+$$;
+
+create or replace function public.bridge_status_request_token()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_request_header('x-bridge-status-token')
+$$;
+
+create or replace function public.bridge_has_client_portal_token_transaction_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.client_portal_links cpl
+    where cpl.transaction_id = target_transaction_id
+      and cpl.is_active = true
+      and cpl.token = public.bridge_client_portal_request_token()
+  )
+$$;
+
+create or replace function public.bridge_has_onboarding_token_transaction_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.transaction_onboarding t_onb
+    where t_onb.transaction_id = target_transaction_id
+      and t_onb.is_active = true
+      and t_onb.token = public.bridge_onboarding_request_token()
+  )
+$$;
+
+create or replace function public.bridge_has_status_token_transaction_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.transaction_status_links tsl
+    where tsl.transaction_id = target_transaction_id
+      and tsl.is_active = true
+      and tsl.token = public.bridge_status_request_token()
+  )
+$$;
+
+create or replace function public.bridge_has_request_transaction_token_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    public.bridge_has_client_portal_token_transaction_access(target_transaction_id)
+    or public.bridge_has_onboarding_token_transaction_access(target_transaction_id)
+    or public.bridge_has_status_token_transaction_access(target_transaction_id)
+$$;
+
 alter table if exists public.transaction_finance_workflows
   add column if not exists finance_owner text,
   add column if not exists blocker_status text,
