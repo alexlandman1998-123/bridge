@@ -17,6 +17,7 @@ const checks = [
   ['synthetic core flow', ['scripts/mvp-synthetic-core-flow.mjs']],
   ['accepted-offer conversion receipt', ['scripts/mvp-accepted-offer-conversion-receipt.test.mjs']],
   ['buyer onboarding notification contract', ['scripts/buyer-onboarding-notification-contract.test.mjs']],
+  ['agency lead selection null safety', ['scripts/agency-lead-selection-null-safety.test.mjs']],
   ['transaction health and audit recovery', ['scripts/mvp-transaction-health-panel.test.mjs']],
   ['transaction audit and notification recovery', ['scripts/mvp-transaction-audit-recovery.test.mjs']],
   ['pilot batch audit controls', ['scripts/mvp-pilot-batch-audit.test.mjs']],
