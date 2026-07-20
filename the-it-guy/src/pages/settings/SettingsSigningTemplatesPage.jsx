@@ -6230,24 +6230,32 @@ export default function SettingsSigningTemplatesPage({
   )
   const mandatePublishGateReport = useMemo(() => {
     if (packetType !== 'mandate') return null
+    const mandateRoute = normalizeMandateTemplateRoute(
+      form.mandateTemplateVariant ||
+        form.metadataJson?.mandate_template_variant ||
+        form.metadataJson?.mandateTemplateVariant ||
+        selectedTemplate?.metadata_json?.mandate_template_variant ||
+        selectedTemplate?.metadata_json?.mandateTemplateVariant ||
+        'default',
+    )
     return buildMandateTemplatePublishGateReport({
       packet_type: 'mandate',
       packetType: 'mandate',
       template_label: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.templateLabel || '',
       metadata_json: {
         ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-        mandate_template_variant: 'default',
-        mandateTemplateVariant: 'default',
+        mandate_template_variant: mandateRoute,
+        mandateTemplateVariant: mandateRoute,
       },
       metadataJson: {
         ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-        mandate_template_variant: 'default',
-        mandateTemplateVariant: 'default',
+        mandate_template_variant: mandateRoute,
+        mandateTemplateVariant: mandateRoute,
       },
       sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'mandate')),
     }, {
       packetType: 'mandate',
-      routeKey: 'default',
+      routeKey: mandateRoute,
     })
   }, [form, packetType, selectedTemplate])
   const variableGroups = useMemo(

@@ -183,10 +183,8 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
       'seller_spouse_full_name',
       'seller_spouse_id_number',
       'seller_spouse_email',
-      'seller_spouse_consent_required',
     ],
     phrases: [
-      'spouse consent',
       'married in community of property',
       'spouse recorded below',
       'spouse will sign',
