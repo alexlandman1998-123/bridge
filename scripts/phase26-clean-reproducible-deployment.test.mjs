@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 
 const evidence = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase26/release-candidate.json', 'utf8'))
 const production = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase26/production-deployment.json', 'utf8'))
+const recertification = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase34/production-source-recertification.json', 'utf8'))
 const releaseSource = JSON.parse(readFileSync('the-it-guy/public/release-source.json', 'utf8'))
 const runtimePaths = [
   'the-it-guy/src',
@@ -43,7 +44,6 @@ assert.equal(evidence.phase, 26)
 assert.doesNotThrow(() => git(['cat-file', '-e', `${evidence.repository.runtimeBaselineCommit}^{commit}`]))
 assert.equal(git(['rev-parse', `${evidence.repository.runtimeBaselineCommit}:the-it-guy/src`]), evidence.repository.runtimeSourceTree)
 assert.equal(fingerprint(evidence.repository.runtimeBaselineCommit), evidence.repository.runtimeBuildInputFingerprint)
-assert.equal(fingerprint('HEAD'), evidence.repository.runtimeBuildInputFingerprint)
 assert.equal(releaseSource.schema, 'arch9_release_source_v1')
 assert.equal(releaseSource.phase, 26)
 assert.equal(releaseSource.runtimeBaselineCommit, evidence.repository.runtimeBaselineCommit)
@@ -100,4 +100,14 @@ assert.equal(production.safety.databaseMutatedByPhase26, false)
 assert.equal(production.safety.phase0MigrationFreezeRemainsActive, true)
 assert.equal(production.safety.uncommittedApplicationChangesDeployed, false)
 
-console.log('Phase 26 passed: clean reproducible release is READY in production with 428/428 assets healthy.')
+assert.equal(recertification.status, 'PRODUCTION_APPLICATION_SOURCE_RECERTIFIED')
+assert.equal(fingerprint('HEAD'), recertification.repository.runtimeBuildInputFingerprint)
+assert.equal(fullFingerprint('HEAD'), recertification.repository.fullRuntimeBuildInputFingerprint)
+assert.equal(recertification.productionDeployment.releaseId, recertification.repository.productionSourceCommit)
+assert.equal(recertification.productionDeployment.status, 'READY')
+assert.equal(recertification.verification.productionCriticalAssetCount, 427)
+assert.equal(recertification.verification.productionCriticalAssetsHealthy, true)
+assert.equal(recertification.build.repeatBuild, 'pass')
+assert.equal(recertification.safety.uncommittedApplicationChangesDeployed, false)
+
+console.log('Phase 26 passed through Phase 34: the current clean reproducible release is READY with 427/427 assets healthy.')

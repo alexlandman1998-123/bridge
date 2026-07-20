@@ -25,6 +25,8 @@ for (const commit of [
   release.phase32GovernanceCommit,
   release.excludedConcurrentCommit,
   release.scopeIsolationCommit,
+  release.postLockDriftCommit,
+  release.postLockIsolationCommit,
 ]) assert.doesNotThrow(() => git(['cat-file', '-e', `${commit}^{commit}`]))
 
 assert.equal(git(['rev-parse', `${release.scopeIsolationCommit}^`]), release.excludedConcurrentCommit)
@@ -35,6 +37,13 @@ assert.equal(
 )
 assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', release.productionApplicationCommit, release.phase32GovernanceCommit]))
 assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', release.scopeIsolationCommit, 'HEAD']))
+assert.equal(git(['rev-parse', `${release.postLockIsolationCommit}^`]), release.postLockDriftCommit)
+assert.equal(
+  git(['rev-parse', `${release.postLockIsolationCommit}^{tree}`]),
+  git(['rev-parse', `${release.postLockDriftCommit}^^{tree}`]),
+  'The post-lock isolation commit must restore the tree that existed before the drift commit.',
+)
+assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', release.postLockIsolationCommit, 'HEAD']))
 
 for (const migration of scope.excluded.deferredMigrations) {
   assert.equal(existsSync(`supabase/migrations/${migration}`), false, `${migration} must remain outside PR #1`)

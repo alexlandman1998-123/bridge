@@ -14,6 +14,8 @@ Commit `ae47263888191e8178c7f7ebb7c0824eca628135` added attorney-module, attorne
 
 Phase 33 excludes that commit from the release through the normal revert commit `670419e866e0b02cc6e1ff327d6c8735416b83f2`. History was not rewritten and the work was not destroyed: it remains available at `ae472638` for a later feature branch and its own staging and production governance.
 
+Phase 34 detected a second post-lock runtime change at `21c158375da84a47113bab7046bde34f63640a6d`. Revert commit `94cf6383cf544c8a11902b505ba36999328d5eb8` preserves that change in history while restoring the locked runtime tree.
+
 ## Allowed follow-up work
 
 Until PR #1 is ready, further commits may only:

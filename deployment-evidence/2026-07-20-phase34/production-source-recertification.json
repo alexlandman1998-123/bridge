@@ -1,0 +1,88 @@
+{
+  "phase": 34,
+  "status": "PRODUCTION_APPLICATION_SOURCE_RECERTIFIED",
+  "verifiedAt": "2026-07-20T20:11:32Z",
+  "repository": {
+    "branch": "codex/mvp-pilot-readiness",
+    "productionSourceCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "runtimeSourceTree": "8f78e7c07b3e5d50f2652e3b477a52023295fae2",
+    "runtimeRootTree": "94a9ca85c7b6b558cee2e0480ec69e4722be29c6",
+    "runtimeBuildInputFingerprintAlgorithm": "sha256_of_git_ls_tree_excluding_release_source_marker",
+    "runtimeBuildInputFingerprint": "ee8967d19cfa6213c062127a898f3b6ad3118cd6f88462a37fb3361e872d6db6",
+    "fullRuntimeBuildInputFingerprint": "8246654e03f4e4b08c155482ad3dce33ade3eb1f9320bfa137de2deceb8cadd5",
+    "branchRuntimeMatchesProductionSource": true,
+    "runtimeBuildInputsClean": true
+  },
+  "deploymentDrift": {
+    "detected": true,
+    "excludedReleaseId": "ae47263888191e8178c7f7ebb7c0824eca628135",
+    "excludedDeploymentId": "dpl_8VwyYjUSw3XCAiQWbcuJSeCdKztg",
+    "excludedDeploymentUrl": "https://bridge-hvfuexarz-alexs-projects-f5496a21.vercel.app",
+    "cause": "an automatic production promotion occurred after the Phase 33 scope boundary",
+    "remediation": "promoted the existing certified 333c08eb deployment back to production",
+    "resolved": true
+  },
+  "releaseBranchDrift": {
+    "detected": true,
+    "driftCommit": "21c158375da84a47113bab7046bde34f63640a6d",
+    "isolationCommit": "94cf6383cf544c8a11902b505ba36999328d5eb8",
+    "strategy": "normal_revert_without_history_rewrite",
+    "driftCommitPreserved": true,
+    "resolved": true
+  },
+  "build": {
+    "isolatedDetachedWorktree": true,
+    "freshLockfileInstall": true,
+    "nodeVersion": "22.23.1",
+    "npmVersion": "10.9.8",
+    "releaseId": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "modulesTransformed": 3490,
+    "criticalAssetCount": 427,
+    "outputFileCount": 445,
+    "deterministicFileCount": 444,
+    "deterministicOutputHash": "e3baf17b78f3ebced69e58e4d9d7f880b63c4597dd4313273001d74c75582bac",
+    "repeatBuildOutputHash": "e3baf17b78f3ebced69e58e4d9d7f880b63c4597dd4313273001d74c75582bac",
+    "repeatBuild": "pass",
+    "performanceBudget": "pass",
+    "lockfileChanged": false
+  },
+  "productionDeployment": {
+    "provider": "Vercel",
+    "project": "bridge",
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "id": "dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT",
+    "url": "https://bridge-r6aczta28-alexs-projects-f5496a21.vercel.app",
+    "domain": "https://app.arch9.co.za",
+    "target": "production",
+    "status": "READY",
+    "releaseId": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "createdAt": "2026-07-20T19:08:37Z"
+  },
+  "verification": {
+    "manifestReleaseMatchesCertifiedSource": true,
+    "productionCriticalAssetCount": 427,
+    "productionCriticalAssetsHealthy": true,
+    "productionFailedCriticalAssets": 0,
+    "manifestCacheControl": "no-cache, no-store, must-revalidate",
+    "browserRoute": "/auth",
+    "browserHttpStatus": 200,
+    "browserTitle": "Arch9 | Platform",
+    "browserSignInControlsPresent": true,
+    "browserConsoleErrors": 0,
+    "browserPageErrors": 0,
+    "authenticatedApiGuardStatus": 401,
+    "boundedRuntimeErrorScan": 0,
+    "boundedHttp500Scan": 0
+  },
+  "safety": {
+    "databaseMutatedByPhase34": false,
+    "productionConfigurationChangedByPhase34": false,
+    "uncommittedApplicationChangesDeployed": false,
+    "phase0MigrationFreezeRemainsActive": true,
+    "rollbackAvailable": true
+  },
+  "advisories": [
+    "The unchanged dependency lockfile reports 13 audit findings: 2 low, 4 moderate, and 7 high.",
+    "Automatic production promotion must be restricted before another out-of-scope branch commit can replace the certified artifact."
+  ]
+}
