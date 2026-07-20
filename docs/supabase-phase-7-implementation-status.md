@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: READY_FOR_CONTROLLED_PRODUCTION_PROMOTION**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 71 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6, Phases 23–25 and Phases 29–30 have promoted 68 migrations, including document generation, attorney identity/access, transaction creation, seller completion, attorney accounting and attorney calendar.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 71 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6 and Phases 23–25 and 29–31 have promoted or target-state verified all 71 governed migrations.
 
 ## Implemented Controls
 
@@ -41,9 +41,9 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production migration history | Reconciled: 0 genuine remote-only versions |
 | Duplicate local migration version | Resolved in Phase 19; 501 files have 501 unique versions |
-| Production SQL promoted | 68/71 |
-| Production closeout evidence | 68/71 complete |
-| Production ledger | 501 rows after Phase 30 |
+| Production SQL promoted or target-state verified | 71/71 |
+| Production closeout evidence | 71/71 complete |
+| Production ledger | 504 rows after Phase 31 |
 
 ## Usage
 
@@ -117,5 +117,4 @@ node scripts/supabase-phase7-production-execution.mjs \
 
 ## Handoff
 
-1. Promote the smallest dependency stream one exact version at a time.
-2. Stop between SQL application and ledger recording for production verification and review.
+The governed promotion queue is empty. Continue to use the one-version runner and separate verification if a later release adds a new governed migration.

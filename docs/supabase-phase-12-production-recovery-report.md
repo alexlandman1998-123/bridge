@@ -59,3 +59,7 @@ After Phase 29, the baseline-plus-reviewed-promotions rule expects 500 productio
 ## Phase 30 re-verification
 
 After Phase 30, the baseline-plus-reviewed-promotions rule expects 501 production ledger rows: the signed 433-row recovery baseline plus 68 unique reviewed promotions. Attorney-calendar version `202607180047` was repair-only because its target state was already live and passed the production behavior suite.
+
+## Phase 31 re-verification
+
+After Phase 31, the baseline-plus-reviewed-promotions rule expects 504 production ledger rows: the signed 433-row recovery baseline plus all 71 unique reviewed governed promotions. The final conditional legal-master chain was applied and verified without activating an organisation rollout.

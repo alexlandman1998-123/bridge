@@ -1,0 +1,34 @@
+name: Phase 31 Migration Closeout Gate
+
+on:
+  pull_request:
+    paths:
+      - 'migration-evidence/2026-07-20-production-phase31-migration-closeout/**'
+      - 'docs/phase-31-migration-closeout.md'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'scripts/phase31-migration-closeout.test.mjs'
+      - '.github/workflows/phase31-migration-closeout-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'migration-evidence/2026-07-20-production-phase31-migration-closeout/**'
+      - 'docs/phase-31-migration-closeout.md'
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'scripts/phase31-migration-closeout.test.mjs'
+      - '.github/workflows/phase31-migration-closeout-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  migration-closeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run supabase:phase31:verify

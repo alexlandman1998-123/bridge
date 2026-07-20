@@ -5,9 +5,9 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: CLOSEOUT_GATE_READY — PHASE0_FREEZE_REMAINS_ACTIVE**
+**Status: GOVERNED_CLOSEOUT_COMPLETE — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 and Phases 23–25 plus Phases 29–30 promoted 68 migrations with complete production evidence. The remaining three manifest versions have not completed production promotion, so freeze retirement remains blocked.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phase 15 Batches 1–6 and Phases 23–25 plus Phases 29–31 completed all 71 governed production promotions with reviewed evidence. Freeze retirement remains a separate reviewed action and also depends on the live inventory having no newer ungoverned migrations.
 
 ## Implemented Controls
 
@@ -31,15 +31,15 @@ Phase 8 implements the read-only reconciliation closeout and steady-state handof
 | Phase 7 staging readiness | Certified and approved |
 | Attorney integrity blockers | 0 assignments |
 | Human staging approval | Alexander Landman |
-| Complete closeout evidence | 68/71 |
-| Phase 7 production promotion | Batches 1–6, Phases 23–25 and Phases 29–30 complete; 3 versions remain |
+| Complete closeout evidence | 71/71 |
+| Phase 7 production promotion | Governed manifest complete; 0 versions remain |
 | Production PITR | Disabled |
 | Completed production physical backups | 8 |
 | Database recovery evidence | Proven and approved in Phase 12 |
 | Pure local-only versions | Reconciled live in the Phase 23 closeout report |
 | Pure remote-only versions | 0 |
 | Reviewed canonical CLI display splits | 17 |
-| Production history reconciliation | Complete; ledger is 501 rows after Phase 30 |
+| Production history reconciliation | Complete for the governed manifest; ledger is 504 rows after Phase 31 |
 | Phase 0 guard | Active |
 
 ## Usage

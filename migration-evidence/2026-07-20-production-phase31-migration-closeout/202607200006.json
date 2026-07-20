@@ -1,0 +1,24 @@
+{
+  "version": "202607200006",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "applicationMode": "forward_sql_then_ledger_record",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 31 instruction)",
+  "verification": {
+    "verificationTablePresent": true,
+    "rowLevelSecurityEnabled": true,
+    "selectPolicyCount": 1,
+    "latestVerificationIndexPresent": true,
+    "securityDefinerFunctionCount": 1,
+    "authenticatedExecuteGranted": true,
+    "anonymousExecuteRevoked": true,
+    "verificationReceiptRows": 0,
+    "missingMigrationRejected": true,
+    "missingMigrationSqlstate": "P0001"
+  }
+}

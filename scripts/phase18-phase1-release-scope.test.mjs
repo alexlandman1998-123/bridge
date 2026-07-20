@@ -30,6 +30,9 @@ assert.equal(scope.changeControl.explicitScopeAmendmentRequired, true)
 if (scope.changeControl.deferredStreamsMayNotBePromotedDuringPilotPreparation === false) {
   assert.equal(scope.changeControl.phase29ScopeAmendmentApproved, true)
   assert.equal(scope.changeControl.phase30ScopeAmendmentApproved, true)
+  if (scope.status === 'PHASE_1_SCOPE_AMENDED_PHASE_31') {
+    assert.equal(scope.changeControl.phase31ScopeAmendmentApproved, true)
+  }
 }
 assert.equal(scope.changeControl.phase0MigrationFreezeRemainsActive, true)
 

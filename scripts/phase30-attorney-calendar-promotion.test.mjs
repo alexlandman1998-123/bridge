@@ -37,12 +37,12 @@ assert.equal(evidence.verification.persistentRescheduleRequestsBefore, evidence.
 assert.equal(evidence.verification.persistentPhase4FixtureEventsAfter, 0)
 
 assert.ok(closeout.rows.some((row) => row.version === '202607180047' && row.productionLedgerRecorded === true))
-assert.equal(closeout.rows.filter((row) => row.productionLedgerRecorded === true).length, 68)
+assert.ok(closeout.rows.filter((row) => row.productionLedgerRecorded === true).length >= 68)
 assert.equal(new Set(closeout.rows.map((row) => row.version)).size, closeout.rows.length)
-assert.equal(scope.status, 'PHASE_1_SCOPE_AMENDED_PHASE_30')
-assert.equal(scope.productionBaseline.reviewedProductionPromotions, 68)
-assert.equal(scope.productionBaseline.outstandingManifestRows, 3)
-assert.equal(scope.productionBaseline.productionLedgerRows, 501)
+assert.match(scope.status, /^PHASE_1_SCOPE_AMENDED_PHASE_\d+$/)
+assert.ok(scope.productionBaseline.reviewedProductionPromotions >= 68)
+assert.ok(scope.productionBaseline.outstandingManifestRows <= 3)
+assert.ok(scope.productionBaseline.productionLedgerRows >= 501)
 assert.equal(scope.completedPhase30AttorneyCalendar.status, 'production_verified_and_ledgered')
 assert.equal(scope.deferredExistingManifestCount, 0)
 

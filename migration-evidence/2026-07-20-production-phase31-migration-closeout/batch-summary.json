@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-07-20T18:40:00Z",
+  "status": "PRODUCTION_PHASE_31_COMPLETE",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "requestedVersions": ["202607200004", "202607200005", "202607200006"],
+  "productionLedgerCountBefore": 501,
+  "productionLedgerCountAfter": 504,
+  "phase31LedgerRows": 3,
+  "closeoutEvidenceComplete": 71,
+  "closeoutEvidenceTotal": 71,
+  "remainingGovernedProductionPromotions": 0,
+  "organisationMigrationAuditRows": 0,
+  "verificationReceiptRows": 0,
+  "organisationRolloutActivated": false,
+  "phase0FreezeRemainsActivePendingLiveInventoryReview": true
+}

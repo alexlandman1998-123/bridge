@@ -5,8 +5,8 @@
 Phase 7 has been implemented as a fail-closed production-promotion gate.
 
 - Production project: `isdowlnollckzvltkasn`
-- Production SQL promoted: 68 migrations across six Phase 15 batches, Phases 23–25 and Phases 29–30
-- Production migration ledger: 501 rows
+- Production SQL promoted or target-state verified: 71 governed migrations across six Phase 15 batches, Phases 23–25 and Phases 29–31
+- Production migration ledger: 504 rows
 - Staging manifest coverage: 71 of 71, recertified during Phase 25
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
@@ -17,7 +17,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The prerequisite gates pass. Phase 30 verified and ledgered the repair-only attorney-calendar RSVP lifecycle. The remaining three conditional legal-master versions remain final-closeout blockers.
+The prerequisite gates pass. Phase 31 promoted and verified the final three conditional legal-master versions. The governed 71-row production migration set is complete; the broad-push freeze remains pending separate live inventory review.
 
 ## Implemented controls
 
@@ -75,12 +75,11 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - Phase 25 production evidence complete for transaction creation, seller completion and corrective version `202607209903`.
 - Phase 29 production evidence complete for the eight attorney-accounting versions; canonical prerequisite `202607180025` was repaired without altering its historical ledger entry.
 - Phase 30 production evidence complete for repair-only attorney-calendar version `202607180047`, with the live behavior suite passing and zero fixture residue.
+- Phase 31 production evidence complete for conditional legal-master versions `202607200004`–`202607200006`; no organisation rollout was activated.
 
-## Required work before the next production batch
+## Closeout boundary
 
-1. Select and preflight the next dependency stream.
-2. Continue one migration version at a time, stopping for production verification before each ledger update.
-3. Keep the Phase 0 broad-push guard active until all 71 rows have reviewed production evidence.
+All 71 governed rows have reviewed production evidence. Keep the Phase 0 broad-push guard active until the live inventory check confirms whether newer migrations outside this manifest require separate governance.
 
 ## Files changed
 
