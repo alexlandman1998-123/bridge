@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import process from 'node:process'
-import { createClient } from '../the-it-guy/node_modules/@supabase/supabase-js/dist/index.mjs'
+import { createClient } from '@supabase/supabase-js'
 import { assessDocumentExperienceLaunchHealth } from '../the-it-guy/src/core/documents/documentExperienceLaunchGate.js'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'

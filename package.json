@@ -62,6 +62,7 @@
     "release:phase33:verify": "node scripts/phase33-pull-request-scope-lock.test.mjs",
     "application:phase34:verify": "node scripts/phase34-production-application-source-recertification.test.mjs",
     "supabase:phase35:verify": "node scripts/phase35-governed-migration-counts.test.mjs",
+    "application:phase36:verify": "node scripts/phase36-phase28-ci.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
