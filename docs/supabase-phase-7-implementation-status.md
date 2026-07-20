@@ -5,9 +5,9 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: PRODUCTION_PROMOTION_GATE_READY — BLOCKED_ATTORNEY_INTEGRITY**
+**Status: STAGING_TECHNICAL_GATES_PASSED — HUMAN APPROVAL AND RECOVERY ATTESTATION REQUIRED**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging now has all 64 manifest versions recorded with complete migration evidence, and production has eight completed physical backups. Promotion remains blocked because the staging attorney integrity gate reports 43 historical ineligible assignments, no human readiness approval is recorded, and production connection/recovery-attestation variables are not configured.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, the attorney integrity gate now passes with zero blockers, and the affected firm is certified. Promotion remains blocked because no human readiness approval is recorded and production connection/recovery-attestation variables are not configured.
 
 ## Implemented Controls
 
@@ -33,7 +33,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Dedicated Arch9 staging target | Healthy: `vaszuxjeoajeuhlcnzzf` |
 | Staging manifest ledger | 64/64 recorded |
 | Staging migration evidence | Complete |
-| Attorney integrity gate | Blocked: 43 historical assignments |
+| Attorney integrity gate | Passed: 0 blocking assignments |
 | Production PITR | Disabled |
 | Production physical backups | 8 completed |
 | Human staging-readiness approval | Not recorded |
@@ -112,9 +112,7 @@ node scripts/supabase-phase7-production-execution.mjs \
 
 ## Handoff
 
-1. Remediate the 43 historical ineligible attorney assignments in staging without destroying assignment history.
-2. Re-run the attorney integrity gate and require zero blocking assignments.
-3. Update `docs/supabase-phase-7-staging-readiness.json` to `READY_FOR_PRODUCTION_PROMOTION` and obtain a human approval.
-4. Configure the production project reference, database URL, and tested-recovery attestation outside source control.
-5. Promote the smallest dependency stream one exact version at a time.
-6. Stop between SQL application and ledger recording for production verification and review.
+1. Add a human approval to `docs/supabase-phase-7-staging-readiness.json` after reviewing the Phase 10 evidence.
+2. Configure the production project reference, database URL, and tested-recovery attestation outside source control.
+3. Promote the smallest dependency stream one exact version at a time.
+4. Stop between SQL application and ledger recording for production verification and review.

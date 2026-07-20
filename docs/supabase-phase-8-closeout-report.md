@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T11:20:13.623Z
+Generated: 2026-07-20T12:11:59.456Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -17,8 +17,8 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Phase 5 manifest rows | 64 |
 | Duplicate versions | 0 |
 | Missing manifest files | 0 |
-| Phase 7 staging readiness | BLOCKED_ATTORNEY_INTEGRITY |
-| Attorney integrity blocking assignments | 43 |
+| Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
+| Attorney integrity blocking assignments | 0 |
 | Human production-readiness approval | No |
 | Complete production evidence rows | 0 |
 | Incomplete production evidence rows | 64 |

@@ -11,12 +11,12 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
 - Production PITR: disabled
-- Attorney integrity gate: blocked
-- Historical ineligible attorney assignments: 43
+- Attorney integrity gate: passed
+- Historical ineligible attorney assignments: 0
 - Human production-readiness approval: not recorded
 - Phase 7 gate tests: passed
 
-The production backup prerequisite is now available, but production promotion remains intentionally blocked until staging is data-clean and explicitly approved.
+The staging technical prerequisites now pass, but production promotion remains intentionally blocked until the readiness record is explicitly approved and tested production recovery is attested.
 
 ## Implemented controls
 
@@ -57,20 +57,16 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - 64 manifest rows;
 - 64 staging ledger entries;
 - complete staging evidence;
-- 43 blocking attorney assignments;
+- zero blocking attorney assignments after the Phase 10 remediation;
 - eight completed production physical backups;
 - no human approval;
 - no configured production connection/recovery attestation.
 
 ## Required work before production
 
-1. Review and remediate the 43 historical assignments without deleting assignment history.
-2. Re-run `public.attorney_role_integrity_v1` and confirm zero blocking assignments.
-3. Complete Phase 9 attorney-role release certification on staging.
-4. Update the readiness record to `READY_FOR_PRODUCTION_PROMOTION`.
-5. Obtain an explicit human `approvedBy` sign-off.
-6. Configure the production database URL and tested-recovery attestation outside source control.
-7. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
+1. Obtain an explicit human `approvedBy` sign-off.
+2. Configure the production database URL and tested-recovery attestation outside source control.
+3. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
 
 ## Files changed
 

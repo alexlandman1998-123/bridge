@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-07-20T12:07:01Z",
+  "phase": 10,
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "targetFirmId": "1694cca1-2081-4c58-be8b-88a1e927c0ba",
+  "remediationRunId": "60aa3587-4167-49e2-9152-1af50ca6f7a4",
+  "repairStrategy": "reassign_to_existing_active_firm_administrator",
+  "updatedAssignmentCount": 43,
+  "distinctTransactionCount": 43,
+  "auditEventCount": 43,
+  "previousAssigneeRemainingCount": 0,
+  "replacementAssigneeCount": 43,
+  "canonicalLegacyMirrorMismatchCount": 0,
+  "attorneyIntegrityGate": "pass",
+  "attorneyIntegrityBlockingAssignments": 0,
+  "integritySnapshot": {
+    "healthy": 1
+  },
+  "firmCertification": {
+    "status": "certified",
+    "version": "phase9-v1",
+    "integrityRowCount": 1
+  },
+  "productionMutated": false
+}

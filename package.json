@@ -21,6 +21,7 @@
     "supabase:phase7:production": "node scripts/supabase-phase7-production-execution.mjs --plan",
     "supabase:phase8": "node scripts/supabase-phase8-closeout.mjs --verify-live --write",
     "supabase:phase8:local": "node scripts/supabase-phase8-closeout.mjs --plan",
+    "supabase:phase10:attorneys": "node scripts/supabase-phase10-attorney-assignment-repair.mjs --plan",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
