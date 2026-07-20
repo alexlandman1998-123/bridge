@@ -2,7 +2,7 @@
 
 ## Decision
 
-**Status: PHASE_1_SCOPE_LOCKED**
+**Status: PHASE_1_SCOPE_AMENDED_PHASE_29**
 
 Phase 1 is a controlled residential-transaction pilot for one organisation. It must prove seller onboarding, eligible attorney assignment, transaction creation, mandate and OTP generation, editing/autosave, deterministic PDF generation, signing, final publication, conditional legal masters, and controlled rollout.
 
@@ -15,13 +15,11 @@ Phase 1 is a controlled residential-transaction pilot for one organisation. It m
 - The three conditional-master migrations assigned to unique consecutive versions `202607200004`–`202607200006`; they are governed and staging-certified but still require production promotion.
 - A clean, reproducible application deployment followed by one enforced N6 pilot cohort.
 
-Phase 25 completed transaction creation and seller-attorney completion promotion. Twelve of the 71 governed manifest rows remain without reviewed production evidence.
+Phase 29 explicitly amended the scope and promoted the eight staging-certified attorney-accounting migrations after repairing their recorded-but-missing canonical prerequisite. Sixty-seven of 71 governed rows now have reviewed production evidence; four remain.
 
 ## Explicitly deferred
 
-- Eight attorney-accounting migrations.
 - Attorney-calendar RSVP repair `202607180047`.
-- Client proof uploads and statements.
 - Multi-organisation and full production rollout.
 
 Deferred work remains required for final production closeout, but it may not enter the Phase 1 pilot-preparation batches without an explicit scope amendment.

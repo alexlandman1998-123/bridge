@@ -1,14 +1,14 @@
 {
-  "status": "PHASE_1_SCOPE_LOCKED",
+  "status": "PHASE_1_SCOPE_AMENDED_PHASE_29",
   "phase": 18,
   "release": "controlled_residential_transaction_pilot",
   "lockedAt": "2026-07-20",
   "approvedBy": "Alexander Landman (explicit Phase 18 instruction)",
   "productionBaseline": {
     "manifestRows": 71,
-    "reviewedProductionPromotions": 59,
-    "outstandingManifestRows": 12,
-    "productionLedgerRows": 492
+    "reviewedProductionPromotions": 67,
+    "outstandingManifestRows": 4,
+    "productionLedgerRows": 500
   },
   "includedCapabilities": [
     "seller_onboarding",
@@ -19,15 +19,19 @@
     "pdf_generation",
     "signing_and_final_publication",
     "conditional_legal_masters",
-    "controlled_organisation_rollout"
+    "controlled_organisation_rollout",
+    "attorney_accounting",
+    "client_proof_uploads",
+    "client_account_statements"
   ],
   "includedExistingManifestVersions": {
     "document_generation": ["202607170029", "202607170030", "202607170031", "202607180023", "202607180033", "202607180034", "202607180048", "202607180049", "202607180050", "202607180051", "202607180052"],
     "attorney_identity_access": ["202607180037", "202607180038", "202607180039", "202607180040", "202607180041", "202607180042"],
     "transaction_creation": ["202607180046"],
-    "seller_attorney_acceptance": ["20260719194500"]
+    "seller_attorney_acceptance": ["20260719194500"],
+    "attorney_accounting": ["202607180026", "202607180027", "202607180028", "202607180029", "202607180030", "202607180031", "202607180035", "202607180036"]
   },
-  "includedExistingManifestCount": 19,
+  "includedExistingManifestCount": 27,
   "completedPhase23DocumentGeneration": {
     "requestedMigrationCount": 11,
     "correctiveMigrationCount": 1,
@@ -47,6 +51,13 @@
     "sellerCompletionStatus": "production_promoted_and_verified",
     "status": "production_promoted_and_verified"
   },
+  "completedPhase29AttorneyAccounting": {
+    "requestedMigrationCount": 8,
+    "prerequisiteRepairVersion": "202607180025",
+    "partyAccountsCreated": 318,
+    "nonZeroOpeningBalances": 0,
+    "status": "production_promoted_and_verified"
+  },
   "pendingConditionalMasterInventory": {
     "files": [
       "202607200004_conditional_legal_masters_phase4.sql",
@@ -61,14 +72,10 @@
     "count": 3
   },
   "deferredExistingManifestVersions": {
-    "attorney_accounting": ["202607180026", "202607180027", "202607180028", "202607180029", "202607180030", "202607180031", "202607180035", "202607180036"],
     "attorney_calendar": ["202607180047"]
   },
-  "deferredExistingManifestCount": 9,
+  "deferredExistingManifestCount": 1,
   "deferredCapabilities": [
-    "attorney_accounting",
-    "client_proof_uploads",
-    "client_account_statements",
     "attorney_calendar_rsvp",
     "multi_organisation_rollout",
     "full_production_rollout"
@@ -86,7 +93,8 @@
     "newFeatureScopeAllowed": false,
     "explicitScopeAmendmentRequired": true,
     "conditionalMasterChainMustBeInventoriedBeforePromotion": true,
-    "deferredStreamsMayNotBePromotedDuringPilotPreparation": true,
+    "deferredStreamsMayNotBePromotedDuringPilotPreparation": false,
+    "phase29ScopeAmendmentApproved": true,
     "phase0MigrationFreezeRemainsActive": true
   }
 }

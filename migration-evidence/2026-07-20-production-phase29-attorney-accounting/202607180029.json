@@ -1,0 +1,14 @@
+{
+  "version": "202607180029",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 29 instruction)",
+  "verification": {
+    "uniquePostedClientProofIndexLive": true,
+    "predicateRequiresPostedClientProof": true
+  }
+}

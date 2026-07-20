@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: READY_FOR_CONTROLLED_PRODUCTION_PROMOTION**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 71 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6 and Phases 23–25 have promoted 59 migrations, including document generation, attorney identity/access, transaction creation and seller completion.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. Staging has all 71 manifest versions recorded with complete migration evidence. Phase 15 Batches 1–6 and Phases 23–25 plus Phase 29 have promoted 67 migrations, including document generation, attorney identity/access, transaction creation, seller completion and attorney accounting.
 
 ## Implemented Controls
 
@@ -41,9 +41,9 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production migration history | Reconciled: 0 genuine remote-only versions |
 | Duplicate local migration version | Resolved in Phase 19; 501 files have 501 unique versions |
-| Production SQL promoted | 59/71 |
-| Production closeout evidence | 59/71 complete |
-| Production ledger | 492 rows after Phase 25 |
+| Production SQL promoted | 67/71 |
+| Production closeout evidence | 67/71 complete |
+| Production ledger | 500 rows after Phase 29 |
 
 ## Usage
 

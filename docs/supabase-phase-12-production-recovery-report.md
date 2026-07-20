@@ -51,3 +51,7 @@ After Phase 24, the same baseline-plus-reviewed-promotions rule expects and find
 ## Phase 25 re-verification
 
 After Phase 25, the rule expects and finds 492/492 production ledger rows. The three reviewed Phase 25 entries are additive to the signed recovery baseline, and the forward-migrated staging ledger contains 504 rows.
+
+## Phase 29 re-verification
+
+After Phase 29, the baseline-plus-reviewed-promotions rule expects 500 production ledger rows: the signed 433-row recovery baseline plus 67 unique reviewed promotions. The eight attorney-accounting versions are represented by per-version production evidence; canonical prerequisite `202607180025` retained its existing historical ledger entry.

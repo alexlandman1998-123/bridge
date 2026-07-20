@@ -1,0 +1,20 @@
+{
+  "version": "202607180025",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "ledgerChanged": false,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 29 instruction)",
+  "repairReason": "The production ledger recorded the canonical accounting migration while all four canonical tables were absent.",
+  "verification": {
+    "canonicalTablesBefore": 0,
+    "canonicalTablesAfter": 4,
+    "rlsEnabledTables": 4,
+    "scopedPolicies": 11,
+    "canonicalTablesInitiallyEmpty": true,
+    "historicalLedgerEntryPreserved": true
+  }
+}
