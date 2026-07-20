@@ -114,6 +114,21 @@ as $$
     or public.bridge_has_status_token_transaction_access(target_transaction_id)
 $$;
 
+create or replace function public.bridge_has_request_development_token_access(target_development_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.transactions transaction_record
+    where transaction_record.development_id = target_development_id
+      and public.bridge_has_request_transaction_token_access(transaction_record.id)
+  )
+$$;
+
 alter table if exists public.transaction_finance_workflows
   add column if not exists finance_owner text,
   add column if not exists blocker_status text,
