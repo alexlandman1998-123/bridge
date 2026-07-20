@@ -74,7 +74,7 @@ export default function SettingsLayout() {
 
   return (
     <section className="settings-shell min-h-[calc(100vh-96px)] pb-10 pt-1">
-      <div className="grid w-full max-w-none gap-6">
+      <div className="mx-auto grid w-full max-w-[1420px] gap-6">
         <header className="settings-shell-heading flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#718499]">Settings</p>

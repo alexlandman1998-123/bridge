@@ -35,7 +35,6 @@ import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
-import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
@@ -253,7 +252,6 @@ function isParentNavActive(item, location) {
 function Sidebar() {
   const workspaceContext = useWorkspace()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
-  const attorneyPermissionsState = useAttorneyPermissions()
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
   const navigate = useNavigate()
@@ -294,8 +292,7 @@ function Sidebar() {
       ? { ...workspaceContext.currentWorkspace, type: navWorkspaceType }
       : { id: workspace.id || '', name: workspace.name || 'Workspace', type: navWorkspaceType },
     currentMembership: navCurrentMembership,
-    attorneyMatterModules: role === 'attorney' ? attorneyPermissionsState.matterModules : undefined,
-  }), [attorneyPermissionsState.matterModules, navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
+  }), [navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
   const roleNavItems = useMemo(
     () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: navCurrentMembership }), navPermissionContext),
     [baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role],

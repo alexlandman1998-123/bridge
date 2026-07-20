@@ -482,12 +482,11 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
     }
     if (
       assignmentType === 'cancellation' &&
-      departmentType !== 'cancellation' &&
       departmentType !== 'transfer' &&
       departmentType !== 'admin' &&
       departmentType !== 'management'
     ) {
-      throw new Error('Cancellation assignments must use the Cancellation, Transfer, Admin, or Management Department.')
+      throw new Error('Cancellation assignments must use the Transfer, Admin, or Management Department.')
     }
   }
 

@@ -16,10 +16,6 @@ import {
   isMissingTableError,
   requireClient,
 } from './attorneyFirmServiceShared'
-import {
-  deriveActiveAttorneyMatterModules,
-  isAttorneyMatterModuleEnabled,
-} from './attorneyMatterModules'
 
 function toLower(value) {
   return String(value || '').trim().toLowerCase()
@@ -1059,7 +1055,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     ? membersRaw
     : [...(membersRaw || []), currentMembership]
 
-  const matterModules = deriveActiveAttorneyMatterModules(departmentsRaw)
   const departments = departmentsRaw.filter((department) => department.isActive)
   const members = dashboardMembers.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
   const activeMembers = members.filter((member) => member.status === 'active')
@@ -1165,8 +1160,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     })
   }
 
-  matterUnits = matterUnits.filter((matter) => isAttorneyMatterModuleEnabled(matterModules, matter.matterType))
-
   const allMatterRoleSummaries = buildMatterRoleSummaries(matterUnits)
   const scopedMatterRoleSummaries = allMatterRoleSummaries.filter((summary) => matterMatchesRoleView(summary, roleView))
   const scopedTransactionIds = new Set(scopedMatterRoleSummaries.map((summary) => summary.transactionId))
@@ -1239,7 +1232,6 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
             const departmentType = String(department.departmentType || '').toLowerCase()
             if (departmentType === 'transfer') return type === 'transfer'
             if (departmentType === 'bond') return type === 'bond'
-            if (departmentType === 'cancellation') return type === 'cancellation'
             if (departmentType === 'admin') return matter.flags.awaitingFica || matter.flags.awaitingSignatures
             if (departmentType === 'management') return true
             return false

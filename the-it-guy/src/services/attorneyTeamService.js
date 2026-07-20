@@ -27,7 +27,6 @@ import {
   normalizeText,
   requireClient,
 } from './attorneyFirmServiceShared'
-import { ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES } from './attorneyMatterModules'
 
 export const ATTORNEY_TEAM_ASSIGNABLE_PROFESSIONAL_ROLES = Object.freeze(
   ATTORNEY_PROFESSIONAL_ROLE_VALUES.filter((role) => role !== 'firm_admin'),
@@ -92,11 +91,11 @@ export function normalizeAttorneyTeamInvite(input = {}) {
   if (departmentType) {
     const allowedDepartments = professionalRole === 'attorney_conveyancer'
       ? [...new Set(profile.practiceQualifications.map((qualification) => (
-          qualification === 'bond' ? 'bond' : qualification === 'cancellation' ? 'cancellation' : 'transfer'
+          qualification === 'bond' ? 'bond' : 'transfer'
         )))]
       : getAllowedAttorneyDepartmentsForRole(
           compatibilityRole,
-          ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES,
+          ['transfer', 'bond', 'admin', 'management'],
         )
     if (!allowedDepartments.includes(departmentType)) {
       throw new Error(`${getAttorneyProfessionalRoleLabel(professionalRole)} cannot be assigned to the selected department.`)

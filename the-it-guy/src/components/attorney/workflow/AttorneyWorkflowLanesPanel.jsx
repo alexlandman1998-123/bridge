@@ -34,14 +34,6 @@ const SEVERITY_CLASS = {
   critical: 'border-danger bg-danger text-white',
 }
 
-const ROLE_VIEW_ORDER = ['transfer', 'bond', 'cancellation']
-
-const ROLE_VIEW_LABELS = {
-  transfer: 'Transfer Attorney',
-  bond: 'Bond Attorney',
-  cancellation: 'Cancellation Attorney',
-}
-
 function toTitle(value = '') {
   return String(value || '')
     .split('_')
@@ -112,43 +104,6 @@ function timelineFilterMatches(item, filter) {
   return item.visibility === filter
 }
 
-function laneHasActions(lane = {}) {
-  return Boolean(
-    lane.permissions?.canUpdateStage ||
-      lane.permissions?.canAddInternalNote ||
-      lane.permissions?.canAddSharedUpdate ||
-      lane.permissions?.canPublishClientVisibleUpdate ||
-      lane.permissions?.canRequestDocuments ||
-      lane.permissions?.canManageSigning,
-  )
-}
-
-function laneCanManageBlockers(lane = {}) {
-  return Boolean(lane.permissions?.canAddInternalNote || lane.permissions?.canUpdateStage)
-}
-
-function getLaneAccessLabel(lane = {}) {
-  if (lane.permissions?.isTransferAttorneyController) return 'Controller'
-  if (lane.permissions?.managementOverrideEnabled) return 'Override'
-  if (lane.permissions?.isAssignedAttorney || lane.permissions?.isAssignedParticipant) return 'Assigned'
-  if (laneHasActions(lane)) return 'Actions'
-  return 'View only'
-}
-
-function getLaneAccessClass(lane = {}) {
-  if (lane.permissions?.isTransferAttorneyController) return 'border-info/30 bg-infoSoft text-info'
-  if (lane.permissions?.managementOverrideEnabled) return 'border-warning/30 bg-warningSoft text-warning'
-  if (lane.permissions?.isAssignedAttorney || lane.permissions?.isAssignedParticipant || laneHasActions(lane)) {
-    return 'border-success/30 bg-successSoft text-success'
-  }
-  return 'border-borderSoft bg-surface text-textMuted'
-}
-
-function getRoleViewNumber(laneKey) {
-  const index = ROLE_VIEW_ORDER.indexOf(String(laneKey || '').trim().toLowerCase())
-  return index >= 0 ? `View ${index + 1}` : 'View'
-}
-
 function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   const [state, setState] = useState({ loading: true, error: '', operations: null })
   const [stageDraft, setStageDraft] = useState(null)
@@ -158,7 +113,6 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   const [blockerDraft, setBlockerDraft] = useState(null)
   const [readiness, setReadiness] = useState(null)
   const [timelineFilter, setTimelineFilter] = useState('all')
-  const [activeLaneKey, setActiveLaneKey] = useState('')
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -187,7 +141,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
     const lanes = state.operations?.lanes || []
     const editableRoles = new Set(
       lanes
-        .filter(laneHasActions)
+        .filter((lane) => lane.permissions?.canUpdateStage || lane.permissions?.canRequestDocuments || lane.permissions?.canAddInternalNote)
         .map((lane) => lane.attorneyRole),
     )
     if (!editableRoles.size) return lanes
@@ -197,32 +151,6 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
       return leftAssigned - rightAssigned
     })
   }, [state.operations?.lanes])
-
-  const roleViewLanes = useMemo(() => {
-    const byLaneKey = new Map(orderedLanes.map((lane) => [lane.laneKey, lane]))
-    const ordered = ROLE_VIEW_ORDER.map((laneKey) => byLaneKey.get(laneKey)).filter(Boolean)
-    const remaining = orderedLanes.filter((lane) => !ROLE_VIEW_ORDER.includes(lane.laneKey))
-    return [...ordered, ...remaining]
-  }, [orderedLanes])
-
-  const activeLane = useMemo(() => {
-    if (!roleViewLanes.length) return null
-    return (
-      roleViewLanes.find((lane) => lane.laneKey === activeLaneKey) ||
-      roleViewLanes.find(laneHasActions) ||
-      roleViewLanes[0] ||
-      null
-    )
-  }, [activeLaneKey, roleViewLanes])
-
-  const blockerActionLanes = useMemo(() => roleViewLanes.filter(laneCanManageBlockers), [roleViewLanes])
-
-  useEffect(() => {
-    if (!roleViewLanes.length) return
-    if (!activeLaneKey || !roleViewLanes.some((lane) => lane.laneKey === activeLaneKey)) {
-      setActiveLaneKey((roleViewLanes.find(laneHasActions) || roleViewLanes[0]).laneKey)
-    }
-  }, [activeLaneKey, roleViewLanes])
 
   async function refreshAfterChange(nextOperations = null) {
     if (nextOperations) {
@@ -387,14 +315,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
     )
   }
 
-  const filteredTimeline = (state.operations?.legalTimeline || [])
-    .filter((item) => !activeLane?.laneKey || item.laneKey === activeLane.laneKey)
-    .filter((item) => timelineFilterMatches(item, timelineFilter))
-    .slice(0, 30)
-  const activeRoleReadiness = activeLane?.attorneyRole ? readiness?.lanes?.[activeLane.attorneyRole] || null : null
-  const activeReadinessPercent = activeRoleReadiness?.readiness ?? readiness?.overallReadiness ?? 0
-  const activeBlockers = activeRoleReadiness?.blockers || []
-  const activeNextAction = activeRoleReadiness?.nextActions?.[0] || readiness?.nextActions?.[0] || null
+  const filteredTimeline = (state.operations?.legalTimeline || []).filter((item) => timelineFilterMatches(item, timelineFilter)).slice(0, 30)
 
   return (
     <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
@@ -422,85 +343,36 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
 
       {orderedLanes.length ? (
         <div className="grid gap-4">
-          <div className="rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-2">
-            <div className="grid gap-2 md:grid-cols-3" role="tablist" aria-label="Attorney role views">
-              {roleViewLanes.map((lane) => {
-                const isActive = lane.laneKey === activeLane?.laneKey
-                const Icon = getLaneIcon(lane.laneStatus)
-                return (
-                  <button
-                    key={lane.laneKey}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    className={`min-w-0 rounded-control border px-3 py-3 text-left transition ${
-                      isActive
-                        ? 'border-[#244966] bg-surface shadow-sm'
-                        : 'border-transparent bg-transparent hover:border-borderSoft hover:bg-surface'
-                    }`}
-                    onClick={() => {
-                      setActiveLaneKey(lane.laneKey)
-                      setTimelineFilter('all')
-                    }}
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
-                          {getRoleViewNumber(lane.laneKey)}
-                        </span>
-                        <span className="mt-1 block truncate text-sm font-semibold text-textStrong">
-                          {ROLE_VIEW_LABELS[lane.laneKey] || lane.label}
-                        </span>
-                      </div>
-                      <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-control border ${STATUS_CLASS[lane.laneStatus] || STATUS_CLASS.not_started}`}>
-                        <Icon size={15} />
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <span className="truncate text-xs text-textMuted">{toTitle(lane.laneStatus)}</span>
-                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase ${getLaneAccessClass(lane)}`}>
-                        {getLaneAccessLabel(lane)}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <span className="truncate text-xs text-textMuted">{buildAssignedLabel(lane)}</span>
-                      <span className="shrink-0 text-xs font-semibold text-textStrong">{lane.summary.completionPercent}%</span>
-                    </div>
-                    <div className="mt-2 h-1.5 rounded-full bg-[#e8edf4]">
-                      <div className="h-1.5 rounded-full bg-[#244966]" style={{ width: `${Math.max(0, Math.min(100, lane.summary.completionPercent))}%` }} />
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
           {readiness ? (
             <div className="rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
               <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
                 <div className="rounded-[16px] border border-borderSoft bg-surface p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <span className="text-label font-semibold uppercase text-textMuted">{activeLane?.label || 'Attorney'} Readiness</span>
-                      <h4 className="mt-1 text-2xl font-semibold text-textStrong">{activeReadinessPercent}% ready</h4>
+                      <span className="text-label font-semibold uppercase text-textMuted">Readiness Summary</span>
+                      <h4 className="mt-1 text-2xl font-semibold text-textStrong">{readiness.overallReadiness}% ready</h4>
                       <p className="mt-1 text-sm text-textMuted">
-                        {activeLane?.currentStageLabel || 'No current stage'} • {activeLane?.summary?.completionPercent || 0}% workflow complete
+                        Lodgement {readiness.lodgementReadiness}% • Registration {readiness.registrationReadiness}%
                       </p>
                     </div>
                     <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
-                      activeRoleReadiness?.status === 'blocked' ? 'border-danger/30 bg-dangerSoft text-danger' : 'border-success/30 bg-successSoft text-success'
+                      readiness.atRisk ? 'border-danger/30 bg-dangerSoft text-danger' : 'border-success/30 bg-successSoft text-success'
                     }`}>
-                      {activeRoleReadiness?.status === 'blocked' ? 'At Risk' : toTitle(activeRoleReadiness?.status || activeLane?.laneStatus || 'in_progress')}
+                      {readiness.atRisk ? 'At Risk' : readiness.readyForLodgement ? 'Ready for Lodgement' : 'In Progress'}
                     </span>
                   </div>
-                  <div className="mt-4 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-textStrong">{activeLane?.label || 'Selected role'}</span>
-                      <span className="text-xs text-textMuted">{activeReadinessPercent}%</span>
-                    </div>
-                    <div className="mt-2 h-1.5 rounded-full bg-[#e8edf4]">
-                      <div className={`h-1.5 rounded-full ${readinessTone(activeReadinessPercent)}`} style={{ width: `${Math.max(0, Math.min(100, activeReadinessPercent))}%` }} />
-                    </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {Object.entries(readiness.lanes || {}).filter(([, item]) => item.required).map(([role, item]) => (
+                      <div key={role} className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-textStrong">{toTitle(role.replace('_attorney', ''))}</span>
+                          <span className="text-xs text-textMuted">{item.readiness}%</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#e8edf4]">
+                          <div className={`h-1.5 rounded-full ${readinessTone(item.readiness)}`} style={{ width: `${Math.max(0, Math.min(100, item.readiness || 0))}%` }} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -509,16 +381,16 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                     <div>
                       <span className="text-label font-semibold uppercase text-textMuted">Next Action</span>
                       <p className="mt-1 text-sm font-semibold text-textStrong">
-                        {activeNextAction?.label || 'No urgent attorney action right now.'}
+                        {readiness.nextActions?.[0]?.label || 'No urgent attorney action right now.'}
                       </p>
                     </div>
-                    {activeLane && laneCanManageBlockers(activeLane) ? (
+                    {orderedLanes.some((lane) => lane.permissions?.canAddInternalNote || lane.permissions?.canUpdateStage) ? (
                       <Button
                         type="button"
                         size="sm"
                         variant="secondary"
                         onClick={() => setBlockerDraft({
-                          laneKey: activeLane?.laneKey || orderedLanes[0]?.laneKey || 'transfer',
+                          laneKey: orderedLanes[0]?.laneKey || 'transfer',
                           title: '',
                           description: '',
                           severity: 'medium',
@@ -531,22 +403,22 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                       </Button>
                     ) : null}
                   </div>
-                  {activeBlockers.length ? (
+                  {readiness.lodgement?.missing?.length ? (
                     <p className="mt-3 rounded-control border border-warning/30 bg-warningSoft px-3 py-2 text-xs text-warning">
-                      Open blockers: {activeBlockers.slice(0, 2).map((item) => item.label).join(' • ')}
+                      Lodgement blockers: {readiness.lodgement.missing.slice(0, 2).join(' • ')}
                     </p>
                   ) : null}
                 </div>
               </div>
 
-              {activeBlockers.length ? (
+              {readiness.blockers?.length ? (
                 <div className="mt-4 rounded-[16px] border border-borderSoft bg-surface p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-label font-semibold uppercase text-textMuted">Active Blockers</span>
-                    <span className="text-xs text-textMuted">{activeBlockers.length} open</span>
+                    <span className="text-xs text-textMuted">{readiness.blockers.length} open</span>
                   </div>
                   <div className="mt-3 grid gap-2">
-                    {activeBlockers.slice(0, 8).map((item) => (
+                    {readiness.blockers.slice(0, 8).map((item) => (
                       <div key={item.id} className="flex flex-col gap-2 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -571,8 +443,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
             </div>
           ) : null}
 
-          {activeLane ? (() => {
-            const lane = activeLane
+          {orderedLanes.map((lane) => {
             const Icon = getLaneIcon(lane.laneStatus)
             return (
               <article key={lane.id} className="rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
@@ -583,12 +454,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                         <Icon size={18} />
                       </span>
                       <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-base font-semibold text-textStrong">{lane.label}</h4>
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase ${getLaneAccessClass(lane)}`}>
-                            {getLaneAccessLabel(lane)}
-                          </span>
-                        </div>
+                        <h4 className="text-base font-semibold text-textStrong">{lane.label}</h4>
                         <p className="mt-1 text-sm text-textMuted">{buildAssignedLabel(lane)}</p>
                       </div>
                     </div>
@@ -697,7 +563,12 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 xl:w-[220px]">
-                    {laneHasActions(lane) ? (
+                    {lane.permissions?.canUpdateStage ||
+                    lane.permissions?.canAddInternalNote ||
+                    lane.permissions?.canAddSharedUpdate ||
+                    lane.permissions?.canPublishClientVisibleUpdate ||
+                    lane.permissions?.canRequestDocuments ||
+                    lane.permissions?.canManageSigning ? (
                       <>
                         {lane.permissions?.canUpdateStage ? (
                           <Button
@@ -785,14 +656,14 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                       </>
                     ) : (
                       <span className="rounded-control border border-borderSoft bg-surface px-4 py-3 text-sm text-textMuted">
-                        View only for this role.
+                        Workflow actions are unavailable for this account.
                       </span>
                     )}
                   </div>
                 </div>
               </article>
             )
-          })() : null}
+          })}
         </div>
       ) : (
         <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
@@ -804,13 +675,11 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
         <div className="mt-5 rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h4 className="text-base font-semibold text-textStrong">{activeLane?.label || 'Legal'} Activity & Audit Trail</h4>
-              <p className="mt-1 text-sm text-textMuted">Lane changes, attorney notes, document actions, and authorization context.</p>
+              <h4 className="text-base font-semibold text-textStrong">Legal Activity Timeline</h4>
+              <p className="mt-1 text-sm text-textMuted">Lane changes, attorney notes, document actions, and client-safe legal updates.</p>
             </div>
             <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-              {(state.operations.timelineFilters || ['all'])
-                .filter((filter) => !ROLE_VIEW_ORDER.includes(filter))
-                .map((filter) => (
+              {(state.operations.timelineFilters || ['all']).map((filter) => (
                 <button
                   key={filter}
                   type="button"
@@ -839,11 +708,6 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                         <span className="rounded-full border border-borderSoft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
                           {visibilityLabel(item.visibility)}
                         </span>
-                        {item.authorizationReason ? (
-                          <span className="rounded-full border border-info/30 bg-infoSoft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-info">
-                            {item.authorizationLabel}
-                          </span>
-                        ) : null}
                       </div>
                       <h5 className="mt-2 text-sm font-semibold text-textStrong">{item.title}</h5>
                       {item.message ? <p className="mt-1 text-sm text-textMuted">{item.message}</p> : null}
@@ -1080,7 +944,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                 value={blockerDraft.laneKey}
                 onChange={(event) => setBlockerDraft((previous) => ({ ...previous, laneKey: event.target.value }))}
               >
-                {blockerActionLanes.map((lane) => (
+                {orderedLanes.map((lane) => (
                   <option key={lane.laneKey} value={lane.laneKey}>
                     {lane.label}
                   </option>

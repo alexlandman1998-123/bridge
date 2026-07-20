@@ -5,8 +5,7 @@ import {
   getCurrentUserAttorneyMembership,
   hasAttorneyProfessionalPermission,
 } from '../lib/attorneyPermissions'
-import { deriveActiveAttorneyMatterModules } from '../services/attorneyMatterModules'
-import { getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
+import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
 
 const EMPTY_PERMISSIONS = getAttorneyProfessionalProfilePermissions({})
 
@@ -31,7 +30,6 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
   const [error, setError] = useState('')
   const [resolvedFirmId, setResolvedFirmId] = useState('')
   const [membership, setMembership] = useState(null)
-  const [departments, setDepartments] = useState([])
 
   useEffect(() => {
     let active = true
@@ -42,7 +40,6 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
         if (!active) return
         setResolvedFirmId('')
         setMembership(null)
-        setDepartments([])
         setError('')
         setLoading(false)
         return
@@ -65,27 +62,21 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
         if (!nextFirmId) {
           setResolvedFirmId('')
           setMembership(null)
-          setDepartments([])
           return
         }
 
-        const [nextMembership, nextDepartments] = await Promise.all([
-          getCurrentUserAttorneyMembership(nextFirmId),
-          getAttorneyFirmDepartments(nextFirmId).catch(() => []),
-        ])
+        const nextMembership = await getCurrentUserAttorneyMembership(nextFirmId)
         if (!active) return
         setResolvedFirmId(nextFirmId)
         setMembership(normalizeOperationalMembership(nextMembership, {
           firmId: nextFirmId,
           userId: profile?.id || '',
         }))
-        setDepartments(nextDepartments || [])
       } catch (loadError) {
         if (!active) return
         setError(loadError?.message || 'Unable to resolve attorney permissions.')
         setResolvedFirmId('')
         setMembership(null)
-        setDepartments([])
       } finally {
         if (active) setLoading(false)
       }
@@ -102,7 +93,6 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
   const compatibilityRole = membership?.role || null
   const permissions = role ? getAttorneyProfessionalProfilePermissions(membership) : EMPTY_PERMISSIONS
   const isActiveMembership = Boolean(membership?.isActive || membership?.status === 'active')
-  const matterModules = useMemo(() => deriveActiveAttorneyMatterModules(departments), [departments])
 
   const hasPermission = useMemo(
     () => (permissionKey) => (role && isActiveMembership ? hasAttorneyProfessionalPermission(membership, permissionKey) : false),
@@ -112,8 +102,6 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
   return {
     firmId: resolvedFirmId || null,
     membership: membership ? { ...membership, isActive: isActiveMembership } : null,
-    departments,
-    matterModules,
     role,
     professionalRole: role,
     compatibilityRole,

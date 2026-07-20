@@ -163,7 +163,7 @@ export default function LegalDocumentPreviewPage() {
   }
 
   return (
-    <div className="w-full max-w-none space-y-5 pb-10" aria-labelledby="legal-preview-title">
+    <div className="mx-auto w-full max-w-[1380px] space-y-5 pb-10" aria-labelledby="legal-preview-title">
       <nav aria-label="Breadcrumb">
         <Link to={overviewPath} className="inline-flex items-center gap-2 text-sm font-semibold text-[#607387] transition hover:text-[#0f7f4f]">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />

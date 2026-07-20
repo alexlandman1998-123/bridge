@@ -19,7 +19,7 @@ export function buildLegalDocumentOverviewPath(documentKey = '') {
   return `${LEGAL_DOCUMENTS_BASE_PATH}/${requireDocumentKey(documentKey)}`
 }
 
-export function buildLegalDocumentEditorPath(documentKey = '', scope = 'standard') {
+export function buildLegalDocumentEditorPath(documentKey = '', scope = 'all') {
   return `${buildLegalDocumentOverviewPath(documentKey)}/edit/${normalizeLegalDocumentEditorScope(scope)}`
 }
 

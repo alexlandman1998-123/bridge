@@ -54,7 +54,7 @@ export default function LegalDocumentsLandingPage() {
   const coverageLabel = summary.allCovered ? 'All' : `${summary.coveredCount} of ${summary.documentCount}`
 
   return (
-    <div className="w-full max-w-none space-y-6 pb-10" aria-labelledby="legal-documents-title">
+    <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-10" aria-labelledby="legal-documents-title">
       <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 id="legal-documents-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">Legal Documents</h1>

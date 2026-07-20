@@ -85,7 +85,7 @@ try {
     assert.ok(Object.isFrozen(definition.permissions))
     assert.deepEqual(Object.keys(definition.permissions), [...ATTORNEY_PERMISSION_KEYS])
     assert.ok(Object.values(definition.permissions).every((value) => typeof value === 'boolean'))
-    assert.ok(definition.allowedDepartments.every((type) => ['transfer', 'bond', 'cancellation', 'admin', 'management'].includes(type)))
+    assert.ok(definition.allowedDepartments.every((type) => ['transfer', 'bond', 'admin', 'management'].includes(type)))
     assert.ok(definition.practiceQualifications.every((type) => ATTORNEY_PRACTICE_QUALIFICATIONS.includes(type)))
   }
 
@@ -94,11 +94,11 @@ try {
   assert.deepEqual(getInviteableAttorneyFirmRoles(), ATTORNEY_FIRM_ROLE_VALUES.filter((role) => role !== 'firm_admin'))
   assert.equal(Object.values(getAttorneyRolePermissions('unknown_role')).some(Boolean), false)
 
-  const departments = ['transfer', 'bond', 'cancellation', 'admin', 'management']
-  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('transfer_attorney', departments), ['transfer', 'cancellation'])
+  const departments = ['transfer', 'bond', 'admin', 'management']
+  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('transfer_attorney', departments), ['transfer'])
   assert.deepEqual(getAllowedAttorneyDepartmentsForRole('bond_attorney', departments), ['bond'])
-  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('conveyancing_secretary', departments), ['transfer', 'bond', 'cancellation', 'admin'])
-  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('candidate_attorney', departments), ['transfer', 'bond', 'cancellation'])
+  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('conveyancing_secretary', departments), ['transfer', 'bond', 'admin'])
+  assert.deepEqual(getAllowedAttorneyDepartmentsForRole('candidate_attorney', departments), ['transfer', 'bond'])
   assert.equal(getDefaultAttorneyDepartmentForRole('director_partner', departments), 'management')
   assert.equal(getDefaultAttorneyDepartmentForRole('candidate_attorney', departments), 'transfer')
 

@@ -434,27 +434,27 @@ export function buildPropertyCollectionEmailPreview({
       ? `<div style="margin-top:10px;">${property.matchReasons.slice(0, 4).map((reason) => `<span style="display:inline-block;margin:0 6px 6px 0;padding:5px 8px;border-radius:999px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;">${escapeHtml(reason)}</span>`).join('')}</div>`
       : ''
     const imageHtml = property.imageUrl
-      ? `<img src="${escapeHtml(property.imageUrl)}" alt="" width="190" class="collection-property-image" style="display:block;width:190px;max-width:190px;height:132px;object-fit:cover;border-radius:18px;background:#eef2f7;" />`
-      : `<div class="collection-property-image" style="width:190px;height:132px;border-radius:18px;background:#eef2f7;color:#64748b;text-align:center;line-height:132px;font-size:13px;">Property image</div>`
+      ? `<img src="${escapeHtml(property.imageUrl)}" alt="" width="190" style="display:block;width:190px;max-width:190px;height:132px;object-fit:cover;border-radius:18px;background:#eef2f7;" />`
+      : `<div style="width:190px;height:132px;border-radius:18px;background:#eef2f7;color:#64748b;text-align:center;line-height:132px;font-size:13px;">Property image</div>`
     const viewUrl = property.publicUrl || ctaUrl
     return `
       <tr>
         <td style="padding:0 0 14px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e5e7eb;border-radius:22px;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.06);overflow:hidden;">
             <tr>
-              <td width="210" valign="top" class="collection-property-image-col" style="padding:14px;">
+              <td width="210" valign="top" style="padding:14px;">
                 <div style="position:relative;">
                   ${imageHtml}
                 </div>
               </td>
-              <td valign="top" class="collection-property-copy-col" style="padding:18px 14px 16px 0;">
+              <td valign="top" style="padding:18px 14px 16px 0;">
                 <p style="margin:0 0 4px;font-size:16px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(property.title)}</p>
                 <p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#64748b;">${escapeHtml(property.suburb || property.address)}</p>
                 ${specs ? `<p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#334155;">${specs}</p>` : ''}
                 ${property.description ? `<p style="margin:0;font-size:13px;line-height:1.55;color:#475569;">${escapeHtml(property.description).slice(0, 180)}</p>` : ''}
                 ${reasons}
               </td>
-              <td width="150" valign="top" class="collection-property-action-col" style="padding:18px 16px;border-left:1px solid #eef2f7;">
+              <td width="150" valign="top" style="padding:18px 16px;border-left:1px solid #eef2f7;">
                 <p style="margin:0 0 10px;font-size:20px;line-height:1.2;color:#0f172a;font-weight:900;">${escapeHtml(property.price || 'Price on request')}</p>
                 ${property.matchScore ? `<p style="display:inline-block;margin:0 0 16px;padding:7px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:800;">${property.matchScore}% Match</p>` : ''}
                 ${viewUrl ? `<a href="${escapeHtml(viewUrl)}" style="display:inline-block;color:#4f46e5;text-decoration:none;font-size:14px;font-weight:800;">View Property →</a>` : ''}
@@ -475,38 +475,15 @@ export function buildPropertyCollectionEmailPreview({
       </tr>
     </table>
   ` : ''
-  const html = `<!doctype html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <style>
-        @media screen and (max-width: 640px) {
-          .collection-outer { padding: 0 !important; }
-          .collection-shell { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
-          .collection-padded { padding-left: 20px !important; padding-right: 20px !important; }
-          .collection-hero-col, .collection-profile-col, .collection-property-image-col, .collection-property-copy-col, .collection-property-action-col, .collection-cta-copy, .collection-cta-action { display: block !important; width: 100% !important; box-sizing: border-box !important; }
-          .collection-hero-col { padding-right: 0 !important; }
-          .collection-profile-col { padding-top: 22px !important; }
-          .collection-property-image-col { padding-bottom: 0 !important; }
-          .collection-property-copy-col { padding: 18px 14px !important; }
-          .collection-property-action-col { border-left: 0 !important; border-top: 1px solid #eef2f7 !important; }
-          .collection-property-image { width: 100% !important; max-width: 100% !important; height: 180px !important; line-height: 180px !important; }
-          .collection-cta-action { padding-top: 0 !important; }
-        }
-      </style>
-    </head>
-    <body style="margin:0;padding:0;background:#f6f8fb;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  const html = `
     <div style="margin:0;padding:0;background:#f6f8fb;">
       <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(resolvedSubject)}</div>
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f8fb;">
         <tr>
-          <td align="center" class="collection-outer" style="padding:28px 14px;">
-            <!--[if mso]>
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="720" align="center"><tr><td>
-            <![endif]-->
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="collection-shell" style="max-width:720px;width:100%;background:#ffffff;border:1px solid #e5e7eb;border-radius:28px;box-shadow:0 24px 70px rgba(15,23,42,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;overflow:hidden;">
+          <td align="center" style="padding:28px 14px;">
+            <table role="presentation" width="720" cellspacing="0" cellpadding="0" style="max-width:720px;width:100%;background:#ffffff;border:1px solid #e5e7eb;border-radius:28px;box-shadow:0 24px 70px rgba(15,23,42,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;overflow:hidden;">
               <tr>
-                <td class="collection-padded" style="padding:34px 34px 18px;">
+                <td style="padding:34px 34px 18px;">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
                       <td>
@@ -518,10 +495,10 @@ export function buildPropertyCollectionEmailPreview({
                 </td>
               </tr>
               <tr>
-                <td class="collection-padded" style="padding:18px 34px 28px;">
+                <td style="padding:18px 34px 28px;">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
-                      <td valign="top" class="collection-hero-col" style="padding-right:24px;">
+                      <td valign="top" style="padding-right:24px;">
                         <p style="margin:0 0 8px;font-size:22px;line-height:1.2;color:#4f46e5;font-weight:900;">Hi ${escapeHtml(buyerFirstName)},</p>
                         <h1 style="margin:0 0 14px;font-size:34px;line-height:1.1;color:#0f172a;font-weight:900;letter-spacing:-0.04em;">We found ${selectedProperties.length} homes that match your requirements</h1>
                         <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#475569;">${escapeHtml(intro)}</p>
@@ -538,27 +515,27 @@ export function buildPropertyCollectionEmailPreview({
                           </tr>
                         </table>
                       </td>
-                      <td width="260" valign="top" class="collection-profile-col">${profileHtml}</td>
+                      <td width="260" valign="top">${profileHtml}</td>
                     </tr>
                   </table>
                 </td>
               </tr>
               <tr>
-                <td class="collection-padded" style="padding:0 34px 10px;">
+                <td style="padding:0 34px 10px;">
                   <div style="height:1px;background:#e5e7eb;"></div>
                   <p style="margin:20px 0 16px;font-size:18px;color:#0f172a;font-weight:900;">Your Matched Properties</p>
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${propertyRows}</table>
                 </td>
               </tr>
               <tr>
-                <td class="collection-padded" style="padding:16px 34px 34px;">
+                <td style="padding:16px 34px 34px;">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:24px;background:#f8f7ff;border:1px solid #ede9fe;">
                     <tr>
-                      <td class="collection-cta-copy" style="padding:24px;">
+                      <td style="padding:24px;">
                         <p style="margin:0 0 8px;font-size:18px;color:#0f172a;font-weight:900;">Ready to schedule a viewing?</p>
                         <p style="margin:0;font-size:15px;line-height:1.6;color:#475569;">I'd be happy to arrange viewings or provide more information on any of these properties.</p>
                       </td>
-                      <td width="210" align="center" class="collection-cta-action" style="padding:24px;">
+                      <td width="210" align="center" style="padding:24px;">
                         ${ctaUrl ? `<a href="${escapeHtml(ctaUrl)}" style="display:block;padding:14px 18px;border-radius:12px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:900;">Schedule a Viewing</a><p style="margin:12px 0 0;font-size:13px;"><a href="mailto:${escapeHtml(resolvedAgentEmail)}" style="color:#4f46e5;text-decoration:none;font-weight:700;">Reply to this email</a></p>` : ''}
                       </td>
                     </tr>
@@ -567,15 +544,10 @@ export function buildPropertyCollectionEmailPreview({
                 </td>
               </tr>
             </table>
-            <!--[if mso]>
-            </td></tr></table>
-            <![endif]-->
           </td>
         </tr>
       </table>
     </div>
-    </body>
-    </html>
   `
   const text = [
     `Hi ${buyerFirstName},`,

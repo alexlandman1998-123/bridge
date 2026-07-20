@@ -95,7 +95,7 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
     description: 'Owns firm configuration, access, reporting, and operational oversight.',
     authorityLevel: 'administrator',
     permissions: ATTORNEY_PERMISSION_KEYS,
-    allowedDepartments: ['transfer', 'bond', 'cancellation', 'admin', 'management'],
+    allowedDepartments: ['transfer', 'bond', 'admin', 'management'],
     practiceQualifications: ['transfer', 'bond', 'cancellation'],
     inviteable: false,
     settingsAssignable: false,
@@ -137,7 +137,7 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
       'can_comment_internal', 'can_view_internal_comments', 'can_manage_signing_appointments',
       'can_generate_otp', 'can_view_client_visible_updates', 'can_publish_client_visible_updates',
     ],
-    allowedDepartments: ['transfer', 'cancellation'],
+    allowedDepartments: ['transfer'],
     practiceQualifications: ['transfer', 'cancellation'],
     inviteable: true,
     settingsAssignable: true,
@@ -177,7 +177,7 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
       'can_manage_signing_appointments', 'can_view_client_visible_updates',
       'can_publish_client_visible_updates',
     ],
-    allowedDepartments: ['transfer', 'bond', 'cancellation', 'admin'],
+    allowedDepartments: ['transfer', 'bond', 'admin'],
     practiceQualifications: [],
     inviteable: true,
     settingsAssignable: true,
@@ -222,7 +222,7 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
     description: 'Assists on assigned matters under practitioner supervision.',
     authorityLevel: 'support',
     permissions: ['can_view_assigned_matters', 'can_upload_documents', 'can_comment_internal', 'can_view_internal_comments'],
-    allowedDepartments: ['transfer', 'bond', 'cancellation'],
+    allowedDepartments: ['transfer', 'bond'],
     practiceQualifications: [],
     inviteable: true,
     settingsAssignable: true,
@@ -236,7 +236,7 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
     description: 'Read-only firm membership without operational matter authority.',
     authorityLevel: 'viewer',
     permissions: [],
-    allowedDepartments: ['transfer', 'bond', 'cancellation', 'admin', 'management'],
+    allowedDepartments: ['transfer', 'bond', 'admin', 'management'],
     practiceQualifications: [],
     inviteable: true,
     settingsAssignable: true,
@@ -394,11 +394,11 @@ export function getDefaultAttorneyDepartmentForRole(role, departmentTypes = []) 
   if (!allowed.length) return ''
   const preferences = {
     director_partner: ['management'],
-    transfer_attorney: ['transfer', 'cancellation'],
+    transfer_attorney: ['transfer'],
     bond_attorney: ['bond'],
     admin_staff: ['admin'],
     reception_scheduling: ['admin'],
-    candidate_attorney: ['transfer', 'bond', 'cancellation'],
+    candidate_attorney: ['transfer', 'bond'],
   }
   return (preferences[normalizeAttorneyFirmRole(role)] || []).find((type) => allowed.includes(type)) || allowed[0]
 }

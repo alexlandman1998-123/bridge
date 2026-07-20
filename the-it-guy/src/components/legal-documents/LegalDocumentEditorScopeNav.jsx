@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Layers3, UsersRound } from 'lucide-react'
+import { ArrowLeft, FileText, Layers3, LayoutList, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
   buildLegalDocumentEditorPath,
@@ -6,9 +6,10 @@ import {
 } from '../../core/documents/legalDocumentRoutes'
 
 const SCOPE_OPTIONS = Object.freeze([
-  { key: 'standard', label: 'Always included', Icon: FileText },
-  { key: 'situations', label: 'Conditional wording', Icon: Layers3 },
-  { key: 'signing', label: 'Who signs', Icon: UsersRound },
+  { key: 'all', label: 'Whole document', Icon: LayoutList },
+  { key: 'standard', label: 'Standard wording', Icon: FileText },
+  { key: 'situations', label: 'Conditional sections', Icon: Layers3 },
+  { key: 'signing', label: 'Signing setup', Icon: UsersRound },
 ])
 
 function withTemplate(path, templateId) {

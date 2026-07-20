@@ -17,7 +17,7 @@ export function buildReservationDepositEmailHtml(payload: ReservationDepositEmai
 
   return `
     <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2937; background: #f8fafc; padding: 24px;">
-      <div style="width: 100%; max-width: 640px; margin: 0 auto; box-sizing: border-box; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 16px; overflow: hidden;">
+      <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 16px; overflow: hidden;">
         <div style="padding: 20px 24px; background: #0f2f4f; color: #ffffff;">
           <p style="margin: 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.8;">BRIDGE</p>
           <h1 style="margin: 10px 0 0; font-size: 24px; line-height: 1.2;">Reservation Deposit</h1>

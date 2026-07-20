@@ -11,7 +11,6 @@ import {
 test('builds stable landing, overview, editor and preview routes', () => {
   assert.equal(buildLegalDocumentsLandingPath(), '/settings/legal-templates')
   assert.equal(buildLegalDocumentOverviewPath('otp'), '/settings/legal-templates/otp')
-  assert.equal(buildLegalDocumentEditorPath('mandate'), '/settings/legal-templates/mandate/edit/standard')
   assert.equal(buildLegalDocumentEditorPath('otp', 'standard'), '/settings/legal-templates/otp/edit/standard')
   assert.equal(buildLegalDocumentPreviewPath('otp'), '/settings/legal-templates/otp/preview')
 })

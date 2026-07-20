@@ -1,6 +1,6 @@
 import {
-  ArrowLeft,
   Building2,
+  CheckCircle2,
   CircleDollarSign,
   FileText,
   HeartHandshake,
@@ -38,22 +38,6 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
     const groups = listLegalDocumentEditorSituationGroups({ packetType })
     const situations = groups.flatMap((group) => group.items)
     const selected = situations.find((situation) => situation.key === situationKey) || null
-    if (selected) {
-      return (
-        <section className="flex flex-col gap-3 rounded-[16px] border border-[#cfe4d7] bg-[#f5fbf7] px-4 py-3 sm:flex-row sm:items-center sm:justify-between" aria-label="Selected conditional wording">
-          <Link
-            to={buildEditorLink(documentKey, 'situations', templateId)}
-            className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-[#176f43] transition hover:text-[#0f5f39]"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to conditional wording
-          </Link>
-          <span className="inline-flex min-h-9 items-center rounded-full border border-[#bfe0cc] bg-white px-3 text-sm font-semibold text-[#236d46]">
-            {selected.label}
-          </span>
-        </section>
-      )
-    }
     return (
       <section className="rounded-[18px] border border-[#cfe4d7] bg-[#f5fbf7] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-labelledby="situation-picker-heading">
         <div className="flex items-start gap-3">
@@ -73,12 +57,14 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="list">
                 {group.items.map((situation) => {
                   const SituationIcon = SITUATION_ICONS[situation.iconKey] || Layers3
+                  const active = situation.key === selected?.key
                   return (
                     <Link
                       key={situation.key}
                       role="listitem"
                       to={buildEditorLink(documentKey, 'situations', templateId, situation.key)}
-                      className="flex min-h-[92px] items-start gap-3 rounded-[12px] border border-[#d8e8de] bg-white/70 px-3 py-3 text-[#334d40] transition hover:border-[#9dcdb0] hover:bg-white"
+                      aria-current={active ? 'page' : undefined}
+                      className={`flex min-h-[92px] items-start gap-3 rounded-[12px] border px-3 py-3 transition ${active ? 'border-[#63b783] bg-white text-[#146f42] shadow-[0_6px_16px_rgba(15,127,79,0.08)]' : 'border-[#d8e8de] bg-white/70 text-[#334d40] hover:border-[#9dcdb0] hover:bg-white'}`}
                     >
                       <SituationIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                       <span>
@@ -93,6 +79,12 @@ export default function LegalDocumentEditorContextPanel({ documentKey, documentL
             </section>
           ))}
         </div>
+        {selected ? (
+          <p className="mt-4 flex items-center gap-2 rounded-[10px] border border-[#bfe0cc] bg-white px-3 py-2 text-sm font-semibold text-[#236d46]">
+            <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Edit the {selected.label.toLowerCase()} wording below. Its inclusion rule remains locked.
+          </p>
+        ) : null}
       </section>
     )
   }

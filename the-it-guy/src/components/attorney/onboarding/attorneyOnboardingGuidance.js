@@ -1,8 +1,4 @@
 import { normalizeWebsite } from '../../../services/attorneyFirmServiceShared.js'
-import {
-  ATTORNEY_DEPARTMENT_LABELS,
-  getActiveAttorneyDepartmentTypesFromSelection,
-} from '../../../services/attorneyMatterModules.js'
 import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
 import { getAllowedDepartmentsForRole } from './teamInviteUtils.js'
 
@@ -20,7 +16,7 @@ export const ONBOARDING_STEPS = [
   {
     key: 'departments',
     label: 'Active Departments',
-    description: 'Choose transfer, bond, cancellation, admin, and management lanes.',
+    description: 'Choose transfer, bond, admin, and management lanes.',
   },
   {
     key: 'team_invites',
@@ -70,12 +66,16 @@ export const DEFAULT_BRANDING = {
 export const DEFAULT_DEPARTMENTS = {
   transfer: true,
   bond: true,
-  cancellation: true,
   admin: true,
   management: true,
 }
 
-const DEPARTMENT_LABELS = ATTORNEY_DEPARTMENT_LABELS
+const DEPARTMENT_LABELS = {
+  transfer: 'Transfer Department',
+  bond: 'Bond Department',
+  admin: 'Admin Department',
+  management: 'Management',
+}
 
 export function buildInviteId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -149,12 +149,12 @@ export function buildSelectedDepartmentsFromRows(rows = []) {
       if (type) accumulator[type] = department.isActive !== false
       return accumulator
     },
-    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, cancellation: false, admin: false, management: true },
+    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, admin: false, management: true },
   )
 }
 
 export function getActiveDepartmentTypes(selectedDepartments = {}) {
-  return getActiveAttorneyDepartmentTypesFromSelection(selectedDepartments)
+  return ['transfer', 'bond', 'admin', 'management'].filter((type) => Boolean(selectedDepartments[type]))
 }
 
 export function validateFirmInformation(values = {}) {

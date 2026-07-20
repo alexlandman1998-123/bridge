@@ -43,7 +43,7 @@ assert.deepEqual(
   launchReadyGuidance.activationDossier.metrics.map((metric) => [metric.key, metric.value]),
   [
     ['readiness', '100%'],
-    ['workflow_lanes', '5'],
+    ['workflow_lanes', '4'],
     ['team_access', '1'],
     ['client_surface', '3'],
   ],

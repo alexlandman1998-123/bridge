@@ -1,9 +1,5 @@
 import { getAttorneyOperationalWorkspaceData } from './attorneyOperations'
 import { getAttorneyIncomingMatterQueue } from './attorneyIncomingMatterQueue'
-import {
-  filterAttorneyMatterTypesByModules,
-  isAttorneyMatterModuleEnabled,
-} from './attorneyMatterModules'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -63,11 +59,6 @@ const SAVED_VIEWS = [
   { id: 'guarantees-outstanding', name: 'Guarantees Outstanding', filters: { nextAction: 'guarantee' } },
 ]
 
-const SAVED_VIEW_MODULES = {
-  'my-bond-registrations': 'bond',
-  'guarantees-outstanding': 'bond',
-}
-
 const INCOMING_SAVED_VIEWS = [
   { id: 'incoming-awaiting-buyer', name: 'Awaiting Buyer', filters: { status: 'awaiting_buyer' } },
   { id: 'incoming-awaiting-otp', name: 'Awaiting OTP', filters: { status: 'awaiting_signed_otp' } },
@@ -81,7 +72,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   all: {
     key: 'all',
     title: 'All Matters',
-    description: '',
+    description: 'Every active firm matter across transfer, bond, cancellation, and development work.',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Matters',
     itemLabel: 'matters',
@@ -614,22 +605,6 @@ function applyBaseView(rows = [], view = 'all') {
   return rows
 }
 
-function filterRowsByAttorneyMatterModules(rows = [], modules = {}) {
-  return rows.filter((row) => {
-    const matterTypeKeys = Array.isArray(row.matterTypeKeys) ? row.matterTypeKeys : []
-    const scopedTypes = matterTypeKeys.filter((type) => ['transfer', 'bond', 'cancellation'].includes(type))
-    if (!scopedTypes.length) return true
-    return scopedTypes.some((type) => isAttorneyMatterModuleEnabled(modules, type))
-  })
-}
-
-function filterSavedViewsByAttorneyMatterModules(savedViews = [], modules = {}) {
-  return savedViews.filter((view) => {
-    const moduleType = SAVED_VIEW_MODULES[view.id] || view.filters?.matterType || ''
-    return !moduleType || isAttorneyMatterModuleEnabled(modules, moduleType)
-  })
-}
-
 function matchesDateBucket(value, bucket = 'all') {
   const normalized = normalize(bucket || 'all')
   if (normalized === 'all') return true
@@ -887,7 +862,7 @@ function buildKpis(rows = [], { usesIncomingQueue = false } = {}) {
   ]
 }
 
-function buildFilterPayload(operational = {}, rows = [], { view = 'all', matterModules = {} } = {}) {
+function buildFilterPayload(operational = {}, rows = [], { view = 'all' } = {}) {
   const viewConfig = getAttorneyMatterViewConfig(view)
   const memberOptions = (operational.availableFilters?.members || []).map((member) => ({
     value: member.value,
@@ -903,7 +878,7 @@ function buildFilterPayload(operational = {}, rows = [], { view = 'all', matterM
 
   return {
     statuses: viewConfig.usesIncomingQueue ? INCOMING_STATUS_FILTERS : STATUS_FILTERS,
-    matterTypes: MATTER_TYPE_FILTERS.filter((option) => option.key === 'all' || filterAttorneyMatterTypesByModules([option.key], matterModules).length),
+    matterTypes: MATTER_TYPE_FILTERS,
     attorneys: [{ value: 'all', label: 'All Attorneys' }, ...memberOptions],
     assistants: [{ value: 'all', label: 'All Assistants' }, ...memberOptions],
     branches: [{ value: 'all', label: 'All Branches' }],
@@ -934,10 +909,9 @@ function buildFilterPayload(operational = {}, rows = [], { view = 'all', matterM
 
 export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
-  const matterModules = options.matterModules || {}
   const documentStatusByMatter = buildDocumentStatusMap(operational.documentQueue || [])
   const incomingMatterQueue = operational.incomingMatterQueue || operational.incomingMatterSource?.filteredRows || []
-  const rawBaseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
+  const baseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
     ? incomingMatterQueue.map((matter) =>
         normalizeIncomingMatterRow(matter, {
           currentUser: operational.currentUser || {},
@@ -949,7 +923,6 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
           currentUser: operational.currentUser || {},
         }),
       )
-  const baseRows = filterRowsByAttorneyMatterModules(rawBaseRows, matterModules)
 
   const viewRows = applyBaseView(baseRows, viewConfig.key)
   const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, { ...options, view: viewConfig.key }))
@@ -965,9 +938,9 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
     permissions: operational.permissions || {},
     view: viewConfig,
     summary: buildSummary(viewRows, { usesIncomingQueue: viewConfig.usesIncomingQueue }),
-    filters: buildFilterPayload(operational, baseRows, { view: viewConfig.key, matterModules }),
+    filters: buildFilterPayload(operational, baseRows, { view: viewConfig.key }),
     kpis: buildKpis(viewRows, { usesIncomingQueue: viewConfig.usesIncomingQueue }),
-    savedViews: viewConfig.usesIncomingQueue ? INCOMING_SAVED_VIEWS : filterSavedViewsByAttorneyMatterModules(SAVED_VIEWS, matterModules),
+    savedViews: viewConfig.usesIncomingQueue ? INCOMING_SAVED_VIEWS : SAVED_VIEWS,
     quickFilters: viewConfig.usesIncomingQueue ? INCOMING_QUICK_FILTERS : QUICK_FILTERS,
     tableRows,
     allRows: baseRows,

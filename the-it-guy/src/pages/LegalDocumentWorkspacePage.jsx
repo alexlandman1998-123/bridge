@@ -1883,11 +1883,6 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       snapshotTransferAttorney.preferredPartnerId,
       onboardingTransferAttorney.preferredPartnerId,
     ),
-    transferAttorneyPartnerRoleConfigurationId: firstText(
-      packetDraft.transferAttorneyPartnerRoleConfigurationId,
-      snapshotTransferAttorney.partnerRoleConfigurationId,
-      onboardingTransferAttorney.partnerRoleConfigurationId,
-    ),
     transferAttorneyPartnerOrganisationId: firstText(
       packetDraft.transferAttorneyPartnerOrganisationId,
       snapshotTransferAttorney.partnerOrganisationId,
@@ -2550,7 +2545,6 @@ export default function LegalDocumentWorkspacePage() {
   )
   const effectiveMandateDraft = useMemo(() => ({
     ...mandateDraftDefaults,
-    transferAttorneyPartnerRoleConfigurationId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.partnerRoleConfigurationId || normalizeText(mandateDraftDefaults.transferAttorneyPartnerRoleConfigurationId),
     transferAttorneyPreferredPartnerId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.id || normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId),
     transferAttorneyPartnerOrganisationId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.partnerOrganisationId || normalizeText(mandateDraftDefaults.transferAttorneyPartnerOrganisationId),
     transferAttorneyCompanyName: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.companyName || normalizeText(mandateDraftDefaults.transferAttorneyCompanyName),
@@ -4173,7 +4167,6 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     const signedMandateAttorney = {
-      partnerRoleConfigurationId: normalizeText(effectiveMandateDraft.transferAttorneyPartnerRoleConfigurationId),
       preferredPartnerId: normalizeText(effectiveMandateDraft.transferAttorneyPreferredPartnerId),
       partnerOrganisationId: normalizeText(effectiveMandateDraft.transferAttorneyPartnerOrganisationId),
       companyName: normalizeText(effectiveMandateDraft.transferAttorneyCompanyName),

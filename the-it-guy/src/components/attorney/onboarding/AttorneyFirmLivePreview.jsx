@@ -1,8 +1,12 @@
 import { AlertCircle, BriefcaseBusiness, Check, FileText, Mail, Monitor, Scale, ShieldCheck, Users } from 'lucide-react'
 import { getAttorneyRoleLabel } from '../../../constants/attorneyRoleCatalog.js'
-import { ATTORNEY_DEPARTMENT_LABELS } from '../../../services/attorneyMatterModules.js'
 
-const DEPARTMENT_LABELS = ATTORNEY_DEPARTMENT_LABELS
+const DEPARTMENT_LABELS = {
+  transfer: 'Transfer',
+  bond: 'Bond',
+  admin: 'Admin',
+  management: 'Management',
+}
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -47,7 +51,7 @@ function AttorneyFirmLivePreview({ preview = null, progressPercent = 0, readines
   const email = normalizeText(firmInformation.email) || 'transfers@yourfirm.co.za'
   const phone = normalizeText(firmInformation.phone) || '+27 00 000 0000'
   const website = normalizeText(firmInformation.website) || 'www.yourfirm.co.za'
-  const visibleDepartments = activeDepartmentTypes.length ? activeDepartmentTypes : ['transfer', 'bond', 'cancellation', 'management']
+  const visibleDepartments = activeDepartmentTypes.length ? activeDepartmentTypes : ['transfer', 'bond', 'management']
   const visibleInvites = invites.filter((invite) => normalizeText(invite.email)).slice(0, 3)
   const previewClassName = variant ? `attorney-firm-preview is-${variant}` : 'attorney-firm-preview'
 

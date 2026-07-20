@@ -2,18 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
-import {
-  getAttorneyFirmDepartments,
-  getCurrentUserPrimaryAttorneyFirm,
-  setAttorneyFirmDepartmentActivation,
-  updateAttorneyFirm,
-} from '../services/attorneyFirms'
-import {
-  ATTORNEY_DEPARTMENT_LABELS,
-  ATTORNEY_MATTER_MODULE_LABELS,
-  ATTORNEY_MATTER_MODULE_TYPES,
-  getActiveAttorneyDepartmentTypesFromSelection,
-} from '../services/attorneyMatterModules'
+import { getCurrentUserPrimaryAttorneyFirm, updateAttorneyFirm } from '../services/attorneyFirms'
 
 function AttorneyFirmSettingsPage() {
   const { role } = useWorkspace()
@@ -23,14 +12,6 @@ function AttorneyFirmSettingsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [firm, setFirm] = useState(null)
-  const [departmentSelection, setDepartmentSelection] = useState({
-    transfer: true,
-    bond: true,
-    cancellation: true,
-    admin: true,
-    management: true,
-  })
-  const [savingModules, setSavingModules] = useState(false)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -49,8 +30,6 @@ function AttorneyFirmSettingsPage() {
 
   const canSubmit = useMemo(() => Boolean(String(form.name || '').trim()) && !saving, [form.name, saving])
   const canEditBranding = permissionsState.hasPermission('can_manage_branding')
-  const canManageFirmSettings = permissionsState.canManageFirmSettings
-  const canSaveModules = useMemo(() => canManageFirmSettings && !savingModules, [canManageFirmSettings, savingModules])
 
   useEffect(() => {
     let active = true
@@ -66,9 +45,6 @@ function AttorneyFirmSettingsPage() {
           setForm((previous) => ({ ...previous, name: '' }))
           return
         }
-        const currentDepartments = await getAttorneyFirmDepartments(currentFirm.id).catch(() => [])
-        if (!active) return
-        setDepartmentSelection(buildDepartmentSelection(currentDepartments))
         setForm({
           name: currentFirm.name || '',
           email: currentFirm.email || '',
@@ -100,39 +76,6 @@ function AttorneyFirmSettingsPage() {
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
-  }
-
-  function toggleMatterModule(type) {
-    if (!ATTORNEY_MATTER_MODULE_TYPES.includes(type) || !canManageFirmSettings) return
-    setDepartmentSelection((previous) => ({
-      ...previous,
-      [type]: !previous[type],
-      management: true,
-    }))
-    setSuccess('')
-    setError('')
-  }
-
-  async function handleSaveModules() {
-    if (!firm?.id || !canSaveModules) return
-
-    setSavingModules(true)
-    setError('')
-    setSuccess('')
-    try {
-      const activeTypes = getActiveAttorneyDepartmentTypesFromSelection({
-        ...departmentSelection,
-        admin: departmentSelection.admin !== false,
-        management: true,
-      })
-      const updatedDepartments = await setAttorneyFirmDepartmentActivation(firm.id, activeTypes)
-      setDepartmentSelection(buildDepartmentSelection(updatedDepartments))
-      setSuccess('Matter modules updated.')
-    } catch (moduleError) {
-      setError(moduleError.message || 'Unable to update matter modules.')
-    } finally {
-      setSavingModules(false)
-    }
   }
 
   async function handleSubmit(event) {
@@ -284,72 +227,7 @@ function AttorneyFirmSettingsPage() {
           ) : null}
         </form>
       </div>
-
-      <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.85rem', marginTop: '1rem' }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Matter Modules</h2>
-          <p className="status-message" style={{ margin: '0.25rem 0 0' }}>
-            Enable only the attorney matter lanes this firm operates.
-          </p>
-        </div>
-        <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          {ATTORNEY_MATTER_MODULE_TYPES.map((type) => {
-            const active = departmentSelection[type] !== false
-            return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => toggleMatterModule(type)}
-                disabled={!canManageFirmSettings || savingModules}
-                className="attorney-department-card"
-                style={{
-                  textAlign: 'left',
-                  borderColor: active ? '#00614f' : '#d0d7de',
-                  background: active ? '#f0fdf8' : '#ffffff',
-                  cursor: canManageFirmSettings && !savingModules ? 'pointer' : 'not-allowed',
-                }}
-                aria-pressed={active}
-              >
-                <span className="attorney-department-card-top">
-                  <span className="attorney-department-state">{active ? 'Active' : 'Inactive'}</span>
-                </span>
-                <span className="attorney-department-copy">
-                  <strong>{ATTORNEY_MATTER_MODULE_LABELS[type]}</strong>
-                  <span>{ATTORNEY_DEPARTMENT_LABELS[type]}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        {!canManageFirmSettings ? (
-          <p className="status-message" style={{ margin: 0 }}>
-            You can view matter modules, but only firm managers can change them.
-          </p>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" className="header-primary-cta" disabled={!canSaveModules} onClick={handleSaveModules}>
-            {savingModules ? 'Saving…' : 'Save Modules'}
-          </button>
-        </div>
-      </div>
     </section>
-  )
-}
-
-function buildDepartmentSelection(departments = []) {
-  return departments.reduce(
-    (selection, department) => {
-      const type = String(department?.departmentType || '').trim().toLowerCase()
-      if (type) selection[type] = department.isActive !== false
-      return selection
-    },
-    {
-      transfer: true,
-      bond: true,
-      cancellation: true,
-      admin: true,
-      management: true,
-    },
   )
 }
 

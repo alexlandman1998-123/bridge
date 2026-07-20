@@ -97,6 +97,11 @@ function normalizeStepStatus(value, fallback = 'not_started') {
   return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed'].includes(normalized) ? normalized : fallback
 }
 
+function isConstraintLikeError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return error?.code === '23514' || message.includes('constraint') || message.includes('violates')
+}
+
 function normalizeVisibility(value, fallback = 'internal') {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'shared') return 'professional_shared'
@@ -126,35 +131,6 @@ function getUpdateTypeLabel(updateTypeId) {
   if (UPDATE_TYPE_BY_VISIBILITY.professional_shared === updateTypeId) return 'Professional update'
   if (UPDATE_TYPE_BY_VISIBILITY.client_visible === updateTypeId) return 'Client-visible update'
   return getAttorneyUpdateType(updateTypeId)?.label || toTitleLabel(updateTypeId)
-}
-
-function compactObject(value = {}) {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== ''))
-}
-
-function getAttorneyWorkflowAuditReasonLabel(reason = '') {
-  if (reason === 'transfer_attorney_controller') return 'Transfer controller'
-  if (reason === 'management_override') return 'Management override'
-  if (reason === 'assigned_attorney') return 'Assigned attorney'
-  if (reason === 'assigned_participant') return 'Assigned participant'
-  return 'Attorney access'
-}
-
-function buildAttorneyWorkflowAuditMetadata(permissionContext = {}, extras = {}) {
-  const permissionReason = permissionContext.permissionReason || permissionContext.viewReason || 'attorney_access'
-  return compactObject({
-    auditVersion: 'attorney_workflow_audit_v1',
-    permissionReason,
-    permissionLabel: getAttorneyWorkflowAuditReasonLabel(permissionReason),
-    authorizingAssignmentId: permissionContext.authorizingAssignmentId,
-    authorizingFirmId: permissionContext.authorizingFirmId || permissionContext.firmId,
-    controlledAssignmentId: permissionContext.controlledAssignmentId,
-    controllerAssignmentId: permissionContext.controllerAssignmentId,
-    controllerLaneRole: permissionContext.controllerLaneRole,
-    isTransferAttorneyController: permissionContext.isTransferAttorneyController ? true : null,
-    managementOverrideEnabled: permissionContext.managementOverrideEnabled ? true : null,
-    ...extras,
-  })
 }
 
 function isMissingSchemaError(error) {
@@ -636,10 +612,6 @@ function buildTimelineFromSources({ updates = [], history = [], documentRequests
       attorneyRole: item.attorney_role || LANE_META[laneKey]?.attorneyRole || null,
       visibility,
       category: 'workflow',
-      authorizationReason: item.metadata?.permissionReason || null,
-      authorizationLabel: item.metadata?.permissionLabel || getAttorneyWorkflowAuditReasonLabel(item.metadata?.permissionReason),
-      authorizingAssignmentId: item.metadata?.authorizingAssignmentId || null,
-      authorizingFirmId: item.metadata?.authorizingFirmId || null,
       metadata: item.metadata || {},
     })
   }
@@ -932,12 +904,6 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
           canReviewDocuments: Boolean(permissionContext?.canReviewDocuments),
           canManageSigning: Boolean(permissionContext?.canManageSigning),
           canAssignAttorney: Boolean(permissionContext?.canAssignAttorney),
-          isAssignedAttorney: Boolean(permissionContext?.isAssignedAttorney),
-          isAssignedParticipant: Boolean(permissionContext?.isAssignedParticipant),
-          isTransferAttorneyController: Boolean(permissionContext?.isTransferAttorneyController),
-          controllerLaneRole: permissionContext?.controllerLaneRole || null,
-          controllerAssignmentId: permissionContext?.controllerAssignmentId || null,
-          managementOverrideEnabled: Boolean(permissionContext?.managementOverrideEnabled),
           readOnlyReason: permissionContext?.viewReason || 'view_only',
         },
         updates: visibleUpdates,
@@ -1232,10 +1198,6 @@ export async function updateAttorneyWorkflowLaneStage({
   const finalStage = targetIndex === stages.length - 1
   const nextLaneStatus = normalizeLaneStatus(finalStage ? 'completed' : laneStatus, 'in_progress')
   const nowIso = new Date().toISOString()
-  const auditMetadata = buildAttorneyWorkflowAuditMetadata(permissionContext, {
-    regression: isRegression,
-    source: 'attorney_workspace_lane_stage_update',
-  })
 
   const stepRows = stages.map((stage, index) => ({
     subprocess_id: lane.id,
@@ -1303,7 +1265,7 @@ export async function updateAttorneyWorkflowLaneStage({
     note: normalizedNote || null,
     visibility: normalizeVisibility(visibility),
     source: 'attorney_workspace',
-    metadata: auditMetadata,
+    metadata: { regression: isRegression },
   }).catch(() => null)
 
   await insertTransactionEvent(client, {
@@ -1316,10 +1278,6 @@ export async function updateAttorneyWorkflowLaneStage({
       attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
       previousStage: currentStage || null,
       newStage: normalizedStageKey,
-      permissionReason: auditMetadata.permissionReason,
-      permissionLabel: auditMetadata.permissionLabel,
-      authorizingAssignmentId: auditMetadata.authorizingAssignmentId,
-      authorizingFirmId: auditMetadata.authorizingFirmId,
       note: normalizedNote || null,
     },
   })

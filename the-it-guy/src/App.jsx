@@ -697,15 +697,6 @@ function isSetupPath(pathname = '') {
   )
 }
 
-function isAttorneyFirmRepairPath(pathname = '', search = '') {
-  if (pathname !== '/attorney/onboarding') return false
-  try {
-    return new URLSearchParams(search || '').get('repair') === 'firm'
-  } catch {
-    return false
-  }
-}
-
 function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const location = useLocation()
   const { authState } = useAuthSession()
@@ -854,7 +845,6 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   const reason = authState.onboardingRequiredReason
-  const isAttorneyFirmRepairRoute = isAttorneyFirmRepairPath(location.pathname, location.search)
   const hasCommercialAccess =
     hasCommercialAccessMarker(authState.currentMembership) ||
     (authState.activeMemberships || []).some((membership) => hasCommercialAccessMarker(membership))
@@ -916,7 +906,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     return <Outlet />
   }
 
-  if (onAnyOnboardingRoute && onboardingCompleted && !isAttorneyFirmRepairRoute) {
+  if (onAnyOnboardingRoute && onboardingCompleted) {
     const pendingPartnerInvitePath = readPendingPartnerInvitePath()
     const target = pendingPartnerInvitePath
       ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)

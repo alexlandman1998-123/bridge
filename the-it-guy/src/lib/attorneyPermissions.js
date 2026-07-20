@@ -11,10 +11,6 @@ import {
   isAttorneyDemoContextEnabled,
 } from './attorneyDemoContext'
 import {
-  ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES,
-  normalizeAttorneyDepartmentTypeForModules,
-} from '../services/attorneyMatterModules.js'
-import {
   ATTORNEY_FIRM_ADMIN_ROLES,
   ATTORNEY_FIRM_MANAGER_ROLES,
   ATTORNEY_FIRM_ROLE_VALUES,
@@ -53,7 +49,7 @@ export {
 
 export const ATTORNEY_FIRM_MEMBER_STATUS_VALUES = ['invited', 'active', 'suspended', 'removed']
 
-export const ATTORNEY_FIRM_DEPARTMENT_TYPES = [...ATTORNEY_OPERATIONAL_DEPARTMENT_TYPES]
+export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'admin', 'management']
 
 export const ATTORNEY_INVITATION_STATUS_VALUES = ['pending', 'accepted', 'expired', 'cancelled']
 
@@ -64,7 +60,8 @@ export function normalizeAttorneyFirmMemberStatus(value, fallback = 'active') {
 }
 
 export function normalizeAttorneyDepartmentType(value, fallback = 'admin') {
-  return normalizeAttorneyDepartmentTypeForModules(value, fallback)
+  const normalized = String(value || '').trim().toLowerCase()
+  return ATTORNEY_FIRM_DEPARTMENT_TYPES.includes(normalized) ? normalized : fallback
 }
 
 export function normalizeAttorneyInvitationStatus(value, fallback = 'pending') {
@@ -271,10 +268,6 @@ function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
   )
 }
 
-function findActivePrimaryTransferAssignment(assignments = []) {
-  return findActiveLaneAssignment(assignments, 'transfer')
-}
-
 async function getMembershipsByFirmForUser(client, userId, firmIds = []) {
   const uniqueFirmIds = [...new Set(firmIds.map((firmId) => normalizeText(firmId)).filter(Boolean))]
   const memberships = await Promise.all(
@@ -339,16 +332,12 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
       canActAsAttorney: false,
       isAssignedAttorney: false,
       isAssignedParticipant: false,
-      isTransferAttorneyController: false,
       isManagementUser: false,
       managementOverrideEnabled: false,
       laneRole: normalizeAttorneyLaneRole(attorneyRole),
       firmId: normalizeText(firmId) || null,
       firmRole: null,
       assignment: null,
-      controlledAssignment: null,
-      controllerAssignment: null,
-      controllerLaneRole: null,
       reason: 'missing_transaction',
     }
   }
@@ -356,25 +345,10 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
   const laneRole = normalizeAttorneyLaneRole(attorneyRole)
   const assignments = await getAttorneyTransactionAssignmentsForPermission(client, resolvedTransactionId, firmId)
-  const transactionAssignments = firmId
-    ? await getAttorneyTransactionAssignmentsForPermission(client, resolvedTransactionId)
-    : assignments
   const activeLaneAssignment = findActiveLaneAssignment(assignments, laneRole)
-  const activeTransferControllerAssignment = laneRole === 'transfer' ? null : findActivePrimaryTransferAssignment(transactionAssignments)
-  const isTransferAttorneyController = Boolean(
-    activeTransferControllerAssignment &&
-      isAssignmentActive(activeTransferControllerAssignment) &&
-      String(activeTransferControllerAssignment.attorney_user_id || activeTransferControllerAssignment.primary_attorney_id || '') === resolvedUserId,
-  )
-  const controllerFirmId = isTransferAttorneyController
-    ? normalizeText(activeTransferControllerAssignment?.attorney_firm_id || activeTransferControllerAssignment?.firm_id)
-    : null
-  const scopedFirmIds = [
-    ...new Set(transactionAssignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean)),
-  ]
+  const scopedFirmIds = [...new Set(assignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
   const membershipsByFirmId = await getMembershipsByFirmForUser(client, resolvedUserId, scopedFirmIds)
   const primaryMembership =
-    (controllerFirmId && membershipsByFirmId[controllerFirmId]) ||
     ((activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id) && membershipsByFirmId[activeLaneAssignment.attorney_firm_id || activeLaneAssignment.firm_id]) ||
     (firmId && membershipsByFirmId[normalizeText(firmId)]) ||
     Object.values(membershipsByFirmId)[0] ||
@@ -397,21 +371,15 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
         activeLaneAssignment.admin_handler_id,
       ].some((candidate) => candidate && String(candidate) === String(resolvedUserId)),
   )
-  const canViewMatter = await canAccessAttorneyMatter(
-    resolvedTransactionId,
-    isTransferAttorneyController ? null : firmId,
-    resolvedUserId,
-  )
+  const canViewMatter = await canAccessAttorneyMatter(resolvedTransactionId, firmId, resolvedUserId)
   const canManageMatter = Boolean(canViewMatter && isManagementUser && permissions.can_view_all_firm_matters)
   const canAssignLane = Boolean(
     canManageMatter && (permissions.can_create_attorney_assignments || permissions.can_update_attorney_assignments),
   )
-  const overrideFirmId = controllerFirmId || activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
+  const overrideFirmId = activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
   const managementOverrideEnabled = isManagementUser ? await getAttorneyFirmOverrideSetting(client, overrideFirmId) : false
-  const activeAssignmentForActions = isTransferAttorneyController ? activeTransferControllerAssignment : activeLaneAssignment
   const canActAsAttorney = Boolean(
     (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
-      (isTransferAttorneyController && activeTransferControllerAssignment?.can_update_workflow_lane !== false) ||
       (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId),
   )
 
@@ -423,22 +391,16 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     canActAsAttorney,
     isAssignedAttorney,
     isAssignedParticipant,
-    isTransferAttorneyController,
     isManagementUser,
     managementOverrideEnabled,
     laneRole,
     firmId: overrideFirmId || null,
     firmRole: activeMembership?.professionalRole || null,
-    assignment: activeAssignmentForActions,
-    controlledAssignment: activeLaneAssignment,
-    controllerAssignment: isTransferAttorneyController ? activeTransferControllerAssignment : null,
-    controllerLaneRole: isTransferAttorneyController ? 'transfer' : null,
+    assignment: activeLaneAssignment,
     reason: canActAsAttorney
       ? isAssignedAttorney
         ? 'assigned_attorney'
-        : isTransferAttorneyController
-          ? 'transfer_attorney_controller'
-          : 'management_override'
+        : 'management_override'
       : canManageMatter
         ? 'management_view_only'
         : canViewMatter

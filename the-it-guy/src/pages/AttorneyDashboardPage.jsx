@@ -24,7 +24,6 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
-import { isAttorneyMatterModuleEnabled } from '../services/attorneyMatterModules'
 
 const ROLE_VIEW_OPTIONS = [
   { value: 'active', label: 'Incoming Matters' },
@@ -477,45 +476,34 @@ function MatterTableCard({ title, count, rows = [], href, emptyLabel, icon }) {
   )
 }
 
-function ActiveMattersByType({ lanes = {}, matterModules = {} }) {
-  const cards = [
-    {
-      type: 'transfer',
-      title: 'Transfer Matters',
-      href: '/attorney/matters/transfer',
-      emptyLabel: 'No active transfer matters yet.',
-      icon: FileCheck2,
-    },
-    {
-      type: 'bond',
-      title: 'Bond Matters',
-      href: '/attorney/matters/bond',
-      emptyLabel: 'No active bond matters yet.',
-      icon: Landmark,
-    },
-    {
-      type: 'cancellation',
-      title: 'Cancellation Matters',
-      href: '/attorney/matters/cancellation',
-      emptyLabel: 'No active cancellation matters yet.',
-      icon: ShieldAlert,
-    },
-  ].filter((card) => isAttorneyMatterModuleEnabled(matterModules, card.type))
-
+function ActiveMattersByType({ lanes = {} }) {
   return (
     <section className="grid gap-3">
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-3">
-        {cards.map((card) => (
-          <MatterTableCard
-            key={card.type}
-            title={card.title}
-            count={(lanes[card.type] || []).length}
-            rows={lanes[card.type] || []}
-            href={card.href}
-            emptyLabel={card.emptyLabel}
-            icon={card.icon}
-          />
-        ))}
+        <MatterTableCard
+          title="Transfer Matters"
+          count={(lanes.transfer || []).length}
+          rows={lanes.transfer || []}
+          href="/attorney/matters/transfer"
+          emptyLabel="No active transfer matters yet."
+          icon={FileCheck2}
+        />
+        <MatterTableCard
+          title="Bond Matters"
+          count={(lanes.bond || []).length}
+          rows={lanes.bond || []}
+          href="/attorney/matters/bond"
+          emptyLabel="No active bond matters yet."
+          icon={Landmark}
+        />
+        <MatterTableCard
+          title="Cancellation Matters"
+          count={(lanes.cancellation || []).length}
+          rows={lanes.cancellation || []}
+          href="/attorney/matters/cancellation"
+          emptyLabel="No active cancellation matters yet."
+          icon={ShieldAlert}
+        />
       </div>
     </section>
   )
@@ -846,10 +834,8 @@ function AttorneyDashboardPage() {
 
   const roleView = useMemo(() => {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
-    if (!ROLE_VIEW_OPTIONS.some((option) => option.value === value)) return 'all'
-    if (['transfer', 'bond', 'cancellation'].includes(value) && !isAttorneyMatterModuleEnabled(permissionsState.matterModules, value)) return 'all'
-    return value
-  }, [location.search, permissionsState.matterModules])
+    return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
+  }, [location.search])
   const shellClass = 'grid w-full max-w-none gap-4 bg-[#f7f9fb] px-0 py-3'
 
   useEffect(() => {
@@ -928,7 +914,7 @@ function AttorneyDashboardPage() {
       <KpiCards stats={stats} performance={performance} />
       <ActiveMatterStrip lanes={lanes} />
       <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
-      <ActiveMattersByType lanes={lanes} matterModules={permissionsState.matterModules} />
+      <ActiveMattersByType lanes={lanes} />
       <AttorneyAnalyticsSection
         partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}
         matterHealth={dashboard.matterHealth || EMPTY_DASHBOARD.matterHealth}

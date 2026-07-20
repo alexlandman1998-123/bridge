@@ -18,7 +18,6 @@ import {
   Save,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Table2,
   Trash2,
@@ -111,13 +110,6 @@ import {
   templateHasLegacySource,
 } from '../../core/documents/structuredTemplateRenderer'
 import StartDocumentModal from '../../components/documents/StartDocumentModal'
-import { TemplateEditorActionBar } from '../../components/legal-documents/TemplateEditorActionBar'
-import {
-  getLegalDocumentEditorGridClass,
-  getLegalDocumentEditorLayoutState,
-  LEGAL_DOCUMENT_EDITOR_LAYOUT_MODES,
-  resolveLegalDocumentEditorLayoutMode,
-} from '../../components/legal-documents/legalDocumentEditorLayout'
 import {
   DOCUMENT_START_DOCUMENT_KINDS,
   DOCUMENT_START_ENTRY_POINTS,
@@ -126,13 +118,6 @@ import {
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
 import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
-import {
-  canMoveLegalDocumentSection,
-  canRemoveLegalDocumentSection,
-  isConditionalMasterPackSection,
-  isCoreConditionRuleLocked,
-  sanitizeLegalDocumentSectionPatch,
-} from '../../core/documents/legalDocumentEditorProtection'
 import {
   assessConditionalMasterTemplate,
   buildConditionalMasterTemplateSections,
@@ -5308,6 +5293,42 @@ function normalizeConditionRule(condition = {}, fallbackField = '') {
   }
 }
 
+function isCoreConditionRuleLocked(section = {}) {
+  const metadata = section?.metadataJson && typeof section.metadataJson === 'object'
+    ? section.metadataJson
+    : section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : {}
+  return metadata.condition_rule_locked === true || metadata.conditionRuleLocked === true
+}
+
+function isConditionalMasterPackSection(section = {}) {
+  const metadata = section?.metadataJson && typeof section.metadataJson === 'object'
+    ? section.metadataJson
+    : section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : {}
+  return metadata.conditional_pack === true
+}
+
+const CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS = new Set([
+  'conditionJson',
+  'condition_json',
+  'sectionKey',
+  'section_key',
+  'sectionLabel',
+  'section_label',
+  'sectionType',
+  'section_type',
+  'sortOrder',
+  'sort_order',
+  'placeholderKeys',
+  'placeholder_keys',
+  'placeholderKeysText',
+  'isRequired',
+  'is_required',
+])
+
 function describeConditionRule(condition = {}, tokenLabelByKey = {}) {
   const rule = normalizeConditionRule(condition)
   if (!rule.enabled || !rule.field) return 'Always include this section.'
@@ -5695,12 +5716,6 @@ export default function SettingsSigningTemplatesPage({
   const normalizedEditorScope = normalizeLegalDocumentEditorScope(editorScope)
   const editorSituation = getLegalDocumentEditorSituation(editorSituationKey, { packetType: defaultPacketType })
   const isFocusedLegalDocumentEditor = Boolean(normalizeText(focusedLegalDocumentKey))
-  const editorLayoutMode = resolveLegalDocumentEditorLayoutMode({
-    focused: isFocusedLegalDocumentEditor,
-    scope: normalizedEditorScope,
-  })
-  const isFocusedStandardEditor = editorLayoutMode === LEGAL_DOCUMENT_EDITOR_LAYOUT_MODES.standard
-  const isFocusedSigningEditor = editorLayoutMode === LEGAL_DOCUMENT_EDITOR_LAYOUT_MODES.signing
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -5765,16 +5780,6 @@ export default function SettingsSigningTemplatesPage({
   const clauseTextareaRef = useRef(null)
   const sectionTitleInputRef = useRef(null)
   const autoDraftSourceTemplateRef = useRef('')
-  const editorLayoutState = getLegalDocumentEditorLayoutState({
-    mode: editorLayoutMode,
-    outlineCollapsed,
-    toolsCollapsed: editorToolsCollapsed,
-  })
-  const editorGridClass = getLegalDocumentEditorGridClass({
-    mode: editorLayoutMode,
-    outlineCollapsed,
-    toolsCollapsed: editorToolsCollapsed,
-  })
 
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
@@ -7357,7 +7362,11 @@ export default function SettingsSigningTemplatesPage({
       ...previous,
       sections: (previous.sections || []).map((section, sectionIndex) => {
         if (sectionIndex !== index) return section
-        const safePatch = sanitizeLegalDocumentSectionPatch(section, patch)
+        const safePatch = isConditionalMasterPackSection(section)
+          ? Object.fromEntries(Object.entries(patch).filter(([key]) => !CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS.has(key)))
+          : isCoreConditionRuleLocked(section) && Object.prototype.hasOwnProperty.call(patch, 'conditionJson')
+            ? Object.fromEntries(Object.entries(patch).filter(([key]) => key !== 'conditionJson'))
+            : patch
         return { ...section, ...safePatch }
       }),
     }))
@@ -7365,7 +7374,9 @@ export default function SettingsSigningTemplatesPage({
 
   function moveSection(index, direction) {
     const targetIndex = index + direction
-    if (!canMoveLegalDocumentSection(form.sections || [], index, targetIndex)) return
+    const sectionCount = (form.sections || []).length
+    if (index < 0 || targetIndex < 0 || index >= sectionCount || targetIndex >= sectionCount) return
+    if (isConditionalMasterPackSection(form.sections?.[index]) || isConditionalMasterPackSection(form.sections?.[targetIndex])) return
 
     setHasUnsavedChanges(true)
     setForm((previous) => {
@@ -7381,7 +7392,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function removeSection(index) {
-    if (!canRemoveLegalDocumentSection(form.sections?.[index])) return
+    if (isConditionalMasterPackSection(form.sections?.[index])) return
     setHasUnsavedChanges(true)
     setForm((previous) => ({
       ...previous,
@@ -8657,26 +8668,86 @@ export default function SettingsSigningTemplatesPage({
           ) : null}
 
           {activeStudioArea === 'templates' ? (
-            <TemplateEditorActionBar
-              activeTab={activeTab}
-              canEdit={canEdit}
-              cloning={cloning}
-              focused={isFocusedLegalDocumentEditor}
-              hasUnsavedChanges={hasUnsavedChanges}
-              isDefault={form.isDefault}
-              onArchive={() => void handleArchiveSelectedTemplate()}
-              onDuplicate={() => void handleCreateEditableCopy({ source: 'duplicate' })}
-              onEdit={() => {
-                setActiveStudioArea('templates')
-                setActiveTab('template')
-              }}
-              onPreview={() => openTemplatePreview()}
-              onPublish={() => void openPublishDialog()}
-              onSave={(event) => void handleSaveDraftAction(event)}
-              saving={saving}
-              selectedIsOrgOwned={selectedIsOrgOwned}
-              selectedTemplate={selectedTemplate}
-            />
+            <div className="flex min-w-0 flex-col gap-3 pt-1 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap gap-2" aria-label="Template view">
+                <button
+                  type="button"
+                  aria-pressed={activeTab !== 'preview'}
+                  onClick={() => {
+                    setActiveStudioArea('templates')
+                    setActiveTab('template')
+                  }}
+                  className={[
+                    'inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-4 py-2 text-sm font-semibold transition',
+                    activeTab !== 'preview'
+                      ? 'border-[#96d7ad] bg-[#eef9f1] text-[#128642]'
+                      : 'border-[#dbe7f3] bg-white text-[#42566d] hover:border-[#b9dfc8] hover:bg-[#f8fbff]',
+                  ].join(' ')}
+                >
+                  <FileText size={15} />
+                  <span>Edit Template</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={activeTab === 'preview'}
+                  onClick={() => openTemplatePreview()}
+                  disabled={!selectedTemplate}
+                  className={[
+                    'inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+                    activeTab === 'preview'
+                      ? 'border-[#96d7ad] bg-[#eef9f1] text-[#128642]'
+                      : 'border-[#dbe7f3] bg-white text-[#42566d] hover:border-[#b9dfc8] hover:bg-[#f8fbff]',
+                  ].join(' ')}
+                >
+                  <Eye size={15} />
+                  <span>Preview</span>
+                </button>
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+                <span className="min-h-10 rounded-[12px] border border-[#dbe7f3] bg-white px-3 py-2 text-sm font-semibold text-[#607387]">
+                  {selectedIsOrgOwned ? 'Editing your agency version' : cloning ? 'Preparing agency version...' : 'Agency version opens automatically'}
+                </span>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={() => void handleCreateEditableCopy({ source: 'duplicate' })}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning || hasUnsavedChanges}
+                  title={hasUnsavedChanges ? 'Save changes before duplicating this template.' : 'Create another independent company template variant.'}
+                >
+                  <CopyPlus size={14} />
+                  <span>{cloning ? 'Copying...' : 'Duplicate'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={() => void handleArchiveSelectedTemplate()}
+                  disabled={!selectedTemplate || !selectedIsOrgOwned || !canEdit || saving || cloning || Boolean(form.isDefault)}
+                  title={form.isDefault ? 'Publish another default before archiving this template.' : 'Archive this template without removing existing documents.'}
+                >
+                  <Trash2 size={14} />
+                  <span>Archive</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioSecondaryButtonClass}
+                  onClick={(event) => void handleSaveDraftAction(event)}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning}
+                >
+                  <Save size={14} />
+                  <span>{saving ? 'Saving...' : 'Save'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={studioPrimaryButtonClass}
+                  onClick={() => void openPublishDialog()}
+                  disabled={!selectedTemplate || !canEdit || saving || cloning || Boolean(form.isDefault)}
+                >
+                  <ShieldCheck size={14} />
+                  <span>{form.isDefault ? 'Live' : 'Publish'}</span>
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
       </header>
@@ -8688,31 +8759,34 @@ export default function SettingsSigningTemplatesPage({
               onSubmit={handleSaveDraftAction}
               className={[
                 'grid min-w-0 gap-4 lg:gap-5 xl:min-h-[760px] xl:items-start',
-                editorGridClass,
+                outlineCollapsed
+                  ? editorToolsCollapsed
+                    ? 'xl:grid-cols-[64px_minmax(0,1fr)_64px]'
+                    : 'xl:grid-cols-[64px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(280px,320px)]'
+                  : editorToolsCollapsed
+                    ? 'xl:grid-cols-[220px_minmax(0,1fr)_64px] 2xl:grid-cols-[260px_minmax(0,1fr)_64px]'
+                    : 'xl:grid-cols-[220px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(280px,320px)]',
               ].join(' ')}
             >
               <aside className={[
                 'rounded-[20px] border border-[#dbe7f3] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-hidden',
-                editorLayoutState.hideOutline ? 'hidden' : '',
-                editorLayoutState.outlineCollapsed ? 'p-3' : 'p-4',
+                outlineCollapsed ? 'p-3' : 'p-4',
               ].join(' ')}
               >
-                <div className={`mb-4 flex items-start gap-3 ${editorLayoutState.outlineCollapsed ? 'flex-col items-center' : 'justify-between'}`}>
-                  <div className={editorLayoutState.outlineCollapsed ? 'sr-only' : ''}>
+                <div className={`mb-4 flex items-start gap-3 ${outlineCollapsed ? 'flex-col items-center' : 'justify-between'}`}>
+                  <div className={outlineCollapsed ? 'sr-only' : ''}>
                     <h2 className="text-base font-semibold text-[#102033]">Document Outline</h2>
                     <p className="mt-1 text-sm leading-6 text-[#607387]">Click a section to edit that part of the document.</p>
                   </div>
-                  {!isFocusedLegalDocumentEditor ? (
-                    <button
-                      type="button"
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#dbe7f3] bg-white text-[#52667d] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642]"
-                      onClick={() => setOutlineCollapsed((previous) => !previous)}
-                      aria-label={outlineCollapsed ? 'Expand document outline' : 'Collapse document outline'}
-                      title={outlineCollapsed ? 'Expand outline' : 'Collapse outline'}
-                    >
-                      <ChevronDown size={16} className={outlineCollapsed ? '-rotate-90' : 'rotate-90'} />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#dbe7f3] bg-white text-[#52667d] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642]"
+                    onClick={() => setOutlineCollapsed((previous) => !previous)}
+                    aria-label={outlineCollapsed ? 'Expand document outline' : 'Collapse document outline'}
+                    title={outlineCollapsed ? 'Expand outline' : 'Collapse outline'}
+                  >
+                    <ChevronDown size={16} className={outlineCollapsed ? '-rotate-90' : 'rotate-90'} />
+                  </button>
                 </div>
 
                 {scopedSectionEntries.length ? (
@@ -8733,15 +8807,15 @@ export default function SettingsSigningTemplatesPage({
                           <button
                             type="button"
                             onClick={() => setSelectedSectionIndex(index)}
-                            className={`flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-1 py-0.5 text-left ${editorLayoutState.outlineCollapsed ? 'justify-center' : ''}`}
+                            className={`flex min-w-0 flex-1 items-center gap-3 rounded-[8px] px-1 py-0.5 text-left ${outlineCollapsed ? 'justify-center' : ''}`}
                             title={label}
                           >
                             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#dbe7f3] bg-white text-xs font-semibold">
                               {index + 1}
                             </span>
-                            <span className={editorLayoutState.outlineCollapsed ? 'sr-only' : 'min-w-0 truncate font-semibold'}>{label}</span>
+                            <span className={outlineCollapsed ? 'sr-only' : 'min-w-0 truncate font-semibold'}>{label}</span>
                           </button>
-                          {canEdit && !editorLayoutState.outlineCollapsed && !isConditionalMasterPackSection(section) ? (
+                          {canEdit && !outlineCollapsed && !isConditionalMasterPackSection(section) ? (
                             <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                               <button
                                 type="button"
@@ -8809,12 +8883,12 @@ export default function SettingsSigningTemplatesPage({
                     title="Add Section"
                   >
                     <Plus size={15} />
-                    <span className={editorLayoutState.outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
+                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
                   </button>
                 ) : null}
               </aside>
 
-              <main className={`min-w-0 overflow-hidden rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-5 ${normalizedEditorScope === 'situations' ? 'w-full' : ''} ${editorLayoutState.hideMain ? 'hidden' : ''}`}>
+              <main className="min-w-0 overflow-hidden rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-5">
                 {selectedSection ? (
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -8823,46 +8897,31 @@ export default function SettingsSigningTemplatesPage({
                           <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[#607387]">
                             Section {selectedSectionIndex + 1}
                           </span>
-                          {normalizedEditorScope === 'situations' ? (
-                            <h2 className="min-w-0 flex-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">{selectedSection.sectionLabel}</h2>
-                          ) : (
-                            <input
-                              ref={sectionTitleInputRef}
-                              aria-label="Section title"
-                              type="text"
-                              value={selectedSection.sectionLabel}
-                              disabled={!canEdit || selectedSectionIsConditionalPack}
-                              onChange={(event) => updateSection(selectedSectionIndex, { sectionLabel: event.target.value })}
-                              className="min-h-11 min-w-0 flex-1 rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
-                              placeholder={`Section ${selectedSectionIndex + 1}`}
-                            />
-                          )}
+                          <input
+                            ref={sectionTitleInputRef}
+                            aria-label="Section title"
+                            type="text"
+                            value={selectedSection.sectionLabel}
+                            disabled={!canEdit || selectedSectionIsConditionalPack}
+                            onChange={(event) => updateSection(selectedSectionIndex, { sectionLabel: event.target.value })}
+                            className="min-h-11 min-w-0 flex-1 rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
+                            placeholder={`Section ${selectedSectionIndex + 1}`}
+                          />
                         </div>
                         <p className="mt-2 text-sm leading-6 text-[#607387]">{selectedSectionDescription}</p>
                       </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        {isFocusedStandardEditor && editorToolsCollapsed ? (
-                          <button
-                            type="button"
-                            className={studioSecondaryButtonClass}
-                            onClick={() => setEditorToolsCollapsed(false)}
-                          >
-                            <SlidersHorizontal size={14} />
-                            <span>Tools</span>
-                          </button>
-                        ) : null}
-                        {selectedSectionIsConditionalPack ? (
-                          <span className="inline-flex min-h-10 items-center gap-2 rounded-[11px] border border-[#cdebd8] bg-[#eef9f1] px-3 text-sm font-semibold text-[#167449]">
-                            <ShieldCheck size={14} />
-                            Core conditional section
-                          </span>
-                        ) : <details className="relative">
-                          <summary className={`${studioSecondaryButtonClass} list-none cursor-pointer`}>
-                            <Type size={14} />
-                            <span>Section Settings</span>
-                            <ChevronDown size={14} />
-                          </summary>
-                          <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-[18px] border border-[#dbe7f3] bg-white p-4 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                      {selectedSectionIsConditionalPack ? (
+                        <span className="inline-flex min-h-10 items-center gap-2 rounded-[11px] border border-[#cdebd8] bg-[#eef9f1] px-3 text-sm font-semibold text-[#167449]">
+                          <ShieldCheck size={14} />
+                          Core conditional section
+                        </span>
+                      ) : <details className="relative">
+                        <summary className={`${studioSecondaryButtonClass} list-none cursor-pointer`}>
+                          <Type size={14} />
+                          <span>Section Settings</span>
+                          <ChevronDown size={14} />
+                        </summary>
+                        <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-[18px] border border-[#dbe7f3] bg-white p-4 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
                           <label className={settingsFieldClass}>
                             Section name
                             <input
@@ -8893,9 +8952,8 @@ export default function SettingsSigningTemplatesPage({
                               <span>Remove</span>
                             </button>
                           </div>
-                          </div>
-                        </details>}
-                      </div>
+                        </div>
+                      </details>}
                     </div>
 
                     {selectedSectionIsConditionalPack ? (
@@ -8931,7 +8989,7 @@ export default function SettingsSigningTemplatesPage({
                     ) : null}
 
                     <div data-editor-tool="content" className="min-w-0 overflow-hidden rounded-[18px] border border-[#dbe7f3] bg-white">
-                      <div className={`${normalizedEditorScope === 'situations' ? 'hidden' : ''} border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-3 sm:px-4`}>
+                      <div className="border-b border-[#e7eef6] bg-[#fbfdff] px-3 py-3 sm:px-4">
                         <div className="flex min-w-0 flex-col gap-3">
                           <div className="min-w-0">
                             <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
@@ -9117,7 +9175,7 @@ export default function SettingsSigningTemplatesPage({
                         <details
                           open={showSourceEditor}
                           onToggle={(event) => setShowSourceEditor(event.currentTarget.open)}
-                          className={`${normalizedEditorScope === 'situations' ? 'hidden' : ''} mx-auto mt-5 w-full max-w-[760px] rounded-[14px] border border-[#f4e2bf] bg-[#fffaf1]`}
+                          className="mx-auto mt-5 w-full max-w-[760px] rounded-[14px] border border-[#f4e2bf] bg-[#fffaf1]"
                         >
                           <summary className="flex cursor-pointer list-none flex-col gap-1 px-4 py-3 text-sm text-[#7d520d] sm:flex-row sm:items-center sm:justify-between">
                             <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#102033]">
@@ -9147,7 +9205,7 @@ export default function SettingsSigningTemplatesPage({
                       </div>
                     </div>
 
-                    {normalizedEditorScope !== 'situations' && selectedSectionTokens.length ? (
+                    {selectedSectionTokens.length ? (
                       <div className="flex flex-wrap gap-2 pb-2">
                         {selectedSectionTokenDetails.map((token) => (
                           <button
@@ -9179,20 +9237,18 @@ export default function SettingsSigningTemplatesPage({
                 data-editor-tools-collapsed={editorToolsCollapsed ? 'true' : 'false'}
                 className={[
                   'min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)]',
-                  editorLayoutState.hideTools ? 'hidden' : '',
-                  editorLayoutState.toolsUseFullWidth ? 'xl:static xl:max-h-none xl:overflow-visible' : '',
-                  editorLayoutState.toolsAreCollapsedRail ? '[&>*:not(:first-child)]:hidden' : 'xl:overflow-y-auto xl:pr-1',
+                  editorToolsCollapsed ? '[&>*:not(:first-child)]:hidden' : 'xl:overflow-y-auto xl:pr-1',
                 ].join(' ')}
               >
                 <section
                   data-editor-tool="content"
                   className={[
                     'min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.05)]',
-                    editorLayoutState.toolsAreCollapsedRail ? 'p-3 [&>*:not(:first-child)]:hidden' : 'p-4',
+                    editorToolsCollapsed ? 'p-3 [&>*:not(:first-child)]:hidden' : 'p-4',
                   ].join(' ')}
                 >
-                  <div className={editorLayoutState.toolsAreCollapsedRail ? 'flex flex-col items-center gap-3' : 'flex items-start justify-between gap-3'}>
-                    {editorLayoutState.toolsAreCollapsedRail ? (
+                  <div className={editorToolsCollapsed ? 'flex flex-col items-center gap-3' : 'flex items-start justify-between gap-3'}>
+                    {editorToolsCollapsed ? (
                       <>
                         <button
                           type="button"
@@ -9503,12 +9559,12 @@ export default function SettingsSigningTemplatesPage({
                   {...(normalizedEditorScope === 'signing'
                     ? { open: true }
                     : { defaultOpen: Boolean(selectedSigningFields.length) })}
-                  className={`group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] ${isFocusedSigningEditor ? 'sm:p-6' : ''}`}
+                  className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
                 >
                   <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
                     <div>
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Optional</p>
-                      <h2 className={`${isFocusedSigningEditor ? 'text-xl' : 'text-base'} mt-2 font-semibold text-[#102033]`}>Signing Fields{isFocusedSigningEditor && selectedSection ? ` · ${getFriendlySectionLabel(selectedSection, selectedSectionIndex)}` : ''}</h2>
+                      <h2 className="mt-2 text-base font-semibold text-[#102033]">Signing Fields</h2>
                       <p className="mt-1 text-sm leading-5 text-[#607387]">Add boxes only when this section needs a signature, date, witness, or initials.</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -9519,7 +9575,7 @@ export default function SettingsSigningTemplatesPage({
                     </div>
                   </summary>
 
-                  <div className={`mt-4 grid gap-2 sm:grid-cols-2 ${isFocusedSigningEditor ? 'xl:grid-cols-4' : 'xl:grid-cols-1 2xl:grid-cols-2'}`}>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                     <button
                       type="button"
                       className={`${studioSecondaryButtonClass} min-w-0 px-3`}
@@ -9595,7 +9651,7 @@ export default function SettingsSigningTemplatesPage({
                     </p>
                   </div>
 
-                  <div className={`mt-4 grid gap-3 ${isFocusedSigningEditor ? '2xl:grid-cols-2' : ''}`}>
+                  <div className="mt-4 space-y-3">
                     {selectedSigningFields.length ? selectedSigningFields.map((field, index) => (
                       <div key={`planned-field-${field.id}`} className="min-w-0 rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] p-3">
                         <div className="flex items-center justify-between gap-2">
@@ -9741,7 +9797,7 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 </details>
 
-                <details className={`group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)] ${isFocusedLegalDocumentEditor ? 'hidden' : ''}`}>
+                <details className="group min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                     <span className="inline-flex items-center gap-3">
                       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef9f1] text-[#128642]">

@@ -9,7 +9,6 @@ const contextPanel = await readFile(new URL('../src/components/legal-documents/L
 const scopeNav = await readFile(new URL('../src/components/legal-documents/LegalDocumentEditorScopeNav.jsx', import.meta.url), 'utf8')
 const editorRoute = await readFile(new URL('../src/pages/settings/LegalDocumentEditorRoute.jsx', import.meta.url), 'utf8')
 const editor = await readFile(new URL('../src/pages/settings/SettingsSigningTemplatesPage.jsx', import.meta.url), 'utf8')
-const protection = await readFile(new URL('../src/core/documents/legalDocumentEditorProtection.js', import.meta.url), 'utf8')
 const overview = await readFile(new URL('../src/pages/settings/LegalDocumentOverviewPage.jsx', import.meta.url), 'utf8')
 
 assert.equal(listLegalDocumentEditorSituations({ packetType: 'mandate' }).length, 6)
@@ -19,14 +18,15 @@ assert.deepEqual(
   ['bond_finance_pack', 'cash_sale_pack', 'cash_contribution_pack'],
 )
 
-assert.match(scopeNav, /label: 'Conditional wording'/)
+assert.match(scopeNav, /label: 'Conditional sections'/)
 assert.match(contextPanel, /Choose the conditional section to edit/)
 assert.match(contextPanel, /Included when \{situation\.activationLabel\}/)
-assert.match(editorRoute, /<LegalDocumentEditorContextPanel[\s\S]*packetType=\{definition\.packetType\}/)
-assert.match(editorRoute, /normalizedScope !== 'situations' \|\| selectedSituation/)
+assert.match(editorRoute, /\{ packetType: definition\.packetType \}/)
+assert.match(editorRoute, /'Conditional sections'/)
 assert.match(overview, /title="Conditional sections"/)
 
 for (const token of [
+  'CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS',
   'isConditionalMasterPackSection(section)',
   'Edit the legal wording, not the inclusion logic',
   'Included automatically',
@@ -36,17 +36,7 @@ for (const token of [
   assert.ok(editor.includes(token), `Phase 5 editor should include ${token}.`)
 }
 
-for (const token of [
-  'CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS',
-  'sanitizeLegalDocumentSectionPatch',
-  'canRemoveLegalDocumentSection',
-  'canMoveLegalDocumentSection',
-]) {
-  assert.ok(protection.includes(token), `Phase 5 protection contract should include ${token}.`)
-}
-
 assert.doesNotMatch(contextPanel, /Which situation do you want to edit\?/)
 assert.doesNotMatch(scopeNav, /label: 'Situation wording'/)
-assert.doesNotMatch(scopeNav, /label: 'Whole document'/)
 
 console.log('Conditional-section legal document editor Phase 5 contract passed.')

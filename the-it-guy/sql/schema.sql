@@ -3762,7 +3762,7 @@ create table if not exists public.attorney_firm_departments (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint attorney_firm_departments_department_type_check
-    check (department_type in ('transfer', 'bond', 'cancellation', 'admin', 'management'))
+    check (department_type in ('transfer', 'bond', 'admin', 'management'))
 );
 
 create table if not exists public.attorney_firm_members (
@@ -3849,7 +3849,6 @@ begin
   values
     (new.id, 'Transfer Department', 'transfer', true),
     (new.id, 'Bond Department', 'bond', true),
-    (new.id, 'Cancellation Department', 'cancellation', true),
     (new.id, 'Admin Department', 'admin', true),
     (new.id, 'Management', 'management', true)
   on conflict (firm_id, department_type) do nothing;
