@@ -78,13 +78,13 @@ function productionTarget(repoRoot) {
   if (accessMode !== ACCESS_MODE) {
     throw new Error(`SUPABASE_PRODUCTION_ACCESS_MODE must equal ${ACCESS_MODE}.`)
   }
+  if (recovery !== RECOVERY_CONFIRMATION) {
+    throw new Error(`Set SUPABASE_PRODUCTION_RECOVERY_CONFIRMED=${RECOVERY_CONFIRMATION} only after recovery has been tested.`)
+  }
   const linkedRefPath = path.join(repoRoot, 'supabase', '.temp', 'project-ref')
   const linkedRef = existsSync(linkedRefPath) ? readFileSync(linkedRefPath, 'utf8').trim() : ''
   if (linkedRef !== projectRef) {
     throw new Error(`The linked Supabase project must equal ${projectRef}; found ${linkedRef || 'none'}.`)
-  }
-  if (recovery !== RECOVERY_CONFIRMATION) {
-    throw new Error(`Set SUPABASE_PRODUCTION_RECOVERY_CONFIRMED=${RECOVERY_CONFIRMATION} only after recovery has been tested.`)
   }
   return { projectRef, accessMode, connectionArgs: ['--linked'] }
 }
