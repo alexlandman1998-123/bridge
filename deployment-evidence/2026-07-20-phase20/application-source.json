@@ -1,0 +1,64 @@
+{
+  "status": "APPLICATION_SOURCE_STABILISED",
+  "phase": 20,
+  "verifiedAt": "2026-07-20T15:06:29.890Z",
+  "repository": {
+    "branch": "codex/mvp-pilot-readiness",
+    "productionSourceCommit": "785b7ef1365d1b7f8fefe4bb8865da3648607a6b",
+    "productionSourceCommitRemoteTracked": true,
+    "runtimeBuildInputsClean": true,
+    "runtimeBuildInputFingerprintAlgorithm": "sha256_of_git_ls_tree",
+    "runtimeBuildInputFingerprint": "ec63af749229266c665c9c1d19973a149317557bc71384b67579613b0517b473",
+    "runtimeSourceTree": "e3b906f98e318326f41bb95b71d7f4c23470666d"
+  },
+  "runtimeBuildInputs": [
+    "the-it-guy/src",
+    "the-it-guy/server",
+    "the-it-guy/api",
+    "the-it-guy/public",
+    "the-it-guy/index.html",
+    "the-it-guy/package.json",
+    "the-it-guy/package-lock.json",
+    "the-it-guy/vite.config.js",
+    "the-it-guy/vercel.json",
+    "the-it-guy/postcss.config.js",
+    "the-it-guy/tailwind.config.js"
+  ],
+  "productionDeployment": {
+    "provider": "Vercel",
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "deploymentId": "dpl_441tuc5PAD2vPGj6r2CCusmmPqnX",
+    "deploymentUrl": "https://bridge-kb696h5ph-alexs-projects-f5496a21.vercel.app",
+    "productionDomain": "https://app.arch9.co.za",
+    "target": "production",
+    "status": "READY",
+    "createdAt": "2026-07-20T14:59:23.370Z",
+    "framework": "vite",
+    "nodeVersion": "22.x",
+    "releaseId": "785b7ef1365d1b7f8fefe4bb8865da3648607a6b"
+  },
+  "verification": {
+    "guardedBuild": "pass",
+    "modulesTransformed": 3490,
+    "releaseIntegrityContract": "pass",
+    "buildReleaseManifest": "pass",
+    "performanceBudget": "pass",
+    "conditionalDocumentContracts": "11/11_pass",
+    "localCriticalAssetCount": 428,
+    "productionCriticalAssetCount": 428,
+    "productionCriticalAssetsHealthy": true,
+    "productionFailedCriticalAssets": 0,
+    "productionManifestCacheControl": "no-cache, no-store, must-revalidate"
+  },
+  "scope": {
+    "applicationRedeployedByPhase20": false,
+    "productionConfigurationChangedByPhase20": false,
+    "databaseMutatedByPhase20": false,
+    "phase0MigrationFreezeRemainsActive": true
+  },
+  "remainingCloseoutBlockers": [
+    "28 governed manifest migrations still require reviewed production promotion evidence.",
+    "The release branch contains commits not yet pushed to its remote tracking branch.",
+    "The document-experience rollout remains in shadow mode without a production cohort."
+  ]
+}
