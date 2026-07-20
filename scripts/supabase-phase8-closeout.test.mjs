@@ -27,6 +27,8 @@ assert.equal(result.phase7Readiness.attorneyIntegrityBlockingAssignments, 0)
 assert.equal(result.phase7Readiness.approved, true)
 assert.equal(result.evidence.complete.length + result.evidence.incomplete.length, 64)
 assert.equal(result.evidence.duplicates.length, 0)
+assert.equal(result.recoveryEvidence.valid, true)
+assert.equal(result.recoveryEvidence.approvedBy, 'Alexander Landman')
 assert.equal(result.live, null)
 
 const unknown = run(['--not-a-real-option'])

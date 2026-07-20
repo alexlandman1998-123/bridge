@@ -5,9 +5,9 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: STAGING_CERTIFIED — PRODUCTION RECOVERY ATTESTATION REQUIRED**
+**Status: STAGING_CERTIFIED — PRODUCTION DATABASE RECOVERY PROVEN**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, and Phase 11 recorded Alexander Landman's approval after live certification. Promotion remains blocked until production connection and tested-recovery attestation variables are configured.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, Phase 11 certified staging, and Phase 12 proved database recovery from the production physical-backup restore. Promotion remains blocked until production connection and runtime recovery-confirmation variables are configured.
 
 ## Implemented Controls
 
@@ -38,7 +38,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production physical backups | 8 completed |
 | Human staging-readiness approval | Alexander Landman |
 | Production connection variables | Not configured |
-| Production recovery test/attestation | Not evidenced |
+| Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production SQL applied in Phase 7 | No |
 | Production ledger changed in Phase 7 | No |
 
@@ -80,6 +80,7 @@ node scripts/supabase-phase7-production-execution.mjs \
   --version 202607170026 \
   --staging-evidence '<staging-evidence>.json' \
   --staging-readiness 'docs/supabase-phase-7-staging-readiness.json' \
+  --recovery-evidence 'migration-evidence/2026-07-20-production-recovery-phase12/production-database-recovery.json' \
   --confirm APPLY_TO_PRODUCTION
 ```
 
@@ -106,12 +107,13 @@ node scripts/supabase-phase7-production-execution.mjs \
   --version 202607170026 \
   --staging-evidence '<staging-evidence>.json' \
   --staging-readiness 'docs/supabase-phase-7-staging-readiness.json' \
+  --recovery-evidence 'migration-evidence/2026-07-20-production-recovery-phase12/production-database-recovery.json' \
   --production-evidence '<production-evidence>.json' \
   --confirm APPLY_TO_PRODUCTION
 ```
 
 ## Handoff
 
-1. Configure the production project reference, database URL, and tested-recovery attestation outside source control.
+1. Configure the production project reference, database URL, and runtime recovery confirmation outside source control.
 2. Promote the smallest dependency stream one exact version at a time.
 3. Stop between SQL application and ledger recording for production verification and review.

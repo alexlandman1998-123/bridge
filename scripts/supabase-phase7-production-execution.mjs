@@ -30,6 +30,7 @@ function parseArgs(argv) {
     else if (arg === '--version') options.version = argv[++index]
     else if (arg === '--staging-evidence') options.stagingEvidence = argv[++index]
     else if (arg === '--staging-readiness') options.stagingReadiness = argv[++index]
+    else if (arg === '--recovery-evidence') options.recoveryEvidence = argv[++index]
     else if (arg === '--production-evidence') options.productionEvidence = argv[++index]
     else if (arg === '--confirm') options.confirm = argv[++index]
     else if (arg === '--json') options.json = true
@@ -157,6 +158,31 @@ function validateProductionEvidence(repoRoot, target, row, filePath) {
   if (!String(evidence.reviewedBy || '').trim()) throw new Error('Production evidence reviewedBy is required.')
 }
 
+function validateRecoveryEvidence(repoRoot, filePath) {
+  const evidence = evidenceFile(repoRoot, filePath, '--recovery-evidence')
+  const required = {
+    status: 'PRODUCTION_DATABASE_RECOVERY_PROVEN',
+    productionProjectRef: PRODUCTION_PROJECT_REF,
+    restoredProjectRef: 'vaszuxjeoajeuhlcnzzf',
+    databaseConnectivityCheck: 'pass',
+    databaseRestoreValidation: 'pass',
+    productionMutated: false,
+  }
+  for (const [key, value] of Object.entries(required)) {
+    if (evidence[key] !== value) throw new Error(`Recovery evidence ${key} must equal ${JSON.stringify(value)}.`)
+  }
+  if (evidence.sourceBackup?.predatesRestoredProject !== true) {
+    throw new Error('Recovery evidence must prove the source backup predates the restored project.')
+  }
+  if (evidence.matchedRelationCount < 1 || evidence.matchedIdentityRowCount < 1) {
+    throw new Error('Recovery evidence must contain matching restored database fingerprints.')
+  }
+  if (evidence.productionLedgerCount !== evidence.restoredProductionLedgerCount) {
+    throw new Error('Recovery evidence must prove the complete production ledger baseline was restored.')
+  }
+  if (!String(evidence.approvedBy || '').trim()) throw new Error('Recovery evidence approvedBy is required.')
+}
+
 function requireRecoverableProduction(repoRoot, target) {
   const result = runSupabase(repoRoot, [
     'backups', 'list', '--project-ref', target.projectRef, '--output-format', 'json',
@@ -198,8 +224,8 @@ function printPlan(rows, options) {
 function printUsage() {
   console.log('Usage:')
   console.log('  node scripts/supabase-phase7-production-execution.mjs --plan [--stream <name>] [--version <version>] [--json]')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --staging-readiness <file> --confirm APPLY_TO_PRODUCTION')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --staging-readiness <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --staging-readiness <file> --recovery-evidence <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --staging-readiness <file> --recovery-evidence <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
 }
 
 function main() {
@@ -227,6 +253,7 @@ function main() {
 
   validateStagingEvidence(repoRoot, row, options.stagingEvidence)
   validateStagingReadiness(repoRoot, manifest, options.stagingReadiness)
+  validateRecoveryEvidence(repoRoot, options.recoveryEvidence)
   const target = productionTarget()
   if (options.mode === 'record_applied') {
     validateProductionEvidence(repoRoot, target, row, options.productionEvidence)

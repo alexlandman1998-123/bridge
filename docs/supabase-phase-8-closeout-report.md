@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T12:11:59.456Z
+Generated: 2026-07-20T12:39:22.575Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -19,7 +19,7 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Missing manifest files | 0 |
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
-| Human staging-readiness approval | Yes — Alexander Landman |
+| Human staging-readiness approval | Yes |
 | Complete production evidence rows | 0 |
 | Incomplete production evidence rows | 64 |
 | Unknown evidence rows | 0 |
@@ -31,7 +31,8 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Unreviewed split versions | 0 |
 | Production PITR | Disabled |
 | Physical backups | 8 |
-| Tested production recovery attested | No |
+| Runtime recovery confirmation configured | No |
+| Phase 12 recovery evidence | Valid — Alexander Landman |
 | Ready for reviewed freeze retirement | No |
 
 ## Incomplete Evidence Versions

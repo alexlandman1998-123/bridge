@@ -1,0 +1,41 @@
+# Supabase Phase 12 — Production Database Recovery Proof
+
+Generated: 2026-07-20T12:35:32Z
+
+## Outcome
+
+**Status: PRODUCTION_DATABASE_RECOVERY_PROVEN**
+
+The production database recovery path was proven using the completed physical backup restored into the independent `Arch9 Staging` project. Alexander Landman explicitly attested the result through the Phase 12 instruction. Production remained online and was queried read-only; no in-place restore or production mutation was performed.
+
+## Recovery evidence
+
+| Check | Result |
+| --- | --- |
+| Production project | `isdowlnollckzvltkasn` — healthy |
+| Restored project | `vaszuxjeoajeuhlcnzzf` — healthy |
+| Organization and region | Match |
+| Backup mechanism | Physical WAL-G backups |
+| Completed backups available | 8 |
+| Rehearsal source backup | `1159413531`, completed `2026-07-20T03:09:30.071Z` |
+| Restored project created | `2026-07-20T08:30:16.693529Z` |
+| Production migration baseline restored | 433/433 ledger versions |
+| Core relation fingerprints | 5/5 exact matches |
+| Restored row identities compared | 671 |
+| Restored database connectivity | Pass |
+| Production mutations | None |
+
+The five comparisons cover `auth.users`, `public.profiles`, `public.organisations`, `public.transactions`, and `public.transaction_attorney_assignments`. Only counts and one-way identity-set fingerprints are stored; no customer row values are included in the evidence.
+
+## Scope boundary
+
+This proves **database** recovery for the migration release. Supabase physical database backups contain database records and Storage metadata, but they do not restore deleted Storage objects themselves. Edge Functions, Auth configuration, API keys, Realtime settings, webhooks, network controls, and other platform configuration also require separate continuity procedures.
+
+Accordingly:
+
+- `storageObjectRecoveryTested` remains `false`.
+- `platformConfigurationRecoveryTested` remains `false`.
+- The Phase 7 database migration runner may accept this evidence.
+- This evidence must not be described as a complete whole-platform disaster-recovery test.
+
+Supabase documentation: [Database backups](https://supabase.com/docs/guides/platform/backups) and [Restore to a new project](https://supabase.com/blog/restore-to-a-new-project).

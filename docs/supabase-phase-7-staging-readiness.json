@@ -10,12 +10,13 @@
   "attorneyIntegrityBlockingAssignments": 0,
   "productionPitrEnabled": false,
   "productionPhysicalBackupCount": 8,
-  "productionRecoveryAttestationPresent": false,
+  "productionRecoveryAttestationPresent": true,
+  "productionRecoveryEvidence": "migration-evidence/2026-07-20-production-recovery-phase12/production-database-recovery.json",
   "productionCredentialsConfigured": false,
   "approvedBy": "Alexander Landman",
   "approvedAt": "2026-07-20T12:19:52.069Z",
   "certificationStatus": "STAGING_CERTIFIED",
   "certificationEvidence": "migration-evidence/2026-07-20-staging-phase11/staging-release-certification.json",
   "releaseCommit": "fd506e46f697462dcc61e89319d9233648fcbc52",
-  "decision": "Staging is certified for reviewed production promotion. Do not mutate production until the production connection is configured and tested recovery is attested."
+  "decision": "Staging is certified and production database recovery is proven. Do not mutate production until the production connection is configured and the runtime recovery confirmation is explicitly supplied."
 }

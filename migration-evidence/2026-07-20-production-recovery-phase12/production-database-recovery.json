@@ -1,0 +1,38 @@
+{
+  "generatedAt": "2026-07-20T12:35:32.000Z",
+  "status": "PRODUCTION_DATABASE_RECOVERY_PROVEN",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "restoredProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectStatus": "ACTIVE_HEALTHY",
+  "restoredProjectStatus": "ACTIVE_HEALTHY",
+  "organizationMatch": true,
+  "regionMatch": true,
+  "backupMechanism": "physical_walg",
+  "pitrEnabled": false,
+  "completedPhysicalBackupCount": 8,
+  "sourceBackup": {
+    "id": 1159413531,
+    "status": "COMPLETED",
+    "insertedAt": "2026-07-20T03:09:30.071Z",
+    "predatesRestoredProject": true
+  },
+  "restoredProjectCreatedAt": "2026-07-20T08:30:16.693529Z",
+  "fingerprintComparisons": [
+    { "relation": "auth.users", "productionRowCount": 161, "restoredRowCount": 161, "rowCountMatch": true, "idFingerprint": "b19955c4d23e0b359e7826a301d9b062", "idFingerprintMatch": true },
+    { "relation": "public.organisations", "productionRowCount": 23, "restoredRowCount": 23, "rowCountMatch": true, "idFingerprint": "d9dca4e5a2f157c1181336c454d7c88c", "idFingerprintMatch": true },
+    { "relation": "public.profiles", "productionRowCount": 143, "restoredRowCount": 143, "rowCountMatch": true, "idFingerprint": "41d8f72bf60a5fb3ab7b625185fc0eb1", "idFingerprintMatch": true },
+    { "relation": "public.transaction_attorney_assignments", "productionRowCount": 59, "restoredRowCount": 59, "rowCountMatch": true, "idFingerprint": "bdb3ee5245a61f7f71d0726c41710546", "idFingerprintMatch": true },
+    { "relation": "public.transactions", "productionRowCount": 285, "restoredRowCount": 285, "rowCountMatch": true, "idFingerprint": "f6f1f07ca8cbe479851367c469555b87", "idFingerprintMatch": true }
+  ],
+  "matchedRelationCount": 5,
+  "matchedIdentityRowCount": 671,
+  "productionLedgerCount": 433,
+  "restoredProductionLedgerCount": 433,
+  "databaseConnectivityCheck": "pass",
+  "databaseRestoreValidation": "pass",
+  "storageObjectRecoveryTested": false,
+  "platformConfigurationRecoveryTested": false,
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase12_user_instruction",
+  "productionMutated": false
+}
