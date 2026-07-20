@@ -5,9 +5,9 @@
   "lockedAt": "2026-07-20",
   "approvedBy": "Alexander Landman (explicit Phase 18 instruction)",
   "productionBaseline": {
-    "manifestRows": 64,
+    "manifestRows": 67,
     "reviewedProductionPromotions": 36,
-    "outstandingManifestRows": 28,
+    "outstandingManifestRows": 31,
     "productionLedgerRows": 469
   },
   "includedCapabilities": [
@@ -36,7 +36,9 @@
     ],
     "allocatedVersions": ["202607200004", "202607200005", "202607200006"],
     "inventoryRepairStatus": "complete",
-    "requiredAction": "add_allocated_chain_to_governed_manifest_and_certify_in_staging",
+    "manifestStatus": "included",
+    "stagingCertificationStatus": "pending",
+    "requiredAction": "certify_allocated_chain_in_staging",
     "count": 3
   },
   "deferredExistingManifestVersions": {

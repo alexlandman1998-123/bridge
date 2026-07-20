@@ -770,6 +770,42 @@
       "objectCount": 2,
       "action": "apply_original_after_dependency_check",
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202607200004",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "stream preflight",
+      "module": "canonical_documents",
+      "file": "202607200004_conditional_legal_masters_phase4.sql",
+      "objectStatus": "reviewed_data_and_revision_migration",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require immutable-revision rollback rehearsal, then apply this file alone and verify both v2 global masters and all 19 conditional sections."
+    },
+    {
+      "version": "202607200005",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "202607200004",
+      "module": "canonical_documents",
+      "file": "202607200005_conditional_legal_master_migration_phase10.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 7,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the certified v2 global masters, then apply and verify the migration table, RLS policies, grants, and four lifecycle functions."
+    },
+    {
+      "version": "202607200006",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "202607200005",
+      "module": "canonical_documents",
+      "file": "202607200006_conditional_legal_master_verification_phase11.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the Phase 10 migration lifecycle, then apply and verify immutable receipts, RLS, grants, and the verification function."
     }
   ]
 }

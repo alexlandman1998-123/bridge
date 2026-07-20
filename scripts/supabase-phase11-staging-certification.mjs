@@ -11,7 +11,7 @@ const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 const PHASE10_EVIDENCE_PATH = path.join('migration-evidence', '2026-07-20-staging-phase10', 'attorney-assignment-remediation.json')
 const PHASE10_COMMIT = 'fd506e46'
-const EXPECTED_MANIFEST_ROWS = 64
+const EXPECTED_MANIFEST_ROWS = 67
 const APPROVAL_CONFIRMATION = 'CERTIFY_STAGING'
 
 function parseArgs(argv) {
@@ -100,7 +100,7 @@ function gitReleaseState(manifest) {
   ]
   const dirty = execFileSync('git', ['status', '--porcelain', '--', ...releasePaths], { encoding: 'utf8' }).trim()
   if (dirty) throw new Error('One or more certified release inputs have uncommitted changes.')
-  return execFileSync('git', ['rev-parse', PHASE10_COMMIT], { encoding: 'utf8' }).trim()
+  return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
 }
 
 async function liveCertificationState(client, manifest) {

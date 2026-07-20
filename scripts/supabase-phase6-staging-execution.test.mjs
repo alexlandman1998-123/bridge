@@ -24,7 +24,11 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 64)
+assert.equal(JSON.parse(plan.stdout).count, 67)
+
+const conditionalMasterPlan = run(['--plan', '--stream', 'conditional_legal_masters', '--json'])
+assert.equal(conditionalMasterPlan.status, 0, conditionalMasterPlan.stderr)
+assert.deepEqual(JSON.parse(conditionalMasterPlan.stdout).rows.map((row) => row.version), ['202607200004', '202607200005', '202607200006'])
 
 const streamPlan = run(['--plan', '--stream', 'settings_governance', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)

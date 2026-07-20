@@ -422,6 +422,7 @@ const DEPLOYMENT_STREAM_ORDER = [
   'settings_governance',
   'legal_review_assurance',
   'legal_document_runtime',
+  'conditional_legal_masters',
   'document_generation',
   'attorney_accounting',
   'attorney_calendar',
@@ -435,6 +436,7 @@ function deploymentStream(row) {
   if (name.includes('settings_')) return 'settings_governance'
   if (/legal_(document_counsel|document_review|draft_review|draft_immutable|signing_envelope|signer_session|final_signed|final_delivery)/.test(name)) return 'legal_review_assurance'
   if (name.includes('document_generator') || name.includes('legal_generation')) return 'document_generation'
+  if (name.includes('conditional_legal_master')) return 'conditional_legal_masters'
   if (name.includes('attorney_accounting')) return 'attorney_accounting'
   if (name.includes('attorney_calendar')) return 'attorney_calendar'
   if (/attorney_(professional|signup|assignment|role)/.test(name)) return 'attorney_identity_access'

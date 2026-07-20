@@ -21,6 +21,7 @@ const duplicates = [...byVersion.entries()].filter(([, versionFiles]) => version
 const chainFiles = evidence.conditionalMasterChain.map((row) => row.newFile)
 const chainVersions = evidence.conditionalMasterChain.map((row) => row.version)
 const manifestVersions = new Set(manifest.rows.map((row) => row.version))
+const phase22 = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase22/staging-inventory-expansion.json', 'utf8'))
 
 assert.equal(evidence.status, 'MIGRATION_INVENTORY_REPAIRED')
 assert.equal(files.length, evidence.inventory.migrationFiles)
@@ -37,8 +38,8 @@ for (const row of evidence.conditionalMasterChain) {
   assert.equal(existsSync(`${migrationsDirectory}/${row.oldFile}`), false, `stale migration remains: ${row.oldFile}`)
   assert.equal(existsSync(`${migrationsDirectory}/${row.newFile}`), true, `allocated migration missing: ${row.newFile}`)
   const digest = createHash('sha256').update(readFileSync(`${migrationsDirectory}/${row.newFile}`)).digest('hex')
-  assert.equal(digest, row.sha256, `migration content changed: ${row.newFile}`)
-  assert.equal(manifestVersions.has(row.version), false, `Phase 19 must not silently expand the frozen manifest: ${row.version}`)
+  assert.equal(digest, phase22.migrationSha256[row.version] ?? row.sha256, `migration content changed without Phase 22 authorization: ${row.newFile}`)
+  assert.equal(manifestVersions.has(row.version), phase22.manifestExpansionAuthorized, `Phase 22 manifest authorization mismatch: ${row.version}`)
 }
 
 assert.equal(evidence.allocationEvidence.productionLedgerQuery, 'pass_empty')

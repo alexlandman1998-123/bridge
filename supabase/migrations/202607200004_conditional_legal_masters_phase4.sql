@@ -5,15 +5,90 @@ begin;
 -- native-template copy/revision workflow; scenario facts never select a
 -- different template row.
 
+-- Published B4 revisions are immutable. Create a draft v2 successor for each
+-- global starter, copy its existing sections, then enrich and publish the new
+-- revision without rewriting any packet's historical v1 source.
+create temporary table phase4_conditional_master_revisions (
+  source_template_id uuid primary key,
+  target_template_id uuid not null unique,
+  packet_type text not null
+) on commit drop;
+
+insert into phase4_conditional_master_revisions (source_template_id, target_template_id, packet_type)
+select id, gen_random_uuid(), packet_type
+from public.document_packet_templates
+where organisation_id is null
+  and template_key in ('mandate_default_v1', 'otp_default_v1')
+  and version_tag = 'v1'
+  and status = 'published'
+  and is_active = true;
+
+insert into public.document_packet_templates (
+  id, organisation_id, module_type, packet_type, template_key, template_label,
+  template_format, template_storage_bucket, template_storage_path, template_file_name,
+  version_tag, description, is_default, is_active, metadata_json,
+  created_by, created_at, updated_at, status, document_model,
+  canonical_contract_version, definition_schema_version, definition_json,
+  revision_root_template_id, revision_parent_template_id, revision_number
+)
+select
+  revision.target_template_id,
+  source.organisation_id,
+  source.module_type,
+  source.packet_type,
+  source.template_key,
+  source.template_label,
+  'structured',
+  null,
+  null,
+  null,
+  'v2',
+  source.description,
+  false,
+  false,
+  coalesce(source.metadata_json, '{}'::jsonb),
+  source.created_by,
+  now(),
+  now(),
+  'draft',
+  source.document_model,
+  source.canonical_contract_version,
+  source.definition_schema_version,
+  '{}'::jsonb,
+  coalesce(source.revision_root_template_id, source.id),
+  source.id,
+  source.revision_number + 1
+from phase4_conditional_master_revisions revision
+join public.document_packet_templates source on source.id = revision.source_template_id;
+
+insert into public.document_template_sections (
+  template_id, section_key, section_label, section_type, sort_order,
+  is_required, is_repeatable, condition_json, placeholder_keys, legal_text, metadata_json
+)
+select
+  revision.target_template_id,
+  section.section_key,
+  section.section_label,
+  section.section_type,
+  section.sort_order,
+  section.is_required,
+  section.is_repeatable,
+  section.condition_json,
+  section.placeholder_keys,
+  section.legal_text,
+  section.metadata_json
+from phase4_conditional_master_revisions revision
+join public.document_template_sections section on section.template_id = revision.source_template_id;
+
 update public.document_packet_templates
 set
   template_format = 'structured',
   template_storage_bucket = null,
   template_storage_path = null,
   template_file_name = null,
-  status = 'published',
-  is_active = true,
-  is_default = true,
+  status = 'draft',
+  is_active = false,
+  is_default = false,
   metadata_json = coalesce(metadata_json, '{}'::jsonb) || jsonb_build_object(
     'conditional_master', true,
     'conditional_master_version', 'conditional-master-v1',
@@ -58,14 +133,14 @@ set
   updated_at = now()
 where organisation_id is null
   and template_key in ('mandate_default_v1', 'otp_default_v1')
-  and version_tag = 'v1';
+  and version_tag = 'v2';
 
 with masters as (
   select id, packet_type
   from public.document_packet_templates
   where organisation_id is null
     and template_key in ('mandate_default_v1', 'otp_default_v1')
-    and version_tag = 'v1'
+    and version_tag = 'v2'
 ), pack_seed as (
   select * from (values
     (array['mandate','otp']::text[], 'seller_individual_capacity_pack', 'Seller Individual Capacity Pack', 20,
@@ -271,7 +346,33 @@ from public.document_packet_templates template
 where section.template_id = template.id
   and template.organisation_id is null
   and template.template_key in ('mandate_default_v1', 'otp_default_v1')
-  and template.version_tag = 'v1';
+  and template.version_tag = 'v2';
+
+update public.document_packet_templates template
+set definition_json = public.bridge_build_template_definition_b1(template.id),
+    updated_at = now()
+where template.organisation_id is null
+  and template.template_key in ('mandate_default_v1', 'otp_default_v1')
+  and template.version_tag = 'v2';
+
+update public.document_packet_templates source
+set status = 'archived',
+    is_active = false,
+    is_default = false,
+    superseded_by_template_id = revision.target_template_id,
+    archived_at = now(),
+    updated_at = now()
+from phase4_conditional_master_revisions revision
+where source.id = revision.source_template_id;
+
+update public.document_packet_templates target
+set status = 'published',
+    is_active = true,
+    is_default = true,
+    published_at = now(),
+    updated_at = now()
+from phase4_conditional_master_revisions revision
+where target.id = revision.target_template_id;
 
 do $$
 declare
@@ -282,7 +383,10 @@ begin
   from public.document_packet_templates
   where organisation_id is null
     and template_key in ('mandate_default_v1', 'otp_default_v1')
-    and version_tag = 'v1'
+    and version_tag = 'v2'
+    and status = 'published'
+    and is_active = true
+    and is_default = true
     and metadata_json ->> 'conditional_master_version' = 'conditional-master-v1';
 
   if v_master_count <> 2 then
@@ -293,7 +397,7 @@ begin
   from public.document_packet_templates template
   where template.organisation_id is null
     and template.template_key in ('mandate_default_v1', 'otp_default_v1')
-    and template.version_tag = 'v1'
+    and template.version_tag = 'v2'
     and (
       template.template_format <> 'structured'
       or template.metadata_json ->> 'scenario_resolver_version' <> 'canonical_legal_document_scenario_v1'

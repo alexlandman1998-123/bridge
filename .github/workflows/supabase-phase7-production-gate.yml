@@ -100,7 +100,7 @@ jobs:
 
       - name: Verify manifest coverage
         run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==64) throw new Error('Expected 64 manifest rows')"
+          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==67) throw new Error('Expected 67 manifest rows')"
 
       - name: Test production ledger reconciliation guard
         run: node scripts/supabase-phase14-production-ledger-reconciliation.test.mjs

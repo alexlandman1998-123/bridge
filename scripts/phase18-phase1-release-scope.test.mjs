@@ -9,7 +9,7 @@ const promoted = new Set(evidence.rows.filter((row) => row.productionLedgerRecor
 const outstanding = manifest.rows.map((row) => row.version).filter((version) => !promoted.has(version)).sort()
 const included = Object.values(scope.includedExistingManifestVersions).flat().sort()
 const deferred = Object.values(scope.deferredExistingManifestVersions).flat().sort()
-const governedOutstanding = [...included, ...deferred].sort()
+const governedOutstanding = [...included, ...deferred, ...scope.pendingConditionalMasterInventory.allocatedVersions].sort()
 
 assert.equal(scope.status, 'PHASE_1_SCOPE_LOCKED')
 assert.equal(manifest.rows.length, scope.productionBaseline.manifestRows)

@@ -26,7 +26,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 64)
+assert.equal(JSON.parse(plan.stdout).count, 67)
 
 const streamPlan = run(['--plan', '--stream', 'attorney_calendar', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
@@ -125,8 +125,8 @@ writeFileSync(stagingReadinessPath, JSON.stringify({
   status: 'READY_FOR_PRODUCTION_PROMOTION',
   productionProjectRef: 'isdowlnollckzvltkasn',
   stagingProjectRef: 'stagingtestref',
-  manifestRowCount: 64,
-  stagingLedgerRecordedCount: 64,
+  manifestRowCount: 67,
+  stagingLedgerRecordedCount: 67,
   stagingEvidenceComplete: true,
   attorneyIntegrityGate: 'pass',
   attorneyIntegrityBlockingAssignments: 0,
