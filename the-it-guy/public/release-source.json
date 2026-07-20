@@ -1,0 +1,7 @@
+{
+  "schema": "arch9_release_source_v1",
+  "phase": 26,
+  "release": "clean-reproducible-application-deployment",
+  "runtimeBaselineCommit": "f387e49ffc1dd65728e9c56708d84f0600775deb",
+  "runtimeBuildInputFingerprint": "ec63af749229266c665c9c1d19973a149317557bc71384b67579613b0517b473"
+}
