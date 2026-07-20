@@ -2,7 +2,7 @@
 
 ## Status
 
-**Release candidate certified; production deployment pending.**
+**CLEAN_REPRODUCIBLE_APPLICATION_DEPLOYED**
 
 The application release is intentionally based on committed source at `f387e49f`. Concurrent uncommitted application, email, legal-document editor, and partner-directory work is excluded from this release.
 
@@ -34,10 +34,27 @@ The application release is intentionally based on committed source at `f387e49f`
 
 `release-manifest.json` is excluded from byte-for-byte comparison only because its `generatedAt` field is intentionally time-dependent. Its release ID and critical asset list remain verified.
 
+## Production result
+
+| Check | Result |
+| --- | --- |
+| Release commit | `2dabb3def53608519d5962c37f33a0a4a03f5680` |
+| Preview | `dpl_9FpAikJWLAgTpuGqUfXG3Ep6NzLV` / READY |
+| Production | `dpl_8wDQV2UxYamoqkxbto4jzAMgdpda` / READY |
+| Production domain | `https://app.arch9.co.za` |
+| Live release marker | Matches release commit |
+| Production critical assets | 428/428 healthy |
+| Browser smoke | `/auth` HTTP 200; sign-in controls present |
+| Browser errors | 0 console / 0 page errors |
+| Authenticated API guard | Expected HTTP 401 without credentials |
+| Runtime error scan | 0 errors observed |
+
+The previous production deployment `dpl_HoRcGD3XuPsu7tH8Eq9bEZbcHozY` remains the explicit rollback target.
+
 ## Dependency advisory
 
 The unchanged lockfile currently reports 13 audit findings: 2 low, 4 moderate, and 7 high. Phase 26 does not run an automatic dependency rewrite because that would change the certified source and can introduce breaking upgrades. Dependency remediation must be reviewed as a separate application-security phase.
 
 ## Safety boundary
 
-Phase 26 does not include concurrent working-tree changes, change database state, weaken the Phase 0 migration freeze, or deploy before the committed release candidate passes. Production evidence and the exact rollback target will be added after the Git-bound Vercel deployment is observed.
+Phase 26 did not include concurrent working-tree changes, change database state, weaken the Phase 0 migration freeze, or change the dependency lockfile. The preview was verified before production promotion, and the production artifact was verified independently after Vercel applied the production environment.

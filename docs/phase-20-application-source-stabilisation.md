@@ -6,6 +6,8 @@
 
 The application currently serving production is reproducible from committed source. The former Phase 16 working-tree changes were captured in commit `785b7ef1`, that commit exists on `origin/codex/mvp-pilot-readiness`, and Vercel deployed it to production as `dpl_441tuc5PAD2vPGj6r2CCusmmPqnX`.
 
+Phase 26 supersedes the live-source portion of this evidence. Production now serves clean release commit `2dabb3de` as Vercel deployment `dpl_8wDQV2UxYamoqkxbto4jzAMgdpda`; the Phase 20 test consumes that newer evidence while retaining this report as the historical stabilisation record.
+
 ## Evidence
 
 | Check | Result |

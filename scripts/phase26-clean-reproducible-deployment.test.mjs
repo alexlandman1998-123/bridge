@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
 const evidence = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase26/release-candidate.json', 'utf8'))
+const production = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase26/production-deployment.json', 'utf8'))
 const releaseSource = JSON.parse(readFileSync('the-it-guy/public/release-source.json', 'utf8'))
 const runtimePaths = [
   'the-it-guy/src',
@@ -29,6 +30,11 @@ function fingerprint(ref) {
     .split('\n')
     .filter((line) => !line.endsWith('\tthe-it-guy/public/release-source.json'))
     .join('\n')
+  return createHash('sha256').update(`${tree}\n`).digest('hex')
+}
+
+function fullFingerprint(ref) {
+  const tree = git(['ls-tree', '-r', ref, '--', ...runtimePaths])
   return createHash('sha256').update(`${tree}\n`).digest('hex')
 }
 
@@ -60,4 +66,38 @@ assert.equal(evidence.safety.databaseMutated, false)
 assert.equal(evidence.safety.applicationPromoted, false)
 assert.equal(evidence.safety.phase0MigrationFreezeRemainsActive, true)
 
-console.log('Phase 26 release candidate passed: clean Node 22 build, deterministic assets, and concurrent changes excluded.')
+assert.equal(production.status, 'CLEAN_REPRODUCIBLE_APPLICATION_DEPLOYED')
+assert.equal(production.repository.releaseCommit, '2dabb3def53608519d5962c37f33a0a4a03f5680')
+assert.doesNotThrow(() => git(['cat-file', '-e', `${production.repository.releaseCommit}^{commit}`]))
+assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', production.repository.releaseCommit, 'HEAD']))
+assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', production.repository.releaseCommit, 'origin/codex/mvp-pilot-readiness']))
+assert.equal(git(['rev-parse', `${production.repository.releaseCommit}:the-it-guy/src`]), production.repository.runtimeSourceTree)
+assert.equal(git(['rev-parse', `${production.repository.releaseCommit}:the-it-guy`]), production.repository.runtimeRootTree)
+assert.equal(fullFingerprint(production.repository.releaseCommit), production.repository.runtimeBuildInputFingerprint)
+assert.equal(production.repository.releaseCommitRemoteTracked, true)
+assert.equal(production.repository.concurrentWorkingTreeChangesExcluded, true)
+assert.equal(production.previewDeployment.status, 'READY')
+assert.equal(production.previewDeployment.releaseId, production.repository.releaseCommit)
+assert.equal(production.productionDeployment.target, 'production')
+assert.equal(production.productionDeployment.status, 'READY')
+assert.equal(production.productionDeployment.releaseId, production.repository.releaseCommit)
+assert.equal(production.productionDeployment.domain, 'https://app.arch9.co.za')
+assert.equal(production.verification.guardedProductionBuild, 'pass')
+assert.equal(production.verification.releaseIntegrityContract, 'pass')
+assert.equal(production.verification.performanceBudget, 'pass')
+assert.equal(production.verification.productionCriticalAssetCount, 428)
+assert.equal(production.verification.productionCriticalAssetsHealthy, true)
+assert.equal(production.verification.productionFailedCriticalAssets, 0)
+assert.equal(production.verification.browserHttpStatus, 200)
+assert.equal(production.verification.browserSignInControlsPresent, true)
+assert.equal(production.verification.browserConsoleErrors, 0)
+assert.equal(production.verification.browserPageErrors, 0)
+assert.equal(production.verification.authenticatedApiGuardStatus, 401)
+assert.equal(production.verification.boundedRuntimeErrorScan, 0)
+assert.equal(production.rollback.available, true)
+assert.notEqual(production.rollback.previousProductionDeploymentId, production.productionDeployment.id)
+assert.equal(production.safety.databaseMutatedByPhase26, false)
+assert.equal(production.safety.phase0MigrationFreezeRemainsActive, true)
+assert.equal(production.safety.uncommittedApplicationChangesDeployed, false)
+
+console.log('Phase 26 passed: clean reproducible release is READY in production with 428/428 assets healthy.')
