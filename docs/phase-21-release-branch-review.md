@@ -25,6 +25,8 @@ The working tree was clean and the branch matched its remote after the reviewed 
 | Vercel previews | passed |
 | External Supabase Preview | failed; no actionable GitHub Actions log |
 
+The push also triggered Vercel's Git integration for the production target. The resulting deployment was READY, while the live release marker remained the already-certified `785b7ef1` runtime source with 428 critical assets. Phase 21 did not manually promote a preview, but future branch pushes must be treated as production-affecting until the Vercel production-branch configuration is reviewed.
+
 The Supabase Preview failure links only to Supabase project `ybvgipeppmpfsrjwvwvw`. In accordance with the review boundary, Phase 21 records it as an external blocker and does not guess at or mutate that integration.
 
 ## CI repairs
@@ -39,10 +41,11 @@ The root lockfile was also synchronized with npm 10 so Node 22 clean installs su
 
 ## Safety boundary
 
-Phase 21 pushed commits and updated pull-request metadata. It did not merge the pull request, promote an application build, mutate a database, or retire the Phase 0 migration freeze.
+Phase 21 pushed commits and updated pull-request metadata. It did not merge the pull request, manually promote a preview, mutate a database, or retire the Phase 0 migration freeze. Vercel did automatically create a READY production deployment from the Git push; the certified runtime source remained unchanged.
 
 ## Remaining review actions
 
-1. Investigate or explicitly waive the external Supabase Preview failure.
-2. Obtain human pull-request approval.
-3. Keep the PR in draft until the controlled release sequence authorizes merge.
+1. Review why this branch triggers automatic Vercel production deployments.
+2. Investigate or explicitly waive the external Supabase Preview failure.
+3. Obtain human pull-request approval.
+4. Keep the PR in draft until the controlled release sequence authorizes merge.

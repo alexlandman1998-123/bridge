@@ -50,11 +50,15 @@
   ],
   "safety": {
     "pullRequestMerged": false,
-    "applicationPromotedByPhase21": false,
+    "applicationManuallyPromotedByPhase21": false,
+    "automaticProductionDeploymentTriggeredByPush": true,
+    "observedProductionDeploymentStatus": "READY",
+    "liveReleaseIdAfterPush": "785b7ef1365d1b7f8fefe4bb8865da3648607a6b",
     "databaseMutatedByPhase21": false,
     "phase0MigrationFreezeRemainsActive": true
   },
   "remainingReviewActions": [
+    "Review why codex/mvp-pilot-readiness is configured to trigger automatic production deployments before future pushes.",
     "Investigate or explicitly waive the external Supabase Preview failure before marking the pull request ready.",
     "Obtain human pull-request approval before merge.",
     "Keep the pull request unmerged until the controlled release sequence authorizes merge."
