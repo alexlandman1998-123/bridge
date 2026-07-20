@@ -1855,7 +1855,6 @@ grant execute on function public.bridge_can_access_assignment(uuid, uuid, text) 
 
 
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_foundation.sql
-begin;
 
 -- -------------------------------------------------------------------
 -- Document packet foundation (generation/send backbone, no e-sign yet)
@@ -2302,10 +2301,7 @@ with check (
   )
 );
 
-commit;
-
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_signing_foundation.sql
-begin;
 
 -- -------------------------------------------------------------------
 -- Packet signing foundation (field/signer model, no public signer flow)
@@ -2520,10 +2516,7 @@ with check (
   )
 );
 
-commit;
-
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_signer_tokens.sql
-begin;
 
 alter table public.document_packet_signers
   add column if not exists signing_token text,
@@ -2545,10 +2538,7 @@ create unique index if not exists document_packet_signers_signing_token_unique_i
 create index if not exists document_packet_signers_token_expiry_idx
   on public.document_packet_signers (token_expires_at);
 
-commit;
-
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_signing_field_assets.sql
-begin;
 
 alter table public.document_signing_fields
   add column if not exists signature_asset_path text,
@@ -2568,10 +2558,7 @@ alter table public.document_signing_fields
 create index if not exists document_signing_fields_signature_asset_idx
   on public.document_signing_fields (packet_version_id, signer_role, field_type, status);
 
-commit;
-
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_final_signed_artifact.sql
-begin;
 
 alter table public.document_packet_versions
   add column if not exists final_signed_file_path text,
@@ -2584,19 +2571,12 @@ alter table public.document_packet_versions
 create index if not exists document_packet_versions_finalised_idx
   on public.document_packet_versions (packet_id, finalised_at desc);
 
-commit;
-
 -- Restored pre-chain source: the-it-guy/sql/20260508_document_packet_final_signed_bucket.sql
-begin;
 
 alter table public.document_packet_versions
   add column if not exists final_signed_file_bucket text;
 
-commit;
-
-
 -- Restored pre-chain source: the-it-guy/sql/20260509_private_listing_foundation.sql
-begin;
 
 create table if not exists public.private_listings (
   id uuid primary key default gen_random_uuid(),
@@ -2900,9 +2880,6 @@ grant select, insert, update on public.private_listings to authenticated;
 grant select, insert, update on public.private_listing_seller_onboarding to authenticated;
 grant select, update on public.private_listing_seller_onboarding to anon;
 grant select, insert on public.private_listing_activity to authenticated;
-
-commit;
-
 
 create table if not exists client_portal_contexts (
   id uuid primary key default gen_random_uuid(),
