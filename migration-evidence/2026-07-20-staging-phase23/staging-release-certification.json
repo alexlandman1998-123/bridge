@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-07-20T15:57:16.351Z",
+  "status": "STAGING_CERTIFIED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "releaseCommit": "c39a52c9503a313c1a5dff55bb26cf9bbc8fffa1",
+  "manifestRowCount": 68,
+  "manifestSha256": "fc37bec298078d5c2aefcb686ed4dfcaf63ec746750a74bcdbee803be5101acd",
+  "stagingEvidenceCount": 68,
+  "stagingEvidenceSetSha256": "a2582d071d5f3f7042d744c1c50b29acfcdcf90354cdc9c55216b7656aad5e37",
+  "ledgerRecordedCount": 68,
+  "attorneyIntegrity": {
+    "rowCount": 8,
+    "blockingRows": 0,
+    "blockingAssignments": 0,
+    "firmCount": 3
+  },
+  "phase10AuditEventCount": 43,
+  "phase10AuditTransactionCount": 43,
+  "remediatedFirmCertification": {
+    "status": "certified",
+    "version": "phase9-v1",
+    "integrityRowCount": 1
+  },
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase11_user_instruction",
+  "productionMutated": false
+}

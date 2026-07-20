@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-20T15:33:41.993Z",
+  "generatedAt": "2026-07-20T15:57:16.351Z",
   "status": "READY_FOR_PRODUCTION_PROMOTION",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
-  "manifestRowCount": 67,
-  "stagingLedgerRecordedCount": 67,
+  "manifestRowCount": 68,
+  "stagingLedgerRecordedCount": 68,
   "stagingEvidenceComplete": true,
   "attorneyIntegrityGate": "pass",
   "attorneyIntegrityBlockingAssignments": 0,
@@ -16,9 +16,9 @@
   "productionAccessMode": "linked_ephemeral",
   "productionAccessEvidence": "migration-evidence/2026-07-20-production-access-phase13/production-access.json",
   "approvedBy": "Alexander Landman",
-  "approvedAt": "2026-07-20T15:33:41.993Z",
+  "approvedAt": "2026-07-20T15:57:16.351Z",
   "certificationStatus": "STAGING_CERTIFIED",
-  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase22/staging-release-certification.json",
-  "releaseCommit": "63e8a9c44b892d3cf67309b788b576c8067c8de0",
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase23/staging-release-certification.json",
+  "releaseCommit": "c39a52c9503a313c1a5dff55bb26cf9bbc8fffa1",
   "decision": "Staging is certified, production database recovery is proven, and short-lived production access is configured. Promote only one reviewed migration at a time through the Phase 7 gate."
 }
