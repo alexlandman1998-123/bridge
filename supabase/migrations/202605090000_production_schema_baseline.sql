@@ -3,6 +3,16 @@
 -- after public.transactions so the same final schema can be built from empty.
 create extension if not exists "pgcrypto";
 
+create or replace function public.set_updated_at_timestamp()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
