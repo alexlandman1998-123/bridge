@@ -1,0 +1,42 @@
+{
+  "phase": 32,
+  "environment": "production",
+  "projectRef": "isdowlnollckzvltkasn",
+  "status": "GOVERNED_PHASE32_SCOPE_PROMOTED_AND_VERIFIED",
+  "ledgerRowsBefore": 504,
+  "ledgerRowsAfter": 511,
+  "governedManifestRows": 78,
+  "versions": ["202607200002", "202607200008", "202607200009", "202607200010", "202607200011", "202607200012", "202607200013"],
+  "repairOnlyVersions": ["202607200002"],
+  "appliedVersions": ["202607200008", "202607200009", "202607200010", "202607200011", "202607200012", "202607200013"],
+  "applicationCutover": {
+    "releaseCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "deploymentId": "dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT",
+    "deploymentStatus": "Ready",
+    "canonicalDomainVerified": "https://app.arch9.co.za"
+  },
+  "checks": {
+    "unresolvedPartnerAliases": 0,
+    "pendingDuplicateIdentityGroups": 0,
+    "canonicalRelationships": 2,
+    "legacyRelationships": 0,
+    "unmappedRelationships": 0,
+    "unmappedAssignments": 0,
+    "partnerRoleRows": 4,
+    "invalidRoleConfigurations": 0,
+    "transactionPartnerAssignments": 8,
+    "canonicalAssignmentGaps": 0,
+    "canonicalPartnerSaveAvailable": true,
+    "canonicalPartnerListAvailable": true,
+    "legacyAuthenticatedWritesAvailable": false,
+    "legacyListExecutionAvailable": false,
+    "missingRelationshipRoleConfigurations": 0
+  },
+  "inventoryCloseout": {
+    "governedVersionsMatched": 78,
+    "governedVersionsOutstanding": 0,
+    "newUnreviewedLocalOnlyVersions": ["202607200014"],
+    "phase0FreezeRetired": false
+  },
+  "approvedBy": "Alexander Landman (explicit Phase 32 instruction)"
+}

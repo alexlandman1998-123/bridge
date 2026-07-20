@@ -1,0 +1,24 @@
+name: Phase 32 final production closeout gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/phase-32-final-production-closeout.md'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'migration-evidence/2026-07-20-**'
+      - 'scripts/phase32-final-production-closeout.test.mjs'
+      - '.github/workflows/phase32-final-production-closeout-gate.yml'
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/phase32-final-production-closeout.test.mjs

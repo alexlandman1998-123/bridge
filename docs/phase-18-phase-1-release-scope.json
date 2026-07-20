@@ -1,14 +1,14 @@
 {
-  "status": "PHASE_1_SCOPE_AMENDED_PHASE_31",
+  "status": "PHASE_1_SCOPE_AMENDED_PHASE_32",
   "phase": 18,
   "release": "controlled_residential_transaction_pilot",
   "lockedAt": "2026-07-20",
   "approvedBy": "Alexander Landman (explicit Phase 18 instruction)",
   "productionBaseline": {
-    "manifestRows": 71,
-    "reviewedProductionPromotions": 71,
+    "manifestRows": 78,
+    "reviewedProductionPromotions": 78,
     "outstandingManifestRows": 0,
-    "productionLedgerRows": 504
+    "productionLedgerRows": 511
   },
   "includedCapabilities": [
     "seller_onboarding",
@@ -32,9 +32,11 @@
     "seller_attorney_acceptance": ["20260719194500"],
     "attorney_accounting": ["202607180026", "202607180027", "202607180028", "202607180029", "202607180030", "202607180031", "202607180035", "202607180036"],
     "attorney_calendar": ["202607180047"],
-    "conditional_legal_masters": ["202607200004", "202607200005", "202607200006"]
+    "conditional_legal_masters": ["202607200004", "202607200005", "202607200006"],
+    "seller_connected_attorney_resolution": ["202607200002"],
+    "partner_canonical_model": ["202607200008", "202607200009", "202607200010", "202607200011", "202607200012", "202607200013"]
   },
-  "includedExistingManifestCount": 31,
+  "includedExistingManifestCount": 38,
   "completedPhase23DocumentGeneration": {
     "requestedMigrationCount": 11,
     "correctiveMigrationCount": 1,
@@ -74,6 +76,16 @@
     "verificationReceiptRows": 0,
     "status": "production_promoted_and_verified"
   },
+  "completedPhase32FinalProductionCloseout": {
+    "requestedMigrationCount": 7,
+    "repairOnlyMigrationCount": 1,
+    "partnerCanonicalMigrationCount": 6,
+    "productionLedgerRows": 511,
+    "governedEvidenceComplete": 78,
+    "applicationReleaseCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "phase0FreezeRetirementStatus": "blocked_by_unreviewed_local_202607200014",
+    "status": "governed_scope_promoted_and_verified"
+  },
   "pendingConditionalMasterInventory": {
     "files": [
       "202607200004_conditional_legal_masters_phase4.sql",
@@ -111,6 +123,7 @@
     "phase29ScopeAmendmentApproved": true,
     "phase30ScopeAmendmentApproved": true,
     "phase31ScopeAmendmentApproved": true,
+    "phase32ScopeAmendmentApproved": true,
     "phase0MigrationFreezeRemainsActive": true
   }
 }

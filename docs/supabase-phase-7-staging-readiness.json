@@ -3,8 +3,8 @@
   "status": "READY_FOR_PRODUCTION_PROMOTION",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
-  "manifestRowCount": 71,
-  "stagingLedgerRecordedCount": 71,
+  "manifestRowCount": 78,
+  "stagingLedgerRecordedCount": 78,
   "stagingEvidenceComplete": true,
   "attorneyIntegrityGate": "pass",
   "attorneyIntegrityBlockingAssignments": 0,
@@ -18,7 +18,7 @@
   "approvedBy": "Alexander Landman",
   "approvedAt": "2026-07-20T15:57:16.351Z",
   "certificationStatus": "STAGING_CERTIFIED",
-  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase25/staging-release-certification.json",
-  "releaseCommit": "18d875bee8cdfa14cb51236b0f7cdfe5c3317698",
-  "decision": "Staging is certified, production database recovery is proven, and short-lived production access is configured. Promote only one reviewed migration at a time through the Phase 7 gate."
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase32-final-closeout/batch-summary.json",
+  "releaseCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+  "decision": "Staging certifies all 78 governed migrations, including the seller-attorney repair and canonical partner chain. Production promotion still requires one reviewed migration at a time."
 }

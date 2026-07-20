@@ -24,7 +24,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 71)
+assert.equal(JSON.parse(plan.stdout).count, 78)
 
 const conditionalMasterPlan = run(['--plan', '--stream', 'conditional_legal_masters', '--json'])
 assert.equal(conditionalMasterPlan.status, 0, conditionalMasterPlan.stderr)

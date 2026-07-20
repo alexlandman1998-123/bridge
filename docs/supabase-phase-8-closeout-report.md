@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T18:42:23.785Z
+Generated: 2026-07-20T19:16:27.630Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -13,19 +13,19 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 | Check | Result |
 | --- | --- |
-| Local migration files | 511 |
-| Phase 5 manifest rows | 71 |
+| Local migration files | 512 |
+| Phase 5 manifest rows | 78 |
 | Duplicate versions | 0 |
 | Missing manifest files | 0 |
 | Phase 7 staging readiness | READY_FOR_PRODUCTION_PROMOTION |
 | Attorney integrity blocking assignments | 0 |
 | Human staging-readiness approval | Yes |
-| Complete production evidence rows | 71 |
+| Complete production evidence rows | 78 |
 | Incomplete production evidence rows | 0 |
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Live verification performed | Yes |
-| Pure local-only versions | 7 |
+| Pure local-only versions | 1 |
 | Pure remote-only versions | 0 |
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |
@@ -41,4 +41,4 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 71 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 78 manifest versions have reviewed closeout evidence, and production recovery is available and tested.

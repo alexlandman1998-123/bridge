@@ -854,6 +854,90 @@
       "objectCount": 4,
       "action": "apply_original_after_dependency_check",
       "gate": "Require the Phase 10 migration lifecycle, then apply and verify immutable receipts, RLS, grants, and the verification function."
+    },
+    {
+      "version": "202607200002",
+      "stream": "seller_onboarding",
+      "dependsOn": "stream preflight",
+      "module": "transaction_network",
+      "file": "202607200002_seller_onboarding_connected_attorney_resolution.sql",
+      "objectStatus": "all_live",
+      "liveCount": 1,
+      "objectCount": 1,
+      "action": "repair_only_after_smoke",
+      "gate": "Verify the connected-attorney resolver is live and behaves correctly, then ledger the historical source version without replaying SQL."
+    },
+    {
+      "version": "202607200008",
+      "stream": "partner_canonical_model",
+      "dependsOn": "stream preflight",
+      "module": "partner_directory",
+      "file": "202607200008_unified_partner_directory_read_model.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the unified directory read model and verify authenticated-only execution plus fail-closed unauthenticated behavior."
+    },
+    {
+      "version": "202607200009",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200008",
+      "module": "partner_directory",
+      "file": "202607200009_partner_identity_linking_and_deduplication.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply identity linking and prove zero unresolved aliases, revoked invitations, or duplicate pending identities."
+    },
+    {
+      "version": "202607200010",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200009",
+      "module": "partner_directory",
+      "file": "202607200010_canonical_partner_relationship_storage.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 7,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Migrate relationships to canonical storage and prove zero unmapped assignments or relationships."
+    },
+    {
+      "version": "202607200011",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200010",
+      "module": "partner_directory",
+      "file": "202607200011_partner_role_configuration_separation.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Create role configuration storage and prove ownership, default, uniqueness, and RLS invariants."
+    },
+    {
+      "version": "202607200012",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200011",
+      "module": "transaction_network",
+      "file": "202607200012_canonical_partner_assignment_ids.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Backfill canonical assignment identifiers and prove zero missing, owner-mismatched, or role-mismatched assignments."
+    },
+    {
+      "version": "202607200013",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200012",
+      "module": "partner_directory",
+      "file": "202607200013_retire_legacy_partner_paths.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 3,
+      "action": "apply_original_after_application_cutover",
+      "gate": "Require the exact canonical application release in production, then revoke legacy writes and prove canonical APIs remain available."
     }
   ]
 }

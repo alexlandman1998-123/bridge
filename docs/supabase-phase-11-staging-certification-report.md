@@ -14,9 +14,9 @@ Production project `isdowlnollckzvltkasn` was not connected to or mutated during
 
 | Check | Result |
 | --- | --- |
-| Manifest migrations | 71 |
-| Manifest versions recorded on staging | 71/71 |
-| Complete reviewed staging evidence | 71/71 |
+| Manifest migrations | 78 |
+| Manifest versions recorded on staging | 78/78 |
+| Complete reviewed staging evidence | 78/78 |
 | Expanded conditional-master chain | 3/3 applied, verified, and ledgered |
 | Phase 25 transaction correction | Applied, verified and ledgered |
 | Attorney-integrity rows | 8 healthy across 3 firms |
@@ -31,6 +31,6 @@ The manifest and selected evidence set are bound to this certification with SHA-
 
 ## Meaning of certification
 
-Staging is approved as the tested source state for the 71-row migration manifest. This certification does not authorize a broad database push.
+Staging is approved as the tested source state for the 78-row migration manifest after the Phase 32 recertification. This certification does not authorize a broad database push.
 
 Production promotion must still use the Phase 7 runner one migration at a time, with the production connection and recovery attestation configured outside source control. Each production migration still requires post-application verification before its ledger entry is recorded.

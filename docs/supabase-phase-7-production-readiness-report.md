@@ -5,9 +5,9 @@
 Phase 7 has been implemented as a fail-closed production-promotion gate.
 
 - Production project: `isdowlnollckzvltkasn`
-- Production SQL promoted or target-state verified: 71 governed migrations across six Phase 15 batches, Phases 23–25 and Phases 29–31
-- Production migration ledger: 504 rows
-- Staging manifest coverage: 71 of 71, recertified during Phase 25
+- Production SQL promoted or target-state verified: 78 governed migrations across six Phase 15 batches and Phases 23–25 and 29–32
+- Production migration ledger: 511 rows
+- Staging manifest coverage: 78 of 78, recertified during Phase 32
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
 - Production PITR: disabled
@@ -17,14 +17,14 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The prerequisite gates pass. Phase 31 promoted and verified the final three conditional legal-master versions. The governed 71-row production migration set is complete; the broad-push freeze remains pending separate live inventory review.
+The prerequisite gates pass. Phase 32 promoted or repair-ledgered the seller-attorney resolution and canonical partner chain after the exact application cutover. The governed 78-row production migration set is complete; the broad-push freeze remains active for unreviewed local-only `202607200014`.
 
 ## Implemented controls
 
 Every production mutation now requires three independent evidence layers:
 
 1. Per-migration staging evidence proving catalogue, behaviour, and rollback/no-residue checks.
-2. A manifest-wide staging readiness record proving all 71 migrations are ledgered and evidenced, with a passing attorney integrity gate and zero blocking assignments.
+2. A manifest-wide staging readiness record proving all 78 migrations are ledgered and evidenced, with a passing attorney integrity gate and zero blocking assignments.
 3. Per-migration production evidence before the production ledger can be recorded.
 
 The manifest-wide readiness record also requires a human `approvedBy` value. Automated migration verification cannot authorize production by itself.
@@ -55,8 +55,8 @@ It stopped before reading production credentials or attempting a mutation becaus
 
 The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness.json` and records:
 
-- 71 manifest rows;
-- 71 staging ledger entries;
+- 78 manifest rows;
+- 78 staging ledger entries;
 - complete staging evidence;
 - zero blocking attorney assignments after the Phase 10 remediation;
 - eight completed production physical backups;
@@ -76,10 +76,11 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - Phase 29 production evidence complete for the eight attorney-accounting versions; canonical prerequisite `202607180025` was repaired without altering its historical ledger entry.
 - Phase 30 production evidence complete for repair-only attorney-calendar version `202607180047`, with the live behavior suite passing and zero fixture residue.
 - Phase 31 production evidence complete for conditional legal-master versions `202607200004`–`202607200006`; no organisation rollout was activated.
+- Phase 32 production evidence complete for repair-only `202607200002` and canonical partner versions `202607200008`–`202607200013`; the canonical application release was live before legacy writes were retired.
 
 ## Closeout boundary
 
-All 71 governed rows have reviewed production evidence. Keep the Phase 0 broad-push guard active until the live inventory check confirms whether newer migrations outside this manifest require separate governance.
+All 78 governed rows have reviewed production evidence. The Phase 0 broad-push guard remains active because the live inventory now contains unreviewed local-only version `202607200014` outside this manifest.
 
 ## Files changed
 

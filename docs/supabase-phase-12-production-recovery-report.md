@@ -63,3 +63,5 @@ After Phase 30, the baseline-plus-reviewed-promotions rule expects 501 productio
 ## Phase 31 re-verification
 
 After Phase 31, the baseline-plus-reviewed-promotions rule expects 504 production ledger rows: the signed 433-row recovery baseline plus all 71 unique reviewed governed promotions. The final conditional legal-master chain was applied and verified without activating an organisation rollout.
+
+After Phase 32, the same rule expects 511 rows: the signed 433-row recovery baseline plus 78 unique reviewed governed promotions. The verifier passes at 511/511. Recovery remains proven; the separate migration freeze remains held for local-only `202607200014`.
