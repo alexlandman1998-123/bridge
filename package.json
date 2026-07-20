@@ -64,6 +64,7 @@
     "supabase:phase35:verify": "node scripts/phase35-governed-migration-counts.test.mjs",
     "application:phase36:verify": "node scripts/phase36-phase28-ci.test.mjs",
     "release:phase38:verify": "node scripts/phase38-clean-release-reproduction.test.mjs",
+    "release:phase39:verify": "node scripts/phase39-pull-request-checks.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

@@ -1,0 +1,74 @@
+{
+  "phase": 39,
+  "status": "PULL_REQUEST_SOURCE_CHECKS_CLEARED",
+  "verifiedAt": "2026-07-20",
+  "pullRequest": {
+    "repository": "alexlandman1998-123/bridge",
+    "number": 1,
+    "branch": "codex/mvp-pilot-readiness"
+  },
+  "productionBaseline": {
+    "sourceCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "deploymentId": "dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT",
+    "domain": "https://app.arch9.co.za",
+    "status": "READY",
+    "stillCertified": true
+  },
+  "releaseCandidate": {
+    "runtimeSourceCommit": "b7b9760f7b25c9e7901b3acbb25e9e68e8041c76",
+    "runtimeSourceTree": "aa9c341a0a084ec70cddba85514b0673d534ebab",
+    "runtimeBuildInputFingerprint": "9263fe4d3c7fb9a4155f02a2d23f271c40e267591ee4cbefdbdbdee07130fe28",
+    "fullRuntimeBuildInputFingerprint": "2d64f38e92dee5699e55425ccb249a838f791b72cb92d4a6ea22e26fddcad796",
+    "differsFromProductionBaseline": true,
+    "promotedToProduction": false,
+    "build": {
+      "isolatedDetachedWorktree": true,
+      "freshLockfileInstall": true,
+      "nodeVersion": "22.23.1",
+      "applicationTestSuite": "9_of_9_pass",
+      "guardedBuild": "pass",
+      "modulesTransformed": 3490,
+      "criticalAssetCount": 427,
+      "releaseManifestId": "b7b9760f7b25c9e7901b3acbb25e9e68e8041c76",
+      "performanceBudget": "pass"
+    }
+  },
+  "sourceCheckRepairs": [
+    {
+      "phase": 20,
+      "repair": "Verify the immutable production baseline and the clean PR candidate as separate artifacts."
+    },
+    {
+      "phase": 26,
+      "repair": "Certify the current candidate build without falsely marking it as promoted."
+    },
+    {
+      "phase": 33,
+      "repair": "Approve exactly eight mandate-generation correction paths and retain the deny-by-default scope lock."
+    },
+    {
+      "phase": 34,
+      "repair": "Preserve the production certification while explicitly recording candidate divergence."
+    }
+  ],
+  "externalChecks": {
+    "supabasePreview": {
+      "status": "REPAIRED_BY_REMOTE_SMTP_SCOPING",
+      "previewMailer": "supabase_restricted_development_mailer",
+      "productionMailer": "resend_remote_override",
+      "productionProjectRef": "isdowlnollckzvltkasn",
+      "secretCapturedInEvidence": false
+    },
+    "vercelPreview": {
+      "statusAtCertification": "PENDING_EXTERNAL_PROVIDER"
+    }
+  },
+  "safety": {
+    "productionApplicationPromoted": false,
+    "productionDatabaseMutated": false,
+    "stagingDatabaseMutated": false,
+    "migrationInventoryChanged": false,
+    "productionSmtpCredentialChanged": false,
+    "unrelatedRuntimePathsApproved": false
+  }
+}

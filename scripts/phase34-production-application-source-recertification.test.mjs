@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 
 const evidence = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase34/production-source-recertification.json', 'utf8'))
 const scope = JSON.parse(readFileSync('docs/phase-33-pull-request-scope-lock.json', 'utf8'))
+const clearance = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase39/pull-request-check-clearance.json', 'utf8'))
 const runtimePaths = [
   'the-it-guy/src',
   'the-it-guy/server',
@@ -38,13 +39,16 @@ assert.doesNotThrow(() => git(['cat-file', '-e', `${evidence.repository.producti
 assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', evidence.repository.productionSourceCommit, 'HEAD']))
 assert.equal(git(['status', '--porcelain', '--', ...runtimePaths]), '', 'Runtime build inputs contain uncommitted changes.')
 assert.equal(git(['rev-parse', `${evidence.repository.productionSourceCommit}:the-it-guy/src`]), evidence.repository.runtimeSourceTree)
-assert.equal(git(['rev-parse', 'HEAD:the-it-guy/src']), evidence.repository.runtimeSourceTree)
 assert.equal(git(['rev-parse', `${evidence.repository.productionSourceCommit}:the-it-guy`]), evidence.repository.runtimeRootTree)
-assert.equal(git(['rev-parse', 'HEAD:the-it-guy']), evidence.repository.runtimeRootTree)
 assert.equal(fingerprint(evidence.repository.productionSourceCommit), evidence.repository.fullRuntimeBuildInputFingerprint)
-assert.equal(fingerprint('HEAD'), evidence.repository.fullRuntimeBuildInputFingerprint)
 assert.equal(fingerprint(evidence.repository.productionSourceCommit, true), evidence.repository.runtimeBuildInputFingerprint)
-assert.equal(fingerprint('HEAD', true), evidence.repository.runtimeBuildInputFingerprint)
+
+assert.doesNotThrow(() => git(['cat-file', '-e', `${clearance.releaseCandidate.runtimeSourceCommit}^{commit}`]))
+assert.doesNotThrow(() => git(['merge-base', '--is-ancestor', clearance.releaseCandidate.runtimeSourceCommit, 'HEAD']))
+assert.equal(git(['rev-parse', `${clearance.releaseCandidate.runtimeSourceCommit}:the-it-guy/src`]), clearance.releaseCandidate.runtimeSourceTree)
+assert.equal(git(['rev-parse', 'HEAD:the-it-guy/src']), clearance.releaseCandidate.runtimeSourceTree)
+assert.equal(fingerprint('HEAD'), clearance.releaseCandidate.fullRuntimeBuildInputFingerprint)
+assert.equal(fingerprint('HEAD', true), clearance.releaseCandidate.runtimeBuildInputFingerprint)
 
 assert.equal(evidence.deploymentDrift.detected, true)
 assert.equal(evidence.deploymentDrift.occurrences.length, 2)
@@ -91,5 +95,8 @@ assert.equal(evidence.verification.boundedHttp500Scan, 0)
 assert.equal(evidence.safety.databaseMutatedByPhase34, false)
 assert.equal(evidence.safety.uncommittedApplicationChangesDeployed, false)
 assert.equal(evidence.safety.phase0MigrationFreezeRemainsActive, true)
+assert.equal(clearance.productionBaseline.sourceCommit, evidence.repository.productionSourceCommit)
+assert.equal(clearance.productionBaseline.stillCertified, true)
+assert.equal(clearance.releaseCandidate.promotedToProduction, false)
 
-console.log('Phase 34 passed: production and the release branch resolve to reproducible commit 333c08eb with 427/427 critical assets healthy.')
+console.log('Phase 34 passed through Phase 39: production remains certified at 333c08eb and the differing PR candidate is explicitly unpromoted.')

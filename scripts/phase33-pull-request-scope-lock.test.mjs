@@ -19,6 +19,12 @@ assert.equal(scope.included.productionLedgerRows, 511)
 assert.equal(scope.controls.newRuntimeFeaturesAllowed, false)
 assert.equal(scope.controls.newMigrationsAllowed, false)
 assert.equal(scope.controls.scopeAmendmentRequiresExplicitApproval, true)
+assert.equal(scope.approvedRuntimeCorrections.status, 'APPROVED_FOR_RELEASE_CANDIDATE')
+assert.equal(scope.approvedRuntimeCorrections.productionPromotionRequiredAfterMerge, true)
+assert.equal(scope.approvedRuntimeCorrections.paths.length, 8)
+for (const path of scope.approvedRuntimeCorrections.paths) {
+  assert.ok(scope.allowedAfterIsolationPaths.includes(path), `${path} must be present in the locked allowlist.`)
+}
 
 for (const commit of [
   release.productionApplicationCommit,

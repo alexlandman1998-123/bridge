@@ -1,0 +1,39 @@
+name: Phase 39 pull-request check clearance gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase39-pull-request-check-clearance-gate.yml'
+      - 'deployment-evidence/2026-07-20-phase39/pull-request-check-clearance.json'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-39-clear-pull-request-checks.md'
+      - 'package.json'
+      - 'scripts/phase20-application-source.test.mjs'
+      - 'scripts/phase26-clean-reproducible-deployment.test.mjs'
+      - 'scripts/phase33-pull-request-scope-lock.test.mjs'
+      - 'scripts/phase34-production-application-source-recertification.test.mjs'
+      - 'scripts/phase39-pull-request-checks.test.mjs'
+      - 'supabase/config.toml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-check-clearance:
+    name: Verify Phase 39 source-check clearance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run application:phase20:verify
+      - run: npm run application:phase26:verify
+      - run: npm run release:phase33:verify
+      - run: npm run application:phase34:verify
+      - run: npm run release:phase39:verify

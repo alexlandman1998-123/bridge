@@ -28,6 +28,12 @@ Until PR #1 is ready, further commits may only:
 
 New runtime capability, new migrations, and unrelated UI or email work require an explicit scope amendment and separate certification.
 
+## Phase 39 scope amendment
+
+Phase 39 explicitly admits eight mandate-generation correction paths introduced through runtime commit `b7b9760f`. These changes repair conditional-master verification and prevent route/control text from being mistaken for mandate body content. They are certified as a release candidate, not represented as already deployed production source.
+
+The production baseline remains commit `333c08eb`. All other runtime work remains denied by default, and promoting the Phase 39 candidate remains a separate operator-controlled action after review and merge.
+
 ## Safety outcome
 
 - Production was not redeployed.

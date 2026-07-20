@@ -18,7 +18,7 @@
     "postLockIsolationCommit": "94cf6383cf544c8a11902b505ba36999328d5eb8"
   },
   "included": {
-    "applicationRuntime": "the committed runtime tree deployed from 333c08eb",
+    "applicationRuntime": "the certified production baseline at 333c08eb plus the eight explicitly approved mandate-generation corrections in the Phase 39 release candidate",
     "database": "78 governed migrations through 202607200013",
     "productionLedgerRows": 511,
     "governance": "Phase 32 evidence and Phase 33 scope-lock artifacts"
@@ -37,6 +37,22 @@
     ],
     "recovery": "The excluded work remains recoverable from commit ae472638 and may be cherry-picked to a separately governed feature branch."
   },
+  "approvedRuntimeCorrections": {
+    "status": "APPROVED_FOR_RELEASE_CANDIDATE",
+    "reason": "Mandate generation and content-scanner corrections required to make the Phase 1 document workflow operable.",
+    "runtimeSourceCommit": "b7b9760f7b25c9e7901b3acbb25e9e68e8041c76",
+    "productionPromotionRequiredAfterMerge": true,
+    "paths": [
+      "the-it-guy/src/core/documents/__tests__/conditionalMasterMigration.test.js",
+      "the-it-guy/src/core/documents/__tests__/conditionalMasterMigrationVerification.test.js",
+      "the-it-guy/src/core/documents/__tests__/mandateTemplateContentScanner.test.js",
+      "the-it-guy/src/core/documents/conditionalMasterMigration.js",
+      "the-it-guy/src/core/documents/conditionalMasterMigrationVerification.js",
+      "the-it-guy/src/core/documents/mandateTemplateContentRules.js",
+      "the-it-guy/src/core/documents/mandateTemplateContentScanner.js",
+      "the-it-guy/src/pages/settings/SettingsSigningTemplatesPage.jsx"
+    ]
+  },
   "allowedAfterIsolationPaths": [
     ".github/workflows/phase33-pull-request-scope-lock-gate.yml",
     ".github/workflows/phase34-production-application-source-recertification-gate.yml",
@@ -44,16 +60,19 @@
     ".github/workflows/phase28-pilot-execution-gate.yml",
     ".github/workflows/phase36-phase28-ci-gate.yml",
     ".github/workflows/phase38-clean-release-reproduction-gate.yml",
+    ".github/workflows/phase39-pull-request-check-clearance-gate.yml",
     ".github/workflows/supabase-phase6-staging-gate.yml",
     ".github/workflows/supabase-phase7-production-gate.yml",
     "deployment-evidence/2026-07-20-phase34/production-source-recertification.json",
     "deployment-evidence/2026-07-20-phase38/clean-release-reproduction.json",
+    "deployment-evidence/2026-07-20-phase39/pull-request-check-clearance.json",
     "docs/phase-33-pull-request-scope-lock.json",
     "docs/phase-33-pull-request-scope-lock.md",
     "docs/phase-34-production-application-source-recertification.md",
     "docs/phase-35-remove-stale-migration-count-assumptions.md",
     "docs/phase-36-repair-phase28-ci-test.md",
     "docs/phase-38-clean-release-reproduction.md",
+    "docs/phase-39-clear-pull-request-checks.md",
     "docs/supabase-phase-7-implementation-status.md",
     "docs/supabase-phase-8-implementation-status.md",
     "package.json",
@@ -66,12 +85,22 @@
     "scripts/phase28-pilot-operations.test.mjs",
     "scripts/phase36-phase28-ci.test.mjs",
     "scripts/phase38-clean-release-reproduction.test.mjs",
+    "scripts/phase39-pull-request-checks.test.mjs",
     "scripts/phase32-final-production-closeout.test.mjs",
     "scripts/supabase-phase6-staging-execution.test.mjs",
     "scripts/supabase-phase7-production-execution.test.mjs",
     "scripts/supabase-phase8-closeout.test.mjs",
+    "supabase/config.toml",
     "scripts/supabase-phase11-staging-certification.mjs",
-    "scripts/supabase-phase11-staging-certification.test.mjs"
+    "scripts/supabase-phase11-staging-certification.test.mjs",
+    "the-it-guy/src/core/documents/__tests__/conditionalMasterMigration.test.js",
+    "the-it-guy/src/core/documents/__tests__/conditionalMasterMigrationVerification.test.js",
+    "the-it-guy/src/core/documents/__tests__/mandateTemplateContentScanner.test.js",
+    "the-it-guy/src/core/documents/conditionalMasterMigration.js",
+    "the-it-guy/src/core/documents/conditionalMasterMigrationVerification.js",
+    "the-it-guy/src/core/documents/mandateTemplateContentRules.js",
+    "the-it-guy/src/core/documents/mandateTemplateContentScanner.js",
+    "the-it-guy/src/pages/settings/SettingsSigningTemplatesPage.jsx"
   ],
   "controls": {
     "newRuntimeFeaturesAllowed": false,
@@ -82,5 +111,5 @@
     "phase0MigrationFreezeRemainsActive": true
   },
   "approvedBy": "Alexander Landman (explicit Phase 33 instruction)",
-  "decision": "PR #1 contains the certified production runtime, its governed database closeout, and release evidence only. Concurrent feature work is explicitly deferred and recoverable."
+  "decision": "PR #1 contains the certified production baseline, its governed database closeout, and eight explicitly approved mandate-generation corrections certified as an unpromoted release candidate. Other concurrent feature work remains deferred and recoverable."
 }
