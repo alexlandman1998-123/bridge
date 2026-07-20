@@ -55,6 +55,18 @@ function fixture(state = 'activated') {
   }
 }
 
+test('verifies source masters with tolerant metadata flags', () => {
+  const value = fixture()
+  value.templates[0].metadata_json.conditional_master = 'true'
+  const result = evaluateConditionalMasterMigrationVerification({
+    packetType: 'mandate',
+    templates: value.templates,
+    migrationRecord: value.migration,
+  })
+  assert.equal(result.state, 'ready_to_verify')
+  assert.equal(result.issues.some((item) => item.code === 'VERIFICATION_SOURCE_MASTER_INVALID'), false)
+})
+
 test('becomes ready only when live coverage matches the activation receipt', () => {
   const value = fixture()
   const result = evaluateConditionalMasterMigrationVerification({

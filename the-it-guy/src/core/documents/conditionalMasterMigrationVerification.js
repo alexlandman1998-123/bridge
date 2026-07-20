@@ -26,7 +26,9 @@ function isLive(template = {}) {
 
 function isConditionalMaster(template = {}) {
   const source = metadata(template)
-  return source.conditional_master === true && text(source.conditional_master_version) !== ''
+  const hasVersion = text(source.conditional_master_version) !== ''
+  const masterFlag = text(source.conditional_master).toLowerCase()
+  return hasVersion && source.conditional_master !== false && masterFlag !== 'false'
 }
 
 function issue(code, message, details = {}) {

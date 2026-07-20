@@ -38,6 +38,23 @@ function legacy(id, wording = 'Legacy parties') {
   }
 }
 
+test('recognises global masters with tolerant metadata flags', () => {
+  const stringFlagMaster = master({ id: 'global-string-flag' })
+  stringFlagMaster.metadata_json.conditional_master = 'true'
+  const versionOnlyMaster = master({ id: 'global-version-only' })
+  delete versionOnlyMaster.metadata_json.conditional_master
+
+  for (const globalTemplate of [stringFlagMaster, versionOnlyMaster]) {
+    const result = evaluateConditionalMasterMigration({
+      packetType: 'mandate',
+      templates: [globalTemplate, legacy('legacy')],
+    })
+    assert.equal(result.state, 'needs_draft')
+    assert.equal(result.canPrepare, true)
+    assert.equal(result.blockers.some((item) => item.code === 'MIGRATION_GLOBAL_MASTER_MISSING'), false)
+  }
+})
+
 test('requires an organisation draft before migration activation', () => {
   const result = evaluateConditionalMasterMigration({
     packetType: 'mandate',
