@@ -24,6 +24,7 @@
     "supabase:phase10:attorneys": "node scripts/supabase-phase10-attorney-assignment-repair.mjs --plan",
     "supabase:phase11:certify": "node scripts/supabase-phase11-staging-certification.mjs --verify",
     "supabase:phase12:recovery": "node scripts/supabase-phase12-production-recovery.mjs --verify",
+    "supabase:phase13:access": "node scripts/supabase-phase13-production-access.mjs --verify",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },

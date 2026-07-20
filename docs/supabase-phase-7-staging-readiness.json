@@ -12,11 +12,13 @@
   "productionPhysicalBackupCount": 8,
   "productionRecoveryAttestationPresent": true,
   "productionRecoveryEvidence": "migration-evidence/2026-07-20-production-recovery-phase12/production-database-recovery.json",
-  "productionCredentialsConfigured": false,
+  "productionCredentialsConfigured": true,
+  "productionAccessMode": "linked_ephemeral",
+  "productionAccessEvidence": "migration-evidence/2026-07-20-production-access-phase13/production-access.json",
   "approvedBy": "Alexander Landman",
   "approvedAt": "2026-07-20T12:19:52.069Z",
   "certificationStatus": "STAGING_CERTIFIED",
   "certificationEvidence": "migration-evidence/2026-07-20-staging-phase11/staging-release-certification.json",
   "releaseCommit": "fd506e46f697462dcc61e89319d9233648fcbc52",
-  "decision": "Staging is certified and production database recovery is proven. Do not mutate production until the production connection is configured and the runtime recovery confirmation is explicitly supplied."
+  "decision": "Staging is certified, production database recovery is proven, and short-lived production access is configured. Promote only one reviewed migration at a time through the Phase 7 gate."
 }

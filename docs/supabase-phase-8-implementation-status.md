@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 **Status: CLOSEOUT_GATE_READY — PHASE0_FREEZE_REMAINS_ACTIVE**
 
-Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phases 10–12 cleared the attorney-integrity blocker, certified staging, and proved database recovery, but Phase 7 production promotion has not completed and no production closeout evidence rows exist, so freeze retirement remains blocked.
+Phase 8 implements the read-only reconciliation closeout and steady-state handoff. It does not remove or weaken the Phase 0 guard. Phases 10–13 cleared the attorney-integrity blocker, certified staging, proved database recovery, and configured production access, but Phase 7 production promotion has not completed and no production closeout evidence rows exist, so freeze retirement remains blocked.
 
 ## Implemented Controls
 

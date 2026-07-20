@@ -17,7 +17,7 @@ function run(args, extraEnv = {}) {
     env: {
       ...process.env,
       SUPABASE_PRODUCTION_PROJECT_REF: '',
-      SUPABASE_PRODUCTION_DB_URL: '',
+      SUPABASE_PRODUCTION_ACCESS_MODE: '',
       SUPABASE_PRODUCTION_RECOVERY_CONFIRMED: '',
       ...extraEnv,
     },
@@ -154,11 +154,25 @@ const missingRecovery = run(
   ],
   {
     SUPABASE_PRODUCTION_PROJECT_REF: 'isdowlnollckzvltkasn',
-    SUPABASE_PRODUCTION_DB_URL: 'postgresql://postgres.isdowlnollckzvltkasn@example.invalid/postgres',
+    SUPABASE_PRODUCTION_ACCESS_MODE: 'linked_ephemeral',
   },
 )
 assert.equal(missingRecovery.status, 1)
 assert.match(missingRecovery.stderr, /only after recovery has been tested/)
+
+const missingAccessMode = run(
+  [
+    '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
+    '--recovery-evidence', recoveryEvidencePath,
+    '--confirm', 'APPLY_TO_PRODUCTION',
+  ],
+  {
+    SUPABASE_PRODUCTION_PROJECT_REF: 'isdowlnollckzvltkasn',
+  },
+)
+assert.equal(missingAccessMode.status, 1)
+assert.match(missingAccessMode.stderr, /SUPABASE_PRODUCTION_ACCESS_MODE must equal linked_ephemeral/)
 
 rmSync(tempDir, { recursive: true })
 

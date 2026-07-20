@@ -16,7 +16,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Human staging-readiness approval: Alexander Landman
 - Phase 7 gate tests: passed
 
-The staging technical prerequisites, human approval, and database recovery proof now pass. Production promotion remains intentionally blocked until the production connection and explicit runtime recovery confirmation are configured.
+The staging technical prerequisites, human approval, database recovery proof, and short-lived production access now pass. Controlled production promotion may proceed one reviewed migration at a time.
 
 ## Implemented controls
 
@@ -61,12 +61,11 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - eight completed production physical backups;
 - Phase 11 approval by Alexander Landman;
 - Phase 12 database recovery evidence approved by Alexander Landman;
-- no configured production connection or runtime recovery confirmation.
+- Phase 13 short-lived production access and runtime recovery confirmation configured.
 
 ## Required work before production
 
-1. Configure the production database URL and runtime recovery confirmation outside source control.
-2. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
+1. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
 
 ## Files changed
 

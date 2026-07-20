@@ -5,14 +5,14 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: STAGING_CERTIFIED — PRODUCTION DATABASE RECOVERY PROVEN**
+**Status: READY_FOR_CONTROLLED_PRODUCTION_PROMOTION**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, Phase 11 certified staging, and Phase 12 proved database recovery from the production physical-backup restore. Promotion remains blocked until production connection and runtime recovery-confirmation variables are configured.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, Phase 11 certified staging, Phase 12 proved database recovery, and Phase 13 configured short-lived production access. The release is ready for controlled one-version-at-a-time promotion.
 
 ## Implemented Controls
 
 - Planning is read-only and covers all 64 Phase 5 manifest rows.
-- Production mutations require the exact project reference `isdowlnollckzvltkasn` and a database URL containing that identity.
+- Production mutations require the exact project reference `isdowlnollckzvltkasn`, the `linked_ephemeral` access mode, and a linked-project identity check.
 - A live pre-mutation backup check requires PITR or at least one physical backup.
 - Operators must explicitly attest tested recovery and pass `--confirm APPLY_TO_PRODUCTION`.
 - Every mutation is limited to one exact migration version.
@@ -37,7 +37,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Production PITR | Disabled |
 | Production physical backups | 8 completed |
 | Human staging-readiness approval | Alexander Landman |
-| Production connection variables | Not configured |
+| Production access | Configured: short-lived linked login role |
 | Production database recovery test/attestation | Proven and approved in Phase 12 |
 | Production SQL applied in Phase 7 | No |
 | Production ledger changed in Phase 7 | No |
@@ -54,7 +54,7 @@ After staging completion and production recovery testing, provide credentials th
 
 ```bash
 export SUPABASE_PRODUCTION_PROJECT_REF='isdowlnollckzvltkasn'
-export SUPABASE_PRODUCTION_DB_URL='<percent-encoded-production-postgres-url>'
+export SUPABASE_PRODUCTION_ACCESS_MODE='linked_ephemeral'
 export SUPABASE_PRODUCTION_RECOVERY_CONFIRMED='I_HAVE_TESTED_PRODUCTION_RECOVERY'
 ```
 
@@ -114,6 +114,5 @@ node scripts/supabase-phase7-production-execution.mjs \
 
 ## Handoff
 
-1. Configure the production project reference, database URL, and runtime recovery confirmation outside source control.
-2. Promote the smallest dependency stream one exact version at a time.
-3. Stop between SQL application and ledger recording for production verification and review.
+1. Promote the smallest dependency stream one exact version at a time.
+2. Stop between SQL application and ledger recording for production verification and review.

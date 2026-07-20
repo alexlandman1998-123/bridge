@@ -1,6 +1,6 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-20T12:39:22.575Z
+Generated: 2026-07-20T12:47:56.144Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
@@ -31,7 +31,7 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Unreviewed split versions | 0 |
 | Production PITR | Disabled |
 | Physical backups | 8 |
-| Runtime recovery confirmation configured | No |
+| Runtime recovery confirmation configured | Yes |
 | Phase 12 recovery evidence | Valid — Alexander Landman |
 | Ready for reviewed freeze retirement | No |
 
