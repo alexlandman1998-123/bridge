@@ -19,6 +19,65 @@ function documentTitleFallbackPlugin() {
   }
 }
 
+function escapeHtmlAttribute(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+function releaseIntegrityPlugin() {
+  let releaseId = 'local-unknown'
+
+  return {
+    name: 'arch9-release-integrity',
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.root, '')
+      releaseId = String(
+        env.VITE_RELEASE_ID ||
+        process.env.VITE_RELEASE_ID ||
+        process.env.VERCEL_GIT_COMMIT_SHA ||
+        process.env.GIT_COMMIT_SHA ||
+        releaseId,
+      ).trim() || 'local-unknown'
+    },
+    transformIndexHtml(html) {
+      const marker = `<meta name="arch9-release" content="${escapeHtmlAttribute(releaseId)}" />`
+      return html.replace('</head>', `    ${marker}\n  </head>`)
+    },
+    generateBundle(_outputOptions, bundle) {
+      const chunks = Object.values(bundle).filter((item) => item.type === 'chunk')
+      const chunksByFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
+      const seedFiles = chunks
+        .filter((chunk) => chunk.isEntry || chunk.fileName.includes('AgentListingDetail'))
+        .map((chunk) => chunk.fileName)
+      const criticalFiles = new Set()
+      const visit = (fileName) => {
+        if (!fileName || criticalFiles.has(fileName)) return
+        criticalFiles.add(fileName)
+        const chunk = chunksByFileName.get(fileName)
+        if (!chunk) return
+        for (const importedFile of [...(chunk.imports || []), ...(chunk.dynamicImports || [])]) visit(importedFile)
+        for (const cssFile of chunk.viteMetadata?.importedCss || []) criticalFiles.add(cssFile)
+      }
+      seedFiles.forEach(visit)
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'release-manifest.json',
+        source: `${JSON.stringify({
+          version: 1,
+          releaseId,
+          generatedAt: new Date().toISOString(),
+          criticalAssets: [...criticalFiles].sort(),
+          listingDetailAssetDetected: seedFiles.some((fileName) => fileName.includes('AgentListingDetail')),
+        }, null, 2)}\n`,
+      })
+    },
+  }
+}
+
 function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
@@ -51,7 +110,7 @@ function missionControlApiPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [documentTitleFallbackPlugin(), react(), missionControlApiPlugin()],
+  plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1600,
     rollupOptions: {

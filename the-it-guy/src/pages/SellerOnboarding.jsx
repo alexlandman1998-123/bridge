@@ -1113,6 +1113,9 @@ function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
 function normalizeFormData(listing) {
   const seller = listing?.seller || {}
   const existing = listing?.sellerOnboarding?.formData || {}
+  const preferredTransferAttorney = existing.preferredTransferAttorney && typeof existing.preferredTransferAttorney === 'object'
+    ? existing.preferredTransferAttorney
+    : null
   const canonicalFacts = getCanonicalSellerFacts(listing)
   const flow = getFlowContract(existing, listing, canonicalFacts)
   const split = splitName(existing.fullName || seller.name || '')
@@ -1506,6 +1509,12 @@ function normalizeFormData(listing) {
     cancellationRequired: existing.cancellationRequired !== undefined ? Boolean(existing.cancellationRequired) : Boolean(existing.existingBond),
     cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
+    preferredTransferAttorney,
+    preferredTransferAttorneyAccepted: Boolean(existing.preferredTransferAttorneyAccepted),
+    preferredTransferAttorneyAcceptance:
+      existing.preferredTransferAttorneyAcceptance && typeof existing.preferredTransferAttorneyAcceptance === 'object'
+        ? existing.preferredTransferAttorneyAcceptance
+        : null,
 
     gasInstallation: Boolean(existing.gasInstallation || existing.gasGeyser || existing.gas_geyser || canonicalFacts?.compliance?.gas_installation || canonicalFacts?.compliance?.gas_geyser),
     gasGeyser: normalizedFeatures.includes('gas_geyser'),
@@ -3525,6 +3534,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ...sellerMissing.map((item) => `Seller: ${item}`),
       ...propertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(form.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
+      ...(!form.preferredTransferAttorney?.preferredPartnerId
+        ? ['Attorney: Preferred transferring attorney is not configured']
+        : form.preferredTransferAttorneyAccepted
+          ? []
+          : ['Attorney: Accept the preferred transferring attorney']),
     ]
     if (finalRequiredMissing.length) {
       setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
@@ -3544,6 +3558,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const finalForm = {
         ...(form || {}),
+        preferredTransferAttorneyAcceptance: {
+          preferredPartnerId: form.preferredTransferAttorney.preferredPartnerId,
+          companyName: form.preferredTransferAttorney.companyName,
+          acceptedAt: new Date().toISOString(),
+          acceptedByName: getSellerDisplayName(listing, form),
+          source: 'seller_onboarding',
+        },
         propertyDisclosure: {
           ...(form.propertyDisclosure || {}),
           generatedDocument: disclosureDocument,
@@ -3803,6 +3824,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.mandateEndDate && 'End date',
     mandateDatesInvalid && 'End date must be after start date',
   ].filter(Boolean)
+  const attorneyMissing = [
+    !form.preferredTransferAttorney?.preferredPartnerId && 'Preferred transferring attorney is not configured',
+    form.preferredTransferAttorney?.preferredPartnerId && !form.preferredTransferAttorneyAccepted && 'Seller acceptance',
+  ].filter(Boolean)
   const propertyMissing = [
     !propertyAddressDetails.line1 && 'Property address',
     !propertyAddressDetails.suburb && 'Suburb',
@@ -3833,6 +3858,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
+    { label: 'Transferring attorney', missing: attorneyMissing, onEdit: () => setCurrentStep(FINAL_STEP_INDEX) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
@@ -5166,6 +5192,39 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
                   ]}
                 />
+                <div className={`rounded-[20px] border p-4 ${attorneyMissing.length ? 'border-[#efb6ad] bg-[#fff8f6]' : 'border-[#b9dfc7] bg-[#f5fcf7]'}`}>
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 rounded-full bg-white p-2 text-[#1f7d44] shadow-sm">
+                      <Landmark size={18} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[#172334]">Preferred transferring attorney</p>
+                      {form.preferredTransferAttorney ? (
+                        <>
+                          <p className="mt-2 font-semibold text-[#243b53]">{form.preferredTransferAttorney.companyName}</p>
+                          <p className="mt-1 text-sm text-[#60748b]">
+                            {[form.preferredTransferAttorney.contactPerson, form.preferredTransferAttorney.email, form.preferredTransferAttorney.phone].filter(Boolean).join(' · ')}
+                          </p>
+                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#d9e2ee] bg-white px-4 py-3 text-sm leading-5 text-[#35546c]">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={Boolean(form.preferredTransferAttorneyAccepted)}
+                              onChange={(event) => handleFormUpdate('preferredTransferAttorneyAccepted', event.target.checked)}
+                            />
+                            <span>
+                              I accept and nominate <strong>{form.preferredTransferAttorney.companyName}</strong> as the preferred transferring attorney for this sale.
+                            </span>
+                          </label>
+                        </>
+                      ) : (
+                        <p className="mt-2 text-sm font-semibold text-[#a33b2f]">
+                          Your agent must configure the preferred transferring attorney before you can submit this onboarding.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <ReviewCard
                   title="Selling Context"
                   onEdit={() => setCurrentStep(0)}

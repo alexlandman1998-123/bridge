@@ -36,7 +36,7 @@ export async function runMvpTransactionRecoveryAction({ transactionId = '', acti
     return { actionKey, mutated: false, ...(await loadAuditContext({ transactionId, viewerRole })) }
   }
 
-  if (['resolve_current_gate', 'review_participant_assignments', 'review_document_requirements'].includes(actionKey)) {
+  if (['resolve_current_gate', 'review_participant_assignments', 'review_document_requirements', 'review_notification_delivery'].includes(actionKey)) {
     const context = await loadAuditContext({ transactionId, viewerRole })
     return {
       actionKey,

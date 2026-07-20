@@ -14,8 +14,16 @@ const checks = [
   ['transfer gate', ['src/core/transactions/__tests__/mvpTransferGate.test.js']],
   ['MVP database schema contract', ['scripts/mvp-schema-contract-check.mjs']],
   ['scenario report', ['scripts/mvp-transaction-simulation.mjs']],
+  ['synthetic core flow', ['scripts/mvp-synthetic-core-flow.mjs']],
+  ['accepted-offer conversion receipt', ['scripts/mvp-accepted-offer-conversion-receipt.test.mjs']],
+  ['buyer onboarding notification contract', ['scripts/buyer-onboarding-notification-contract.test.mjs']],
+  ['transaction health and audit recovery', ['scripts/mvp-transaction-health-panel.test.mjs']],
+  ['transaction audit and notification recovery', ['scripts/mvp-transaction-audit-recovery.test.mjs']],
+  ['pilot batch audit controls', ['scripts/mvp-pilot-batch-audit.test.mjs']],
+  ['exposure-readiness evidence controls', ['scripts/mvp-exposure-readiness.test.mjs']],
+  ['phase 8 pilot go/no-go controls', ['scripts/mvp-pilot-go-no-go.test.mjs']],
   ['100-transaction capacity and integrity', ['scripts/mvp-transaction-load-check.mjs']],
-  ['10-transaction pilot batch dry run', ['scripts/mvp-pilot-batch-dry-run.mjs']],
+  ['2-transaction pilot batch dry run', ['scripts/mvp-pilot-batch-dry-run.mjs']],
 ]
 
 const results = []

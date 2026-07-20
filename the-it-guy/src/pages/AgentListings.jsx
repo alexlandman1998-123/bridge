@@ -39,6 +39,7 @@ import {
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
+import { assertMvpPilotCreationAllowed, resolveMvpPilotCreationFreeze } from '../lib/mvpPilotCreationFreeze'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   evaluatePrivateListingTransitionGuards,
@@ -1540,6 +1541,7 @@ function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, profile, agencyWorkflowMode, currentMembership } = useWorkspace()
+  const pilotCreationFreeze = resolveMvpPilotCreationFreeze()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1870,6 +1872,12 @@ function AgentListings({ initialTab = null } = {}) {
   }, [branchOptions, currentBranchId])
 
   function openSellerLeadModal() {
+    try {
+      assertMvpPilotCreationAllowed({ operation: 'start a new seller listing' })
+    } catch (freezeError) {
+      setError(freezeError.message)
+      return
+    }
     setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('seller_lead')
     setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
@@ -1882,6 +1890,12 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function openQuickAddListingModal() {
+    try {
+      assertMvpPilotCreationAllowed({ operation: 'quick-add a listing' })
+    } catch (freezeError) {
+      setError(freezeError.message)
+      return
+    }
     setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('quick_add')
     setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
@@ -1900,6 +1914,12 @@ function AgentListings({ initialTab = null } = {}) {
   function openQuickAddHandoffAction(action = null, listingId = '') {
     const normalizedListingId = normalizeText(listingId)
     if (action?.key === 'create_deal') {
+      try {
+        assertMvpPilotCreationAllowed({ operation: 'create a transaction' })
+      } catch (freezeError) {
+        setError(freezeError.message)
+        return
+      }
       window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { listingId: normalizedListingId } }))
       return
     }
@@ -2948,10 +2968,11 @@ function AgentListings({ initialTab = null } = {}) {
     event.preventDefault()
     if (isListingSaving) return
 
-    setIsListingSaving(true)
     setError('')
     setWorkflowMessage('')
     try {
+      assertMvpPilotCreationAllowed({ operation: 'create a listing' })
+      setIsListingSaving(true)
       await performSaveListing()
     } catch (saveError) {
       console.error('[Listings] listing save failed', saveError)
@@ -3398,6 +3419,12 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function openMandateFirstWorkspace() {
+    try {
+      assertMvpPilotCreationAllowed({ operation: 'start a mandate and create its listing' })
+    } catch (freezeError) {
+      setError(freezeError.message)
+      return
+    }
     const draftId = `mandate-draft-${Date.now().toString(36)}`
     const params = new URLSearchParams()
     params.set('mode', 'generate')
@@ -3411,6 +3438,12 @@ function AgentListings({ initialTab = null } = {}) {
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        {pilotCreationFreeze.paused ? (
+          <div className="mb-4 rounded-[14px] border border-[#f2cf8d] bg-[#fff8e8] px-4 py-3 text-sm text-[#805d12]" role="status">
+            <p className="font-semibold">Controlled pilot hold — new listings and transactions are paused.</p>
+            <p className="mt-1">Existing records remain available to review. Do not create new live records until the release gate is cleared.</p>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="grid flex-1 gap-3 md:grid-cols-1 xl:max-w-[460px]">
             <label className="grid gap-2">
@@ -3433,15 +3466,15 @@ function AgentListings({ initialTab = null } = {}) {
 
           {listingsTab !== 'developments' ? (
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <Button type="button" onClick={openMandateFirstWorkspace}>
+              <Button type="button" onClick={openMandateFirstWorkspace} disabled={pilotCreationFreeze.paused}>
                 <FileText size={16} />
                 Generate Mandate
               </Button>
-              <Button type="button" variant="secondary" onClick={openQuickAddListingModal}>
+              <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused}>
                 <Plus size={16} />
                 Quick Add Listing
               </Button>
-              <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
+              <Button type="button" variant="secondary" onClick={openSellerLeadModal} disabled={pilotCreationFreeze.paused}>
                 <Plus size={16} />
                 Guided Listing
               </Button>
@@ -3699,15 +3732,15 @@ function AgentListings({ initialTab = null } = {}) {
                 Start a seller workflow or add a manual listing. Listings become live here once onboarding, mandate, and required documents are ready.
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <Button type="button" onClick={openMandateFirstWorkspace}>
+                <Button type="button" onClick={openMandateFirstWorkspace} disabled={pilotCreationFreeze.paused}>
                   <FileText size={16} />
                   Generate Mandate
                 </Button>
-                <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
+                <Button type="button" variant="secondary" onClick={openSellerLeadModal} disabled={pilotCreationFreeze.paused}>
                   <Plus size={16} />
                   Guided Listing
                 </Button>
-                <Button type="button" variant="secondary" onClick={openManualListingModal}>
+                <Button type="button" variant="secondary" onClick={openManualListingModal} disabled={pilotCreationFreeze.paused}>
                   <Plus size={16} />
                   Quick Add Listing
                 </Button>

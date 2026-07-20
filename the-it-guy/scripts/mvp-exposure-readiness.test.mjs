@@ -17,6 +17,9 @@ const scenario = (key) => ({
       participantBootstrapComplete: true,
       documentBootstrapComplete: true,
       workflowBootstrapComplete: true,
+      conversionConfirmed: true,
+      healthAudited: true,
+      notificationDeliveryReviewed: true,
     },
   },
 })
@@ -34,5 +37,13 @@ assert.equal(evaluateMvpExposureReadiness({ localChecks, stagingEvidence: eviden
 assert.ok(evaluateMvpExposureReadiness({ localChecks, stagingEvidence: null, now }).blockers.includes('staging_evidence_missing'))
 assert.ok(evaluateMvpExposureReadiness({ localChecks, stagingEvidence: { ...evidence, collectedAt: '2026-07-17T17:30:00.000Z' }, now }).blockers.includes('staging_evidence_stale_or_invalid'))
 assert.ok(evaluateMvpExposureReadiness({ localChecks, stagingEvidence: { ...evidence, scenarios: evidence.scenarios.slice(1) }, now }).blockers.includes('staging_scenario_missing:cash_individual'))
+assert.ok(evaluateMvpExposureReadiness({
+  localChecks,
+  stagingEvidence: {
+    ...evidence,
+    scenarios: [{ ...evidence.scenarios[0], postDeployCheck: { ...evidence.scenarios[0].postDeployCheck, batchRecord: { ...evidence.scenarios[0].postDeployCheck.batchRecord, healthAudited: false } } }, ...evidence.scenarios.slice(1)],
+  },
+  now,
+}).blockers.includes('staging_scenario_failed:cash_individual'))
 
 console.log('mvp-exposure-readiness: passed')

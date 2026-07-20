@@ -753,33 +753,43 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
   const property = resolvePropertyProfile(onboarding, lead, privateListing, transaction, mandateDraft)
   const mandate = resolveMandateProfile(onboarding, lead, agency, organisation, privateListing, transaction, mandateDraft)
   const transferAttorney = {
+    ...(onboarding.preferredTransferAttorney && typeof onboarding.preferredTransferAttorney === 'object'
+      ? onboarding.preferredTransferAttorney
+      : {}),
     preferredPartnerId: firstText(
       mandateDraft.transferAttorneyPreferredPartnerId,
       mandateDraft.transfer_attorney_preferred_partner_id,
+      onboarding.preferredTransferAttorney?.preferredPartnerId,
     ),
     partnerOrganisationId: firstText(
       mandateDraft.transferAttorneyPartnerOrganisationId,
       mandateDraft.transfer_attorney_partner_organisation_id,
+      onboarding.preferredTransferAttorney?.partnerOrganisationId,
     ),
     companyName: firstText(
       mandateDraft.transferAttorneyCompanyName,
       mandateDraft.transfer_attorney_company_name,
+      onboarding.preferredTransferAttorney?.companyName,
     ),
     contactPerson: firstText(
       mandateDraft.transferAttorneyContactPerson,
       mandateDraft.transfer_attorney_contact_person,
+      onboarding.preferredTransferAttorney?.contactPerson,
     ),
     email: firstText(
       mandateDraft.transferAttorneyEmail,
       mandateDraft.transfer_attorney_email,
+      onboarding.preferredTransferAttorney?.email,
     ).toLowerCase(),
     phone: firstText(
       mandateDraft.transferAttorneyPhone,
       mandateDraft.transfer_attorney_phone,
+      onboarding.preferredTransferAttorney?.phone,
     ),
     selectionSource: firstText(
       mandateDraft.transferAttorneySelectionSource,
       mandateDraft.transfer_attorney_selection_source,
+      onboarding.preferredTransferAttorney?.selectionSource,
       'seller_mandate',
     ),
     selectionDeferred: Boolean(

@@ -1,6 +1,6 @@
-export const MVP_PILOT_BATCH_AUDIT_VERSION = 'arch9_mvp_pilot_batch_audit_v1'
+export const MVP_PILOT_BATCH_AUDIT_VERSION = 'arch9_mvp_pilot_batch_audit_v2'
 
-export function auditMvpPilotBatch(transactions = [], { batchLimit = 10 } = {}) {
+export function auditMvpPilotBatch(transactions = [], { batchLimit = 2 } = {}) {
   const rows = Array.isArray(transactions) ? transactions : []
   const issues = []
   if (rows.length > batchLimit) issues.push('batch_limit_exceeded')
@@ -15,6 +15,9 @@ export function auditMvpPilotBatch(transactions = [], { batchLimit = 10 } = {}) 
     if (transaction?.participantBootstrapComplete !== true) issues.push(`participant_bootstrap_missing:${id || key}`)
     if (transaction?.documentBootstrapComplete !== true) issues.push(`document_bootstrap_missing:${id || key}`)
     if (transaction?.workflowBootstrapComplete !== true) issues.push(`workflow_bootstrap_missing:${id || key}`)
+    if (transaction?.conversionConfirmed !== true) issues.push(`accepted_offer_conversion_unconfirmed:${id || key}`)
+    if (transaction?.healthAudited !== true) issues.push(`transaction_health_not_audited:${id || key}`)
+    if (transaction?.notificationDeliveryReviewed !== true) issues.push(`notification_delivery_not_reviewed:${id || key}`)
   }
   return { version: MVP_PILOT_BATCH_AUDIT_VERSION, passed: issues.length === 0, batchSize: rows.length, batchLimit, issues }
 }

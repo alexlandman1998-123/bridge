@@ -1604,6 +1604,9 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
   const snapshotTransferAttorney = generatedSnapshot?.transferAttorney && typeof generatedSnapshot.transferAttorney === 'object'
     ? generatedSnapshot.transferAttorney
     : {}
+  const onboardingTransferAttorney = onboarding?.preferredTransferAttorney && typeof onboarding.preferredTransferAttorney === 'object'
+    ? onboarding.preferredTransferAttorney
+    : {}
   const snapshotSeller = generatedSnapshot?.seller && typeof generatedSnapshot.seller === 'object' ? generatedSnapshot.seller : {}
   const snapshotProperty = generatedSnapshot?.property && typeof generatedSnapshot.property === 'object' ? generatedSnapshot.property : {}
   const sellerFirstName = firstText(
@@ -1876,30 +1879,37 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
     transferAttorneyPreferredPartnerId: firstText(
       packetDraft.transferAttorneyPreferredPartnerId,
       snapshotTransferAttorney.preferredPartnerId,
+      onboardingTransferAttorney.preferredPartnerId,
     ),
     transferAttorneyPartnerOrganisationId: firstText(
       packetDraft.transferAttorneyPartnerOrganisationId,
       snapshotTransferAttorney.partnerOrganisationId,
+      onboardingTransferAttorney.partnerOrganisationId,
     ),
     transferAttorneyCompanyName: firstText(
       packetDraft.transferAttorneyCompanyName,
       snapshotTransferAttorney.companyName,
+      onboardingTransferAttorney.companyName,
     ),
     transferAttorneyContactPerson: firstText(
       packetDraft.transferAttorneyContactPerson,
       snapshotTransferAttorney.contactPerson,
+      onboardingTransferAttorney.contactPerson,
     ),
     transferAttorneyEmail: firstText(
       packetDraft.transferAttorneyEmail,
       snapshotTransferAttorney.email,
+      onboardingTransferAttorney.email,
     ),
     transferAttorneyPhone: firstText(
       packetDraft.transferAttorneyPhone,
       snapshotTransferAttorney.phone,
+      onboardingTransferAttorney.phone,
     ),
     transferAttorneySelectionSource: firstText(
       packetDraft.transferAttorneySelectionSource,
       snapshotTransferAttorney.selectionSource,
+      onboardingTransferAttorney.selectionSource,
       'seller_mandate',
     ),
     transferAttorneySelectionDeferred: Boolean(

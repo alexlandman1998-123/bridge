@@ -80,6 +80,7 @@ import {
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
+import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
 import {
   completeViewingRequest,
   formatViewingStatusLabel,
@@ -304,7 +305,7 @@ function mergeListingRecord(existing = {}, incoming = {}) {
 function upsertListingRecord(rows = [], incoming = null) {
   if (!incoming?.id) return rows
   let found = false
-  const nextRows = rows.map((row) => {
+  const nextRows = sanitizePrivateListingRows(rows).map((row) => {
     if (String(row?.id || '') !== String(incoming.id)) return row
     found = true
     return mergeListingRecord(row, incoming)
@@ -1845,7 +1846,13 @@ function AgentListingDetail() {
   const location = useLocation()
   const { listingId: encodedListingId } = useParams()
   const { profile } = useWorkspace()
-  const listingId = decodeURIComponent(String(encodedListingId || ''))
+  const listingId = useMemo(() => {
+    try {
+      return decodeURIComponent(String(encodedListingId || '')).trim()
+    } catch {
+      return ''
+    }
+  }, [encodedListingId])
 
   const [activeTab, setActiveTab] = useState('seller')
   const [privateListings, setPrivateListings] = useState([])
@@ -1961,7 +1968,14 @@ function AgentListingDetail() {
   const loadListingData = useCallback(async () => {
     setLoading(true)
     setDetailError('')
-    const runtimeListings = readAgentPrivateListings()
+    if (!listingId) {
+      setPrivateListings([])
+      setDetailError('This listing link is invalid. Return to Listings and open the record again.')
+      setLoading(false)
+      return
+    }
+
+    const runtimeListings = sanitizePrivateListingRows(readAgentPrivateListings())
     if (!isSupabaseConfigured) {
       setPipelineLeads(readPipelineLeads())
     }
@@ -1970,7 +1984,10 @@ function AgentListingDetail() {
     if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
       try {
         const dbListing = await getPrivateListing(listingId)
-        if (dbListing?.id) {
+        const returnedListingId = getPrivateListingRecordId(dbListing)
+        if (dbListing && returnedListingId !== listingId) {
+          setDetailError('This listing returned an invalid record. Refresh Listings and open it again; no changes were made.')
+        } else if (returnedListingId) {
           nextListings = upsertListingRecord(runtimeListings, dbListing)
         }
       } catch (error) {
@@ -1979,7 +1996,7 @@ function AgentListingDetail() {
       }
     }
 
-    setPrivateListings(nextListings)
+    setPrivateListings(sanitizePrivateListingRows(nextListings))
     setLoading(false)
   }, [listingId])
 
@@ -2002,7 +2019,7 @@ function AgentListingDetail() {
   }, [loadListingData])
 
   const listingRecord = useMemo(() => {
-    return privateListings.find((item) => String(item.id) === listingId) || null
+    return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
 
   const listingOrganisationId = useMemo(
@@ -2366,8 +2383,8 @@ function AgentListingDetail() {
   function patchListing(updater) {
     if (!listingRecord) return null
     let updatedListing = null
-    const nextRows = privateListings.map((item) => {
-      if (String(item.id) !== String(listingRecord.id)) return item
+    const nextRows = sanitizePrivateListingRows(privateListings).map((item) => {
+      if (String(item?.id || '') !== String(listingRecord.id)) return item
       updatedListing = updater({ ...item })
       return updatedListing
     })

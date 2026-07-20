@@ -5039,6 +5039,7 @@ export async function sendSellerOnboarding(
     includePortalBranding = true,
     deferStatusTransition = false,
     performedBy = '',
+    transferAttorneyPreferredPartnerId = '',
   } = {},
 ) {
   const client = requireClient()
@@ -5049,6 +5050,48 @@ export async function sendSellerOnboarding(
   }
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
+
+  const requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  let preferredAttorneyBuilder = client
+    .from('organisation_preferred_partners')
+    .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
+    .eq('organisation_id', listing.organisationId)
+    .eq('partner_type', 'transfer_attorney')
+    .eq('is_active', true)
+    .order('is_preferred_default', { ascending: false })
+    .order('company_name', { ascending: true })
+    .limit(1)
+  if (requestedPreferredAttorneyId) preferredAttorneyBuilder = preferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
+  let preferredAttorneyQuery = await preferredAttorneyBuilder.maybeSingle()
+
+  if (preferredAttorneyQuery.error && isMissingColumnError(preferredAttorneyQuery.error, 'partner_organisation_id')) {
+    let legacyPreferredAttorneyBuilder = client
+      .from('organisation_preferred_partners')
+      .select('id, company_name, contact_person, email_address, phone_number, is_preferred_default')
+      .eq('organisation_id', listing.organisationId)
+      .eq('partner_type', 'transfer_attorney')
+      .eq('is_active', true)
+      .order('is_preferred_default', { ascending: false })
+      .order('company_name', { ascending: true })
+      .limit(1)
+    if (requestedPreferredAttorneyId) legacyPreferredAttorneyBuilder = legacyPreferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
+    preferredAttorneyQuery = await legacyPreferredAttorneyBuilder.maybeSingle()
+  }
+  if (preferredAttorneyQuery.error) throw preferredAttorneyQuery.error
+  if (!preferredAttorneyQuery.data?.id || !normalizeText(preferredAttorneyQuery.data?.company_name)) {
+    throw new Error(requestedPreferredAttorneyId
+      ? 'The selected transfer attorney is no longer active for this agency.'
+      : 'Configure an active preferred transfer attorney before sending seller onboarding.')
+  }
+  const preferredTransferAttorney = {
+    preferredPartnerId: preferredAttorneyQuery.data.id,
+    partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
+    companyName: normalizeText(preferredAttorneyQuery.data.company_name),
+    contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
+    email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
+    phone: normalizeText(preferredAttorneyQuery.data.phone_number),
+    selectionSource: 'agency_recommended',
+  }
 
   const existingQuery = await client
     .from('private_listing_seller_onboarding')
@@ -5082,6 +5125,12 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
+  const existingAcceptedAttorneyId = normalizeText(
+    existingFormData.preferredTransferAttorneyAcceptance?.preferredPartnerId,
+  )
+  const preserveAttorneyAcceptance =
+    existingFormData.preferredTransferAttorneyAccepted === true &&
+    existingAcceptedAttorneyId === preferredTransferAttorney.preferredPartnerId
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -5100,6 +5149,11 @@ export async function sendSellerOnboarding(
       email: resolvedSellerEmail,
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
+      preferredTransferAttorney,
+      preferredTransferAttorneyAccepted: preserveAttorneyAcceptance,
+      preferredTransferAttorneyAcceptance: preserveAttorneyAcceptance
+        ? existingFormData.preferredTransferAttorneyAcceptance
+        : null,
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',
@@ -5343,10 +5397,19 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
+  const preferredAttorneyId = normalizeText(formData.preferredTransferAttorney?.preferredPartnerId)
+  const acceptedAttorneyId = normalizeText(formData.preferredTransferAttorneyAcceptance?.preferredPartnerId)
+  if (!preferredAttorneyId) {
+    throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
+  }
+  if (formData.preferredTransferAttorneyAccepted !== true || acceptedAttorneyId !== preferredAttorneyId) {
+    throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+  }
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
     p_token: normalizedToken,
-    p_form_data: payload.formData && typeof payload.formData === 'object' ? payload.formData : {},
+    p_form_data: formData,
     p_seller_type: normalizeNullableText(payload.sellerType),
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),

@@ -137,6 +137,8 @@ function mapTransactionRow(row = {}) {
     propertyTenure: row.property_tenure || null,
     sellerEntityType: row.seller_type || null,
     sellerHasExistingBond: Boolean(row.seller_has_existing_bond || row.existing_bond),
+    acceptedOfferId: row.accepted_offer_id || null,
+    creationIdempotencyKey: row.creation_idempotency_key || null,
     routingProfile,
     testDataProtection: assessMvpTestDataProtection({ transaction: { ...row, routingProfile } }),
     lifecycleState: row.lifecycle_state || null,
@@ -627,7 +629,7 @@ function buildNextActions({ blockers = [] }) {
 async function fetchTransaction(client, transactionId, warnings) {
   const primary = await client
     .from('transactions')
-    .select('id, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
+    .select('id, transaction_reference, accepted_offer_id, creation_idempotency_key, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -639,7 +641,9 @@ async function fetchTransaction(client, transactionId, warnings) {
 
     if (
       isMissingColumnError(primary.error, 'current_main_stage') ||
-      isMissingColumnError(primary.error, 'finance_managed_by')
+      isMissingColumnError(primary.error, 'finance_managed_by') ||
+      isMissingColumnError(primary.error, 'accepted_offer_id') ||
+      isMissingColumnError(primary.error, 'creation_idempotency_key')
     ) {
       const fallback = await client
         .from('transactions')
@@ -931,6 +935,38 @@ async function fetchAttorneyAssignments(client, transactionId, warnings = []) {
   return query.data || []
 }
 
+async function fetchNotificationOutbox(client, organisationId, transactionId, warnings = []) {
+  if (!organisationId || !transactionId) return []
+  const query = await client
+    .from('notification_events')
+    .select('id, status, channel, metadata_json, error_message, created_at, updated_at')
+    .eq('organisation_id', organisationId)
+    .eq('transaction_id', transactionId)
+    .eq('source', 'agent_workspace')
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'notification_events')) {
+      appendWarning(warnings, 'notification_events table missing. Notification health is unavailable.')
+      return []
+    }
+    appendWarning(warnings, `Failed to load notification outbox: ${query.error.message || 'Unknown error'}`)
+    return []
+  }
+
+  return (query.data || []).map((row) => ({
+    id: row.id,
+    status: row.status,
+    channel: row.channel,
+    handoffRequired: row.metadata_json?.handoffRequired === true,
+    metadata: row.metadata_json || {},
+    errorMessage: row.error_message || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }))
+}
+
 async function fetchSharedProgress(client, transactionId, warnings = [], viewer = {}) {
   try {
     return await getTransactionSharedProgress(transactionId, {
@@ -969,7 +1005,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
   }
   const subprocessIds = subprocesses.map((item) => item.id).filter(Boolean)
 
-  const [subprocessSteps, checklistItems, documentRequests, transactionRequiredDocuments, participants, participantRequirements, events, attorneyAssignments, sharedProgress] = await Promise.all([
+  const [subprocessSteps, checklistItems, documentRequests, transactionRequiredDocuments, participants, participantRequirements, events, attorneyAssignments, notificationOutbox, sharedProgress] = await Promise.all([
     fetchSubprocessSteps(client, subprocessIds, warnings),
     fetchChecklistItems(client, normalizedTransactionId, warnings),
     fetchDocumentRequests(client, normalizedTransactionId, warnings),
@@ -978,6 +1014,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     fetchParticipantRequirements(client, normalizedTransactionId, warnings),
     fetchEvents(client, normalizedTransactionId, warnings),
     fetchAttorneyAssignments(client, normalizedTransactionId, warnings),
+    fetchNotificationOutbox(client, transaction.organisationId, normalizedTransactionId, warnings),
     fetchSharedProgress(client, normalizedTransactionId, warnings, options),
   ])
 
@@ -1051,6 +1088,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     transaction,
     participantRoster,
     documentRoster,
+    notificationOutbox,
   })
   const mvpAudit = buildMvpTransactionAuditRecovery({
     transaction,
@@ -1059,6 +1097,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     participantRoster,
     documentRoster,
     warnings,
+    notificationOutbox,
   })
   const mvpControlBoard = {
     ...buildMvpTransactionControlBoard(mvpTruth),
@@ -1080,6 +1119,7 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     documentRequests,
     transactionRequiredDocuments,
     documentRoster,
+    notificationOutbox,
     rolePlayers: participants,
     participantRequirements,
     participantRoster,

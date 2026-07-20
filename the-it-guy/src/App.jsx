@@ -2460,7 +2460,15 @@ function AppRoutes() {
                 path="/agent/listings/:listingId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <AgentListingDetail />
+                    <AppErrorBoundary
+                      scope="agent-listing-detail"
+                      title="Listing workspace failed to load"
+                      fallbackPath="/listings"
+                      fallbackLabel="Back to Listings"
+                      resetKey={`${location.pathname}${location.search}`}
+                    >
+                      <AgentListingDetail />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />

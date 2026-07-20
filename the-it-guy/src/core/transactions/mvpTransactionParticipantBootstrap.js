@@ -42,13 +42,24 @@ export function buildMvpTransactionParticipantBootstrap({
     ? buildMvpControlledTestRoleSet({ routingProfile, rolePlan })
     : []
   const overrides = new Map(testParticipants.map((participant) => [participant.roleKey, participant]))
-  const participants = baseParticipants.map((participant) => ({
-    ...participant,
-    ...(overrides.get(participant.roleKey) || {}),
-  }))
+  const participants = baseParticipants.map((participant) => {
+    const merged = {
+      ...participant,
+      ...(overrides.get(participant.roleKey) || {}),
+    }
+    return {
+      ...merged,
+      // Entity signatories can share a transaction role with the buyer or
+      // seller. Preserve the launch role key so OTP and gate checks can
+      // distinguish the required authority from the primary client record.
+      mvpLaunchRoleKey: merged.roleKey,
+    }
+  })
   const capturedKeys = new Set(participants.map((participant) => participant.roleKey))
   for (const participant of testParticipants) {
-    if (!capturedKeys.has(participant.roleKey)) participants.push(participant)
+    if (!capturedKeys.has(participant.roleKey)) {
+      participants.push({ ...participant, mvpLaunchRoleKey: participant.roleKey })
+    }
   }
 
   return Object.freeze({
