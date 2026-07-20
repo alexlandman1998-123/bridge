@@ -76,7 +76,15 @@
       "idempotencyRepairs": [
         "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them",
         "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults"
-      ]
+      ],
+      "previewReset": {
+        "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
+        "branch": "codex/mvp-pilot-readiness",
+        "withData": false,
+        "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
+        "productionAffected": false,
+        "stagingAffected": false
+      }
     },
     "vercelPreview": {
       "statusAtCertification": "PASS"
