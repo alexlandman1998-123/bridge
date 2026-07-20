@@ -47,6 +47,7 @@ assert.equal(
 )
 assert.match(readFileSync(previewBaselinePath, 'utf8'), /Historical schema snapshot from commit 4ee5387b/)
 assert.doesNotThrow(() => git(['show', `${previewBaseline.sourceCommit}:the-it-guy/sql/schema.sql`]))
+assert.equal(previewBaseline.bootstrapRepairs.length, 3)
 assert.equal(previewBaseline.productionLedgerAttestationRequiredBeforeMerge, true)
 assert.equal(evidence.externalChecks.vercelPreview.statusAtCertification, 'PASS')
 assert.equal(evidence.safety.productionApplicationPromoted, false)
