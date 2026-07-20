@@ -36,6 +36,7 @@ assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/2026060
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202606280002_development_financials_rls.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607090001_agency_tasks_foundation.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607140009_private_listing_transfer_attorney_allocation_phase1.sql'))
+assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607140018_legacy_demo_rls_scoped_replacement.sql'))
 
 for (const commit of [
   release.productionApplicationCommit,

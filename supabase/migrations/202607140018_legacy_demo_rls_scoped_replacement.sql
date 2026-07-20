@@ -5,6 +5,115 @@
 -- portal and authenticated workflows before RLS has a chance to evaluate.
 
 begin;
+
+-- Restore the external-workspace helper chain before the scoped policies use it.
+create or replace function public.bridge_external_access_request_token()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_request_header('x-bridge-external-access-token')
+$$;
+
+create or replace function public.bridge_external_access_request_link()
+returns public.transaction_external_access
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select external_access.*
+  from public.transaction_external_access external_access
+  where external_access.access_token = public.bridge_external_access_request_token()
+    and external_access.revoked = false
+    and (external_access.expires_at is null or external_access.expires_at >= now())
+  limit 1
+$$;
+
+create or replace function public.bridge_has_external_access_token()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.transaction_external_access external_access
+    where external_access.access_token = public.bridge_external_access_request_token()
+      and external_access.revoked = false
+      and (external_access.expires_at is null or external_access.expires_at >= now())
+  )
+$$;
+
+create or replace function public.bridge_external_workspace_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((public.bridge_external_access_request_link()).role, '')
+$$;
+
+create or replace function public.bridge_external_workspace_email()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select lower(coalesce((public.bridge_external_access_request_link()).email, ''))
+$$;
+
+create or replace function public.bridge_external_workspace_primary_transaction_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select (public.bridge_external_access_request_link()).transaction_id
+$$;
+
+create or replace function public.bridge_external_role_candidates()
+returns text[]
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when public.bridge_external_workspace_role() = 'attorney' then array['attorney', 'tuckers']
+    else array[public.bridge_external_workspace_role()]
+  end
+$$;
+
+create or replace function public.bridge_has_external_workspace_transaction_access(target_transaction_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when public.bridge_has_external_access_token() = false then false
+    when public.bridge_external_workspace_role() = 'client' then false
+    else exists (
+      select 1
+      from public.transaction_external_access external_access
+      where external_access.transaction_id = target_transaction_id
+        and lower(coalesce(external_access.email, '')) = public.bridge_external_workspace_email()
+        and external_access.role = any(public.bridge_external_role_candidates())
+        and external_access.revoked = false
+        and (external_access.expires_at is null or external_access.expires_at >= now())
+    )
+    or public.bridge_external_workspace_primary_transaction_id() = target_transaction_id
+  end
+$$;
+
 create or replace function public.bridge_has_legacy_firm_membership(
   target_firm_id uuid,
   require_admin boolean default false
