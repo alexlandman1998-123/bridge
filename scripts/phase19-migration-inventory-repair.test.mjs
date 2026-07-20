@@ -22,7 +22,8 @@ const chainFiles = evidence.conditionalMasterChain.map((row) => row.newFile)
 const chainVersions = evidence.conditionalMasterChain.map((row) => row.version)
 const manifestVersions = new Set(manifest.rows.map((row) => row.version))
 const phase22 = JSON.parse(readFileSync('deployment-evidence/2026-07-20-phase22/staging-inventory-expansion.json', 'utf8'))
-const authorizedPostBaselineMigrations = [
+const authorizedInventoryAdditions = [
+  '202605090000_production_schema_baseline.sql',
   '202607200007_document_generator_least_privilege_h2_fix.sql',
   '202607200008_unified_partner_directory_read_model.sql',
   '202607200009_partner_identity_linking_and_deduplication.sql',
@@ -36,12 +37,12 @@ const authorizedPostBaselineMigrations = [
 ]
 
 assert.equal(evidence.status, 'MIGRATION_INVENTORY_REPAIRED')
-assert.equal(files.length, evidence.inventory.migrationFiles + authorizedPostBaselineMigrations.length)
-assert.equal(byVersion.size, evidence.inventory.uniqueVersions + authorizedPostBaselineMigrations.length)
+assert.equal(files.length, evidence.inventory.migrationFiles + authorizedInventoryAdditions.length)
+assert.equal(byVersion.size, evidence.inventory.uniqueVersions + authorizedInventoryAdditions.length)
 assert.deepEqual(duplicates, [])
 assert.deepEqual(evidence.inventory.duplicateVersions, [])
 assert.ok(files.includes(evidence.inventory.preservedMigration))
-for (const migration of authorizedPostBaselineMigrations) assert.ok(files.includes(migration))
+for (const migration of authorizedInventoryAdditions) assert.ok(files.includes(migration))
 assert.deepEqual(chainVersions, ['202607200004', '202607200005', '202607200006'])
 assert.deepEqual(scope.pendingConditionalMasterInventory.files, chainFiles)
 assert.deepEqual(scope.pendingConditionalMasterInventory.allocatedVersions, chainVersions)
@@ -62,4 +63,4 @@ assert.equal(evidence.scope.sqlAppliedToProduction, false)
 assert.equal(evidence.scope.productionLedgerChanged, false)
 assert.equal(evidence.scope.phase0MigrationFreezeRemainsActive, true)
 
-console.log(`Phase 19 inventory baseline plus ${authorizedPostBaselineMigrations.length} authorized post-baseline migrations passed: ${byVersion.size} unique versions.`)
+console.log(`Phase 19 inventory plus ${authorizedInventoryAdditions.length} authorized additions passed: ${byVersion.size} unique versions.`)

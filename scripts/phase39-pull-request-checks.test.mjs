@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 const evidence = JSON.parse(readFileSync(
@@ -33,14 +34,27 @@ assert.equal(evidence.releaseCandidate.build.applicationTestSuite, '9_of_9_pass'
 assert.equal(evidence.releaseCandidate.build.guardedBuild, 'pass')
 assert.equal(evidence.releaseCandidate.build.performanceBudget, 'pass')
 assert.deepEqual(evidence.sourceCheckRepairs.map(({ phase }) => phase), [20, 26, 33, 34])
-assert.equal(evidence.externalChecks.supabasePreview.status, 'REPAIRED_BY_REMOTE_SMTP_SCOPING')
+assert.equal(evidence.externalChecks.supabasePreview.status, 'SMTP_REPAIRED_AND_HISTORICAL_BASELINE_RESTORED')
 assert.equal(evidence.externalChecks.supabasePreview.previewMailer, 'supabase_restricted_development_mailer')
 assert.equal(evidence.externalChecks.supabasePreview.productionMailer, 'resend_remote_override')
 assert.equal(evidence.externalChecks.supabasePreview.secretCapturedInEvidence, false)
+const previewBaseline = evidence.externalChecks.supabasePreview.previewBaseline
+const previewBaselinePath = `supabase/migrations/${previewBaseline.migration}`
+assert.equal(previewBaseline.sourceCommit, '4ee5387b8bbc1540e5545c11c22fedfbd552d4d0')
+assert.equal(
+  createHash('sha256').update(readFileSync(previewBaselinePath)).digest('hex'),
+  previewBaseline.sha256,
+)
+assert.equal(
+  readFileSync(previewBaselinePath, 'utf8').trim(),
+  git(['show', `${previewBaseline.sourceCommit}:the-it-guy/sql/schema.sql`]),
+  'The preview baseline must remain byte-for-byte equivalent to the historical pre-migration schema.',
+)
+assert.equal(previewBaseline.productionLedgerAttestationRequiredBeforeMerge, true)
 assert.equal(evidence.safety.productionApplicationPromoted, false)
 assert.equal(evidence.safety.productionDatabaseMutated, false)
 assert.equal(evidence.safety.stagingDatabaseMutated, false)
-assert.equal(evidence.safety.migrationInventoryChanged, false)
+assert.equal(evidence.safety.migrationInventoryChanged, true)
 assert.equal(evidence.safety.productionSmtpCredentialChanged, false)
 assert.equal(evidence.safety.unrelatedRuntimePathsApproved, false)
 

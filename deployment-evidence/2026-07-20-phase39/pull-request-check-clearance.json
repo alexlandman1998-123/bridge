@@ -53,11 +53,18 @@
   ],
   "externalChecks": {
     "supabasePreview": {
-      "status": "REPAIRED_BY_REMOTE_SMTP_SCOPING",
+      "status": "SMTP_REPAIRED_AND_HISTORICAL_BASELINE_RESTORED",
       "previewMailer": "supabase_restricted_development_mailer",
       "productionMailer": "resend_remote_override",
       "productionProjectRef": "isdowlnollckzvltkasn",
-      "secretCapturedInEvidence": false
+      "secretCapturedInEvidence": false,
+      "previewBaseline": {
+        "migration": "202605090000_production_schema_baseline.sql",
+        "sourceCommit": "4ee5387b8bbc1540e5545c11c22fedfbd552d4d0",
+        "sha256": "ae036b7decff817686c98c15e518dd4bc84518776a1267db72f0676d02e1353b",
+        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration",
+        "productionLedgerAttestationRequiredBeforeMerge": true
+      }
     },
     "vercelPreview": {
       "statusAtCertification": "PENDING_EXTERNAL_PROVIDER"
@@ -67,7 +74,7 @@
     "productionApplicationPromoted": false,
     "productionDatabaseMutated": false,
     "stagingDatabaseMutated": false,
-    "migrationInventoryChanged": false,
+    "migrationInventoryChanged": true,
     "productionSmtpCredentialChanged": false,
     "unrelatedRuntimePathsApproved": false
   }

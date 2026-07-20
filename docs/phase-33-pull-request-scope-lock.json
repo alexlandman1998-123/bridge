@@ -19,7 +19,7 @@
   },
   "included": {
     "applicationRuntime": "the certified production baseline at 333c08eb plus the eight explicitly approved mandate-generation corrections in the Phase 39 release candidate",
-    "database": "78 governed migrations through 202607200013",
+    "database": "78 governed forward migrations through 202607200013 plus the historical pre-20260509 preview bootstrap baseline",
     "productionLedgerRows": 511,
     "governance": "Phase 32 evidence and Phase 33 scope-lock artifacts"
   },
@@ -76,6 +76,7 @@
     "docs/supabase-phase-7-implementation-status.md",
     "docs/supabase-phase-8-implementation-status.md",
     "package.json",
+    "scripts/phase19-migration-inventory-repair.test.mjs",
     "scripts/phase20-application-source.test.mjs",
     "scripts/phase26-clean-reproducible-deployment.test.mjs",
     "scripts/phase33-pull-request-scope-lock.test.mjs",
@@ -91,6 +92,7 @@
     "scripts/supabase-phase7-production-execution.test.mjs",
     "scripts/supabase-phase8-closeout.test.mjs",
     "supabase/config.toml",
+    "supabase/migrations/202605090000_production_schema_baseline.sql",
     "scripts/supabase-phase11-staging-certification.mjs",
     "scripts/supabase-phase11-staging-certification.test.mjs",
     "the-it-guy/src/core/documents/__tests__/conditionalMasterMigration.test.js",
@@ -105,6 +107,7 @@
   "controls": {
     "newRuntimeFeaturesAllowed": false,
     "newMigrationsAllowed": false,
+    "previewBaselineMigrationAllowed": true,
     "productionDatabaseMutationAllowed": false,
     "productionDeploymentAllowed": false,
     "scopeAmendmentRequiresExplicitApproval": true,
