@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-07-20T13:19:56.000Z",
+  "version": "202607170026",
+  "batch": "phase15_batch1_settings_governance",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)",
+  "verification": {
+    "membershipRows": 58,
+    "recognisedJobTitlesBackfilled": 50,
+    "unmappedMemberships": 8,
+    "invalidJobTitleLabels": 0,
+    "jobTitleColumnLive": true,
+    "jobTitleConstraintValidated": true,
+    "functionsLive": 4,
+    "triggersLiveAndEnabled": 3,
+    "partialIndexLive": true,
+    "anonymousFunctionExecuteRevoked": true,
+    "authenticatedFunctionExecuteGranted": true,
+    "unauthenticatedSetterDenied": "42501",
+    "unauthenticatedChangedValueUpdateDenied": "42501",
+    "behaviorProbeResidue": false
+  }
+}

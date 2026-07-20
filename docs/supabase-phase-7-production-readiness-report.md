@@ -5,8 +5,8 @@
 Phase 7 has been implemented as a fail-closed production-promotion gate.
 
 - Production project: `isdowlnollckzvltkasn`
-- Production SQL applied: no
-- Production migration ledger changed: no
+- Production SQL promoted: 3 settings-governance migrations
+- Production migration ledger: 436 rows; all three Batch 1 versions recorded
 - Staging manifest coverage: 64 of 64
 - Staging evidence coverage: complete
 - Production physical backups: 8 completed
@@ -17,7 +17,7 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Phase 7 gate tests: passed
 - Phase 14 production history reconciliation: passed
 
-The staging technical prerequisites, human approval, database recovery proof, short-lived production access, and production history reconciliation now pass. Resolve the unrelated duplicate local version `202607200002`, then controlled production promotion may proceed one reviewed migration at a time.
+The staging technical prerequisites, human approval, database recovery proof, short-lived production access, and production history reconciliation pass. Phase 15 Batch 1 completed through the controlled one-version-at-a-time path. The unrelated duplicate local version `202607200002` remains a final-closeout blocker.
 
 ## Implemented controls
 
@@ -64,11 +64,13 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - Phase 12 database recovery evidence approved by Alexander Landman;
 - Phase 13 short-lived production access and runtime recovery confirmation configured.
 - Phase 14 canonical production ledger history recorded with zero genuine remote-only drift.
+- Phase 15 Batch 1 production evidence complete for `202607170026`, `202607170027`, and `202607170028`.
 
-## Required work before production
+## Required work before the next production batch
 
-1. Resolve the unrelated duplicate local migration version `202607200002`.
-2. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
+1. Select and preflight the next dependency stream.
+2. Continue one migration version at a time, stopping for production verification before each ledger update.
+3. Resolve the unrelated duplicate local migration version `202607200002` before final closeout.
 
 ## Files changed
 
@@ -79,4 +81,4 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - `docs/supabase-phase-7-implementation-status.md`
 - `docs/database-release-runbook.md`
 
-Phase 14 changed migration-history metadata only; production schema and application data remain untouched.
+Phase 15 Batch 1 applied the three reviewed settings-governance migrations and retained per-version production evidence.

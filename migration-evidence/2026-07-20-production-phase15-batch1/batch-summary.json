@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-07-20T13:19:56.000Z",
+  "status": "PRODUCTION_BATCH_1_COMPLETE",
+  "phase": 15,
+  "batch": 1,
+  "stream": "settings_governance",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase15_batch1_user_instruction",
+  "versions": [
+    "202607170026",
+    "202607170027",
+    "202607170028"
+  ],
+  "sqlAppliedCount": 3,
+  "productionLedgerRecordedCount": 3,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "productionLedgerCountBefore": 433,
+  "productionLedgerCountAfter": 436,
+  "membershipRowsBefore": 58,
+  "membershipRowsAfter": 58,
+  "jobTitlesBackfilled": 50,
+  "unmappedMemberships": 8,
+  "invalidJobTitles": 0,
+  "closeoutEvidenceComplete": 3,
+  "closeoutEvidenceTotal": 64,
+  "multipleOwnerOrganisationsPreservedForSeparateCleanup": 2,
+  "multiplePrimaryOwnerOrganisationsPreservedForSeparateCleanup": 2,
+  "phase0FreezeRemainsActive": true
+}

@@ -1,4 +1,35 @@
 {
   "productionProjectRef": "isdowlnollckzvltkasn",
-  "rows": []
+  "rows": [
+    {
+      "version": "202607170026",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)"
+    },
+    {
+      "version": "202607170027",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)"
+    },
+    {
+      "version": "202607170028",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)"
+    }
+  ]
 }

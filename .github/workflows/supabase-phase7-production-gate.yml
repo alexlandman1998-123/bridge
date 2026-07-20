@@ -17,6 +17,9 @@ on:
       - 'scripts/supabase-phase14-production-ledger-reconciliation.mjs'
       - 'scripts/supabase-phase14-production-ledger-reconciliation.test.mjs'
       - 'migration-evidence/2026-07-20-production-ledger-phase14/**'
+      - 'scripts/supabase-phase15-batch1.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch1/**'
+      - 'docs/supabase-phase-15-batch-1-production-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -38,6 +41,9 @@ on:
       - 'scripts/supabase-phase14-production-ledger-reconciliation.mjs'
       - 'scripts/supabase-phase14-production-ledger-reconciliation.test.mjs'
       - 'migration-evidence/2026-07-20-production-ledger-phase14/**'
+      - 'scripts/supabase-phase15-batch1.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch1/**'
+      - 'docs/supabase-phase-15-batch-1-production-report.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
@@ -68,3 +74,6 @@ jobs:
 
       - name: Test production ledger reconciliation guard
         run: node scripts/supabase-phase14-production-ledger-reconciliation.test.mjs
+
+      - name: Test Phase 15 Batch 1 production evidence
+        run: node scripts/supabase-phase15-batch1.test.mjs
