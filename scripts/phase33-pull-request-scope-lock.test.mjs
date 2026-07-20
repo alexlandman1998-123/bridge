@@ -39,6 +39,7 @@ assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/2026071
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607140018_legacy_demo_rls_scoped_replacement.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607160012_attorney_client_financial_documents_phase1.sql'))
 assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/202607170012_seller_document_transaction_continuity_p0_6.sql'))
+assert.ok(scope.allowedAfterIsolationPaths.includes('supabase/migrations/20260719201000_mvp_atomic_transaction_creation_grant_hardening.sql'))
 
 for (const commit of [
   release.productionApplicationCommit,

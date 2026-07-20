@@ -122,6 +122,7 @@
     "supabase/migrations/202607140018_legacy_demo_rls_scoped_replacement.sql",
     "supabase/migrations/202607160012_attorney_client_financial_documents_phase1.sql",
     "supabase/migrations/202607170012_seller_document_transaction_continuity_p0_6.sql",
+    "supabase/migrations/20260719201000_mvp_atomic_transaction_creation_grant_hardening.sql",
     "the-it-guy/scripts/commercial-phase4.test.mjs",
     "scripts/supabase-phase11-staging-certification.mjs",
     "scripts/supabase-phase11-staging-certification.test.mjs",

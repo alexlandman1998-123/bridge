@@ -17,9 +17,20 @@ revoke all on function public.bridge_seed_mvp_transaction_workflow_lanes(uuid, u
 revoke all on function public.bridge_create_mvp_transaction(jsonb)
   from public, anon, service_role;
 
-revoke all on function public.bridge_create_mvp_transaction_operator_fallback(jsonb, text)
-  from public, anon, service_role;
+do $$
+begin
+  if to_regprocedure('public.bridge_create_mvp_transaction_operator_fallback(jsonb,text)') is not null then
+    execute 'revoke all on function public.bridge_create_mvp_transaction_operator_fallback(jsonb, text) from public, anon, service_role';
+  end if;
+end
+$$;
 
 grant execute on function public.bridge_create_mvp_transaction(jsonb) to authenticated;
 
-grant execute on function public.bridge_create_mvp_transaction_operator_fallback(jsonb, text) to authenticated;
+do $$
+begin
+  if to_regprocedure('public.bridge_create_mvp_transaction_operator_fallback(jsonb,text)') is not null then
+    execute 'grant execute on function public.bridge_create_mvp_transaction_operator_fallback(jsonb, text) to authenticated';
+  end if;
+end
+$$;
