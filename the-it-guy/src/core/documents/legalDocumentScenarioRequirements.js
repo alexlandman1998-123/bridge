@@ -9,6 +9,10 @@ function asRecord(value) {
 }
 
 const FIELD_DEFINITIONS = Object.freeze({
+  sellerEntityType: { label: 'Seller type', group: 'Legal setup', kind: 'routing' },
+  buyerEntityType: { label: 'Buyer type', group: 'Legal setup', kind: 'routing' },
+  propertyTitleType: { label: 'Property title type', group: 'Legal setup', kind: 'routing' },
+  financeType: { label: 'Finance type', group: 'Legal setup', kind: 'routing' },
   sellerFullName: { label: 'Seller legal name', group: 'Seller' },
   sellerIdNumber: { label: 'Seller ID or registration number', group: 'Seller' },
   sellerMaritalRegime: { label: 'Seller marital position', group: 'Seller' },
@@ -32,7 +36,6 @@ const FIELD_DEFINITIONS = Object.freeze({
   buyerSpouseIdNumber: { label: 'Buyer spouse ID number', group: 'Buyer spouse' },
   buyerSpouseEmail: { label: 'Buyer spouse email', group: 'Buyer spouse' },
   propertyAddress: { label: 'Property address', group: 'Property' },
-  propertyTitleType: { label: 'Property title type', group: 'Property' },
   unitNumber: { label: 'Section or unit number', group: 'Sectional title' },
   complexName: { label: 'Scheme or complex name', group: 'Sectional title' },
   erfNumber: { label: 'Erf number', group: 'Full title' },
@@ -43,6 +46,7 @@ const FIELD_DEFINITIONS = Object.freeze({
 
 function requiredPartyFields(role = 'seller', clauseProfile = '') {
   const prefix = role === 'buyer' ? 'buyer' : 'seller'
+  if (!clauseProfile || clauseProfile === 'party_unknown') return []
   const fields = [`${prefix}FullName`, `${prefix}IdNumber`]
   if (['individual', 'individual_spouse_consent'].includes(clauseProfile)) {
     fields.push(`${prefix}MaritalRegime`)
@@ -57,6 +61,99 @@ function requiredPartyFields(role = 'seller', clauseProfile = '') {
     fields.push(`${prefix}SpouseFullName`, `${prefix}SpouseIdNumber`, `${prefix}SpouseEmail`)
   }
   return fields
+}
+
+function requiredRoutingFields(profile = {}) {
+  return unique([
+    'sellerEntityType',
+    profile.sellerEntityType === 'individual' ? 'sellerMaritalRegime' : '',
+    profile.packetType === 'otp' ? 'buyerEntityType' : '',
+    profile.packetType === 'otp' && profile.buyerEntityType === 'individual' ? 'buyerMaritalRegime' : '',
+    'propertyTitleType',
+    profile.packetType === 'otp' ? 'financeType' : '',
+  ])
+}
+
+function scenarioValue(profile = {}, key = '') {
+  const values = {
+    sellerEntityType: profile.sellerEntityType,
+    sellerMaritalRegime: profile.sellerMaritalRegime,
+    buyerEntityType: profile.buyerEntityType,
+    buyerMaritalRegime: profile.buyerMaritalRegime,
+    propertyTitleType: profile.propertyTitleType,
+    financeType: profile.financeType,
+  }
+  return values[key]
+}
+
+export function getLegalDocumentScenarioDependentFieldClears(field = '', value = '') {
+  const normalizedValue = normalizeText(value).toLowerCase()
+  const role = field === 'buyerEntityType' ? 'buyer' : field === 'sellerEntityType' ? 'seller' : ''
+  const fields = []
+
+  if (role) {
+    if (normalizedValue !== 'individual') {
+      fields.push(`${role}MaritalRegime`, `${role}SpouseFullName`, `${role}SpouseIdNumber`, `${role}SpouseEmail`)
+    }
+    if (normalizedValue !== 'trust') fields.push(`${role}TrusteeNames`)
+    if (!['company', 'close_corporation'].includes(normalizedValue)) fields.push(`${role}ResolutionDate`)
+    if (normalizedValue === 'individual' || !normalizedValue) {
+      fields.push(`${role}RepresentativeName`, `${role}RepresentativeCapacity`, `${role}AuthorityBasis`)
+    }
+  }
+
+  if (field === 'buyerMaritalRegime' && normalizedValue !== 'in_community') {
+    fields.push('buyerSpouseFullName', 'buyerSpouseIdNumber', 'buyerSpouseEmail')
+  }
+  if (field === 'sellerMaritalRegime' && normalizedValue !== 'in_community') {
+    fields.push('sellerSpouseFullName', 'sellerSpouseIdNumber', 'sellerSpouseEmail')
+  }
+  if (field === 'propertyTitleType') {
+    if (normalizedValue !== 'sectional_title') fields.push('unitNumber', 'complexName')
+    if (normalizedValue !== 'full_title') fields.push('erfNumber')
+  }
+  if (field === 'financeType') {
+    if (!['bond', 'combination'].includes(normalizedValue)) fields.push('bondAmount')
+    if (!['cash', 'combination'].includes(normalizedValue)) fields.push('cashAmount')
+  }
+
+  return unique(fields)
+}
+
+export function sanitizeLegalDocumentScenarioDraft(draft = {}, options = {}) {
+  const source = { ...asRecord(draft) }
+  const profile = options.scenarioProfile || resolveLegalDocumentScenarioProfile({
+    packetType: options.packetType || options.packet_type || 'otp',
+    seller: {
+      entityType: source.sellerEntityType,
+      maritalRegime: source.sellerMaritalRegime,
+    },
+    buyer: {
+      entityType: source.buyerEntityType,
+      maritalRegime: source.buyerMaritalRegime,
+    },
+    property: { titleType: source.propertyTitleType },
+    transaction: { financeType: source.financeType },
+  })
+  const answers = [
+    ['sellerEntityType', profile.sellerEntityType],
+    ['sellerMaritalRegime', profile.sellerMaritalRegime],
+    ...(profile.packetType === 'otp'
+      ? [
+          ['buyerEntityType', profile.buyerEntityType],
+          ['buyerMaritalRegime', profile.buyerMaritalRegime],
+        ]
+      : []),
+    ['propertyTitleType', profile.propertyTitleType],
+    ...(profile.packetType === 'otp' ? [['financeType', profile.financeType]] : []),
+  ]
+
+  for (const [field, value] of answers) {
+    for (const dependentField of getLegalDocumentScenarioDependentFieldClears(field, value)) {
+      source[dependentField] = ''
+    }
+  }
+  return source
 }
 
 function unique(values = []) {
@@ -110,15 +207,16 @@ export function buildLegalDocumentRequirementDraftFromPlaceholders(placeholders 
 export function resolveLegalDocumentScenarioRequirements(options = {}) {
   const draft = asRecord(options.draft)
   const profile = options.scenarioProfile || resolveLegalDocumentScenarioProfile(options)
+  const routingFieldKeys = requiredRoutingFields(profile)
   const requiredKeys = unique([
+    ...routingFieldKeys,
     ...requiredPartyFields('seller', profile.sellerClauseProfile),
     ...(profile.packetType === 'otp' ? requiredPartyFields('buyer', profile.buyerClauseProfile) : []),
-    'propertyAddress',
-    'propertyTitleType',
+    profile.propertyClauseProfile !== 'property_unknown' ? 'propertyAddress' : '',
     profile.propertyClauseProfile === 'sectional_title' ? 'unitNumber' : '',
     profile.propertyClauseProfile === 'sectional_title' ? 'complexName' : '',
     profile.propertyClauseProfile === 'full_title' ? 'erfNumber' : '',
-    profile.packetType === 'otp' ? 'purchasePrice' : '',
+    profile.packetType === 'otp' && profile.financeClauseProfile !== 'finance_unknown' ? 'purchasePrice' : '',
     profile.financeClauseProfile === 'bond' ? 'bondAmount' : '',
     profile.financeClauseProfile === 'cash' ? 'cashAmount' : '',
     profile.financeClauseProfile === 'combination' ? 'bondAmount' : '',
@@ -126,7 +224,7 @@ export function resolveLegalDocumentScenarioRequirements(options = {}) {
   ])
   const fields = requiredKeys.map((key) => {
     const definition = FIELD_DEFINITIONS[key] || { label: key, group: 'Legal details' }
-    const value = draft[key]
+    const value = firstValue(draft, [key]) || scenarioValue(profile, key)
     const complete = normalizeText(value) !== ''
     return { key, ...definition, value, complete, missing: !complete }
   })
@@ -149,6 +247,11 @@ export function resolveLegalDocumentScenarioRequirements(options = {}) {
     groups,
     missingFields,
     requiredFieldKeys: requiredKeys,
+    routingFieldKeys,
+    dataFieldKeys: requiredKeys.filter((key) => !routingFieldKeys.includes(key)),
+    activePackKeys: [...(profile.activePackKeys || [])],
+    phase: !profile.complete ? 'routing' : missingFields.length ? 'details' : 'complete',
+    nextMissingGroup: groups.find((group) => !group.complete)?.key || '',
     complete: profile.complete && missingFields.length === 0,
     completionCount: fields.length - missingFields.length,
     fieldCount: fields.length,

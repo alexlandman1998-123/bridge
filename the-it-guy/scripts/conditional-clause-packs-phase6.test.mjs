@@ -146,12 +146,15 @@ for (const token of [
   'conditionalPackDataRequirements,',
   'conditionalPackMissingPlaceholders,',
   'conditionalPackCanProceed &&',
-  "const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')",
-  'const allowGenerationBypass = (',
+  'const hasConditionalPackBlockingIssues = (validation.critical || []).some(',
+  "(issue) => issue?.source === 'conditional_pack',",
+  'const hasConditionalEngineBlockingIssues = (validation.critical || []).some(',
+  "(issue) => issue?.source === 'conditional_engine',",
   'isMandatePacket &&',
   '!hasConditionalPackBlockingIssues &&',
   '!hasLegalScenarioBlockingIssues &&',
   '!hasLegalScenarioRequirementBlockingIssues &&',
+  'const allowGenerationBypass = !hasConditionalEngineBlockingIssues && !hasConditionalSigningBlockingIssues && !hasConditionalMasterCoverageBlockingIssues && (',
 ]) {
   assert.ok(packetService.includes(token), `packetService should enforce conditional pack preflight: ${token}`)
 }

@@ -52,12 +52,6 @@ import {
   serializeMandateTemplatePublishGateScan,
 } from '../../core/documents/mandateTemplatePublishGate'
 import {
-  buildMandateTemplateOperationalAudit,
-} from '../../core/documents/mandateTemplateOperationalAudit'
-import {
-  buildMandateTemplateLaunchReadiness,
-} from '../../core/documents/mandateTemplateLaunchReadiness'
-import {
   archiveDocumentPacket,
   archiveDocumentPacketTemplate,
   appendDocumentPacketEvent,
@@ -121,10 +115,19 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../../core/documents/documentStartRules'
-import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/legalDocumentTemplateRouting'
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
 import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
+import {
+  assessConditionalMasterTemplate,
+  buildConditionalMasterTemplateSections,
+  getConditionalMasterTemplateDefinition,
+} from '../../core/documents/conditionalMasterTemplateDefinitions'
+import { evaluateConditionalMasterCoverage } from '../../core/documents/conditionalMasterCoverageReadiness'
+import {
+  listLegalDocumentPreviewScenarios,
+  resolveLegalDocumentPreviewScenario,
+} from '../../core/documents/legalDocumentPreviewScenarios'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -156,6 +159,11 @@ const SUPPORTED_PACKET_TYPES = [
     subtitle: 'Template set for commercial sales mandates and due diligence workflows.',
   },
 ]
+
+// Scenario-specific template routing has been retired for Mandate and OTP.
+// Keep the legacy editor block dormant while historical metadata remains
+// readable during the conditional-master migration.
+const LEGACY_SCENARIO_TEMPLATE_ROUTING_UI_ENABLED = false
 
 const DEFAULT_ALLOWED_PACKET_TYPES = ['otp', 'mandate']
 const SUPPORTED_PACKET_TYPE_KEYS = new Set(SUPPORTED_PACKET_TYPES.map((item) => item.key))
@@ -2172,7 +2180,7 @@ function getTemplateFormatForMode(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX
   return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'html' : 'docx'
 }
 
-function createStarterSections(packetType = 'otp') {
+function createStarterBaseSections(packetType = 'otp') {
   const normalized = normalizeText(packetType).toLowerCase()
   if (normalized === 'mandate') {
     return [
@@ -2690,6 +2698,13 @@ function createStarterSections(packetType = 'otp') {
   ]
 }
 
+function createStarterSections(packetType = 'otp') {
+  const baseSections = createStarterBaseSections(packetType)
+  return ['mandate', 'otp'].includes(normalizeText(packetType).toLowerCase())
+    ? buildConditionalMasterTemplateSections(packetType, baseSections)
+    : baseSections
+}
+
 function isDefaultLegalTemplatePacketType(packetType = '') {
   return Boolean(LEGAL_DEFAULT_TEMPLATE_DEFINITIONS[normalizeText(packetType).toLowerCase()])
 }
@@ -2727,6 +2742,7 @@ function createDefaultLegalTemplateRecord(packetType = 'otp', {
   const renderMode = getDefaultRenderMode(normalizedPacketType)
   const timestamp = normalizeText(updatedAt) || '2026-05-11T00:00:00.000Z'
   const starterSections = createStarterSections(normalizedPacketType)
+  const conditionalMasterDefinition = getConditionalMasterTemplateDefinition(normalizedPacketType)
   const validationMetadata = {
     renderable: true,
     isRenderable: true,
@@ -2777,6 +2793,16 @@ function createDefaultLegalTemplateRecord(packetType = 'otp', {
       documentKind: 'standard',
       preferred_document_kind: 'standard',
       document_kind_label: 'Standard document',
+      ...(conditionalMasterDefinition
+        ? {
+            conditional_master: true,
+            conditional_master_version: conditionalMasterDefinition.masterVersion,
+            scenario_resolver_version: conditionalMasterDefinition.resolverVersion,
+            core_condition_rules_locked: true,
+            conditional_pack_keys: conditionalMasterDefinition.packKeys,
+            default_signer_roles: conditionalMasterDefinition.defaultSignerRoles,
+          }
+        : {}),
       ...(normalizedPacketType === 'mandate'
         ? {
             mandate_template_variant: 'default',
@@ -3030,101 +3056,6 @@ function getMandateVariantTemplateLabel(baseLabel = 'Mandate Agreement', routeKe
 
 function isLiveTemplateStatus(status = '') {
   return ['active', 'published', 'approved', 'live'].includes(normalizeText(status).toLowerCase())
-}
-
-function classifyMandateVariantTemplateReadiness(template = null) {
-  if (!template) {
-    return {
-      key: 'missing',
-      label: 'Missing',
-      tone: 'missing',
-      routable: false,
-      renderable: false,
-      template: null,
-    }
-  }
-
-  const templateStatus = normalizeTemplateStatus(template)
-  const classification = classifyTemplateMigrationState(template, 'mandate')
-  const metadata = getTemplateMetadata(template)
-  const mandateContentScan = metadata.last_mandate_content_scan || metadata.lastMandateContentScan || metadata.mandate_content_publish_scan
-  const isActive = template?.is_active !== false
-  const isLiveStatus = isLiveTemplateStatus(templateStatus)
-  const renderable = Boolean(classification.renderable)
-  const contentScanReady = mandateContentScan?.isValidForPublish !== false
-
-  if (isActive && isLiveStatus && renderable && contentScanReady) {
-    return {
-      key: 'live',
-      label: 'Live',
-      tone: 'live',
-      routable: true,
-      renderable,
-      template,
-    }
-  }
-
-  if (isActive && isLiveStatus && (!renderable || !contentScanReady)) {
-    return {
-      key: 'needs_setup',
-      label: 'Needs setup',
-      tone: 'warning',
-      routable: false,
-      renderable,
-      template,
-    }
-  }
-
-  return {
-    key: 'draft',
-    label: 'Draft',
-    tone: 'draft',
-    routable: false,
-    renderable,
-    template,
-  }
-}
-
-function compareMandateVariantTemplatesForReadiness(left = null, right = null) {
-  const readinessRank = {
-    live: 0,
-    needs_setup: 1,
-    draft: 2,
-    missing: 3,
-  }
-  const leftReadiness = classifyMandateVariantTemplateReadiness(left)
-  const rightReadiness = classifyMandateVariantTemplateReadiness(right)
-  if (readinessRank[leftReadiness.key] !== readinessRank[rightReadiness.key]) {
-    return readinessRank[leftReadiness.key] - readinessRank[rightReadiness.key]
-  }
-  const leftOrg = Boolean(left?.organisation_id)
-  const rightOrg = Boolean(right?.organisation_id)
-  if (leftOrg !== rightOrg) return leftOrg ? -1 : 1
-  const updatedDelta = String(right?.updated_at || '').localeCompare(String(left?.updated_at || ''))
-  if (updatedDelta) return updatedDelta
-  return normalizeText(left?.id).localeCompare(normalizeText(right?.id))
-}
-
-function buildMandateVariantCoverageRows(templates = [], routeOptions = MANDATE_TEMPLATE_ROUTE_OPTIONS) {
-  const mandateTemplates = (Array.isArray(templates) ? templates : [])
-    .filter((template) => normalizeText(template?.packet_type || template?.packetType).toLowerCase() === 'mandate')
-  const routes = routeOptions.filter((option) => option.key !== 'default')
-  return routes.map((option) => {
-    const routeTemplates = mandateTemplates
-      .filter((template) => getMandateTemplateRouteFromTemplate(template) === option.key)
-      .sort(compareMandateVariantTemplatesForReadiness)
-    const preferredTemplate = routeTemplates[0] || null
-    const readiness = classifyMandateVariantTemplateReadiness(preferredTemplate)
-    return {
-      ...option,
-      templates: routeTemplates,
-      template: preferredTemplate,
-      templateCount: routeTemplates.length,
-      readiness,
-      exists: Boolean(preferredTemplate),
-      routable: Boolean(readiness.routable),
-    }
-  })
 }
 
 function getTemplateMetadata(template = null) {
@@ -3735,7 +3666,7 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
 
   const packetType = normalizeText(form.packetType || form.packet_type).toLowerCase()
   if (packetType === 'mandate') {
-    const mandateTemplateVariant = normalizeMandateTemplateRoute(form.mandateTemplateVariant)
+    const mandateTemplateVariant = 'default'
     const mandateContentScan = serializeMandateTemplatePublishGateScan(form.mandateContentScan)
     nextMetadata.mandate_template_variant = mandateTemplateVariant
     nextMetadata.mandateTemplateVariant = mandateTemplateVariant
@@ -5362,6 +5293,42 @@ function normalizeConditionRule(condition = {}, fallbackField = '') {
   }
 }
 
+function isCoreConditionRuleLocked(section = {}) {
+  const metadata = section?.metadataJson && typeof section.metadataJson === 'object'
+    ? section.metadataJson
+    : section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : {}
+  return metadata.condition_rule_locked === true || metadata.conditionRuleLocked === true
+}
+
+function isConditionalMasterPackSection(section = {}) {
+  const metadata = section?.metadataJson && typeof section.metadataJson === 'object'
+    ? section.metadataJson
+    : section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : {}
+  return metadata.conditional_pack === true
+}
+
+const CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS = new Set([
+  'conditionJson',
+  'condition_json',
+  'sectionKey',
+  'section_key',
+  'sectionLabel',
+  'section_label',
+  'sectionType',
+  'section_type',
+  'sortOrder',
+  'sort_order',
+  'placeholderKeys',
+  'placeholder_keys',
+  'placeholderKeysText',
+  'isRequired',
+  'is_required',
+])
+
 function describeConditionRule(condition = {}, tokenLabelByKey = {}) {
   const rule = normalizeConditionRule(condition)
   if (!rule.enabled || !rule.field) return 'Always include this section.'
@@ -5747,7 +5714,7 @@ export default function SettingsSigningTemplatesPage({
     ? requestedPacketType
     : stableAllowedPacketTypes[0] || 'otp'
   const normalizedEditorScope = normalizeLegalDocumentEditorScope(editorScope)
-  const editorSituation = getLegalDocumentEditorSituation(editorSituationKey)
+  const editorSituation = getLegalDocumentEditorSituation(editorSituationKey, { packetType: defaultPacketType })
   const isFocusedLegalDocumentEditor = Boolean(normalizeText(focusedLegalDocumentKey))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -5797,6 +5764,7 @@ export default function SettingsSigningTemplatesPage({
     isActive: true,
   })
   const [previewState, setPreviewState] = useState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
+  const [templatePreviewScenarioKey, setTemplatePreviewScenarioKey] = useState('company')
   const [mergeFieldSearch, setMergeFieldSearch] = useState('')
   const [mergeFieldCategory, setMergeFieldCategory] = useState('all')
   const [activeStudioArea, setActiveStudioArea] = useState('templates')
@@ -6124,84 +6092,13 @@ export default function SettingsSigningTemplatesPage({
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
   )
-  const mandateOperationalAudit = useMemo(() => {
-    if (packetType !== 'mandate') return null
-    const currentRoute = normalizeMandateTemplateRoute(
-      form.mandateTemplateVariant || getMandateTemplateRouteFromTemplate(selectedTemplate || templateDetail),
-    )
-    const currentTemplate = selectedTemplate
-      ? {
-          ...selectedTemplate,
-          metadata_json: {
-            ...(selectedTemplate.metadata_json && typeof selectedTemplate.metadata_json === 'object' ? selectedTemplate.metadata_json : {}),
-            ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-            mandate_template_variant: currentRoute,
-            mandateTemplateVariant: currentRoute,
-          },
-          metadataJson: {
-            ...(selectedTemplate.metadata_json && typeof selectedTemplate.metadata_json === 'object' ? selectedTemplate.metadata_json : {}),
-            ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-            mandate_template_variant: currentRoute,
-            mandateTemplateVariant: currentRoute,
-          },
-          packet_type: 'mandate',
-          packetType: 'mandate',
-          sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'mandate')),
-        }
-      : null
-    const auditTemplates = selectedList.map((template) => (
-      currentTemplate && normalizeText(template.id) === normalizeText(selectedTemplateId)
-        ? currentTemplate
-        : template
-    ))
-    return buildMandateTemplateOperationalAudit(auditTemplates, { includeDefaultRoute: true })
-  }, [form, packetType, selectedList, selectedTemplate, selectedTemplateId, templateDetail])
-  const mandateLaunchReadiness = useMemo(() => {
-    if (!mandateOperationalAudit) return null
-    return buildMandateTemplateLaunchReadiness(mandateOperationalAudit, { includeDefaultRoute: true })
-  }, [mandateOperationalAudit])
-  const otpTemplateCoverageAudit = useMemo(() => {
-    if (packetType !== 'otp') return null
-    const effectiveTemplates = selectedList.map((template) => {
-      if (normalizeText(template.id) !== normalizeText(selectedTemplateId)) return template
-      return {
-        ...template,
-        packet_type: 'otp',
-        packetType: 'otp',
-        template_status: form.templateStatus,
-        is_active: Boolean(form.isActive),
-        is_default: Boolean(form.isDefault),
-        metadata_json: buildTemplateMetadata({ ...form, packetType: 'otp' }, form.metadataJson || {}, null),
-      }
-    })
-    const liveTemplates = effectiveTemplates.filter((template) => (
-      template?.is_active !== false && (
-        Boolean(template?.is_default) ||
-        isLiveTemplateStatus(template?.template_status || template?.status || template?.lifecycle_status)
-      )
-    ))
-    return buildLegalDocumentTemplateCoverageAudit(liveTemplates, { packetType: 'otp' })
-  }, [form, packetType, selectedList, selectedTemplateId])
-  const mandateVariantOptions = useMemo(
-    () => MANDATE_TEMPLATE_ROUTE_OPTIONS.filter((option) => option.key !== 'default'),
-    [],
-  )
-  const mandateVariantCoverageRows = useMemo(
-    () => packetType === 'mandate'
-      ? buildMandateVariantCoverageRows(selectedList, MANDATE_TEMPLATE_ROUTE_OPTIONS)
-      : [],
-    [packetType, selectedList],
-  )
-  const liveMandateVariantCount = useMemo(
-    () => mandateVariantCoverageRows.filter((row) => row.routable).length,
-    [mandateVariantCoverageRows],
-  )
-  const missingMandateVariantOptions = useMemo(
-    () => packetType === 'mandate'
-      ? mandateVariantCoverageRows.filter((row) => row.readiness.key === 'missing')
-      : [],
-    [mandateVariantCoverageRows, packetType],
-  )
+  const otpTemplateCoverageAudit = null
+  const mandateVariantOptions = []
+  const mandateVariantCoverageRows = []
+  const liveMandateVariantCount = 0
+  const missingMandateVariantOptions = []
+  const mandateOperationalAudit = null
+  const mandateLaunchReadiness = null
   const selectedIsPickerCustomTemplate = isTemplatePickerCustomTemplate(selectedTemplate)
   const customTemplateTabs = useMemo(
     () => stableAllowedPacketTypes
@@ -6326,29 +6223,26 @@ export default function SettingsSigningTemplatesPage({
   )
   const mandatePublishGateReport = useMemo(() => {
     if (packetType !== 'mandate') return null
-    const mandateTemplateVariant = normalizeMandateTemplateRoute(
-      form.mandateTemplateVariant || getMandateTemplateRouteFromTemplate(selectedTemplate || templateDetail),
-    )
     return buildMandateTemplatePublishGateReport({
       packet_type: 'mandate',
       packetType: 'mandate',
       template_label: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.templateLabel || '',
       metadata_json: {
         ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-        mandate_template_variant: mandateTemplateVariant,
-        mandateTemplateVariant: mandateTemplateVariant,
+        mandate_template_variant: 'default',
+        mandateTemplateVariant: 'default',
       },
       metadataJson: {
         ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
-        mandate_template_variant: mandateTemplateVariant,
-        mandateTemplateVariant: mandateTemplateVariant,
+        mandate_template_variant: 'default',
+        mandateTemplateVariant: 'default',
       },
       sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'mandate')),
     }, {
       packetType: 'mandate',
-      routeKey: mandateTemplateVariant,
+      routeKey: 'default',
     })
-  }, [form, packetType, selectedTemplate, templateDetail])
+  }, [form, packetType, selectedTemplate])
   const variableGroups = useMemo(
     () => getVariableGroups(canonicalFields),
     [canonicalFields],
@@ -6459,6 +6353,14 @@ export default function SettingsSigningTemplatesPage({
     () => describeConditionRule(selectedSectionCondition, tokenLabelByKey),
     [selectedSectionCondition, tokenLabelByKey],
   )
+  const selectedSectionConditionRuleLocked = useMemo(
+    () => isCoreConditionRuleLocked(selectedSection),
+    [selectedSection],
+  )
+  const selectedSectionIsConditionalPack = useMemo(
+    () => isConditionalMasterPackSection(selectedSection),
+    [selectedSection],
+  )
   const selectedSigningFields = useMemo(
     () => getSigningFieldsFromMetadata(selectedSection?.metadataJson || {}, selectedSection || {}),
     [selectedSection],
@@ -6520,6 +6422,23 @@ export default function SettingsSigningTemplatesPage({
     workspaceMembershipRole,
     canEdit,
   })
+  const conditionalMasterAssessment = useMemo(() => {
+    const metadata = form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}
+    const isConditionalMaster = ['mandate', 'otp'].includes(packetType)
+      && (isFocusedLegalDocumentEditor || metadata.conditional_master === true)
+    return isConditionalMaster ? assessConditionalMasterTemplate(packetType, form.sections || []) : null
+  }, [form.metadataJson, form.sections, isFocusedLegalDocumentEditor, packetType])
+  const conditionalMasterCoverageReadiness = useMemo(() => {
+    if (!conditionalMasterAssessment) return null
+    return evaluateConditionalMasterCoverage({
+      packetType,
+      template: {
+        packet_type: packetType,
+        metadata_json: form.metadataJson || {},
+        sections: form.sections || [],
+      },
+    })
+  }, [conditionalMasterAssessment, form.metadataJson, form.sections, packetType])
   const publishReview = useMemo(() => {
     const baselineSections = baselineForm?.sections || []
     const currentSections = form.sections || []
@@ -6551,9 +6470,22 @@ export default function SettingsSigningTemplatesPage({
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
     const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
+    const conditionalMasterBlockers = conditionalMasterAssessment && !conditionalMasterAssessment.valid
+      ? [
+          ...(conditionalMasterAssessment.missingPackKeys.length ? [`Restore ${conditionalMasterAssessment.missingPackKeys.length} missing conditional section${conditionalMasterAssessment.missingPackKeys.length === 1 ? '' : 's'}.`] : []),
+          ...(conditionalMasterAssessment.duplicateSectionKeys.length ? ['Remove duplicate conditional master section keys.'] : []),
+          ...(conditionalMasterAssessment.unlockedPackKeys.length ? ['Restore the protected inclusion rules for all core conditional sections.'] : []),
+          ...(conditionalMasterAssessment.signatureCount !== 1 ? ['The conditional master must contain exactly one signature section.'] : []),
+        ]
+      : []
+    const conditionalCoverageBlockers = conditionalMasterCoverageReadiness && !conditionalMasterCoverageReadiness.ready
+      ? conditionalMasterCoverageReadiness.issues.map((item) => item.message)
+      : []
     const blockers = [
       ...validationSummary.blockers,
       ...contentScanBlockers,
+      ...conditionalMasterBlockers,
+      ...conditionalCoverageBlockers,
       ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
       ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish templates.`] : []),
       ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
@@ -6571,6 +6503,8 @@ export default function SettingsSigningTemplatesPage({
       lockedSectionCount: lockedSections.length,
       signingFieldCount,
       conditionCount,
+      conditionalMasterAssessment,
+      conditionalMasterCoverageReadiness,
       contentScan: mandatePublishGateReport,
       contentScanBlockers,
       contentScanWarnings,
@@ -6579,7 +6513,7 @@ export default function SettingsSigningTemplatesPage({
       liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
       currentTemplateLabel: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.template_key || 'Current draft',
     }
-  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
+  }, [administratorLabel, baselineForm, canPublishTemplate, conditionalMasterAssessment, conditionalMasterCoverageReadiness, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
   const studioHealthChecks = useMemo(() => {
     const docxReady = normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.LEGACY_DOCX
       ? Boolean(normalizeText(form.templateStoragePath))
@@ -7426,9 +7360,15 @@ export default function SettingsSigningTemplatesPage({
     setHasUnsavedChanges(true)
     setForm((previous) => ({
       ...previous,
-      sections: (previous.sections || []).map((section, sectionIndex) => (
-        sectionIndex === index ? { ...section, ...patch } : section
-      )),
+      sections: (previous.sections || []).map((section, sectionIndex) => {
+        if (sectionIndex !== index) return section
+        const safePatch = isConditionalMasterPackSection(section)
+          ? Object.fromEntries(Object.entries(patch).filter(([key]) => !CONDITIONAL_PACK_PROTECTED_SECTION_FIELDS.has(key)))
+          : isCoreConditionRuleLocked(section) && Object.prototype.hasOwnProperty.call(patch, 'conditionJson')
+            ? Object.fromEntries(Object.entries(patch).filter(([key]) => key !== 'conditionJson'))
+            : patch
+        return { ...section, ...safePatch }
+      }),
     }))
   }
 
@@ -7436,6 +7376,7 @@ export default function SettingsSigningTemplatesPage({
     const targetIndex = index + direction
     const sectionCount = (form.sections || []).length
     if (index < 0 || targetIndex < 0 || index >= sectionCount || targetIndex >= sectionCount) return
+    if (isConditionalMasterPackSection(form.sections?.[index]) || isConditionalMasterPackSection(form.sections?.[targetIndex])) return
 
     setHasUnsavedChanges(true)
     setForm((previous) => {
@@ -7451,6 +7392,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function removeSection(index) {
+    if (isConditionalMasterPackSection(form.sections?.[index])) return
     setHasUnsavedChanges(true)
     setForm((previous) => ({
       ...previous,
@@ -7625,12 +7567,22 @@ export default function SettingsSigningTemplatesPage({
         moduleType: normalizedModuleType,
         validationSummary,
       })
+      const legalScenarioPreview = ['mandate', 'otp'].includes(packetType)
+        ? resolveLegalDocumentPreviewScenario({
+            scenarioKey: templatePreviewScenarioKey,
+            packetType,
+            organisationId: resolvedOrganisationId,
+            template: previewTemplate,
+          })
+        : null
 
       const preview = await renderPacketPreview({
         packetType,
-        context: buildSamplePreviewContext(packetType),
+        context: legalScenarioPreview?.context || buildSamplePreviewContext(packetType),
         template: previewTemplate,
-        title: `${templateTypeConfig.shortLabel} template validation preview`,
+        title: legalScenarioPreview
+          ? `${templateTypeConfig.shortLabel} · ${legalScenarioPreview.scenario.label} preview`
+          : `${templateTypeConfig.shortLabel} template validation preview`,
         validationAction: 'template_preview',
       })
 
@@ -7640,6 +7592,9 @@ export default function SettingsSigningTemplatesPage({
         warnings: preview?.warnings || [],
         critical: preview?.critical || [],
         dataRequirements: preview?.dataRequirements || [],
+        scenarioProfile: preview?.legalDocumentScenarioProfile || legalScenarioPreview?.profile || null,
+        conditionalMasterAudit: preview?.conditionalEngineAudit || legalScenarioPreview?.conditionalMasterAudit || null,
+        signingAudit: preview?.conditionalSigningAudit || legalScenarioPreview?.signingAudit || null,
         error: '',
       })
 
@@ -8279,7 +8234,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function updateSelectedSectionCondition(patch = {}) {
-    if (!selectedSection || !canEdit) return
+    if (!selectedSection || !canEdit || selectedSectionConditionRuleLocked) return
     const nextCondition = normalizeConditionRule({
       ...selectedSectionCondition,
       ...patch,
@@ -8304,7 +8259,7 @@ export default function SettingsSigningTemplatesPage({
   }
 
   function clearSelectedSectionCondition() {
-    if (!selectedSection || !canEdit) return
+    if (!selectedSection || !canEdit || selectedSectionConditionRuleLocked) return
     updateSection(selectedSectionIndex, { conditionJson: {} })
   }
 
@@ -8860,7 +8815,7 @@ export default function SettingsSigningTemplatesPage({
                             </span>
                             <span className={outlineCollapsed ? 'sr-only' : 'min-w-0 truncate font-semibold'}>{label}</span>
                           </button>
-                          {canEdit && !outlineCollapsed ? (
+                          {canEdit && !outlineCollapsed && !isConditionalMasterPackSection(section) ? (
                             <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                               <button
                                 type="button"
@@ -8909,12 +8864,12 @@ export default function SettingsSigningTemplatesPage({
                 ) : (
                   <SettingsEmptyState
                     title={normalizedEditorScope === 'situations'
-                      ? editorSituation ? `No ${editorSituation.label.toLowerCase()} wording yet` : 'Choose a situation above'
+                      ? editorSituation ? `${editorSituation.label} section is missing` : 'Choose a conditional section above'
                       : 'No sections yet'}
                     description={normalizedEditorScope === 'situations'
                       ? editorSituation
-                        ? `Use an approved clause to add buyer or seller wording for ${editorSituation.label.toLowerCase()}.`
-                        : 'Select Individual, Company, Trust, Married in community, Sectional title or Finance before editing.'
+                        ? 'This master is incomplete. Restore the missing core section before publishing.'
+                        : 'Select one of the seller, purchaser, consent, property or finance sections before editing.'
                       : 'Add a section to start editing this document.'}
                   />
                 )}
@@ -8929,17 +8884,6 @@ export default function SettingsSigningTemplatesPage({
                   >
                     <Plus size={15} />
                     <span className={outlineCollapsed ? 'sr-only' : ''}>Add Section</span>
-                  </button>
-                ) : null}
-                {normalizedEditorScope === 'situations' && editorSituation ? (
-                  <button
-                    type="button"
-                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#a9d8bd] bg-[#eef9f2] px-3 py-2.5 text-sm font-semibold text-[#128642] transition hover:border-[#75bd90] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => setActiveStudioArea('clauseLibrary')}
-                    disabled={!canEdit}
-                  >
-                    <Layers3 size={15} />
-                    <span className={outlineCollapsed ? 'sr-only' : ''}>Add {editorSituation.label} wording</span>
                   </button>
                 ) : null}
               </aside>
@@ -8958,7 +8902,7 @@ export default function SettingsSigningTemplatesPage({
                             aria-label="Section title"
                             type="text"
                             value={selectedSection.sectionLabel}
-                            disabled={!canEdit}
+                            disabled={!canEdit || selectedSectionIsConditionalPack}
                             onChange={(event) => updateSection(selectedSectionIndex, { sectionLabel: event.target.value })}
                             className="min-h-11 min-w-0 flex-1 rounded-[12px] border border-[#dbe7f3] bg-white px-3 text-base font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#96d7ad] focus:ring-4 focus:ring-[#e7f6ed] disabled:bg-[#f8fbff] disabled:text-[#7b8da6]"
                             placeholder={`Section ${selectedSectionIndex + 1}`}
@@ -8966,7 +8910,12 @@ export default function SettingsSigningTemplatesPage({
                         </div>
                         <p className="mt-2 text-sm leading-6 text-[#607387]">{selectedSectionDescription}</p>
                       </div>
-                      <details className="relative">
+                      {selectedSectionIsConditionalPack ? (
+                        <span className="inline-flex min-h-10 items-center gap-2 rounded-[11px] border border-[#cdebd8] bg-[#eef9f1] px-3 text-sm font-semibold text-[#167449]">
+                          <ShieldCheck size={14} />
+                          Core conditional section
+                        </span>
+                      ) : <details className="relative">
                         <summary className={`${studioSecondaryButtonClass} list-none cursor-pointer`}>
                           <Type size={14} />
                           <span>Section Settings</span>
@@ -9004,8 +8953,20 @@ export default function SettingsSigningTemplatesPage({
                             </button>
                           </div>
                         </div>
-                      </details>
+                      </details>}
                     </div>
+
+                    {selectedSectionIsConditionalPack ? (
+                      <section className="rounded-[18px] border border-[#cdebd8] bg-[#f4fbf7] px-5 py-4" aria-label="Conditional section editing boundary">
+                        <div className="flex items-start gap-3">
+                          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[#167449]" aria-hidden="true" />
+                          <div>
+                            <h2 className="text-sm font-semibold text-[#18372a]">Edit the legal wording, not the inclusion logic</h2>
+                            <p className="mt-1 text-sm leading-6 text-[#5f786b]">Bridge includes this section automatically when {editorSituation?.activationLabel || selectedSectionConditionSummary.toLowerCase()}. Its key, position, merge fields and activation rule are protected.</p>
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
 
                     {selectedSectionUnknownTokens.length ? (
                       <SettingsBanner tone="warning">
@@ -9262,11 +9223,11 @@ export default function SettingsSigningTemplatesPage({
                   </div>
                 ) : (
                   <SettingsEmptyState
-                    title={normalizedEditorScope === 'situations' && !editorSituation ? 'Choose a situation first' : 'Choose a section'}
+                    title={normalizedEditorScope === 'situations' && !editorSituation ? 'Choose a conditional section first' : 'Choose a section'}
                     description={normalizedEditorScope === 'situations'
                       ? editorSituation
-                        ? `Select ${editorSituation.label.toLowerCase()} wording from the outline, or add an approved clause.`
-                        : 'Use the simple choices above to tell Bridge whether you are editing individual, company, trust, marriage, property or finance wording.'
+                        ? `Select the ${editorSituation.label.toLowerCase()} section from the outline.`
+                        : 'Choose an exact seller, purchaser, consent, property or finance section above.'
                       : 'Select a section from the outline to edit the document wording.'}
                   />
                 )}
@@ -9301,7 +9262,7 @@ export default function SettingsSigningTemplatesPage({
                         <ShieldCheck size={18} className="text-[#128642]" aria-hidden="true" />
                         <span
                           className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2 py-1 text-[0.65rem] font-semibold text-[#128642]"
-                          title={normalizedEditorScope === 'situations' ? 'Sections in this situation' : 'Standard conditions covered'}
+                          title={normalizedEditorScope === 'situations' ? 'Sections selected' : 'Standard conditions covered'}
                         >
                           {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
                         </span>
@@ -9309,8 +9270,8 @@ export default function SettingsSigningTemplatesPage({
                     ) : (
                       <>
                         <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Selected situation' : 'Standard Conditions'}</p>
-                          <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a situation' : 'Legal Coverage'}</h2>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Conditional section' : 'Standard Conditions'}</p>
+                          <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a section' : 'Legal Coverage'}</h2>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
@@ -9333,18 +9294,13 @@ export default function SettingsSigningTemplatesPage({
                     <div className="mt-3">
                       <p className="text-sm leading-6 text-[#607387]">
                         {editorSituation
-                          ? `Only ${editorSituation.label.toLowerCase()} wording is shown. Standard clauses remain unchanged.`
-                          : 'Choose a situation above before editing conditional legal wording.'}
+                          ? `Only the ${editorSituation.label.toLowerCase()} pack is shown. Standard wording remains unchanged.`
+                          : 'Choose a conditional section above before editing its legal wording.'}
                       </p>
                       {editorSituation ? (
-                        <button
-                          type="button"
-                          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#a9d8bd] bg-[#eef9f2] px-3 py-2.5 text-sm font-semibold text-[#128642] transition hover:bg-white"
-                          onClick={() => setActiveStudioArea('clauseLibrary')}
-                        >
-                          <Layers3 size={14} />
-                          <span>Browse {editorSituation.label} Clauses</span>
-                        </button>
+                        <p className="mt-3 rounded-[12px] border border-[#cdebd8] bg-[#f4fbf7] px-3 py-2 text-xs font-semibold leading-5 text-[#236d46]">
+                          Included when {editorSituation.activationLabel}. The inclusion rule is protected.
+                        </p>
                       ) : null}
                     </div>
                   ) : (
@@ -9486,6 +9442,26 @@ export default function SettingsSigningTemplatesPage({
                   )}
                 </section>
 
+                {selectedSectionConditionRuleLocked ? (
+                  <section
+                    data-editor-tool="situation"
+                    className="min-w-0 max-w-full rounded-[20px] border border-[#cdebd8] bg-[#f4fbf7] p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]"
+                    aria-labelledby="protected-inclusion-rule-heading"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#56806a]">Canonical resolver</p>
+                        <h2 id="protected-inclusion-rule-heading" className="mt-2 text-base font-semibold text-[#18372a]">Included automatically</h2>
+                        <p className="mt-1 text-sm leading-5 text-[#5f786b]">The transaction facts decide whether this section appears.</p>
+                      </div>
+                      <span className="rounded-full border border-[#bfe0cc] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#167449]">Protected</span>
+                    </div>
+                    <p className="mt-3 rounded-[14px] border border-[#cdebd8] bg-white px-3 py-2 text-sm font-semibold leading-6 text-[#236d46]">
+                      {selectedSectionConditionSummary}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-[#5f786b]">You can still edit the clause wording. Use the document page above; changing this rule requires a platform master update and scenario regression review.</p>
+                  </section>
+                ) : (
                 <details
                   data-editor-tool="situation"
                   defaultOpen={selectedSectionCondition.enabled}
@@ -9518,7 +9494,7 @@ export default function SettingsSigningTemplatesPage({
                       <input
                         type="checkbox"
                         checked={Boolean(selectedSectionCondition.enabled)}
-                        disabled={!selectedSection || !canEdit}
+                        disabled={!selectedSection || !canEdit || selectedSectionConditionRuleLocked}
                         onChange={(event) => updateSelectedSectionCondition({ enabled: event.target.checked })}
                         className="h-4 w-4 rounded border-[#dbe7f3] text-[#128642] focus:ring-[#96d7ad]"
                       />
@@ -9529,7 +9505,7 @@ export default function SettingsSigningTemplatesPage({
                       Data field
                       <select
                         value={selectedSectionCondition.field}
-                        disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                        disabled={!selectedSection || !canEdit || selectedSectionConditionRuleLocked || !selectedSectionCondition.enabled}
                         onChange={(event) => updateSelectedSectionCondition({ field: event.target.value })}
                       >
                         {conditionFieldOptions.map((field) => (
@@ -9544,7 +9520,7 @@ export default function SettingsSigningTemplatesPage({
                       Rule
                       <select
                         value={selectedSectionCondition.operator}
-                        disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                        disabled={!selectedSection || !canEdit || selectedSectionConditionRuleLocked || !selectedSectionCondition.enabled}
                         onChange={(event) => updateSelectedSectionCondition({ operator: event.target.value })}
                       >
                         {CONDITION_OPERATORS.map((operator) => (
@@ -9559,7 +9535,7 @@ export default function SettingsSigningTemplatesPage({
                         <input
                           type="text"
                           value={selectedSectionCondition.value}
-                          disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                          disabled={!selectedSection || !canEdit || selectedSectionConditionRuleLocked || !selectedSectionCondition.enabled}
                           onChange={(event) => updateSelectedSectionCondition({ value: event.target.value })}
                           placeholder={['in', 'not_in'].includes(selectedSectionCondition.operator) ? 'company, trust, individual' : 'Bond, Cash, Company...'}
                         />
@@ -9570,12 +9546,13 @@ export default function SettingsSigningTemplatesPage({
                       type="button"
                       className="w-full rounded-[12px] border border-[#dbe7f3] bg-[#f8fbff] px-3 py-2.5 text-sm font-semibold text-[#24518a] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={clearSelectedSectionCondition}
-                      disabled={!selectedSection || !canEdit || !selectedSectionCondition.enabled}
+                      disabled={!selectedSection || !canEdit || selectedSectionConditionRuleLocked || !selectedSectionCondition.enabled}
                     >
                       Clear condition
                     </button>
                   </div>
                 </details>
+                )}
 
                 <details
                   data-editor-tool="signing"
@@ -10336,15 +10313,32 @@ export default function SettingsSigningTemplatesPage({
                   title="Document Preview"
                   description="See how the current template will look with safe sample details."
                   actions={
-                    <button
-                      type="button"
-                      className={studioSecondaryButtonClass}
-                      onClick={() => openTemplatePreview()}
-                      disabled={testingTemplate}
-                    >
-                      <Eye size={14} />
-                      <span>{testingTemplate ? 'Previewing...' : 'Open Preview'}</span>
-                    </button>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {['mandate', 'otp'].includes(packetType) ? (
+                        <select
+                          aria-label="Preview legal scenario"
+                          value={templatePreviewScenarioKey}
+                          onChange={(event) => {
+                            setTemplatePreviewScenarioKey(event.target.value)
+                            setPreviewState({ loading: false, html: '', warnings: [], critical: [], dataRequirements: [], error: '' })
+                          }}
+                          className="min-h-10 rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-semibold text-[#3b5068]"
+                        >
+                          {listLegalDocumentPreviewScenarios().map((scenario) => (
+                            <option key={scenario.key} value={scenario.key}>{scenario.label}</option>
+                          ))}
+                        </select>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={studioSecondaryButtonClass}
+                        onClick={() => openTemplatePreview()}
+                        disabled={testingTemplate}
+                      >
+                        <Eye size={14} />
+                        <span>{testingTemplate ? 'Previewing...' : 'Open Preview'}</span>
+                      </button>
+                    </div>
                   }
                 >
                   <div className="rounded-[24px] border border-[#dbe7f3] bg-[#f5f7fb] p-4">
@@ -10373,6 +10367,24 @@ export default function SettingsSigningTemplatesPage({
                     {previewState.html || previewState.critical.length || previewState.warnings.length ? (
                       <div className="mt-4">
                         <PreviewIssueSummary critical={previewState.critical} warnings={previewState.warnings} compact />
+                      </div>
+                    ) : null}
+                    {previewState.scenarioProfile ? (
+                      <div className="mt-4 rounded-[18px] border border-[#dbe7f3] bg-white px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.13em] text-[#71849a]">Scenario decision</p>
+                          <span className="text-xs font-semibold text-[#26744a]">{previewState.scenarioProfile.scenarioKey}</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(previewState.conditionalMasterAudit?.includedPackKeys || previewState.scenarioProfile.activeClausePacks || []).map((pack) => (
+                            <span key={pack} className="rounded-full border border-[#cde8d7] bg-[#eef9f2] px-2.5 py-1 text-[0.68rem] font-semibold text-[#247149]">
+                              {normalizeText(pack).replace(/_pack$/i, '').replace(/_/g, ' ')}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-[#667a90]">
+                          Signers: {(previewState.signingAudit?.signers || []).map((signer) => signer.label).join(', ') || 'No signer plan resolved'}
+                        </p>
                       </div>
                     ) : null}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe7f3] bg-white/90 px-4 py-3 text-sm text-[#6b7c93]">
@@ -10757,77 +10769,14 @@ export default function SettingsSigningTemplatesPage({
                   </select>
                 </label>
 
-                {packetType === 'mandate' ? (
-                  <label className={settingsFieldClass}>
-                    Mandate route
-                    <select
-                      value={form.mandateTemplateVariant || ''}
-                      disabled={!canEdit || !selectedIsOrgOwned}
-                      onChange={(event) => setForm((previous) => ({ ...previous, mandateTemplateVariant: event.target.value }))}
-                    >
-                      {MANDATE_TEMPLATE_ROUTE_OPTIONS.map((option) => (
-                        <option key={option.key || 'all'} value={option.key}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <fieldset className={`${settingsFieldSpanClass} rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4`}>
-                    <legend className="px-2 text-sm font-semibold text-[#102033]">Used when…</legend>
-                    <p className="mb-4 text-xs leading-5 text-[#6b7c93]">
-                      Choose only what makes this OTP version different. Leave a field on “Any” when it applies broadly.
+                {['mandate', 'otp'].includes(packetType) ? (
+                  <div className={`${settingsFieldSpanClass} rounded-[18px] border border-[#cdebd8] bg-[#eef9f1] p-4`}>
+                    <p className="text-sm font-semibold text-[#102033]">Conditional master document</p>
+                    <p className="mt-2 text-xs leading-5 text-[#52667d]">
+                      This is the organisation’s single editable master. Seller, buyer, property, marital and finance facts control which conditional sections appear; they do not select another template.
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className={settingsFieldClass}>
-                        Seller
-                        <select
-                          value={form.legalSellerClauseProfile || 'any'}
-                          disabled={!canEdit || !selectedIsOrgOwned}
-                          onChange={(event) => setForm((previous) => ({ ...previous, legalSellerClauseProfile: event.target.value }))}
-                        >
-                          {LEGAL_PARTY_ROUTE_OPTIONS.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className={settingsFieldClass}>
-                        Buyer
-                        <select
-                          value={form.legalBuyerClauseProfile || 'any'}
-                          disabled={!canEdit || !selectedIsOrgOwned}
-                          onChange={(event) => setForm((previous) => ({ ...previous, legalBuyerClauseProfile: event.target.value }))}
-                        >
-                          {LEGAL_PARTY_ROUTE_OPTIONS.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className={settingsFieldClass}>
-                        Property
-                        <select
-                          value={form.legalPropertyClauseProfile || 'any'}
-                          disabled={!canEdit || !selectedIsOrgOwned}
-                          onChange={(event) => setForm((previous) => ({ ...previous, legalPropertyClauseProfile: event.target.value }))}
-                        >
-                          {LEGAL_PROPERTY_ROUTE_OPTIONS.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className={settingsFieldClass}>
-                        Finance
-                        <select
-                          value={form.legalFinanceClauseProfile || 'any'}
-                          disabled={!canEdit || !selectedIsOrgOwned}
-                          onChange={(event) => setForm((previous) => ({ ...previous, legalFinanceClauseProfile: event.target.value }))}
-                        >
-                          {LEGAL_FINANCE_ROUTE_OPTIONS.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </fieldset>
-                )}
+                  </div>
+                ) : null}
 
                 <label className="flex items-center gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
                   <input
@@ -10870,12 +10819,12 @@ export default function SettingsSigningTemplatesPage({
                       : 'Uses an uploaded DOCX file as the base template.'}
                   </p>
                 </div>
-                {packetType === 'mandate' ? (
+                {['mandate', 'otp'].includes(packetType) ? (
                   <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Mandate Route</p>
-                    <p className="mt-3 text-sm font-semibold text-[#102033]">{getMandateTemplateRouteLabel(form.mandateTemplateVariant)}</p>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Generation model</p>
+                    <p className="mt-3 text-sm font-semibold text-[#102033]">One conditional master</p>
                     <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
-                      The generator uses this route when onboarding data matches the seller and property situation.
+                      The generator evaluates the sections in this revision against the saved legal scenario facts.
                     </p>
                   </div>
                 ) : (
@@ -10898,7 +10847,7 @@ export default function SettingsSigningTemplatesPage({
                 </div>
               </div>
 
-              {packetType === 'otp' && otpTemplateCoverageAudit ? (
+              {LEGACY_SCENARIO_TEMPLATE_ROUTING_UI_ENABLED && packetType === 'otp' && otpTemplateCoverageAudit ? (
                 <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
@@ -10947,7 +10896,7 @@ export default function SettingsSigningTemplatesPage({
                 </div>
               ) : null}
 
-              {packetType === 'mandate' ? (
+              {LEGACY_SCENARIO_TEMPLATE_ROUTING_UI_ENABLED && packetType === 'mandate' ? (
                 <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
@@ -11180,6 +11129,48 @@ export default function SettingsSigningTemplatesPage({
                     </div>
                   ))}
                 </div>
+
+                {conditionalMasterCoverageReadiness ? (
+                  <div className={[
+                    'mt-4 rounded-[18px] border px-4 py-3',
+                    conditionalMasterCoverageReadiness.ready
+                      ? 'border-[#cdebd8] bg-[#eef9f1]'
+                      : 'border-[#f3d1ce] bg-[#fff4f3]',
+                  ].join(' ')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">Coverage Readiness</p>
+                        <p className="mt-1 text-sm font-semibold text-[#102033]">
+                          {conditionalMasterCoverageReadiness.coveredCaseCount}/{conditionalMasterCoverageReadiness.caseCount} supported legal cases covered
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                          One conditional master is checked across every supported party, property and finance combination.
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        conditionalMasterCoverageReadiness.ready
+                          ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                          : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                      ].join(' ')}
+                      >
+                        {conditionalMasterCoverageReadiness.ready ? 'Coverage ready' : 'Coverage blocked'}
+                      </span>
+                    </div>
+                    {conditionalMasterCoverageReadiness.issues.length ? (
+                      <div className="mt-3 space-y-2">
+                        {conditionalMasterCoverageReadiness.issues.slice(0, 3).map((item) => (
+                          <p key={`${item.code}-${item.sectionKey}`} className="text-sm leading-6 text-[#8e1f15]">{item.message}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#52667d]">
+                        All protected wording packs and signer rules agree with the canonical scenario resolver.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
 
                 {packetType === 'mandate' && mandatePublishGateReport ? (
                   <div className={[

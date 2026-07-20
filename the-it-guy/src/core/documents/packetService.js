@@ -53,10 +53,6 @@ import {
   formatMandateTemplatePublishGateIssue,
 } from './mandateTemplatePublishGate'
 import {
-  buildMandateTemplateRuntimeLaunchReadiness,
-  formatMandateTemplateLaunchReadinessIssue,
-} from './mandateTemplateLaunchReadiness'
-import {
   NATIVE_RENDERER_VERSION,
   normalizeTemplateRenderMode,
   resolveTemplateStorageConfig as resolveStructuredTemplateStorageConfig,
@@ -77,7 +73,8 @@ import {
 } from '../../services/documents/commercialDocumentAdapterService'
 import { classifySellerParty } from './documentPartyClassification'
 import { resolveConditionalPackAudit } from './conditionalPackAudit'
-import { evaluateVisibilityRules } from './sectionVisibilityRules'
+import { evaluateVisibilityRulesDetailed } from './sectionVisibilityRules'
+import { evaluateConditionalMasterSections } from './conditionalMasterEngine'
 import {
   buildLegalDocumentScenarioPlaceholders,
   resolveLegalDocumentScenarioProfile,
@@ -91,6 +88,8 @@ import {
   resolveLegalDocumentScenarioRequirements,
 } from './legalDocumentScenarioRequirements'
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile'
+import { evaluateConditionalSigningPlan } from './conditionalSigningEngine'
+import { evaluateConditionalMasterCoverage } from './conditionalMasterCoverageReadiness'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -117,7 +116,40 @@ function normalizeValidationAction(value, fallback = 'preview') {
 }
 
 function buildLegalScenarioIssues(profile = null) {
-  return (profile?.missingRoutingFacts || []).map((placeholderKey) => {
+  const conflicts = (profile?.conflictingFacts || []).map((conflict) => {
+    const placeholderKey = conflict.field
+    const placeholderLabel = LEGAL_ROUTING_FACT_LABELS[placeholderKey] || humanizePlaceholderKey(placeholderKey)
+    const values = (conflict.values || []).map((entry) => entry.value).filter(Boolean).join(', ')
+    return {
+      source: 'legal_scenario_conflict',
+      sectionKey: 'legal_scenario',
+      sectionLabel: 'Legal setup',
+      placeholderKey,
+      placeholderLabel,
+      message: `${placeholderLabel} conflicts across saved sources${values ? ` (${values})` : ''}. Resolve the source data before generating the document.`,
+      required: true,
+      conflict,
+    }
+  })
+  const conflictingKeys = new Set(conflicts.map((issue) => issue.placeholderKey))
+  const invalid = (profile?.invalidFacts || []).map((invalidFact) => {
+    const placeholderKey = invalidFact.field
+    const placeholderLabel = LEGAL_ROUTING_FACT_LABELS[placeholderKey] || humanizePlaceholderKey(placeholderKey)
+    return {
+      source: 'legal_scenario_invalid',
+      sectionKey: 'legal_scenario',
+      sectionLabel: 'Legal setup',
+      placeholderKey,
+      placeholderLabel,
+      message: `${placeholderLabel} contains an unsupported value. Select a recognised legal option before generating the document.`,
+      required: true,
+      invalidFact,
+    }
+  }).filter((issue) => !conflictingKeys.has(issue.placeholderKey))
+  const invalidKeys = new Set(invalid.map((issue) => issue.placeholderKey))
+  const missing = (profile?.missingRoutingFacts || []).filter(
+    (placeholderKey) => !conflictingKeys.has(placeholderKey) && !invalidKeys.has(placeholderKey),
+  ).map((placeholderKey) => {
     const placeholderLabel = LEGAL_ROUTING_FACT_LABELS[placeholderKey] || humanizePlaceholderKey(placeholderKey)
     return {
       source: 'legal_scenario',
@@ -129,6 +161,7 @@ function buildLegalScenarioIssues(profile = null) {
       required: true,
     }
   })
+  return [...conflicts, ...invalid, ...missing]
 }
 
 function mapMandateValidationIssue(issue = {}) {
@@ -383,6 +416,7 @@ function buildGenerationPayload({
     legalDocumentTemplateFallbackWarning: validation?.legalDocumentTemplateFallbackWarning || null,
     mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
+    conditionalMasterCoverageReadiness: validation?.conditionalMasterCoverageReadiness || null,
     validation: mandateValidation || buildValidationSummary(validation),
     template: template
       ? {
@@ -448,6 +482,9 @@ function buildRenderProvenance({
     validation?.legalDocumentScenarioProfile ||
     mandateScenarioProfile ||
     null
+  const conditionalEngineAudit = validation?.conditionalEngineAudit || null
+  const conditionalSigningAudit = validation?.conditionalSigningAudit || null
+  const conditionalMasterCoverageReadiness = validation?.conditionalMasterCoverageReadiness || null
   const mandateTemplateVariant =
     normalizeText(generationPayload?.mandateTemplateVariant) ||
     normalizeText(mandateScenarioProfile?.templateVariant) ||
@@ -490,6 +527,51 @@ function buildRenderProvenance({
     financeClauseProfile:
       normalizeText(legalDocumentScenarioProfile?.financeClauseProfile || pdfPlaceholders?.finance_clause_profile) ||
       null,
+    conditionalEngineVersion: normalizeText(conditionalEngineAudit?.engineVersion) || null,
+    conditionalVisibilityEngineVersion: normalizeText(conditionalEngineAudit?.visibilityEngineVersion) || null,
+    conditionalEngineCanProceed: conditionalEngineAudit?.applies ? Boolean(conditionalEngineAudit.canProceed) : null,
+    conditionalIncludedSectionKeys: conditionalEngineAudit?.includedSectionKeys || [],
+    conditionalExcludedSectionKeys: conditionalEngineAudit?.excludedSectionKeys || [],
+    conditionalIncludedPackKeys: conditionalEngineAudit?.includedPackKeys || [],
+    conditionalExcludedPackKeys: conditionalEngineAudit?.excludedPackKeys || [],
+    conditionalDecisionHash: conditionalEngineAudit
+      ? buildContentFingerprint({
+          engineVersion: conditionalEngineAudit.engineVersion,
+          scenarioKey: conditionalEngineAudit.scenarioKey,
+          sections: conditionalEngineAudit.sections,
+        })
+      : null,
+    conditionalSigningEngineVersion: normalizeText(conditionalSigningAudit?.engineVersion) || null,
+    conditionalSigningCanPrepare: conditionalSigningAudit?.applies
+      ? Boolean(conditionalSigningAudit.canPrepareSigning)
+      : null,
+    conditionalSelectedSignerRoles: conditionalSigningAudit?.selectedSignerRoles || [],
+    conditionalExcludedSignerRoles: conditionalSigningAudit?.excludedScenarioRoles || [],
+    conditionalSigningDecisionHash: conditionalSigningAudit
+      ? buildContentFingerprint({
+          engineVersion: conditionalSigningAudit.engineVersion,
+          scenarioKey: conditionalSigningAudit.scenarioKey,
+          selectedSignerRoles: conditionalSigningAudit.selectedSignerRoles,
+          excludedScenarioRoles: conditionalSigningAudit.excludedScenarioRoles,
+          plannedFieldRoles: conditionalSigningAudit.plannedFieldRoles,
+        })
+      : null,
+    conditionalMasterCoverageVersion: normalizeText(conditionalMasterCoverageReadiness?.coverageVersion) || null,
+    conditionalMasterCoverageReady: conditionalMasterCoverageReadiness?.applies
+      ? Boolean(conditionalMasterCoverageReadiness.ready)
+      : null,
+    conditionalMasterCoverageCaseCount: conditionalMasterCoverageReadiness?.caseCount || 0,
+    conditionalMasterCoveredCaseCount: conditionalMasterCoverageReadiness?.coveredCaseCount || 0,
+    conditionalMasterCoverageDecisionHash: conditionalMasterCoverageReadiness
+      ? buildContentFingerprint({
+          coverageVersion: conditionalMasterCoverageReadiness.coverageVersion,
+          packetType: conditionalMasterCoverageReadiness.packetType,
+          ready: conditionalMasterCoverageReadiness.ready,
+          expectedPackKeys: conditionalMasterCoverageReadiness.expectedPackKeys,
+          coveredPackKeys: conditionalMasterCoverageReadiness.coveredPackKeys,
+          issueCodes: conditionalMasterCoverageReadiness.issues?.map((item) => item.code) || [],
+        })
+      : null,
     generatedAt: generatedAt || null,
     generationAttemptId: normalizeText(generationPayload?.generationAttemptId) || null,
     ...buildDraftLegalProvenance(template),
@@ -1018,27 +1100,10 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
   }
 
   try {
-    if (normalizedPacketType === 'mandate') {
-      const mandateTemplateResolution = await resolveMandateScenarioTemplateForPacket({
-        packetType: normalizedPacketType,
-        context,
-        moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
-        organisationId: resolveTemplateOrganisationId(context),
-        includeSections: true,
-      })
-      if (mandateTemplateResolution?.template) return mandateTemplateResolution
-    }
-    if (normalizedPacketType === 'otp') {
-      const otpTemplateResolution = await resolveOtpScenarioTemplateForPacket({
-        packetType: normalizedPacketType,
-        context,
-        moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
-        organisationId: resolveTemplateOrganisationId(context),
-        includeSections: true,
-      })
-      if (otpTemplateResolution?.template) return otpTemplateResolution
-    }
-
+    // Mandates and OTPs use one active master revision per organisation and
+    // document type. Party, property, marital and finance facts select
+    // conditional sections inside that revision; they never select a separate
+    // template. Legacy scenario metadata remains readable for old packets only.
     return await resolveActivePacketTemplate({
       packetType: normalizedPacketType,
       moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
@@ -1501,17 +1566,20 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
   }
 }
 
-function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {}, versionNumber = null } = {}) {
+function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {}, versionNumber = null, plannedFields = [] } = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const config = DEFAULT_SIGNING_LAYOUT[normalizedPacketType] || DEFAULT_SIGNING_LAYOUT.otp
-  const legalSignerProfile =
-    normalizedPacketType === 'otp'
-      ? resolveLegalDocumentSignerProfile({
-          packetType: normalizedPacketType,
-          placeholders,
-          context,
-        })
-      : null
+  const conditionalSigningAudit = evaluateConditionalSigningPlan({
+    packetType: normalizedPacketType,
+    placeholders,
+    context,
+    plannedFields,
+  })
+  const legalSignerProfile = resolveLegalDocumentSignerProfile({
+    packetType: normalizedPacketType,
+    placeholders,
+    context,
+  })
   const signaturePage = config.pageCount
   const initialsPages = Array.from({ length: config.pageCount }, (_, index) => index + 1)
   const initialY = 748
@@ -1531,10 +1599,8 @@ function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {},
     label: signer.label,
     reason: signer.reason,
   }))
-  const configuredSignatureRoles = legalSignerProfile
-    ? legalSignerSeeds.map((signer) => signer.role)
-    : config.signatureRoles
-  const optionalOtpRoles = legalSignerProfile ? ['agent', 'contractor'] : []
+  const configuredSignatureRoles = legalSignerSeeds.map((signer) => signer.role)
+  const optionalOtpRoles = []
   const uniqueRoles = Array.from(
     new Set([
       ...(config.signerOrder || []),
@@ -1635,6 +1701,7 @@ function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {},
     fields,
     pageCount: config.pageCount,
     legalSignerProfile,
+    conditionalSigningAudit,
   }
 }
 
@@ -1749,7 +1816,7 @@ function humanizePlaceholderKey(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
-function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
+function mapTemplateSectionToManifest(section = {}, placeholders = {}, visibilityDecision = null) {
   const metadata =
     section?.metadata_json && typeof section.metadata_json === 'object'
       ? section.metadata_json
@@ -1772,6 +1839,17 @@ function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
       'Section',
   )
   const sectionKey = normalizeText(section?.section_key || section?.key || sectionLabel)
+  const visibilityRules =
+    section?.condition_json && typeof section.condition_json === 'object'
+      ? section.condition_json
+      : section?.condition && typeof section.condition === 'object'
+        ? section.condition
+        : metadata?.visibility_rules || {}
+  const visibilityEvaluation = visibilityDecision?.condition || evaluateVisibilityRulesDetailed(
+    visibilityRules,
+    placeholders,
+    { strict: Boolean(Object.keys(visibilityRules).length) },
+  )
 
   return {
     key: sectionKey,
@@ -1781,12 +1859,7 @@ function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
     sortOrder: Number.isFinite(Number(section?.sort_order ?? section?.order))
       ? Number(section?.sort_order ?? section?.order)
       : 0,
-    visibilityRules:
-      section?.condition_json && typeof section.condition_json === 'object'
-        ? section.condition_json
-        : section?.condition && typeof section.condition === 'object'
-          ? section.condition
-          : {},
+    visibilityRules,
     editableBy: Array.isArray(metadata?.editable_by)
       ? metadata.editable_by
       : ['principal', 'super_admin', 'admin', 'agent'],
@@ -1797,16 +1870,19 @@ function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
     ]),
     legalText: String(section?.legal_text ?? section?.content ?? metadata?.legal_text ?? ''),
     metadata,
-    visible: evaluateVisibilityRules(
-      section?.condition_json || section?.condition || metadata?.visibility_rules || null,
-      placeholders,
-    ),
+    visibilityEvaluation,
+    visible: visibilityDecision
+      ? Boolean(visibilityDecision.visible)
+      : visibilityEvaluation.visible,
   }
 }
 
-async function resolveSeededSectionManifest({ packetType, template = null, placeholders = {} } = {}) {
+async function resolveSeededSectionManifest({ packetType, template = null, placeholders = {}, scenarioProfile = null } = {}) {
   if (!template?.id) {
-    return buildPacketSectionManifest({ packetType, placeholders })
+    return {
+      sectionManifest: buildPacketSectionManifest({ packetType, placeholders }),
+      conditionalEngineAudit: null,
+    }
   }
 
   let hydratedTemplate = template
@@ -1823,13 +1899,28 @@ async function resolveSeededSectionManifest({ packetType, template = null, place
       ? hydratedTemplate.sections
       : []
   if (!sections.length) {
-    return buildPacketSectionManifest({ packetType, placeholders })
+    return {
+      sectionManifest: buildPacketSectionManifest({ packetType, placeholders }),
+      conditionalEngineAudit: null,
+    }
   }
 
-  return sections
-    .map((section) => mapTemplateSectionToManifest(section, placeholders))
+  const conditionalEngineAudit = evaluateConditionalMasterSections({
+    packetType,
+    sections,
+    placeholders,
+    canonicalPlaceholders: scenarioProfile ? buildLegalDocumentScenarioPlaceholders(scenarioProfile) : placeholders,
+    scenarioProfile,
+  })
+  const decisions = conditionalEngineAudit.applies ? conditionalEngineAudit.sections : []
+
+  return {
+    sectionManifest: sections
+    .map((section, index) => mapTemplateSectionToManifest(section, placeholders, decisions[index] || null))
     .filter((section) => section.visible !== false)
-    .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0))
+    .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0)),
+    conditionalEngineAudit,
+  }
 }
 
 function resolvePacketTypeContext(packetType, context = {}) {
@@ -1899,6 +1990,9 @@ function buildValidationSummary(validation = {}) {
     conditionalPackDataRequirements: validation?.conditionalPackDataRequirements || [],
     conditionalPackMissingPlaceholders: validation?.conditionalPackMissingPlaceholders || [],
     conditionalPackAudit: validation?.conditionalPackAudit || null,
+    conditionalEngineAudit: validation?.conditionalEngineAudit || null,
+    conditionalSigningAudit: validation?.conditionalSigningAudit || null,
+    conditionalMasterCoverageReadiness: validation?.conditionalMasterCoverageReadiness || null,
     templateResolutionSource: validation?.templateResolutionSource || null,
     mandateTemplateFallback: Boolean(validation?.mandateTemplateFallback),
     mandateTemplateFallbackWarning: validation?.mandateTemplateFallbackWarning || null,
@@ -1909,6 +2003,9 @@ function buildValidationSummary(validation = {}) {
     legalDocumentScenarioKey: validation?.legalDocumentScenarioKey || null,
     legalDocumentScenarioComplete: Boolean(validation?.legalDocumentScenarioComplete),
     legalDocumentMissingRoutingFacts: validation?.legalDocumentMissingRoutingFacts || [],
+    legalDocumentConflictingFacts: validation?.legalDocumentConflictingFacts || [],
+    legalDocumentInvalidFacts: validation?.legalDocumentInvalidFacts || [],
+    legalDocumentScenarioProvenance: validation?.legalDocumentScenarioProvenance || {},
     legalScenarioValidation: validation?.legalScenarioValidation || null,
   }
 }
@@ -1980,38 +2077,6 @@ function buildLegalDocumentTemplateFallbackWarning({ validation = {}, templateRe
   }
 }
 
-function resolveMandateTemplateRuntimeRouteKey(validation = {}, templateResolution = null) {
-  const template = templateResolution?.template || null
-  const metadata =
-    template?.metadata_json && typeof template.metadata_json === 'object'
-      ? template.metadata_json
-      : template?.metadataJson && typeof template.metadataJson === 'object'
-        ? template.metadataJson
-        : {}
-  const templateRoute = normalizeMandateTemplateVariant(
-    metadata.mandate_template_variant ||
-      metadata.mandateTemplateVariant ||
-      metadata.template_variant ||
-      metadata.templateVariant ||
-      '',
-  )
-  const scenarioRoute = normalizeMandateTemplateVariant(
-    validation?.mandateTemplateVariant ||
-      validation?.placeholders?.mandate_template_variant ||
-      templateResolution?.mandateTemplateRouting?.mandateTemplateVariant ||
-      templateResolution?.mandateScenarioProfile?.templateVariant ||
-      '',
-  )
-  const resolutionSource = normalizeText(templateResolution?.source)
-
-  if (resolutionSource === 'mandate_scenario_variant') {
-    return scenarioRoute || templateRoute || 'default'
-  }
-  if (templateRoute && templateRoute !== 'default') return templateRoute
-  if (resolutionSource === 'mandate_scenario_fallback') return 'default'
-  return scenarioRoute || templateRoute || 'default'
-}
-
 function mapMandateTemplateContentGateIssue(issue = {}, gate = {}, { required = true } = {}) {
   const signalKey = normalizeText(
     issue.signalGroupKey || issue.conditionalPackKey || issue.code || 'mandate_template_content',
@@ -2033,31 +2098,14 @@ function mapMandateTemplateContentGateIssue(issue = {}, gate = {}, { required = 
   }
 }
 
-function mapMandateTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { required = true } = {}) {
-  const routeKey = normalizeText(issue.routeKey || readiness.routeKey || 'mandate_template_variant')
-  const routeLabel = normalizeText(issue.routeLabel || readiness.routeLabel || 'Mandate route')
-  return {
-    source: 'mandate_template_launch_readiness',
-    sectionKey: 'mandate_template_launch_readiness',
-    sectionLabel: 'Mandate launch readiness',
-    placeholderKey: routeKey,
-    placeholderLabel: routeLabel,
-    message: formatMandateTemplateLaunchReadinessIssue(issue),
-    required,
-    warningCode: normalizeText(issue.code) || 'MANDATE_TEMPLATE_LAUNCH_READINESS',
-    mandateTemplateVariant: routeKey,
-    mandateTemplateRouteLabel: routeLabel,
-    selectedTemplateId: normalizeText(issue.templateId || readiness.selectedTemplateId) || null,
-    selectedTemplateKey: normalizeText(issue.templateKey || readiness.selectedTemplateKey) || null,
-  }
-}
-
 function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
   if (normalizeText(validation?.packetType).toLowerCase() !== 'mandate') return null
   const template = templateResolution?.template || null
   if (!template?.id) return null
 
-  const routeKey = resolveMandateTemplateRuntimeRouteKey(validation, templateResolution)
+  // The live mandate is a conditional master. Scan it as the universal route:
+  // scenario-specific wording is valid only inside correctly conditioned packs.
+  const routeKey = 'default'
   const gate = buildMandateTemplatePublishGateReport(
     {
       ...template,
@@ -2081,60 +2129,30 @@ function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolut
   }
 }
 
-function withMandateTemplateRoutingWarnings(validation = {}, templateResolution = null) {
+function withConditionalMasterTemplateValidation(validation = {}, templateResolution = null) {
   const templateResolutionSource =
     normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
-  const fallbackWarning = buildMandateTemplateFallbackWarning({
-    validation,
-    templateResolution,
-  })
-  const legalFallbackWarning = buildLegalDocumentTemplateFallbackWarning({
-    validation,
-    templateResolution,
-  })
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
-  const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
-    action: validation?.validationAction,
-  })
   const contentGateBlockers = (contentGate?.blockers || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: true }),
   )
   const contentGateWarnings = (contentGate?.warnings || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: false }),
   )
-  const launchReadinessBlockers = (launchReadiness?.shouldBlockGeneration ? launchReadiness.blockers : []).map(
-    (issue) =>
-      mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, {
-        required: true,
-      }),
-  )
-  const launchReadinessWarnings = (!launchReadiness?.shouldBlockGeneration ? launchReadiness?.warnings || [] : []).map(
-    (issue) =>
-      mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, {
-        required: false,
-      }),
-  )
+  const coverageTemplate = templateResolution?.template || null
+  const conditionalMasterCoverageReadiness = ['mandate', 'otp'].includes(normalizeText(validation?.packetType).toLowerCase())
+    ? evaluateConditionalMasterCoverage({
+        packetType: validation.packetType,
+        template: coverageTemplate,
+      })
+    : null
+  const coverageBlockers = conditionalMasterCoverageReadiness?.issues || []
 
   return {
     ...validation,
     templateResolutionSource,
-    mandateTemplateLaunchReadiness: launchReadiness
-      ? {
-          readinessVersion: launchReadiness.readinessVersion,
-          status: launchReadiness.status,
-          action: launchReadiness.action,
-          shouldBlockGeneration: Boolean(launchReadiness.shouldBlockGeneration),
-          canGenerateWithoutFallback: Boolean(launchReadiness.canGenerateWithoutFallback),
-          routeKey: launchReadiness.routeKey,
-          routeLabel: launchReadiness.routeLabel,
-          templateResolutionSource: launchReadiness.templateResolutionSource,
-          selectedTemplateId: launchReadiness.selectedTemplateId,
-          selectedTemplateKey: launchReadiness.selectedTemplateKey,
-          selectedTemplateLabel: launchReadiness.selectedTemplateLabel,
-          blockerCodes: (launchReadiness.blockers || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
-          warningCodes: (launchReadiness.warnings || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
-        }
-      : validation?.mandateTemplateLaunchReadiness || null,
+    mandateTemplateLaunchReadiness: null,
+    conditionalMasterCoverageReadiness,
     mandateTemplateContentGate: contentGate
       ? {
           gateVersion: contentGate.gateVersion,
@@ -2160,22 +2178,19 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
     critical: dedupeValidationIssues([
       ...(validation?.critical || []),
       ...contentGateBlockers,
-      ...launchReadinessBlockers,
+      ...coverageBlockers,
     ]),
-    mandateTemplateFallback: Boolean(fallbackWarning || validation?.mandateTemplateFallback),
-    mandateTemplateFallbackWarning: fallbackWarning || validation?.mandateTemplateFallbackWarning || null,
-    legalDocumentTemplateFallback: Boolean(legalFallbackWarning || validation?.legalDocumentTemplateFallback),
-    legalDocumentTemplateFallbackWarning:
-      legalFallbackWarning || validation?.legalDocumentTemplateFallbackWarning || null,
+    mandateTemplateFallback: false,
+    mandateTemplateFallbackWarning: null,
+    legalDocumentTemplateFallback: false,
+    legalDocumentTemplateFallbackWarning: null,
     warnings: dedupeValidationIssues([
       ...(validation?.warnings || []),
-      ...(fallbackWarning ? [fallbackWarning] : []),
-      ...(legalFallbackWarning ? [legalFallbackWarning] : []),
       ...contentGateWarnings,
-      ...launchReadinessWarnings,
     ]),
-    isValidForGeneration:
-      contentGateBlockers.length || launchReadinessBlockers.length ? false : validation?.isValidForGeneration,
+    isValidForGeneration: contentGateBlockers.length || coverageBlockers.length
+      ? false
+      : validation?.isValidForGeneration,
   }
 }
 
@@ -2210,36 +2225,6 @@ export async function resolveActiveTemplate({
   context = {},
   includeSections = true,
 } = {}) {
-  const normalizedPacketType = normalizeText(packetType).toLowerCase()
-  if (normalizedPacketType === 'mandate') {
-    const mandateTemplateResolution = await resolveMandateScenarioTemplateForPacket({
-      packetType: normalizedPacketType,
-      context: {
-        ...context,
-        moduleType,
-        organisationId,
-      },
-      moduleType: normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context),
-      organisationId: organisationId || resolveTemplateOrganisationId(context),
-      includeSections,
-    })
-    if (mandateTemplateResolution?.template) return mandateTemplateResolution
-  }
-  if (normalizedPacketType === 'otp') {
-    const otpTemplateResolution = await resolveOtpScenarioTemplateForPacket({
-      packetType: normalizedPacketType,
-      context: {
-        ...context,
-        moduleType,
-        organisationId,
-      },
-      moduleType: normalizeText(moduleType) || resolveTemplateModuleType(normalizedPacketType, context),
-      organisationId: organisationId || resolveTemplateOrganisationId(context),
-      includeSections,
-    })
-    if (otpTemplateResolution?.template) return otpTemplateResolution
-  }
-
   return resolveActivePacketTemplate({
     packetType,
     moduleType: normalizeText(moduleType) || resolveTemplateModuleType(packetType, context),
@@ -2309,18 +2294,73 @@ export async function validatePacket({ packetType, context = {}, template = null
         ...buildLegalDocumentScenarioPlaceholders(legalDocumentScenarioProfile),
       }
     : normalizedPlaceholders
-  const sectionManifest =
-    resolveEditableSectionManifest(context, placeholders) ||
-    (await resolveSeededSectionManifest({
-      packetType: normalizedPacketType,
-      template,
-      placeholders,
-    }))
+  const editableSectionManifest = resolveEditableSectionManifest(context, placeholders)
+  const seededSectionResolution = await resolveSeededSectionManifest({
+    packetType: normalizedPacketType,
+    template,
+    placeholders,
+    scenarioProfile: legalDocumentScenarioProfile,
+  })
+  const sectionManifest = editableSectionManifest || seededSectionResolution.sectionManifest
+  const conditionalEngineAudit = seededSectionResolution.conditionalEngineAudit
+  const conditionalEngineIssues = conditionalEngineAudit?.issues || []
+  let conditionalEngineCanProceed = !conditionalEngineAudit?.applies || Boolean(conditionalEngineAudit.canProceed)
+
+  if (editableSectionManifest && conditionalEngineAudit?.applies) {
+    const actualPackKeys = new Set(
+      editableSectionManifest
+        .map((section) => normalizeText(section?.key))
+        .filter((key) => conditionalEngineAudit.sections.some((decision) => decision.packKey === key)),
+    )
+    const expectedPackKeys = new Set(conditionalEngineAudit.includedPackKeys || [])
+    const missingExpected = [...expectedPackKeys].filter((key) => !actualPackKeys.has(key))
+    const unexpected = [...actualPackKeys].filter((key) => !expectedPackKeys.has(key))
+    if (missingExpected.length || unexpected.length) {
+      conditionalEngineIssues.push({
+        code: 'CONDITIONAL_EDITABLE_MANIFEST_MISMATCH',
+        source: 'conditional_engine',
+        sectionKey: 'conditional_master',
+        sectionLabel: 'Conditional master',
+        message: 'The editable document sections do not match the canonical scenario decision.',
+        required: true,
+        details: { missingExpected, unexpected },
+      })
+      conditionalEngineAudit.canProceed = false
+      conditionalEngineCanProceed = false
+    }
+  }
   const ruleValidation = validatePacketPlaceholders({
     packetType: normalizedPacketType,
     placeholders,
     sectionManifest,
   })
+  const templateMetadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const signerRoleDefinitions = Array.isArray(template?.default_signer_roles)
+    ? template.default_signer_roles
+    : Array.isArray(templateMetadata.default_signer_roles)
+      ? templateMetadata.default_signer_roles
+      : Array.isArray(templateMetadata.defaultSignerRoles)
+        ? templateMetadata.defaultSignerRoles
+        : null
+  const conditionalSigningAudit = supportsLegalScenario
+    ? evaluateConditionalSigningPlan({
+        packetType: normalizedPacketType,
+        placeholders,
+        context,
+        scenarioProfile: legalDocumentScenarioProfile,
+        plannedFields: resolveVersionPlannedSigningFields({
+          section_manifest_json: ruleValidation.sectionManifest,
+        }),
+        signerRoleDefinitions,
+      })
+    : null
+  const conditionalSigningDocumentIssues = (conditionalSigningAudit?.issues || []).filter(
+    (item) => !['CONDITIONAL_SIGNER_FACT_MISSING', 'CONDITIONAL_SIGNING_SCENARIO_INCOMPLETE'].includes(item.code),
+  )
   const conditionalPackAudit = resolveConditionalPackAudit({
     packetType: normalizedPacketType,
     placeholders,
@@ -2451,13 +2491,15 @@ export async function validatePacket({ packetType, context = {}, template = null
       ])
     : []
   const criticalIssues = isTemplatePreview
-    ? [...ruleCritical]
+    ? [...ruleCritical, ...conditionalEngineIssues, ...conditionalSigningDocumentIssues]
     : allowMandateGenerationGaps
       ? [
           ...sellerCriticalIssues,
           ...conditionalPackMissingPlaceholders,
           ...legalScenarioIssues,
           ...legalScenarioRequirementIssues,
+          ...conditionalEngineIssues,
+          ...conditionalSigningDocumentIssues,
         ]
       : [
           ...ruleCritical,
@@ -2466,6 +2508,8 @@ export async function validatePacket({ packetType, context = {}, template = null
           ...conditionalPackMissingPlaceholders,
           ...legalScenarioIssues,
           ...legalScenarioRequirementIssues,
+          ...conditionalEngineIssues,
+          ...conditionalSigningDocumentIssues,
         ]
   const warningIssues = isTemplatePreview
     ? [...structuralRuleWarnings]
@@ -2489,10 +2533,15 @@ export async function validatePacket({ packetType, context = {}, template = null
     conditionalPackDataRequirements,
     conditionalPackMissingPlaceholders,
     conditionalPackAudit,
+    conditionalEngineAudit,
+    conditionalSigningAudit,
     legalDocumentScenarioProfile,
     legalDocumentScenarioKey: legalDocumentScenarioProfile?.scenarioKey || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
     legalDocumentMissingRoutingFacts: legalDocumentScenarioProfile?.missingRoutingFacts || [],
+    legalDocumentConflictingFacts: legalDocumentScenarioProfile?.conflictingFacts || [],
+    legalDocumentInvalidFacts: legalDocumentScenarioProfile?.invalidFacts || [],
+    legalDocumentScenarioProvenance: legalDocumentScenarioProfile?.sourceProvenance || {},
     legalScenarioValidation: {
       canProceed: legalScenarioCanProceed && legalScenarioRequirementsCanProceed,
       issues: [...legalScenarioIssues, ...legalScenarioRequirementIssues],
@@ -2504,12 +2553,14 @@ export async function validatePacket({ packetType, context = {}, template = null
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
     isValidForGeneration: isTemplatePreview
-      ? ruleValidation.isValidForGeneration
+      ? ruleValidation.isValidForGeneration && conditionalEngineCanProceed && Boolean(conditionalSigningAudit?.documentCanProceed ?? true)
       : isCommercialPacket
         ? ruleValidation.isValidForGeneration && conditionalPackCanProceed
         : legalScenarioCanProceed &&
           legalScenarioRequirementsCanProceed &&
           conditionalPackCanProceed &&
+          conditionalEngineCanProceed &&
+          Boolean(conditionalSigningAudit?.documentCanProceed ?? true) &&
           sellerValidation.canProceed &&
           (allowMandateGenerationGaps ||
             (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed))),
@@ -2541,7 +2592,7 @@ export async function renderPacketPreview({
     template: resolvedTemplate,
     validationAction,
   })
-  const validation = withMandateTemplateRoutingWarnings(baseValidation, templateResolution)
+  const validation = withConditionalMasterTemplateValidation(baseValidation, templateResolution)
   if (
     validation.packetType === 'mandate' &&
     validationAction === 'upload_signed' &&
@@ -2635,7 +2686,7 @@ export async function savePacketDraft({
     template: resolvedTemplate,
     validationAction,
   })
-  const rendered = withMandateTemplateRoutingWarnings(renderedPreview, templateResolution)
+  const rendered = withConditionalMasterTemplateValidation(renderedPreview, templateResolution)
 
   const packet = await createOrReusePacket({
     packetId,
@@ -2694,6 +2745,7 @@ export async function savePacketDraft({
       legalDocumentTemplateFallbackWarning: rendered.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: rendered.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: rendered.mandateTemplateLaunchReadiness || null,
+      conditionalMasterCoverageReadiness: rendered.conditionalMasterCoverageReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
       warningsSnapshot: buildWarningsSnapshot(context, rendered),
@@ -2779,6 +2831,15 @@ export async function generatePacketVersion({
     const hasConditionalPackBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'conditional_pack',
     )
+    const hasConditionalEngineBlockingIssues = (validation.critical || []).some(
+      (issue) => issue?.source === 'conditional_engine',
+    )
+    const hasConditionalSigningBlockingIssues = (validation.critical || []).some(
+      (issue) => issue?.source === 'conditional_signing_engine',
+    )
+    const hasConditionalMasterCoverageBlockingIssues = (validation.critical || []).some(
+      (issue) => issue?.source === 'conditional_master_coverage',
+    )
     const hasLegalScenarioBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'legal_scenario',
     )
@@ -2788,28 +2849,25 @@ export async function generatePacketVersion({
     const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_content_gate',
     )
-    const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(
-      (issue) => issue?.source === 'mandate_template_launch_readiness',
-    )
-    const allowGenerationBypass =
+    const allowGenerationBypass = !hasConditionalEngineBlockingIssues && !hasConditionalSigningBlockingIssues && !hasConditionalMasterCoverageBlockingIssues && (
       (isMandatePacket &&
         !hasConditionalPackBlockingIssues &&
         !hasLegalScenarioBlockingIssues &&
         !hasLegalScenarioRequirementBlockingIssues &&
-        !hasMandateTemplateContentGateBlockingIssues &&
-        !hasMandateTemplateLaunchReadinessBlockingIssues) ||
+        !hasMandateTemplateContentGateBlockingIssues) ||
       forceGenerate
+    )
     if (!validation.isValidForGeneration && !allowGenerationBypass) {
       const error = createPacketError(
-        hasMandateTemplateLaunchReadinessBlockingIssues
-          ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
+        hasConditionalMasterCoverageBlockingIssues
+          ? 'CONDITIONAL_MASTER_COVERAGE_BLOCKED'
           : hasMandateTemplateContentGateBlockingIssues
             ? 'MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED'
             : 'VALIDATION_BLOCKED',
-        hasMandateTemplateLaunchReadinessBlockingIssues
-          ? 'Mandate template launch readiness is blocked. Publish the correct route template before generation.'
+        hasConditionalMasterCoverageBlockingIssues
+          ? 'The conditional master does not cover every supported legal scenario. Restore the protected packs and signer rules before generation.'
           : hasMandateTemplateContentGateBlockingIssues
-            ? 'Mandate template wording does not match the selected route. Fix the template content before generation.'
+            ? 'Mandate template wording does not satisfy the conditional-master content gate. Fix the template content before generation.'
             : 'Critical packet data is missing. Fix validation issues before generation.',
       )
       error.validation = validation
@@ -2865,6 +2923,7 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+        conditionalMasterCoverageReadiness: generationPayload.conditionalMasterCoverageReadiness || null,
         generatedAt,
         generationAttemptId,
         message:
@@ -3211,6 +3270,7 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+        conditionalMasterCoverageReadiness: generationPayload.conditionalMasterCoverageReadiness || null,
         generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
         missingFieldsSnapshot:
           context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
@@ -3256,6 +3316,7 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+        conditionalMasterCoverageReadiness: generationPayload.conditionalMasterCoverageReadiness || null,
         message: previewOnlyGeneration
           ? 'Mandate draft preview was generated.'
           : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
@@ -3439,13 +3500,31 @@ export async function prepareSigningFields({
     organisationId,
   })
 
+  const plannedFields = resolveVersionPlannedSigningFields(targetVersion)
+  const frozenPlaceholders = targetVersion?.placeholders_resolved_json && typeof targetVersion.placeholders_resolved_json === 'object'
+    ? targetVersion.placeholders_resolved_json
+    : placeholders && typeof placeholders === 'object'
+      ? placeholders
+      : {}
+  const signingContext = {
+    ...(packet?.source_context_json && typeof packet.source_context_json === 'object' ? packet.source_context_json : {}),
+    ...(context && typeof context === 'object' ? context : {}),
+  }
   const seed = buildDefaultSigningSeeds({
     packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
-    placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
-    context,
+    placeholders: frozenPlaceholders,
+    context: signingContext,
     versionNumber: targetVersion.version_number,
+    plannedFields,
   })
-  const plannedFields = resolveVersionPlannedSigningFields(targetVersion)
+  if (!seed.conditionalSigningAudit?.canPrepareSigning) {
+    const error = createPacketError(
+      'CONDITIONAL_SIGNING_PLAN_BLOCKED',
+      'The signer plan does not match the generated document scenario.',
+    )
+    error.details = seed.conditionalSigningAudit
+    throw error
+  }
   if (plannedFields.length) {
     const existingSignerByRole = new Map(
       seed.signers.map((signer) => [normalizeText(signer?.signerRole).toLowerCase(), signer]),
@@ -3457,9 +3536,9 @@ export async function prepareSigningFields({
         existing ||
         resolveSignerSeed({
           role,
-          placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
+          placeholders: frozenPlaceholders,
           context: {
-            ...context,
+            ...signingContext,
             packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
           },
         })
@@ -3487,6 +3566,21 @@ export async function prepareSigningFields({
   if (currentSummary.fieldCount > 0 || currentSummary.signerCount > 0) {
     const currentSigners = Array.isArray(currentSummary.signers) ? currentSummary.signers : []
     const currentFields = Array.isArray(currentSummary.fields) ? currentSummary.fields : []
+    const currentSigningAudit = evaluateConditionalSigningPlan({
+      packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
+      placeholders: frozenPlaceholders,
+      context: signingContext,
+      plannedFields: currentFields,
+      actualSigners: currentSigners,
+    })
+    if (!currentSigningAudit.canPrepareSigning) {
+      const error = createPacketError(
+        'CONDITIONAL_SIGNING_ROSTER_MISMATCH',
+        'The existing signer roster no longer matches the generated document scenario. Reset signing preparation before continuing.',
+      )
+      error.details = currentSigningAudit
+      throw error
+    }
     const needsSignerRepair = seed.signers.some((seedSigner) => {
       const existingSigner = currentSigners.find(
         (row) =>
@@ -3614,6 +3708,8 @@ export async function prepareSigningFields({
           reason: signer.reason,
         })) || [],
       signingLayoutSource: seed.layoutSource,
+      conditionalSigningEngineVersion: seed.conditionalSigningAudit?.engineVersion || null,
+      conditionalSigningDecision: seed.conditionalSigningAudit || null,
     },
   })
 

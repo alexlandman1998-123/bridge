@@ -7,6 +7,7 @@ function normalizeComparable(value) {
 }
 
 export const VISIBILITY_VALUELESS_OPERATORS = ['exists', 'missing', 'truthy', 'falsy']
+export const VISIBILITY_ENGINE_VERSION = 'conditional-visibility-v2'
 
 const VISIBILITY_OPERATOR_ALIASES = new Map([
   ['=', 'equals'],
@@ -178,53 +179,199 @@ function expectedValues(value) {
     .filter(Boolean)
 }
 
-function evaluateVisibilityPredicate(rule = {}, placeholders = {}) {
-  const field = normalizeVisibilityFieldKey(rule.key || rule.placeholder || rule.field)
-  if (!field) return true
+function visibilityError(code, message, details = {}) {
+  return { code, message, ...details }
+}
 
-  const operator = normalizeVisibilityOperator(rule.operator || 'exists')
+function resolveVisibilityPlaceholderEvidence(placeholders = {}, field = '') {
+  const payload = placeholders && typeof placeholders === 'object' ? placeholders : {}
+  const matches = buildFieldCandidates(field)
+    .map((candidate) => ({
+      key: candidate,
+      value: hasOwn(payload, candidate) ? payload[candidate] : resolveNestedValue(payload, candidate),
+    }))
+    .filter((item) => item.value !== undefined)
+  const meaningful = matches.filter((item) => isMeaningfullyPresent(item.value))
+  const selected = meaningful[0] || matches[0] || { key: normalizeVisibilityFieldKey(field), value: undefined }
+  const signatures = new Set(meaningful.map((item) => comparableValues(item.value).sort().join('|')))
+  return {
+    value: selected.value,
+    resolvedKey: selected.key,
+    candidates: matches,
+    conflict: signatures.size > 1,
+  }
+}
+
+function resolveStrictVisibilityOperator(value = '') {
+  const normalized = normalizeComparable(value).replace(/\s+/g, ' ')
+  return VISIBILITY_OPERATOR_ALIASES.get(normalized) || null
+}
+
+function normalizeBooleanValue(value) {
+  if (typeof value === 'boolean') return value
+  const normalized = normalizeComparable(value)
+  if (['true', 'yes', '1', 'on'].includes(normalized)) return true
+  if (['false', 'no', '0', 'off', ''].includes(normalized)) return false
+  return Boolean(value)
+}
+
+function evaluateVisibilityPredicateDetailed(rule = {}, placeholders = {}, { strict = false, path = 'rule' } = {}) {
+  const field = normalizeVisibilityFieldKey(rule.key || rule.placeholder || rule.placeholderKey || rule.placeholder_key || rule.field)
+  const rawOperator = rule.operator || 'exists'
+  const operator = strict ? resolveStrictVisibilityOperator(rawOperator) : normalizeVisibilityOperator(rawOperator)
+  const errors = []
+
+  if (!field) {
+    errors.push(visibilityError('VISIBILITY_FIELD_MISSING', 'Conditional rule field is missing.', { path }))
+  }
+  if (!operator) {
+    errors.push(visibilityError('VISIBILITY_OPERATOR_UNSUPPORTED', `Conditional operator "${normalizeText(rawOperator)}" is not supported.`, { path, field }))
+  }
+
   const expected = rule.value
-  const current = resolveVisibilityPlaceholderValue(placeholders, field)
+  const expectedList = expectedValues(expected)
+  if (operator && !VISIBILITY_VALUELESS_OPERATORS.includes(operator) && expectedList.length === 0) {
+    errors.push(visibilityError('VISIBILITY_EXPECTED_VALUE_MISSING', 'Conditional rule expected value is missing.', { path, field, operator }))
+  }
+
+  const evidence = resolveVisibilityPlaceholderEvidence(placeholders, field)
+  if (strict && evidence.conflict) {
+    errors.push(visibilityError('VISIBILITY_FIELD_CONFLICT', `Conflicting values were supplied for ${field}.`, {
+      path,
+      field,
+      candidateKeys: evidence.candidates.map((item) => item.key),
+    }))
+  }
+
+  const current = evidence.value
+  const present = isMeaningfullyPresent(current)
   const currentValues = comparableValues(current)
   const currentText = currentValues.join(' ')
-  const expectedList = expectedValues(expected)
   const expectedText = expectedList[0] || ''
+  let matched = false
 
-  if (operator === 'exists') return isMeaningfullyPresent(current)
-  if (operator === 'missing') return !isMeaningfullyPresent(current)
-  if (operator === 'truthy') return Boolean(current)
-  if (operator === 'falsy') return !current
-  if (operator === 'equals') return currentValues.some((value) => value === expectedText)
-  if (operator === 'not_equals') return currentValues.every((value) => value !== expectedText)
-  if (operator === 'contains') return Boolean(expectedText && currentText.includes(expectedText))
-  if (operator === 'not_contains') return Boolean(!expectedText || !currentText.includes(expectedText))
-  if (operator === 'in') return expectedList.some((value) => currentValues.includes(value))
-  if (operator === 'not_in') return !expectedList.some((value) => currentValues.includes(value))
+  if (!errors.length || !strict) {
+    if (operator === 'exists') matched = present
+    else if (operator === 'missing') matched = !present
+    else if (operator === 'truthy') matched = present && normalizeBooleanValue(current)
+    else if (operator === 'falsy') matched = !present || !normalizeBooleanValue(current)
+    else if (!present && strict) matched = false
+    else if (operator === 'equals') matched = currentValues.some((value) => value === expectedText)
+    else if (operator === 'not_equals') matched = currentValues.every((value) => value !== expectedText)
+    else if (operator === 'contains') matched = Boolean(expectedText && currentText.includes(expectedText))
+    else if (operator === 'not_contains') matched = Boolean(!expectedText || !currentText.includes(expectedText))
+    else if (operator === 'in') matched = expectedList.some((value) => currentValues.includes(value))
+    else if (operator === 'not_in') matched = !expectedList.some((value) => currentValues.includes(value))
+  }
 
-  return true
+  const valid = errors.length === 0
+  return {
+    engineVersion: VISIBILITY_ENGINE_VERSION,
+    visible: strict ? valid && matched : matched,
+    valid,
+    decision: strict && !valid ? 'invalid_excluded' : matched ? 'included' : 'excluded',
+    field,
+    operator: operator || normalizeText(rawOperator),
+    expected: VISIBILITY_VALUELESS_OPERATORS.includes(operator) ? null : expected,
+    actual: current,
+    resolvedKey: evidence.resolvedKey,
+    errors,
+    trace: [{ path, field, operator: operator || normalizeText(rawOperator), matched, present, resolvedKey: evidence.resolvedKey }],
+  }
+}
+
+function combineVisibilityResults(kind, results = [], { strict = false, path = 'rule' } = {}) {
+  const valid = results.every((result) => result.valid)
+  const matched = kind === 'any'
+    ? results.some((result) => result.visible)
+    : results.every((result) => result.visible)
+  const errors = results.flatMap((result) => result.errors || [])
+  const visible = strict ? valid && matched : matched
+  return {
+    engineVersion: VISIBILITY_ENGINE_VERSION,
+    visible,
+    valid,
+    decision: strict && !valid ? 'invalid_excluded' : visible ? 'included' : 'excluded',
+    operator: kind,
+    errors,
+    trace: [{ path, operator: kind, matched }, ...results.flatMap((result) => result.trace || [])],
+  }
+}
+
+export function evaluateVisibilityRulesDetailed(ruleSet = null, placeholders = {}, { strict = false, path = 'condition' } = {}) {
+  if (ruleSet === null || ruleSet === undefined || (typeof ruleSet === 'object' && !Array.isArray(ruleSet) && Object.keys(ruleSet).length === 0)) {
+    return {
+      engineVersion: VISIBILITY_ENGINE_VERSION,
+      visible: true,
+      valid: true,
+      decision: 'unconditional',
+      errors: [],
+      trace: [{ path, operator: 'unconditional', matched: true }],
+    }
+  }
+  if (typeof ruleSet === 'boolean') {
+    return {
+      engineVersion: VISIBILITY_ENGINE_VERSION,
+      visible: ruleSet,
+      valid: true,
+      decision: ruleSet ? 'included' : 'excluded',
+      errors: [],
+      trace: [{ path, operator: 'boolean', matched: ruleSet }],
+    }
+  }
+  if (Array.isArray(ruleSet)) {
+    if (strict && ruleSet.length === 0) {
+      const error = visibilityError('VISIBILITY_GROUP_EMPTY', 'Conditional rule group cannot be empty.', { path })
+      return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: false, valid: false, decision: 'invalid_excluded', errors: [error], trace: [{ path, operator: 'all', matched: false }] }
+    }
+    return combineVisibilityResults('all', ruleSet.map((item, index) => evaluateVisibilityRulesDetailed(item, placeholders, { strict, path: `${path}[${index}]` })), { strict, path })
+  }
+  if (typeof ruleSet !== 'object') {
+    if (!strict) return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: true, valid: true, decision: 'legacy_included', errors: [], trace: [{ path, operator: 'legacy', matched: true }] }
+    const error = visibilityError('VISIBILITY_RULE_INVALID_TYPE', 'Conditional rule must be an object, array or boolean.', { path })
+    return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: false, valid: false, decision: 'invalid_excluded', errors: [error], trace: [{ path, operator: 'invalid', matched: false }] }
+  }
+  if (ruleSet.enabled === false) {
+    return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: true, valid: true, decision: 'disabled_unconditional', errors: [], trace: [{ path, operator: 'disabled', matched: true }] }
+  }
+  if (ruleSet.rule && typeof ruleSet.rule === 'object') {
+    if (strict && Object.keys(ruleSet.rule).length === 0) {
+      const error = visibilityError('VISIBILITY_RULE_EMPTY', 'Enabled conditional rule cannot be empty.', { path: `${path}.rule` })
+      return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: false, valid: false, decision: 'invalid_excluded', errors: [error], trace: [{ path, operator: 'rule', matched: false }] }
+    }
+    return evaluateVisibilityRulesDetailed(ruleSet.rule, placeholders, { strict, path: `${path}.rule` })
+  }
+  if (Array.isArray(ruleSet.all)) {
+    if (strict && ruleSet.all.length === 0) {
+      const error = visibilityError('VISIBILITY_GROUP_EMPTY', 'Conditional all-group cannot be empty.', { path })
+      return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: false, valid: false, decision: 'invalid_excluded', errors: [error], trace: [{ path, operator: 'all', matched: false }] }
+    }
+    return combineVisibilityResults('all', ruleSet.all.map((item, index) => evaluateVisibilityRulesDetailed(item, placeholders, { strict, path: `${path}.all[${index}]` })), { strict, path })
+  }
+  if (Array.isArray(ruleSet.any)) {
+    if (strict && ruleSet.any.length === 0) {
+      const error = visibilityError('VISIBILITY_GROUP_EMPTY', 'Conditional any-group cannot be empty.', { path })
+      return { engineVersion: VISIBILITY_ENGINE_VERSION, visible: false, valid: false, decision: 'invalid_excluded', errors: [error], trace: [{ path, operator: 'any', matched: false }] }
+    }
+    return combineVisibilityResults('any', ruleSet.any.map((item, index) => evaluateVisibilityRulesDetailed(item, placeholders, { strict, path: `${path}.any[${index}]` })), { strict, path })
+  }
+  if (ruleSet.not !== undefined) {
+    const nested = evaluateVisibilityRulesDetailed(ruleSet.not, placeholders, { strict, path: `${path}.not` })
+    const visible = strict ? nested.valid && !nested.visible : !nested.visible
+    return {
+      engineVersion: VISIBILITY_ENGINE_VERSION,
+      visible,
+      valid: nested.valid,
+      decision: strict && !nested.valid ? 'invalid_excluded' : visible ? 'included' : 'excluded',
+      operator: 'not',
+      errors: nested.errors,
+      trace: [{ path, operator: 'not', matched: visible }, ...(nested.trace || [])],
+    }
+  }
+
+  return evaluateVisibilityPredicateDetailed(ruleSet, placeholders, { strict, path })
 }
 
 export function evaluateVisibilityRules(ruleSet = null, placeholders = {}) {
-  if (!ruleSet) return true
-  if (typeof ruleSet === 'boolean') return ruleSet
-  if (Array.isArray(ruleSet)) {
-    return ruleSet.every((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (typeof ruleSet !== 'object') return true
-  if (ruleSet.enabled === false) return true
-
-  if (ruleSet.rule && typeof ruleSet.rule === 'object') {
-    return evaluateVisibilityRules(ruleSet.rule, placeholders)
-  }
-  if (Array.isArray(ruleSet.all)) {
-    return ruleSet.all.every((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (Array.isArray(ruleSet.any)) {
-    return ruleSet.any.some((item) => evaluateVisibilityRules(item, placeholders))
-  }
-  if (ruleSet.not !== undefined) {
-    return !evaluateVisibilityRules(ruleSet.not, placeholders)
-  }
-
-  return evaluateVisibilityPredicate(ruleSet, placeholders)
+  return evaluateVisibilityRulesDetailed(ruleSet, placeholders).visible
 }

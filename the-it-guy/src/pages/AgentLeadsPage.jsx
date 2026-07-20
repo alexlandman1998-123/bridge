@@ -45,6 +45,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AgentAssignmentSelect from '../components/AgentAssignmentSelect'
+import AttorneySelector from '../components/AttorneySelector'
 import {
   buildActorAgentOption,
   buildAgentOptions,
@@ -15418,6 +15419,7 @@ function PreferredAttorneySelectionModal({
   onSelect,
   onClose,
   onConfirm,
+  onConnect,
 }) {
   const selectedAttorney = attorneys.find((attorney) => String(attorney.id) === String(selectedId)) || null
   return (
@@ -15443,27 +15445,16 @@ function PreferredAttorneySelectionModal({
       )}
     >
       {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
-      {loading ? (
-        <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
-      ) : attorneys.length ? (
-        <label className="grid gap-2 text-sm font-semibold text-slate-700">
-          Connected attorney
-          <select
-            value={selectedId}
-            onChange={(event) => onSelect?.(event.target.value)}
-            className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-          >
-            <option value="">Select an attorney</option>
-            {attorneys.map((attorney) => (
-              <option key={attorney.id} value={attorney.id}>{attorney.companyName}</option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No connected attorney firms were found. Connect an attorney under Organisation → Partners before sending seller onboarding.
-        </div>
-      )}
+      <div className="grid gap-2">
+        <span className="text-sm font-semibold text-slate-700">Connected attorney</span>
+        <AttorneySelector
+          attorneys={attorneys}
+          value={selectedId}
+          loading={loading}
+          onValueChange={onSelect}
+          onConnect={onConnect}
+        />
+      </div>
     </Modal>
   )
 }
@@ -21157,6 +21148,13 @@ function AgentLeadWorkspace() {
         companyName: normalizeText(attorney.companyName) || 'Connected attorney',
         contactPerson: normalizeText(attorney.contactPerson),
         email: normalizeText(attorney.email),
+        logoUrl: normalizeText(attorney.logoUrl),
+        city: normalizeText(attorney.city),
+        province: normalizeText(attorney.province),
+        branch: normalizeText(attorney.branch),
+        serviceType: normalizeText(attorney.serviceType) || 'Conveyancing',
+        specialties: Array.isArray(attorney.specialties) ? attorney.specialties : [],
+        status: 'connected',
       })).filter((attorney) => attorney.id)
       setSellerPreferredAttorneys(attorneys)
       const existingAttorneyId = normalizeText(
@@ -22171,6 +22169,10 @@ function AgentLeadWorkspace() {
             }}
             onClose={() => setSellerAttorneyPickerOpen(false)}
             onConfirm={confirmSellerOnboardingSend}
+            onConnect={() => {
+              setSellerAttorneyPickerOpen(false)
+              navigate('/partners')
+            }}
           />
         </>
       ) : null}

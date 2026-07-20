@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildLegalDocumentLibraryModel } from '../legalDocumentLibraryModel.js'
+import {
+  buildConditionalMasterTemplateSections,
+  getConditionalMasterTemplateDefinition,
+} from '../conditionalMasterTemplateDefinitions.js'
+
+const otpMaster = getConditionalMasterTemplateDefinition('otp')
 
 const otpTemplates = [
   {
@@ -11,21 +17,25 @@ const otpTemplates = [
     is_active: true,
     version_tag: 'v4',
     updated_at: '2026-07-10T08:00:00.000Z',
-    metadata_json: { document_kind: 'standard', lifecycle_status: 'active' },
-    sections: [
-      { section_key: 'parties', metadata_json: {} },
-      { section_key: 'property_details', metadata_json: {} },
-      { section_key: 'buyer_company_authority_pack', metadata_json: {} },
+    metadata_json: {
+      document_kind: 'standard',
+      lifecycle_status: 'active',
+      default_signer_roles: otpMaster.defaultSignerRoles,
+    },
+    sections: buildConditionalMasterTemplateSections('otp', [
+      { sectionKey: 'parties', metadataJson: {}, legalText: 'Parties' },
+      { sectionKey: 'property_details', metadataJson: {}, legalText: 'Property' },
       {
-        section_key: 'signature_pages',
-        metadata_json: {
+        sectionKey: 'signature_pages',
+        legalText: 'Signatures',
+        metadataJson: {
           planned_signing_fields: [
             { signer_role: 'purchaser_1', field_type: 'signature' },
             { signer_role: 'seller', field_type: 'signature' },
           ],
         },
       },
-    ],
+    ]),
   },
   {
     id: 'otp-specialised-draft',
@@ -55,7 +65,7 @@ const otpTemplates = [
   },
 ]
 
-test('derives real OTP status, section groups, signing rules and routing coverage', () => {
+test('derives real OTP status, section groups, signing rules and conditional-master coverage', () => {
   const model = buildLegalDocumentLibraryModel({
     templatesByType: { otp: otpTemplates, mandate: [] },
   })
@@ -64,13 +74,13 @@ test('derives real OTP status, section groups, signing rules and routing coverag
   assert.equal(otp.liveTemplateId, 'otp-live')
   assert.equal(otp.versionLabel, 'v4')
   assert.equal(otp.standardSectionCount, 3)
-  assert.equal(otp.situationClauseCount, 1)
+  assert.equal(otp.situationClauseCount, 13)
   assert.deepEqual(otp.standardSections.map((section) => section.title), [
     'Parties',
-    'Property Details',
     'Signature Pages',
+    'Property Details',
   ])
-  assert.equal(otp.situationSections[0].ruleLabel, 'Buyer company authority pack')
+  assert.equal(otp.situationSections[0].ruleLabel, 'Individual buyer capacity pack')
   assert.equal(otp.signerRuleCount, 2)
   assert.equal(otp.coverageReady, true)
   assert.equal(otp.draftCount, 1)

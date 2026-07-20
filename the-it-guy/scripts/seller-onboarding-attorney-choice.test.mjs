@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const [leadWorkspace, sellerOnboarding, privateListingService, acceptanceMigration, resolutionMigration] = await Promise.all([
+const [leadWorkspace, attorneySelector, sellerOnboarding, privateListingService, acceptanceMigration, resolutionMigration] = await Promise.all([
   readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/AttorneySelector.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
   readFile(new URL('../../supabase/migrations/20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql', import.meta.url), 'utf8'),
@@ -12,7 +13,11 @@ const [leadWorkspace, sellerOnboarding, privateListingService, acceptanceMigrati
 assert.ok(leadWorkspace.includes('function PreferredAttorneySelectionModal'), 'seller sends must open the attorney picker')
 assert.ok(leadWorkspace.includes('Confirm attorney & send'), 'the picker must require an explicit confirmation')
 assert.ok(leadWorkspace.includes('onSendSellerOnboarding={requestSellerOnboardingSend}'), 'seller workspace send actions must route through the picker')
-assert.ok(leadWorkspace.includes('<select'), 'the attorney picker must be a simple dropdown')
+assert.ok(leadWorkspace.includes('<AttorneySelector'), 'the attorney picker must use the premium searchable selector')
+assert.ok(!attorneySelector.includes('<select'), 'the attorney picker must not use a native browser select')
+assert.ok(attorneySelector.includes("from 'cmdk'"), 'the attorney picker must use the accessible command pattern')
+assert.ok(attorneySelector.includes('Search connected attorneys...'), 'the attorney picker must support firm and location search')
+assert.ok(attorneySelector.includes("isMobile ? 'fixed inset-x-0 bottom-0"), 'the attorney picker must become a bottom sheet on mobile')
 assert.ok(leadWorkspace.includes("getPartnerAssignmentOptions(snapshot, 'transfer_attorney', accessContext)"), 'the dropdown must load accepted connected attorney firms')
 assert.ok(leadWorkspace.includes('transferAttorneyPartnerOrganisationId: preferredAttorneyId'), 'the selected connected organisation must be bound to onboarding creation')
 assert.ok(privateListingService.includes(".eq('id', requestedPreferredAttorneyId)"), 'the service must validate the selected attorney against the agency')

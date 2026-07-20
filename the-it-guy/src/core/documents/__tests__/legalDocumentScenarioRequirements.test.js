@@ -2,8 +2,82 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildLegalDocumentRequirementDraftFromPlaceholders,
+  getLegalDocumentScenarioDependentFieldClears,
   resolveLegalDocumentScenarioRequirements,
+  sanitizeLegalDocumentScenarioDraft,
 } from '../legalDocumentScenarioRequirements.js'
+
+test('starts an empty OTP with routing questions only', () => {
+  const requirements = resolveLegalDocumentScenarioRequirements({ packetType: 'otp', draft: {} })
+
+  assert.equal(requirements.phase, 'routing')
+  assert.deepEqual(requirements.requiredFieldKeys, [
+    'sellerEntityType',
+    'buyerEntityType',
+    'propertyTitleType',
+    'financeType',
+  ])
+  assert.deepEqual(requirements.dataFieldKeys, [])
+})
+
+test('reveals requirements only for dimensions that have been resolved', () => {
+  const requirements = resolveLegalDocumentScenarioRequirements({
+    packetType: 'otp',
+    seller: { entityType: 'close corporation' },
+    draft: {},
+  })
+
+  for (const key of ['sellerFullName', 'sellerIdNumber', 'sellerRepresentativeName', 'sellerResolutionDate']) {
+    assert.ok(requirements.requiredFieldKeys.includes(key), key)
+  }
+  assert.ok(!requirements.requiredFieldKeys.includes('buyerFullName'))
+  assert.ok(!requirements.requiredFieldKeys.includes('propertyAddress'))
+  assert.ok(!requirements.requiredFieldKeys.includes('purchasePrice'))
+})
+
+test('clears values that become irrelevant when a scenario answer changes', () => {
+  assert.deepEqual(
+    getLegalDocumentScenarioDependentFieldClears('buyerEntityType', 'individual'),
+    ['buyerTrusteeNames', 'buyerResolutionDate', 'buyerRepresentativeName', 'buyerRepresentativeCapacity', 'buyerAuthorityBasis'],
+  )
+  assert.deepEqual(
+    getLegalDocumentScenarioDependentFieldClears('propertyTitleType', 'sectional_title'),
+    ['erfNumber'],
+  )
+  assert.deepEqual(
+    getLegalDocumentScenarioDependentFieldClears('financeType', 'combination'),
+    [],
+  )
+  assert.ok(getLegalDocumentScenarioDependentFieldClears('sellerEntityType', '').includes('sellerRepresentativeName'))
+})
+
+test('sanitizes hidden values before an OTP draft is persisted or rendered', () => {
+  const sanitized = sanitizeLegalDocumentScenarioDraft({
+    sellerEntityType: 'company',
+    sellerMaritalRegime: 'in_community',
+    sellerSpouseFullName: 'Stale spouse',
+    sellerTrusteeNames: 'Stale trustee',
+    sellerRepresentativeName: 'Valid representative',
+    buyerEntityType: 'individual',
+    buyerMaritalRegime: 'single',
+    buyerRepresentativeName: 'Stale representative',
+    propertyTitleType: 'full_title',
+    unitNumber: 'Stale unit',
+    erfNumber: '1234',
+    financeType: 'cash',
+    bondAmount: '1000000',
+    cashAmount: '2000000',
+  })
+
+  assert.equal(sanitized.sellerSpouseFullName, '')
+  assert.equal(sanitized.sellerTrusteeNames, '')
+  assert.equal(sanitized.sellerRepresentativeName, 'Valid representative')
+  assert.equal(sanitized.buyerRepresentativeName, '')
+  assert.equal(sanitized.unitNumber, '')
+  assert.equal(sanitized.erfNumber, '1234')
+  assert.equal(sanitized.bondAmount, '')
+  assert.equal(sanitized.cashAmount, '2000000')
+})
 
 test('requires spouse facts only for an individual married in community', () => {
   const requirements = resolveLegalDocumentScenarioRequirements({

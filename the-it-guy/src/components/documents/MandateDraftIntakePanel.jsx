@@ -171,11 +171,11 @@ export default function MandateDraftIntakePanel({
   const sourceLabel = getSourceModeLabel(sourceMode)
   const hasManualStart = normalizeKey(sourceMode) === 'manual_details'
   const startLabel = normalizeText(documentStart).replace(/_/g, ' ') || 'seller lead mandate'
-  const propertyTitleType = normalizeKey(draft.propertyTitleType || (draft.unitNumber || draft.complexName ? 'sectional_title' : 'full_title'))
+  const propertyTitleType = normalizeKey(draft.propertyTitleType)
   const scenarioProfile = resolveLegalDocumentScenarioProfile({
     packetType: 'mandate',
     seller: {
-      entityType: draft.sellerEntityType || 'individual',
+      entityType: draft.sellerEntityType || '',
       maritalStatus: draft.sellerMaritalRegime || draft.sellerMaritalStatus,
     },
     property: { propertyType: propertyTitleType },
@@ -184,6 +184,7 @@ export default function MandateDraftIntakePanel({
     scenarioProfile,
     draft: { ...draft, propertyTitleType },
   })
+  const legalMissingLabels = legalRequirements.missingFields.map((field) => field.label)
   const selectedAttorney = attorneySelectionDeferred
     ? null
     : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || null
@@ -239,7 +240,7 @@ export default function MandateDraftIntakePanel({
               Edit in Seller
             </Button>
           ) : null}
-          <Button type="button" onClick={onConfirm} disabled={!attorneyReady}>
+          <Button type="button" onClick={onConfirm} disabled={!attorneyReady || !legalRequirements.complete}>
             <CheckCircle2 size={15} />
             Looks good
           </Button>
@@ -249,9 +250,13 @@ export default function MandateDraftIntakePanel({
       <div className="mt-5 flex flex-col gap-2 rounded-[18px] border border-[#dbeafe] bg-[#f4f8ff] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#456b98]">Legal situation</p>
-          <p className="mt-1 text-sm font-semibold capitalize text-[#173b63]">
-            {scenarioProfile.sellerClauseProfile.replace(/_/g, ' ')} seller · {scenarioProfile.propertyClauseProfile.replace(/_/g, ' ')}
-          </p>
+          {scenarioProfile.complete ? (
+            <p className="mt-1 text-sm font-semibold capitalize text-[#173b63]">
+              {scenarioProfile.sellerClauseProfile.replace(/_/g, ' ')} seller · {scenarioProfile.propertyClauseProfile.replace(/_/g, ' ')}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm font-semibold text-[#9a5b1d]">Complete the seller legal setup before confirming.</p>
+          )}
         </div>
         <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-semibold ${legalRequirements.complete ? 'border-[#cdebd8] bg-white text-[#20895a]' : 'border-[#f5d9b8] bg-[#fffaf3] text-[#9a5b1d]'}`}>
           {legalRequirements.complete ? 'Legal details ready' : `${legalRequirements.missingFields.length} legal detail${legalRequirements.missingFields.length === 1 ? '' : 's'} to check`}
@@ -410,6 +415,14 @@ export default function MandateDraftIntakePanel({
       {missingChecks.length ? (
         <div className="mt-4 rounded-[18px] border border-[#fde4de] bg-[#fff8f5] px-4 py-3 text-sm font-semibold text-[#9b452e]">
           Update missing items in Seller before generating if they are required for this mandate.
+        </div>
+      ) : null}
+
+      {legalMissingLabels.length ? (
+        <div className="mt-3 rounded-[18px] border border-[#f5d9b8] bg-[#fffaf3] px-4 py-3 text-sm text-[#8a541f]">
+          <p className="font-semibold">Required for this legal situation</p>
+          <p className="mt-1 leading-5">{legalMissingLabels.slice(0, 6).join(', ')}{legalMissingLabels.length > 6 ? ` and ${legalMissingLabels.length - 6} more` : ''}.</p>
+          <p className="mt-1 text-xs font-medium">Update these values in Seller; fields that do not apply to this scenario are not required.</p>
         </div>
       ) : null}
     </section>

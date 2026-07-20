@@ -43,18 +43,35 @@ function withDiagnostics(recovery, error) {
 }
 
 function validationRecovery(error, label) {
+  const conflicts = Array.isArray(error?.validation?.legalDocumentConflictingFacts)
+    ? error.validation.legalDocumentConflictingFacts
+    : []
+  const invalid = Array.isArray(error?.validation?.legalDocumentInvalidFacts)
+    ? error.validation.legalDocumentInvalidFacts
+    : []
   const routingFacts = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
     ? error.validation.legalDocumentMissingRoutingFacts
     : []
   const critical = Array.isArray(error?.validation?.critical) ? error.validation.critical : []
-  const fields = routingFacts.length
-    ? routingFacts.map((field) => String(field).replace(/_/g, ' '))
+  const fields = conflicts.length
+    ? conflicts.map((fact) => String(fact.field).replace(/_/g, ' '))
+    : invalid.length
+      ? invalid.map((fact) => String(fact.field).replace(/_/g, ' '))
+      : routingFacts.length
+        ? routingFacts.map((field) => String(field).replace(/_/g, ' '))
     : critical.map((item) => normalizeText(item?.placeholderLabel || item?.field || item?.message)).filter(Boolean)
+  const hasInvalidSetup = conflicts.length > 0 || invalid.length > 0
   return {
     code: 'VALIDATION_BLOCKED',
-    label: 'Information needed',
-    message: fields.length ? `${label} generation needs: ${fields.slice(0, 6).join(', ')}.` : `${label} generation needs more required information.`,
-    nextAction: 'Complete the highlighted information, then select Generate again.',
+    label: hasInvalidSetup ? 'Legal setup needs attention' : 'Information needed',
+    message: fields.length
+      ? hasInvalidSetup
+        ? `${label} generation found conflicting or unsupported legal setup values: ${fields.slice(0, 6).join(', ')}.`
+        : `${label} generation needs: ${fields.slice(0, 6).join(', ')}.`
+      : `${label} generation needs more required information.`,
+    nextAction: hasInvalidSetup
+      ? 'Resolve the highlighted legal setup values, then select Generate again.'
+      : 'Complete the highlighted information, then select Generate again.',
     retryable: false,
     actionKey: 'review_information',
     actionLabel: 'Review information',

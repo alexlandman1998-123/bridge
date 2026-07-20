@@ -1,5 +1,4 @@
-import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile.js'
-import { resolveMandateSecondarySignerConfig } from '../../lib/mandateSignatureRules.js'
+import { evaluateConditionalSigningPlan } from './conditionalSigningEngine.js'
 import { isPilotDocumentFallbackVersion } from './pilotDocumentFallback.js'
 
 function text(value) {
@@ -65,12 +64,21 @@ export function assessSigningEnvelope({ packet = {}, version = {}, signers = [],
     else signingOrders.add(order)
   }
 
-  let expectedSignerRoles = []
-  if (packetType === 'otp') {
-    expectedSignerRoles = resolveLegalDocumentSignerProfile({ packetType, placeholders, context }).signers.map((signer) => key(signer.role))
-  } else if (packetType === 'mandate') {
-    const secondary = resolveMandateSecondarySignerConfig({ packet, latestVersion: version, placeholders })
-    expectedSignerRoles = ['agent', 'seller', ...(secondary.required ? [key(secondary.role)] : [])]
+  const conditionalSigningAudit = ['mandate', 'otp'].includes(packetType)
+    ? evaluateConditionalSigningPlan({
+        packetType,
+        placeholders,
+        context,
+        plannedFields: fieldRows,
+        actualSigners: signerRows,
+      })
+    : null
+  const expectedSignerRoles = conditionalSigningAudit?.selectedSignerRoles || []
+  for (const signingIssue of conditionalSigningAudit?.issues || []) {
+    if (signingIssue.code === 'CONDITIONAL_SIGNER_ROSTER_MISSING') reasons.push('E3_REQUIRED_SIGNER_MISSING')
+    if (signingIssue.code === 'CONDITIONAL_SIGNER_ROSTER_UNEXPECTED') reasons.push('E3_UNEXPECTED_SCENARIO_SIGNER')
+    if (signingIssue.code === 'CONDITIONAL_SIGNING_FIELD_ROLE_UNEXPECTED') reasons.push('E3_UNEXPECTED_SCENARIO_FIELD')
+    if (signingIssue.code === 'CONDITIONAL_SIGNING_SCENARIO_INCOMPLETE') reasons.push('E3_SIGNING_SCENARIO_INCOMPLETE')
   }
   for (const role of [...new Set(expectedSignerRoles.filter(Boolean))]) {
     if (!signerByRole.has(role)) reasons.push('E3_REQUIRED_SIGNER_MISSING')
@@ -114,6 +122,7 @@ export function assessSigningEnvelope({ packet = {}, version = {}, signers = [],
     signerRoles: [...signerByRole.keys()],
     expectedSignerRoles: [...new Set(expectedSignerRoles.filter(Boolean))],
     requiredSignatureRoles: [...requiredSignatureRoles],
+    conditionalSigningAudit,
   }
 }
 

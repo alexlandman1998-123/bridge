@@ -9,7 +9,6 @@ import { buildMvpTransactionParticipantBootstrap, MVP_CONTROLLED_TEST_ROLE_SET }
 import { buildMvpTransactionDocumentBootstrap } from '../core/transactions/mvpTransactionDocumentBootstrap.js'
 import { buildMvpTransactionWorkflowBootstrap } from '../core/transactions/mvpTransactionWorkflowBootstrap.js'
 import { assessMvpTestDataProtection, assertMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
-import { assertMvpPilotCreationAllowed } from './mvpPilotCreationFreeze.js'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -503,7 +502,6 @@ export function createTransactionFromAcceptedOffer({
   actor = null,
   payload = {},
 } = {}) {
-  assertMvpPilotCreationAllowed({ operation: 'create a transaction from an accepted offer' })
   if (!listing) {
     throw new Error('Listing not found.')
   }
@@ -831,7 +829,6 @@ export async function createTransactionFromLeadOverride({
   payload = {},
   options = {},
 } = {}) {
-  assertMvpPilotCreationAllowed({ operation: 'create a transaction from a lead' })
   if (!lead) {
     throw new Error('Lead not found.')
   }
@@ -1140,7 +1137,6 @@ export function createTransactionFromLeadManualOverride({
   actor = null,
   payload = {},
 } = {}) {
-  assertMvpPilotCreationAllowed({ operation: 'create a manual fallback transaction' })
   if (!lead) {
     throw new Error('Lead not found.')
   }

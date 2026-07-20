@@ -267,10 +267,12 @@ function addDaysToIsoDate(days = 0, baseDate = new Date()) {
 
 function normalizeEntityType(value = '') {
   const key = normalizeKey(value)
+  if (!key) return ''
   if (key.includes('company')) return 'company'
+  if (key === 'cc' || key.includes('close_corporation')) return 'close_corporation'
   if (key.includes('trust')) return 'trust'
   if (key.includes('individual') || key.includes('married') || key.includes('single')) return 'individual'
-  return key || 'individual'
+  return key
 }
 
 function buildMapperInput(input = {}, legacyLead = {}, legacyAgency = {}, legacyAgent = {}) {
@@ -326,7 +328,7 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
       onboarding.entityType,
       onboarding.sellerType,
       lead.sellerType,
-    ) || 'individual',
+    ),
   )
   const entityType = normalizeEntityType(ownershipType)
   const firstName = firstText(mandateDraft.sellerFirstName, onboarding.sellerFirstName, onboarding.firstName, lead.sellerName)
@@ -824,10 +826,10 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     sourceContext.property_disclosure_annexure = propertyDisclosureAnnexure
   }
 
-  if (['company', 'trust'].includes(seller.entityType) && !seller.representativeName) {
+  if (['company', 'close_corporation', 'trust'].includes(seller.entityType) && !seller.representativeName) {
     warnings.push(`${toTitleCase(seller.entityType)} representative name is missing.`)
   }
-  if (['company', 'trust'].includes(seller.entityType) && !seller.representativeIdNumber) {
+  if (['company', 'close_corporation', 'trust'].includes(seller.entityType) && !seller.representativeIdNumber) {
     warnings.push(`${toTitleCase(seller.entityType)} representative ID number is missing.`)
   }
 
@@ -842,8 +844,8 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     seller_email: safePlaceholder(seller.email),
     seller_phone: safePlaceholder(seller.phone),
     seller_domicilium_address: safePlaceholder(seller.domiciliumAddress),
-    seller_entity_type: safePlaceholder(toTitleCase(seller.entityType || 'individual')),
-    'seller.entity_type_raw': seller.entityType || 'individual',
+    seller_entity_type: safePlaceholder(toTitleCase(seller.entityType)),
+    'seller.entity_type_raw': seller.entityType || '',
     seller_marital_status: safePlaceholder(toTitleCase(seller.maritalStatus)),
     seller_marital_regime: safePlaceholder(toTitleCase(seller.maritalRegime)),
     seller_spouse_full_name: safePlaceholder(seller.spouseFullName || seller.spouseName),

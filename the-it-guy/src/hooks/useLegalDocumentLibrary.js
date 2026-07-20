@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildLegalDocumentLibraryModel } from '../core/documents/legalDocumentLibraryModel.js'
 import {
+  fetchConditionalMasterMigration,
+  fetchConditionalMasterVerification,
   fetchDocumentPacketTemplate,
   listDocumentPacketTemplates,
 } from '../lib/documentPacketsApi.js'
@@ -33,36 +35,50 @@ export function useLegalDocumentLibrary({
     loading: Boolean(enabled),
     error: '',
     templatesByType: {},
+    migrationsByType: {},
+    verificationsByType: {},
   })
 
   const refresh = useCallback(async () => {
     if (!enabled) {
-      setState({ loading: false, error: '', templatesByType: {} })
+      setState({ loading: false, error: '', templatesByType: {}, migrationsByType: {}, verificationsByType: {} })
       return null
     }
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
     setState((previous) => ({ ...previous, loading: true, error: '' }))
     try {
-      const templateRows = await Promise.all(stablePacketTypes.map(async (packetType) => [
-        packetType,
-        await listDocumentPacketTemplates({
+      const [templateRows, migrationRows, verificationRows] = await Promise.all([
+        Promise.all(stablePacketTypes.map(async (packetType) => [
           packetType,
-          moduleType,
-          organisationId,
-          includeInactive: true,
-        }),
-      ]))
+          await listDocumentPacketTemplates({
+            packetType,
+            moduleType,
+            organisationId,
+            includeInactive: true,
+          }),
+        ])),
+        Promise.all(stablePacketTypes.map(async (packetType) => [
+          packetType,
+          organisationId ? await fetchConditionalMasterMigration({ packetType, organisationId }).catch(() => null) : null,
+        ])),
+        Promise.all(stablePacketTypes.map(async (packetType) => [
+          packetType,
+          organisationId ? await fetchConditionalMasterVerification({ packetType, organisationId }).catch(() => null) : null,
+        ])),
+      ])
       const templatesByType = Object.fromEntries(templateRows.map(([packetType, templates]) => [packetType, templates || []]))
-      const initialModel = buildLegalDocumentLibraryModel({ templatesByType, packetTypes: stablePacketTypes })
+      const migrationsByType = Object.fromEntries(migrationRows)
+      const verificationsByType = Object.fromEntries(verificationRows)
+      const initialModel = buildLegalDocumentLibraryModel({ templatesByType, migrationsByType, verificationsByType, packetTypes: stablePacketTypes })
       const primaryIds = [...new Set(initialModel.documents.map((document) => document.primaryTemplateId).filter(Boolean))]
       const details = await Promise.all(primaryIds.map((templateId) => (
         fetchDocumentPacketTemplate(templateId, { includeSections: true }).catch(() => null)
       )))
       const hydratedTemplatesByType = replaceTemplateDetails(templatesByType, details)
       if (requestId !== requestIdRef.current) return null
-      setState({ loading: false, error: '', templatesByType: hydratedTemplatesByType })
-      return buildLegalDocumentLibraryModel({ templatesByType: hydratedTemplatesByType, packetTypes: stablePacketTypes })
+      setState({ loading: false, error: '', templatesByType: hydratedTemplatesByType, migrationsByType, verificationsByType })
+      return buildLegalDocumentLibraryModel({ templatesByType: hydratedTemplatesByType, migrationsByType, verificationsByType, packetTypes: stablePacketTypes })
     } catch (error) {
       if (requestId !== requestIdRef.current) return null
       setState((previous) => ({
@@ -83,14 +99,18 @@ export function useLegalDocumentLibrary({
 
   const model = useMemo(() => buildLegalDocumentLibraryModel({
     templatesByType: state.templatesByType,
+    migrationsByType: state.migrationsByType,
+    verificationsByType: state.verificationsByType,
     packetTypes: stablePacketTypes,
-  }), [stablePacketTypes, state.templatesByType])
+  }), [stablePacketTypes, state.migrationsByType, state.templatesByType, state.verificationsByType])
 
   return {
     ...model,
     loading: state.loading,
     error: state.error,
     templatesByType: state.templatesByType,
+    migrationsByType: state.migrationsByType,
+    verificationsByType: state.verificationsByType,
     refresh,
   }
 }

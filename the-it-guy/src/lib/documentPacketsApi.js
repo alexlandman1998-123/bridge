@@ -13,7 +13,6 @@ import { assertSigningDispatchReady } from '../core/documents/signingDispatchAss
 import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 import {
   assertDocumentLifecycleTransition,
-  normalizeDocumentLifecycleState,
   resolveDocumentLifecycleStateFromPacket,
   toDocumentPacketStorageStatus,
 } from '../core/documents/documentLifecycle'
@@ -25,6 +24,7 @@ import {
 import { buildOrganisationTemplateCloneInput } from '../core/documents/organisationTemplateClone'
 import { buildTemplateRevisionInput, isImmutableTemplateRevision } from '../core/documents/templateVersioning'
 import { assertSigningFieldLayout } from '../core/documents/signingFieldLayout'
+import { evaluateConditionalMasterCoverage } from '../core/documents/conditionalMasterCoverageReadiness'
 import {
   buildEditableDraftSectionManifest,
   buildEditableTransactionDocumentDraft,
@@ -1098,6 +1098,121 @@ export async function listDocumentPacketTemplates({
     organisationId,
     limit,
   })
+}
+
+export async function fetchConditionalMasterMigration({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  const { data, error } = await client
+    .from('legal_document_master_migrations')
+    .select('*')
+    .eq('organisation_id', context.organisationId)
+    .eq('packet_type', normalizedPacketType)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export async function fetchConditionalMasterVerification({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  const { data, error } = await client
+    .from('legal_document_master_verifications')
+    .select('*')
+    .eq('organisation_id', context.organisationId)
+    .eq('packet_type', normalizedPacketType)
+    .order('verified_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export async function prepareConditionalMasterMigration({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) throw new Error('Only Principal/Super Admin/Admin can prepare a legal-template migration.')
+  const { data, error } = await client.rpc('bridge_prepare_conditional_master_migration_phase10', {
+    p_organisation_id: context.organisationId,
+    p_packet_type: normalizedPacketType,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function activateConditionalMasterMigration({
+  migrationId,
+  candidateTemplateId,
+  wordingReviewed = false,
+} = {}) {
+  if (!migrationId || !candidateTemplateId) throw new Error('Migration and candidate template are required.')
+  if (!wordingReviewed) throw new Error('Review and confirm the reconciled legacy wording before activation.')
+  const candidate = await fetchDocumentPacketTemplate(candidateTemplateId, { includeSections: true })
+  const coverage = evaluateConditionalMasterCoverage({ packetType: candidate?.packet_type, template: candidate })
+  if (!coverage.ready) {
+    const blocked = new Error(coverage.issues?.[0]?.message || 'The conditional master does not cover every supported legal scenario.')
+    blocked.code = 'CONDITIONAL_MASTER_MIGRATION_COVERAGE_BLOCKED'
+    blocked.coverage = coverage
+    throw blocked
+  }
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_activate_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+    p_coverage_version: coverage.coverageVersion,
+    p_coverage_decision_hash: coverage.decisionHash,
+    p_wording_reviewed: true,
+  })
+  if (error) throw error
+  return { ...data, coverage }
+}
+
+export async function rollbackConditionalMasterMigration(migrationId) {
+  if (!migrationId) throw new Error('migrationId is required.')
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_rollback_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function finalizeConditionalMasterMigration(migrationId) {
+  if (!migrationId) throw new Error('migrationId is required.')
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_finalize_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function verifyConditionalMasterMigration({ migrationId, candidateTemplateId } = {}) {
+  if (!migrationId || !candidateTemplateId) throw new Error('Migration and candidate template are required.')
+  const candidate = await fetchDocumentPacketTemplate(candidateTemplateId, { includeSections: true })
+  const coverage = evaluateConditionalMasterCoverage({ packetType: candidate?.packet_type, template: candidate })
+  if (!coverage.ready) {
+    const blocked = new Error(coverage.issues?.[0]?.message || 'The live conditional master does not pass complete scenario coverage.')
+    blocked.code = 'CONDITIONAL_MASTER_VERIFICATION_COVERAGE_BLOCKED'
+    blocked.coverage = coverage
+    throw blocked
+  }
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_verify_conditional_master_migration_phase11', {
+    p_migration_id: migrationId,
+    p_coverage_version: coverage.coverageVersion,
+    p_coverage_decision_hash: coverage.decisionHash,
+  })
+  if (error) throw error
+  if (data?.passed !== true) {
+    const blocked = new Error(`Verification found integrity blockers: ${(data?.issue_codes || []).join(', ') || 'review the verification receipt'}.`)
+    blocked.code = 'CONDITIONAL_MASTER_VERIFICATION_BLOCKED'
+    blocked.receipt = data
+    throw blocked
+  }
+  return { ...data, coverage }
 }
 
 export async function resolveActiveDocumentPacketTemplate({

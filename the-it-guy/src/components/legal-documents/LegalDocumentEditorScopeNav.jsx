@@ -8,7 +8,7 @@ import {
 const SCOPE_OPTIONS = Object.freeze([
   { key: 'all', label: 'Whole document', Icon: LayoutList },
   { key: 'standard', label: 'Standard wording', Icon: FileText },
-  { key: 'situations', label: 'Situation wording', Icon: Layers3 },
+  { key: 'situations', label: 'Conditional sections', Icon: Layers3 },
   { key: 'signing', label: 'Signing setup', Icon: UsersRound },
 ])
 

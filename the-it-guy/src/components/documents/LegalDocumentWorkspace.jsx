@@ -407,6 +407,26 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
   if (code === 'VALIDATION_BLOCKED') {
+    const legalScenarioConflicts = Array.isArray(error?.validation?.legalDocumentConflictingFacts)
+      ? error.validation.legalDocumentConflictingFacts
+      : []
+    if (legalScenarioConflicts.length) {
+      return [
+        'Legal Setup Conflict',
+        ...legalScenarioConflicts.map((fact) => `- ${String(fact.field).replace(/_/g, ' ')}`),
+        'Resolve the conflicting saved values before generating the document.',
+      ].join('\n')
+    }
+    const legalScenarioInvalid = Array.isArray(error?.validation?.legalDocumentInvalidFacts)
+      ? error.validation.legalDocumentInvalidFacts
+      : []
+    if (legalScenarioInvalid.length) {
+      return [
+        'Legal Setup Invalid',
+        ...legalScenarioInvalid.map((fact) => `- ${String(fact.field).replace(/_/g, ' ')}`),
+        'Choose a recognised value before generating the document.',
+      ].join('\n')
+    }
     const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
       ? error.validation.legalDocumentMissingRoutingFacts
       : []
@@ -533,7 +553,7 @@ function isLegacyBridgeLogoUrl(value) {
 
 function resolveSignerBlueprint(packetType = 'mandate', options = {}) {
   const key = normalizeKey(packetType)
-  if (key === 'otp' && Array.isArray(options.legalSignerProfile?.signers)) {
+  if (Array.isArray(options.legalSignerProfile?.signers)) {
     return options.legalSignerProfile.signers.map((signer) => ({
       role: signer.role,
       label: signer.label,
@@ -662,7 +682,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   const mandateType = normalizeKey(sourceContext?.mandateType || sourceContext?.contextType)
   const blueprint = [
     ...resolveSignerBlueprint(packetType, { mandateType, legalSignerProfile }),
-    ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired
+    ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired && !legalSignerProfile
       ? [{ role: 'purchaser_2', label: secondarySignerLabel, required: true }]
       : []),
   ]
@@ -688,7 +708,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   for (const row of rows) {
     const role = normalizeKey(row?.signer_role || row?.role)
     if (!role || configured.has(role)) continue
-    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSecondarySignerRequired) continue
+    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && (legalSignerProfile || !mandateSecondarySignerRequired)) continue
     const defaults = signerDefaults?.[role] || {}
     roster.push({
       role,
@@ -3147,20 +3167,25 @@ export default function LegalDocumentWorkspace({
     [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
   const legalSignerProfile = useMemo(() => (
-    isOtpPacket
+    isMandatePacket || isOtpPacket
       ? resolveLegalDocumentSignerProfile({
-          packetType: 'otp',
+          packetType,
           placeholders: latestVersion?.placeholders_resolved_json || {},
           context: sourceContext,
         })
       : null
-  ), [isOtpPacket, latestVersion?.placeholders_resolved_json, sourceContext])
+  ), [isMandatePacket, isOtpPacket, latestVersion?.placeholders_resolved_json, packetType, sourceContext])
   const signerDefaults = useMemo(() => {
-    if (isMandatePacket) return buildSignerDefaultsFromContext({ sourceContext, latestVersion })
     if (!legalSignerProfile) return {}
-    return Object.fromEntries(legalSignerProfile.signers.map((signer) => [signer.role, {
+    const scenarioDefaults = Object.fromEntries(legalSignerProfile.signers.map((signer) => [signer.role, {
       signerName: signer.signerName,
       signerEmail: signer.signerEmail,
+    }]))
+    if (!isMandatePacket) return scenarioDefaults
+    const legacyDefaults = buildSignerDefaultsFromContext({ sourceContext, latestVersion })
+    return Object.fromEntries(Object.entries(scenarioDefaults).map(([role, value]) => [role, {
+      signerName: value.signerName || legacyDefaults?.[role]?.signerName || '',
+      signerEmail: value.signerEmail || legacyDefaults?.[role]?.signerEmail || '',
     }]))
   }, [isMandatePacket, latestVersion, legalSignerProfile, sourceContext])
 

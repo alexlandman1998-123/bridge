@@ -20,7 +20,6 @@ export function resolveMandateScenarioProfile(options = {}) {
   return resolveLegalDocumentScenarioProfile({
     ...options,
     packetType: 'mandate',
-    assumeIndividualSeller: options.assumeIndividualSeller !== false,
   })
 }
 

@@ -1,3 +1,5 @@
+import { resolveCanonicalLegalDocumentScenario } from './legalDocumentScenarioProfile.js'
+
 function normalizeText(value = '') {
   return String(value ?? '').trim()
 }
@@ -33,84 +35,23 @@ export const DOCUMENT_START_FINANCE_TYPES = Object.freeze([
   { value: 'combination', label: 'Cash and bond' },
 ])
 
-function normalizePartyType(value = '') {
-  const key = normalizeKey(value)
-  if (['single', 'married'].includes(key)) return 'individual'
-  if (['pty', 'organisation', 'organization'].includes(key)) return 'company'
-  if (key === 'trustee') return 'trust'
-  return normalizeLegalPartyEntityType(value)
-}
-
-function normalizeMaritalRegime(value = '') {
-  const key = normalizeKey(value)
-  if (['anc_with_accrual', 'anc_without_accrual'].includes(key)) return 'out_of_community'
-  if (['icop', 'married_coc'].includes(key)) return 'in_community'
-  return normalizeLegalMaritalRegime(value)
-}
-
-function normalizePropertyTitleType(value = '') {
-  const normalized = normalizeLegalPropertyTitleType(value)
-  if (normalized === 'share_block') return 'sectional_title'
-  if (normalized === 'agricultural_holding') return 'full_title'
-  return normalized
-}
-
-function normalizeFinanceType(value = '') {
-  return normalizeLegalFinanceType(value)
-}
-
-function isIndividual(value = '') {
-  return normalizePartyType(value) === 'individual'
-}
-
-function getPartyProfile(entityType = '', maritalRegime = '') {
-  const normalizedEntityType = normalizePartyType(entityType)
-  if (normalizedEntityType === 'individual' && normalizeMaritalRegime(maritalRegime) === 'in_community') {
-    return 'individual_spouse_consent'
-  }
-  return normalizedEntityType
-}
-
 function getOptionLabel(options = [], value = '') {
   return options.find((option) => option.value === value)?.label || ''
 }
 
 export function normalizeDocumentStartLegalScenario(input = {}, packetType = '') {
   const normalizedPacketType = normalizeKey(packetType || input.packetType)
-  const sellerEntityType = normalizePartyType(input.sellerEntityType || input.seller_entity_type || input.sellerType || input.seller_type)
-  const buyerEntityType = normalizedPacketType === 'otp'
-    ? normalizePartyType(input.buyerEntityType || input.buyer_entity_type || input.buyerType || input.buyer_type || input.purchaserType || input.purchaser_type)
-    : ''
-  const sellerMaritalRegime = sellerEntityType === 'individual'
-    ? normalizeMaritalRegime(input.sellerMaritalRegime || input.seller_marital_regime || input.sellerMaritalStatus || input.seller_marital_status)
-    : ''
-  const buyerMaritalRegime = buyerEntityType === 'individual'
-    ? normalizeMaritalRegime(input.buyerMaritalRegime || input.buyer_marital_regime || input.buyerMaritalStatus || input.buyer_marital_status)
-    : ''
-  const propertyTitleType = normalizePropertyTitleType(
-    input.propertyTitleType ||
-      input.property_title_type ||
-      input.propertyStructureType ||
-      input.property_structure_type ||
-      input.propertyType ||
-      input.property_type,
-  )
-  const financeType = normalizedPacketType === 'otp'
-    ? normalizeFinanceType(input.financeType || input.finance_type)
-    : ''
-
-  const missingFields = []
-  if (!sellerEntityType) missingFields.push('seller_entity_type')
-  if (isIndividual(sellerEntityType) && !sellerMaritalRegime) missingFields.push('seller_marital_regime')
-  if (normalizedPacketType === 'otp' && !buyerEntityType) missingFields.push('buyer_entity_type')
-  if (normalizedPacketType === 'otp' && isIndividual(buyerEntityType) && !buyerMaritalRegime) missingFields.push('buyer_marital_regime')
-  if (!propertyTitleType) missingFields.push('property_title_type')
-  if (normalizedPacketType === 'otp' && !financeType) missingFields.push('finance_type')
-
-  const sellerProfile = getPartyProfile(sellerEntityType, sellerMaritalRegime)
-  const buyerProfile = getPartyProfile(buyerEntityType, buyerMaritalRegime)
-  const mandateTemplateVariant = normalizedPacketType === 'mandate' && sellerProfile && propertyTitleType
-    ? `${sellerProfile}_${propertyTitleType}`
+  const canonical = resolveCanonicalLegalDocumentScenario({ ...input, packetType: normalizedPacketType })
+  const sellerEntityType = canonical.sellerEntityType
+  const buyerEntityType = canonical.buyerEntityType
+  const sellerMaritalRegime = canonical.sellerMaritalRegime
+  const buyerMaritalRegime = canonical.buyerMaritalRegime
+  const propertyTitleType = canonical.propertyTitleType
+  const financeType = canonical.financeType
+  const sellerProfile = canonical.sellerClauseProfile === 'party_unknown' ? '' : canonical.sellerClauseProfile
+  const buyerProfile = canonical.buyerClauseProfile === 'party_unknown' ? '' : canonical.buyerClauseProfile
+  const mandateTemplateVariant = normalizedPacketType === 'mandate' && canonical.complete
+    ? canonical.templateVariant
     : ''
   const summaryParts = [
     sellerProfile ? `${getOptionLabel(DOCUMENT_START_PARTY_TYPES, sellerEntityType)} seller${sellerProfile === 'individual_spouse_consent' ? ' (married in community)' : ''}` : '',
@@ -133,8 +74,13 @@ export function normalizeDocumentStartLegalScenario(input = {}, packetType = '')
     propertyProfile: propertyTitleType,
     financeType,
     mandateTemplateVariant,
-    missingFields,
-    complete: missingFields.length === 0,
+    activePackKeys: canonical.activePackKeys,
+    missingFields: canonical.missingFacts,
+    conflictingFacts: canonical.conflictingFacts,
+    invalidFacts: canonical.invalidFacts,
+    sourceProvenance: canonical.sourceProvenance,
+    resolverVersion: canonical.resolverVersion,
+    complete: canonical.complete,
     summaryLabel: summaryParts.join(' + '),
   }
 }
@@ -182,9 +128,3 @@ export function readDocumentStartLegalScenarioParams(searchParams, packetType = 
     financeType: searchParams.get('financeType'),
   }, packetType)
 }
-import {
-  normalizeLegalFinanceType,
-  normalizeLegalMaritalRegime,
-  normalizeLegalPartyEntityType,
-  normalizeLegalPropertyTitleType,
-} from './legalDocumentScenarioProfile.js'

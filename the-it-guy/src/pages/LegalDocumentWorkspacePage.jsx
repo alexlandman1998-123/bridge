@@ -16,7 +16,10 @@ import {
   normalizeLegalPropertyTitleType,
   resolveLegalDocumentScenarioProfile,
 } from '../core/documents/legalDocumentScenarioProfile'
-import { resolveLegalDocumentScenarioRequirements } from '../core/documents/legalDocumentScenarioRequirements'
+import {
+  resolveLegalDocumentScenarioRequirements,
+  sanitizeLegalDocumentScenarioDraft,
+} from '../core/documents/legalDocumentScenarioRequirements'
 import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
@@ -140,7 +143,7 @@ function toIsoDate(value = '') {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
-function normalizeEntityType(value = '', fallback = 'individual') {
+function normalizeEntityType(value = '', fallback = '') {
   const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (['individual', 'company', 'trust', 'close_corporation'].includes(key)) return key
   if (key === 'cc') return 'close_corporation'
@@ -151,7 +154,7 @@ function normalizeOtpFinanceType(value = '') {
   const key = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (key === 'hybrid') return 'combination'
   if (['cash', 'bond', 'combination'].includes(key)) return key
-  return 'cash'
+  return ''
 }
 
 function parseDraftMoney(value = '') {
@@ -224,7 +227,7 @@ function buildMandateFirstListingPayload({
   const sellerEmail = firstText(seller.email, draft.sellerEmail).toLowerCase()
   const sellerPhone = firstText(seller.phone, draft.sellerPhone)
   const sellerIdNumber = firstText(seller.identityNumber, seller.idNumber, draft.sellerIdNumber)
-  const sellerEntityType = normalizeEntityType(firstText(seller.entityType, draft.sellerEntityType, 'individual'), 'individual')
+  const sellerEntityType = normalizeEntityType(firstText(seller.entityType, draft.sellerEntityType))
   const propertyAddress = firstText(property.fullAddress, property.address, draft.propertyAddress)
   const displayAddress = firstText(property.displayAddress, propertyAddress)
   const propertyType = firstText(property.propertyType, property.type, draft.propertyType, 'Property')
@@ -1642,8 +1645,7 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       onboarding.entityType,
       onboarding.sellerType,
       lead.sellerType,
-      'individual',
-    )) || 'individual',
+    )),
     sellerFullName,
     sellerIdNumber: firstText(
       packetDraft.sellerIdNumber,
@@ -2018,7 +2020,6 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
       transaction.purchaser_type,
       onboarding.purchaserType,
       onboarding.purchaser_type,
-      'individual',
     )),
     buyerFullName,
     buyerIdNumber: firstText(
@@ -2056,7 +2057,7 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     coBuyerPhone: firstText(packetDraft.coBuyerPhone, secondaryPurchaser.phone, onboarding.co_buyer_phone, onboarding.coBuyerPhone),
     coBuyerIdNumber: firstText(packetDraft.coBuyerIdNumber, secondaryPurchaser.idNumber, secondaryPurchaser.id_number, secondaryPurchaser.identityNumber, onboarding.co_buyer_id_number, onboarding.coBuyerIdNumber, onboarding.co_buyer_identity_number, onboarding.coBuyerIdentityNumber),
 
-    sellerEntityType: normalizeEntityType(firstText(packetDraft.sellerEntityType, sourceSeller.entityType, sellerDetails.entityType, transaction.seller_type, 'company'), 'company'),
+    sellerEntityType: normalizeEntityType(firstText(packetDraft.sellerEntityType, sourceSeller.entityType, sellerDetails.entityType, transaction.seller_type)),
     sellerFullName: firstText(
       packetDraft.sellerFullName,
       sourceSeller.fullName,
@@ -2095,7 +2096,7 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
 
     purchasePrice: String(firstText(packetDraft.purchasePrice, sourceOffer.purchasePrice, transaction.purchase_price, transaction.sales_price, unit.price)),
     depositAmount: String(firstText(packetDraft.depositAmount, sourceOffer.depositAmount, transaction.deposit_amount, onboarding.depositAmount, onboarding.deposit_amount)),
-    financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type, 'cash')),
+    financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type)),
     bondAmount: String(firstText(packetDraft.bondAmount, sourceOffer.bondAmount, transaction.bond_amount, onboarding.bondAmount, onboarding.bond_amount)),
     cashAmount: String(firstText(packetDraft.cashAmount, sourceOffer.cashAmount, transaction.cash_amount, onboarding.cashAmount, onboarding.cash_amount)),
     occupationDate: toIsoDate(firstText(packetDraft.occupationDate, offerConditions.occupationDate, offerConditions.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
@@ -2112,17 +2113,18 @@ function buildOtpDraftGenerationOverrides({
   onboardingFormData = null,
   otpDraft = {},
 } = {}) {
-  const draft = otpDraft && typeof otpDraft === 'object' ? otpDraft : {}
+  const draft = sanitizeLegalDocumentScenarioDraft(
+    otpDraft && typeof otpDraft === 'object' ? otpDraft : {},
+    { packetType: 'otp' },
+  )
   const purchasePrice = parseDraftMoney(draft.purchasePrice)
   const depositAmount = parseDraftMoney(draft.depositAmount)
   const bondAmount = parseDraftMoney(draft.bondAmount)
   const cashAmount = parseDraftMoney(draft.cashAmount)
-  const buyerEntityType = normalizeEntityType(draft.buyerEntityType, 'individual')
-  const sellerEntityType = normalizeEntityType(draft.sellerEntityType, 'company')
+  const buyerEntityType = normalizeEntityType(draft.buyerEntityType)
+  const sellerEntityType = normalizeEntityType(draft.sellerEntityType)
   const financeType = normalizeOtpFinanceType(draft.financeType)
-  const propertyTitleType = normalizeLegalPropertyTitleType(
-    draft.propertyTitleType || (draft.unitNumber || draft.complexName ? 'sectional_title' : 'full_title'),
-  ) || 'full_title'
+  const propertyTitleType = normalizeLegalPropertyTitleType(draft.propertyTitleType)
   const existingTransaction = transaction && typeof transaction === 'object' ? transaction : {}
   const existingBuyer = buyer && typeof buyer === 'object' ? buyer : {}
   const existingSeller = sellerDetails && typeof sellerDetails === 'object' ? sellerDetails : {}
@@ -3543,6 +3545,9 @@ export default function LegalDocumentWorkspacePage() {
         validationError.code = 'VALIDATION_BLOCKED'
         validationError.validation = {
           legalDocumentMissingRoutingFacts: otpScenarioProfile.missingRoutingFacts,
+          legalDocumentConflictingFacts: otpScenarioProfile.conflictingFacts,
+          legalDocumentInvalidFacts: otpScenarioProfile.invalidFacts,
+          legalDocumentScenarioProvenance: otpScenarioProfile.sourceProvenance,
           legalDocumentScenarioProfile: otpScenarioProfile,
           legalScenarioRequirements: otpLegalRequirements,
           critical: otpLegalRequirements.missingFields.map((field) => ({
