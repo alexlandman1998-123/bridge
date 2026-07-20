@@ -5040,6 +5040,7 @@ export async function sendSellerOnboarding(
     deferStatusTransition = false,
     performedBy = '',
     transferAttorneyPreferredPartnerId = '',
+    transferAttorneyPartnerOrganisationId = '',
   } = {},
 ) {
   const client = requireClient()
@@ -5051,7 +5052,19 @@ export async function sendSellerOnboarding(
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
-  const requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  let requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  const requestedPartnerOrganisationId = normalizeText(transferAttorneyPartnerOrganisationId)
+  if (requestedPartnerOrganisationId) {
+    const resolution = await client.rpc('bridge_resolve_seller_connected_transfer_attorney', {
+      p_organisation_id: listing.organisationId,
+      p_partner_organisation_id: requestedPartnerOrganisationId,
+    })
+    if (resolution.error) throw resolution.error
+    requestedPreferredAttorneyId = normalizeText(resolution.data?.id)
+    if (!requestedPreferredAttorneyId) {
+      throw new Error('The selected attorney is no longer connected to this agency.')
+    }
+  }
   let preferredAttorneyBuilder = client
     .from('organisation_preferred_partners')
     .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
