@@ -13,10 +13,10 @@ Phase 7 has been implemented as a fail-closed production-promotion gate.
 - Production PITR: disabled
 - Attorney integrity gate: passed
 - Historical ineligible attorney assignments: 0
-- Human production-readiness approval: not recorded
+- Human staging-readiness approval: Alexander Landman
 - Phase 7 gate tests: passed
 
-The staging technical prerequisites now pass, but production promotion remains intentionally blocked until the readiness record is explicitly approved and tested production recovery is attested.
+The staging technical prerequisites and human approval now pass, but production promotion remains intentionally blocked until tested production recovery is attested and the production connection is configured.
 
 ## Implemented controls
 
@@ -59,14 +59,13 @@ The machine-readable state is stored in `docs/supabase-phase-7-staging-readiness
 - complete staging evidence;
 - zero blocking attorney assignments after the Phase 10 remediation;
 - eight completed production physical backups;
-- no human approval;
+- Phase 11 approval by Alexander Landman;
 - no configured production connection/recovery attestation.
 
 ## Required work before production
 
-1. Obtain an explicit human `approvedBy` sign-off.
-2. Configure the production database URL and tested-recovery attestation outside source control.
-3. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
+1. Configure the production database URL and tested-recovery attestation outside source control.
+2. Promote one dependency stream and one migration version at a time, stopping for production verification before each ledger update.
 
 ## Files changed
 

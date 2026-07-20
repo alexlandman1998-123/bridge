@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-20T12:07:01.000Z",
+  "generatedAt": "2026-07-20T12:19:52.069Z",
   "status": "READY_FOR_PRODUCTION_PROMOTION",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
@@ -12,6 +12,10 @@
   "productionPhysicalBackupCount": 8,
   "productionRecoveryAttestationPresent": false,
   "productionCredentialsConfigured": false,
-  "approvedBy": "",
-  "decision": "The staging technical gates pass. Do not mutate production until a human approver signs this readiness record and tested production recovery is configured and attested."
+  "approvedBy": "Alexander Landman",
+  "approvedAt": "2026-07-20T12:19:52.069Z",
+  "certificationStatus": "STAGING_CERTIFIED",
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase11/staging-release-certification.json",
+  "releaseCommit": "fd506e46f697462dcc61e89319d9233648fcbc52",
+  "decision": "Staging is certified for reviewed production promotion. Do not mutate production until the production connection is configured and tested recovery is attested."
 }

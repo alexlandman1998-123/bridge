@@ -5,9 +5,9 @@ Production project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: STAGING_TECHNICAL_GATES_PASSED — HUMAN APPROVAL AND RECOVERY ATTESTATION REQUIRED**
+**Status: STAGING_CERTIFIED — PRODUCTION RECOVERY ATTESTATION REQUIRED**
 
-Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, the attorney integrity gate now passes with zero blockers, and the affected firm is certified. Promotion remains blocked because no human readiness approval is recorded and production connection/recovery-attestation variables are not configured.
+Phase 7 implements a fail-closed, manifest-driven production promotion mechanism. No production SQL was applied and the production migration ledger was not changed. Staging has all 64 manifest versions recorded with complete migration evidence. Phase 10 repaired the 43 historical assignments, and Phase 11 recorded Alexander Landman's approval after live certification. Promotion remains blocked until production connection and tested-recovery attestation variables are configured.
 
 ## Implemented Controls
 
@@ -36,7 +36,7 @@ Phase 7 implements a fail-closed, manifest-driven production promotion mechanism
 | Attorney integrity gate | Passed: 0 blocking assignments |
 | Production PITR | Disabled |
 | Production physical backups | 8 completed |
-| Human staging-readiness approval | Not recorded |
+| Human staging-readiness approval | Alexander Landman |
 | Production connection variables | Not configured |
 | Production recovery test/attestation | Not evidenced |
 | Production SQL applied in Phase 7 | No |
@@ -112,7 +112,6 @@ node scripts/supabase-phase7-production-execution.mjs \
 
 ## Handoff
 
-1. Add a human approval to `docs/supabase-phase-7-staging-readiness.json` after reviewing the Phase 10 evidence.
-2. Configure the production project reference, database URL, and tested-recovery attestation outside source control.
-3. Promote the smallest dependency stream one exact version at a time.
-4. Stop between SQL application and ledger recording for production verification and review.
+1. Configure the production project reference, database URL, and tested-recovery attestation outside source control.
+2. Promote the smallest dependency stream one exact version at a time.
+3. Stop between SQL application and ledger recording for production verification and review.
