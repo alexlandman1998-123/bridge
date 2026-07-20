@@ -34,7 +34,7 @@ Phase 39 explicitly admits eight mandate-generation correction paths introduced 
 
 The production baseline remains commit `333c08eb`. All other runtime work remains denied by default, and promoting the Phase 39 candidate remains a separate operator-controlled action after review and merge.
 
-Phase 39 also admits one database-history repair: `202605090000_production_schema_baseline.sql`. It derives from the schema snapshot at commit `4ee5387b`, immediately before the repository's first incremental migration; its forward transaction foreign keys are deferred until `public.transactions` exists so the same schema can be built from empty. It exists only to make a fresh Supabase Preview reconstructible; it does not authorize any new product schema or a production database mutation. Before merge, production must attest this baseline version as already represented by its existing schema so the historical snapshot is not replayed there.
+Phase 39 also admits one database-history repair: `202605090000_production_schema_baseline.sql`. It derives from the schema snapshot at commit `4ee5387b`, immediately before the repository's first incremental migration; its forward transaction foreign keys are deferred until `public.transactions` exists, and the six missing May 8 document/signing sources are restored before their first dependent object. It exists only to make a fresh Supabase Preview reconstructible; it does not authorize any new product schema or a production database mutation. Before merge, production must attest this baseline version as already represented by its existing schema so the historical snapshot is not replayed there.
 
 ## Safety outcome
 

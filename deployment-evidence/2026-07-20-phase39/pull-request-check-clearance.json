@@ -61,8 +61,8 @@
       "previewBaseline": {
         "migration": "202605090000_production_schema_baseline.sql",
         "sourceCommit": "4ee5387b8bbc1540e5545c11c22fedfbd552d4d0",
-        "sha256": "f9fbc85edc45a3ed8d314caff3ec590bfbbebf88002ef0940bc3824abc15cfcc",
-        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred until the referenced table exists",
+        "sha256": "33043a93d39b3c89cd900f2525820b0222e91bc2e1d64bdbdb62d986ca524efa",
+        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred and the six missing May 8 document/signing sources restored before their first dependent object",
         "productionLedgerAttestationRequiredBeforeMerge": true
       }
     },
