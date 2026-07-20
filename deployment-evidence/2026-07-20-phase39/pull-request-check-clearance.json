@@ -79,6 +79,7 @@
       ],
       "previewReset": {
         "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
+        "createdProjectRef": "kpxwhrfksgubewkypbly",
         "branch": "codex/mvp-pilot-readiness",
         "withData": false,
         "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
