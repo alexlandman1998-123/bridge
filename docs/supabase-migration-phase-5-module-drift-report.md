@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-20T07:57:19.578Z
+Generated: 2026-07-20T08:05:40.732Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,35 +12,53 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Field | Value |
 | --- | --- |
 | Status | MODULE_AUDIT_READY |
-| Local migration files | 496 |
+| Local migration files | 497 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 415 |
-| Split local/remote versions | 0 |
-| Reviewed split baseline | 0 |
+| Matched rows | 416 |
+| Split local/remote versions | 17 |
+| Reviewed split baseline | 17 |
 | Unreviewed split versions | 0 |
-| Pure local-only rows | 81 |
-| Pure remote-only rows | 18 |
-| Application manifest rows | 81 |
+| Pure local-only rows | 64 |
+| Pure remote-only rows | 0 |
+| Application manifest rows | 64 |
 | Extracted objects checked | 491 |
 
 ## Module Summary
 
 | Module | Pure Local-Only | Split Rows | Unreviewed Split | All Live | Partial Live | None Live | No Static Objects | Recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| other | 24 | 0 | 0 | 0 | 1 | 22 | 1 | Needs object-level review; do not repair as a batch yet. |
+| other | 23 | 1 | 0 | 0 | 1 | 22 | 1 | Needs object-level review; do not repair as a batch yet. |
 | canonical_documents | 19 | 0 | 0 | 0 | 0 | 19 | 0 | Needs object-level review; do not repair as a batch yet. |
 | attorney | 14 | 0 | 0 | 1 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
-| transaction_network | 6 | 0 | 0 | 2 | 0 | 4 | 0 | Needs object-level review; do not repair as a batch yet. |
-| workspace_platform | 6 | 0 | 0 | 4 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
-| commercial | 5 | 0 | 0 | 5 | 0 | 0 | 0 | Candidate for reviewed ledger repair after module smoke evidence. |
-| lead_capture_crm | 5 | 0 | 0 | 4 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
-| bond_finance | 1 | 0 | 0 | 0 | 0 | 0 | 1 | Needs module owner review; static objects were limited or not fetched. |
-| notification_automation | 1 | 0 | 0 | 1 | 0 | 0 | 0 | Candidate for reviewed ledger repair after module smoke evidence. |
+| transaction_network | 5 | 1 | 0 | 2 | 0 | 4 | 0 | Needs object-level review; do not repair as a batch yet. |
+| workspace_platform | 2 | 4 | 0 | 4 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
+| commercial | 0 | 5 | 0 | 5 | 0 | 0 | 0 | No local-only work. |
+| lead_capture_crm | 1 | 4 | 0 | 4 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
+| bond_finance | 0 | 1 | 0 | 0 | 0 | 0 | 1 | No local-only work. |
+| notification_automation | 0 | 1 | 0 | 1 | 0 | 0 | 0 | No local-only work. |
 
 ## Split Ledger Rows
 
-No split local/remote versions detected.
+These versions appear as both local-only and remote-only in the Supabase CLI comparison. Treat them as ledger/tooling mismatches, not missing migrations:
+
+- 202606010001
+- 202606030007
+- 202606030008
+- 202606030009
+- 202606030010
+- 202606030011
+- 202606040001
+- 202606040002
+- 202606040004
+- 202606040005
+- 202606050001
+- 202606080002
+- 202606090010
+- 202606110004
+- 202606110005
+- 202606110006
+- 202606110007
 
 ## Reviewed Repair Candidates
 
@@ -49,22 +67,7 @@ These pure local-only migrations have all statically extracted objects present i
 | Version | Module | File | Objects Live |
 | --- | --- | --- | --- |
 | 202607180047 | attorney | 202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql | 10/10 |
-| 202606080002 | commercial | 202606080002_commercial_listings_foundation.sql | 12/12 |
-| 202606110004 | commercial | 202606110004_commercial_transactions_phase2.sql | 18/18 |
-| 202606110005 | commercial | 202606110005_commercial_crm_foundation_phase3.sql | 32/32 |
-| 202606110006 | commercial | 202606110006_commercial_supply_side_phase4.sql | 3/3 |
-| 202606110007 | commercial | 202606110007_commercial_brokerage_os_phase5.sql | 9/9 |
-| 202606030007 | lead_capture_crm | 202606030007_lead_communication_events.sql | 11/11 |
-| 202606030008 | lead_capture_crm | 202606030008_lead_listing_suggestions.sql | 11/11 |
-| 202606030009 | lead_capture_crm | 202606030009_lead_recommendations.sql | 11/11 |
-| 202606030010 | lead_capture_crm | 202606030010_lead_saved_searches.sql | 11/11 |
-| 202606030011 | notification_automation | 202606030011_communication_delivery_preferences.sql | 19/19 |
-| 202606010001 | transaction_network | 202606010001_partner_routing_rules_phase1.sql | 15/15 |
 | 202607180046 | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | 6/6 |
-| 202606040001 | workspace_platform | 202606040001_onboarding_role_contract_phase2.sql | 8/8 |
-| 202606040002 | workspace_platform | 202606040002_workspace_entitlements_phase4.sql | 11/11 |
-| 202606040004 | workspace_platform | 202606040004_workspace_entitlement_enforcement_phase5.sql | 15/15 |
-| 202606040005 | workspace_platform | 202606040005_workspace_billing_operations_phase6.sql | 12/12 |
 
 ## Needs Object Review
 
@@ -103,7 +106,6 @@ These pure local-only migrations have all statically extracted objects present i
 | 202607180051 | canonical_documents | 202607180051_document_generator_concurrency_i1.sql | none_live | 0/6 |
 | 202607180052 | canonical_documents | 202607180052_document_generator_backpressure_i3.sql | none_live | 0/3 |
 | 20260719194500 | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live | 0/2 |
-| 202606090010 | other | 202606090010_created_by_access_remediation.sql | partial_live | 27/30 |
 | 202607170018 | other | 202607170018_legal_draft_review_gate_e1.sql | none_live | 0/2 |
 | 202607170019 | other | 202607170019_legal_draft_immutable_lock_e2.sql | none_live | 0/6 |
 | 202607170020 | other | 202607170020_legal_signing_envelope_assurance_e3.sql | none_live | 0/6 |
@@ -140,9 +142,9 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | Action | Count |
 | --- | --- |
 | apply_original_after_dependency_check | 58 |
-| corrective_migration_required | 4 |
-| manual_data_review | 2 |
-| repair_only_after_smoke | 17 |
+| corrective_migration_required | 3 |
+| manual_data_review | 1 |
+| repair_only_after_smoke | 2 |
 
 | Version | Stream | Depends On | Module | File | Evidence | Action | Required Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -209,24 +211,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180041 | attorney_identity_access | 202607180040 | attorney | 202607180041_attorney_role_integrity_gate_phase8.sql | none_live (0/1) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 202607180042 | attorney_identity_access | 202607180041 | attorney | 202607180042_attorney_role_release_certification_phase9.sql | none_live (0/5) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 202607180046 | transaction_creation | stream preflight | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | all_live (6/6) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606010001 | other | stream preflight | transaction_network | 202606010001_partner_routing_rules_phase1.sql | all_live (15/15) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606030007 | other | 202606010001 | lead_capture_crm | 202606030007_lead_communication_events.sql | all_live (11/11) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606030008 | other | 202606030007 | lead_capture_crm | 202606030008_lead_listing_suggestions.sql | all_live (11/11) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606030009 | other | 202606030008 | lead_capture_crm | 202606030009_lead_recommendations.sql | all_live (11/11) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606030010 | other | 202606030009 | lead_capture_crm | 202606030010_lead_saved_searches.sql | all_live (11/11) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606030011 | other | 202606030010 | notification_automation | 202606030011_communication_delivery_preferences.sql | all_live (19/19) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606040001 | other | 202606030011 | workspace_platform | 202606040001_onboarding_role_contract_phase2.sql | all_live (8/8) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606040002 | other | 202606040001 | workspace_platform | 202606040002_workspace_entitlements_phase4.sql | all_live (11/11) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606040004 | other | 202606040002 | workspace_platform | 202606040004_workspace_entitlement_enforcement_phase5.sql | all_live (15/15) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606040005 | other | 202606040004 | workspace_platform | 202606040005_workspace_billing_operations_phase6.sql | all_live (12/12) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606050001 | other | 202606040005 | bond_finance | 202606050001_bond_bank_relationship_profiles.sql | no_static_objects | manual_data_review | Verify the intended data outcome and idempotency manually before deciding apply or repair. |
-| 202606080002 | other | 202606050001 | commercial | 202606080002_commercial_listings_foundation.sql | all_live (12/12) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606090010 | other | 202606080002 | other | 202606090010_created_by_access_remediation.sql | partial_live (27/30) | corrective_migration_required | Diff live definitions, create an idempotent corrective migration, and verify both outcomes. |
-| 202606110004 | other | 202606090010 | commercial | 202606110004_commercial_transactions_phase2.sql | all_live (18/18) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606110005 | other | 202606110004 | commercial | 202606110005_commercial_crm_foundation_phase3.sql | all_live (32/32) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606110006 | other | 202606110005 | commercial | 202606110006_commercial_supply_side_phase4.sql | all_live (3/3) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202606110007 | other | 202606110006 | commercial | 202606110007_commercial_brokerage_os_phase5.sql | all_live (9/9) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 20260719194500 | other | 202606110007 | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live (0/2) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
+| 20260719194500 | other | stream preflight | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live (0/2) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 
 ## Local-Only Drift Detail
 
@@ -246,7 +231,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180041 | pure_local_only | attorney | 202607180041_attorney_role_integrity_gate_phase8.sql | none_live | 0/1 |
 | 202607180042 | pure_local_only | attorney | 202607180042_attorney_role_release_certification_phase9.sql | none_live | 0/5 |
 | 202607180047 | pure_local_only | attorney | 202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql | all_live | 10/10 |
-| 202606050001 | pure_local_only | bond_finance | 202606050001_bond_bank_relationship_profiles.sql | no_static_objects | n/a |
+| 202606050001 | split_local_remote | bond_finance | 202606050001_bond_bank_relationship_profiles.sql | no_static_objects | n/a |
 | 202607170016 | pure_local_only | canonical_documents | 202607170016_legal_document_counsel_approval_b3.sql | none_live | 0/1 |
 | 202607170017 | pure_local_only | canonical_documents | 202607170017_legal_document_review_cycle_restart_c3.sql | none_live | 0/1 |
 | 202607170025 | pure_local_only | canonical_documents | 202607170025_legal_packet_least_privilege_h2.sql | none_live | 0/5 |
@@ -266,18 +251,18 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180050 | pure_local_only | canonical_documents | 202607180050_document_generator_public_signer_surface_h4.sql | none_live | 0/1 |
 | 202607180051 | pure_local_only | canonical_documents | 202607180051_document_generator_concurrency_i1.sql | none_live | 0/6 |
 | 202607180052 | pure_local_only | canonical_documents | 202607180052_document_generator_backpressure_i3.sql | none_live | 0/3 |
-| 202606080002 | pure_local_only | commercial | 202606080002_commercial_listings_foundation.sql | all_live | 12/12 |
-| 202606110004 | pure_local_only | commercial | 202606110004_commercial_transactions_phase2.sql | all_live | 18/18 |
-| 202606110005 | pure_local_only | commercial | 202606110005_commercial_crm_foundation_phase3.sql | all_live | 32/32 |
-| 202606110006 | pure_local_only | commercial | 202606110006_commercial_supply_side_phase4.sql | all_live | 3/3 |
-| 202606110007 | pure_local_only | commercial | 202606110007_commercial_brokerage_os_phase5.sql | all_live | 9/9 |
-| 202606030007 | pure_local_only | lead_capture_crm | 202606030007_lead_communication_events.sql | all_live | 11/11 |
-| 202606030008 | pure_local_only | lead_capture_crm | 202606030008_lead_listing_suggestions.sql | all_live | 11/11 |
-| 202606030009 | pure_local_only | lead_capture_crm | 202606030009_lead_recommendations.sql | all_live | 11/11 |
-| 202606030010 | pure_local_only | lead_capture_crm | 202606030010_lead_saved_searches.sql | all_live | 11/11 |
+| 202606080002 | split_local_remote | commercial | 202606080002_commercial_listings_foundation.sql | all_live | 12/12 |
+| 202606110004 | split_local_remote | commercial | 202606110004_commercial_transactions_phase2.sql | all_live | 18/18 |
+| 202606110005 | split_local_remote | commercial | 202606110005_commercial_crm_foundation_phase3.sql | all_live | 32/32 |
+| 202606110006 | split_local_remote | commercial | 202606110006_commercial_supply_side_phase4.sql | all_live | 3/3 |
+| 202606110007 | split_local_remote | commercial | 202606110007_commercial_brokerage_os_phase5.sql | all_live | 9/9 |
+| 202606030007 | split_local_remote | lead_capture_crm | 202606030007_lead_communication_events.sql | all_live | 11/11 |
+| 202606030008 | split_local_remote | lead_capture_crm | 202606030008_lead_listing_suggestions.sql | all_live | 11/11 |
+| 202606030009 | split_local_remote | lead_capture_crm | 202606030009_lead_recommendations.sql | all_live | 11/11 |
+| 202606030010 | split_local_remote | lead_capture_crm | 202606030010_lead_saved_searches.sql | all_live | 11/11 |
 | 20260719194500 | pure_local_only | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live | 0/2 |
-| 202606030011 | pure_local_only | notification_automation | 202606030011_communication_delivery_preferences.sql | all_live | 19/19 |
-| 202606090010 | pure_local_only | other | 202606090010_created_by_access_remediation.sql | partial_live | 27/30 |
+| 202606030011 | split_local_remote | notification_automation | 202606030011_communication_delivery_preferences.sql | all_live | 19/19 |
+| 202606090010 | split_local_remote | other | 202606090010_created_by_access_remediation.sql | partial_live | 27/30 |
 | 202607170018 | pure_local_only | other | 202607170018_legal_draft_review_gate_e1.sql | none_live | 0/2 |
 | 202607170019 | pure_local_only | other | 202607170019_legal_draft_immutable_lock_e2.sql | none_live | 0/6 |
 | 202607170020 | pure_local_only | other | 202607170020_legal_signing_envelope_assurance_e3.sql | none_live | 0/6 |
@@ -301,16 +286,16 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180019 | pure_local_only | other | 202607180019_controlled_final_signed_artifact_f2.sql | none_live | 0/4 |
 | 202607180021 | pure_local_only | other | 202607180021_cross_surface_completion_f4.sql | none_live | 0/5 |
 | 202607180022 | pure_local_only | other | 202607180022_final_completion_status_recovery_f5.sql | none_live | 0/6 |
-| 202606010001 | pure_local_only | transaction_network | 202606010001_partner_routing_rules_phase1.sql | all_live | 15/15 |
+| 202606010001 | split_local_remote | transaction_network | 202606010001_partner_routing_rules_phase1.sql | all_live | 15/15 |
 | 202607180006 | pure_local_only | transaction_network | 202607180006_editable_transaction_document_draft_c1.sql | none_live | 0/4 |
 | 202607180012 | pure_local_only | transaction_network | 202607180012_durable_transaction_pdf_link_d3.sql | none_live | 0/6 |
 | 202607180020 | pure_local_only | transaction_network | 202607180020_final_signed_transaction_publication_f3.sql | none_live | 0/7 |
 | 202607180039 | pure_local_only | transaction_network | 202607180039_attorney_assignment_qualification_phase6.sql | none_live | 0/3 |
 | 202607180046 | pure_local_only | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | all_live | 6/6 |
-| 202606040001 | pure_local_only | workspace_platform | 202606040001_onboarding_role_contract_phase2.sql | all_live | 8/8 |
-| 202606040002 | pure_local_only | workspace_platform | 202606040002_workspace_entitlements_phase4.sql | all_live | 11/11 |
-| 202606040004 | pure_local_only | workspace_platform | 202606040004_workspace_entitlement_enforcement_phase5.sql | all_live | 15/15 |
-| 202606040005 | pure_local_only | workspace_platform | 202606040005_workspace_billing_operations_phase6.sql | all_live | 12/12 |
+| 202606040001 | split_local_remote | workspace_platform | 202606040001_onboarding_role_contract_phase2.sql | all_live | 8/8 |
+| 202606040002 | split_local_remote | workspace_platform | 202606040002_workspace_entitlements_phase4.sql | all_live | 11/11 |
+| 202606040004 | split_local_remote | workspace_platform | 202606040004_workspace_entitlement_enforcement_phase5.sql | all_live | 15/15 |
+| 202606040005 | split_local_remote | workspace_platform | 202606040005_workspace_billing_operations_phase6.sql | all_live | 12/12 |
 | 202607170026 | pure_local_only | workspace_platform | 202607170026_settings_job_title_governance_phase3_1.sql | none_live | 0/9 |
 | 202607170027 | pure_local_only | workspace_platform | 202607170027_settings_role_permission_governance_phase3_2.sql | none_live | 0/4 |
 
@@ -327,7 +312,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-33674.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-40265.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pairSplitLedgerVersions } from './supabase-reviewed-split-baseline.mjs'
 
 const REPORT_PATH = path.join('docs', 'supabase-migration-phase-6-split-ledger-investigation-report.md')
 
@@ -214,7 +215,7 @@ function ledgerBuckets(rows) {
 
   const localOnlyVersions = new Set(localOnly.map((row) => row.local))
   const remoteOnlyVersions = new Set(remoteOnly.map((row) => row.remote))
-  const splitVersions = [...localOnlyVersions].filter((version) => remoteOnlyVersions.has(version)).sort()
+  const { splitVersions } = pairSplitLedgerVersions(localOnlyVersions, remoteOnlyVersions)
 
   return {
     matched,
@@ -393,8 +394,14 @@ select
   end as statement_count,
   md5(coalesce(to_jsonb(sm)->>'statements', '')) as statement_hash
 from split_versions v
-left join supabase_migrations.schema_migrations sm
-  on sm.version = v.version
+left join lateral (
+  select candidate.*
+  from supabase_migrations.schema_migrations candidate
+  where candidate.version = v.version
+     or candidate.version = v.version || '00'
+  order by (candidate.version = v.version) desc
+  limit 1
+) sm on true
 order by v.version;
 `
 }

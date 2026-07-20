@@ -1,6 +1,6 @@
 # Supabase Migration Phase 6 Split Ledger Investigation Report
 
-Generated: 2026-07-18T21:55:05.002Z
+Generated: 2026-07-20T08:06:40.616Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,10 +12,10 @@ Phase 6 is read-only. It investigates split local/remote migration versions from
 | Field | Value |
 | --- | --- |
 | Status | SPLIT_BASELINE_READY |
-| Local migration files | 487 |
+| Local migration files | 497 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 407 |
+| Matched rows | 416 |
 | Split versions investigated | 17 |
 | All static objects live | 15 |
 | Partial static objects live | 1 |
@@ -92,8 +92,8 @@ No split row exposed a remote migration name that differed from the local file n
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-history-77623.sql --output-format json | ok | Initialising login role... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-object-checks-77623.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-history-41353.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-object-checks-41353.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

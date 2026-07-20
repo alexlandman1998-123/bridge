@@ -21170,7 +21170,11 @@ function AgentLeadWorkspace() {
     setSellerPreferredAttorneysLoading(true)
     try {
       const partners = await listOrganisationPreferredPartners()
-      const attorneys = (partners || []).filter((partner) => partner?.isActive && partner?.partnerType === 'transfer_attorney')
+      const attorneys = (partners || []).filter((partner) => (
+        partner?.isActive &&
+        partner?.partnerType === 'transfer_attorney' &&
+        normalizeText(partner?.partnerOrganisationId)
+      ))
       setSellerPreferredAttorneys(attorneys)
       const existingAttorneyId = normalizeText(
         linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId,
@@ -21181,7 +21185,7 @@ function AgentLeadWorkspace() {
         || null
       setSelectedSellerAttorneyId(initialAttorney?.id || '')
       if (!attorneys.length) {
-        setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation → Partners before sending onboarding.')
+        setSellerPreferredAttorneysError('Connect an active transfer-attorney organisation under Organisation → Partners before sending onboarding.')
       }
     } catch (loadError) {
       setSellerPreferredAttorneys([])
