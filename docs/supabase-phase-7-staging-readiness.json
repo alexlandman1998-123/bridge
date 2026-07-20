@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-20T16:59:19.744Z",
+  "generatedAt": "2026-07-20T17:23:57.326Z",
   "status": "READY_FOR_PRODUCTION_PROMOTION",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
-  "manifestRowCount": 70,
-  "stagingLedgerRecordedCount": 70,
+  "manifestRowCount": 71,
+  "stagingLedgerRecordedCount": 71,
   "stagingEvidenceComplete": true,
   "attorneyIntegrityGate": "pass",
   "attorneyIntegrityBlockingAssignments": 0,
@@ -18,7 +18,7 @@
   "approvedBy": "Alexander Landman",
   "approvedAt": "2026-07-20T15:57:16.351Z",
   "certificationStatus": "STAGING_CERTIFIED",
-  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase24/staging-release-certification.json",
-  "releaseCommit": "f2549d330a528488a150a474da8bb220fb6e6d04",
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase25/staging-release-certification.json",
+  "releaseCommit": "18d875bee8cdfa14cb51236b0f7cdfe5c3317698",
   "decision": "Staging is certified, production database recovery is proven, and short-lived production access is configured. Promote only one reviewed migration at a time through the Phase 7 gate."
 }

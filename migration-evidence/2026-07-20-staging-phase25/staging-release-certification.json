@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-07-20T17:23:57.326Z",
+  "status": "STAGING_CERTIFIED",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "releaseCommit": "18d875bee8cdfa14cb51236b0f7cdfe5c3317698",
+  "manifestRowCount": 71,
+  "manifestSha256": "9254e9b8b33b3cc125cd0d0fceff21719ae6dc8b8afc23a7b82fd090f21d21be",
+  "stagingEvidenceCount": 71,
+  "stagingEvidenceSetSha256": "2c5155f68f6e37c0396dc74e3f04503f39df933bfb826181bffbf3881203b2af",
+  "ledgerRecordedCount": 71,
+  "integrity": {
+    "rowCount": 8,
+    "blockingRows": 0,
+    "blockingAssignments": 0,
+    "firmCount": 3
+  },
+  "phase10AuditEventCount": 43,
+  "phase10AuditTransactionCount": 43,
+  "remediatedFirmCertification": {
+    "status": "certified",
+    "version": "phase9-v1",
+    "integrityRowCount": 1
+  },
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase11_user_instruction",
+  "productionMutated": false
+}
