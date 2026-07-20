@@ -1,0 +1,34 @@
+name: Phase 21 Release Branch Review Gate
+
+on:
+  pull_request:
+    paths:
+      - 'deployment-evidence/2026-07-20-phase21/release-branch-review.json'
+      - 'docs/phase-21-release-branch-review.md'
+      - 'scripts/phase21-release-branch-review.test.mjs'
+      - '.github/workflows/phase21-release-branch-review-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deployment-evidence/2026-07-20-phase21/release-branch-review.json'
+      - 'docs/phase-21-release-branch-review.md'
+      - 'scripts/phase21-release-branch-review.test.mjs'
+      - '.github/workflows/phase21-release-branch-review-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  release-review:
+    name: Verify reviewed release branch evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/phase21-release-branch-review.test.mjs
