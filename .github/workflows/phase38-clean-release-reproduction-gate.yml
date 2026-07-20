@@ -1,0 +1,28 @@
+name: Phase 38 clean release reproduction evidence gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase38-clean-release-reproduction-gate.yml'
+      - 'deployment-evidence/2026-07-20-phase38/clean-release-reproduction.json'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-38-clean-release-reproduction.md'
+      - 'package.json'
+      - 'scripts/phase38-clean-release-reproduction.test.mjs'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  clean-release-evidence:
+    name: Verify Phase 38 clean reproduction evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run release:phase38:verify

@@ -1,0 +1,120 @@
+{
+  "phase": 38,
+  "status": "CLEAN_RELEASE_REPRODUCED_WITH_BLOCKERS",
+  "executedAt": "2026-07-20",
+  "source": {
+    "branch": "codex/mvp-pilot-readiness",
+    "commit": "03107b17fe1e5c032cac6575348a6d3fdd81f37d",
+    "tree": "020add0e0f532a54de453bd587649a12f073a099",
+    "matchedRemoteHead": true
+  },
+  "checkout": {
+    "isolatedGitWorktree": true,
+    "detachedHead": true,
+    "cleanBeforeExecution": true,
+    "repositoryWorktreeReused": false
+  },
+  "runtime": {
+    "node": "v22.23.1",
+    "npm": "11.6.2"
+  },
+  "lockedInstalls": {
+    "root": {
+      "command": "npm ci --ignore-scripts",
+      "passed": true,
+      "packagesAudited": 44,
+      "vulnerabilities": {
+        "low": 0,
+        "moderate": 1,
+        "high": 2,
+        "critical": 0
+      }
+    },
+    "application": {
+      "command": "npm ci --ignore-scripts",
+      "passed": true,
+      "packagesAudited": 406,
+      "vulnerabilities": {
+        "low": 2,
+        "moderate": 4,
+        "high": 7,
+        "critical": 0
+      }
+    }
+  },
+  "deterministicReleaseGates": {
+    "total": 32,
+    "passed": 28,
+    "failed": 4,
+    "passedNames": [
+      "phase0", "phase6", "phase7", "phase8", "phase14",
+      "phase15-batch1", "phase15-batch2", "phase15-batch3",
+      "phase15-batch4", "phase15-batch5", "phase15-batch6",
+      "phase16", "phase17", "phase18", "phase19", "phase21",
+      "phase22", "phase23", "phase24", "phase25", "phase27",
+      "phase28", "phase29", "phase30", "phase31", "phase32",
+      "phase35", "phase36"
+    ],
+    "failures": [
+      {
+        "phase": 20,
+        "code": "APPLICATION_SOURCE_FINGERPRINT_DRIFT",
+        "actual": "824864e6c574785d12b490b156fafa80c6b4a72f5035c69ecd48848e481da3b8",
+        "expected": "8246654e03f4e4b08c155482ad3dce33ade3eb1f9320bfa137de2deceb8cadd5"
+      },
+      {
+        "phase": 26,
+        "code": "RELEASE_CANDIDATE_FINGERPRINT_DRIFT",
+        "actual": "52d97f6161cd5cf4597df0230cd6ec093c74cf6f76bde7703b1570f7f26097a7",
+        "expected": "ee8967d19cfa6213c062127a898f3b6ad3118cd6f88462a37fb3361e872d6db6"
+      },
+      {
+        "phase": 33,
+        "code": "PULL_REQUEST_SCOPE_DRIFT",
+        "unexpectedRuntimePathCount": 8
+      },
+      {
+        "phase": 34,
+        "code": "PRODUCTION_SOURCE_RECERTIFICATION_DRIFT",
+        "actual": "72e7a8f7dff87625a0e23bc89b9b79e6b83b9ee5",
+        "expected": "8f78e7c07b3e5d50f2652e3b477a52023295fae2"
+      }
+    ]
+  },
+  "applicationRelease": {
+    "mvpCertification": {
+      "passed": true,
+      "checks": 24
+    },
+    "serviceTests": {
+      "passed": true,
+      "groups": 9
+    },
+    "guardedProductionBuild": {
+      "passed": true,
+      "releaseId": "03107b17fe1e5c032cac6575348a6d3fdd81f37d",
+      "criticalAssetCount": 427,
+      "performanceBudgetPassed": true,
+      "totalGzipMb": 6.18,
+      "initialGzipKb": 318.4,
+      "entryScriptGzipKb": 80.7
+    }
+  },
+  "externalChecks": {
+    "includedInCleanReproduction": false,
+    "supabasePreview": {
+      "status": "BLOCKED",
+      "reason": "Preview branch requires a custom SMTP secret before database preview can complete."
+    },
+    "productionPromotion": {
+      "attempted": false
+    }
+  },
+  "safety": {
+    "stagingMutated": false,
+    "productionMutated": false,
+    "applicationDeployed": false,
+    "secretsCaptured": false
+  },
+  "decision": "The source is reproducibly installable, testable, and buildable from its remote commit, but it is not promotable until Phases 20, 26, 33, and 34 are recertified for the intended runtime scope and the Supabase Preview SMTP configuration is repaired."
+}
