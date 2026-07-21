@@ -5440,7 +5440,6 @@ export default function LegalDocumentWorkspace({
       setActionProgressMessage(statusState?.packet?.id ? 'Generating mandate PDF…' : 'Generating draft…')
       try {
         const generationResult = await onGenerate({
-          ...(editableSections.length ? { editableSections } : {}),
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
         if (!isCurrentAutoGenerateRun()) return
@@ -6053,12 +6052,13 @@ export default function LegalDocumentWorkspace({
     const generationBaseline = captureLegalDocumentGenerationBaseline(statusStateRef.current)
     let renderFreeze = null
     try {
+      const renderEditedRevision = Boolean(editableDirty || autosavePromiseRef.current)
       let renderSourceVersion = editableVersion
-      if (editableDirty || autosavePromiseRef.current) {
+      if (renderEditedRevision) {
         setActionProgressMessage('Saving the latest wording…')
         renderSourceVersion = await saveEditableDraftVersion({ reviewState: draftReviewState, source: 'generation' })
       }
-      if (renderSourceVersion?.id && Array.isArray(renderSourceVersion?.editable_content_json?.sections) && renderSourceVersion.editable_content_json.sections.length) {
+      if (renderEditedRevision && renderSourceVersion?.id && Array.isArray(renderSourceVersion?.editable_content_json?.sections) && renderSourceVersion.editable_content_json.sections.length) {
         setActionProgressMessage('Freezing the saved document revision…')
         renderFreeze = await freezeEditableDocumentRevisionForRender({
           packetId: normalizeText(statusState?.packet?.id || packetId),
@@ -6067,8 +6067,7 @@ export default function LegalDocumentWorkspace({
         })
       }
       const generationResult = await onGenerate({
-        editableSections,
-        renderFreeze,
+        ...(renderFreeze?.freezeId ? { editableSections, renderFreeze } : {}),
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
       })
       if (generationResult?.status) {

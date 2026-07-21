@@ -2412,6 +2412,19 @@ function buildFallbackPacketStatus(packetType = 'mandate', warning = '') {
   }
 }
 
+function buildLoadingPacketStatus({ packetType = 'mandate', packetId = '', organisationId = null } = {}) {
+  return {
+    ...buildFallbackPacketStatus(packetType),
+    state: 'LOADING',
+    packet: {
+      id: packetId,
+      packet_type: packetType,
+      organisation_id: organisationId,
+    },
+    actionHint: 'Loading the existing mandate.',
+  }
+}
+
 export default function LegalDocumentWorkspacePage() {
   const navigate = useNavigate()
   const params = useParams()
@@ -2770,6 +2783,10 @@ export default function LegalDocumentWorkspacePage() {
       const immediateTransactionId = normalizeText(
         immediateLeadContext.linkedTransaction?.transactionId || immediateLeadContext.linkedTransaction?.dealId,
       )
+      const knownLeadPacketId = normalizeText(immediateLeadContext.lead?.mandatePacketId)
+      if (resolvedPacketType === 'mandate' && isUuidLike(knownLeadPacketId) && !effectiveRoutePacketId) {
+        effectiveRoutePacketId = knownLeadPacketId
+      }
       if (!hasRenderedContextRef.current) {
         setTransactionDetail(null)
         setOrganisationId(immediateOrganisationId)
@@ -2777,8 +2794,14 @@ export default function LegalDocumentWorkspacePage() {
         setWorkspaceSettings(null)
         setLeadContext(immediateLeadContext)
         applyInitialStatus(
-          resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
-            ? buildRuntimeMandateStatusForLead({
+          resolvedPacketType === 'mandate' && isUuidLike(knownLeadPacketId)
+            ? buildLoadingPacketStatus({
+                packetType: resolvedPacketType,
+                packetId: knownLeadPacketId,
+                organisationId: immediateOrganisationId,
+              })
+            : resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
+              ? buildRuntimeMandateStatusForLead({
                 organisationId: immediateOrganisationId,
                 transactionId: immediateTransactionId,
                 transactionReference: [
@@ -2791,8 +2814,11 @@ export default function LegalDocumentWorkspacePage() {
                 role,
                 settings: null,
               })
-            : buildFallbackPacketStatus(resolvedPacketType)
+              : buildFallbackPacketStatus(resolvedPacketType)
         )
+        if (resolvedPacketType === 'mandate' && isUuidLike(knownLeadPacketId)) {
+          setValidatedRoutePacketId(knownLeadPacketId)
+        }
         setLoadingContext(false)
         setContextHydrated(true)
         renderedFallback = true
@@ -4559,7 +4585,7 @@ export default function LegalDocumentWorkspacePage() {
         onView={() => openLatestDocument({ signed: false })}
         onViewSigned={() => openLatestDocument({ signed: true })}
         onRefreshContext={undefined}
-        autoGenerateEnabled={contextHydrated && routeContextSettled}
+        autoGenerateEnabled={contextHydrated && routeContextSettled && normalizeKey(initialStatus?.state) !== 'loading'}
       />
     </>
   )

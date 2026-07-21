@@ -2335,7 +2335,7 @@ export async function validatePacket({ packetType, context = {}, template = null
     placeholders,
     scenarioProfile: legalDocumentScenarioProfile,
   })
-  const sectionManifest = editableSectionManifest || seededSectionResolution.sectionManifest
+  let sectionManifest = editableSectionManifest || seededSectionResolution.sectionManifest
   const conditionalEngineAudit = seededSectionResolution.conditionalEngineAudit
   const conditionalEngineIssues = conditionalEngineAudit?.issues || []
   let conditionalEngineCanProceed = !conditionalEngineAudit?.applies || Boolean(conditionalEngineAudit.canProceed)
@@ -2350,17 +2350,16 @@ export async function validatePacket({ packetType, context = {}, template = null
     const missingExpected = [...expectedPackKeys].filter((key) => !actualPackKeys.has(key))
     const unexpected = [...actualPackKeys].filter((key) => !expectedPackKeys.has(key))
     if (missingExpected.length || unexpected.length) {
-      conditionalEngineIssues.push({
+      // Older drafts can contain only the introductory editable section. They are not a
+      // legal decision and must not override the scenario-specific canonical clause pack.
+      sectionManifest = seededSectionResolution.sectionManifest
+      console.warn('[PACKETS] ignored incomplete editable section manifest for canonical scenario render.', {
         code: 'CONDITIONAL_EDITABLE_MANIFEST_MISMATCH',
-        source: 'conditional_engine',
-        sectionKey: 'conditional_master',
-        sectionLabel: 'Conditional master',
-        message: 'The editable document sections do not match the canonical scenario decision.',
-        required: true,
-        details: { missingExpected, unexpected },
+        resolution: 'canonical_manifest_restored',
+        packetType: normalizedPacketType,
+        missingExpected,
+        unexpected,
       })
-      conditionalEngineAudit.canProceed = false
-      conditionalEngineCanProceed = false
     }
   }
   const ruleValidation = validatePacketPlaceholders({
