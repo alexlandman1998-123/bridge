@@ -2223,7 +2223,6 @@ function SignerPreparationPanel({
   onDraftChange = null,
   validation = { blockers: [], warnings: [] },
   onPrepare = null,
-  onSave = null,
   onResend = null,
   onRefresh = null,
   signingLayout = [],
@@ -2384,11 +2383,8 @@ function SignerPreparationPanel({
       ) : null}
 
       <div className="mt-3 grid gap-2">
-        <Button type="button" size="sm" variant="secondary" onClick={() => void onPrepare?.()} disabled={busy || !canEditRoster}>
-          {busy ? 'Working…' : 'Prepare Signer Fields'}
-        </Button>
-        <Button type="button" size="sm" variant="secondary" onClick={() => void onSave?.()} disabled={busy || !canEditRoster}>
-          {busy ? 'Working…' : 'Save Signer Details'}
+        <Button type="button" size="sm" onClick={() => void onPrepare?.()} disabled={busy || !canEditRoster}>
+          {busy ? 'Working…' : 'Save and Prepare'}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => void onRefresh?.()} disabled={busy}>
           Refresh Signer Status
@@ -4306,16 +4302,28 @@ export default function LegalDocumentWorkspace({
     setActionFeedback('')
     setActionProgressMessage('Preparing signature fields…')
     try {
-      const signingVersion = getSigningVersionSnapshot(statusState, latestVersion)
+      setActionProgressMessage('Saving signer details…')
+      const savedCount = await saveSignerDetails({ includeOptional: true })
+      let workingStatus = statusStateRef.current || statusState
+      if (savedCount > 0) {
+        const refreshed = await refreshWorkspaceData()
+        if (refreshed?.resolved) {
+          statusStateRef.current = refreshed.resolved
+          setStatusState(refreshed.resolved)
+          workingStatus = refreshed.resolved
+        }
+      }
+      setActionProgressMessage('Preparing signature fields…')
+      const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
       const prepared = await prepareSigningFields({
         packetId: resolvedPacketId,
         packetType,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
         placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
-        context: statusState?.packet?.source_context_json || {},
+        context: workingStatus?.packet?.source_context_json || {},
       })
       applyPreparedSigningState(prepared)
-      setActionFeedback('Signer fields prepared. Review signer details and send when ready.')
+      setActionFeedback(savedCount > 0 ? 'Signer details saved and signature fields prepared.' : 'Signature fields prepared. Signer details were already up to date.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare signer fields right now.'))
     } finally {
@@ -5382,14 +5390,19 @@ export default function LegalDocumentWorkspace({
   }
 
   useEffect(() => {
-    if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
+    if (!open || !isMandatePacket || effectiveMode !== 'generate' || actionBusy || loading) return
     if (!autoGenerateEnabled) return
     if (!legalPermissions.canGenerate || typeof onGenerate !== 'function') return
+    if (editableDirty || autosavePromiseRef.current) return
+    const existingGeneratedVersion = getGeneratedPacketVersionForSigning(statusState?.versions || [])
+    if (statusState?.packet?.id && existingGeneratedVersion?.id) return
     const autoGenerateKey = [
       packetType,
-      normalizeText(packetId),
+      normalizeText(statusState?.packet?.id || packetId),
       normalizeText(transactionId),
       normalizeText(statusState?.state || 'NO_PACKET'),
+      normalizeText(existingGeneratedVersion?.id || 'NO_GENERATED_VERSION'),
+      editableSections.length,
     ].join(':')
     if (autoGenerateGuardRef.current === autoGenerateKey) return
     autoGenerateGuardRef.current = autoGenerateKey
@@ -5404,9 +5417,10 @@ export default function LegalDocumentWorkspace({
       setActionBusy(true)
       setLoadError('')
       setActionFeedback('')
-      setActionProgressMessage('Generating draft…')
+      setActionProgressMessage(statusState?.packet?.id ? 'Generating mandate PDF…' : 'Generating draft…')
       try {
         const generationResult = await onGenerate({
+          ...(editableSections.length ? { editableSections } : {}),
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
         if (!isCurrentAutoGenerateRun()) return
@@ -5450,6 +5464,8 @@ export default function LegalDocumentWorkspace({
     void generateInitialDraft()
   }, [
     actionBusy,
+    editableDirty,
+    editableSections.length,
     effectiveMode,
     isMandatePacket,
     legalPermissions.canGenerate,
@@ -5462,6 +5478,7 @@ export default function LegalDocumentWorkspace({
     refreshWorkspaceData,
     statusState?.packet?.id,
     statusState?.state,
+    statusState?.versions,
     transactionId,
     autoGenerateEnabled,
   ])
@@ -6359,6 +6376,18 @@ export default function LegalDocumentWorkspace({
               </div>
 
               <div id="document-workspace-actions" className="flex scroll-mt-24 items-start gap-2 self-start">
+                {generatedPreviewUrl && typeof onView === 'function' ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void onView?.()}
+                    disabled={loading || actionBusy}
+                  >
+                    <Eye size={14} />
+                    Preview
+                  </Button>
+                ) : null}
                 {showGeneratePdfButton ? (
                   <Button
                     type="button"
@@ -6653,7 +6682,7 @@ export default function LegalDocumentWorkspace({
                       </button>
                     </div>
                   ) : null}
-                    {generatedPreviewUrl && typeof onView === 'function' ? (
+                    {!isMandatePacket && generatedPreviewUrl && typeof onView === 'function' ? (
                       <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
                         Open Draft
                       </Button>
@@ -7000,7 +7029,6 @@ export default function LegalDocumentWorkspace({
                   onDraftChange={handleSignerDraftChange}
                   validation={signerValidation}
                   onPrepare={handlePrepareSignerFields}
-                  onSave={handleSaveSignerDetails}
                   onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
                   onRefresh={handleRefreshSignerStatus}
                   signingLayout={signingFieldLayout}
