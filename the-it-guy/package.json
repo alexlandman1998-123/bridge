@@ -12,6 +12,7 @@
     "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:otp-signing-send-responsiveness": "node scripts/otp-signing-send-responsiveness.test.mjs",
+    "test:signer-mobile-experience": "node scripts/signer-mobile-experience.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",
     "test:workspace-branding-observability": "node scripts/workspace-branding-observability.test.mjs",
     "test:workspace-branding-integrity-phase6": "node scripts/workspace-branding-integrity-phase6.test.mjs",
