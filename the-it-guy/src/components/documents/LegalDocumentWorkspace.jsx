@@ -4445,7 +4445,7 @@ export default function LegalDocumentWorkspace({
       preparedVersionId = normalizeText(getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id)
     }
 
-    let latestRoster = resolveSignerRoster({
+    const persistedRoster = resolveSignerRoster({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
       mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
@@ -4453,7 +4453,8 @@ export default function LegalDocumentWorkspace({
       signerDefaults,
       sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
       legalSignerProfile,
-    }).map((row) => {
+    })
+    const latestRoster = persistedRoster.map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
       return {
@@ -4472,7 +4473,7 @@ export default function LegalDocumentWorkspace({
       throw new Error(`Cannot send: ${check.blockers[0]}`)
     }
 
-    const hasDraftOverrides = latestRoster.some((row) => {
+    const hasDraftOverrides = persistedRoster.some((row) => {
       const draft = signerDraftByRole[row.role] || {}
       const nextName = normalizeText(draft.signerName)
       const nextEmail = normalizeText(draft.signerEmail).toLowerCase()

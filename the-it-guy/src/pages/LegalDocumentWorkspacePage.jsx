@@ -4082,32 +4082,44 @@ export default function LegalDocumentWorkspacePage() {
         leadContext?.lead?.private_listing_id,
       )
       if (isSupabaseConfigured && isUuidLike(linkedListingId)) {
-        try {
-          await updatePrivateListing(
-            linkedListingId,
-            {
-              listingStatus: 'mandate_sent',
-              mandateStatus: 'sent',
-            },
-            { includeRequirementsAndDocuments: false },
-          )
-          await createPrivateListingActivity({
-            privateListingId: linkedListingId,
-            activityType: 'mandate_sent',
-            activityTitle: 'Mandate sent for digital signing',
-            activityDescription: `Mandate was sent to the ${recipientLabelLower} for digital signing.`,
-            performedBy: normalizeText(actor.id),
-            visibility: 'internal',
-            metadata: {
-              leadId: normalizeText(leadContext?.lead?.leadId),
-              packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
-              signingMethod: 'digital',
-              recipientRole: signerRole || null,
-            },
-          })
-        } catch (listingUpdateError) {
-          console.warn('[LegalDocumentWorkspacePage] linked listing mandate send sync skipped.', listingUpdateError)
-        }
+        // Listing history is useful, but email delivery must not wait on it. This used to
+        // keep the send dialog on "Processing..." when an unrelated CRM query was slow.
+        void (async () => {
+          try {
+            await withLegalWorkspaceTimeout(
+              updatePrivateListing(
+                linkedListingId,
+                {
+                  listingStatus: 'mandate_sent',
+                  mandateStatus: 'sent',
+                },
+                { includeRequirementsAndDocuments: false },
+              ),
+              'Linked listing mandate status update is taking too long.',
+              5000,
+            )
+            await withLegalWorkspaceTimeout(
+              createPrivateListingActivity({
+                privateListingId: linkedListingId,
+                activityType: 'mandate_sent',
+                activityTitle: 'Mandate sent for digital signing',
+                activityDescription: `Mandate was sent to the ${recipientLabelLower} for digital signing.`,
+                performedBy: normalizeText(actor.id),
+                visibility: 'internal',
+                metadata: {
+                  leadId: normalizeText(leadContext?.lead?.leadId),
+                  packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
+                  signingMethod: 'digital',
+                  recipientRole: signerRole || null,
+                },
+              }),
+              'Linked listing mandate activity update is taking too long.',
+              5000,
+            )
+          } catch (listingUpdateError) {
+            console.warn('[LegalDocumentWorkspacePage] linked listing mandate send sync skipped.', listingUpdateError)
+          }
+        })()
       }
       void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },

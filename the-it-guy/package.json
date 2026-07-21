@@ -670,6 +670,7 @@
     "test:mandate-template-readiness-phase5": "node scripts/mandate-template-readiness-phase5.test.mjs",
     "test:mandate-template-fallback-guardrails-phase6": "node scripts/mandate-template-fallback-guardrails-phase6.test.mjs",
     "test:mandate-template-workspace-phase7": "node scripts/mandate-template-workspace-phase7.test.mjs",
+    "test:mandate-signing-send-responsiveness": "node scripts/mandate-signing-send-responsiveness.test.mjs",
     "test:mandate-template-content-rules-phase8": "node scripts/mandate-template-content-rules-phase8.test.mjs",
     "test:mandate-template-content-scanner-phase9": "node scripts/mandate-template-content-scanner-phase9.test.mjs",
     "test:mandate-template-publish-gate-phase10": "node scripts/mandate-template-publish-gate-phase10.test.mjs",
