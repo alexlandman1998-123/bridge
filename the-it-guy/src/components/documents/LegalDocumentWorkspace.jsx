@@ -5576,24 +5576,6 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  async function handleSaveSignerDetails() {
-    if (signerBusyRef.current) return
-    signerBusyRef.current = true
-    setSignerBusy(true)
-    setLoadError('')
-    setActionFeedback('')
-    try {
-      const savedCount = await saveSignerDetails({ includeOptional: true })
-      await refreshWorkspaceData()
-      setActionFeedback(savedCount > 0 ? `Saved ${savedCount} signer update(s).` : 'Signer details are already up to date.')
-    } catch (error) {
-      setLoadError(toFriendlyWorkspaceError(error, 'Unable to save signer details right now.'))
-    } finally {
-      signerBusyRef.current = false
-      setSignerBusy(false)
-    }
-  }
-
   async function handleRefreshSignerStatus() {
     if (signerBusyRef.current) return
     signerBusyRef.current = true

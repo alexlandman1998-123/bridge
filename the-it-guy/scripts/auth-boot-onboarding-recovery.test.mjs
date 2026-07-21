@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -8,6 +9,16 @@ const server = await createServer({
 })
 
 try {
+  const authBootSource = await readFile(new URL('../src/lib/authBoot.js', import.meta.url), 'utf8')
+  const loadBridgeAuthStateStart = authBootSource.indexOf('export async function loadBridgeAuthState')
+  const profileLoadStart = authBootSource.indexOf('const [profile, loadedSignupIntent]', loadBridgeAuthStateStart)
+  const bridgeUserResolution = authBootSource.slice(loadBridgeAuthStateStart, profileLoadStart)
+
+  assert.ok(loadBridgeAuthStateStart >= 0)
+  assert.ok(profileLoadStart > loadBridgeAuthStateStart)
+  assert.match(bridgeUserResolution, /const user = session\.user/)
+  assert.doesNotMatch(bridgeUserResolution, /auth\.getUser/)
+
   const {
     deriveAuthBootOnboardingState,
     shouldAutoClaimWorkspaceMembership,

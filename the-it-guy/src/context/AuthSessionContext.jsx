@@ -352,7 +352,12 @@ export function AuthSessionProvider({ children }) {
         })
       } catch (error) {
         if (!active) return
-        console.error('[AUTH] bridge-boot:failed', error)
+        console.error('[AUTH] bridge-boot:failed', {
+          error,
+          userId: session.user.id,
+          selectedWorkspaceId: selectedWorkspaceId || null,
+          activeSteps: getActiveAuthBootStepDiagnostics(),
+        })
         void reportError(error, {
           userId: session.user.id,
           operation: 'bridge_auth_boot',
