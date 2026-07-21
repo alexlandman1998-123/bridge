@@ -4427,11 +4427,15 @@ export default function LegalDocumentWorkspace({
       workingStatus = applyPreparedSigningState(prepared, workingStatus)
     }
 
+    const alreadyPrepared = Number(workingStatus?.signingSummary?.signerCount || 0) > 0 &&
+      Number(workingStatus?.signingSummary?.fieldCount || 0) > 0
     if (isResend) {
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || statusStateRef.current || statusState || workingStatus
-    } else {
+    } else if (!alreadyPrepared) {
       await ensurePrepared()
+    } else {
+      preparedVersionId = normalizeText(getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id)
     }
 
     let latestRoster = resolveSignerRoster({
@@ -4847,7 +4851,7 @@ export default function LegalDocumentWorkspace({
     return nextSummary
   }
 
-  async function transitionLifecycleState(nextState, { validateReadiness = false } = {}) {
+  async function transitionLifecycleState(nextState, { validateReadiness = false, sourceContextPatch = {} } = {}) {
     const target = normalizeLifecycleState(nextState)
     const currentStatus = statusStateRef.current || statusState
     let packet = currentStatus?.packet
@@ -4869,7 +4873,10 @@ export default function LegalDocumentWorkspace({
       packetId: packet.id,
       nextState: target,
       versionId: latestVersion?.id || null,
-      sourceContextPatch: target === 'sent' ? { sentAt: nowIso } : {},
+      sourceContextPatch: {
+        ...(target === 'sent' ? { sentAt: nowIso } : {}),
+        ...(sourceContextPatch && typeof sourceContextPatch === 'object' ? sourceContextPatch : {}),
+      },
       eventPayload: {
         versionNumber: latestVersion?.version_number || null,
         contentFingerprint:
@@ -4898,7 +4905,8 @@ export default function LegalDocumentWorkspace({
 
   async function ensurePersistedPacketBeforeSend() {
     let currentStatus = statusStateRef.current || statusState
-    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+    const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(currentStatus?.versions || [])?.id)
+    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId) && !hasGeneratedVersion) {
       try {
         const refreshed = await refreshWorkspaceData()
         currentStatus = refreshed?.resolved || statusStateRef.current || currentStatus
@@ -5017,6 +5025,16 @@ export default function LegalDocumentWorkspace({
   }
 
   async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
+    const sendStartedAt = Date.now()
+    const logSendStage = (stage, metadata = {}) => {
+      console.info('[LegalDocumentWorkspace] mandate signing timing', {
+        stage,
+        elapsedMs: Date.now() - sendStartedAt,
+        packetId: normalizeText(statusStateRef.current?.packet?.id || packetId) || null,
+        resend,
+        ...metadata,
+      })
+    }
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
@@ -5036,7 +5054,8 @@ export default function LegalDocumentWorkspace({
         ? persistedStatus.packet
         : await ensureTemplateReferenceBeforeSend()
       const blockers = getSendReadinessBlockers({
-        requireSignerReadiness: true,
+        // Signer fields are prepared by the send flow below when they do not exist yet.
+        requireSignerReadiness: false,
         packetOverride: packetForSend,
         statusOverride: persistedStatus,
       })
@@ -5147,15 +5166,9 @@ export default function LegalDocumentWorkspace({
       : 'signer'
     setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
+    logSendStage('signers_ready')
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
-    }
-    if (!resend) {
-      const packetAfterLinkPreparation = await fetchDocumentPacket(
-        normalizeText(linkResult?.packetId || persistedStatus?.packet?.id || packetId),
-        { includeVersions: false, includeEvents: false },
-      )
-      lifecycleBeforeSend = resolveDocumentLifecycleStateFromPacket(packetAfterLinkPreparation)
     }
     if (!resend && lifecycleBeforeSend === 'pdf_generated') {
       await transitionLifecycleState('ready_to_send', { validateReadiness: true })
@@ -5182,31 +5195,28 @@ export default function LegalDocumentWorkspace({
     const signerEmails = linkSigners.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
 
     if (!resend && lifecycleBeforeSend !== 'sent') {
-      await transitionLifecycleState('sent')
+      await transitionLifecycleState('sent', {
+        sourceContextPatch: {
+          signing_method: 'digital',
+          signingMethod: 'digital',
+          signing_status: workflowSigningStatus,
+          signingStatus: workflowSigningStatus,
+          mandateStatus: workflowSigningStatus,
+          lifecycle_state: 'sent',
+          sentAt: currentPacket?.sent_at || nowIso,
+          sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
+          signerEmails,
+          signerCount: signerEmails.length,
+          signingLinkPreparedAt: nowIso,
+          signingLinkLastSentAt: nowIso,
+          signingLinkResentAt: resend ? nowIso : null,
+          lastSigningRecipientRole: linkRecipientRole || null,
+        },
+      })
     }
+    logSendStage('packet_marked_sent')
 
-    await updateWorkspacePacket(currentPacketId, {
-      sourceContextJson: {
-        ...(currentPacket?.source_context_json || {}),
-        signing_method: 'digital',
-        signingMethod: 'digital',
-        signing_status: workflowSigningStatus,
-        signingStatus: workflowSigningStatus,
-        mandateStatus: workflowSigningStatus,
-        lifecycle_state: 'sent',
-        sentAt: currentPacket?.sent_at || nowIso,
-        sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
-        signerEmails,
-        signerCount: signerEmails.length,
-        signingLinkPreparedAt: nowIso,
-        signingLinkLastSentAt: nowIso,
-        signingLinkResentAt: resend ? nowIso : null,
-        lastSigningRecipientRole: linkRecipientRole || null,
-      },
-      allowSigningMetadataUpdate: true,
-    })
-
-    await appendDocumentPacketEvent({
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
       organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
@@ -5219,6 +5229,8 @@ export default function LegalDocumentWorkspace({
         targetSignerRole: linkRecipientRole || null,
         preparedAt: nowIso,
       },
+    }).catch((eventError) => {
+      console.warn('[LegalDocumentWorkspace] could not record signing preparation event', eventError)
     })
 
     setActionProgressMessage(resend ? 'Sending resend notifications…' : 'Sending signer notifications…')
@@ -5235,7 +5247,8 @@ export default function LegalDocumentWorkspace({
           targetSignerRole: linkRecipientRole,
           signingStatus: workflowSigningStatus,
         })
-        await completeAppliedEnvelopeDispatch({
+        logSendStage('email_confirmed')
+        void completeAppliedEnvelopeDispatch({
           dispatchId: linkResult?.dispatchId,
           success: true,
           deliveryEvidence: {
@@ -5246,6 +5259,8 @@ export default function LegalDocumentWorkspace({
             recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
             emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
           },
+        }).catch((dispatchError) => {
+          console.warn('[LegalDocumentWorkspace] could not complete signing dispatch record', dispatchError)
         })
       } catch (sendError) {
         if (linkResult?.dispatchId) {
@@ -5263,22 +5278,25 @@ export default function LegalDocumentWorkspace({
       }
     }
 
-    setActionProgressMessage('Updating signing status…')
-    const refreshed = await resolveDocumentPacketStatus({
+    setActionProgressMessage('Finalizing send…')
+    void resolveDocumentPacketStatus({
       packetType,
       packetId: currentPacketId,
       transactionId,
       organisationId,
+    }).then((refreshed) => {
+      statusStateRef.current = refreshed
+      setStatusState(refreshed)
+    }).catch((statusError) => {
+      console.warn('[LegalDocumentWorkspace] signing status refresh failed after send.', statusError)
     })
-    statusStateRef.current = refreshed
-    setStatusState(refreshed)
-    await appendDocumentPacketEvent({
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
-      organisationId: refreshed?.packet?.organisation_id || currentPacket?.organisation_id || organisationId || null,
+      organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
       eventType: resend ? 'mandate_signing_email_resent' : 'mandate_sent_for_digital_signing',
       eventPayload: {
-        transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
+        transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
         signingStatus: workflowSigningStatus,
@@ -5290,6 +5308,8 @@ export default function LegalDocumentWorkspace({
         recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
         recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
+    }).catch((auditError) => {
+      console.warn('[LegalDocumentWorkspace] signing email audit write skipped.', auditError)
     })
   }
 
@@ -5614,7 +5634,7 @@ export default function LegalDocumentWorkspace({
         allowSigningMetadataUpdate: true,
       })
       if (!isRuntimePacketId(statusState.packet.id)) {
-        await appendDocumentPacketEvent({
+        void appendDocumentPacketEvent({
           packetId: statusState.packet.id,
           organisationId: statusState?.packet?.organisation_id || organisationId || null,
           versionId: latestVersion?.id || null,
@@ -5624,8 +5644,9 @@ export default function LegalDocumentWorkspace({
             previousMethod,
             selectedMethod: method,
           },
+        }).catch((auditError) => {
+          console.warn('[LegalDocumentWorkspace] signing method audit write skipped.', auditError)
         })
-        await refreshWorkspaceData()
       }
       setActionFeedback(`${resolveSigningMethodLabel(method)} selected.`)
     } catch (error) {
@@ -6330,8 +6351,8 @@ export default function LegalDocumentWorkspace({
 
   async function handleConfirmedSend() {
     recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-    await runReviewAction('send_signature', { confirmedSend: true })
     setSendConfirmationOpen(false)
+    await runReviewAction('send_signature', { confirmedSend: true })
   }
 
   function handleMobileAction(actionId) {

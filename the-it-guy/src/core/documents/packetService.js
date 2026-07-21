@@ -1261,7 +1261,9 @@ async function withPacketRetries(task, { attempts = 2, retryDelayMs = 450 } = {}
   throw lastError || new Error('Retry failed.')
 }
 
-const PACKET_GENERATION_TIMEOUT_MS = 10000
+// Native PDF rendering includes template loading, document assembly, and storage upload.
+// Ten seconds was shorter than normal production renders and incorrectly fenced valid work.
+const PACKET_GENERATION_TIMEOUT_MS = 45000
 const FINAL_SIGNED_GENERATION_TIMEOUT_MS = 45000
 
 function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {

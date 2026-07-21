@@ -3320,6 +3320,7 @@ export default function LegalDocumentWorkspacePage() {
     mandateData = null,
     sourceListingId = '',
     onProgress = null,
+    navigateToListing = true,
   } = {}) => {
     const existingListingId = normalizeText(
       sourceListingId ||
@@ -3455,7 +3456,9 @@ export default function LegalDocumentWorkspacePage() {
     nextParams.set('returnTo', '/listings')
     const linkedLeadId = normalizeLeadUuid(listingPayload.sellerLeadId || leadContext?.lead?.leadId || routeLeadId)
     if (linkedLeadId && linkedLeadId !== listing.id) nextParams.set('leadId', linkedLeadId)
-    navigate(`/agent/listings/${encodeURIComponent(listing.id)}/legal/mandate?${nextParams.toString()}`, { replace: true })
+    if (navigateToListing) {
+      navigate(`/agent/listings/${encodeURIComponent(listing.id)}/legal/mandate?${nextParams.toString()}`, { replace: true })
+    }
 
     return { listing, packet: linkedPacket, status: nextStatus }
   }, [
@@ -3862,25 +3865,25 @@ export default function LegalDocumentWorkspacePage() {
       console.warn('[LegalDocumentWorkspacePage] generated packet status reconciliation failed; keeping generation result.', statusError)
     })
 
-    let autoCreatedListing = null
-    const autoCreateResult = await createListingFromGeneratedMandate({
+    // Listing creation is useful follow-up work, but must not keep the newly generated
+    // mandate in a busy state or route the agent away from the workspace.
+    void createListingFromGeneratedMandate({
       packet: generationResult.packet || refreshedStatus?.packet || packet,
       status: refreshedStatus,
       mandateData: generationContext.mandateData,
       sourceListingId,
-      onProgress,
+      navigateToListing: false,
+    }).then((autoCreateResult) => {
+      if (autoCreateResult?.listing) {
+        logGenerationStage('listing_synced', { listingId: normalizeText(autoCreateResult.listing.id) || null })
+      }
+    }).catch((listingError) => {
+      console.warn('[LegalDocumentWorkspacePage] generated mandate listing sync skipped.', listingError)
     })
-    if (autoCreateResult?.listing) {
-      autoCreatedListing = autoCreateResult.listing
-      refreshedStatus = autoCreateResult.status || refreshedStatus
-      if (refreshedStatus) applyInitialStatus(refreshedStatus)
-    }
 
     window.dispatchEvent(new Event('itg:transaction-updated'))
     return {
       ...generationResult,
-      autoCreatedListing,
-      actionFeedback: autoCreatedListing ? 'Mandate generated and listing created.' : undefined,
       status: refreshedStatus,
     }
   }, [
@@ -3913,7 +3916,9 @@ export default function LegalDocumentWorkspacePage() {
   ])
 
   const handleSend = useCallback(async ({ resend = false, reminder = false, signerLinks = [], packetId: sentPacketId = '', targetSignerRole = '', signingStatus = '' } = {}) => {
-    const shouldResolveStatus = packetType === 'otp' || !resend
+    // Mandate sending already has the packet and signer links from the workspace.
+    // Avoid a full packet/status read before the email edge call.
+    const shouldResolveStatus = packetType === 'otp'
     const status = shouldResolveStatus ? await resolveCurrentStatus() : null
     const latestVersion = status ? getLatestVersion(status) : null
     if (packetType === 'otp') {
