@@ -112,19 +112,6 @@ function isPersistedPacketId(value = '') {
   return isUuidLike(text) || isRuntimePacketId(text)
 }
 
-function hasLoadedWorkspaceSnapshot(status = null) {
-  if (!status || typeof status !== 'object') return false
-  const packetId = normalizeText(status?.packet?.id)
-  const state = normalizeKey(status?.state)
-  const versions = Array.isArray(status?.versions) ? status.versions : []
-
-  if (isRuntimePacketId(packetId)) return true
-  if (!packetId || !isUuidLike(packetId)) return false
-  if (versions.length > 0) return true
-  if (['pdf_generated', 'ready_to_send', 'sent', 'partially_signed', 'completed', 'archived'].includes(state)) return true
-  return false
-}
-
 function hasUsablePacketVersionForSigning(version = null) {
   if (!normalizeText(version?.id)) return false
   if (isPilotDocumentFallbackVersion(version)) return false
@@ -2928,6 +2915,7 @@ export default function LegalDocumentWorkspace({
   displayMode = 'modal',
   transactionId = '',
   transactionReference = '',
+  leadId = '',
   packetType = 'mandate',
   packetId = '',
   mode = 'view',
@@ -3000,7 +2988,6 @@ export default function LegalDocumentWorkspace({
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
-  const skippedInitialPageRefreshRef = useRef(false)
   const centerTabInitializedRef = useRef(false)
   const centerTabPreferenceRef = useRef(null)
   const autosavePromiseRef = useRef(null)
@@ -3684,8 +3671,13 @@ export default function LegalDocumentWorkspace({
     refreshPromise = (async () => {
       const currentStatus = statusStateRef.current || null
       const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
-      const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
-      if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
+      const currentPacketId = isUuidLike(rawPacketId)
+        ? rawPacketId
+        : isUuidLike(packetId)
+          ? normalizeText(packetId)
+          : ''
+      const canResolveSavedPacket = Boolean(currentPacketId || normalizeText(transactionId) || normalizeText(leadId))
+      if (!canResolveSavedPacket && currentStatus) {
         setStatusState(currentStatus)
         setPacketDetail(null)
         return {
@@ -3699,7 +3691,9 @@ export default function LegalDocumentWorkspace({
           packetType,
           packetId: currentPacketId,
           transactionId,
+          leadId,
           organisationId,
+          includeActivity: false,
         }),
         'Packet status is taking too long to load.',
       ).catch((error) => {
@@ -3743,7 +3737,7 @@ export default function LegalDocumentWorkspace({
 
     refreshWorkspacePromiseRef.current = refreshPromise
     return refreshPromise
-  }, [organisationId, packetId, packetType, transactionId])
+  }, [leadId, organisationId, packetId, packetType, transactionId])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {
     if (!isMandatePacket) return
@@ -3882,12 +3876,6 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
-    if (isPageMode && hasLoadedWorkspaceSnapshot(initialStatus) && !skippedInitialPageRefreshRef.current) {
-      skippedInitialPageRefreshRef.current = true
-      return () => {
-        active = false
-      }
-    }
 
     const load = async () => {
       const shouldBlockPreview = !statusStateRef.current
@@ -3908,7 +3896,7 @@ export default function LegalDocumentWorkspace({
     return () => {
       active = false
     }
-  }, [initialStatus, isPageMode, open, refreshWorkspaceData])
+  }, [initialStatus, open, refreshWorkspaceData])
 
   useEffect(() => {
     let active = true

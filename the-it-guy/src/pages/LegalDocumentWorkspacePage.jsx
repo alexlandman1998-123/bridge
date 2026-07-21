@@ -4572,6 +4572,7 @@ export default function LegalDocumentWorkspacePage() {
         backLabel={routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
         transactionId={transactionId}
         transactionReference={transactionReference}
+        leadId={routeLeadId}
         packetType={packetType}
         packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
         mode={mode}
