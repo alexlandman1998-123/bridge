@@ -7,10 +7,6 @@ import SigningOperationalStatusCard from './SigningOperationalStatusCard'
 import SigningProgressTimeline from './SigningProgressTimeline'
 import SigningActivityHistory from './SigningActivityHistory'
 import SigningCompletionCertificate from './SigningCompletionCertificate'
-import DocumentRoleGuidanceCard from './DocumentRoleGuidanceCard'
-import DocumentRoleActionBar from './DocumentRoleActionBar'
-import DocumentResponsibilityCard from './DocumentResponsibilityCard'
-import DocumentHelpRecoveryCard from './DocumentHelpRecoveryCard'
 import { DocumentJourneyProgress } from './DocumentJourneyProgress'
 import { DocumentMobileActionDock } from './DocumentMobileActionDock'
 import { DocumentAccessibilityNavigation } from './DocumentAccessibilityNavigation'
@@ -83,8 +79,6 @@ import { templateIsUsableForGeneration } from '../../core/documents/structuredTe
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
 import { findLatestPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from '../../core/documents/pilotDocumentFallback'
-import { buildDocumentRoleGuidance } from '../../core/documents/documentRoleGuidance'
-import { buildDocumentRoleActions } from '../../core/documents/documentRoleActions'
 import { buildDocumentResponsibility } from '../../core/documents/documentResponsibility'
 import { buildDocumentHelpRecovery } from '../../core/documents/documentHelpRecovery'
 import { buildDocumentJourneyProgress } from '../../core/documents/documentJourneyProgress'
@@ -3350,22 +3344,6 @@ export default function LegalDocumentWorkspace({
     surface: 'workspace',
     state: signingOperationalStatus.state,
   }), [signingOperationalStatus.state])
-  const roleGuidance = useMemo(() => buildDocumentRoleGuidance({
-    surface: 'workspace',
-    role: workspaceRole,
-    packetType,
-    state: signingOperationalStatus.state,
-  }), [packetType, signingOperationalStatus.state, workspaceRole])
-  const roleActions = useMemo(() => buildDocumentRoleActions({
-    surface: 'workspace',
-    role: workspaceRole,
-    state: signingOperationalStatus.state,
-    canEdit: legalPermissions.canEditDraft,
-    canSend: legalPermissions.canSend,
-    canFinalize: legalPermissions.canFinalize,
-    finalCopyAvailable: Boolean(signedPreviewUrl),
-    certificateAvailable: statusState?.completionCertificate?.ready === true,
-  }), [legalPermissions.canEditDraft, legalPermissions.canFinalize, legalPermissions.canSend, signedPreviewUrl, signingOperationalStatus.state, statusState?.completionCertificate?.ready, workspaceRole])
   const responsibility = useMemo(() => buildDocumentResponsibility({
     surface: 'workspace',
     role: workspaceRole,
@@ -3398,33 +3376,6 @@ export default function LegalDocumentWorkspace({
     lastWorkspaceOutcomeTelemetryRef.current = outcomeKey
     recordWorkspaceExperience('outcome_shown', { state: signingOperationalStatus.state, category })
   }, [open, outcomeFeedback?.category, recordWorkspaceExperience, signingOperationalStatus.state])
-
-  function handleRoleAction(actionId) {
-    recordWorkspaceExperience('primary_action_selected', { state: signingOperationalStatus.state, actionId })
-    if (actionId === 'edit_document') {
-      centerTabPreferenceRef.current = 'editor'
-      setCenterTab('editor')
-      document.getElementById('legal-document-main-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } else if (actionId === 'open_preview') {
-      centerTabPreferenceRef.current = 'preview'
-      setCenterTab('preview')
-      document.getElementById('legal-document-main-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } else if (actionId === 'prepare_signatures') {
-      setSignerPrepOpen(true)
-    } else if (actionId === 'send_document') {
-      void runReviewAction('send_signature')
-    } else if (actionId === 'open_signers') {
-      document.getElementById('legal-document-signer-progress')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'open_activity') {
-      document.getElementById('legal-document-signing-activity')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'open_final') {
-      if (signedPreviewUrl) window.open(signedPreviewUrl, '_blank', 'noopener,noreferrer')
-    } else if (actionId === 'open_certificate') {
-      document.getElementById('legal-document-completion-certificate')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'retry_completion') {
-      void handleRetryFinalCompletion()
-    }
-  }
 
   function handleHelpRecoveryAction(actionId) {
     recordWorkspaceExperience('recovery_selected', { state: signingOperationalStatus.state, actionId, category: helpRecovery.category })
@@ -4353,6 +4304,7 @@ export default function LegalDocumentWorkspace({
     setSignerBusy(true)
     setLoadError('')
     setActionFeedback('')
+    setActionProgressMessage('Preparing signature fields…')
     try {
       const signingVersion = getSigningVersionSnapshot(statusState, latestVersion)
       const prepared = await prepareSigningFields({
@@ -4368,6 +4320,7 @@ export default function LegalDocumentWorkspace({
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare signer fields right now.'))
     } finally {
       setSignerBusy(false)
+      setActionProgressMessage('')
     }
   }
 
@@ -4450,7 +4403,10 @@ export default function LegalDocumentWorkspace({
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
     let preparedVersionId = ''
+    let preparedDuringSend = false
     const ensurePrepared = async () => {
+      preparedDuringSend = true
+      setActionProgressMessage('Preparing signature fields…')
       const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
       const prepared = await prepareSigningFields({
         packetId: normalizeText(workingStatus?.packet?.id || packetId),
@@ -4493,31 +4449,6 @@ export default function LegalDocumentWorkspace({
       lifecycleState: normalizeLifecycleState(workingStatus?.state),
     })
 
-    if (!check.isReady && !isResend) {
-      await ensurePrepared()
-      latestRoster = resolveSignerRoster({
-        packetType,
-        signers: workingStatus?.signingSummary?.signers || [],
-        mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
-        secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
-        signerDefaults,
-        sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
-        legalSignerProfile,
-      }).map((row) => {
-        const draft = signerDraftByRole[row.role] || null
-        if (!draft) return row
-        return {
-          ...row,
-          signerName: normalizeText(draft.signerName || row.signerName),
-          signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
-        }
-      })
-      check = validateSignerRoster({
-        roster: latestRoster,
-        lifecycleState: normalizeLifecycleState(workingStatus?.state),
-      })
-    }
-
     if (!check.isReady) {
       throw new Error(`Cannot send: ${check.blockers[0]}`)
     }
@@ -4537,6 +4468,7 @@ export default function LegalDocumentWorkspace({
       return !row.signer && (row.required || signerEmail) && signerName && isValidEmail(signerEmail)
     })
     if ((hasDraftOverrides || needsSignerPersistence) && !isResend) {
+      setActionProgressMessage('Saving signer details…')
       await saveSignerDetails({ includeOptional: true })
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || workingStatus
@@ -4560,6 +4492,7 @@ export default function LegalDocumentWorkspace({
       },
     })
 
+    setActionProgressMessage(preparedDuringSend ? 'Creating secure signing links…' : 'Refreshing secure signing links…')
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
     const linkResult = await generateSigningLinks({
       packetId: resolvedPacketId,
@@ -5322,6 +5255,7 @@ export default function LegalDocumentWorkspace({
       }
     }
 
+    setActionProgressMessage('Updating signing status…')
     const refreshed = await resolveDocumentPacketStatus({
       packetType,
       packetId: currentPacketId,
@@ -5576,14 +5510,21 @@ export default function LegalDocumentWorkspace({
         await onView?.()
       }
 
-      await onRefreshContext?.()
-      await refreshWorkspaceData()
+      if (['send_signature', 'resend_signature', 'remind_signer'].includes(actionKey)) {
+        void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+          console.warn('[LegalDocumentWorkspace] background context refresh failed after signing action.', refreshError)
+        })
+      } else {
+        await onRefreshContext?.()
+        await refreshWorkspaceData()
+      }
     } catch (error) {
       await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
     } finally {
       actionBusyRef.current = false
       setActionBusy(false)
+      setActionProgressMessage('')
     }
   }
 
@@ -6099,16 +6040,20 @@ export default function LegalDocumentWorkspace({
       const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
       const generatedVersion = getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])
       if (renderFreeze?.freezeId && generatedVersion?.id) {
-        await verifyFrozenEditableRenderOutput({
-          packetId: normalizeText(statusState?.packet?.id || packetId),
-          freezeId: renderFreeze.freezeId,
-          generatedVersionId: generatedVersion.id,
-        })
-        await verifyServerAttestedNativePdfRender({
-          packetId: normalizeText(statusState?.packet?.id || packetId),
-          freezeId: renderFreeze.freezeId,
-          generatedVersionId: generatedVersion.id,
-        })
+        setActionProgressMessage('Verifying generated PDF…')
+        await Promise.all([
+          verifyFrozenEditableRenderOutput({
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            freezeId: renderFreeze.freezeId,
+            generatedVersionId: generatedVersion.id,
+          }),
+          verifyServerAttestedNativePdfRender({
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            freezeId: renderFreeze.freezeId,
+            generatedVersionId: generatedVersion.id,
+          }),
+        ])
+        setActionProgressMessage('Saving generated PDF…')
         await persistGeneratedPdfToTransaction({
           packetId: normalizeText(statusState?.packet?.id || packetId),
           generatedVersionId: generatedVersion.id,
@@ -6140,16 +6085,20 @@ export default function LegalDocumentWorkspace({
           setStatusState(refreshed.resolved)
           const refreshedGeneratedVersion = getGeneratedPacketVersionForSigning(refreshed.resolved.versions || [])
           if (renderFreeze?.freezeId && refreshedGeneratedVersion?.id) {
-            await verifyFrozenEditableRenderOutput({
-              packetId: normalizeText(statusState?.packet?.id || packetId),
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId: refreshedGeneratedVersion.id,
-            })
-            await verifyServerAttestedNativePdfRender({
-              packetId: normalizeText(statusState?.packet?.id || packetId),
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId: refreshedGeneratedVersion.id,
-            })
+            setActionProgressMessage('Verifying generated PDF…')
+            await Promise.all([
+              verifyFrozenEditableRenderOutput({
+                packetId: normalizeText(statusState?.packet?.id || packetId),
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId: refreshedGeneratedVersion.id,
+              }),
+              verifyServerAttestedNativePdfRender({
+                packetId: normalizeText(statusState?.packet?.id || packetId),
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId: refreshedGeneratedVersion.id,
+              }),
+            ])
+            setActionProgressMessage('Saving generated PDF…')
             await persistGeneratedPdfToTransaction({
               packetId: normalizeText(statusState?.packet?.id || packetId),
               generatedVersionId: refreshedGeneratedVersion.id,
@@ -6318,6 +6267,9 @@ export default function LegalDocumentWorkspace({
   const documentLabel = resolveDocumentLabel(packetType)
   const previewDownloadUrl = signedPreviewUrl || generatedPreviewUrl || ''
   const hasPreviewSurface = Boolean(generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml)
+  const showInlineEditor = Boolean(editableAllowed && (isMandatePacket || centerTab === 'editor') && statusState?.packet?.id)
+  const showInlinePreview = Boolean(statusState?.packet?.id && hasPreviewSurface && (!editableAllowed || (!isMandatePacket && centerTab === 'preview')))
+  const showPreviewUnavailable = Boolean(statusState?.packet?.id && !hasPreviewSurface && (!editableAllowed || (!isMandatePacket && centerTab === 'preview')))
   const shellClassName = isPageMode
     ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[28px] border border-[#dfe8f3] bg-[#f5f7fb]'
     : 'mx-auto flex h-full w-full max-w-[1760px] flex-col overflow-hidden rounded-[30px] border border-[#dfe8f3] bg-[#f5f7fb] shadow-[0_28px_70px_rgba(10,24,42,0.24)]'
@@ -6406,7 +6358,7 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 self-start">
+              <div id="document-workspace-actions" className="flex scroll-mt-24 items-start gap-2 self-start">
                 {showGeneratePdfButton ? (
                   <Button
                     type="button"
@@ -6529,21 +6481,11 @@ export default function LegalDocumentWorkspace({
             <div className="mb-5">
               <DocumentJourneyProgress model={documentJourney} />
             </div>
-            <div className="mb-5">
-              <SigningOperationalStatusCard status={signingOperationalStatus} />
-            </div>
-            <div className="mb-5">
-              <DocumentRoleGuidanceCard guidance={roleGuidance} />
-            </div>
-            <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
-              <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
-            </div>
-            <div className="mb-5">
-              <DocumentResponsibilityCard model={responsibility} />
-            </div>
-            <div className="mb-5">
-              <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
-            </div>
+            {!isMandatePacket ? (
+              <div className="mb-5">
+                <SigningOperationalStatusCard status={signingOperationalStatus} />
+              </div>
+            ) : null}
             {statusState?.signingSummary?.signers?.length ? (
               <div id="legal-document-signer-progress" className="mb-5 scroll-mt-24">
                 <SigningProgressTimeline
@@ -6663,7 +6605,9 @@ export default function LegalDocumentWorkspace({
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">
                       {editableAllowed ? 'Document Editor' : 'Document Preview'}
                     </h3>
-                    <p className="mt-1 text-sm text-[#6b7c93]">Preview stays tied to the existing packet generation and signing pipeline.</p>
+                    {!isMandatePacket ? (
+                      <p className="mt-1 text-sm text-[#6b7c93]">Preview stays tied to the existing packet generation and signing pipeline.</p>
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {editableAllowed ? (
@@ -6687,7 +6631,7 @@ export default function LegalDocumentWorkspace({
                                 : 'Saved'}
                     </span>
                   ) : null}
-                  {editableAllowed ? (
+                  {editableAllowed && !isMandatePacket ? (
                     <div className="inline-flex items-center rounded-full border border-[#dbe5f0] bg-[#f7faff] p-1">
                       <button
                         type="button"
@@ -6737,7 +6681,7 @@ export default function LegalDocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
+                  {!loading && showInlineEditor ? (
                     !editableSections.length ? (
                       <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                         <AlertCircle size={24} className="text-[#9b6b1c]" />
@@ -6756,7 +6700,7 @@ export default function LegalDocumentWorkspace({
                     )
                   ) : null}
 
-                  {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !hasPreviewSurface ? (
+                  {!loading && showPreviewUnavailable ? (
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <AlertCircle size={24} className="text-[#9b6b1c]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">
@@ -6768,7 +6712,7 @@ export default function LegalDocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {!loading && (!editableAllowed || centerTab === 'preview') && hasPreviewSurface ? (
+                  {!loading && showInlinePreview ? (
                     <div className="space-y-4">
                       <div className="mx-auto max-w-[900px] rounded-[28px] bg-white p-4 shadow-[0_18px_48px_rgba(16,32,51,0.09)] sm:p-6">
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
