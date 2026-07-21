@@ -10,7 +10,6 @@ import SigningCompletionCertificate from './SigningCompletionCertificate'
 import { DocumentJourneyProgress } from './DocumentJourneyProgress'
 import { DocumentMobileActionDock } from './DocumentMobileActionDock'
 import { DocumentAccessibilityNavigation } from './DocumentAccessibilityNavigation'
-import { DocumentCommitConfirmation } from './DocumentCommitConfirmation'
 import { DocumentOutcomeNotice } from './DocumentOutcomeNotice'
 import Drawer from '../ui/Drawer'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -85,7 +84,6 @@ import { buildDocumentJourneyProgress } from '../../core/documents/documentJourn
 import { getConditionalMasterPackDefinitions } from '../../core/documents/conditionalMasterTemplateDefinitions'
 import { buildDocumentMobileAction } from '../../core/documents/documentMobileAction'
 import { buildDocumentAccessibility } from '../../core/documents/documentAccessibility'
-import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../../core/documents/documentOutcomeFeedback'
 import { recordDocumentExperienceEvent } from '../../services/documentExperienceTelemetryService'
 import {
@@ -2981,7 +2979,6 @@ export default function LegalDocumentWorkspace({
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
-  const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
   const [certifiedPdfAccessUrl, setCertifiedPdfAccessUrl] = useState('')
   const [pdfAccessBusy, setPdfAccessBusy] = useState(false)
@@ -3403,7 +3400,11 @@ export default function LegalDocumentWorkspace({
     }
     return null
   }, [isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
-  const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
+  // Seller onboarding is a digital-signing flow. Physical signing remains an explicit
+  // exception, but agents should not need to make a default-method click first.
+  const signingMethod = isMandatePacket
+    ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod || 'digital')
+    : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
   const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
   const mandateRoutingSnapshot = isMandatePacket
@@ -4482,8 +4483,6 @@ export default function LegalDocumentWorkspace({
     if ((hasDraftOverrides || needsSignerPersistence) && !isResend) {
       setActionProgressMessage('Saving signer details…')
       await saveSignerDetails({ includeOptional: true })
-      const refreshed = await refreshWorkspaceData()
-      workingStatus = refreshed?.resolved || workingStatus
     }
 
     const resolvedPacketId = normalizeText(workingStatus?.packet?.id || packetId)
@@ -5503,11 +5502,6 @@ export default function LegalDocumentWorkspace({
   ])
 
   async function runReviewAction(actionKey, options = {}) {
-    if (actionKey === 'send_signature' && options.confirmedSend !== true) {
-      recordWorkspaceExperience('commit_opened', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-      setSendConfirmationOpen(true)
-      return
-    }
     if (actionBusyRef.current) return
     actionBusyRef.current = true
     setActionBusy(true)
@@ -6030,14 +6024,9 @@ export default function LegalDocumentWorkspace({
     legalPermissions.canGenerate &&
     typeof onGenerate === 'function' &&
     (isMandatePacket || isOtpPacket) &&
-    (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
+    normalizeKey(statusState?.state) !== 'loading' &&
+    !hasGeneratedMandateVersion
   const handleSendForSignatureIntent = () => {
-    if (isMandatePacket && signingMethod === 'digital' && signerValidation.blockers.length) {
-      setSignerPrepOpen(true)
-      setLoadError('')
-      setActionFeedback('Review signer details before sending the mandate.')
-      return
-    }
     void runReviewAction('send_signature')
   }
   const handleGeneratePacketDraft = async () => {
@@ -6342,18 +6331,6 @@ export default function LegalDocumentWorkspace({
     contentTargetId: 'document-workspace-content',
     actionsTargetId: 'document-workspace-actions',
   })
-  const sendConfirmation = buildDocumentCommitConfirmation({
-    action: 'send_signature',
-    packetType,
-    signerCount: signerValidation.isReady ? effectiveSignerRoster.filter((row) => row.required).length : 0,
-  })
-
-  async function handleConfirmedSend() {
-    recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-    setSendConfirmationOpen(false)
-    await runReviewAction('send_signature', { confirmedSend: true })
-  }
-
   function handleMobileAction(actionId) {
     if (actionId === 'workspace_primary') handleWorkspacePrimaryAction()
     else handleHelpRecoveryAction(actionId)
@@ -7097,13 +7074,6 @@ export default function LegalDocumentWorkspace({
                 />
       </Drawer>
 
-      <DocumentCommitConfirmation
-        model={sendConfirmation}
-        open={sendConfirmationOpen}
-        busy={actionBusy}
-        onCancel={() => setSendConfirmationOpen(false)}
-        onConfirm={() => void handleConfirmedSend()}
-      />
     </>
   )
 }
