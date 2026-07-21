@@ -190,7 +190,10 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
-import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import {
+  appendDocumentStartLegalScenarioParams,
+  buildDocumentStartLegalScenarioFromSellerOnboarding,
+} from '../core/documents/documentStartLegalScenario'
 import {
   buildSellerRequirementProfile,
 } from '../lib/sellerDocumentRequirementEngine'
@@ -21063,20 +21066,12 @@ function AgentLeadWorkspace() {
       { label: 'Mandate', value: mandateMeta.label || commissionLabel },
     ]
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerOnboardingStatus])
-  const sellerMandateLegalScenario = useMemo(() => ({
-    sellerEntityType:
-      linkedSellerListing?.sellerEntityType || linkedSellerListing?.seller_entity_type ||
-      linkedSellerListing?.sellerType || linkedSellerListing?.seller_type ||
-      row?.sellerEntityType || row?.seller_entity_type || row?.sellerType || row?.seller_type || row?.ownershipType,
-    sellerMaritalRegime:
-      linkedSellerListing?.sellerMaritalRegime || linkedSellerListing?.seller_marital_regime ||
-      linkedSellerListing?.sellerMaritalStatus || linkedSellerListing?.seller_marital_status ||
-      row?.sellerMaritalRegime || row?.seller_marital_regime || row?.sellerMaritalStatus || row?.seller_marital_status,
-    propertyTitleType:
-      linkedSellerListing?.propertyTitleType || linkedSellerListing?.property_title_type ||
-      linkedSellerListing?.propertyStructureType || linkedSellerListing?.property_structure_type ||
-      linkedSellerListing?.propertyType || linkedSellerListing?.property_type ||
-      row?.propertyTitleType || row?.propertyStructureType || row?.propertyType || row?.property_type,
+  const sellerMandateLegalScenario = useMemo(() => buildDocumentStartLegalScenarioFromSellerOnboarding({
+    packetType: DOCUMENT_START_PACKET_TYPES.mandate,
+    listing: linkedSellerListing,
+    lead: row,
+    onboarding: linkedSellerListing?.sellerOnboarding || row?.sellerOnboarding,
+    formData: readSellerOnboardingFormData(linkedSellerListing, row),
   }), [linkedSellerListing, row])
   const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace

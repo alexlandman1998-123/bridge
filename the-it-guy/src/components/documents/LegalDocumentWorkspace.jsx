@@ -3320,7 +3320,7 @@ export default function LegalDocumentWorkspace({
       setActionFeedback('')
       const result = await retryFinalDocumentCompletion({ packetId: resolvedPacketId, versionId: resolvedVersionId })
       setFinalCompletionState(result?.status || await getFinalDocumentCompletionStatus({ packetId: resolvedPacketId, versionId: resolvedVersionId }))
-      setActionFeedback('Final signed document completed across the transaction, portals and recipient delivery.')
+      setActionFeedback('Final signed document completed across the transaction and portal surfaces.')
       await refreshWorkspaceData()
     } catch (error) {
       setActionFeedback(error?.message || 'The signed PDF is safe, but completion still needs attention. Please retry.')
@@ -6603,7 +6603,9 @@ export default function LegalDocumentWorkspace({
                   <div data-testid="final-completion-state" className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${finalCompletionState.ready ? 'border-[#c8e5d4] bg-white text-[#1d5b3c]' : 'border-[#f1dfb9] bg-[#fff9ec] text-[#7d520d]'}`}>
                     <p className="font-semibold">{finalCompletionState.ready ? 'Completed everywhere' : 'Signed PDF safe — completion pending'}</p>
                     <p className="mt-1">
-                      Transaction: {finalCompletionState.transactionDocumentId ? 'saved' : 'pending'} · Recipient delivery: {finalCompletionState.deliveredRecipientCount || 0}/{finalCompletionState.recipientCount || 0}
+                      Transaction: {finalCompletionState.transactionDocumentId ? 'saved' : 'pending'}
+                      {finalCompletionState.ready && finalCompletionState.deliveryReady === false ? ` · Final email delivery pending: ${finalCompletionState.deliveredRecipientCount || 0}/${finalCompletionState.recipientCount || 0}` : ''}
+                      {!finalCompletionState.ready ? ` · Recipient delivery: ${finalCompletionState.deliveredRecipientCount || 0}/${finalCompletionState.recipientCount || 0}` : ''}
                     </p>
                     {!finalCompletionState.ready && finalCompletionState.retryable && legalPermissions.canFinalize ? (
                       <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void handleRetryFinalCompletion()} disabled={finalCompletionBusy || actionBusy}>

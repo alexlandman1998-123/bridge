@@ -10,3 +10,18 @@ test('maps the runtime RPC decision without exposing control internals', async (
   assert.equal(result.allowed, true)
   assert.deepEqual(Object.keys(result).sort(), ['allowed', 'code', 'configured', 'contract', 'expiresAt', 'revision', 'stage', 'status'].sort())
 })
+
+test('keeps runtime RPC failures fail-open in shadow mode', async () => {
+  const client = { rpc: async () => ({ data: null, error: { code: '42501', message: 'Organisation membership required.' } }) }
+  const result = await fetchDocumentExperienceRuntimeRolloutAccess({ organisationId: '00000000-0000-4000-8000-000000000001', enforcementMode: 'shadow', client })
+  assert.equal(result.allowed, true)
+  assert.equal(result.code, 'N6_SHADOW_INVALID_CONTROL')
+  assert.equal(result.observedReason, 'invalid_control')
+})
+
+test('blocks runtime RPC failures only when rollout is enforced', async () => {
+  const client = { rpc: async () => { throw new Error('network unavailable') } }
+  const result = await fetchDocumentExperienceRuntimeRolloutAccess({ organisationId: '00000000-0000-4000-8000-000000000001', enforcementMode: 'enforced', client })
+  assert.equal(result.allowed, false)
+  assert.equal(result.code, 'N6_INVALID_CONTROL')
+})

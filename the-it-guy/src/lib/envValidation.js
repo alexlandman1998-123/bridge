@@ -89,7 +89,7 @@ export function getFeatureFlags() {
     enableWhatsAppAutomation: asBoolean(import.meta.env.VITE_FEATURE_WHATSAPP_AUTOMATION, false),
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
     enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
-    enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
+    enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, true),
     enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
     enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
     allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),

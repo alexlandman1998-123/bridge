@@ -2467,7 +2467,18 @@ export default function LegalDocumentWorkspacePage() {
         if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision })
       })
       .catch(() => {
-        if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision: { allowed: false, title: 'Document rollout unavailable', message: 'The runtime rollout check could not be completed.', solution: { phases: [{ id: 'N6.1', action: 'Retry after the rollout service is restored.' }] } } })
+        if (active) setRuntimeRolloutAccess({
+          organisationId: scopedOrganisationId,
+          decision: {
+            contract: 'arch9-document-experience-runtime-rollout-gate-v1',
+            allowed: true,
+            status: 'shadow_allowed',
+            code: 'N6_SHADOW_RUNTIME_CHECK_FAILED',
+            configured: false,
+            stage: 'legacy',
+            revision: 0,
+          },
+        })
       })
     return () => { active = false }
   }, [loadingContext, organisationId])

@@ -332,6 +332,7 @@
     "test:seller-mandate-phase7": "node scripts/seller-mandate-phase7.test.mjs",
     "test:seller-mandate-phase8": "node scripts/seller-mandate-phase8.test.mjs",
     "test:seller-mandate-phase9": "node scripts/seller-mandate-phase9.test.mjs",
+    "test:seller-mandate-terminal-state": "node scripts/mandate-completion-terminal-state.test.mjs",
     "report:seller-mandate-continuity": "node scripts/report-seller-mandate-continuity.mjs",
     "reconcile:seller-documents": "node scripts/reconcile-seller-documents.mjs",
     "verify:seller-documents": "node scripts/reconcile-seller-documents.mjs --gate",

@@ -451,6 +451,7 @@ async function getFinalEvidence(service, versionId) {
         'mandate_signed_by_seller',
         'final_signed_document_generated',
         'final_signed_generation_triggered',
+        'final_document_surfaces_completed',
         'final_signed_delivery_completed',
         'final_signed_delivery_incomplete',
       ])
@@ -532,6 +533,7 @@ try {
   let finalEvidence = await getFinalEvidence(service, version.id)
   const surfaceRecovery = await ensureFinalSurfaces(service, { packet, version, finalEvidence })
   finalEvidence = await getFinalEvidence(service, version.id)
+  packet = await getLaunchPacket(service, listing)
   const portalMandatePacket = await verifyPortal(anonClient, listing, packet.id)
   const latestDeliveries = latestDeliveryBySigner(finalEvidence.deliveries)
 

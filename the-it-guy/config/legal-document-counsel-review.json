@@ -1,43 +1,66 @@
 {
   "version": 1,
   "phase": "B2",
-  "status": "pending_review",
+  "status": "approved",
   "projectRef": "isdowlnollckzvltkasn",
-  "b1ManifestDigest": "sha256:1b5f6a0dc6cfbd2cf3f42643fbe84c7f8580dd928970eb432e1035893391c1da",
+  "b1ManifestDigest": "sha256:0a23be15ee16ddb3fd5c50b2a0269fa2dbed9d97c4e17d9a16a528b39783f4b0",
   "reviewBatchReference": null,
   "reviews": [
     {
-      "templateId": "3cec3c33-fd76-43de-9e5c-d4dff3f510a1",
+      "templateId": "bbc7898f-566f-441b-abad-11787946505b",
+      "packetType": "mandate",
+      "contentDigest": "sha256:b5b0137dc045c620cad25fd9e2b3007f0fb8901908c9e026a2343e1a93c65453",
+      "decision": "approved",
+      "reviewedBy": "Alex",
+      "reviewedAt": "2026-07-21T16:26:00.000Z",
+      "reviewReference": "ref",
+      "notes": null,
+      "history": [
+        {
+          "action": "b1_refreeze_pending_review",
+          "previousContentDigest": null,
+          "nextContentDigest": "sha256:b5b0137dc045c620cad25fd9e2b3007f0fb8901908c9e026a2343e1a93c65453",
+          "previousDecision": null,
+          "recordedAt": "2026-07-21T15:10:55.281Z"
+        },
+        {
+          "decision": "approved",
+          "reviewedBy": "Alex",
+          "reviewedAt": "2026-07-21T16:26:00.000Z",
+          "reviewReference": "ref",
+          "contentDigest": "sha256:b5b0137dc045c620cad25fd9e2b3007f0fb8901908c9e026a2343e1a93c65453",
+          "notes": null,
+          "recordedAt": "2026-07-21T16:26:53.129Z"
+        }
+      ]
+    },
+    {
+      "templateId": "ebabea7f-67c1-4160-95ee-7833db98d061",
       "packetType": "otp",
-      "contentDigest": "sha256:db30f9c82db7e068268442dcffd6aaa914bce55962eaa819c952e55ea3cef8a0",
-      "decision": "pending",
-      "reviewedBy": null,
-      "reviewedAt": null,
-      "reviewReference": null,
+      "contentDigest": "sha256:8ce049fa1cf3ead746d441e8d91b309936d86f151875ad97404801c79185b7cd",
+      "decision": "approved",
+      "reviewedBy": "Alex",
+      "reviewedAt": "2026-07-21T16:26:00.000Z",
+      "reviewReference": "ref",
       "notes": null,
-      "history": []
-    },
-    {
-      "templateId": "d1208f47-1564-497e-b68f-4c0984a3a27b",
-      "packetType": "mandate",
-      "contentDigest": "sha256:583e2abd16a0a3af0dbeb32118ff26913815858e49e53eb9990934b685cd1fdc",
-      "decision": "pending",
-      "reviewedBy": null,
-      "reviewedAt": null,
-      "reviewReference": null,
-      "notes": null,
-      "history": []
-    },
-    {
-      "templateId": "f2ef4b55-416b-4d1d-ae76-0d6b9164e52a",
-      "packetType": "mandate",
-      "contentDigest": "sha256:f6e7f717279845ea889fc31ecaa885d3f0d1ba9995565f2eba2535b7125f3e06",
-      "decision": "pending",
-      "reviewedBy": null,
-      "reviewedAt": null,
-      "reviewReference": null,
-      "notes": null,
-      "history": []
+      "history": [
+        {
+          "action": "b1_refreeze_pending_review",
+          "previousContentDigest": null,
+          "nextContentDigest": "sha256:8ce049fa1cf3ead746d441e8d91b309936d86f151875ad97404801c79185b7cd",
+          "previousDecision": null,
+          "recordedAt": "2026-07-21T15:10:55.281Z"
+        },
+        {
+          "decision": "approved",
+          "reviewedBy": "Alex",
+          "reviewedAt": "2026-07-21T16:26:00.000Z",
+          "reviewReference": "ref",
+          "contentDigest": "sha256:8ce049fa1cf3ead746d441e8d91b309936d86f151875ad97404801c79185b7cd",
+          "notes": null,
+          "recordedAt": "2026-07-21T16:26:53.385Z"
+        }
+      ]
     }
   ]
 }

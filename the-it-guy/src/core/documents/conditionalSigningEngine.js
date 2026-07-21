@@ -53,6 +53,19 @@ function signature(value) {
   return JSON.stringify(stableValue(value ?? null))
 }
 
+function normalizeConditionForSignature(condition = null) {
+  if (!condition || typeof condition !== 'object') return null
+  const rule = condition.rule && typeof condition.rule === 'object' ? condition.rule : {}
+  return {
+    enabled: condition.enabled !== false,
+    rule: {
+      field: key(rule.field),
+      operator: key(rule.operator),
+      value: key(rule.value),
+    },
+  }
+}
+
 export function evaluateConditionalSigningPlan({
   packetType = '',
   placeholders = {},
@@ -129,7 +142,10 @@ export function evaluateConditionalSigningPlan({
       const actual = matches[0]
       const actualCondition = actual.conditionJson || actual.condition_json || null
       const expectedCondition = expected.conditionJson || expected.condition_json || null
-      if (Boolean(actual.required) !== Boolean(expected.required) || signature(actualCondition) !== signature(expectedCondition)) {
+      if (
+        Boolean(actual.required) !== Boolean(expected.required) ||
+        signature(normalizeConditionForSignature(actualCondition)) !== signature(normalizeConditionForSignature(expectedCondition))
+      ) {
         issues.push(issue(
           'CONDITIONAL_SIGNER_ROLE_RULE_DRIFT',
           'A protected signer-role requirement or activation rule has changed.',

@@ -17,10 +17,10 @@ export function documentExperienceRolloutEnvironment() {
 
 export async function fetchDocumentExperienceRuntimeRolloutAccess({ organisationId = '', environment = documentExperienceRolloutEnvironment(), enforcementMode = documentExperienceRolloutEnforcementMode(), client = supabase } = {}) {
   if (!client || (!isSupabaseConfigured && client === supabase)) return resolveDocumentExperienceRuntimeRolloutAccess({ organisationId, enforcementMode, schemaAvailable: false })
-  const result = await client.rpc('bridge_document_experience_runtime_access_n6', { p_organisation_id: organisationId || null, p_environment: environment })
+  const result = await client.rpc('bridge_document_experience_runtime_access_n6', { p_organisation_id: organisationId || null, p_environment: environment }).catch((error) => ({ error }))
   if (result.error) {
     if (missingRuntimeSchema(result.error)) return resolveDocumentExperienceRuntimeRolloutAccess({ organisationId, enforcementMode, schemaAvailable: false })
-    return resolveDocumentExperienceRuntimeRolloutAccess({ organisationId, enforcementMode: 'enforced', schemaAvailable: true, rpcResult: { configured: true, allowed: false, reason: 'invalid_control' } })
+    return resolveDocumentExperienceRuntimeRolloutAccess({ organisationId, enforcementMode, schemaAvailable: true, rpcResult: { configured: true, allowed: false, reason: 'invalid_control' } })
   }
   return resolveDocumentExperienceRuntimeRolloutAccess({ organisationId, enforcementMode, schemaAvailable: true, rpcResult: result.data || {} })
 }

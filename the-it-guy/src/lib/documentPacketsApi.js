@@ -2516,6 +2516,30 @@ export async function persistGeneratedPdfToTransaction({ packetId, generatedVers
   return result
 }
 
+export async function certifyNativeStructuredLegalPdf({ packetId, generatedVersionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(generatedVersionId)) throw new Error('generatedVersionId is required.')
+  const { data: result, error } = await client.rpc('bridge_certify_native_structured_legal_pdf', {
+    p_packet_id: packetId,
+    p_generated_version_id: generatedVersionId,
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('NATIVE_STRUCTURED_CERTIFICATION_')) {
+      const certificationError = new Error('The generated PDF could not be certified for signing. Regenerate it before continuing.')
+      certificationError.code = detail
+      certificationError.cause = error
+      throw certificationError
+    }
+    throw error
+  }
+  if (result?.contract !== 'native-structured-d3-v1' || result?.certified !== true || !result?.documentId || !result?.path) {
+    throw new Error('Native structured legal PDF certification returned an invalid result.')
+  }
+  return result
+}
+
 export async function requestPersistedPdfAccess({ packetId, versionId, purpose = 'preview' } = {}) {
   const client = requireClient()
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')

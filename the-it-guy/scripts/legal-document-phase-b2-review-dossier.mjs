@@ -14,8 +14,8 @@ console.log(JSON.stringify({
   projectRef: manifest.projectRef,
   b1ManifestDigest: manifest.manifestDigest,
   instructions: [
-    'Review the exact source identified by storageBucket/storagePath and verify its SHA-256 digest before deciding.',
-    'Do not approve a section-only fingerprint when sourceAvailable is false.',
+    'Review the exact source identified by sourceMode: storageBucket/storagePath for legacy DOCX templates, or the frozen native section set for native structured templates.',
+    'Do not approve a missing legacy DOCX source when sourceAvailable is false.',
     'Record approved, changes_requested, or rejected against the exact contentDigest.',
     'Any template change invalidates this dossier and requires a new B1 freeze.',
   ],
@@ -27,6 +27,7 @@ console.log(JSON.stringify({
     versionTag: template.versionTag,
     storageBucket: template.storageBucket,
     storagePath: template.storagePath,
+    sourceMode: template.sourceMode || (template.storagePath ? 'legacy_storage_object' : null),
     sourceAvailable: template.sourceAvailable,
     sourceSha256: template.sourceSha256,
     sectionsSha256: template.sectionsSha256,

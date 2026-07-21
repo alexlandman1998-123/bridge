@@ -46,7 +46,10 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
-import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import {
+  appendDocumentStartLegalScenarioParams,
+  buildDocumentStartLegalScenarioFromSellerOnboarding,
+} from '../core/documents/documentStartLegalScenario'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -5139,27 +5142,13 @@ function AgentListingDetail() {
       },
     ]
   }, [acceptedOfferOtpStartOffer, listingRecord, marketingDraft.headline])
-  const listingMandateLegalScenario = useMemo(() => ({
-    sellerEntityType:
-      listingRecord?.sellerEntityType ||
-      listingRecord?.seller_entity_type ||
-      listingRecord?.sellerType ||
-      listingRecord?.seller_type ||
-      sellerProfile?.entityType ||
-      sellerProfile?.sellerType,
-    sellerMaritalRegime:
-      listingRecord?.sellerMaritalRegime ||
-      listingRecord?.seller_marital_regime ||
-      listingRecord?.sellerMaritalStatus ||
-      listingRecord?.seller_marital_status,
-    propertyTitleType:
-      listingRecord?.propertyTitleType ||
-      listingRecord?.property_title_type ||
-      listingRecord?.propertyStructureType ||
-      listingRecord?.property_structure_type ||
-      listingRecord?.propertyType ||
-      listingRecord?.property_type,
-  }), [listingRecord, sellerProfile])
+  const listingMandateLegalScenario = useMemo(() => buildDocumentStartLegalScenarioFromSellerOnboarding({
+    packetType: DOCUMENT_START_PACKET_TYPES.mandate,
+    listing: listingRecord,
+    sellerProfile,
+    onboarding: listingRecord?.sellerOnboarding,
+    formData: sellerFormData,
+  }), [listingRecord, sellerFormData, sellerProfile])
   const acceptedOfferOtpLegalScenario = useMemo(() => {
     const offer = acceptedOfferOtpStartOffer || {}
     return {

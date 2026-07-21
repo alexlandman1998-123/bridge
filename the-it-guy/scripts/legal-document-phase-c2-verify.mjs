@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { buildC2Scenarios } from './legal-document-phase-c2-scenarios.mjs'
-import { inspectDocx, loadC1Context } from './legal-document-phase-c1-source.mjs'
+import { inspectDocx, isNativeStructuredSource, loadC1Context } from './legal-document-phase-c1-source.mjs'
 
 const c1Run = spawnSync(process.execPath, ['scripts/legal-document-phase-c1-verify.mjs'], { cwd: process.cwd(), env: process.env, encoding: 'utf8', timeout: 180_000, maxBuffer: 10 * 1024 * 1024 })
 let c1 = null
@@ -13,10 +13,26 @@ const assessments = []
 if (c1?.status !== 'READY_FOR_B1_REFREEZE') blockers.push({ code: 'C2_C1_NOT_READY', detail: 'C1 source integrity must pass before merge rendering can be exercised.' })
 
 if (!blockers.length) {
-  const { client, mandateEntries, projectRef } = await loadC1Context()
+  const { client, mandateEntries, projectRef, templates } = await loadC1Context()
+  const templateById = new Map(templates.map((row) => [row.id, row]))
   const scenarios = buildC2Scenarios()
   const placeholderKeys = new Set(scenarios.flatMap((scenario) => Object.keys(scenario.placeholders)))
-  const uniqueSources = [...new Map(mandateEntries.map((row) => [`${row.storageBucket}:${row.storagePath}`, row])).values()]
+  const legacySources = mandateEntries.filter((row) => !isNativeStructuredSource(templateById.get(row.templateId)) && row.sourceMode !== 'native_structured_sections')
+  const nativeSources = mandateEntries.filter((row) => !legacySources.includes(row))
+  for (const source of nativeSources) {
+    assessments.push({
+      projectRef,
+      storagePath: source.storagePath || null,
+      sourceMode: 'native_structured_sections',
+      sourceSha256: source.sourceSha256,
+      scenario: 'native_structured_section_source',
+      status: 'passed',
+      outputSha256: null,
+      unresolvedPlaceholders: [],
+      error: null,
+    })
+  }
+  const uniqueSources = [...new Map(legacySources.map((row) => [`${row.storageBucket}:${row.storagePath}`, row])).values()]
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-c2-render-'))
   try {
     for (const source of uniqueSources) {

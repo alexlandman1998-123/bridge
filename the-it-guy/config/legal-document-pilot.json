@@ -1,8 +1,10 @@
 {
   "version": 1,
-  "enabled": false,
+  "enabled": true,
   "environment": "production",
-  "organisationIds": [],
+  "organisationIds": [
+    "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  ],
   "cohortPreparation": {
     "candidateOrganisationIds": [
       "ec19d0a6-bcba-4eef-aa72-9972de88204d"
@@ -14,14 +16,16 @@
     ],
     "requirePreferredTransferAttorney": true,
     "sourceEnvironment": "staging",
-    "status": "pending_readiness"
+    "status": "ready"
   },
   "releasePreparation": {
-    "status": "pending_evidence",
-    "organisationIds": [],
-    "approvedBy": null,
-    "approvedAt": null,
-    "approvalReference": null,
+    "status": "approved",
+    "organisationIds": [
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+    ],
+    "approvedBy": "Alex",
+    "approvedAt": "2026-07-21T17:12:10.000Z",
+    "approvalReference": "user-request:activate-kingstons-production:2026-07-21",
     "requiredChecks": [
       "a1_cohort_ready",
       "all_routable_templates_legally_approved",
@@ -31,12 +35,14 @@
     ]
   },
   "activation": {
-    "status": "inactive",
-    "targetProjectRef": null,
-    "activatedOrganisationIds": [],
-    "activatedBy": null,
-    "activatedAt": null,
-    "activationReference": null,
+    "status": "active",
+    "targetProjectRef": "isdowlnollckzvltkasn",
+    "activatedOrganisationIds": [
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+    ],
+    "activatedBy": "Alex",
+    "activatedAt": "2026-07-21T17:12:10.000Z",
+    "activationReference": "user-request:activate-kingstons-production:2026-07-21",
     "deactivatedBy": null,
     "deactivatedAt": null,
     "deactivationReason": null

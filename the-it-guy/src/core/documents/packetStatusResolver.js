@@ -174,7 +174,7 @@ function resolveLifecycleStateFromPacket({
   if (finalCompletion?.ready === true) {
     return {
       state: 'COMPLETED',
-      reason: 'The final signed artifact is verified across the transaction, portal and recipient delivery.',
+      reason: 'The final signed artifact is verified across the transaction and portal surfaces.',
     }
   }
 

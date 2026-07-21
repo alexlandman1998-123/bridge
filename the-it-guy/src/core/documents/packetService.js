@@ -17,6 +17,7 @@ import {
   deleteDocumentSigningFields as deletePacketSigningFieldsRecord,
   createPacket,
   fetchDocumentPacket,
+  certifyNativeStructuredLegalPdf,
   generateDocumentPacketSigningLinks as generatePacketSigningLinksRecord,
   getPacketTemplate,
   getPacketTemplates,
@@ -52,6 +53,10 @@ import {
   buildMandateTemplatePublishGateReport,
   formatMandateTemplatePublishGateIssue,
 } from './mandateTemplatePublishGate'
+import {
+  buildMandateTemplateRuntimeLaunchReadiness,
+  formatMandateTemplateLaunchReadinessIssue,
+} from './mandateTemplateLaunchReadiness'
 import {
   NATIVE_RENDERER_VERSION,
   normalizeTemplateRenderMode,
@@ -2098,6 +2103,24 @@ function mapMandateTemplateContentGateIssue(issue = {}, gate = {}, { required = 
   }
 }
 
+function mapMandateTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { required = true } = {}) {
+  const routeKey = normalizeText(issue.routeKey || readiness.routeKey || 'default')
+  return {
+    source: 'mandate_template_launch_readiness',
+    sectionKey: 'mandate_template_launch_readiness',
+    sectionLabel: 'Mandate template launch readiness',
+    placeholderKey: routeKey,
+    placeholderLabel: normalizeText(issue.routeLabel || readiness.routeLabel || 'Mandate route'),
+    message: formatMandateTemplateLaunchReadinessIssue(issue),
+    required,
+    warningCode: normalizeText(issue.code) || 'MANDATE_TEMPLATE_LAUNCH_READINESS',
+    mandateTemplateVariant: routeKey,
+    mandateTemplateRouteLabel: normalizeText(issue.routeLabel || readiness.routeLabel),
+    selectedTemplateId: normalizeText(issue.templateId || readiness.selectedTemplateId) || null,
+    selectedTemplateKey: normalizeText(issue.templateKey || readiness.selectedTemplateKey) || null,
+  }
+}
+
 function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
   if (normalizeText(validation?.packetType).toLowerCase() !== 'mandate') return null
   const template = templateResolution?.template || null
@@ -2133,6 +2156,13 @@ function withConditionalMasterTemplateValidation(validation = {}, templateResolu
   const templateResolutionSource =
     normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
+  const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution)
+  const launchReadinessBlockers = (launchReadiness?.blockers || []).map((issue) =>
+    mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, { required: true }),
+  )
+  const launchReadinessWarnings = (launchReadiness?.warnings || []).map((issue) =>
+    mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, { required: false }),
+  )
   const contentGateBlockers = (contentGate?.blockers || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: true }),
   )
@@ -2151,7 +2181,7 @@ function withConditionalMasterTemplateValidation(validation = {}, templateResolu
   return {
     ...validation,
     templateResolutionSource,
-    mandateTemplateLaunchReadiness: null,
+    mandateTemplateLaunchReadiness: launchReadiness || validation?.mandateTemplateLaunchReadiness || null,
     conditionalMasterCoverageReadiness,
     mandateTemplateContentGate: contentGate
       ? {
@@ -2177,6 +2207,7 @@ function withConditionalMasterTemplateValidation(validation = {}, templateResolu
       : validation?.mandateTemplateContentGate || null,
     critical: dedupeValidationIssues([
       ...(validation?.critical || []),
+      ...launchReadinessBlockers,
       ...contentGateBlockers,
       ...coverageBlockers,
     ]),
@@ -2186,9 +2217,10 @@ function withConditionalMasterTemplateValidation(validation = {}, templateResolu
     legalDocumentTemplateFallbackWarning: null,
     warnings: dedupeValidationIssues([
       ...(validation?.warnings || []),
+      ...launchReadinessWarnings,
       ...contentGateWarnings,
     ]),
-    isValidForGeneration: contentGateBlockers.length || coverageBlockers.length
+    isValidForGeneration: launchReadinessBlockers.length || contentGateBlockers.length || coverageBlockers.length
       ? false
       : validation?.isValidForGeneration,
   }
@@ -2849,11 +2881,13 @@ export async function generatePacketVersion({
     const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_content_gate',
     )
+    const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')
     const allowGenerationBypass = !hasConditionalEngineBlockingIssues && !hasConditionalSigningBlockingIssues && !hasConditionalMasterCoverageBlockingIssues && (
       (isMandatePacket &&
         !hasConditionalPackBlockingIssues &&
         !hasLegalScenarioBlockingIssues &&
         !hasLegalScenarioRequirementBlockingIssues &&
+        !hasMandateTemplateLaunchReadinessBlockingIssues &&
         !hasMandateTemplateContentGateBlockingIssues) ||
       forceGenerate
     )
@@ -2861,12 +2895,16 @@ export async function generatePacketVersion({
       const error = createPacketError(
         hasConditionalMasterCoverageBlockingIssues
           ? 'CONDITIONAL_MASTER_COVERAGE_BLOCKED'
-          : hasMandateTemplateContentGateBlockingIssues
+          : hasMandateTemplateLaunchReadinessBlockingIssues
+            ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
+            : hasMandateTemplateContentGateBlockingIssues
             ? 'MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED'
             : 'VALIDATION_BLOCKED',
         hasConditionalMasterCoverageBlockingIssues
           ? 'The conditional master does not cover every supported legal scenario. Restore the protected packs and signer rules before generation.'
-          : hasMandateTemplateContentGateBlockingIssues
+          : hasMandateTemplateLaunchReadinessBlockingIssues
+            ? 'Mandate template launch readiness is blocked. Publish the correct route template before generation.'
+            : hasMandateTemplateContentGateBlockingIssues
             ? 'Mandate template wording does not satisfy the conditional-master content gate. Fix the template content before generation.'
             : 'Critical packet data is missing. Fix validation issues before generation.',
       )
@@ -2948,9 +2986,10 @@ export async function generatePacketVersion({
     let previewOnlyReason = ''
     let previewOnlyFailureCode = ''
     const useEditableNativeRenderer = Array.isArray(context?.editableSections) && context.editableSections.length > 0
+    const useNativeRendererForTemplate = shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
 
     try {
-      if (validation.packetType === 'otp' && !useEditableNativeRenderer) {
+      if (validation.packetType === 'otp' && !useEditableNativeRenderer && !useNativeRendererForTemplate) {
         const templateConfig = resolveTemplateConfig(effectiveTemplate)
         const otpResult = await withPacketRetries(() =>
           generateOtpDocumentFromTemplate({
@@ -2979,7 +3018,7 @@ export async function generatePacketVersion({
         const renderMode = useEditableNativeRenderer
           ? 'native_structured'
           : resolveTemplateRenderMode(effectiveTemplate, validation.packetType)
-        const useNativeRenderer = shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
+        const useNativeRenderer = useNativeRendererForTemplate
         if (
           !useEditableNativeRenderer &&
           !templateIsUsableForGeneration(effectiveTemplate, validation.packetType) &&
@@ -3472,6 +3511,34 @@ function getLatestGeneratedVersion(versions = []) {
   return findLatestSignableGeneratedVersion(versions)
 }
 
+function isNativeStructuredGeneratedPdfVersion(version = {}) {
+  if (!version?.id || normalizeText(version.render_status).toLowerCase() !== 'generated') return false
+  if (version.transaction_pdf_persisted === true && version.native_pdf_verified === true) return false
+  const summary = version.validation_summary_json && typeof version.validation_summary_json === 'object'
+    ? version.validation_summary_json
+    : {}
+  const render = summary.render_provenance && typeof summary.render_provenance === 'object'
+    ? summary.render_provenance
+    : summary.renderProvenance && typeof summary.renderProvenance === 'object'
+      ? summary.renderProvenance
+      : {}
+  const artifact = summary.artifact_provenance && typeof summary.artifact_provenance === 'object'
+    ? summary.artifact_provenance
+    : summary.artifactProvenance && typeof summary.artifactProvenance === 'object'
+      ? summary.artifactProvenance
+      : {}
+  return normalizeText(render.renderMode).toLowerCase() === 'native_structured' &&
+    normalizeText(artifact.mediaType).toLowerCase() === 'application/pdf'
+}
+
+async function certifyNativeStructuredVersionForSigning({ packetId, version } = {}) {
+  if (!isNativeStructuredGeneratedPdfVersion(version)) return null
+  return certifyNativeStructuredLegalPdf({
+    packetId,
+    generatedVersionId: version.id,
+  })
+}
+
 export async function prepareSigningFields({
   packetId,
   packetType,
@@ -3493,6 +3560,11 @@ export async function prepareSigningFields({
   if (!targetVersion?.id) {
     throw createPacketError('NO_GENERATED_VERSION', 'Generate a packet version before preparing signing fields.')
   }
+
+  await certifyNativeStructuredVersionForSigning({
+    packetId: resolvedPacketId,
+    version: targetVersion,
+  })
 
   const currentSummary = await getPacketSigningSummaryRecord({
     packetId: resolvedPacketId,

@@ -22,6 +22,7 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
   const legal = buildDraftLegalProvenance(template)
   const missing = Array.isArray(version.placeholders_missing_json || version.placeholdersMissingJson)
     ? (version.placeholders_missing_json || version.placeholdersMissingJson)
+      .filter((placeholder) => placeholder?.required !== false)
     : []
   const reasons = []
   const packetType = text(packet.packet_type || packet.packetType).toLowerCase()

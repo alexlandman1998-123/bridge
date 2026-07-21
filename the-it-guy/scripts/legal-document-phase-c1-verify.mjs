@@ -1,4 +1,4 @@
-import { inspectStoredSource, loadC1Context } from './legal-document-phase-c1-source.mjs'
+import { inspectStoredSource, isNativeStructuredSource, loadC1Context } from './legal-document-phase-c1-source.mjs'
 
 const { mandateEntries, projectRef, client, templates } = await loadC1Context()
 const templateById = new Map(templates.map((row) => [row.id, row]))
@@ -12,8 +12,11 @@ for (const frozen of mandateEntries) {
     continue
   }
   if (template.packet_type !== 'mandate' || template.status !== 'published' || template.is_active === false) blockers.push({ code: 'C1_TEMPLATE_ROUTE_INACTIVE', templateId: frozen.templateId })
-  if (template.template_storage_bucket !== frozen.storageBucket || template.template_storage_path !== frozen.storagePath) blockers.push({ code: 'C1_TEMPLATE_SOURCE_ROUTE_DRIFT', templateId: frozen.templateId })
-  const source = await inspectStoredSource(client, template.template_storage_bucket, template.template_storage_path)
+  const nativeStructured = isNativeStructuredSource(template) || frozen.sourceMode === 'native_structured_sections'
+  if (!nativeStructured && (template.template_storage_bucket !== frozen.storageBucket || template.template_storage_path !== frozen.storagePath)) blockers.push({ code: 'C1_TEMPLATE_SOURCE_ROUTE_DRIFT', templateId: frozen.templateId })
+  const source = nativeStructured
+    ? { available: true, valid: true, sourceMode: 'native_structured_sections', sectionCount: frozen.sectionCount, sha256: frozen.sourceSha256, error: null }
+    : await inspectStoredSource(client, template.template_storage_bucket, template.template_storage_path)
   sources.push({ templateId: frozen.templateId, bucket: template.template_storage_bucket, path: template.template_storage_path, ...source })
   if (!source.available) blockers.push({ code: 'C1_SOURCE_MISSING', templateId: frozen.templateId, detail: source.error })
   else if (source.valid === false) blockers.push({ code: 'C1_SOURCE_INVALID_DOCX', templateId: frozen.templateId, detail: source.error })

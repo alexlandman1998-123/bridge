@@ -51,6 +51,10 @@ import {
   buildMandateTemplatePublishGateReport,
   serializeMandateTemplatePublishGateScan,
 } from '../../core/documents/mandateTemplatePublishGate'
+import { listMandateTemplateContentRules } from '../../core/documents/mandateTemplateContentRules'
+import { normalizeMandateTemplateVariant } from '../../core/documents/mandateTemplateRouting'
+import { buildMandateTemplateOperationalAudit } from '../../core/documents/mandateTemplateOperationalAudit'
+import { buildMandateTemplateLaunchReadiness } from '../../core/documents/mandateTemplateLaunchReadiness'
 import {
   archiveDocumentPacket,
   archiveDocumentPacketTemplate,
@@ -3052,6 +3056,72 @@ function getMandateVariantTemplateLabel(baseLabel = 'Mandate Agreement', routeKe
   const routeLabel = getMandateTemplateRouteLabel(routeKey)
   if (normalizeMandateTemplateRoute(routeKey) === 'default') return normalizeText(baseLabel) || 'Mandate Agreement'
   return `${routeLabel} Mandate`
+}
+
+function getMandateTemplateRouteKey(template = null) {
+  const metadata = getTemplateMetadata(template)
+  return normalizeMandateTemplateVariant(
+    template?.mandateTemplateVariant ||
+      template?.mandate_template_variant ||
+      metadata.mandate_template_variant ||
+      metadata.mandateTemplateVariant ||
+      metadata.template_variant ||
+      metadata.templateVariant ||
+      'default',
+  ) || 'default'
+}
+
+function classifyMandateVariantTemplateReadiness(option = {}, templates = []) {
+  const routeKey = normalizeMandateTemplateRoute(option.key)
+  const routeTemplates = (Array.isArray(templates) ? templates : [])
+    .filter((template) => normalizeMandateTemplateRoute(getMandateTemplateRouteKey(template)) === routeKey)
+
+  if (!routeTemplates.length) {
+    return { key: 'missing', label: 'Missing', routable: false, template: null }
+  }
+
+  const liveTemplates = routeTemplates.filter((template) => isLiveTemplateStatus(template?.status || template?.template_status))
+  const liveTemplate = liveTemplates[0] || null
+  if (liveTemplate) {
+    const metadata = getTemplateMetadata(liveTemplate)
+    const persistedScan = metadata.last_mandate_content_scan || metadata.lastMandateContentScan || metadata.mandate_content_publish_scan || {}
+    const blockerCount = Array.isArray(persistedScan.blockers) ? persistedScan.blockers.length : 0
+    const verified = persistedScan.isValidForPublish === true || persistedScan.isValidForGeneration === true
+    if (verified && blockerCount === 0) {
+      return { key: 'live', label: 'Live', routable: true, template: liveTemplate }
+    }
+    return { key: 'needs_setup', label: 'Needs setup', routable: false, template: liveTemplate }
+  }
+
+  return { key: 'draft', label: 'Draft', routable: false, template: routeTemplates[0] }
+}
+
+function compareMandateVariantTemplatesForReadiness(left = {}, right = {}) {
+  const order = {
+    live: 0,
+    needs_setup: 1,
+    draft: 2,
+    missing: 3,
+  }
+  const leftRank = order[left.readiness?.key] ?? order.missing
+  const rightRank = order[right.readiness?.key] ?? order.missing
+  if (leftRank !== rightRank) return leftRank - rightRank
+  return normalizeText(left.label).localeCompare(normalizeText(right.label))
+}
+
+function buildMandateVariantCoverageRows(options = [], templates = []) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => {
+      const readiness = classifyMandateVariantTemplateReadiness(option, templates)
+      return {
+        ...option,
+        readiness,
+        template: readiness.template,
+        exists: Boolean(readiness.template),
+        routable: readiness.routable,
+      }
+    })
+    .sort(compareMandateVariantTemplatesForReadiness)
 }
 
 function isLiveTemplateStatus(status = '') {
@@ -6100,12 +6170,28 @@ export default function SettingsSigningTemplatesPage({
     [selectedList, selectedTemplateId],
   )
   const otpTemplateCoverageAudit = null
-  const mandateVariantOptions = []
-  const mandateVariantCoverageRows = []
-  const liveMandateVariantCount = 0
-  const missingMandateVariantOptions = []
-  const mandateOperationalAudit = null
-  const mandateLaunchReadiness = null
+  const mandateTemplatesForReadiness = useMemo(
+    () => templatesByType.mandate || [],
+    [templatesByType],
+  )
+  const mandateVariantOptions = useMemo(
+    () => listMandateTemplateContentRules().map((rule) => ({ key: rule.key, label: rule.label })),
+    [],
+  )
+  const mandateVariantCoverageRows = useMemo(
+    () => buildMandateVariantCoverageRows(mandateVariantOptions, mandateTemplatesForReadiness),
+    [mandateTemplatesForReadiness, mandateVariantOptions],
+  )
+  const liveMandateVariantCount = mandateVariantCoverageRows.filter((option) => option.readiness.key === 'live' && option.routable).length
+  const missingMandateVariantOptions = mandateVariantCoverageRows.filter((option) => option.readiness.key === 'missing')
+  const mandateOperationalAudit = useMemo(
+    () => buildMandateTemplateOperationalAudit(mandateTemplatesForReadiness, { includeDefaultRoute: true }),
+    [mandateTemplatesForReadiness],
+  )
+  const mandateLaunchReadiness = useMemo(
+    () => buildMandateTemplateLaunchReadiness(mandateOperationalAudit, { includeDefaultRoute: true }),
+    [mandateOperationalAudit],
+  )
   const selectedIsPickerCustomTemplate = isTemplatePickerCustomTemplate(selectedTemplate)
   const customTemplateTabs = useMemo(
     () => stableAllowedPacketTypes

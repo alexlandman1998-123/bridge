@@ -1094,16 +1094,35 @@ function toTitle(value) {
 
 function formatRoleFriendlyReference(transaction = {}, role = '') {
   const normalizedRole = String(role || '').trim().toLowerCase()
-  const rawReference = String(
-    transaction?.application_reference ||
-      transaction?.bond_application_reference ||
-      transaction?.matter_number ||
-      transaction?.transaction_reference ||
-      transaction?.reference ||
-      transaction?.id ||
-      '',
-  ).trim()
   const fallbackId = String(transaction?.id || '').trim()
+
+  let rawReference = ''
+  if (normalizedRole === 'bond_originator') {
+    rawReference = String(
+      transaction?.application_reference ||
+        transaction?.bond_application_reference ||
+        transaction?.transaction_reference ||
+        transaction?.reference ||
+        transaction?.id ||
+        '',
+    ).trim()
+  } else if (normalizedRole === 'attorney') {
+    rawReference = String(
+      transaction?.matter_number ||
+        transaction?.transaction_reference ||
+        transaction?.reference ||
+        transaction?.id ||
+        '',
+    ).trim()
+  } else {
+    rawReference = String(
+      transaction?.transaction_reference ||
+        transaction?.reference ||
+        transaction?.id ||
+        '',
+    ).trim()
+  }
+
   const numericPart = rawReference.match(/\d+$/)?.[0] || fallbackId.match(/\d+$/)?.[0] || fallbackId.slice(0, 8).toUpperCase()
 
   if (normalizedRole === 'bond_originator') {
@@ -2125,6 +2144,7 @@ function AttorneyMatterCommandCenter({
   onDraftBrief = null,
   onOpenWorkspace = null,
   onOpenTask = null,
+  isAgentView = false,
 }) {
   const activeWorkflows = workflows.filter((workflow) => workflow?.required)
   const queueItems = buildAttorneyDailyActionQueueItems(workflows)
@@ -2155,6 +2175,31 @@ function AttorneyMatterCommandCenter({
   const openWorkTotal = totals.facts + totals.documents + totals.signatures + totals.blockers
   const primaryQueueItem = visibleQueueItems[0] || null
   const lifecycleStatusMeta = openWorkTotal || urgentCount ? WORKFLOW_STATUS_META.waiting : WORKFLOW_STATUS_META.completed
+  const copy = isAgentView
+    ? {
+        title: 'Transaction Command Center',
+        description: 'The next action, transfer work, roleplayers, and recent movement in one view.',
+        statusFallback: 'Transaction status',
+        noUrgentAction: 'No urgent transaction action',
+        noUrgentDescription: 'Visible transaction work does not have an urgent action right now.',
+        activeWorkflowsTitle: 'Active Workflows',
+        activeWorkflowsDescription: 'Open transaction lanes with work still blocking progress.',
+        actionQueueDescription: 'Prioritized transaction actions, follow-ups, handoffs, and missing documents.',
+        emptyQueue: 'No urgent transaction actions are visible right now.',
+        teamTitle: 'Transaction Team',
+      }
+    : {
+        title: 'Matter Command Center',
+        description: 'The next action, open legal work, roleplayers, and recent movement in one view.',
+        statusFallback: 'Matter status',
+        noUrgentAction: 'No urgent matter action',
+        noUrgentDescription: 'Visible legal lanes do not have an urgent action right now.',
+        activeWorkflowsTitle: 'Active Workflows',
+        activeWorkflowsDescription: 'Open legal lanes with the work still blocking progress.',
+        actionQueueDescription: 'Prioritized legal lane actions, follow-ups, handoffs, and missing documents.',
+        emptyQueue: 'No urgent attorney actions are visible right now.',
+        teamTitle: 'Matter Team',
+      }
 
   const handleQueueAction = (item) => {
     if (!item) return
@@ -2191,15 +2236,15 @@ function AttorneyMatterCommandCenter({
               <Workflow size={18} />
             </span>
             <div>
-              <h2 className="text-[1.1rem] font-semibold tracking-[-0.02em] text-textStrong">Matter Command Center</h2>
-              <p className="mt-1 text-sm leading-6 text-textMuted">The next action, open legal work, roleplayers, and recent movement in one view.</p>
+              <h2 className="text-[1.1rem] font-semibold tracking-[-0.02em] text-textStrong">{copy.title}</h2>
+              <p className="mt-1 text-sm leading-6 text-textMuted">{copy.description}</p>
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${lifecycleStatusMeta.border} ${lifecycleStatusMeta.bg} ${lifecycleStatusMeta.text}`}>
             <span className={`h-2 w-2 rounded-full ${lifecycleStatusMeta.dot}`} />
-            {healthLabel || statusLabel || 'Matter status'}
+            {healthLabel || statusLabel || copy.statusFallback}
           </span>
           {updatedLabel ? (
             <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
@@ -2231,10 +2276,10 @@ function AttorneyMatterCommandCenter({
               <div className="min-w-0">
                 <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Primary Focus</span>
                 <h3 className="mt-1 text-base font-semibold text-textStrong">
-                  {primaryQueueItem?.title || lifecycleAction?.title || 'No urgent matter action'}
+                  {primaryQueueItem?.title || lifecycleAction?.title || copy.noUrgentAction}
                 </h3>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">
-                  {primaryQueueItem?.description || lifecycleAction?.description || 'Visible legal lanes do not have an urgent action right now.'}
+                  {primaryQueueItem?.description || lifecycleAction?.description || copy.noUrgentDescription}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {primaryQueueItem?.workflow?.title ? (
@@ -2281,8 +2326,8 @@ function AttorneyMatterCommandCenter({
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold text-textStrong">Active Workflows</h3>
-                <p className="mt-1 text-xs leading-5 text-textMuted">Open legal lanes with the work still blocking progress.</p>
+                <h3 className="text-sm font-semibold text-textStrong">{copy.activeWorkflowsTitle}</h3>
+                <p className="mt-1 text-xs leading-5 text-textMuted">{copy.activeWorkflowsDescription}</p>
               </div>
               <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
                 {activeWorkflows.length} active
@@ -2335,7 +2380,7 @@ function AttorneyMatterCommandCenter({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-textStrong">Action Queue</h3>
-                <p className="mt-1 text-xs leading-5 text-textMuted">Prioritized legal lane actions, follow-ups, handoffs, and missing documents.</p>
+                <p className="mt-1 text-xs leading-5 text-textMuted">{copy.actionQueueDescription}</p>
               </div>
               <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${urgentCount ? 'border-warning/30 bg-warningSoft text-warning' : 'border-success/25 bg-successSoft text-success'}`}>
                 {urgentCount} urgent
@@ -2374,7 +2419,7 @@ function AttorneyMatterCommandCenter({
                 )
               }) : (
                 <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                  No urgent attorney actions are visible right now.
+                  {copy.emptyQueue}
                 </p>
               )}
             </div>
@@ -2396,7 +2441,7 @@ function AttorneyMatterCommandCenter({
 
           <section className="rounded-[16px] border border-borderSoft bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-textStrong">Matter Team</h3>
+              <h3 className="text-sm font-semibold text-textStrong">{copy.teamTitle}</h3>
               {onOpenWorkspace ? (
                 <Button type="button" size="sm" variant="ghost" onClick={() => onOpenWorkspace('stakeholders')}>Manage</Button>
               ) : null}
@@ -11177,7 +11222,7 @@ function AttorneyTransactionDetail() {
         subtitle: 'Property, unit, development, price, and registration details.',
         items: [
           ['Erf / Unit', unit?.unit_number ? `Unit ${unit.unit_number}` : transaction?.erf_number || 'Not captured'],
-          ['Development', development?.name || 'Standalone matter'],
+          ['Development', development?.name || (isAgentTransactionView ? 'Standalone transaction' : 'Standalone matter')],
           ['Address', propertyAddress || transaction?.property_description || 'Not captured'],
           ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
           ['Registration Date', formatDate(transaction?.registration_date || transaction?.registered_at)],
@@ -11186,7 +11231,7 @@ function AttorneyTransactionDetail() {
       },
       {
         title: 'Agents',
-        subtitle: 'Agent and brokerage contacts linked to this matter.',
+        subtitle: isAgentTransactionView ? 'Agent and brokerage contacts linked to this transaction.' : 'Agent and brokerage contacts linked to this matter.',
         items: agents.length
           ? agents.map((agent) => [agent.roleLabel || 'Agent', agent.participantName || agent.participantEmail || 'Agent'])
           : [['Agents', 'No agents linked']],
@@ -11217,6 +11262,7 @@ function AttorneyTransactionDetail() {
       transaction,
       transferAttorney,
       unit?.unit_number,
+      isAgentTransactionView,
     ],
   )
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
@@ -11558,7 +11604,7 @@ function AttorneyTransactionDetail() {
     const audience = template.audience || 'professional'
     const target = getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
     if (!target?.laneKey || !target?.actionKey || !target?.visibility) {
-      setError(`No permitted ${audience} update action is available for this matter.`)
+      setError(`No permitted ${audience} update action is available for this ${isAgentTransactionView ? 'transaction' : 'matter'}.`)
       return
     }
     setDiscussionLaneKey(target.laneKey)
@@ -11568,7 +11614,7 @@ function AttorneyTransactionDetail() {
     setDiscussionBody(String(template.body || '').trim())
     setShowDetailedCommunicationLog(true)
     setWorkspaceMenu('activity')
-  }, [legalWorkflowModels])
+  }, [isAgentTransactionView, legalWorkflowModels])
   const transactionContactRows = [
     {
       key: 'buyer',
@@ -11686,14 +11732,16 @@ function AttorneyTransactionDetail() {
   const detailPanelSections = useMemo(
     () => ({
       matter: {
-        title: workspaceRole === 'bond_originator' ? 'Application Details' : 'Matter Details',
+        title: workspaceRole === 'bond_originator' ? 'Application Details' : isAgentTransactionView ? 'Transaction Details' : 'Matter Details',
         subtitle: workspaceRole === 'bond_originator'
           ? 'Reference and application metadata relevant to bond execution.'
-          : 'Reference and transaction metadata relevant to legal execution.',
+          : isAgentTransactionView
+            ? 'Reference and transaction metadata relevant to this deal.'
+            : 'Reference and transaction metadata relevant to legal execution.',
         summary: `${transferStageLabel} • ${workspaceReference}`,
         items: [
-          { label: workspaceRole === 'bond_originator' ? 'Application ID' : 'Matter Number', value: workspaceReference },
-          { label: 'Development', value: development?.name || 'Standalone matter' },
+          { label: workspaceRole === 'bond_originator' ? 'Application ID' : isAgentTransactionView ? 'Transaction Reference' : 'Matter Number', value: workspaceReference },
+          { label: 'Development', value: development?.name || (isAgentTransactionView ? 'Standalone transaction' : 'Standalone matter') },
           { label: 'Unit', value: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not linked' },
           { label: 'Property Address', value: propertyAddress || transaction?.property_description || 'Not set' },
           { label: workspaceRole === 'bond_originator' ? 'Application Type' : 'Transaction Type', value: matterTypeLabel },
@@ -11719,7 +11767,7 @@ function AttorneyTransactionDetail() {
       },
       seller: {
         title: 'Seller Details',
-        subtitle: 'Seller identity and contact details for this matter.',
+        subtitle: isAgentTransactionView ? 'Seller identity and contact details for this transaction.' : 'Seller identity and contact details for this matter.',
         summary: `${transaction?.seller_name || 'Seller not assigned'}${transaction?.seller_email ? ` • ${transaction.seller_email}` : ''}`,
         items: [
           { label: 'Seller Name', value: transaction?.seller_name || 'Not assigned' },
@@ -11751,16 +11799,17 @@ function AttorneyTransactionDetail() {
       unit?.unit_number,
       workspaceReference,
       workspaceRole,
+      isAgentTransactionView,
     ],
   )
 
   const detailRows = useMemo(
     () => [
-      { key: 'matter', title: 'Matter Details' },
+      { key: 'matter', title: isAgentTransactionView ? 'Transaction Details' : 'Matter Details' },
       { key: 'buyer', title: 'Buyer Details' },
       { key: 'seller', title: 'Seller Details' },
     ],
-    [],
+    [isAgentTransactionView],
   )
 
   const activeDetailPanel = detailPanelSections[detailPanelKey] || detailPanelSections.matter
@@ -12955,7 +13004,7 @@ function AttorneyTransactionDetail() {
   return (
     <>
       <SharedTransactionShell
-      printTitle="Attorney Matter Report"
+      printTitle={isAgentTransactionView ? 'Transaction Report' : workspaceRole === 'bond_originator' ? 'Bond Application Report' : 'Attorney Matter Report'}
       printSubtitle={matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
@@ -13065,7 +13114,7 @@ function AttorneyTransactionDetail() {
             <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Matter Conversation</h3>
+                  <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Application Conversation</h3>
                   <p className="mt-1 text-sm text-textMuted">Updates, notes, roleplayer visibility, and system activity for this application.</p>
                 </div>
                 <Button type="button" variant="ghost" size="sm" onClick={() => openWorkspaceMenu('activity')}>
@@ -13176,6 +13225,7 @@ function AttorneyTransactionDetail() {
                     onDraftBrief={handleDraftAttorneyStatusBrief}
                     onOpenWorkspace={openWorkspaceMenu}
                     onOpenTask={(item) => openWorkspaceMenu(getWorkspaceMenuForTask(item))}
+                    isAgentView={isAgentTransactionView}
                   />
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
@@ -14869,7 +14919,7 @@ function AttorneyTransactionDetail() {
                     <div className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-8 text-center">
                       <MessageSquarePlus size={22} className="mx-auto text-textMuted" />
                       <h4 className="mt-3 text-sm font-semibold text-textStrong">No activity matches this filter</h4>
-                      <p className="mt-1 text-sm text-textMuted">Updates will appear here as the matter team collaborates.</p>
+                      <p className="mt-1 text-sm text-textMuted">Updates will appear here as the {isAgentTransactionView ? 'transaction' : 'matter'} team collaborates.</p>
                     </div>
                   ) : null}
                 </div>
@@ -14908,7 +14958,7 @@ function AttorneyTransactionDetail() {
                       rows={5}
                       value={discussionBody}
                       onChange={(event) => setDiscussionBody(event.target.value)}
-                      placeholder="Share a matter update..."
+                      placeholder={isAgentTransactionView ? 'Share a transaction update...' : 'Share a matter update...'}
                     />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex gap-1">

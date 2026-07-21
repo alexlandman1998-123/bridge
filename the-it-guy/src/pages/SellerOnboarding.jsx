@@ -351,9 +351,13 @@ function getSellerBrandStyle(brand = {}) {
     '--seller-brand-secondary': secondary,
     '--seller-brand-accent': accent,
     '--seller-brand-primary-rgb': hexToRgbParts(primary),
+    '--seller-brand-secondary-rgb': hexToRgbParts(secondary),
+    '--seller-brand-accent-rgb': hexToRgbParts(accent),
     '--seller-brand-primary-soft': `rgb(${hexToRgbParts(primary)} / 0.12)`,
     '--seller-brand-primary-tint': `rgb(${hexToRgbParts(primary)} / 0.08)`,
     '--seller-brand-primary-border': `rgb(${hexToRgbParts(primary)} / 0.38)`,
+    '--seller-brand-accent-soft': `rgb(${hexToRgbParts(accent)} / 0.14)`,
+    '--seller-brand-accent-border': `rgb(${hexToRgbParts(accent)} / 0.44)`,
   }
 }
 
@@ -519,25 +523,64 @@ function getSpecialMandateConditionLabels(conditions = {}) {
 }
 
 function resolveAgencyBrand(listing = {}) {
-  const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
+  const sellerOnboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const sellerOnboardingSnakeFormData = listing?.seller_onboarding?.form_data && typeof listing.seller_onboarding.form_data === 'object'
+    ? listing.seller_onboarding.form_data
+    : {}
+  const onboardingFormData = listing?.onboardingFormData?.formData && typeof listing.onboardingFormData.formData === 'object'
+    ? listing.onboardingFormData.formData
+    : {}
+  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingSnakeFormData.portalBranding || onboardingFormData.portalBranding || {}
   const listingBranding = {
     agencyOrganisation: listing?.agencyOrganisation,
+    agency_organisation: listing?.agency_organisation,
     organisationName: listing?.organisationName,
+    organisation_name: listing?.organisation_name,
     agencyName: listing?.agencyName,
+    agency_name: listing?.agency_name,
     assignedAgencyName: listing?.assignedAgencyName,
+    assigned_agency_name: listing?.assigned_agency_name,
     agencyLogoUrl: listing?.agencyLogoUrl,
+    agency_logo_url: listing?.agency_logo_url,
     agencyLogoDarkUrl: listing?.agencyLogoDarkUrl,
+    agency_logo_dark_url: listing?.agency_logo_dark_url,
     agencyLogoLightUrl: listing?.agencyLogoLightUrl,
+    agency_logo_light_url: listing?.agency_logo_light_url,
     organisationLogoUrl: listing?.organisationLogoUrl,
+    organisation_logo_url: listing?.organisation_logo_url,
     organisationLogoDarkUrl: listing?.organisationLogoDarkUrl,
+    organisation_logo_dark_url: listing?.organisation_logo_dark_url,
     organisationLogoLightUrl: listing?.organisationLogoLightUrl,
+    organisation_logo_light_url: listing?.organisation_logo_light_url,
+    primaryColour: listing?.primaryColour,
+    primary_colour: listing?.primary_colour,
+    primaryColor: listing?.primaryColor,
+    primary_color: listing?.primary_color,
+    secondaryColour: listing?.secondaryColour,
+    secondary_colour: listing?.secondary_colour,
+    secondaryColor: listing?.secondaryColor,
+    secondary_color: listing?.secondary_color,
+    accentColour: listing?.accentColour,
+    accent_colour: listing?.accent_colour,
+    accentColor: listing?.accentColor,
+    accent_color: listing?.accent_color,
   }
   const brandingSources = [
     listing?.branding,
     onboardingBranding,
+    sellerOnboardingFormData.branding,
+    sellerOnboardingSnakeFormData.branding,
+    onboardingFormData.branding,
+    listing?.sellerOnboarding?.portalBranding,
+    listing?.sellerOnboarding?.portal_branding,
+    listing?.seller_onboarding?.portalBranding,
+    listing?.seller_onboarding?.portal_branding,
     listingBranding,
     listing?.agency,
     listing?.organisation,
+    listing?.organization,
   ]
   const branding = resolveOnboardingBranding(...brandingSources)
   const hasAgencyName = hasResolvedOnboardingBrandingValue(
@@ -1614,13 +1657,13 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
 function SellerBrandBar({ brand }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-3 sm:pb-5">
+    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--seller-brand-accent-border)] pb-3 sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
-        <AgencyMark brand={brand} tone="light" />
+        <AgencyMark brand={brand} tone="dark" />
       </div>
-      <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
+      <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--seller-brand-accent-border)] bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
-        <span className="rounded-full bg-white px-2 py-0.5 text-[#101827] sm:px-2.5 sm:py-1">arch9</span>
+        <span className="rounded-full bg-[color:var(--seller-brand-accent)] px-2 py-0.5 text-[color:var(--seller-brand-secondary)] sm:px-2.5 sm:py-1">arch9</span>
       </div>
     </div>
   )
@@ -1632,32 +1675,38 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="hidden overflow-hidden rounded-[22px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:block sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
+    <section
+      className="hidden overflow-hidden rounded-[22px] border p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:block sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]"
+      style={{
+        borderColor: 'rgb(var(--seller-brand-primary-rgb) / 0.62)',
+        background: 'linear-gradient(135deg, var(--seller-brand-primary) 0%, var(--seller-brand-secondary) 56%, var(--seller-brand-primary) 100%)',
+      }}
+    >
       <SellerBrandBar brand={brand} />
       <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-5 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
           <h1 className="max-w-3xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-white sm:text-4xl lg:text-5xl">
             Complete your seller onboarding
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:mt-4 sm:text-base lg:text-[1.05rem]">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80 sm:mt-4 sm:text-base lg:text-[1.05rem]">
             A guided intake for your seller, property, compliance, and mandate details. We’ll only ask what matters next.
           </p>
         </div>
-        <div className="rounded-[18px] border border-white/10 bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
+        <div className="rounded-[18px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
           <div className="grid gap-2.5 sm:gap-3">
             <article>
-              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Seller</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--seller-brand-accent)] sm:text-xs">Seller</p>
               <p className="mt-1 break-words text-sm font-semibold text-white">{sellerName}</p>
             </article>
             <article>
-              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Property</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--seller-brand-accent)] sm:text-xs">Property</p>
               <p className="mt-1 break-words text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
             </article>
             <div className="grid gap-2 pt-1 sm:grid-cols-2">
-              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+              <span className="rounded-[14px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-3 py-2 text-xs text-white/70">
                 Agent<br /><strong className="text-white">{agentName}</strong>
               </span>
-              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+              <span className="rounded-[14px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-3 py-2 text-xs text-white/70">
                 Status<br /><strong className="text-white">{statusLabel}</strong>
               </span>
             </div>
@@ -1666,8 +1715,8 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
       </div>
       <div className="mt-4 flex flex-wrap gap-2 sm:mt-6 lg:mt-7">
         {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
-          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[10px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
-            <BadgeCheck size={13} />
+          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-2.5 py-1.5 text-[10px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
+            <BadgeCheck size={13} className="text-[color:var(--seller-brand-accent)]" />
             {item}
           </span>
         ))}
@@ -5441,7 +5490,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const sellerMainClass = shouldShowWelcome
     ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] font-sans antialiased text-white'
-    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
+    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
 
   return (
     <main className={sellerMainClass} style={getSellerBrandStyle(agencyBrand)}>
@@ -5456,7 +5505,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {content}
       </div>
       {!shouldShowWelcome && !isCompleted ? (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+      <div className="relative z-10 mt-4 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
         <div className={PAGE_CONTAINER_CLASS}>
           <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))]">
             <div className="flex min-w-0 items-center justify-between gap-2">

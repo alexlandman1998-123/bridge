@@ -21,11 +21,19 @@ test('allows only an explicitly enrolled active stage', () => {
   assert.equal(result.revision, 3)
 })
 
-test('an explicit pause blocks even in shadow mode', () => {
+test('shadow mode observes an explicit pause without blocking production users', () => {
   const result = resolveDocumentExperienceRuntimeRolloutAccess({ organisationId: 'org-1', enforcementMode: 'shadow', schemaAvailable: true, rpcResult: { configured: true, allowed: false, reason: 'paused', stage: 'pilot', revision: 4 } })
-  assert.equal(result.allowed, false)
-  assert.equal(result.code, 'N6_PAUSED')
-  assert.ok(result.solution.phases.length >= 2)
+  assert.equal(result.allowed, true)
+  assert.equal(result.code, 'N6_SHADOW_PAUSED')
+  assert.equal(result.observedReason, 'paused')
+  assert.equal(result.observedAllowed, false)
+})
+
+test('shadow mode observes unenrolled organisations without blocking normal access', () => {
+  const result = resolveDocumentExperienceRuntimeRolloutAccess({ organisationId: 'org-1', enforcementMode: 'shadow', schemaAvailable: true, rpcResult: { configured: true, allowed: false, reason: 'not_enrolled', stage: 'pilot', revision: 4 } })
+  assert.equal(result.allowed, true)
+  assert.equal(result.code, 'N6_SHADOW_NOT_ENROLLED')
+  assert.equal(result.observedReason, 'not_enrolled')
 })
 
 test('blocks expired, unenrolled and over-limit organisations', () => {

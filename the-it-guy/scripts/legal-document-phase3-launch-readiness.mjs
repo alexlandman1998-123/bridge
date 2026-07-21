@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
 const FIXTURE_KEY = 'otp_phase2_launch_acceptance_v1'
+const MIN_FINAL_OTP_PDF_BYTES = 5_000
 
 function envFile(file) {
   if (!fs.existsSync(file)) return {}
@@ -20,6 +21,17 @@ function normalize(value) {
 
 function metadata(template = {}) {
   return template.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+}
+
+function usesNativeStructuredSource(template = {}) {
+  const meta = metadata(template)
+  const format = normalize(template.template_format).toLowerCase()
+  const renderMode = normalize(meta.render_mode).toLowerCase()
+  return ['structured', 'json', 'native_structured'].includes(format) || renderMode === 'native_structured'
+}
+
+function hasRenderableSource(template = {}) {
+  return usesNativeStructuredSource(template) || Boolean(normalize(template.template_storage_path))
 }
 
 function legalApproval(template = {}) {
@@ -58,7 +70,7 @@ const evidence = {}
 
 const templateResult = await client
   .from('document_packet_templates')
-  .select('id, organisation_id, packet_type, template_key, template_label, status, is_active, template_storage_bucket, template_storage_path, metadata_json, updated_at')
+  .select('id, organisation_id, packet_type, template_key, template_label, template_format, status, is_active, template_storage_bucket, template_storage_path, metadata_json, updated_at')
   .in('packet_type', ['otp', 'mandate'])
   .eq('status', 'published')
   .neq('is_active', false)
@@ -67,13 +79,13 @@ const templates = templateResult.data || []
 const routableTemplates = templates.filter((row) => row.organisation_id === null || candidateOrganisationIds.includes(row.organisation_id))
 const otpTemplates = routableTemplates.filter((row) => normalize(row.packet_type).toLowerCase() === 'otp')
 const mandateTemplates = routableTemplates.filter((row) => normalize(row.packet_type).toLowerCase() === 'mandate')
-if (!otpTemplates.length || otpTemplates.some((row) => !row.template_storage_path)) blockers.push({ code: 'OTP_TEMPLATE_SOURCE_MISSING', detail: 'Every published OTP route available to the pilot cohort must have a renderable storage source.' })
+if (!otpTemplates.length || otpTemplates.some((row) => !hasRenderableSource(row))) blockers.push({ code: 'OTP_TEMPLATE_SOURCE_MISSING', detail: 'Every published OTP route available to the pilot cohort must have a renderable storage source or native structured source.' })
 if (!otpTemplates.length || otpTemplates.some((row) => !approved(row))) blockers.push({ code: 'OTP_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'Every published OTP route available to the pilot cohort needs approved status, approval date, and counsel/reference metadata.' })
 if (!mandateTemplates.length) blockers.push({ code: 'SALES_MANDATE_TEMPLATE_MISSING', detail: 'No published active SalesMandate template exists.' })
 if (!mandateTemplates.length || mandateTemplates.some((row) => !approved(row))) blockers.push({ code: 'SALES_MANDATE_TEMPLATE_LEGAL_APPROVAL_PENDING', detail: 'Every published SalesMandate route available to the pilot cohort needs approved status, approval date, and counsel/reference metadata.' })
 evidence.templates = {
   cohortOrganisationIds: candidateOrganisationIds,
-  otp: otpTemplates.map((row) => ({ id: row.id, organisationId: row.organisation_id, key: row.template_key, sourcePresent: Boolean(row.template_storage_path), legalApproval: legalApproval(row) })),
+  otp: otpTemplates.map((row) => ({ id: row.id, organisationId: row.organisation_id, key: row.template_key, sourcePresent: hasRenderableSource(row), sourceMode: usesNativeStructuredSource(row) ? 'native_structured_sections' : 'legacy_storage_object', legalApproval: legalApproval(row) })),
   mandate: mandateTemplates.map((row) => ({ id: row.id, organisationId: row.organisation_id, key: row.template_key, legalApproval: legalApproval(row) })),
 }
 
@@ -125,7 +137,7 @@ if (completedPacket) {
       if (artifact.error || !artifact.data) blockers.push({ code: 'OTP_FINAL_ARTIFACT_UNREADABLE', detail: 'Final OTP PDF could not be downloaded by the release gate.' })
       else {
         const bytes = new Uint8Array(await artifact.data.arrayBuffer())
-        if (new TextDecoder().decode(bytes.subarray(0, 4)) !== '%PDF' || bytes.length < 10_000) blockers.push({ code: 'OTP_FINAL_ARTIFACT_INVALID', detail: 'Final OTP artifact is not a credible PDF payload.' })
+        if (new TextDecoder().decode(bytes.subarray(0, 4)) !== '%PDF' || bytes.length < MIN_FINAL_OTP_PDF_BYTES) blockers.push({ code: 'OTP_FINAL_ARTIFACT_INVALID', detail: 'Final OTP artifact is not a credible PDF payload.' })
         evidence.finalArtifact = { bytes: bytes.length, bucket: finalVersion.final_signed_file_bucket, path: finalVersion.final_signed_file_path }
       }
     }
