@@ -407,7 +407,7 @@ export type SendSellerMandateSentPayload = {
   organisationId?: string;
   packetId?: string;
   mandateId?: string;
-  recipientRole?: "agent" | "seller";
+  recipientRole?: "agent" | "seller" | "buyer" | "purchaser_1" | "purchaser_2" | "buyer_spouse" | "signer" | string;
   recipientName?: string;
   sellerName?: string;
   propertyTitle?: string;

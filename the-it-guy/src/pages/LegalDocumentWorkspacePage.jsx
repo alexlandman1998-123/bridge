@@ -3942,11 +3942,10 @@ export default function LegalDocumentWorkspacePage() {
   ])
 
   const handleSend = useCallback(async ({ resend = false, reminder = false, signerLinks = [], packetId: sentPacketId = '', targetSignerRole = '', signingStatus = '' } = {}) => {
-    // Mandate sending already has the packet and signer links from the workspace.
-    // Avoid a full packet/status read before the email edge call.
-    const shouldResolveStatus = packetType === 'otp'
-    const status = shouldResolveStatus ? await resolveCurrentStatus() : null
-    const latestVersion = status ? getLatestVersion(status) : null
+    // The workspace has already prepared the packet and secure links. Do not make
+    // recipients wait for a second packet lookup before their email is sent.
+    const status = null
+    const latestVersion = null
     if (packetType === 'otp') {
       const recipients = (Array.isArray(signerLinks) ? signerLinks : []).filter((signer) =>
         normalizeText(signer?.signing_link) && normalizeText(signer?.signer_email)
@@ -3956,18 +3955,18 @@ export default function LegalDocumentWorkspacePage() {
         error.code = 'SIGNING_EMAIL_FAILED'
         throw error
       }
-      const deliveries = []
-      for (const signer of recipients) {
+      const deliveries = await Promise.all(recipients.map(async (signer) => {
         const recipientEmail = normalizeText(signer.signer_email).toLowerCase()
         const recipientName = normalizeText(signer.signer_name) || 'Signer'
+        const recipientRole = normalizeText(signer.signer_role) || 'signer'
         const response = await withLegalWorkspaceTimeout(
           invokeEdgeFunction('send-mandate-signing-email', {
             body: {
               type: 'seller_mandate_sent',
               to: recipientEmail,
               organisationId,
-              packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
-              recipientRole: 'seller',
+              packetId: normalizeText(sentPacketId),
+              recipientRole,
               recipientName,
               sellerName: recipientName,
               propertyTitle: transactionReference || 'your property transaction',
@@ -3981,15 +3980,35 @@ export default function LegalDocumentWorkspacePage() {
           LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
         )
         assertEdgeFunctionSuccess(response, `The OTP signing email could not be sent to ${recipientEmail}.`)
-        deliveries.push({ emailDeliveryId: normalizeText(response?.data?.emailId), recipientEmail, recipientRole: normalizeText(signer.signer_role) })
-      }
-      if (latestVersion?.rendered_document_id) {
-        await updateOtpDocumentWorkflowState({
-          documentId: latestVersion.rendered_document_id,
-          workflowState: OTP_DOCUMENT_TYPES.sentToClient,
-          isClientVisible: true,
-        })
-      }
+        return { emailDeliveryId: normalizeText(response?.data?.emailId), recipientEmail, recipientRole }
+      }))
+
+      // The client can proceed as soon as delivery is confirmed. Keep the
+      // documents-area classification in sync without leaving the send dialog
+      // stuck behind a separate status read or database write.
+      void (async () => {
+        try {
+          const currentStatus = await withLegalWorkspaceTimeout(
+            resolveCurrentStatus(),
+            'OTP workflow sync is taking too long.',
+            5000,
+          )
+          const currentVersion = getLatestVersion(currentStatus)
+          if (currentVersion?.rendered_document_id) {
+            await withLegalWorkspaceTimeout(
+              updateOtpDocumentWorkflowState({
+                documentId: currentVersion.rendered_document_id,
+                workflowState: OTP_DOCUMENT_TYPES.sentToClient,
+                isClientVisible: true,
+              }),
+              'OTP document workflow update is taking too long.',
+              5000,
+            )
+          }
+        } catch (workflowError) {
+          console.warn('[LegalDocumentWorkspacePage] OTP document workflow sync skipped after signing send.', workflowError)
+        }
+      })()
       window.dispatchEvent(new Event('itg:transaction-updated'))
       return {
         emailDeliveryId: deliveries[0]?.emailDeliveryId || null,
