@@ -3629,8 +3629,6 @@ function AgentListingDetail() {
       return
     }
 
-    await handleGenerateMandateFollowUp({ silent: true })
-
     const params = new URLSearchParams()
     const sellerLeadId = resolveSellerLeadIdFromListing(listingRecord)
     if (sellerLeadId) params.set('leadId', sellerLeadId)
@@ -3642,6 +3640,12 @@ function AgentListingDetail() {
     params.set('returnTo', `/agent/listings/${encodeURIComponent(String(listingRecord.id))}?tab=seller`)
 
     navigate(`/agent/listings/${encodeURIComponent(String(listingRecord.id))}/legal/mandate?${params.toString()}`)
+    if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+      void updatePrivateListing(listingRecord.id, { mandateStatus: 'ready' }, { includeRequirementsAndDocuments: false })
+        .catch((error) => {
+          console.warn('[AgentListingDetail] mandate ready sync skipped after workspace navigation.', error)
+        })
+    }
   }
 
   async function handleSignedMandateUpload(event) {

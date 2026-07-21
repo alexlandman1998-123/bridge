@@ -6726,8 +6726,19 @@ export default function LegalDocumentWorkspace({
                   {!loading && !statusState?.packet?.id ? (
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <FileText size={24} className="text-[#7287a0]" />
-                      <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
-                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Arch9 will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
+                      <p className="mt-3 text-base font-semibold text-[#102033]">Mandate setup is ready.</p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Generate the mandate when you are ready to create the signing copy.</p>
+                      {showGeneratePdfButton ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-5"
+                          onClick={() => void handleGeneratePacketDraft()}
+                          disabled={actionBusy}
+                        >
+                          {actionBusy ? 'Working…' : `Generate ${isOtpPacket ? 'OTP' : 'Mandate'}`}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
 
