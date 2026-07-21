@@ -40,7 +40,7 @@ export default function LegalDocumentLibraryCard({ document, compact = false }) 
   const statusLabel = document.status === 'live' && document.kind === 'standard' ? 'Ready' : status.label
 
   return (
-    <article className={`group relative flex h-full flex-col rounded-[18px] border border-[#dde6ef] bg-white transition hover:border-[#a9d4bc] hover:shadow-[0_18px_38px_rgba(15,23,42,0.08)] sm:flex-row ${compact ? 'min-h-[172px] p-5' : 'min-h-[218px] p-6'}`}>
+    <article className={`group relative flex h-full flex-col rounded-[18px] border border-[#dde6ef] bg-white transition hover:border-[#a9d4bc] hover:shadow-[0_18px_38px_rgba(15,23,42,0.08)] sm:flex-row ${compact ? 'min-h-[150px] p-5' : 'min-h-[190px] p-5'}`}>
       <span className={`inline-flex shrink-0 items-center justify-center rounded-[15px] border border-[#d5e7dc] bg-[#f1faf5] text-[#11804b] ${compact ? 'h-12 w-12' : 'h-16 w-16'}`}>
         <FileText className={`${compact ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={1.9} aria-hidden="true" />
       </span>
@@ -49,7 +49,7 @@ export default function LegalDocumentLibraryCard({ document, compact = false }) 
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h3 className={`${compact ? 'text-lg' : 'text-xl'} font-semibold tracking-[-0.015em] text-[#142033]`}>{document.label}</h3>
-            <p className="mt-2 text-sm leading-6 text-[#66798e]">{document.description}</p>
+            <p className="mt-1.5 text-sm leading-5 text-[#66798e]">{document.description}</p>
           </div>
           <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.className}`}>
             <StatusIcon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -58,7 +58,7 @@ export default function LegalDocumentLibraryCard({ document, compact = false }) 
         </div>
 
       {!compact ? (
-          <dl className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#738599]">
+          <dl className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#738599]">
             <div className="inline-flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5" aria-hidden="true" />
               <dt className="sr-only">Standard sections</dt>
@@ -80,7 +80,7 @@ export default function LegalDocumentLibraryCard({ document, compact = false }) 
           </dl>
         ) : null}
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs leading-5 text-[#8090a2]">
             {document.versionLabel ? <span className="font-semibold text-[#607387]">Version {document.versionLabel}</span> : 'Not versioned'}
             <span className="mx-2 text-[#c3cdd7]" aria-hidden="true">•</span>

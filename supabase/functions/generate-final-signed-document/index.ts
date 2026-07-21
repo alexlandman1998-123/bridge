@@ -37,6 +37,22 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack || null,
+    };
+  }
+  if (error && typeof error === "object") {
+    return error as JsonRecord;
+  }
+  return {
+    message: String(error),
+  };
+}
+
 async function authorizeFinalisation(req: Request, serviceClient: any, serviceKey: string, packet: JsonRecord) {
   const bearer = normalizeText(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
   if (bearer === serviceKey) return { service: true, userId: null };
@@ -2626,11 +2642,13 @@ Deno.serve(async (req: Request) => {
         : "Source packet was DOCX and converted through the configured DOCX→PDF converter before overlaying signatures.",
     });
   } catch (error) {
-    console.error("generate-final-signed-document failed", error);
+    const serializedError = serializeError(error);
+    console.error("generate-final-signed-document failed", serializedError);
     return jsonResponse(500, {
       success: false,
-      error: String(error),
+      error: normalizeText(serializedError.message) || "Final signed document generation failed.",
       errorCode: "FINAL_SIGNED_GENERATION_FAILED",
+      details: serializedError,
     });
   }
 });
