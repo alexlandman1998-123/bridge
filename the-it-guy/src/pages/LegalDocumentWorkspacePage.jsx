@@ -2437,12 +2437,20 @@ export default function LegalDocumentWorkspacePage() {
   const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
   const [runtimeRolloutAccess, setRuntimeRolloutAccess] = useState({ organisationId: '', decision: null })
   const initialStatusRef = useRef(null)
+  const initialStatusValueRef = useRef(initialStatus)
   const hasRenderedContextRef = useRef(false)
   const hydratedRouteContextKeyRef = useRef('')
 
   useEffect(() => {
     initialStatusRef.current = initialStatus
+    initialStatusValueRef.current = initialStatus
   }, [initialStatus])
+
+  const applyInitialStatus = useCallback((nextStatus) => {
+    initialStatusRef.current = nextStatus
+    initialStatusValueRef.current = nextStatus
+    setInitialStatus(nextStatus)
+  }, [])
 
   const rawRoutePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
   const routePacketId = isUuidLike(rawRoutePacketId) ? rawRoutePacketId : ''
@@ -2489,11 +2497,6 @@ export default function LegalDocumentWorkspacePage() {
   )
   const autoCreateListingFromMandate = ['1', 'true', 'yes'].includes(normalizeKey(searchParams.get('autoCreateListing')))
   const actor = useMemo(() => buildAgentFromProfile(profile), [profile])
-  const initialStatusValueRef = useRef(initialStatus)
-
-  useEffect(() => {
-    initialStatusValueRef.current = initialStatus
-  }, [initialStatus])
 
   const backPath = useMemo(() => {
     if (returnTo) return returnTo
@@ -2773,7 +2776,7 @@ export default function LegalDocumentWorkspacePage() {
         setWorkspaceBranding(null)
         setWorkspaceSettings(null)
         setLeadContext(immediateLeadContext)
-        setInitialStatus(
+        applyInitialStatus(
           resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
             ? buildRuntimeMandateStatusForLead({
                 organisationId: immediateOrganisationId,
@@ -3050,8 +3053,18 @@ export default function LegalDocumentWorkspacePage() {
       })
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
-      setInitialStatus(status)
-      setValidatedRoutePacketId(normalizeText(status?.packet?.id || effectiveRoutePacketId))
+      const currentPacketId = normalizeText(initialStatusValueRef.current?.packet?.id)
+      const nextPacketId = normalizeText(status?.packet?.id)
+      const staleNoPacketResult = isUuidLike(currentPacketId) && !nextPacketId
+      const nextStatus = staleNoPacketResult ? initialStatusValueRef.current : status
+      if (staleNoPacketResult) {
+        console.info('[LegalDocumentWorkspacePage] ignored stale route status after mandate generation.', {
+          routePacketId: effectiveRoutePacketId || null,
+          currentPacketId,
+        })
+      }
+      applyInitialStatus(nextStatus)
+      setValidatedRoutePacketId(normalizeText(nextStatus?.packet?.id || effectiveRoutePacketId))
       setContextHydrated(true)
       hasRenderedContextRef.current = true
       hydratedRouteContextKeyRef.current = nextRouteContextKey
@@ -3068,7 +3081,7 @@ export default function LegalDocumentWorkspacePage() {
       setRouteContextSettled(true)
       if (!renderedFallback && !hasRenderedCurrentRoute) setLoadingContext(false)
     }
-  }, [actor, requestedPacketType, role, routeLeadId, routeListingId, routePacketId, routeTransactionId])
+  }, [actor, applyInitialStatus, requestedPacketType, role, routeLeadId, routeListingId, routePacketId, routeTransactionId])
 
   useEffect(() => {
     void loadRouteContext()
@@ -3177,9 +3190,9 @@ export default function LegalDocumentWorkspacePage() {
     if (isUuidLike(resolvedPacketId)) {
       setValidatedRoutePacketId(resolvedPacketId)
     }
-    setInitialStatus(status)
+    applyInitialStatus(status)
     return status
-  }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
+  }, [applyInitialStatus, initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
   const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false } = {}) => {
     const routeListingUuid = normalizeLeadUuid(routeListingId)
@@ -3430,7 +3443,7 @@ export default function LegalDocumentWorkspacePage() {
       previous: leadContext,
     })
     setLeadContext(nextLeadContext)
-    if (nextStatus) setInitialStatus(nextStatus)
+    if (nextStatus) applyInitialStatus(nextStatus)
     setValidatedRoutePacketId(packetId)
 
     const nextParams = new URLSearchParams()
@@ -3447,6 +3460,7 @@ export default function LegalDocumentWorkspacePage() {
     return { listing, packet: linkedPacket, status: nextStatus }
   }, [
     actor,
+    applyInitialStatus,
     autoCreateListingFromMandate,
     documentStartEntryPoint,
     documentStartSourceMode,
@@ -3459,8 +3473,20 @@ export default function LegalDocumentWorkspacePage() {
     routeListingId,
   ])
 
-  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false, editableSections = null, renderFreeze = null } = {}) => {
+  const handleGenerate = useCallback(async ({ onProgress, resetExisting = false, editableSections = null, renderFreeze = null } = {}) => {
+    const generationStartedAt = Date.now()
+    const logGenerationStage = (stage, metadata = {}) => {
+      console.info('[LegalDocumentWorkspacePage] mandate generation timing', {
+        stage,
+        elapsedMs: Date.now() - generationStartedAt,
+        packetType,
+        routeLeadId: normalizeText(routeLeadId) || null,
+        packetId: normalizeText(validatedRoutePacketId || initialStatus?.packet?.id) || null,
+        ...metadata,
+      })
+    }
     onProgress?.('Preparing draft...')
+    logGenerationStage('started')
     if (packetType === 'mandate' && !effectiveMandateDraft.transferAttorneyPreferredPartnerId && !effectiveMandateDraft.transferAttorneySelectionDeferred) {
       throw new Error('Select the seller\'s transfer attorney or explicitly defer the nomination before generating the mandate.')
     }
@@ -3491,17 +3517,10 @@ export default function LegalDocumentWorkspacePage() {
         })
       }
       setValidatedRoutePacketId('')
-      setInitialStatus(buildFallbackPacketStatus(packetType))
+      applyInitialStatus(buildFallbackPacketStatus(packetType))
     }
 
-    const leadRuntimeMandate = packetType === 'mandate'
-      && routeLeadId
-      && !validatedRoutePacketId
-      && !initialStatus?.packet?.id
-      && !normalizeText(leadContext.lead?.mandatePacketId)
-      && !persistForSend
-      && !resetMandatePacket
-    const shouldResolveExistingStatus = !resetMandatePacket && Boolean(validatedRoutePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
+    const shouldResolveExistingStatus = !resetMandatePacket && Boolean(validatedRoutePacketId || initialStatus?.packet?.id)
     const existingStatus = shouldResolveExistingStatus
       ? await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
@@ -3520,17 +3539,9 @@ export default function LegalDocumentWorkspacePage() {
       (normalizeKey(existingPacketSourceContext.mandateType) === 'developer_agent_mandate' ||
         normalizeKey(existingPacketSourceContext.contextType) === 'developer_agent_mandate')
 
-    let effectiveLeadContext = leadContext
-    if (packetType === 'mandate' && !isDeveloperAgentMandatePacket) {
-      effectiveLeadContext = await withLegalWorkspaceTimeout(
-        hydrateLeadContextWithSellerOnboarding(leadContext),
-        'Seller onboarding lookup is taking too long.',
-        generationLookupTimeoutMs,
-      ).catch((onboardingError) => {
-        console.warn('[LegalDocumentWorkspacePage] seller onboarding refresh unavailable before generation; using loaded lead context.', onboardingError)
-        return leadContext
-      })
-    }
+    // Route hydration already loaded seller onboarding before generation became available.
+    // Repeating it here made every mandate request wait on a second network round trip.
+    const effectiveLeadContext = leadContext
 
     const generationContext = buildMandateGenerationContext({
       organisationId,
@@ -3756,9 +3767,11 @@ export default function LegalDocumentWorkspacePage() {
       )
       template = getFirstTemplate(templates, packetType)
     }
+    logGenerationStage('template_resolved', { templateId: normalizeText(template?.id) || null })
 
     onProgress?.('Preparing mandate packet...')
     const packet = await ensurePacket({ template, allowRuntime: false, forceNew: resetMandatePacket })
+    logGenerationStage('packet_ready', { packetId: normalizeText(packet?.id) || null })
 
     if (isRuntimePacketId(packet?.id)) {
       const runtimeDraft = buildRuntimeMandateDraft({
@@ -3766,7 +3779,7 @@ export default function LegalDocumentWorkspacePage() {
         context: generationContext,
         branding: workspaceBranding,
       })
-      setInitialStatus(runtimeDraft.status)
+      applyInitialStatus(runtimeDraft.status)
       if (packetType === 'mandate' && leadContext.lead?.leadId) {
         void syncLeadMandateState({
           mandateRuntimeDraftId: normalizeText(packet?.id),
@@ -3797,6 +3810,10 @@ export default function LegalDocumentWorkspacePage() {
       'Draft generation is taking too long.',
       LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
     )
+    logGenerationStage('pdf_generated', {
+      packetId: normalizeText(packet?.id) || null,
+      versionId: normalizeText(generationResult?.version?.id) || null,
+    })
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
       void syncLeadMandateState({
@@ -3814,33 +3831,36 @@ export default function LegalDocumentWorkspacePage() {
     }
     setValidatedRoutePacketId(normalizeText(packet?.id))
 
-    let refreshedStatus = null
-    try {
-      onProgress?.('Refreshing draft status...')
-      refreshedStatus = await withLegalWorkspaceTimeout(
-        resolveDocumentPacketStatus({
-          packetType,
-          packetId: packet.id,
-          transactionId,
-          leadId: routeLeadId,
-          organisationId,
-        }),
-        'Generated packet status is taking too long.',
-      )
-      setInitialStatus(refreshedStatus)
-    } catch (statusError) {
-      console.warn('[LegalDocumentWorkspacePage] generated packet status refresh failed; using generation result snapshot.', statusError)
-      refreshedStatus = {
-        packetType,
-        state: 'generated',
-        packet: generationResult.packet || packet,
-        versions: [generationResult.version].filter(Boolean),
-        signingSummary: null,
-        warnings: generationResult.validation?.warnings || [],
-        actionHint: 'Draft generated.',
-      }
-      setInitialStatus(refreshedStatus)
+    // The render response already has the new packet and version. Show it immediately;
+    // reconciliation is deliberately background work and must not block or replace it.
+    let refreshedStatus = {
+      packetType,
+      state: 'PDF_GENERATED',
+      signingStatus: 'generated',
+      packet: generationResult.packet || packet,
+      versions: [generationResult.version].filter(Boolean),
+      signingSummary: null,
+      warnings: generationResult.validation?.warnings || [],
+      actionHint: 'Draft generated.',
     }
+    applyInitialStatus(refreshedStatus)
+
+    void withLegalWorkspaceTimeout(
+      resolveDocumentPacketStatus({
+        packetType,
+        packetId: packet.id,
+        transactionId,
+        leadId: routeLeadId,
+        organisationId,
+      }),
+      'Generated packet status is taking too long.',
+    ).then((resolvedStatus) => {
+      const currentPacketId = normalizeText(initialStatusValueRef.current?.packet?.id)
+      if (currentPacketId && currentPacketId !== normalizeText(packet.id)) return
+      applyInitialStatus(resolvedStatus)
+    }).catch((statusError) => {
+      console.warn('[LegalDocumentWorkspacePage] generated packet status reconciliation failed; keeping generation result.', statusError)
+    })
 
     let autoCreatedListing = null
     const autoCreateResult = await createListingFromGeneratedMandate({
@@ -3853,7 +3873,7 @@ export default function LegalDocumentWorkspacePage() {
     if (autoCreateResult?.listing) {
       autoCreatedListing = autoCreateResult.listing
       refreshedStatus = autoCreateResult.status || refreshedStatus
-      if (refreshedStatus) setInitialStatus(refreshedStatus)
+      if (refreshedStatus) applyInitialStatus(refreshedStatus)
     }
 
     window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -3865,6 +3885,7 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [
     actor,
+    applyInitialStatus,
     createListingFromGeneratedMandate,
     documentStartEntryPoint,
     documentStartSourceMode,
@@ -4533,7 +4554,7 @@ export default function LegalDocumentWorkspacePage() {
         onView={() => openLatestDocument({ signed: false })}
         onViewSigned={() => openLatestDocument({ signed: true })}
         onRefreshContext={undefined}
-        autoGenerateEnabled={contextHydrated}
+        autoGenerateEnabled={contextHydrated && routeContextSettled}
       />
     </>
   )
