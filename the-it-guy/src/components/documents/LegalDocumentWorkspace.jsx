@@ -861,6 +861,9 @@ function extractTemplateTokens(section = {}) {
   if (Array.isArray(section?.placeholders)) {
     return normalizePlaceholderTokens(section.placeholders)
   }
+  if (Array.isArray(section?.mergeFields)) {
+    return normalizePlaceholderTokens(section.mergeFields)
+  }
   if (section?.placeholders && typeof section.placeholders === 'object') {
     return Object.entries(section.placeholders).map(([token, label]) => ({
       token: normalizeText(token),
@@ -3919,7 +3922,7 @@ export default function LegalDocumentWorkspace({
 
     const loadTemplate = async () => {
       try {
-        const template = await fetchDocumentPacketTemplate(templateId, { includeSections: false })
+        const template = await fetchDocumentPacketTemplate(templateId, { includeSections: true })
         if (!active) return
         setTemplateDetail(template || null)
       } catch {
@@ -3939,9 +3942,24 @@ export default function LegalDocumentWorkspace({
 
   useEffect(() => {
     if (!open) return
-    const manifest = Array.isArray(editableVersion?.section_manifest_json)
+    const editableManifest = Array.isArray(editableVersion?.section_manifest_json)
       ? editableVersion.section_manifest_json
       : []
+    const generatedManifest = Array.isArray(latestVersion?.section_manifest_json)
+      ? latestVersion.section_manifest_json
+      : []
+    const templateManifest = Array.isArray(templateDetail?.canonical_definition?.sections)
+      ? templateDetail.canonical_definition.sections
+      : Array.isArray(templateDetail?.sections)
+        ? templateDetail.sections
+        : []
+    // Old editable revisions were seeded with just the introduction section. Prefer the
+    // real generated/template outline whenever it has more than that stale placeholder.
+    const manifest = generatedManifest.length > 1
+      ? generatedManifest
+      : templateManifest.length > 1
+        ? templateManifest
+        : editableManifest
     const placeholderMap = editableVersion?.placeholders_resolved_json && typeof editableVersion.placeholders_resolved_json === 'object'
       ? editableVersion.placeholders_resolved_json
       : {}
@@ -3970,7 +3988,7 @@ export default function LegalDocumentWorkspace({
       }
       return currentTab
     })
-  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, mode, open, packetType])
+  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, latestVersion?.section_manifest_json, mode, open, packetType, templateDetail?.canonical_definition?.sections, templateDetail?.sections])
 
   useEffect(() => {
     if (!editableDirty || !open || !editableAllowed || !editableSections.length || actionBusy) return undefined
