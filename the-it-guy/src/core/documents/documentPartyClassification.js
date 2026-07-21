@@ -73,7 +73,12 @@ export function normalizeDocumentPartyEntityType(value = '') {
 export function normalizeDocumentMaritalRegime(value = '') {
   const normalized = normalizeKey(value)
   if (!normalized) return ''
-  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)(_|$)/.test(normalized)) return 'single'
+  if (
+    /(^|_)(single|unmarried|divorced|widowed|not_married|never_married)(_|$)/.test(normalized) ||
+    ['not_applicable', 'not_applicable_marital_regime', 'n_a', 'na'].includes(normalized)
+  ) {
+    return 'single'
+  }
   if (
     normalized === 'married_anc' ||
     normalized === 'anc' ||

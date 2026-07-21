@@ -6284,9 +6284,9 @@ export default function LegalDocumentWorkspace({
   const documentLabel = resolveDocumentLabel(packetType)
   const previewDownloadUrl = signedPreviewUrl || generatedPreviewUrl || ''
   const hasPreviewSurface = Boolean(generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml)
-  const showInlineEditor = Boolean(editableAllowed && (isMandatePacket || centerTab === 'editor') && statusState?.packet?.id)
-  const showInlinePreview = Boolean(statusState?.packet?.id && hasPreviewSurface && (!editableAllowed || (!isMandatePacket && centerTab === 'preview')))
-  const showPreviewUnavailable = Boolean(statusState?.packet?.id && !hasPreviewSurface && (!editableAllowed || (!isMandatePacket && centerTab === 'preview')))
+  const showInlineEditor = Boolean(editableAllowed && centerTab === 'editor' && statusState?.packet?.id)
+  const showInlinePreview = Boolean(statusState?.packet?.id && hasPreviewSurface && (!editableAllowed || centerTab === 'preview'))
+  const showPreviewUnavailable = Boolean(statusState?.packet?.id && !hasPreviewSurface && (!editableAllowed || centerTab === 'preview'))
   const shellClassName = isPageMode
     ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[28px] border border-[#dfe8f3] bg-[#f5f7fb]'
     : 'mx-auto flex h-full w-full max-w-[1760px] flex-col overflow-hidden rounded-[30px] border border-[#dfe8f3] bg-[#f5f7fb] shadow-[0_28px_70px_rgba(10,24,42,0.24)]'
@@ -6375,13 +6375,34 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
 
-              <div id="document-workspace-actions" className="flex scroll-mt-24 items-start gap-2 self-start">
-                {generatedPreviewUrl && typeof onView === 'function' ? (
+              <div id="document-workspace-actions" className="flex scroll-mt-24 flex-wrap items-start gap-2 self-start">
+                {editableAllowed && legalPermissions.canEditDraft ? (
                   <Button
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => void onView?.()}
+                    onClick={() => {
+                      centerTabPreferenceRef.current = 'editor'
+                      setCenterTab('editor')
+                    }}
+                    disabled={loading || actionBusy}
+                  >
+                    <FileText size={14} />
+                    Edit
+                  </Button>
+                ) : null}
+                {hasPreviewSurface ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (generatedPreviewUrl && typeof onView === 'function') {
+                        void onView()
+                        return
+                      }
+                      handleFocusPreview()
+                    }}
                     disabled={loading || actionBusy}
                   >
                     <Eye size={14} />

@@ -129,6 +129,19 @@ test('blocks a rejected source candidate even when another source is valid', () 
   assert.equal(profile.sourceProvenance.seller_entity_type.rejectedCandidates[0].source, 'seller')
 })
 
+test('maps not applicable marital regime to single for individual mandate routing', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'individual', maritalRegime: 'not_applicable' },
+    property: { titleType: 'full_title' },
+  })
+
+  assert.equal(profile.complete, true)
+  assert.equal(profile.sellerMaritalRegime, 'single')
+  assert.equal(profile.scenarioKey, 'individual_full_title')
+  assert.deepEqual(profile.invalidFacts, [])
+})
+
 test('retains close corporation as a canonical fact while using company wording', () => {
   const profile = resolveCanonicalLegalDocumentScenario({
     packetType: 'mandate',
