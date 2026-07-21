@@ -374,6 +374,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const mainScrollRef = useRef(null)
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
+  const previousPathnameRef = useRef(location.pathname)
   const lastActivityAtRef = useRef(0)
   const lastTimerResetAtRef = useRef(0)
   const resetInactivityTimerRef = useRef(null)
@@ -551,6 +552,11 @@ function AppLayout({ onLogout, session = null, user }) {
   }, [location.pathname])
 
   useEffect(() => {
+    const previousPathname = previousPathnameRef.current
+    previousPathnameRef.current = location.pathname
+    const wasSettingsRoute = previousPathname === '/settings' || previousPathname.startsWith('/settings/')
+    if (isSettingsRoute && wasSettingsRoute) return undefined
+
     const frameId = window.requestAnimationFrame(() => {
       const mainEl = mainScrollRef.current
       if (mainEl && typeof mainEl.scrollTo === 'function') {
@@ -563,7 +569,7 @@ function AppLayout({ onLogout, session = null, user }) {
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [location.pathname])
+  }, [isSettingsRoute, location.pathname])
 
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)

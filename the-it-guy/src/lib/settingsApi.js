@@ -3195,6 +3195,110 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   }
 }
 
+function buildSellerOnboardingPortalBrandingSnapshot({ organisation = {}, onboarding = {} } = {}) {
+  const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
+    ? onboarding.agencyInformation
+    : {}
+  const branding = onboarding?.branding && typeof onboarding.branding === 'object'
+    ? onboarding.branding
+    : {}
+  const brandColours = branding.brandColours && typeof branding.brandColours === 'object'
+    ? branding.brandColours
+    : {}
+  const organisationName = normalizeText(
+    agencyInformation.tradingName ||
+      agencyInformation.agencyName ||
+      organisation.displayName ||
+      organisation.display_name ||
+      organisation.name,
+  )
+  const logoLightUrl = normalizeText(branding.logoLight || branding.logoLightUrl || branding.logo_light_url || organisation.logoUrl || organisation.logo_url)
+  const logoDarkUrl = normalizeText(branding.logoDark || branding.logoDarkUrl || branding.logo_dark_url)
+  const logoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || branding.logo_icon_url || organisation.logoIconUrl || organisation.logo_icon_url)
+  const logoUrl = logoDarkUrl || logoLightUrl || logoIconUrl
+
+  return {
+    organisationId: normalizeText(organisation.id),
+    organisationName,
+    agencyName: organisationName,
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+    logoIconUrl,
+    logoDark: logoDarkUrl,
+    logoLight: logoLightUrl,
+    primaryColour: normalizeText(brandColours.primary || branding.primaryColour || branding.primaryColor),
+    secondaryColour: normalizeText(brandColours.secondary || branding.secondaryColour || branding.secondaryColor),
+    accentColour: normalizeText(brandColours.accent || branding.accentColour || branding.accentColor),
+  }
+}
+
+async function refreshSellerOnboardingPortalBrandingSnapshots(client, { organisationId = '', portalBranding = null } = {}) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!client || !normalizedOrganisationId || !portalBranding) return { updated: 0, skipped: true }
+
+  const listingsQuery = await client
+    .from('private_listings')
+    .select('id')
+    .eq('organisation_id', normalizedOrganisationId)
+
+  if (listingsQuery.error) {
+    if (
+      isMissingTableError(listingsQuery.error, 'private_listings') ||
+      isPermissionDeniedError(listingsQuery.error)
+    ) {
+      return { updated: 0, skipped: true, reason: listingsQuery.error.message }
+    }
+    throw listingsQuery.error
+  }
+
+  const listingIds = (listingsQuery.data || []).map((row) => normalizeText(row.id)).filter(Boolean)
+  if (!listingIds.length) return { updated: 0, skipped: false }
+
+  let updated = 0
+  const batchSize = 100
+  for (let index = 0; index < listingIds.length; index += batchSize) {
+    const batchIds = listingIds.slice(index, index + batchSize)
+    const onboardingQuery = await client
+      .from('private_listing_seller_onboarding')
+      .select('id, form_data')
+      .in('private_listing_id', batchIds)
+
+    if (onboardingQuery.error) {
+      if (
+        isMissingTableError(onboardingQuery.error, 'private_listing_seller_onboarding') ||
+        isPermissionDeniedError(onboardingQuery.error)
+      ) {
+        return { updated, skipped: true, reason: onboardingQuery.error.message }
+      }
+      throw onboardingQuery.error
+    }
+
+    for (const row of onboardingQuery.data || []) {
+      const formData = row.form_data && typeof row.form_data === 'object' && !Array.isArray(row.form_data)
+        ? row.form_data
+        : {}
+      const update = await client
+        .from('private_listing_seller_onboarding')
+        .update({
+          form_data: {
+            ...formData,
+            portalBranding: {
+              ...(formData.portalBranding && typeof formData.portalBranding === 'object' ? formData.portalBranding : {}),
+              ...portalBranding,
+            },
+          },
+        })
+        .eq('id', row.id)
+
+      if (update.error) throw update.error
+      updated += 1
+    }
+  }
+
+  return { updated, skipped: false }
+}
+
 export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
@@ -3260,6 +3364,18 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
 
   if (error) {
     throw error
+  }
+
+  try {
+    await refreshSellerOnboardingPortalBrandingSnapshots(client, {
+      organisationId: context.organisation.id,
+      portalBranding: buildSellerOnboardingPortalBrandingSnapshot({
+        organisation: context.organisation,
+        onboarding: mergedDraft,
+      }),
+    })
+  } catch (brandingSnapshotError) {
+    console.warn('[Settings] seller onboarding branding snapshot refresh skipped.', brandingSnapshotError)
   }
 
   if (shouldSyncCommercialAccess && commercialSync.installed) {

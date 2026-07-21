@@ -1273,9 +1273,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     applyOrganisationState,
     refreshOrganisation,
   } = useOrganisation()
-  const [state, setState] = useState(null)
-  const [initialState, setInitialState] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState(() => organisationContextState || null)
+  const [initialState, setInitialState] = useState(() => organisationContextState || null)
+  const [loading, setLoading] = useState(() => !organisationContextState)
   const [saving, setSaving] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [brandPreviewTab, setBrandPreviewTab] = useState('portal')

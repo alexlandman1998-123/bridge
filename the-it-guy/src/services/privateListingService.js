@@ -1862,6 +1862,12 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     ? onboardingFormData.portalBranding
     : {}
   const resolvedPortalBranding = resolveOnboardingBranding(portalBranding)
+  const portalBrandingOrganisationId = normalizeUuid(
+    portalBranding.organisationId ||
+      portalBranding.organisation_id ||
+      portalBranding.organizationId ||
+      portalBranding.organization_id,
+  )
   const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
   const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
@@ -1963,7 +1969,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
 
   const mapped = {
     id: row.id,
-    organisationId: row.organisation_id || null,
+    organisationId: row.organisation_id || portalBrandingOrganisationId || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
     assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
