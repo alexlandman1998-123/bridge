@@ -396,7 +396,9 @@ export function OnboardingSectionHeader({
 }) {
   const Icon = typeof icon === 'string' ? (SECTION_ICONS[icon] || FileCheck2) : icon
   const accentClasses =
-    accent === 'green'
+    accent === 'brand'
+      ? 'border-[color:var(--seller-brand-primary-border)] bg-white text-[color:var(--seller-brand-primary)]'
+      : accent === 'green'
       ? 'border-[#d7eadf] bg-white text-[#137a4a]'
       : 'border-[#dbe5ef] bg-white text-[#35546c]'
 
@@ -422,11 +424,15 @@ export function OnboardingSummaryCard({
 }) {
   const Icon = typeof icon === 'string' ? (SECTION_ICONS[icon] || CheckCircle2) : icon
   const toneClasses =
-    tone === 'green'
+    tone === 'brand'
+      ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)]'
+      : tone === 'green'
       ? 'border-[#cfe8da] bg-[#f4fbf7] text-[#14532d]'
       : 'border-[#dbe6f2] bg-[#f8fbff] text-[#22364a]'
   const iconClasses =
-    tone === 'green'
+    tone === 'brand'
+      ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary)] text-white'
+      : tone === 'green'
       ? 'border-[#b9dec8] bg-[#2f8f64] text-white'
       : 'border-[#d6e1ee] bg-white text-[#35546c]'
 

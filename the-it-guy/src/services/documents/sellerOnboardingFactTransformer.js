@@ -123,6 +123,25 @@ function normalizeRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function formatAddressObject(value = {}) {
+  const record = normalizeRecord(value)
+  return normalizeText(
+    record.formatted ||
+      record.fullAddress ||
+      record.full_address ||
+      record.address ||
+      [
+        record.line1 || record.line_1 || record.addressLine1 || record.address_line_1 || record.street,
+        record.line2 || record.line_2 || record.addressLine2 || record.address_line_2,
+        record.suburb,
+        record.city || record.town,
+        record.province || record.state,
+        record.postalCode || record.postal_code,
+        record.country,
+      ].filter(Boolean).join(', '),
+  )
+}
+
 function hasValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'boolean') return value
@@ -167,10 +186,18 @@ function resolveSellerResidentialAddress(form = {}) {
   return normalizeText(
     form.residentialAddress ||
       form.sellerResidentialAddress ||
+      form.residential_address ||
+      form.seller_residential_address ||
       form.physicalAddress ||
+      form.physical_address ||
       form.domiciliumAddress ||
       form.domicilium_address ||
-      form.address,
+      form.address ||
+      formatAddressObject(form.residentialAddressDetails) ||
+      formatAddressObject(form.sellerResidentialAddressDetails) ||
+      formatAddressObject(form.seller_residential_address_details) ||
+      formatAddressObject(form.seller?.residential_address) ||
+      formatAddressObject(form.seller?.residentialAddress),
   )
 }
 
