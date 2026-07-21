@@ -11,7 +11,7 @@ const server = await createServer({
 try {
   const authBootSource = await readFile(new URL('../src/lib/authBoot.js', import.meta.url), 'utf8')
   const loadBridgeAuthStateStart = authBootSource.indexOf('export async function loadBridgeAuthState')
-  const profileLoadStart = authBootSource.indexOf('const [profile, loadedSignupIntent]', loadBridgeAuthStateStart)
+  const profileLoadStart = authBootSource.indexOf('let profile = buildDefaultProfileFromUser(user)', loadBridgeAuthStateStart)
   const bridgeUserResolution = authBootSource.slice(loadBridgeAuthStateStart, profileLoadStart)
 
   assert.ok(loadBridgeAuthStateStart >= 0)

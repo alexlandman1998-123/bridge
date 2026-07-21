@@ -816,10 +816,11 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   if (authState.status === 'error') {
+    const dataServiceUnavailable = String(profileError || '').includes('data service is temporarily unavailable')
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>We couldn’t load your Arch9 account.</h2>
+          <h2>{dataServiceUnavailable ? 'Arch9 is temporarily unavailable.' : 'We couldn’t load your Arch9 account.'}</h2>
           <p>{profileError || 'Authentication boot failed.'}</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button

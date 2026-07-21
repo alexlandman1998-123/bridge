@@ -1,10 +1,10 @@
-import { getOrCreateUserProfile } from './profileApi'
+import { buildDefaultProfileFromUser, getOrCreateUserProfile } from './profileApi'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { SIGNUP_INTENT_STATUSES } from '../constants/signupIntents'
-import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
+import { getSignupIntentFallbackForUser, loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
 
@@ -17,6 +17,32 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.noActiveMembership,
   ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
 ])
+
+const PROFILE_BOOT_TIMEOUT_MS = 8000
+const SIGNUP_INTENT_BOOT_TIMEOUT_MS = 4000
+const WORKSPACE_BOOT_TIMEOUT_MS = 12000
+
+function createAuthBackendTimeoutError(step, timeoutMs) {
+  const error = new Error(`Arch9 data service did not respond while loading ${step}.`)
+  error.code = 'AUTH_BACKEND_UNAVAILABLE'
+  error.step = step
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+async function withAuthBootStepTimeout(task, { step, timeoutMs }) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => reject(createAuthBackendTimeoutError(step, timeoutMs)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -223,21 +249,60 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   const user = session.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
-  const [profile, loadedSignupIntent] = await Promise.all([
-    runAuthBootStep('profile.getOrCreate', () => getOrCreateUserProfile({ user }), {
+  let profile = buildDefaultProfileFromUser(user)
+  try {
+    profile = await runAuthBootStep(
+      'profile.getOrCreate',
+      () => withAuthBootStepTimeout(getOrCreateUserProfile({ user }), {
+        step: 'profile.getOrCreate',
+        timeoutMs: PROFILE_BOOT_TIMEOUT_MS,
+      }),
+      { userId: user.id },
+    )
+  } catch (error) {
+    if (error?.code !== 'AUTH_BACKEND_UNAVAILABLE') throw error
+    console.warn('[AUTH] profile bootstrap timed out; using session profile fallback.', {
       userId: user.id,
-    }),
-    runAuthBootStep('signupIntent.load', () => loadSignupIntentForUser({ user }), {
-      userId: user.id,
-    }),
-  ])
-  const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
-    ? await runAuthBootStep(
-        'signupIntent.markReady',
-        () => markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent }),
+      error,
+    })
+  }
+
+  let loadedSignupIntent = getSignupIntentFallbackForUser(user)
+  if (!loadedSignupIntent) {
+    try {
+      loadedSignupIntent = await runAuthBootStep(
+        'signupIntent.load',
+        () => withAuthBootStepTimeout(loadSignupIntentForUser({ user }), {
+          step: 'signupIntent.load',
+          timeoutMs: SIGNUP_INTENT_BOOT_TIMEOUT_MS,
+        }),
         { userId: user.id },
       )
-    : loadedSignupIntent || null
+    } catch (error) {
+      console.warn('[AUTH] signup intent bootstrap timed out; continuing without it.', {
+        userId: user.id,
+        error,
+      })
+    }
+  }
+  let signupIntent = loadedSignupIntent || null
+  if (signupIntent && signupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding) {
+    try {
+      signupIntent = await runAuthBootStep(
+        'signupIntent.markReady',
+        () => withAuthBootStepTimeout(markSignupIntentReadyForOnboarding({ user, intent: signupIntent }), {
+          step: 'signupIntent.markReady',
+          timeoutMs: SIGNUP_INTENT_BOOT_TIMEOUT_MS,
+        }),
+        { userId: user.id },
+      )
+    } catch (error) {
+      console.warn('[AUTH] signup intent update did not complete during bootstrap; continuing with the existing intent.', {
+        userId: user.id,
+        error,
+      })
+    }
+  }
   const appRole = normalizeCanonicalAppRole(profile?.role)
 
   if (!isCanonicalAppRole(appRole)) {
@@ -249,11 +314,14 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
 
   let workspaceResolution = await runAuthBootStep(
     'workspace.resolveCurrentWorkspace',
-    () => resolveCurrentWorkspace(user.id, {
-      client: supabase,
-      user,
-      profile,
-      requestedWorkspaceId: selectedWorkspaceId,
+    () => withAuthBootStepTimeout(resolveCurrentWorkspace(user.id, {
+        client: supabase,
+        user,
+        profile,
+        requestedWorkspaceId: selectedWorkspaceId,
+      }), {
+        step: 'workspace.resolveCurrentWorkspace',
+        timeoutMs: WORKSPACE_BOOT_TIMEOUT_MS,
     }),
     {
       userId: user.id,

@@ -259,6 +259,12 @@ export async function loadSignupIntentForUser({ user = null } = {}) {
     }
   }
 
+  return getSignupIntentFallbackForUser(user)
+}
+
+export function getSignupIntentFallbackForUser(user = null) {
+  if (!user?.id) return null
+
   const metadataIntent = normalizeSignupIntent(user.user_metadata?.signup_intent)
   if (metadataIntent) {
     const readyIntent = {

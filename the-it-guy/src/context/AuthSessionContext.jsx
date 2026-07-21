@@ -352,6 +352,10 @@ export function AuthSessionProvider({ children }) {
         })
       } catch (error) {
         if (!active) return
+        const backendUnavailable = error?.code === 'AUTH_BACKEND_UNAVAILABLE'
+        const bootError = backendUnavailable
+          ? 'Arch9’s data service is temporarily unavailable. Your sign-in is still active; please try again in a moment.'
+          : error?.message || 'Unable to load your Arch9 workspace.'
         console.error('[AUTH] bridge-boot:failed', {
           error,
           userId: session.user.id,
@@ -368,7 +372,7 @@ export function AuthSessionProvider({ children }) {
           status: 'error',
           session,
           user: session.user,
-          bootError: error?.message || 'Unable to load your Arch9 workspace.',
+          bootError,
         })
       }
     }
