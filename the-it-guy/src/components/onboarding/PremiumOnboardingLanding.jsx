@@ -41,9 +41,9 @@ const REASSURANCE_ROWS = [
 ]
 
 const DEFAULT_THEME = {
-  primary: '#001a3d',
-  secondary: '#001b44',
-  accent: '#f7cf22',
+  primary: '#494b8a',
+  secondary: '#000000',
+  accent: '#ceac69',
 }
 
 function normalizePortalType(value = '') {
