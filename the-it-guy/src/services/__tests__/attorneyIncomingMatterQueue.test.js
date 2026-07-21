@@ -24,6 +24,7 @@ try {
       {
         allocation_id: 'allocation-awaiting-buyer',
         private_listing_id: 'listing-1',
+        agency_organisation_id: 'agency-mandate',
         listing_reference: 'PL-MANDATE',
         property_label: '9 Mandate Avenue',
         seller_name: 'Mandate Seller',
@@ -115,6 +116,7 @@ try {
     transactions: [
       {
         id: 'tx-awaiting-otp',
+        organisation_id: 'agency-transfer',
         buyer_id: 'buyer-1',
         unit_id: 'unit-1',
         transaction_reference: 'TRF-OTP',
@@ -127,6 +129,7 @@ try {
       },
       {
         id: 'tx-docs',
+        organisation_id: 'agency-transfer',
         buyer_id: 'buyer-2',
         unit_id: 'unit-2',
         transaction_reference: 'TRF-DOCS',
@@ -139,6 +142,7 @@ try {
       },
       {
         id: 'tx-ready',
+        organisation_id: 'agency-ready',
         buyer_id: 'buyer-3',
         unit_id: 'unit-3',
         transaction_reference: 'TRF-READY',
@@ -151,6 +155,7 @@ try {
       },
       {
         id: 'tx-pre',
+        organisation_id: 'agency-transfer',
         buyer_id: 'buyer-4',
         unit_id: 'unit-4',
         transaction_reference: 'TRF-PRE',
@@ -162,6 +167,7 @@ try {
       },
       {
         id: 'tx-accepted',
+        organisation_id: 'agency-transfer',
         buyer_id: 'buyer-5',
         unit_id: 'unit-5',
         transaction_reference: 'TRF-ACTIVE',
@@ -236,6 +242,11 @@ try {
       { id: 'att-1', full_name: 'Sarah Conveyancer', email: 'sarah@example.com' },
       { id: 'att-2', full_name: 'John Transfer', email: 'john@example.com' },
     ],
+    sourceOrganisations: [
+      { id: 'agency-mandate', display_name: 'Mandate Realty', logo_url: 'https://cdn.example.test/mandate.png', type: 'agency' },
+      { id: 'agency-transfer', display_name: 'Transfer Realty', logo_url: 'https://cdn.example.test/transfer.png', type: 'agency' },
+      { id: 'agency-ready', display_name: 'Ready Realty', logo_url: 'https://cdn.example.test/ready.png', type: 'agency' },
+    ],
   }
 
   {
@@ -259,7 +270,11 @@ try {
     assert.deepEqual(queue.rows[0].waitingOn, ['buyer'])
     assert.equal(queue.rows[0].actionHref, '/legal-documents/packet-mandate')
     assert.equal(queue.rows[0].transactionId, '')
+    assert.equal(queue.rows[0].assignedFrom.name, 'Mandate Realty')
+    assert.equal(queue.rows[0].assignedFrom.logoUrl, 'https://cdn.example.test/mandate.png')
     assert.deepEqual(queue.rows[1].waitingOn, ['signed_otp', 'documents'])
+    assert.equal(queue.rows[1].assignedFrom.name, 'Transfer Realty')
+    assert.equal(queue.rows[1].assignedFrom.logoUrl, 'https://cdn.example.test/transfer.png')
     assert.equal(queue.rows[2].documents.reviewCount, 1)
     assert.equal(queue.rows[3].nextAction, 'Accept the transfer instruction.')
   }

@@ -88,6 +88,7 @@ import { buildDocumentRoleActions } from '../../core/documents/documentRoleActio
 import { buildDocumentResponsibility } from '../../core/documents/documentResponsibility'
 import { buildDocumentHelpRecovery } from '../../core/documents/documentHelpRecovery'
 import { buildDocumentJourneyProgress } from '../../core/documents/documentJourneyProgress'
+import { getConditionalMasterPackDefinitions } from '../../core/documents/conditionalMasterTemplateDefinitions'
 import { buildDocumentMobileAction } from '../../core/documents/documentMobileAction'
 import { buildDocumentAccessibility } from '../../core/documents/documentAccessibility'
 import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
@@ -907,6 +908,11 @@ function convertManifestToEditableSections({
 } = {}) {
   const snapshotSections = Array.isArray(editableSnapshot?.sections) ? editableSnapshot.sections : []
   const snapshotByKey = new Map(snapshotSections.map((row) => [normalizeText(row?.key), row]))
+  const protectedConditionalPackKeys = new Set(
+    getConditionalMasterPackDefinitions(packetType)
+      .map((pack) => normalizeText(pack?.key))
+      .filter(Boolean),
+  )
   let sourceRows = Array.isArray(manifest) ? manifest : []
   const manifestHasMandateIntro = sourceRows.some((section) => normalizeKey(section?.key) === 'introduction_purpose')
   const snapshotMandateIntro = snapshotSections.find((section) => normalizeKey(section?.key) === 'introduction_purpose')
@@ -931,7 +937,7 @@ function convertManifestToEditableSections({
   const sourceKeySet = new Set(sourceRows.map((section) => normalizeText(section?.key)).filter(Boolean))
   const snapshotOnlyRows = snapshotSections.filter((section) => {
     const key = normalizeText(section?.key)
-    return key && !sourceKeySet.has(key)
+    return key && !sourceKeySet.has(key) && !protectedConditionalPackKeys.has(key)
   })
   if (snapshotOnlyRows.length) {
     sourceRows = [...sourceRows, ...snapshotOnlyRows]

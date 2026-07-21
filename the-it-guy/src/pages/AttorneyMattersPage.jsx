@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import OrganisationAvatar from '../components/organisation/OrganisationAvatar'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
   ATTORNEY_MATTER_PAGE_SIZES,
@@ -548,6 +549,22 @@ function Assignee({ person }) {
   )
 }
 
+function AssignedFrom({ organisation }) {
+  const source = organisation?.name ? organisation : { name: 'Source agency' }
+  return (
+    <div className="flex min-w-[160px] items-center gap-2">
+      <OrganisationAvatar
+        organisation={source}
+        size="sm"
+        showName
+        className="bg-white"
+        imageClassName="p-1"
+        nameClassName="text-sm font-medium text-slate-700"
+      />
+    </div>
+  )
+}
+
 function getMatterPreview(row = {}) {
   return {
     matterId: row.matterId,
@@ -714,7 +731,7 @@ function IncomingMattersTable({
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Waiting On</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Documents</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Since</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned To</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned From</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Next Action</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
             </tr>
@@ -773,7 +790,7 @@ function IncomingMattersTable({
                     </p>
                     <p className="mt-1 text-xs font-medium text-slate-500">{formatIncomingAge(row.incomingAgeDays)} in queue</p>
                   </td>
-                  <td className="px-4 py-3"><Assignee person={row.assignedAttorney} /></td>
+                  <td className="px-4 py-3"><AssignedFrom organisation={row.assignedFrom} /></td>
                   <td className="min-w-[240px] px-4 py-3">
                     <p className="font-semibold leading-5 text-slate-800">{row.nextAction}</p>
                     <div className="mt-2 hidden flex-wrap gap-3 group-hover:flex">

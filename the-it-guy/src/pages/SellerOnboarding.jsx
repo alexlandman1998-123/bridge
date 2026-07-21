@@ -277,7 +277,9 @@ const SECTION_CARD_CLASS =
 const INNER_PANEL_CLASS =
   'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[color:var(--seller-brand-primary)] focus:ring-2 focus:ring-[color:var(--seller-brand-primary-soft)] sm:rounded-[18px]'
+  'box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium leading-5 text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[color:var(--seller-brand-primary)] focus:ring-2 focus:ring-[color:var(--seller-brand-primary-soft)] sm:rounded-[18px]'
+const DETAIL_TEXTAREA_CLASS =
+  'box-border w-full min-w-0 max-w-full rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-sm font-medium leading-5 text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[color:var(--seller-brand-primary)] focus:ring-2 focus:ring-[color:var(--seller-brand-primary-soft)] sm:rounded-[18px] sm:text-[15px]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const SELLER_BRAND_DEFAULTS = {
@@ -1841,7 +1843,7 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, illustration = '', children, mobilePane = true, mobilePaneIndex = null }) {
   const { paneIndex, mobilePaneClassName } = useMobileQuestionPane(mobilePane, mobilePaneIndex)
   return (
-    <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
+    <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
       {illustration ? (
         <div className="mb-5 sm:hidden">
           <SellerOnboardingIllustration variant={illustration} />
@@ -2303,7 +2305,7 @@ function PropertyDisclosureSection({
             <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
               21. Comments or explanation for any of the above
               <textarea
-                className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
+                className={`${DETAIL_TEXTAREA_CLASS} min-h-[150px] resize-y`}
                 value={normalized.comments}
                 onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
                 placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
@@ -4416,7 +4418,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <div className="mt-3 grid grid-cols-1 gap-3">
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Authority Details
-                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.executorAuthorityDetails} onChange={(event) => handleFormUpdate('executorAuthorityDetails', event.target.value)} placeholder="Letters of executorship, master's office reference, or other authority detail" />
+                          <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.executorAuthorityDetails} onChange={(event) => handleFormUpdate('executorAuthorityDetails', event.target.value)} placeholder="Letters of executorship, master's office reference, or other authority detail" />
                         </label>
                       </div>
                     </article>
@@ -4462,7 +4464,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <div className="mt-3 grid grid-cols-1 gap-3">
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Authority Details
-                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.powerOfAttorneyAuthorityDetails} onChange={(event) => handleFormUpdate('powerOfAttorneyAuthorityDetails', event.target.value)} placeholder="Reference number, scope of authority, or signing instruction" />
+                          <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.powerOfAttorneyAuthorityDetails} onChange={(event) => handleFormUpdate('powerOfAttorneyAuthorityDetails', event.target.value)} placeholder="Reference number, scope of authority, or signing instruction" />
                         </label>
                       </div>
                     </article>
@@ -4589,12 +4591,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       ))}
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                  <div className="grid min-w-0 max-w-full gap-4 sm:grid-cols-2">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate start date
                       <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateStartDate || ''} onChange={(event) => handleFormUpdate('mandateStartDate', event.target.value)} />
                     </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate end date
                       <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
                     </label>
@@ -4625,7 +4627,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Anything else to include? (optional)
                     <textarea
-                      className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
+                      className={`${DETAIL_TEXTAREA_CLASS} min-h-[120px] resize-y`}
                       value={form.additionalConditions || ''}
                       onChange={(event) => handleFormUpdate('additionalConditions', event.target.value)}
                       placeholder="Access rules, timing, exclusions, or anything your agent should include in the mandate."
@@ -4969,7 +4971,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                         Operating context
                         <textarea
-                          className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`}
+                          className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`}
                           value={form.commercialUseDescription}
                           onChange={(event) => handleFormUpdate('commercialUseDescription', event.target.value)}
                           placeholder="Offices, retail, tenant mix, storage, services, trading, etc."
@@ -5127,7 +5129,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                       Notes (optional)
-                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about utility accounts, costs, or pricing" />
+                      <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about utility accounts, costs, or pricing" />
                     </label>
                   </div>
                 </FormSection>
@@ -5467,7 +5469,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       </section>
       )}
 
-      <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      <footer className="hidden flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] md:flex md:flex-row md:items-center md:justify-between md:text-left">
         <span>Secure seller onboarding powered by arch9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
       </footer>
@@ -5512,7 +5514,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               <DraftSaveStatus
                 status={saving ? 'saving' : draftSyncStatus}
                 savedAt={lastDraftSavedAt}
-                fallback="Secure seller onboarding"
+                fallback=""
               />
               <div className="flex shrink-0 items-center gap-1.5">
                 {currentStep > 0 || activeMobilePaneIndex > 0 ? (
@@ -5543,6 +5545,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <CheckCircle2 size={14} />
               </Button>
             ) : null}
+            <footer className="flex flex-col gap-1 pt-1 text-center text-xs leading-5 text-[#7d8ea3]">
+              <span>Secure seller onboarding powered by arch9</span>
+              <span>Need help? Contact {resolveAgentName(listing)}.</span>
+            </footer>
           </div>
         </div>
       </div>

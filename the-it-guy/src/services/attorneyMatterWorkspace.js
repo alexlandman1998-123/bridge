@@ -287,6 +287,7 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const stage = getIncomingMatterStage(row)
   const health = getIncomingMatterHealth(row)
   const assignedAttorneyName = row.assignedAttorney?.name || 'Unassigned'
+  const assignedFromName = row.assignedFrom?.name || row.sourceOrganisation?.name || row.agent || 'Source agency'
   const assignedAssistant = row.assignedSecretary?.id ? row.assignedSecretary : row.assignedAdminHandler
   const assistantName = assignedAssistant?.name || ''
   const waitingOnLabels = Array.isArray(row.waitingOnLabels) ? row.waitingOnLabels : []
@@ -322,6 +323,15 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
       id: row.assignedAttorney?.id || '',
       name: assignedAttorneyName,
       initials: row.assignedAttorney?.initials || getInitials(assignedAttorneyName),
+    },
+    assignedFrom: {
+      id: row.assignedFrom?.id || row.sourceOrganisation?.id || '',
+      name: assignedFromName,
+      displayName: assignedFromName,
+      initials: row.assignedFrom?.initials || row.sourceOrganisation?.initials || getInitials(assignedFromName),
+      logoUrl: row.assignedFrom?.logoUrl || row.assignedFrom?.logo_url || row.sourceOrganisation?.logoUrl || row.sourceOrganisation?.logo_url || '',
+      logo_url: row.assignedFrom?.logo_url || row.assignedFrom?.logoUrl || row.sourceOrganisation?.logo_url || row.sourceOrganisation?.logoUrl || '',
+      type: row.assignedFrom?.type || row.sourceOrganisation?.type || 'agency',
     },
     assignedAssistant: {
       id: assignedAssistant?.id || '',
@@ -364,6 +374,7 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     nextRow.development,
     nextRow.unit,
     nextRow.assignedAttorney.name,
+    nextRow.assignedFrom.name,
     nextRow.assignedAssistant.name,
     nextRow.agent,
     nextRow.stage.label,
