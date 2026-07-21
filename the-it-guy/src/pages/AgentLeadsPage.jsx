@@ -8679,7 +8679,7 @@ function AgentLeadList() {
         </div>
       </header>
 
-      <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
+      <section className="relative overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
         <div className="border-b border-slate-200/80">
           <LeadTypeTabs activeCategory={primaryView} rows={rows} onChange={setFilters} />
         </div>

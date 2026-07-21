@@ -2402,8 +2402,11 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const logoDarkUrl = resolvedBranding.logoDarkUrl
     const logoIconUrl = resolvedBranding.logoIconUrl
     const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
+    const primaryColour = resolvedBranding.primaryColour
+    const secondaryColour = resolvedBranding.secondaryColour
+    const accentColour = resolvedBranding.accentColour
 
-    if (!organisationName && !logoUrl) return null
+    if (!organisationName && !logoUrl && !primaryColour && !secondaryColour && !accentColour) return null
     return {
       organisationId: normalizedOrganisationId,
       organisationName,
@@ -2414,9 +2417,9 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       logoIconUrl,
       logoDark: logoDarkUrl,
       logoLight: logoLightUrl,
-      primaryColour: pickFirstText(resolvedBranding.primaryColour, '#274C69'),
-      secondaryColour: pickFirstText(resolvedBranding.secondaryColour, '#10273A'),
-      accentColour: resolvedBranding.accentColour,
+      primaryColour: pickFirstText(primaryColour, '#274C69'),
+      secondaryColour: pickFirstText(secondaryColour, '#10273A'),
+      accentColour: pickFirstText(accentColour, '#F7CF22'),
     }
   } catch (error) {
     console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {

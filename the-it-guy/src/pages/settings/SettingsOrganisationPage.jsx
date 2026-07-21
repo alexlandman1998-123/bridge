@@ -981,11 +981,13 @@ function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationNam
     <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-[#0b1728] shadow-[0_16px_34px_rgba(15,23,42,0.12)]">
       <div className="p-5 text-white sm:p-6" style={{ background: overlay }}>
         <div className="flex items-center gap-3">
-          <div className="flex min-w-0 items-center">
-            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/15 bg-white/10 p-2 text-sm font-semibold text-white">
-              {logoUrl || iconUrl ? <img src={logoUrl || iconUrl} alt="" className="h-full w-full object-contain" /> : getInitials(organisationName)}
+          {logoUrl || iconUrl ? (
+            <img src={logoUrl || iconUrl} alt="" className="h-14 w-auto max-w-[220px] object-contain drop-shadow-[0_14px_28px_rgba(0,0,0,0.3)]" />
+          ) : (
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-white/15 bg-white/10 text-sm font-semibold text-white">
+              {getInitials(organisationName)}
             </span>
-          </div>
+          )}
         </div>
 
         <div className="mt-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
