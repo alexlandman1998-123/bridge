@@ -611,16 +611,23 @@ async function createDocumentPacketVersionSafely(input = {}) {
   try {
     return await createDocumentPacketVersion(input)
   } catch (error) {
+    const originalCode = normalizeText(error?.code || error?.details?.code || error?.details)
+    const originalMessage = normalizeText(error?.message || error)
     console.error('[PACKETS] packet version creation failed', {
       packetId: normalizeText(input?.packetId) || null,
       renderStatus: normalizeText(input?.renderStatus) || null,
-      code: error?.code || null,
-      message: error?.message || null,
+      code: originalCode || null,
+      message: originalMessage || null,
     })
     throw createPacketError(
       'PACKET_VERSION_CREATE_FAILED',
       toFriendlyGenerationMessage('PACKET_VERSION_CREATE_FAILED'),
-      { cause: error },
+      {
+        cause: error,
+        originalCode: originalCode || null,
+        originalMessage: originalMessage || null,
+        causedByTimeout: isRetryablePacketError(error),
+      },
     )
   }
 }
@@ -1192,6 +1199,7 @@ async function withPacketRetries(task, { attempts = 2, retryDelayMs = 450 } = {}
 }
 
 const PACKET_GENERATION_TIMEOUT_MS = 10000
+const PACKET_GENERATION_LEASE_TTL_SECONDS = 120
 const FINAL_SIGNED_GENERATION_TIMEOUT_MS = 45000
 
 function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {
@@ -2735,7 +2743,7 @@ export async function generatePacketVersion({
     const claimed = await claimDocumentPacketGenerationLease({
       packetId: targetPacketId,
       generationAttemptId,
-      ttlSeconds: 300,
+      ttlSeconds: PACKET_GENERATION_LEASE_TTL_SECONDS,
     })
     if (!claimed) {
       const leaseStatus = await getDocumentPacketGenerationLeaseStatus({
@@ -3039,7 +3047,7 @@ export async function generatePacketVersion({
         }).catch(() => null)
         const error = createPacketError(failureCode, failureMessage, {
           generationStatus: 'active',
-          retryAfterSeconds: 300,
+          retryAfterSeconds: PACKET_GENERATION_LEASE_TTL_SECONDS,
           safeToRetry: false,
           resultAmbiguous: true,
         })
@@ -3151,78 +3159,123 @@ export async function generatePacketVersion({
       })
     }
 
-    const version = await createDocumentPacketVersionSafely({
-      packetId: packet.id,
-      renderStatus,
-      renderedDocumentId: artifact.renderedDocumentId,
-      renderedFilePath: artifact.renderedFilePath,
-      renderedFileName: artifact.renderedFileName,
-      renderedFileUrl: artifact.renderedFileUrl,
-      placeholdersResolvedJson: pdfPlaceholders,
-      placeholdersMissingJson: validation.missingPlaceholders,
-      sectionManifestJson: validation.sectionManifest,
-      validationSummaryJson: {
-        ...buildValidationSummary(validation),
-        generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
-        previewOnly: previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
-        pilotFallback,
-        generationPayload,
-        templateVersion,
-        templateResolution: prepared.templateResolution || null,
+    let version = null
+    try {
+      version = await createDocumentPacketVersionSafely({
+        packetId: packet.id,
+        renderStatus,
+        renderedDocumentId: artifact.renderedDocumentId,
+        renderedFilePath: artifact.renderedFilePath,
+        renderedFileName: artifact.renderedFileName,
+        renderedFileUrl: artifact.renderedFileUrl,
+        placeholdersResolvedJson: pdfPlaceholders,
+        placeholdersMissingJson: validation.missingPlaceholders,
+        sectionManifestJson: validation.sectionManifest,
+        validationSummaryJson: {
+          ...buildValidationSummary(validation),
+          generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
+          previewOnly: previewOnlyGeneration,
+          previewOnlyReason: previewOnlyReason || null,
+          pilotFallback,
+          generationPayload,
+          templateVersion,
+          templateResolution: prepared.templateResolution || null,
+          generatedAt,
+          generationAttemptId,
+          render_provenance: renderProvenance,
+          artifact_provenance: artifactProvenance,
+          native_render_attestation: artifact.renderAttestation,
+          generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+          missingFieldsSnapshot:
+            context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+          warningsSnapshot: buildWarningsSnapshot(context, validation),
+          sourceContext: sourceContextSnapshot,
+          readOnlyAnnexures,
+          annexures: readOnlyAnnexures,
+        },
+        generatedBy: context?.generatedByUserId || null,
         generatedAt,
-        generationAttemptId,
-        render_provenance: renderProvenance,
-        artifact_provenance: artifactProvenance,
-        native_render_attestation: artifact.renderAttestation,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot:
-          context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: buildWarningsSnapshot(context, validation),
-        sourceContext: sourceContextSnapshot,
-        readOnlyAnnexures,
-        annexures: readOnlyAnnexures,
-      },
-      generatedBy: context?.generatedByUserId || null,
+      })
+    } catch (versionError) {
+      await addPacketEvent({
+        packetId: packet.id,
+        organisationId: packet.organisation_id,
+        eventType: 'generation_version_persist_failed',
+        eventPayload: {
+          packetType: validation.packetType,
+          generationAttemptId,
+          generatedAt,
+          failureCode: versionError?.code || 'PACKET_VERSION_CREATE_FAILED',
+          causedByTimeout: Boolean(versionError?.details?.causedByTimeout),
+          message: 'Document rendering completed, but the generated packet version could not be saved.',
+        },
+      }).catch(() => null)
+      const error = createPacketError(
+        'PACKET_VERSION_CREATE_FAILED',
+        toFriendlyGenerationMessage('PACKET_VERSION_CREATE_FAILED'),
+        {
+          safeToRetry: true,
+          generationPhase: 'version_persist',
+          causedByTimeout: Boolean(versionError?.details?.causedByTimeout),
+          originalCode: versionError?.details?.originalCode || versionError?.code || null,
+        },
+      )
+      error.validation = validation
+      error.packetId = packet.id
+      throw error
+    }
+
+    const generatedSourceContext = {
+      ...(packet?.source_context_json || {}),
+      lastGeneratedVersion: version.version_number,
+      previewOnlyGeneration,
+      previewOnlyReason: previewOnlyReason || null,
+      pilotFallback,
+      generationPayload,
+      templateVersion,
       generatedAt,
-    })
-
-    const updatedPacket = await updatePacketFresh(packet.id, {
+      renderProvenance,
+      artifactProvenance,
+      generationAttemptId,
+      templateResolutionSource: generationPayload.templateResolutionSource || null,
+      mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+      mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
+      mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
+      mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      missingFieldsSnapshot:
+        context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
+      sourceContext: sourceContextSnapshot,
+      readOnlyAnnexures,
+      annexures: readOnlyAnnexures,
+    }
+    const updatedPacket = {
+      ...(packet || {}),
       status: 'generated',
-      sourceContextJson: {
-        ...(packet?.source_context_json || {}),
-        lastGeneratedVersion: version.version_number,
-        previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
-        pilotFallback,
-        generationPayload,
-        templateVersion,
-        generatedAt,
-        renderProvenance,
-        artifactProvenance,
-        generationAttemptId,
-        templateResolutionSource: generationPayload.templateResolutionSource || null,
-        mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
-        mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
-        mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
-        mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
-        mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
-        legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
-        legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
-        mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
-        mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot:
-          context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: buildWarningsSnapshot(context, validation),
-        sourceContext: sourceContextSnapshot,
-        readOnlyAnnexures,
-        annexures: readOnlyAnnexures,
-      },
+      current_version_number: version.version_number,
+      source_context_json: generatedSourceContext,
+      branding_snapshot_json: validation.branding || {},
+      updated_at: new Date().toISOString(),
+    }
+    void updatePacketFresh(packet.id, {
+      status: 'generated',
+      sourceContextJson: generatedSourceContext,
       brandingSnapshotJson: validation.branding || {},
+    }).catch((packetUpdateError) => {
+      console.warn('[PACKETS] generated packet metadata update skipped after version creation.', {
+        packetId: packet.id,
+        generationAttemptId,
+        code: packetUpdateError?.code || null,
+      })
     })
 
-    await addPacketEvent({
+    void addPacketEvent({
       packetId: packet.id,
       organisationId: packet.organisation_id,
       versionId: version.id,
@@ -3262,6 +3315,13 @@ export async function generatePacketVersion({
             ? 'Commercial document was generated successfully.'
             : 'Mandate was generated successfully.',
       },
+    }).catch((eventError) => {
+      console.warn('[PACKETS] generated version audit event skipped.', {
+        packetId: packet.id,
+        versionId: version.id,
+        generationAttemptId,
+        code: eventError?.code || null,
+      })
     })
 
     if (
@@ -3269,7 +3329,7 @@ export async function generatePacketVersion({
       !previewOnlyGeneration &&
       version.rendered_file_path
     ) {
-      await addPacketEvent({
+      void addPacketEvent({
         packetId: packet.id,
         organisationId: packet.organisation_id,
         versionId: version.id,
@@ -3284,6 +3344,13 @@ export async function generatePacketVersion({
             ? 'Commercial document PDF was created.'
             : 'Mandate PDF was created.',
         },
+      }).catch((eventError) => {
+        console.warn('[PACKETS] generated PDF audit event skipped.', {
+          packetId: packet.id,
+          versionId: version.id,
+          generationAttemptId,
+          code: eventError?.code || null,
+        })
       })
     }
 

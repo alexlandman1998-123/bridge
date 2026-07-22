@@ -93,6 +93,7 @@ import { buildDocumentAccessibility } from '../../core/documents/documentAccessi
 import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../../core/documents/documentOutcomeFeedback'
 import { recordDocumentExperienceEvent } from '../../services/documentExperienceTelemetryService'
+import { recordPerformanceMetric } from '../../services/observability/performanceMetrics'
 import {
   DOCUMENT_LIFECYCLE_STATES,
   assertDocumentLifecycleTransition,
@@ -104,6 +105,17 @@ import {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getPerformanceNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+function roundedDurationMs(startedAt = 0) {
+  const duration = getPerformanceNow() - Number(startedAt || 0)
+  return Math.max(0, Math.round(duration))
 }
 
 function isRuntimePacketId(value = '') {
@@ -164,6 +176,10 @@ function normalizeKey(value) {
 }
 
 const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+const SIGNING_DELIVERY_TIMEOUT_MS = 12000
+const WORKSPACE_STATUS_FRESH_MS = 2500
+const WORKSPACE_STATUS_REVALIDATION_DELAYS_MS = [1000, 4000]
+const SIGNING_STATUS_REVALIDATION_DELAYS_MS = [800, 3000, 8000]
 
 function withWorkspaceTimeout(task, message, timeoutMs = WORKSPACE_REFRESH_TIMEOUT_MS) {
   let timeoutId = null
@@ -2984,6 +3000,8 @@ export default function LegalDocumentWorkspace({
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
+  const lastWorkspaceRefreshAtRef = useRef(0)
+  const scheduledWorkspaceRefreshTimersRef = useRef(new Set())
   const skippedInitialPageRefreshRef = useRef(false)
   const centerTabInitializedRef = useRef(false)
   const centerTabPreferenceRef = useRef(null)
@@ -3002,6 +3020,22 @@ export default function LegalDocumentWorkspace({
       ...metadata,
     })
   }, [organisationId, packetType, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id, workspaceRole])
+
+  const recordWorkspacePerformance = useCallback((metricName, startedAt, metadata = {}) => {
+    void recordPerformanceMetric({
+      metricName,
+      durationMs: roundedDurationMs(startedAt),
+      userId: workspaceProfile?.user_id || workspaceProfile?.userId || workspaceProfile?.id || '',
+      workspaceId: organisationId || workspaceProfile?.organisation_id || workspaceProfile?.organisationId || '',
+      route: '/legal-document-workspace',
+      metadata: {
+        packetType,
+        state: normalizeText(statusStateRef.current?.state || statusState?.state) || null,
+        packetId: normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId) || null,
+        ...metadata,
+      },
+    })
+  }, [organisationId, packetId, packetType, statusState?.packet?.id, statusState?.state, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id])
 
   const applyPreparedSigningState = useCallback((prepared, fallbackStatus = statusStateRef.current || statusState) => {
     if (!prepared) return fallbackStatus
@@ -3693,7 +3727,7 @@ export default function LegalDocumentWorkspace({
     throw error
   }, [isMandatePacket, latestVersion?.id, mandateDataSnapshot, packetId, transactionId])
 
-  const refreshWorkspaceData = useCallback(async () => {
+  const refreshWorkspaceData = useCallback(async ({ force = false, allowStale = false } = {}) => {
     if (refreshWorkspacePromiseRef.current) {
       return refreshWorkspacePromiseRef.current
     }
@@ -3701,11 +3735,22 @@ export default function LegalDocumentWorkspace({
     let refreshPromise = null
     refreshPromise = (async () => {
       const currentStatus = statusStateRef.current || null
+      if (!force && allowStale && hasLoadedWorkspaceSnapshot(currentStatus)) {
+        const ageMs = Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)
+        if (ageMs >= 0 && ageMs < WORKSPACE_STATUS_FRESH_MS) {
+          return {
+            resolved: currentStatus,
+            detail: null,
+            skipped: true,
+          }
+        }
+      }
       const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
       const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
       if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
         setStatusState(currentStatus)
         setPacketDetail(null)
+        lastWorkspaceRefreshAtRef.current = Date.now()
         return {
           resolved: currentStatus,
           detail: null,
@@ -3725,6 +3770,7 @@ export default function LegalDocumentWorkspace({
         return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
       })
       setStatusState(resolved)
+      lastWorkspaceRefreshAtRef.current = Date.now()
 
       const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
       if (isUuidLike(resolvedPacketId)) {
@@ -3762,6 +3808,32 @@ export default function LegalDocumentWorkspace({
     refreshWorkspacePromiseRef.current = refreshPromise
     return refreshPromise
   }, [organisationId, packetId, packetType, transactionId])
+
+  const scheduleWorkspaceStatusRevalidation = useCallback((reason = 'workspace status', delaysMs = WORKSPACE_STATUS_REVALIDATION_DELAYS_MS) => {
+    const delays = Array.isArray(delaysMs) && delaysMs.length ? delaysMs : WORKSPACE_STATUS_REVALIDATION_DELAYS_MS
+    for (const delayMs of delays) {
+      const normalizedDelay = Math.max(0, Number(delayMs || 0))
+      const timerId = setTimeout(() => {
+        scheduledWorkspaceRefreshTimersRef.current.delete(timerId)
+        void refreshWorkspaceData({ force: true }).then((refreshed) => {
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+          }
+        }).catch((refreshError) => {
+          console.warn(`[LegalDocumentWorkspace] background ${reason} revalidation failed.`, refreshError)
+        })
+      }, normalizedDelay)
+      scheduledWorkspaceRefreshTimersRef.current.add(timerId)
+    }
+  }, [refreshWorkspaceData])
+
+  useEffect(() => () => {
+    for (const timerId of scheduledWorkspaceRefreshTimersRef.current) {
+      clearTimeout(timerId)
+    }
+    scheduledWorkspaceRefreshTimersRef.current.clear()
+  }, [])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {
     if (!isMandatePacket) return
@@ -4928,7 +5000,7 @@ export default function LegalDocumentWorkspace({
     let currentStatus = statusStateRef.current || statusState
     if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
       try {
-        const refreshed = await refreshWorkspaceData()
+        const refreshed = await refreshWorkspaceData({ allowStale: true })
         currentStatus = refreshed?.resolved || statusStateRef.current || currentStatus
       } catch {
         currentStatus = statusStateRef.current || currentStatus
@@ -5045,6 +5117,7 @@ export default function LegalDocumentWorkspace({
   }
 
   async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
+    const sendStartedAt = getPerformanceNow()
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
@@ -5174,7 +5247,14 @@ export default function LegalDocumentWorkspace({
         }).toLowerCase()
       : 'signer'
     setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
+    const signerReadinessStartedAt = getPerformanceNow()
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
+    recordWorkspacePerformance('legal_document.signing.signer_readiness', signerReadinessStartedAt, {
+      resend: resend === true,
+      reminder: reminder === true,
+      targetSignerRole: normalizedTargetSignerRole || null,
+      signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
+    })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
     }
@@ -5253,17 +5333,34 @@ export default function LegalDocumentWorkspace({
     let sendResult = null
     if (linkResult?.dispatchAlreadyDelivered && !resend) {
       sendResult = { emailConfirmed: true, deduplicated: true }
+      recordWorkspacePerformance('legal_document.signing.email_delivery', sendStartedAt, {
+        resend: false,
+        deduplicated: true,
+        targetSignerRole: linkRecipientRole || null,
+        recipientCount: 0,
+      })
     } else {
+      const emailDeliveryStartedAt = getPerformanceNow()
       try {
         if (typeof onSend !== 'function') throw new Error('Signing email delivery is not configured for this workspace.')
-        sendResult = await onSend({
-          resend,
-          signerLinks: linkSigners,
-          packetId: currentPacketId,
-          targetSignerRole: linkRecipientRole,
-          signingStatus: workflowSigningStatus,
+        sendResult = await withWorkspaceTimeout(
+          Promise.resolve(onSend({
+            resend,
+            signerLinks: linkSigners,
+            packetId: currentPacketId,
+            targetSignerRole: linkRecipientRole,
+            signingStatus: workflowSigningStatus,
+          })),
+          'The signing link is ready, but email delivery was not confirmed within 12 seconds. Refresh the signer status before resending.',
+          SIGNING_DELIVERY_TIMEOUT_MS,
+        )
+        recordWorkspacePerformance('legal_document.signing.email_delivery', emailDeliveryStartedAt, {
+          resend: resend === true,
+          targetSignerRole: linkRecipientRole || null,
+          recipientCount: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails.length : (sendResult?.recipientEmail ? 1 : 0),
+          emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
         })
-        await completeAppliedEnvelopeDispatch({
+        void completeAppliedEnvelopeDispatch({
           dispatchId: linkResult?.dispatchId,
           success: true,
           deliveryEvidence: {
@@ -5274,8 +5371,16 @@ export default function LegalDocumentWorkspace({
             recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
             emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
           },
+        }).catch((dispatchError) => {
+          console.warn('[LegalDocumentWorkspace] could not complete signing dispatch record', dispatchError)
         })
       } catch (sendError) {
+        recordWorkspacePerformance('legal_document.signing.email_delivery', emailDeliveryStartedAt, {
+          resend: resend === true,
+          targetSignerRole: linkRecipientRole || null,
+          failed: true,
+          errorCode: normalizeText(sendError?.code) || null,
+        })
         if (linkResult?.dispatchId) {
           await completeAppliedEnvelopeDispatch({
             dispatchId: linkResult.dispatchId,
@@ -5291,21 +5396,38 @@ export default function LegalDocumentWorkspace({
       }
     }
 
-    const refreshed = await resolveDocumentPacketStatus({
-      packetType,
+    const sentStatus = {
+      ...(statusStateRef.current || statusState || {}),
+      state: 'SENT',
+      signingStatus: workflowSigningStatus,
+      packet: {
+        ...((statusStateRef.current || statusState)?.packet || currentPacket || {}),
+        status: 'sent',
+        source_context_json: {
+          ...(((statusStateRef.current || statusState)?.packet || currentPacket || {}).source_context_json || {}),
+          signing_method: 'digital',
+          signingMethod: 'digital',
+          signing_status: workflowSigningStatus,
+          signingStatus: workflowSigningStatus,
+          mandateStatus: workflowSigningStatus,
+          lifecycle_state: 'sent',
+          signingLinkLastSentAt: nowIso,
+          lastSigningRecipientRole: linkRecipientRole || null,
+        },
+      },
+    }
+    statusStateRef.current = sentStatus
+    setStatusState(sentStatus)
+    lastWorkspaceRefreshAtRef.current = Date.now()
+
+    scheduleWorkspaceStatusRevalidation('signing status', SIGNING_STATUS_REVALIDATION_DELAYS_MS)
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
-      transactionId,
-      organisationId,
-    })
-    statusStateRef.current = refreshed
-    setStatusState(refreshed)
-    await appendDocumentPacketEvent({
-      packetId: currentPacketId,
-      organisationId: refreshed?.packet?.organisation_id || currentPacket?.organisation_id || organisationId || null,
+      organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
       eventType: resend ? 'mandate_signing_email_resent' : 'mandate_sent_for_digital_signing',
       eventPayload: {
-        transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
+        transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
         signingStatus: workflowSigningStatus,
@@ -5317,6 +5439,15 @@ export default function LegalDocumentWorkspace({
         recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
         recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
+    }).catch((auditError) => {
+      console.warn('[LegalDocumentWorkspace] signing email audit write skipped.', auditError)
+    })
+    recordWorkspacePerformance('legal_document.signing.total', sendStartedAt, {
+      resend: resend === true,
+      reminder: reminder === true,
+      targetSignerRole: linkRecipientRole || normalizedTargetSignerRole || null,
+      signerCount: signerEmails.length,
+      emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
     })
   }
 
@@ -5398,6 +5529,7 @@ export default function LegalDocumentWorkspace({
       if (generationResult?.status) {
         statusStateRef.current = generationResult.status
         setStatusState(generationResult.status)
+        lastWorkspaceRefreshAtRef.current = Date.now()
       }
       setActionProgressMessage('Refreshing draft status...')
       const refreshed = await refreshWorkspaceData()
@@ -5545,11 +5677,19 @@ export default function LegalDocumentWorkspace({
         await onView?.()
       }
 
-      await onRefreshContext?.()
-      await refreshWorkspaceData()
+      if (['send_signature', 'resend_signature', 'remind_signer'].includes(actionKey)) {
+        void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+          console.warn('[LegalDocumentWorkspace] background context refresh failed after signing action.', refreshError)
+        })
+      } else {
+        await onRefreshContext?.()
+        await refreshWorkspaceData()
+      }
+      return true
     } catch (error) {
       await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
+      return false
     } finally {
       actionBusyRef.current = false
       setActionBusy(false)
@@ -6093,14 +6233,7 @@ export default function LegalDocumentWorkspace({
         void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
           console.warn('[LegalDocumentWorkspace] background context refresh failed after generation.', refreshError)
         })
-        void refreshWorkspaceData().then((refreshed) => {
-          if (refreshed?.resolved) {
-            statusStateRef.current = refreshed.resolved
-            setStatusState(refreshed.resolved)
-          }
-        }).catch((refreshError) => {
-          console.warn('[LegalDocumentWorkspace] background draft status refresh failed after generation.', refreshError)
-        })
+        scheduleWorkspaceStatusRevalidation('draft status')
       } else {
         setActionProgressMessage('Refreshing draft status…')
         const refreshed = await refreshWorkspaceData()
@@ -6330,8 +6463,8 @@ export default function LegalDocumentWorkspace({
 
   async function handleConfirmedSend() {
     recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-    await runReviewAction('send_signature', { confirmedSend: true })
-    setSendConfirmationOpen(false)
+    const sent = await runReviewAction('send_signature', { confirmedSend: true })
+    if (sent) setSendConfirmationOpen(false)
   }
 
   function handleMobileAction(actionId) {

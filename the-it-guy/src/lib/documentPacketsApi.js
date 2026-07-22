@@ -2058,6 +2058,48 @@ export async function listDocumentPacketVersions(packetId) {
   return Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
 }
 
+export async function getDocumentWorkspaceStatusFast({
+  packetId = '',
+  packetType = '',
+  transactionId = '',
+  leadId = '',
+  organisationId = null,
+  includeActivity = false,
+  activityLimit = 25,
+} = {}) {
+  const client = requireClient()
+  const cappedActivityLimit = Math.max(0, Math.min(Number(activityLimit || 25), 100))
+  const { data, error } = await client.rpc('bridge_get_document_workspace_status_p2', {
+    p_packet_id: normalizeNullableUuid(packetId),
+    p_packet_type: normalizeNullableText(packetType)?.toLowerCase() || null,
+    p_transaction_id: normalizeNullableUuid(transactionId),
+    p_lead_id: normalizeNullableUuid(leadId),
+    p_organisation_id: normalizeNullableUuid(organisationId),
+    p_include_activity: includeActivity === true,
+    p_activity_limit: cappedActivityLimit,
+  })
+
+  if (error) throw error
+  if (!data || data.contract !== 'p2-document-workspace-status-v1') {
+    throw new Error('Document workspace status RPC returned an unsupported contract.')
+  }
+
+  const packet = data.packet || null
+  const rawVersions = Array.isArray(data.versions) ? data.versions : []
+  const versions = await Promise.all(rawVersions.map((item) => hydratePacketVersionAccessUrls(client, item)))
+  const rawFields = Array.isArray(data.fields) ? data.fields : []
+  const rawSigners = Array.isArray(data.signers) ? data.signers : []
+
+  return {
+    ...data,
+    packet,
+    versions,
+    events: Array.isArray(data.events) ? data.events : [],
+    signingSummary: packet ? buildDocumentPacketSigningSummary(packet, rawFields, rawSigners) : null,
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
+  }
+}
+
 export async function updateDocumentPacketVersionFinalArtifact({
   packetId,
   packetVersionId,
@@ -3414,59 +3456,20 @@ export async function updateDocumentSigningFieldStatus({
   return data
 }
 
-export async function getDocumentPacketSigningSummary({ packetId, packetVersionId = null, organisationId = null } = {}) {
-  const client = requireClient()
-  const { packet } = await fetchPacketForSigningContext(client, packetId, organisationId)
-
-  let fieldsQuery = client
-    .from('document_signing_fields')
-    .select(
-      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email, signature_asset_path, signature_asset_url, signature_type, field_value_text, created_at, updated_at',
-    )
-    .eq('packet_id', packet.id)
-    .order('page_number', { ascending: true })
-    .order('created_at', { ascending: true })
-  if (packetVersionId) fieldsQuery = fieldsQuery.eq('packet_version_id', packetVersionId)
-
-  let signersQuery = client
-    .from('document_packet_signers')
-    .select(
-      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at',
-    )
-    .eq('packet_id', packet.id)
-    .order('signing_order', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true })
-  if (packetVersionId) signersQuery = signersQuery.eq('packet_version_id', packetVersionId)
-
-  const [fieldsResult, signersResult] = await Promise.all([fieldsQuery, signersQuery])
-
-  if (fieldsResult.error) {
-    if (isMissingTableOrSchemaError(fieldsResult.error)) {
-      fieldsResult.data = []
-    } else {
-      throw fieldsResult.error
-    }
-  }
-  if (signersResult.error) {
-    if (isMissingTableOrSchemaError(signersResult.error)) {
-      signersResult.data = []
-    } else {
-      throw signersResult.error
-    }
-  }
-
-  const rawFields = fieldsResult.data || []
-  const rawSigners = signersResult.data || []
-  const spouseFields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+function buildDocumentPacketSigningSummary(packet = {}, rawFieldsInput = [], rawSignersInput = []) {
+  const rawFields = Array.isArray(rawFieldsInput) ? rawFieldsInput : []
+  const rawSigners = Array.isArray(rawSignersInput) ? rawSignersInput : []
+  const packetType = normalizeText(packet?.packet_type || packet?.packetType).toLowerCase()
+  const spouseFields = packetType === 'mandate'
     ? rawFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
     : []
   const requiresSpouse = spouseFields.length
     ? resolveMandateSpouseRequirementFromFields(spouseFields)
     : resolveMandateSecondarySignerConfig({ packet }).required
-  const fields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+  const fields = packetType === 'mandate'
     ? filterMandateSigningRows(rawFields, { requiresSpouse })
     : rawFields
-  const signers = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+  const signers = packetType === 'mandate'
     ? filterMandateSigningRows(rawSigners, { requiresSpouse })
     : rawSigners
 
@@ -3517,6 +3520,50 @@ export async function getDocumentPacketSigningSummary({ packetId, packetVersionI
     allRequiredFieldsCompleted,
     groupedBySigner: Object.values(groupedBySigner),
   }
+}
+
+export async function getDocumentPacketSigningSummary({ packetId, packetVersionId = null, organisationId = null } = {}) {
+  const client = requireClient()
+  const { packet } = await fetchPacketForSigningContext(client, packetId, organisationId)
+
+  let fieldsQuery = client
+    .from('document_signing_fields')
+    .select(
+      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email, signature_asset_path, signature_asset_url, signature_type, field_value_text, created_at, updated_at',
+    )
+    .eq('packet_id', packet.id)
+    .order('page_number', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (packetVersionId) fieldsQuery = fieldsQuery.eq('packet_version_id', packetVersionId)
+
+  let signersQuery = client
+    .from('document_packet_signers')
+    .select(
+      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at',
+    )
+    .eq('packet_id', packet.id)
+    .order('signing_order', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+  if (packetVersionId) signersQuery = signersQuery.eq('packet_version_id', packetVersionId)
+
+  const [fieldsResult, signersResult] = await Promise.all([fieldsQuery, signersQuery])
+
+  if (fieldsResult.error) {
+    if (isMissingTableOrSchemaError(fieldsResult.error)) {
+      fieldsResult.data = []
+    } else {
+      throw fieldsResult.error
+    }
+  }
+  if (signersResult.error) {
+    if (isMissingTableOrSchemaError(signersResult.error)) {
+      signersResult.data = []
+    } else {
+      throw signersResult.error
+    }
+  }
+
+  return buildDocumentPacketSigningSummary(packet, fieldsResult.data || [], signersResult.data || [])
 }
 
 export async function generateDocumentPacketSigningLinks({
