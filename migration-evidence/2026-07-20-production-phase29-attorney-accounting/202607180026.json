@@ -1,0 +1,19 @@
+{
+  "version": "202607180026",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 29 instruction)",
+  "verification": {
+    "partyAccounts": 318,
+    "bootstrapEvents": 318,
+    "financialDocuments": 0,
+    "financialEntries": 0,
+    "nonZeroOpeningBalances": 0,
+    "participantUniqueIndexLive": true,
+    "participantSyncTriggerEnabled": true
+  }
+}

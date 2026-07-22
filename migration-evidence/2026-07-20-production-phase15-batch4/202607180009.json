@@ -1,0 +1,19 @@
+{
+  "version": "202607180009",
+  "batch": "phase15_batch4_editable_pdf_runtime",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 4 instruction)",
+  "verification": {
+    "columns": 6,
+    "functions": 2,
+    "indexPresent": true,
+    "authenticatedExecute": true,
+    "anonExecute": false,
+    "documentPacketVersionRows": 94
+  }
+}

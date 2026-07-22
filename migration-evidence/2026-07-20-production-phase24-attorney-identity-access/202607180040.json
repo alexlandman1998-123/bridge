@@ -1,0 +1,20 @@
+{
+  "version": "202607180040",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "verification": {
+    "applicationMode": "ledger_after_reviewed_corrective_migration",
+    "correctiveVersion": "202607209902",
+    "adminAndLeadChecksUseProfessionalRole": true,
+    "bootstrapWritesProfessionalRole": true,
+    "anonymousBootstrapRevoked": true,
+    "authenticatedBootstrapGranted": true,
+    "memberCompatibilityMismatches": 0,
+    "invitationCompatibilityMismatches": 0
+  }
+}

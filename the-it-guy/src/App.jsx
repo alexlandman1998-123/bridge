@@ -219,7 +219,6 @@ const DeveloperIntelligencePricingSimulatorPage = lazy(() => import('./pages/dev
 const DevelopmentDetail = lazy(() => import('./pages/DevelopmentDetail'))
 const DeveloperPartnerInvitePage = lazy(() => import('./pages/DeveloperPartnerInvitePage'))
 const DeveloperAccessInvitePage = lazy(() => import('./pages/DeveloperAccessInvitePage'))
-const DeveloperPartnersPage = lazy(() => import('./pages/DeveloperPartnersPage'))
 const Developments = lazy(() => import('./pages/Developments'))
 const Documents = lazy(() => import('./pages/Documents'))
 const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
@@ -375,6 +374,7 @@ function AppLayout({ onLogout, session = null, user }) {
   const mainScrollRef = useRef(null)
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
+  const previousPathnameRef = useRef(location.pathname)
   const lastActivityAtRef = useRef(0)
   const lastTimerResetAtRef = useRef(0)
   const resetInactivityTimerRef = useRef(null)
@@ -552,6 +552,11 @@ function AppLayout({ onLogout, session = null, user }) {
   }, [location.pathname])
 
   useEffect(() => {
+    const previousPathname = previousPathnameRef.current
+    previousPathnameRef.current = location.pathname
+    const wasSettingsRoute = previousPathname === '/settings' || previousPathname.startsWith('/settings/')
+    if (isSettingsRoute && wasSettingsRoute) return undefined
+
     const frameId = window.requestAnimationFrame(() => {
       const mainEl = mainScrollRef.current
       if (mainEl && typeof mainEl.scrollTo === 'function') {
@@ -564,7 +569,7 @@ function AppLayout({ onLogout, session = null, user }) {
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [location.pathname])
+  }, [isSettingsRoute, location.pathname])
 
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)
@@ -804,17 +809,18 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     )
   }
 
-  if (authState.status === 'unauthenticated' || !session) {
-    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
-    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
-    return <Navigate to="/auth" replace state={{ from: location }} />
-  }
-
   if (authState.status === 'error') {
+    const normalizedProfileError = String(profileError || '').toLowerCase()
+    const dataServiceUnavailable =
+      normalizedProfileError.includes('data service is temporarily unavailable') ||
+      normalizedProfileError.includes('authentication bootstrap timed out') ||
+      normalizedProfileError.includes('failed to fetch') ||
+      normalizedProfileError.includes('lock broken') ||
+      normalizedProfileError.includes('aborterror')
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>We couldn’t load your Arch9 account.</h2>
+          <h2>{dataServiceUnavailable ? 'Arch9 is temporarily unavailable.' : 'We couldn’t load your Arch9 account.'}</h2>
           <p>{profileError || 'Authentication boot failed.'}</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
@@ -835,6 +841,12 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
         </div>
       </section>
     )
+  }
+
+  if (authState.status === 'unauthenticated' || !session) {
+    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
+    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
+    return <Navigate to="/auth" replace state={{ from: location }} />
   }
 
   const onAnyOnboardingRoute = isOnboardingRoute(location.pathname)
@@ -1911,9 +1923,7 @@ function AppRoutes() {
                 path="/developer/partners"
                 element={
                   <RoleRoute allowedRoles={['developer']}>
-                    <AppErrorBoundary scope="developer-partners-workspace" title="Developer partners failed to load">
-                      <DeveloperPartnersPage />
-                    </AppErrorBoundary>
+                    <Navigate to="/partners" replace />
                   </RoleRoute>
                 }
               />
@@ -2460,7 +2470,15 @@ function AppRoutes() {
                 path="/agent/listings/:listingId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <AgentListingDetail />
+                    <AppErrorBoundary
+                      scope="agent-listing-detail"
+                      title="Listing workspace failed to load"
+                      fallbackPath="/listings"
+                      fallbackLabel="Back to Listings"
+                      resetKey={`${location.pathname}${location.search}`}
+                    >
+                      <AgentListingDetail />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />
@@ -2929,7 +2947,7 @@ function AppRoutes() {
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="seller" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/:token" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/mandate" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/documents" element={<SellerLegacyRedirect />} />

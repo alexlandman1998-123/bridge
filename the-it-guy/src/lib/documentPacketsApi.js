@@ -13,7 +13,6 @@ import { assertSigningDispatchReady } from '../core/documents/signingDispatchAss
 import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 import {
   assertDocumentLifecycleTransition,
-  normalizeDocumentLifecycleState,
   resolveDocumentLifecycleStateFromPacket,
   toDocumentPacketStorageStatus,
 } from '../core/documents/documentLifecycle'
@@ -25,6 +24,7 @@ import {
 import { buildOrganisationTemplateCloneInput } from '../core/documents/organisationTemplateClone'
 import { buildTemplateRevisionInput, isImmutableTemplateRevision } from '../core/documents/templateVersioning'
 import { assertSigningFieldLayout } from '../core/documents/signingFieldLayout'
+import { evaluateConditionalMasterCoverage } from '../core/documents/conditionalMasterCoverageReadiness'
 import {
   buildEditableDraftSectionManifest,
   buildEditableTransactionDocumentDraft,
@@ -81,6 +81,12 @@ export const DOCUMENT_PACKET_SIGNER_STATUSES = ['pending', 'ready_to_send', 'sen
 const PACKET_VERSION_SELECT =
   'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, rendered_file_bucket, rendered_media_type, rendered_byte_length, rendered_sha256, transaction_pdf_persisted, transaction_pdf_persisted_at, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, source_template_revision_id, editable_content_schema_version, editable_content_json, edit_status, edit_sequence, render_freeze_id, render_freeze_status, render_frozen_at, render_content_fingerprint, render_source_version_id, render_source_fingerprint, render_input_verified, render_input_verified_at, native_pdf_verified, native_pdf_verified_at, native_pdf_renderer_contract, generated_by, generated_at, created_at, updated_at'
 
+// Keep packet reads usable while the document-generator migration stream is being
+// promoted. These are the original packet-version columns required for mandate
+// generation and preview; newer artifact/editing fields are optional read metadata.
+const PACKET_VERSION_COMPAT_SELECT =
+  'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, generated_by, generated_at, created_at, updated_at'
+
 let organisationBrandingTableAvailable = true
 let cachedPacketAuthUser = null
 let cachedPacketAuthUserAt = 0
@@ -93,6 +99,8 @@ const cachedPacketContexts = new Map()
 const pendingPacketContextPromises = new Map()
 let documentPacketTemplateSelectPlanIndex = 0
 let documentPacketTemplateSelectPlanCachedAt = 0
+let packetVersionCompatibilityWarningLogged = false
+let packetVersionReadUsesCompatibility = false
 
 const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
@@ -350,6 +358,24 @@ function isMissingColumnError(error, columnName = '') {
   return normalizedColumn
     ? message.includes('column') && message.includes(normalizedColumn)
     : message.includes('column')
+}
+
+async function readPacketVersionsWithSchemaCompatibility(buildQuery) {
+  if (packetVersionReadUsesCompatibility) return buildQuery(PACKET_VERSION_COMPAT_SELECT)
+
+  const currentResult = await buildQuery(PACKET_VERSION_SELECT)
+  if (!currentResult?.error || !isMissingColumnError(currentResult.error)) return currentResult
+
+  packetVersionReadUsesCompatibility = true
+  if (!packetVersionCompatibilityWarningLogged) {
+    packetVersionCompatibilityWarningLogged = true
+    console.warn('[PACKETS] optional packet-version columns are unavailable; using the compatible read shape.', {
+      code: currentResult.error?.code || null,
+      message: currentResult.error?.message || null,
+    })
+  }
+
+  return buildQuery(PACKET_VERSION_COMPAT_SELECT)
 }
 
 function isMissingSpecificTableError(error, tableName) {
@@ -859,14 +885,25 @@ async function getAuthenticatedUser(client) {
     return pendingPacketAuthUserPromise
   }
 
-  pendingPacketAuthUserPromise = client.auth.getUser()
-    .then((authResult) => {
-      if (authResult.error) throw authResult.error
-      if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
-      cachedPacketAuthUser = authResult.data.user
+  pendingPacketAuthUserPromise = (async () => {
+    // Packet reads run throughout the mandate workspace. The session is already
+    // established by the application gate, and RLS still validates its access
+    // token server-side. Avoid making every cold packet read wait on auth.getUser.
+    const sessionResult = await client.auth.getSession().catch(() => null)
+    const sessionUser = sessionResult?.data?.session?.user || null
+    if (sessionUser?.id) {
+      cachedPacketAuthUser = sessionUser
       cachedPacketAuthUserAt = Date.now()
       return cachedPacketAuthUser
-    })
+    }
+
+    const authResult = await client.auth.getUser()
+    if (authResult.error) throw authResult.error
+    if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
+    cachedPacketAuthUser = authResult.data.user
+    cachedPacketAuthUserAt = Date.now()
+    return cachedPacketAuthUser
+  })()
     .finally(() => {
       pendingPacketAuthUserPromise = null
     })
@@ -1072,6 +1109,121 @@ export async function listDocumentPacketTemplates({
     organisationId,
     limit,
   })
+}
+
+export async function fetchConditionalMasterMigration({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  const { data, error } = await client
+    .from('legal_document_master_migrations')
+    .select('*')
+    .eq('organisation_id', context.organisationId)
+    .eq('packet_type', normalizedPacketType)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export async function fetchConditionalMasterVerification({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  const { data, error } = await client
+    .from('legal_document_master_verifications')
+    .select('*')
+    .eq('organisation_id', context.organisationId)
+    .eq('packet_type', normalizedPacketType)
+    .order('verified_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export async function prepareConditionalMasterMigration({ packetType, organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) throw new Error('Only Principal/Super Admin/Admin can prepare a legal-template migration.')
+  const { data, error } = await client.rpc('bridge_prepare_conditional_master_migration_phase10', {
+    p_organisation_id: context.organisationId,
+    p_packet_type: normalizedPacketType,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function activateConditionalMasterMigration({
+  migrationId,
+  candidateTemplateId,
+  wordingReviewed = false,
+} = {}) {
+  if (!migrationId || !candidateTemplateId) throw new Error('Migration and candidate template are required.')
+  if (!wordingReviewed) throw new Error('Review and confirm the reconciled legacy wording before activation.')
+  const candidate = await fetchDocumentPacketTemplate(candidateTemplateId, { includeSections: true })
+  const coverage = evaluateConditionalMasterCoverage({ packetType: candidate?.packet_type, template: candidate })
+  if (!coverage.ready) {
+    const blocked = new Error(coverage.issues?.[0]?.message || 'The conditional master does not cover every supported legal scenario.')
+    blocked.code = 'CONDITIONAL_MASTER_MIGRATION_COVERAGE_BLOCKED'
+    blocked.coverage = coverage
+    throw blocked
+  }
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_activate_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+    p_coverage_version: coverage.coverageVersion,
+    p_coverage_decision_hash: coverage.decisionHash,
+    p_wording_reviewed: true,
+  })
+  if (error) throw error
+  return { ...data, coverage }
+}
+
+export async function rollbackConditionalMasterMigration(migrationId) {
+  if (!migrationId) throw new Error('migrationId is required.')
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_rollback_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function finalizeConditionalMasterMigration(migrationId) {
+  if (!migrationId) throw new Error('migrationId is required.')
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_finalize_conditional_master_migration_phase10', {
+    p_migration_id: migrationId,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function verifyConditionalMasterMigration({ migrationId, candidateTemplateId } = {}) {
+  if (!migrationId || !candidateTemplateId) throw new Error('Migration and candidate template are required.')
+  const candidate = await fetchDocumentPacketTemplate(candidateTemplateId, { includeSections: true })
+  const coverage = evaluateConditionalMasterCoverage({ packetType: candidate?.packet_type, template: candidate })
+  if (!coverage.ready) {
+    const blocked = new Error(coverage.issues?.[0]?.message || 'The live conditional master does not pass complete scenario coverage.')
+    blocked.code = 'CONDITIONAL_MASTER_VERIFICATION_COVERAGE_BLOCKED'
+    blocked.coverage = coverage
+    throw blocked
+  }
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_verify_conditional_master_migration_phase11', {
+    p_migration_id: migrationId,
+    p_coverage_version: coverage.coverageVersion,
+    p_coverage_decision_hash: coverage.decisionHash,
+  })
+  if (error) throw error
+  if (data?.passed !== true) {
+    const blocked = new Error(`Verification found integrity blockers: ${(data?.issue_codes || []).join(', ') || 'review the verification receipt'}.`)
+    blocked.code = 'CONDITIONAL_MASTER_VERIFICATION_BLOCKED'
+    blocked.receipt = data
+    throw blocked
+  }
+  return { ...data, coverage }
 }
 
 export async function resolveActiveDocumentPacketTemplate({
@@ -2022,11 +2174,13 @@ export async function fetchDocumentPacket(packetId, { includeVersions = true, in
   const result = { ...packet }
 
   if (includeVersions) {
-    const { data, error } = await client
-      .from('document_packet_versions')
-      .select(PACKET_VERSION_SELECT)
-      .eq('packet_id', packetId)
-      .order('version_number', { ascending: false })
+    const { data, error } = await readPacketVersionsWithSchemaCompatibility((selectColumns) =>
+      client
+        .from('document_packet_versions')
+        .select(selectColumns)
+        .eq('packet_id', packetId)
+        .order('version_number', { ascending: false }),
+    )
     if (error) throw error
     result.versions = await Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
   }
@@ -2048,11 +2202,13 @@ export async function listDocumentPacketVersions(packetId) {
   const client = requireClient()
   if (!packetId) throw new Error('packetId is required.')
 
-  const { data, error } = await client
-    .from('document_packet_versions')
-    .select(PACKET_VERSION_SELECT)
-    .eq('packet_id', packetId)
-    .order('version_number', { ascending: false })
+  const { data, error } = await readPacketVersionsWithSchemaCompatibility((selectColumns) =>
+    client
+      .from('document_packet_versions')
+      .select(selectColumns)
+      .eq('packet_id', packetId)
+      .order('version_number', { ascending: false }),
+  )
 
   if (error) throw error
   return Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
@@ -2367,6 +2523,30 @@ export async function persistGeneratedPdfToTransaction({ packetId, generatedVers
   }
   if (result?.contract !== 'd3-v1' || result?.persisted !== true || !result?.documentId || !result?.path) {
     throw new Error('Transaction PDF persistence returned an invalid result.')
+  }
+  return result
+}
+
+export async function certifyNativeStructuredLegalPdf({ packetId, generatedVersionId } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(generatedVersionId)) throw new Error('generatedVersionId is required.')
+  const { data: result, error } = await client.rpc('bridge_certify_native_structured_legal_pdf', {
+    p_packet_id: packetId,
+    p_generated_version_id: generatedVersionId,
+  })
+  if (error) {
+    const detail = normalizeText(error?.details)
+    if (detail.includes('NATIVE_STRUCTURED_CERTIFICATION_')) {
+      const certificationError = new Error('The generated PDF could not be certified for signing. Regenerate it before continuing.')
+      certificationError.code = detail
+      certificationError.cause = error
+      throw certificationError
+    }
+    throw error
+  }
+  if (result?.contract !== 'native-structured-d3-v1' || result?.certified !== true || !result?.documentId || !result?.path) {
+    throw new Error('Native structured legal PDF certification returned an invalid result.')
   }
   return result
 }

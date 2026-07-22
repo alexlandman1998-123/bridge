@@ -41,9 +41,9 @@ const REASSURANCE_ROWS = [
 ]
 
 const DEFAULT_THEME = {
-  primary: '#001a3d',
-  secondary: '#001b44',
-  accent: '#f7cf22',
+  primary: '#494b8a',
+  secondary: '#000000',
+  accent: '#ceac69',
 }
 
 function normalizePortalType(value = '') {
@@ -109,7 +109,7 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
       <img
         src={logoUrl}
         alt={`${safeName} logo`}
-        className="h-14 w-auto max-w-[230px] object-contain drop-shadow-[0_16px_30px_rgba(0,0,0,0.35)] sm:h-16 sm:max-w-[280px]"
+        className="h-20 w-auto max-w-[320px] object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-24 sm:max-w-[420px]"
       />
     )
   }

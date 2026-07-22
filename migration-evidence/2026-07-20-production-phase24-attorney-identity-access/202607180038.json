@@ -1,0 +1,18 @@
+{
+  "version": "202607180038",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "verification": {
+    "requestProfileColumnsLive": 2,
+    "acceptedInvitationProfileFunctionLive": true,
+    "acceptedInvitationProfileTriggerLive": true,
+    "anonymousExecuteRevoked": true,
+    "authenticatedExecuteRevoked": true,
+    "unprofiledAttorneyRequests": 0
+  }
+}

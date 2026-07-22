@@ -121,8 +121,9 @@ assert.deepEqual(
 )
 
 for (const token of [
-  "import { evaluateVisibilityRules } from './sectionVisibilityRules'",
-  'visible: evaluateVisibilityRules(section?.condition_json || metadata?.visibility_rules || null, placeholders)',
+  "import { evaluateVisibilityRulesDetailed } from './sectionVisibilityRules'",
+  "import { evaluateConditionalMasterSections } from './conditionalMasterEngine'",
+  'visibilityEvaluation.visible',
 ]) {
   assert.ok(packetService.includes(token), `packetService should use the shared condition evaluator: ${token}`)
 }

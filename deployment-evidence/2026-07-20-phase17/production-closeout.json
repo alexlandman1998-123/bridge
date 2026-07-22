@@ -1,0 +1,53 @@
+{
+  "status": "PRODUCTION_CLOSEOUT_BLOCKED",
+  "phase": 17,
+  "generatedAt": "2026-07-20T14:39:57Z",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "productionDomain": "https://app.arch9.co.za",
+  "application": {
+    "deploymentId": "dpl_5cGZ8ii4g7KVJtSSjCMB4s5siiD7",
+    "status": "READY",
+    "browserSmoke": "pass",
+    "runtimeErrorLogs": 0,
+    "http500Logs": 0,
+    "releaseManifestMatchesPreview": true
+  },
+  "database": {
+    "projectStatus": "ACTIVE_HEALTHY",
+    "accessMode": "linked_ephemeral",
+    "accessVerification": "pass",
+    "productionLedgerCount": 469,
+    "expectedProductionLedgerCount": 469,
+    "recoveryEvidence": "valid",
+    "completedPhysicalBackups": 8,
+    "migrationEvidenceComplete": 36,
+    "migrationEvidenceTotal": 64,
+    "incompleteMigrationCount": 28,
+    "pureRemoteOnlyVersions": 0,
+    "divergentVersions": 0
+  },
+  "releaseTraceability": {
+    "branch": "codex/mvp-pilot-readiness",
+    "commitsAheadOfRemote": 14,
+    "workingTreeEntries": 79,
+    "deployedWorkingTreeHadUncommittedApplicationChanges": true,
+    "duplicateMigrationVersion": "202607200002",
+    "duplicateMigrationFileCount": 2
+  },
+  "runtimeRollout": {
+    "enforcementEnvironmentVariableConfigured": false,
+    "effectiveMode": "shadow",
+    "productionControlRows": 0,
+    "productionCohortConfigured": false
+  },
+  "blockers": [
+    "28 manifest migrations do not yet have reviewed production closeout evidence.",
+    "Migration version 202607200002 is duplicated locally.",
+    "The deployed application source contains uncommitted changes and is not reproducible from one commit.",
+    "Fourteen release commits have not been pushed to the remote branch.",
+    "The production document-experience rollout remains in shadow mode with no controlled cohort."
+  ],
+  "phase0MigrationFreezeRemainsActive": true,
+  "approvedBy": "Alexander Landman (explicit Phase 17 instruction)",
+  "productionMutatedByCloseout": false
+}

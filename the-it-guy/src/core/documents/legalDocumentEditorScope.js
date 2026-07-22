@@ -84,7 +84,7 @@ export function listScopedLegalDocumentSectionEntries(sections = [], {
   })
   if (normalizedScope === 'situations') {
     if (!situationKey) return []
-    return matches.filter((entry) => sectionMatchesLegalDocumentEditorSituation(entry.section, situationKey))
+    return matches.filter((entry) => sectionMatchesLegalDocumentEditorSituation(entry.section, situationKey, { packetType }))
   }
   if (normalizedScope === 'signing' && !matches.length) return entries
   return matches

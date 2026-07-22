@@ -1,0 +1,47 @@
+{
+  "phase": 28,
+  "status": "BLOCKED_PENDING_GENUINE_N4_EVIDENCE",
+  "verifiedAt": "2026-07-20T18:10:56.897Z",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "cohort": {
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "organisationName": "Kingstons Real Estate",
+    "activeMembers": 7,
+    "activeAdmins": 2,
+    "documentPackets": 5,
+    "maximumParticipants": 10
+  },
+  "n4": {
+    "ready": false,
+    "decision": "HOLD_AND_FIX",
+    "eventCount": 2,
+    "journeys": 1,
+    "primaryActions": 1,
+    "coverage": {
+      "packetTypes": ["mandate"],
+      "surfaces": ["workspace"],
+      "viewports": ["desktop"],
+      "audiences": ["agent"]
+    },
+    "missing": {
+      "packetTypes": ["otp"],
+      "surfaces": ["signer_portal"],
+      "viewports": ["mobile"],
+      "audiences": ["principal", "attorney", "seller", "buyer"]
+    }
+  },
+  "execution": {
+    "phase27PreflightRun": true,
+    "n6ControlCreated": false,
+    "vercelEnforcementConfigured": false,
+    "productionRedeployed": false,
+    "pilotWindowStarted": false
+  },
+  "safety": {
+    "syntheticTelemetryCreated": false,
+    "accountsImpersonated": false,
+    "productionDataMutated": false,
+    "applicationRemainsInShadowMode": true,
+    "phase0MigrationFreezeRemainsActive": true
+  }
+}

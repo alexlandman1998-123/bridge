@@ -5,7 +5,7 @@ import process from 'node:process'
 import { createClient } from '@supabase/supabase-js'
 
 const root = resolve(import.meta.dirname, '..')
-const migration = readFileSync(resolve(root, '../supabase/migrations/202607180025_attorney_calendar_phase4_rsvp_lifecycle.sql'), 'utf8')
+const migration = readFileSync(resolve(root, '../supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql'), 'utf8')
 const page = readFileSync(resolve(root, 'src/pages/AppointmentRsvpPage.jsx'), 'utf8')
 const operations = readFileSync(resolve(root, 'src/services/attorneyOperations.js'), 'utf8')
 const liveMode = process.argv.includes('--live')

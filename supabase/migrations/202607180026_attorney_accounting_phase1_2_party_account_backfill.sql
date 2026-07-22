@@ -160,7 +160,7 @@ begin
 
   select assignment.attorney_assignment_id, assignment.attorney_firm_id
   into v_attorney_assignment_id, v_attorney_firm_id
-  from public.bridge_preferred_matter_financial_assignment(v_participant.transaction_id);
+  from public.bridge_preferred_matter_financial_assignment(v_participant.transaction_id) as assignment;
 
   v_party_label := nullif(trim(coalesce(v_participant.participant_name, '')), '');
   v_party_email := lower(nullif(trim(coalesce(v_participant.participant_email, '')), ''));
@@ -305,6 +305,8 @@ $$;
 revoke all on function public.bridge_preferred_matter_financial_assignment(uuid) from public, anon, authenticated;
 revoke all on function public.bridge_sync_matter_financial_account_from_participant(uuid) from public, anon, authenticated;
 revoke all on function public.bridge_sync_matter_financial_account_from_participant_trigger() from public, anon, authenticated;
+revoke all on function public.bridge_can_manage_matter_financials(uuid, uuid, uuid) from public, anon;
+revoke all on function public.bridge_matter_financial_party_role(text, text) from public, anon;
 
 grant execute on function public.bridge_can_manage_matter_financials(uuid, uuid, uuid) to authenticated;
 grant execute on function public.bridge_matter_financial_party_role(text, text) to authenticated;

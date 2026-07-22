@@ -1,0 +1,45 @@
+{
+  "status": "STAGING_INVENTORY_RECERTIFIED",
+  "phase": 22,
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "manifestExpansionAuthorized": true,
+  "manifestRowsBefore": 64,
+  "manifestRowsAfter": 67,
+  "versions": ["202607200004", "202607200005", "202607200006"],
+  "migrationSha256": {
+    "202607200004": "e93f4c13c466219a3da32ff4d4e07a427737a832dcce0d8f75c9137cc11f2987",
+    "202607200005": "2162fc21c375791a0d950494c8f6cdb573461953de1477d0815c924823cf788e",
+    "202607200006": "9e88803dfbb53397100312cf5fa613791309e9cde5791ab1b3bd56671f6e1b78"
+  },
+  "backup": {
+    "physicalBackupsCompleted": 3,
+    "latestCompletedBackupId": 1162717236,
+    "latestCompletedBackupAt": "2026-07-20T08:37:11.050Z"
+  },
+  "preflight": {
+    "versionsAlreadyRecorded": [],
+    "rollbackRehearsal": "pass",
+    "rollbackResidue": "none",
+    "immutableV2GlobalMasters": 2,
+    "conditionalSections": 19,
+    "migrationLifecycleObjects": "pass",
+    "verificationObjects": "pass"
+  },
+  "stagingSqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "stagingLedgerRowsBefore": 497,
+  "stagingLedgerRowsAfter": 500,
+  "liveVerification": {
+    "recordedVersions": ["202607200004", "202607200005", "202607200006"],
+    "publishedConditionalMasters": 2,
+    "conditionalSections": 19,
+    "migrationAuditRows": 0,
+    "verificationReceiptRows": 0
+  },
+  "stagingCertified": true,
+  "certificationEvidence": "migration-evidence/2026-07-20-staging-phase22/staging-release-certification.json",
+  "certifiedReleaseCommit": "63e8a9c44b892d3cf67309b788b576c8067c8de0",
+  "productionMutated": false,
+  "phase0MigrationFreezeRemainsActive": true
+}

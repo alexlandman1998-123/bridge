@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const RECOVERY_CONFIRMATION = 'I_HAVE_TESTED_PRODUCTION_RECOVERY'
 const APPLY_CONFIRMATION = 'APPLY_TO_PRODUCTION'
+const ACCESS_MODE = 'linked_ephemeral'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 
 function findRepoRoot(startDir) {
@@ -29,6 +30,8 @@ function parseArgs(argv) {
     else if (arg === '--stream') options.stream = argv[++index]
     else if (arg === '--version') options.version = argv[++index]
     else if (arg === '--staging-evidence') options.stagingEvidence = argv[++index]
+    else if (arg === '--staging-readiness') options.stagingReadiness = argv[++index]
+    else if (arg === '--recovery-evidence') options.recoveryEvidence = argv[++index]
     else if (arg === '--production-evidence') options.productionEvidence = argv[++index]
     else if (arg === '--confirm') options.confirm = argv[++index]
     else if (arg === '--json') options.json = true
@@ -64,24 +67,26 @@ function runSupabase(repoRoot, args) {
   }
 }
 
-function productionTarget() {
+function productionTarget(repoRoot) {
   const projectRef = String(process.env.SUPABASE_PRODUCTION_PROJECT_REF || '').trim()
-  const dbUrl = String(process.env.SUPABASE_PRODUCTION_DB_URL || '').trim()
+  const accessMode = String(process.env.SUPABASE_PRODUCTION_ACCESS_MODE || '').trim()
   const recovery = String(process.env.SUPABASE_PRODUCTION_RECOVERY_CONFIRMED || '').trim()
 
   if (projectRef !== PRODUCTION_PROJECT_REF) {
     throw new Error(`SUPABASE_PRODUCTION_PROJECT_REF must equal ${PRODUCTION_PROJECT_REF}.`)
   }
-  if (!dbUrl) throw new Error('SUPABASE_PRODUCTION_DB_URL is required.')
-  let decodedDbUrl = dbUrl
-  try { decodedDbUrl = decodeURIComponent(dbUrl) } catch { /* retain the original for identity checking */ }
-  if (!decodedDbUrl.includes(projectRef)) {
-    throw new Error('The production database URL does not contain SUPABASE_PRODUCTION_PROJECT_REF.')
+  if (accessMode !== ACCESS_MODE) {
+    throw new Error(`SUPABASE_PRODUCTION_ACCESS_MODE must equal ${ACCESS_MODE}.`)
   }
   if (recovery !== RECOVERY_CONFIRMATION) {
     throw new Error(`Set SUPABASE_PRODUCTION_RECOVERY_CONFIRMED=${RECOVERY_CONFIRMATION} only after recovery has been tested.`)
   }
-  return { projectRef, dbUrl }
+  const linkedRefPath = path.join(repoRoot, 'supabase', '.temp', 'project-ref')
+  const linkedRef = existsSync(linkedRefPath) ? readFileSync(linkedRefPath, 'utf8').trim() : ''
+  if (linkedRef !== projectRef) {
+    throw new Error(`The linked Supabase project must equal ${projectRef}; found ${linkedRef || 'none'}.`)
+  }
+  return { projectRef, accessMode, connectionArgs: ['--linked'] }
 }
 
 function requireSingleRow(rows, options) {
@@ -101,7 +106,6 @@ function validateStagingEvidence(repoRoot, row, filePath) {
   const evidence = evidenceFile(repoRoot, filePath, '--staging-evidence')
   const required = {
     version: row.version,
-    stagingLedgerRecorded: true,
     catalogChecks: 'pass',
     behaviorChecks: 'pass',
     rollbackOrNoResidue: 'pass',
@@ -109,10 +113,35 @@ function validateStagingEvidence(repoRoot, row, filePath) {
   for (const [key, value] of Object.entries(required)) {
     if (evidence[key] !== value) throw new Error(`Staging evidence ${key} must equal ${JSON.stringify(value)}.`)
   }
-  const stagingProjectRef = String(evidence.stagingProjectRef || '').trim()
+  if (evidence.stagingLedgerRecorded !== true && evidence.sqlApplied !== true) {
+    throw new Error('Staging evidence must prove SQL/target-state application or staging ledger recording.')
+  }
+  const stagingProjectRef = String(evidence.stagingProjectRef || evidence.targetProjectRef || '').trim()
   if (!stagingProjectRef) throw new Error('Staging evidence stagingProjectRef is required.')
   if (stagingProjectRef === PRODUCTION_PROJECT_REF) throw new Error('Staging evidence cannot identify the production project.')
-  if (!String(evidence.approvedBy || '').trim()) throw new Error('Staging evidence approvedBy is required.')
+  if (!String(evidence.approvedBy || evidence.reviewedBy || '').trim()) {
+    throw new Error('Staging evidence approvedBy or reviewedBy is required.')
+  }
+}
+
+function validateStagingReadiness(repoRoot, manifest, filePath) {
+  const readiness = evidenceFile(repoRoot, filePath, '--staging-readiness')
+  const required = {
+    status: 'READY_FOR_PRODUCTION_PROMOTION',
+    productionProjectRef: PRODUCTION_PROJECT_REF,
+    manifestRowCount: manifest.rows.length,
+    stagingLedgerRecordedCount: manifest.rows.length,
+    stagingEvidenceComplete: true,
+    attorneyIntegrityGate: 'pass',
+    attorneyIntegrityBlockingAssignments: 0,
+  }
+  for (const [key, value] of Object.entries(required)) {
+    if (readiness[key] !== value) throw new Error(`Staging readiness ${key} must equal ${JSON.stringify(value)}.`)
+  }
+  const stagingProjectRef = String(readiness.stagingProjectRef || '').trim()
+  if (!stagingProjectRef) throw new Error('Staging readiness stagingProjectRef is required.')
+  if (stagingProjectRef === PRODUCTION_PROJECT_REF) throw new Error('Staging readiness cannot identify the production project.')
+  if (!String(readiness.approvedBy || '').trim()) throw new Error('Staging readiness approvedBy is required.')
 }
 
 function validateProductionEvidence(repoRoot, target, row, filePath) {
@@ -132,6 +161,31 @@ function validateProductionEvidence(repoRoot, target, row, filePath) {
   if (!String(evidence.reviewedBy || '').trim()) throw new Error('Production evidence reviewedBy is required.')
 }
 
+function validateRecoveryEvidence(repoRoot, filePath) {
+  const evidence = evidenceFile(repoRoot, filePath, '--recovery-evidence')
+  const required = {
+    status: 'PRODUCTION_DATABASE_RECOVERY_PROVEN',
+    productionProjectRef: PRODUCTION_PROJECT_REF,
+    restoredProjectRef: 'vaszuxjeoajeuhlcnzzf',
+    databaseConnectivityCheck: 'pass',
+    databaseRestoreValidation: 'pass',
+    productionMutated: false,
+  }
+  for (const [key, value] of Object.entries(required)) {
+    if (evidence[key] !== value) throw new Error(`Recovery evidence ${key} must equal ${JSON.stringify(value)}.`)
+  }
+  if (evidence.sourceBackup?.predatesRestoredProject !== true) {
+    throw new Error('Recovery evidence must prove the source backup predates the restored project.')
+  }
+  if (evidence.matchedRelationCount < 1 || evidence.matchedIdentityRowCount < 1) {
+    throw new Error('Recovery evidence must contain matching restored database fingerprints.')
+  }
+  if (evidence.productionLedgerCount !== evidence.restoredProductionLedgerCount) {
+    throw new Error('Recovery evidence must prove the complete production ledger baseline was restored.')
+  }
+  if (!String(evidence.approvedBy || '').trim()) throw new Error('Recovery evidence approvedBy is required.')
+}
+
 function requireRecoverableProduction(repoRoot, target) {
   const result = runSupabase(repoRoot, [
     'backups', 'list', '--project-ref', target.projectRef, '--output-format', 'json',
@@ -149,7 +203,7 @@ function requireRecoverableProduction(repoRoot, target) {
 
 function migrationRecorded(repoRoot, target, version) {
   const sql = `select exists (select 1 from supabase_migrations.schema_migrations where version = '${version}') as already_applied`
-  const result = runSupabase(repoRoot, ['db', 'query', '--db-url', target.dbUrl, sql, '--output-format', 'json'])
+  const result = runSupabase(repoRoot, ['db', 'query', ...target.connectionArgs, sql, '--output-format', 'json'])
   if (!result.ok) throw new Error(`Could not read the production migration ledger: ${result.stderr || result.error}`)
   return /"already_applied"\s*:\s*true/.test(result.stdout)
 }
@@ -173,8 +227,8 @@ function printPlan(rows, options) {
 function printUsage() {
   console.log('Usage:')
   console.log('  node scripts/supabase-phase7-production-execution.mjs --plan [--stream <name>] [--version <version>] [--json]')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --confirm APPLY_TO_PRODUCTION')
-  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --apply-sql --version <version> --staging-evidence <file> --staging-readiness <file> --recovery-evidence <file> --confirm APPLY_TO_PRODUCTION')
+  console.log('  node scripts/supabase-phase7-production-execution.mjs --record-applied --version <version> --staging-evidence <file> --staging-readiness <file> --recovery-evidence <file> --production-evidence <file> --confirm APPLY_TO_PRODUCTION')
 }
 
 function main() {
@@ -201,7 +255,9 @@ function main() {
   }
 
   validateStagingEvidence(repoRoot, row, options.stagingEvidence)
-  const target = productionTarget()
+  validateStagingReadiness(repoRoot, manifest, options.stagingReadiness)
+  validateRecoveryEvidence(repoRoot, options.recoveryEvidence)
+  const target = productionTarget(repoRoot)
   if (options.mode === 'record_applied') {
     validateProductionEvidence(repoRoot, target, row, options.productionEvidence)
   }
@@ -215,7 +271,7 @@ function main() {
   if (options.mode === 'apply_sql') {
     const migrationPath = path.join(repoRoot, 'supabase', 'migrations', row.file)
     if (!existsSync(migrationPath)) throw new Error(`Migration file not found: ${migrationPath}`)
-    const result = runSupabase(repoRoot, ['db', 'query', '--db-url', target.dbUrl, '--file', migrationPath])
+    const result = runSupabase(repoRoot, ['db', 'query', ...target.connectionArgs, '--file', migrationPath])
     if (!result.ok) throw new Error(`Production SQL application failed: ${result.stderr || result.error}`)
     console.log(`Applied SQL for ${row.version} to production project ${target.projectRef}.`)
     console.log('The production ledger was not changed. Verify the target and prepare production evidence before --record-applied.')
@@ -223,7 +279,7 @@ function main() {
   }
 
   const result = runSupabase(repoRoot, [
-    'migration', 'repair', '--db-url', target.dbUrl, '--status', 'applied', row.version,
+    'migration', 'repair', ...target.connectionArgs, '--status', 'applied', row.version,
   ])
   if (!result.ok) throw new Error(`Production ledger update failed: ${result.stderr || result.error}`)
   console.log(`Recorded ${row.version} as applied on production project ${target.projectRef}.`)

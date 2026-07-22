@@ -9,6 +9,9 @@ const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
 const EVIDENCE_PATH = path.join('docs', 'supabase-phase-8-closeout-evidence.json')
 const REPORT_PATH = path.join('docs', 'supabase-phase-8-closeout-report.md')
+const PHASE7_READINESS_PATH = path.join('docs', 'supabase-phase-7-staging-readiness.json')
+const RECOVERY_CONFIRMATION = 'I_HAVE_TESTED_PRODUCTION_RECOVERY'
+const RECOVERY_EVIDENCE_PATH = path.join('migration-evidence', '2026-07-20-production-recovery-phase12', 'production-database-recovery.json')
 const REVIEWED_SPLIT_BASELINE = new Set([
   '202606010001', '202606030007', '202606030008', '202606030009', '202606030010',
   '202606030011', '202606040001', '202606040002', '202606040004', '202606040005',
@@ -152,6 +155,25 @@ function validateEvidence(manifest, evidence) {
   return { complete, incomplete, unknown, duplicates }
 }
 
+function recoveryEvidenceState(repoRoot) {
+  try {
+    const evidence = JSON.parse(readFileSync(path.join(repoRoot, RECOVERY_EVIDENCE_PATH), 'utf8'))
+    const valid = evidence.status === 'PRODUCTION_DATABASE_RECOVERY_PROVEN'
+      && evidence.productionProjectRef === PRODUCTION_PROJECT_REF
+      && evidence.databaseConnectivityCheck === 'pass'
+      && evidence.databaseRestoreValidation === 'pass'
+      && evidence.sourceBackup?.predatesRestoredProject === true
+      && evidence.productionLedgerCount === evidence.restoredProductionLedgerCount
+      && evidence.matchedRelationCount > 0
+      && evidence.matchedIdentityRowCount > 0
+      && String(evidence.approvedBy || '').trim().length > 0
+      && evidence.productionMutated === false
+    return { valid, approvedBy: String(evidence.approvedBy || ''), evidencePath: RECOVERY_EVIDENCE_PATH }
+  } catch {
+    return { valid: false, approvedBy: '', evidencePath: RECOVERY_EVIDENCE_PATH }
+  }
+}
+
 function runSupabase(repoRoot, args) {
   const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
     cwd: repoRoot,
@@ -177,13 +199,15 @@ function liveState(repoRoot) {
   if (!backups.ok) throw new Error(`Could not read production backup status: ${backups.stderr || backups.error}`)
   const backupStatus = parseJsonLoose(backups.stdout)
   if (!backupStatus) throw new Error('The production backup response was not valid JSON.')
-  const physicalBackups = Array.isArray(backupStatus.backups) ? backupStatus.backups : []
+  const physicalBackups = (Array.isArray(backupStatus.backups) ? backupStatus.backups : [])
+    .filter((backup) => backup?.is_physical_backup === true && backup?.status === 'COMPLETED')
   return {
     ledger: ledgerBuckets(rows),
     recovery: {
       pitrEnabled: backupStatus.pitr_enabled === true,
       physicalBackupCount: physicalBackups.length,
       recoverable: backupStatus.pitr_enabled === true || physicalBackups.length > 0,
+      recoveryAttested: process.env.SUPABASE_PRODUCTION_RECOVERY_CONFIRMED === RECOVERY_CONFIRMATION,
     },
   }
 }
@@ -191,27 +215,42 @@ function liveState(repoRoot) {
 function buildResult(repoRoot, options) {
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, MANIFEST_PATH), 'utf8'))
   const evidence = JSON.parse(readFileSync(path.join(repoRoot, EVIDENCE_PATH), 'utf8'))
-  if (manifest.linkedProjectRef !== PRODUCTION_PROJECT_REF || evidence.productionProjectRef !== PRODUCTION_PROJECT_REF) {
-    throw new Error('Manifest or closeout evidence has an unexpected production identity.')
+  const phase7Readiness = JSON.parse(readFileSync(path.join(repoRoot, PHASE7_READINESS_PATH), 'utf8'))
+  if (manifest.linkedProjectRef !== PRODUCTION_PROJECT_REF
+    || evidence.productionProjectRef !== PRODUCTION_PROJECT_REF
+    || phase7Readiness.productionProjectRef !== PRODUCTION_PROJECT_REF) {
+    throw new Error('Manifest, Phase 7 readiness, or closeout evidence has an unexpected production identity.')
   }
   const migrations = localMigrations(repoRoot)
   const duplicates = duplicateVersions(migrations)
   const filenames = new Set(migrations.map((migration) => migration.file))
   const missingManifestFiles = manifest.rows.filter((row) => !filenames.has(row.file)).map((row) => row.file)
   const evidenceState = validateEvidence(manifest, evidence)
+  const recoveryEvidence = recoveryEvidenceState(repoRoot)
+  const phase7Ready = phase7Readiness.status === 'READY_FOR_PRODUCTION_PROMOTION'
+    && phase7Readiness.manifestRowCount === manifest.rows.length
+    && phase7Readiness.stagingLedgerRecordedCount === manifest.rows.length
+    && phase7Readiness.stagingEvidenceComplete === true
+    && phase7Readiness.attorneyIntegrityGate === 'pass'
+    && phase7Readiness.attorneyIntegrityBlockingAssignments === 0
+    && String(phase7Readiness.approvedBy || '').trim().length > 0
   const live = options.verifyLive ? liveState(repoRoot) : null
 
   const localReady = duplicates.length === 0
     && missingManifestFiles.length === 0
+    && phase7Ready
     && evidenceState.incomplete.length === 0
     && evidenceState.unknown.length === 0
     && evidenceState.duplicates.length === 0
+    && recoveryEvidence.valid
   const liveReady = live
     && live.ledger.pureLocalOnly.length === 0
     && live.ledger.pureRemoteOnly.length === 0
     && live.ledger.divergent.length === 0
     && live.ledger.unreviewedSplitVersions.length === 0
     && live.recovery.recoverable
+    && live.recovery.recoveryAttested
+    && recoveryEvidence.valid
   const ready = Boolean(localReady && liveReady)
   return {
     generatedAt: new Date().toISOString(),
@@ -222,7 +261,15 @@ function buildResult(repoRoot, options) {
     manifestRowCount: manifest.rows.length,
     duplicateVersions: duplicates,
     missingManifestFiles,
+    phase7Readiness: {
+      status: phase7Readiness.status,
+      ready: phase7Ready,
+      attorneyIntegrityGate: phase7Readiness.attorneyIntegrityGate,
+      attorneyIntegrityBlockingAssignments: phase7Readiness.attorneyIntegrityBlockingAssignments,
+      approved: String(phase7Readiness.approvedBy || '').trim().length > 0,
+    },
     evidence: evidenceState,
+    recoveryEvidence,
     live,
   }
 }
@@ -249,6 +296,9 @@ The Phase 0 broad-push freeze remains active unless this report says \`READY_FOR
 | Phase 5 manifest rows | ${result.manifestRowCount} |
 | Duplicate versions | ${result.duplicateVersions.length} |
 | Missing manifest files | ${result.missingManifestFiles.length} |
+| Phase 7 staging readiness | ${result.phase7Readiness.status} |
+| Attorney integrity blocking assignments | ${result.phase7Readiness.attorneyIntegrityBlockingAssignments} |
+| Human staging-readiness approval | ${result.phase7Readiness.approved ? 'Yes' : 'No'} |
 | Complete production evidence rows | ${result.evidence.complete.length} |
 | Incomplete production evidence rows | ${result.evidence.incomplete.length} |
 | Unknown evidence rows | ${result.evidence.unknown.length} |
@@ -260,6 +310,8 @@ The Phase 0 broad-push freeze remains active unless this report says \`READY_FOR
 | Unreviewed split versions | ${live ? live.ledger.unreviewedSplitVersions.length : 'Not checked'} |
 | Production PITR | ${live ? (live.recovery.pitrEnabled ? 'Enabled' : 'Disabled') : 'Not checked'} |
 | Physical backups | ${live ? live.recovery.physicalBackupCount : 'Not checked'} |
+| Runtime recovery confirmation configured | ${live ? (live.recovery.recoveryAttested ? 'Yes' : 'No') : 'Not checked'} |
+| Phase 12 recovery evidence | ${result.recoveryEvidence.valid ? `Valid — ${result.recoveryEvidence.approvedBy}` : 'Missing or invalid'} |
 | Ready for reviewed freeze retirement | ${result.readyForFreezeRetirement ? 'Yes' : 'No'} |
 
 ## Incomplete Evidence Versions
@@ -268,7 +320,7 @@ ${list(result.evidence.incomplete)}
 
 ## Closeout Rule
 
-Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 63 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all ${result.manifestRowCount} manifest versions have reviewed closeout evidence, and production recovery is available and tested.
 `
 }
 

@@ -174,7 +174,7 @@ function resolveLifecycleStateFromPacket({
   if (finalCompletion?.ready === true) {
     return {
       state: 'COMPLETED',
-      reason: 'The final signed artifact is verified across the transaction, portal and recipient delivery.',
+      reason: 'The final signed artifact is verified across the transaction and portal surfaces.',
     }
   }
 
@@ -314,6 +314,7 @@ function resolvePacketStatusCacheKey({
   leadId = '',
   organisationId = null,
   viewerRole = '',
+  includeActivity = true,
 } = {}) {
   return [
     normalizeKey(packetType),
@@ -322,6 +323,7 @@ function resolvePacketStatusCacheKey({
     normalizeLeadUuid(leadId),
     normalizeNullableUuid(organisationId) || '',
     normalizeKey(viewerRole),
+    includeActivity ? 'activity' : 'status',
   ].join(':')
 }
 
@@ -382,6 +384,7 @@ export async function resolveDocumentPacketStatus({
   leadId = '',
   organisationId = null,
   viewerRole = '',
+  includeActivity = true,
 } = {}) {
   const cacheKey = resolvePacketStatusCacheKey({
     packetType,
@@ -390,6 +393,7 @@ export async function resolveDocumentPacketStatus({
     leadId,
     organisationId,
     viewerRole,
+    includeActivity,
   })
   const cached = cachedPacketStatuses.get(cacheKey)
   const now = Date.now()
@@ -428,7 +432,7 @@ export async function resolveDocumentPacketStatus({
 
     try {
       if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
+        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: includeActivity })
         if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
           warnings.push('The packet in the link belongs to another lead, so it was ignored.')
           packet = null
@@ -467,7 +471,7 @@ export async function resolveDocumentPacketStatus({
     }
 
     if (packet?.id) {
-      if (!Array.isArray(packet.events)) {
+      if (includeActivity && !Array.isArray(packet.events)) {
         try {
           const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
           packet = packetWithEvents || packet
@@ -550,11 +554,13 @@ export async function resolveDocumentPacketStatus({
       finalCompletion,
       viewerRole,
     })
-    const signingActivity = buildSigningActivityHistory({
-      signers: signingSummary?.signers || [],
-      events: Array.isArray(packet?.events) ? packet.events : [],
-      limit: 100,
-    })
+    const signingActivity = includeActivity
+      ? buildSigningActivityHistory({
+          signers: signingSummary?.signers || [],
+          events: Array.isArray(packet?.events) ? packet.events : [],
+          limit: 100,
+        })
+      : null
     const completionCertificate = buildSigningCompletionCertificate({
       packet,
       version: versions.find((version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url)) || null,

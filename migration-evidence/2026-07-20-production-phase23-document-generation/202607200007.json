@@ -1,0 +1,25 @@
+{
+  "version": "202607200007",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "directPipelineWriteGrantCountBefore": 15,
+    "directPipelineWriteGrantCountAfter": 0,
+    "expectedPolicyTableCount": 10,
+    "packetScopedPolicyTableCount": 10,
+    "expectedRlsTableCount": 15,
+    "rlsTableCount": 15,
+    "serviceEvidenceClientGrantCount": 0,
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "documentRows": 82,
+    "ledgerRecordedBeforeRepair": false
+  }
+}

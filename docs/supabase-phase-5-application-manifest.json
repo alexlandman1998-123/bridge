@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T22:03:40.698Z",
+  "generatedAt": "2026-07-20T09:22:01.207Z",
   "linkedProjectRef": "isdowlnollckzvltkasn",
   "status": "MODULE_AUDIT_READY",
   "rows": [
@@ -520,9 +520,21 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180049",
+      "version": "202607200007",
       "stream": "document_generation",
       "dependsOn": "202607180048",
+      "module": "canonical_documents",
+      "file": "202607200007_document_generator_least_privilege_h2_fix.sql",
+      "objectStatus": "corrective_privilege_hardening",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the H2 catalogue contract to report zero direct client write grants before continuing document-generation promotion."
+    },
+    {
+      "version": "202607180049",
+      "stream": "document_generation",
+      "dependsOn": "202607200007",
       "module": "canonical_documents",
       "file": "202607180049_document_generator_least_privilege_h2.sql",
       "objectStatus": "none_live",
@@ -676,16 +688,28 @@
       "gate": "Run module behavior tests; then record only this version as applied."
     },
     {
-      "version": "202607180037",
+      "version": "202607209901",
       "stream": "attorney_identity_access",
       "dependsOn": "stream preflight",
       "module": "attorney",
-      "file": "202607180037_attorney_professional_role_persistence_phase3.sql",
-      "objectStatus": "partial_live",
+      "file": "202607209901_attorney_professional_role_persistence_phase24_fix.sql",
+      "objectStatus": "reviewed_partial_live_correction",
       "liveCount": 4,
       "objectCount": 27,
-      "action": "corrective_migration_required",
-      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes."
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the reviewed idempotent Phase 24 correction, verify the complete professional-profile target state, then ledger the historical source version."
+    },
+    {
+      "version": "202607180037",
+      "stream": "attorney_identity_access",
+      "dependsOn": "202607209901",
+      "module": "attorney",
+      "file": "202607180037_attorney_professional_role_persistence_phase3.sql",
+      "objectStatus": "all_live_after_reviewed_correction",
+      "liveCount": 27,
+      "objectCount": 27,
+      "action": "repair_only_after_smoke",
+      "gate": "Record only after 202607209901 is applied and the complete historical target state passes production catalog and behavior checks."
     },
     {
       "version": "202607180038",
@@ -712,16 +736,28 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180040",
+      "version": "202607209902",
       "stream": "attorney_identity_access",
       "dependsOn": "202607180039",
       "module": "attorney",
-      "file": "202607180040_attorney_professional_permission_cutover_phase7.sql",
-      "objectStatus": "partial_live",
+      "file": "202607209902_attorney_professional_permission_cutover_phase24_fix.sql",
+      "objectStatus": "reviewed_partial_live_correction",
       "liveCount": 3,
       "objectCount": 4,
-      "action": "corrective_migration_required",
-      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes."
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the reviewed idempotent Phase 24 permission correction, verify canonical authorization behavior, then ledger the historical source version."
+    },
+    {
+      "version": "202607180040",
+      "stream": "attorney_identity_access",
+      "dependsOn": "202607209902",
+      "module": "attorney",
+      "file": "202607180040_attorney_professional_permission_cutover_phase7.sql",
+      "objectStatus": "all_live_after_reviewed_correction",
+      "liveCount": 4,
+      "objectCount": 4,
+      "action": "repair_only_after_smoke",
+      "gate": "Record only after 202607209902 is applied and canonical permission behavior passes production verification."
     },
     {
       "version": "202607180041",
@@ -748,16 +784,160 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "202607180046",
+      "version": "202607209903",
       "stream": "transaction_creation",
       "dependsOn": "stream preflight",
       "module": "transaction_network",
+      "file": "202607209903_transaction_participant_requirements_least_privilege_phase25_fix.sql",
+      "objectStatus": "reviewed_privilege_correction",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Revoke direct anonymous and authenticated writes, retain authenticated RLS-scoped reads, and verify the RPC-only creation boundary."
+    },
+    {
+      "version": "202607180046",
+      "stream": "transaction_creation",
+      "dependsOn": "202607209903",
+      "module": "transaction_network",
       "file": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+      "objectStatus": "all_live",
+      "liveCount": 6,
+      "objectCount": 6,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied."
+    },
+    {
+      "version": "20260719194500",
+      "stream": "other",
+      "dependsOn": "stream preflight",
+      "module": "lead_capture_crm",
+      "file": "20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql",
       "objectStatus": "none_live",
       "liveCount": 0,
-      "objectCount": 6,
+      "objectCount": 2,
       "action": "apply_original_after_dependency_check",
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202607200004",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "stream preflight",
+      "module": "canonical_documents",
+      "file": "202607200004_conditional_legal_masters_phase4.sql",
+      "objectStatus": "reviewed_data_and_revision_migration",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require immutable-revision rollback rehearsal, then apply this file alone and verify both v2 global masters and all 19 conditional sections."
+    },
+    {
+      "version": "202607200005",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "202607200004",
+      "module": "canonical_documents",
+      "file": "202607200005_conditional_legal_master_migration_phase10.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 7,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the certified v2 global masters, then apply and verify the migration table, RLS policies, grants, and four lifecycle functions."
+    },
+    {
+      "version": "202607200006",
+      "stream": "conditional_legal_masters",
+      "dependsOn": "202607200005",
+      "module": "canonical_documents",
+      "file": "202607200006_conditional_legal_master_verification_phase11.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Require the Phase 10 migration lifecycle, then apply and verify immutable receipts, RLS, grants, and the verification function."
+    },
+    {
+      "version": "202607200002",
+      "stream": "seller_onboarding",
+      "dependsOn": "stream preflight",
+      "module": "transaction_network",
+      "file": "202607200002_seller_onboarding_connected_attorney_resolution.sql",
+      "objectStatus": "all_live",
+      "liveCount": 1,
+      "objectCount": 1,
+      "action": "repair_only_after_smoke",
+      "gate": "Verify the connected-attorney resolver is live and behaves correctly, then ledger the historical source version without replaying SQL."
+    },
+    {
+      "version": "202607200008",
+      "stream": "partner_canonical_model",
+      "dependsOn": "stream preflight",
+      "module": "partner_directory",
+      "file": "202607200008_unified_partner_directory_read_model.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply the unified directory read model and verify authenticated-only execution plus fail-closed unauthenticated behavior."
+    },
+    {
+      "version": "202607200009",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200008",
+      "module": "partner_directory",
+      "file": "202607200009_partner_identity_linking_and_deduplication.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Apply identity linking and prove zero unresolved aliases, revoked invitations, or duplicate pending identities."
+    },
+    {
+      "version": "202607200010",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200009",
+      "module": "partner_directory",
+      "file": "202607200010_canonical_partner_relationship_storage.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 7,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Migrate relationships to canonical storage and prove zero unmapped assignments or relationships."
+    },
+    {
+      "version": "202607200011",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200010",
+      "module": "partner_directory",
+      "file": "202607200011_partner_role_configuration_separation.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Create role configuration storage and prove ownership, default, uniqueness, and RLS invariants."
+    },
+    {
+      "version": "202607200012",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200011",
+      "module": "transaction_network",
+      "file": "202607200012_canonical_partner_assignment_ids.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Backfill canonical assignment identifiers and prove zero missing, owner-mismatched, or role-mismatched assignments."
+    },
+    {
+      "version": "202607200013",
+      "stream": "partner_canonical_model",
+      "dependsOn": "202607200012",
+      "module": "partner_directory",
+      "file": "202607200013_retire_legacy_partner_paths.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 3,
+      "action": "apply_original_after_application_cutover",
+      "gate": "Require the exact canonical application release in production, then revoke legacy writes and prove canonical APIs remain available."
     }
   ]
 }

@@ -12,6 +12,13 @@ const { createClient } = require('@supabase/supabase-js')
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 export const normalizeIds = (value) => [...new Set((Array.isArray(value) ? value : String(value || '').split(',')).map((item) => String(item).trim()).filter(Boolean))].sort()
 
+export function isNativeStructuredSource(template = {}) {
+  const metadata = template.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const format = String(template.template_format || '').trim().toLowerCase()
+  const renderMode = String(metadata.render_mode || '').trim().toLowerCase()
+  return ['structured', 'json', 'native_structured'].includes(format) || renderMode === 'native_structured'
+}
+
 export function inspectDocx(bytes) {
   const buffer = Buffer.from(bytes)
   if (buffer.length < 100) throw new Error('The candidate DOCX is empty or truncated.')
@@ -54,7 +61,7 @@ export async function loadC1Context() {
   const projectRef = new URL(url).hostname.split('.')[0]
   if (projectRef !== manifest.projectRef) throw new Error('Runtime Supabase project does not match the frozen review project.')
   const client = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
-  const result = await client.from('document_packet_templates').select('id, packet_type, status, is_active, template_storage_bucket, template_storage_path, template_file_name').in('id', mandateEntries.map((row) => row.templateId))
+  const result = await client.from('document_packet_templates').select('id, packet_type, status, is_active, template_format, template_storage_bucket, template_storage_path, template_file_name, metadata_json').in('id', mandateEntries.map((row) => row.templateId))
   if (result.error) throw result.error
   const templates = result.data || []
   return { manifest, mandateEntries, projectRef, client, templates }

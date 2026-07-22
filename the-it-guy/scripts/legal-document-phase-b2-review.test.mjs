@@ -20,7 +20,7 @@ for (const item of review.reviews) {
   assert.equal(item.contentDigest, frozen.contentDigest)
   assert.ok(['pending', 'approved', 'changes_requested', 'rejected'].includes(item.decision))
 }
-assert.match(dossier, /Do not approve a section-only fingerprint/)
+assert.match(dossier, /Do not approve a missing legacy DOCX source/)
 assert.doesNotMatch(dossier, /writeFileSync|\.insert\(|\.update\(|\.upsert\(|\.delete\(/)
 assert.match(record, /LEGAL_DOCUMENT_COUNSEL_REVIEW_WRITE/)
 assert.match(record, /confirm-content-digest/)

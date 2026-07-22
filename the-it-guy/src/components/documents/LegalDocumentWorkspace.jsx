@@ -7,14 +7,9 @@ import SigningOperationalStatusCard from './SigningOperationalStatusCard'
 import SigningProgressTimeline from './SigningProgressTimeline'
 import SigningActivityHistory from './SigningActivityHistory'
 import SigningCompletionCertificate from './SigningCompletionCertificate'
-import DocumentRoleGuidanceCard from './DocumentRoleGuidanceCard'
-import DocumentRoleActionBar from './DocumentRoleActionBar'
-import DocumentResponsibilityCard from './DocumentResponsibilityCard'
-import DocumentHelpRecoveryCard from './DocumentHelpRecoveryCard'
 import { DocumentJourneyProgress } from './DocumentJourneyProgress'
 import { DocumentMobileActionDock } from './DocumentMobileActionDock'
 import { DocumentAccessibilityNavigation } from './DocumentAccessibilityNavigation'
-import { DocumentCommitConfirmation } from './DocumentCommitConfirmation'
 import { DocumentOutcomeNotice } from './DocumentOutcomeNotice'
 import Drawer from '../ui/Drawer'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -83,14 +78,12 @@ import { templateIsUsableForGeneration } from '../../core/documents/structuredTe
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
 import { findLatestPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from '../../core/documents/pilotDocumentFallback'
-import { buildDocumentRoleGuidance } from '../../core/documents/documentRoleGuidance'
-import { buildDocumentRoleActions } from '../../core/documents/documentRoleActions'
 import { buildDocumentResponsibility } from '../../core/documents/documentResponsibility'
 import { buildDocumentHelpRecovery } from '../../core/documents/documentHelpRecovery'
 import { buildDocumentJourneyProgress } from '../../core/documents/documentJourneyProgress'
+import { getConditionalMasterPackDefinitions } from '../../core/documents/conditionalMasterTemplateDefinitions'
 import { buildDocumentMobileAction } from '../../core/documents/documentMobileAction'
 import { buildDocumentAccessibility } from '../../core/documents/documentAccessibility'
-import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../../core/documents/documentOutcomeFeedback'
 import { recordDocumentExperienceEvent } from '../../services/documentExperienceTelemetryService'
 import {
@@ -117,19 +110,6 @@ function isUuidLike(value = '') {
 function isPersistedPacketId(value = '') {
   const text = normalizeText(value)
   return isUuidLike(text) || isRuntimePacketId(text)
-}
-
-function hasLoadedWorkspaceSnapshot(status = null) {
-  if (!status || typeof status !== 'object') return false
-  const packetId = normalizeText(status?.packet?.id)
-  const state = normalizeKey(status?.state)
-  const versions = Array.isArray(status?.versions) ? status.versions : []
-
-  if (isRuntimePacketId(packetId)) return true
-  if (!packetId || !isUuidLike(packetId)) return false
-  if (versions.length > 0) return true
-  if (['pdf_generated', 'ready_to_send', 'sent', 'partially_signed', 'completed', 'archived'].includes(state)) return true
-  return false
 }
 
 function hasUsablePacketVersionForSigning(version = null) {
@@ -164,6 +144,8 @@ function normalizeKey(value) {
 }
 
 const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+const SIGNING_PREPARATION_TIMEOUT_MS = 15000
+const SIGNING_DELIVERY_TIMEOUT_MS = 12000
 
 function withWorkspaceTimeout(task, message, timeoutMs = WORKSPACE_REFRESH_TIMEOUT_MS) {
   let timeoutId = null
@@ -407,6 +389,26 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
   if (code === 'VALIDATION_BLOCKED') {
+    const legalScenarioConflicts = Array.isArray(error?.validation?.legalDocumentConflictingFacts)
+      ? error.validation.legalDocumentConflictingFacts
+      : []
+    if (legalScenarioConflicts.length) {
+      return [
+        'Legal Setup Conflict',
+        ...legalScenarioConflicts.map((fact) => `- ${String(fact.field).replace(/_/g, ' ')}`),
+        'Resolve the conflicting saved values before generating the document.',
+      ].join('\n')
+    }
+    const legalScenarioInvalid = Array.isArray(error?.validation?.legalDocumentInvalidFacts)
+      ? error.validation.legalDocumentInvalidFacts
+      : []
+    if (legalScenarioInvalid.length) {
+      return [
+        'Legal Setup Invalid',
+        ...legalScenarioInvalid.map((fact) => `- ${String(fact.field).replace(/_/g, ' ')}`),
+        'Choose a recognised value before generating the document.',
+      ].join('\n')
+    }
     const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
       ? error.validation.legalDocumentMissingRoutingFacts
       : []
@@ -533,7 +535,7 @@ function isLegacyBridgeLogoUrl(value) {
 
 function resolveSignerBlueprint(packetType = 'mandate', options = {}) {
   const key = normalizeKey(packetType)
-  if (key === 'otp' && Array.isArray(options.legalSignerProfile?.signers)) {
+  if (Array.isArray(options.legalSignerProfile?.signers)) {
     return options.legalSignerProfile.signers.map((signer) => ({
       role: signer.role,
       label: signer.label,
@@ -662,7 +664,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   const mandateType = normalizeKey(sourceContext?.mandateType || sourceContext?.contextType)
   const blueprint = [
     ...resolveSignerBlueprint(packetType, { mandateType, legalSignerProfile }),
-    ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired
+    ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired && !legalSignerProfile
       ? [{ role: 'purchaser_2', label: secondarySignerLabel, required: true }]
       : []),
   ]
@@ -688,7 +690,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   for (const row of rows) {
     const role = normalizeKey(row?.signer_role || row?.role)
     if (!role || configured.has(role)) continue
-    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSecondarySignerRequired) continue
+    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && (legalSignerProfile || !mandateSecondarySignerRequired)) continue
     const defaults = signerDefaults?.[role] || {}
     roster.push({
       role,
@@ -848,6 +850,9 @@ function extractTemplateTokens(section = {}) {
   if (Array.isArray(section?.placeholders)) {
     return normalizePlaceholderTokens(section.placeholders)
   }
+  if (Array.isArray(section?.mergeFields)) {
+    return normalizePlaceholderTokens(section.mergeFields)
+  }
   if (section?.placeholders && typeof section.placeholders === 'object') {
     return Object.entries(section.placeholders).map(([token, label]) => ({
       token: normalizeText(token),
@@ -884,9 +889,15 @@ function convertManifestToEditableSections({
   manifest = [],
   placeholders = {},
   editableSnapshot = null,
+  includeSnapshotOnlySections = true,
 } = {}) {
   const snapshotSections = Array.isArray(editableSnapshot?.sections) ? editableSnapshot.sections : []
   const snapshotByKey = new Map(snapshotSections.map((row) => [normalizeText(row?.key), row]))
+  const protectedConditionalPackKeys = new Set(
+    getConditionalMasterPackDefinitions(packetType)
+      .map((pack) => normalizeText(pack?.key))
+      .filter(Boolean),
+  )
   let sourceRows = Array.isArray(manifest) ? manifest : []
   const manifestHasMandateIntro = sourceRows.some((section) => normalizeKey(section?.key) === 'introduction_purpose')
   const snapshotMandateIntro = snapshotSections.find((section) => normalizeKey(section?.key) === 'introduction_purpose')
@@ -911,9 +922,9 @@ function convertManifestToEditableSections({
   const sourceKeySet = new Set(sourceRows.map((section) => normalizeText(section?.key)).filter(Boolean))
   const snapshotOnlyRows = snapshotSections.filter((section) => {
     const key = normalizeText(section?.key)
-    return key && !sourceKeySet.has(key)
+    return key && !sourceKeySet.has(key) && !protectedConditionalPackKeys.has(key)
   })
-  if (snapshotOnlyRows.length) {
+  if (includeSnapshotOnlySections && snapshotOnlyRows.length) {
     sourceRows = [...sourceRows, ...snapshotOnlyRows]
   }
 
@@ -2203,7 +2214,6 @@ function SignerPreparationPanel({
   onDraftChange = null,
   validation = { blockers: [], warnings: [] },
   onPrepare = null,
-  onSave = null,
   onResend = null,
   onRefresh = null,
   signingLayout = [],
@@ -2364,11 +2374,8 @@ function SignerPreparationPanel({
       ) : null}
 
       <div className="mt-3 grid gap-2">
-        <Button type="button" size="sm" variant="secondary" onClick={() => void onPrepare?.()} disabled={busy || !canEditRoster}>
-          {busy ? 'Working…' : 'Prepare Signer Fields'}
-        </Button>
-        <Button type="button" size="sm" variant="secondary" onClick={() => void onSave?.()} disabled={busy || !canEditRoster}>
-          {busy ? 'Working…' : 'Save Signer Details'}
+        <Button type="button" size="sm" onClick={() => void onPrepare?.()} disabled={busy || !canEditRoster}>
+          {busy ? 'Working…' : 'Save and Prepare'}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => void onRefresh?.()} disabled={busy}>
           Refresh Signer Status
@@ -2450,17 +2457,145 @@ function SignaturePreparationCard({
   )
 }
 
+function SendForSignatureReviewPanel({
+  packetType = 'mandate',
+  lifecycleState = 'draft',
+  roster = [],
+  recipientRoles = new Set(),
+  recipientSummary = '',
+  routeNote = '',
+  validation = { blockers: [], warnings: [], isReady: false },
+  draftByRole = {},
+  canManageSigners = true,
+  canSend = true,
+  busy = false,
+  loadError = '',
+  onDraftChange = null,
+  onConfirm = null,
+  onClose = null,
+}) {
+  const rows = Array.isArray(roster) ? roster : []
+  const canEditRoster = canManageSigners && ['draft', 'pdf_generated', 'ready_to_send'].includes(normalizeLifecycleState(lifecycleState))
+  const blockerCount = Array.isArray(validation?.blockers) ? validation.blockers.length : 0
+  const warningCount = Array.isArray(validation?.warnings) ? validation.warnings.length : 0
+  const readyToSend = canSend && validation?.isReady && !blockerCount
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">Next send</p>
+            <h4 className="mt-1 text-lg font-semibold text-[#102033]">
+              {recipientSummary || 'Signer details'}
+            </h4>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+            readyToSend
+              ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+              : 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+          }`}>
+            {readyToSend ? 'Ready to send' : 'Needs review'}
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#6b7c93]">
+          {routeNote || `Confirm who will receive the ${resolveDocumentLabel(packetType).toLowerCase()} signing link before sending.`}
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        {rows.map((row) => {
+          const draft = draftByRole[row.role] || { signerName: row.signerName, signerEmail: row.signerEmail }
+          const signerName = normalizeText(draft.signerName || row.signerName)
+          const signerEmail = normalizeText(draft.signerEmail || row.signerEmail).toLowerCase()
+          const rowStatus = normalizeKey(row.statusRaw || row.status)
+          const willReceiveLink = recipientRoles.has(row.role)
+          const rowReady = signerName && isValidEmail(signerEmail) && !signerEmail.endsWith('@bridge.local')
+          const editableRow = canEditRoster && (!row.signer || !isValidEmail(row.signerEmail) || row.signerEmail.endsWith('@bridge.local'))
+          return (
+            <article key={row.role} className={`rounded-[16px] border p-3 ${
+              willReceiveLink ? 'border-[#cfe1ff] bg-[#f4f8ff]' : 'border-[#e3ebf5] bg-white'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#20344b]">
+                    {row.label}
+                    {row.required ? <span className="ml-1 text-[#7b8ea4]">*</span> : null}
+                  </p>
+                  <p className="mt-0.5 text-[0.68rem] text-[#6f839b]">
+                    {willReceiveLink ? 'Will receive this signing link' : rowStatus === 'signed' ? 'Already signed' : row.required ? 'Required signer' : 'Optional signer'}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${
+                  rowStatus === 'signed'
+                    ? 'bg-[#effaf4] text-[#2e7b4f]'
+                    : rowReady
+                      ? 'bg-[#eef5ff] text-[#0a66ff]'
+                      : 'bg-[#fff8ec] text-[#8a5b12]'
+                }`}>
+                  {rowStatus === 'signed' ? 'Signed' : rowReady ? 'Ready' : 'Needs details'}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={(event) => onDraftChange?.(row.role, 'signerName', event.target.value)}
+                  disabled={!editableRow || busy}
+                  placeholder={`${row.label} name`}
+                  className="rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4] disabled:cursor-not-allowed disabled:bg-[#f2f6fb] disabled:text-[#7b8fa5]"
+                />
+                <input
+                  type="email"
+                  value={signerEmail}
+                  onChange={(event) => onDraftChange?.(row.role, 'signerEmail', event.target.value.toLowerCase())}
+                  disabled={!editableRow || busy}
+                  placeholder={`${row.label} email`}
+                  className="rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4] disabled:cursor-not-allowed disabled:bg-[#f2f6fb] disabled:text-[#7b8fa5]"
+                />
+              </div>
+            </article>
+          )
+        })}
+      </section>
+
+      {blockerCount ? (
+        <div className="space-y-1 rounded-[14px] border border-[#f2d7d2] bg-[#fff4f2] px-4 py-3 text-sm text-[#a03a2a]">
+          {validation.blockers.map((item, index) => <p key={`send-blocker-${index}`}>{item}</p>)}
+        </div>
+      ) : null}
+      {warningCount ? (
+        <div className="space-y-1 rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+          {validation.warnings.map((item, index) => <p key={`send-warning-${index}`}>{item}</p>)}
+        </div>
+      ) : null}
+      {loadError ? (
+        <div className="rounded-[14px] border border-[#f2d7d2] bg-[#fff4f2] px-4 py-3 text-sm text-[#a03a2a]">
+          {loadError}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button type="button" size="md" variant="secondary" onClick={() => onClose?.()} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="button" size="md" onClick={() => void onConfirm?.()} disabled={busy || !readyToSend}>
+          {busy ? 'Sending…' : 'Confirm and Send'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function SigningMethodPanel({
   method = 'not_selected',
   packetType = 'mandate',
   canChange = false,
   lockedReason = '',
   onSelect = null,
-  onOpenSignaturePrep = null,
   canResend = false,
   onResend = null,
   resendSummary = '',
-  signaturePrepSummary = null,
   busy = false,
   className = '',
 }) {
@@ -2540,63 +2675,29 @@ function SigningMethodPanel({
           })}
         </div>
 
-        <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
-              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                Open signer details in a popup so this panel stays compact.
-              </p>
-            </div>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-              signaturePrepSummary?.tone === 'amber'
-                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
-                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-            }`}>
-              {signaturePrepSummary?.statusLabel || 'Ready to open'}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {resolveDocumentLabel(packetType)}
-            </span>
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {signaturePrepSummary?.readyLabel || 'Signer details ready'}
-            </span>
-          </div>
-          {lockedReason ? (
-            <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-              {lockedReason}
-            </p>
-          ) : !canChange ? (
-            <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-          ) : null}
-          {canResend ? (
-            <div className="mt-3 rounded-[16px] border border-[#dbe8f6] bg-white px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#102033]">Resend signing links</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                    {resendSummary || 'Refresh and resend links to outstanding signers without changing the mandate.'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
-                    {busy ? 'Working…' : 'Resend Links'}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-                    Choose Recipient
-                  </Button>
-                </div>
+        {lockedReason ? (
+          <p className="rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+            {lockedReason}
+          </p>
+        ) : !canChange ? (
+          <p className="text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+        ) : null}
+
+        {canResend ? (
+          <div className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#102033]">Signing links</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                  {resendSummary || 'Refresh links to outstanding signers without changing the mandate.'}
+                </p>
               </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
+                {busy ? 'Working…' : 'Resend Links'}
+              </Button>
             </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-              Open Signature Prep
-            </Button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   )
@@ -2911,6 +3012,7 @@ export default function LegalDocumentWorkspace({
   displayMode = 'modal',
   transactionId = '',
   transactionReference = '',
+  leadId = '',
   packetType = 'mandate',
   packetId = '',
   mode = 'view',
@@ -2961,11 +3063,10 @@ export default function LegalDocumentWorkspace({
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const [mergeDetailsOpen, setMergeDetailsOpen] = useState(false)
-  const [signerPrepOpen, setSignerPrepOpen] = useState(false)
+  const [sendSignatureReviewOpen, setSendSignatureReviewOpen] = useState(false)
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
-  const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
   const [certifiedPdfAccessUrl, setCertifiedPdfAccessUrl] = useState('')
   const [pdfAccessBusy, setPdfAccessBusy] = useState(false)
@@ -2984,7 +3085,6 @@ export default function LegalDocumentWorkspace({
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
-  const skippedInitialPageRefreshRef = useRef(false)
   const centerTabInitializedRef = useRef(false)
   const centerTabPreferenceRef = useRef(null)
   const autosavePromiseRef = useRef(null)
@@ -3069,28 +3169,6 @@ export default function LegalDocumentWorkspace({
     return getGeneratedPacketVersionForSigning(versions) || getUsablePacketVersionForSigning(versions) || versions[0] || null
   }, [statusState?.versions])
 
-  useEffect(() => {
-    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
-    const resolvedVersionId = normalizeText(latestVersion?.id)
-    if (!signerPrepOpen || !resolvedPacketId || !resolvedVersionId || latestVersion?.transaction_pdf_persisted !== true) return undefined
-    let cancelled = false
-    setSigningFieldLayoutBusy(true)
-    fetchSigningFieldLayout({ packetId: resolvedPacketId, versionId: resolvedVersionId })
-      .then((layout) => {
-        if (cancelled) return
-        setSigningFieldLayout(Array.isArray(layout?.fields) ? layout.fields : [])
-        setSigningFieldLayoutRevision(Number(layout?.revision || 0))
-        setSigningPdfPageCount(Number(layout?.pdfPageCount || 1))
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(toFriendlyWorkspaceError(error, 'Unable to load the signature block layout.'))
-      })
-      .finally(() => {
-        if (!cancelled) setSigningFieldLayoutBusy(false)
-      })
-    return () => { cancelled = true }
-  }, [latestVersion?.id, latestVersion?.transaction_pdf_persisted, packetId, signerPrepOpen, statusState?.packet?.id])
-
   const editableVersion = useMemo(() => {
     const versions = Array.isArray(statusState?.versions) ? statusState.versions : []
     return versions.find((version) => (
@@ -3147,20 +3225,25 @@ export default function LegalDocumentWorkspace({
     [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
   const legalSignerProfile = useMemo(() => (
-    isOtpPacket
+    isMandatePacket || isOtpPacket
       ? resolveLegalDocumentSignerProfile({
-          packetType: 'otp',
+          packetType,
           placeholders: latestVersion?.placeholders_resolved_json || {},
           context: sourceContext,
         })
       : null
-  ), [isOtpPacket, latestVersion?.placeholders_resolved_json, sourceContext])
+  ), [isMandatePacket, isOtpPacket, latestVersion?.placeholders_resolved_json, packetType, sourceContext])
   const signerDefaults = useMemo(() => {
-    if (isMandatePacket) return buildSignerDefaultsFromContext({ sourceContext, latestVersion })
     if (!legalSignerProfile) return {}
-    return Object.fromEntries(legalSignerProfile.signers.map((signer) => [signer.role, {
+    const scenarioDefaults = Object.fromEntries(legalSignerProfile.signers.map((signer) => [signer.role, {
       signerName: signer.signerName,
       signerEmail: signer.signerEmail,
+    }]))
+    if (!isMandatePacket) return scenarioDefaults
+    const legacyDefaults = buildSignerDefaultsFromContext({ sourceContext, latestVersion })
+    return Object.fromEntries(Object.entries(scenarioDefaults).map(([role, value]) => [role, {
+      signerName: value.signerName || legacyDefaults?.[role]?.signerName || '',
+      signerEmail: value.signerEmail || legacyDefaults?.[role]?.signerEmail || '',
     }]))
   }, [isMandatePacket, latestVersion, legalSignerProfile, sourceContext])
 
@@ -3295,7 +3378,7 @@ export default function LegalDocumentWorkspace({
       setActionFeedback('')
       const result = await retryFinalDocumentCompletion({ packetId: resolvedPacketId, versionId: resolvedVersionId })
       setFinalCompletionState(result?.status || await getFinalDocumentCompletionStatus({ packetId: resolvedPacketId, versionId: resolvedVersionId }))
-      setActionFeedback('Final signed document completed across the transaction, portals and recipient delivery.')
+      setActionFeedback('Final signed document completed across the transaction and portal surfaces.')
       await refreshWorkspaceData()
     } catch (error) {
       setActionFeedback(error?.message || 'The signed PDF is safe, but completion still needs attention. Please retry.')
@@ -3319,22 +3402,6 @@ export default function LegalDocumentWorkspace({
     surface: 'workspace',
     state: signingOperationalStatus.state,
   }), [signingOperationalStatus.state])
-  const roleGuidance = useMemo(() => buildDocumentRoleGuidance({
-    surface: 'workspace',
-    role: workspaceRole,
-    packetType,
-    state: signingOperationalStatus.state,
-  }), [packetType, signingOperationalStatus.state, workspaceRole])
-  const roleActions = useMemo(() => buildDocumentRoleActions({
-    surface: 'workspace',
-    role: workspaceRole,
-    state: signingOperationalStatus.state,
-    canEdit: legalPermissions.canEditDraft,
-    canSend: legalPermissions.canSend,
-    canFinalize: legalPermissions.canFinalize,
-    finalCopyAvailable: Boolean(signedPreviewUrl),
-    certificateAvailable: statusState?.completionCertificate?.ready === true,
-  }), [legalPermissions.canEditDraft, legalPermissions.canFinalize, legalPermissions.canSend, signedPreviewUrl, signingOperationalStatus.state, statusState?.completionCertificate?.ready, workspaceRole])
   const responsibility = useMemo(() => buildDocumentResponsibility({
     surface: 'workspace',
     role: workspaceRole,
@@ -3368,33 +3435,6 @@ export default function LegalDocumentWorkspace({
     recordWorkspaceExperience('outcome_shown', { state: signingOperationalStatus.state, category })
   }, [open, outcomeFeedback?.category, recordWorkspaceExperience, signingOperationalStatus.state])
 
-  function handleRoleAction(actionId) {
-    recordWorkspaceExperience('primary_action_selected', { state: signingOperationalStatus.state, actionId })
-    if (actionId === 'edit_document') {
-      centerTabPreferenceRef.current = 'editor'
-      setCenterTab('editor')
-      document.getElementById('legal-document-main-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } else if (actionId === 'open_preview') {
-      centerTabPreferenceRef.current = 'preview'
-      setCenterTab('preview')
-      document.getElementById('legal-document-main-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } else if (actionId === 'prepare_signatures') {
-      setSignerPrepOpen(true)
-    } else if (actionId === 'send_document') {
-      void runReviewAction('send_signature')
-    } else if (actionId === 'open_signers') {
-      document.getElementById('legal-document-signer-progress')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'open_activity') {
-      document.getElementById('legal-document-signing-activity')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'open_final') {
-      if (signedPreviewUrl) window.open(signedPreviewUrl, '_blank', 'noopener,noreferrer')
-    } else if (actionId === 'open_certificate') {
-      document.getElementById('legal-document-completion-certificate')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } else if (actionId === 'retry_completion') {
-      void handleRetryFinalCompletion()
-    }
-  }
-
   function handleHelpRecoveryAction(actionId) {
     recordWorkspaceExperience('recovery_selected', { state: signingOperationalStatus.state, actionId, category: helpRecovery.category })
     if (actionId === 'review_information') {
@@ -3425,7 +3465,11 @@ export default function LegalDocumentWorkspace({
     }
     return null
   }, [isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
-  const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
+  // Seller onboarding is a digital-signing flow. Physical signing remains an explicit
+  // exception, but agents should not need to make a default-method click first.
+  const signingMethod = isMandatePacket
+    ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod || 'digital')
+    : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
   const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
   const mandateRoutingSnapshot = isMandatePacket
@@ -3491,26 +3535,39 @@ export default function LegalDocumentWorkspace({
       percent,
     }
   }, [signerRoster])
-  const signaturePrepSummary = useMemo(() => {
-    const blockerCount = Array.isArray(signerValidation.blockers) ? signerValidation.blockers.length : 0
-    const warningCount = Array.isArray(signerValidation.warnings) ? signerValidation.warnings.length : 0
+  const signatureSendReview = useMemo(() => {
+    const rows = effectiveSignerRoster.map((row) => {
+      const draft = signerDraftByRole[row.role] || null
+      if (!draft) return row
+      return {
+        ...row,
+        signerName: normalizeText(draft.signerName || row.signerName),
+        signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
+      }
+    })
+    const agentRow = rows.find((row) => normalizeKey(row.role) === 'agent') || null
+    const agentHasSigned = Boolean(agentRow?.signedAt) || normalizeKey(agentRow?.statusRaw || agentRow?.status) === 'signed'
+    const requiredRows = rows.filter((row) => row.required)
+    const outstandingRequiredRows = requiredRows.filter((row) => !['signed', 'declined'].includes(normalizeKey(row.statusRaw || row.status)))
+    const recipientRows = isMandatePacket && agentRow && !agentHasSigned
+      ? [agentRow]
+      : (outstandingRequiredRows.length ? outstandingRequiredRows : requiredRows)
+    const recipientRoles = new Set(recipientRows.map((row) => row.role))
+    const recipientSummary = recipientRows.length
+      ? recipientRows.map((row) => row.label).join(', ')
+      : 'No outstanding signers'
+    const routeNote = isMandatePacket && agentRow && !agentHasSigned
+      ? 'The agent receives the first secure signing link. Seller-side links follow once the agent has signed.'
+      : recipientRows.length > 1
+        ? 'These outstanding signers will receive secure signing links for the mandate.'
+        : 'This signer will receive the next secure signing link for the mandate.'
     return {
-      readyLabel: signerProgressMeta.totalRequired
-        ? `${signerProgressMeta.signedRequired}/${signerProgressMeta.totalRequired} ready`
-        : 'No required signers',
-      statusLabel: blockerCount
-        ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention`
-        : warningCount
-          ? `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review`
-          : 'Signer identities ready',
-      tone: blockerCount || warningCount ? 'amber' : 'green',
+      rows,
+      recipientRoles,
+      recipientSummary,
+      routeNote,
     }
-  }, [
-    signerProgressMeta.signedRequired,
-    signerProgressMeta.totalRequired,
-    signerValidation.blockers,
-    signerValidation.warnings,
-  ])
+  }, [effectiveSignerRoster, isMandatePacket, signerDraftByRole])
 
   const editablePreviewHtml = useMemo(() => {
     if (!editableSections.length) return ''
@@ -3702,8 +3759,13 @@ export default function LegalDocumentWorkspace({
     refreshPromise = (async () => {
       const currentStatus = statusStateRef.current || null
       const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
-      const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
-      if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
+      const currentPacketId = isUuidLike(rawPacketId)
+        ? rawPacketId
+        : isUuidLike(packetId)
+          ? normalizeText(packetId)
+          : ''
+      const canResolveSavedPacket = Boolean(currentPacketId || normalizeText(transactionId) || normalizeText(leadId))
+      if (!canResolveSavedPacket && currentStatus) {
         setStatusState(currentStatus)
         setPacketDetail(null)
         return {
@@ -3712,16 +3774,29 @@ export default function LegalDocumentWorkspace({
         }
       }
 
+      const statusRequest = resolveDocumentPacketStatus({
+        packetType,
+        packetId: currentPacketId,
+        transactionId,
+        leadId,
+        organisationId,
+        includeActivity: false,
+      })
       const resolved = await withWorkspaceTimeout(
-        resolveDocumentPacketStatus({
-          packetType,
-          packetId: currentPacketId,
-          transactionId,
-          organisationId,
-        }),
+        statusRequest,
         'Packet status is taking too long to load.',
       ).catch((error) => {
         console.warn('[LegalDocumentWorkspace] packet status refresh timed out; keeping workspace usable.', error)
+        // Keep the delayed request alive. It contains the packet's actual
+        // template id and replaces the temporary draft as soon as Supabase
+        // responds, instead of requiring the user to leave and reopen.
+        void statusRequest.then((lateResolved) => {
+          if (!lateResolved?.packet?.id) return
+          statusStateRef.current = lateResolved
+          setStatusState(lateResolved)
+        }).catch((lateStatusError) => {
+          console.warn('[LegalDocumentWorkspace] delayed packet status refresh failed.', lateStatusError)
+        })
         return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
       })
       setStatusState(resolved)
@@ -3761,7 +3836,7 @@ export default function LegalDocumentWorkspace({
 
     refreshWorkspacePromiseRef.current = refreshPromise
     return refreshPromise
-  }, [organisationId, packetId, packetType, transactionId])
+  }, [leadId, organisationId, packetId, packetType, transactionId])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {
     if (!isMandatePacket) return
@@ -3900,12 +3975,6 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
-    if (isPageMode && hasLoadedWorkspaceSnapshot(initialStatus) && !skippedInitialPageRefreshRef.current) {
-      skippedInitialPageRefreshRef.current = true
-      return () => {
-        active = false
-      }
-    }
 
     const load = async () => {
       const shouldBlockPreview = !statusStateRef.current
@@ -3926,7 +3995,7 @@ export default function LegalDocumentWorkspace({
     return () => {
       active = false
     }
-  }, [initialStatus, isPageMode, open, refreshWorkspaceData])
+  }, [initialStatus, open, refreshWorkspaceData])
 
   useEffect(() => {
     let active = true
@@ -3940,7 +4009,7 @@ export default function LegalDocumentWorkspace({
 
     const loadTemplate = async () => {
       try {
-        const template = await fetchDocumentPacketTemplate(templateId, { includeSections: false })
+        const template = await fetchDocumentPacketTemplate(templateId, { includeSections: true })
         if (!active) return
         setTemplateDetail(template || null)
       } catch {
@@ -3960,9 +4029,32 @@ export default function LegalDocumentWorkspace({
 
   useEffect(() => {
     if (!open) return
-    const manifest = Array.isArray(editableVersion?.section_manifest_json)
+    const editableManifest = Array.isArray(editableVersion?.section_manifest_json)
       ? editableVersion.section_manifest_json
       : []
+    const generatedManifest = Array.isArray(latestVersion?.section_manifest_json)
+      ? latestVersion.section_manifest_json
+      : []
+    const templateManifest = Array.isArray(templateDetail?.canonical_definition?.sections)
+      ? templateDetail.canonical_definition.sections
+      : Array.isArray(templateDetail?.sections)
+        ? templateDetail.sections
+        : []
+    const currentPacketTemplateId = normalizeText(statusState?.packet?.template_id)
+    const currentTemplateId = normalizeText(templateDetail?.id)
+    const canAdoptCurrentTemplate = ['draft', 'ready_for_generation', 'pdf_generated', 'ready_to_send']
+      .includes(normalizedLifecycleState) &&
+      Boolean(currentPacketTemplateId) &&
+      currentPacketTemplateId === currentTemplateId
+    // Before signing starts, the legal-template page is the source of truth.
+    // Generated manifests remain a historical record once a packet is sent.
+    const manifest = canAdoptCurrentTemplate && templateManifest.length
+      ? templateManifest
+      : generatedManifest.length > 1
+        ? generatedManifest
+        : templateManifest.length > 1
+          ? templateManifest
+          : editableManifest
     const placeholderMap = editableVersion?.placeholders_resolved_json && typeof editableVersion.placeholders_resolved_json === 'object'
       ? editableVersion.placeholders_resolved_json
       : {}
@@ -3971,6 +4063,7 @@ export default function LegalDocumentWorkspace({
       manifest,
       placeholders: placeholderMap,
       editableSnapshot,
+      includeSnapshotOnlySections: !canAdoptCurrentTemplate,
     })
     setEditableSections(sections)
     setEditableDirty(false)
@@ -3991,7 +4084,7 @@ export default function LegalDocumentWorkspace({
       }
       return currentTab
     })
-  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, mode, open, packetType])
+  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, latestVersion?.section_manifest_json, mode, normalizedLifecycleState, open, packetType, statusState?.packet?.template_id, templateDetail?.canonical_definition?.sections, templateDetail?.id, templateDetail?.sections])
 
   useEffect(() => {
     if (!editableDirty || !open || !editableAllowed || !editableSections.length || actionBusy) return undefined
@@ -4266,7 +4359,16 @@ export default function LegalDocumentWorkspace({
     const resolvedPacketId = normalizeText(currentStatus?.packet?.id || packetId)
     if (!resolvedPacketId) throw new Error('Generate a packet first before assigning signers.')
     const currentSigningVersion = getGeneratedPacketVersionForSigning(currentStatus?.versions || [])
-    if (!currentSigningVersion?.id) throw createWorkspaceError('NO_GENERATED_VERSION', 'Generate a packet version before assigning signers.')
+    if (!currentSigningVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(currentStatus?.versions || [])
+      if (pilotVersion) {
+        throw createWorkspaceError(
+          'PILOT_FALLBACK_REVIEW_REQUIRED',
+          'This draft is an internal preview, not a signable mandate. Generate a verified mandate before preparing signers.',
+        )
+      }
+      throw createWorkspaceError('NO_GENERATED_VERSION', 'Generate a verified mandate before assigning signers.')
+    }
 
     const payload = effectiveSignerRoster
       .map((row, index) => {
@@ -4302,8 +4404,8 @@ export default function LegalDocumentWorkspace({
         organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
         markSigningPrep: true,
       }),
-      'Signer details are taking too long to save.',
-      10000,
+      'Signer details could not be confirmed within 15 seconds. Check your connection and retry once.',
+      SIGNING_PREPARATION_TIMEOUT_MS,
     )
     return payload.length
   }
@@ -4315,6 +4417,14 @@ export default function LegalDocumentWorkspace({
       setLoadError('Generate a document packet before preparing signer fields.')
       return
     }
+    const verifiedVersion = getGeneratedPacketVersionForSigning(statusState?.versions || [])
+    if (!verifiedVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
+      setLoadError(pilotVersion
+        ? 'This is an internal review preview, not a signable mandate. Generate a verified mandate before preparing signatures.'
+        : 'Generate a verified mandate before preparing signatures.')
+      return
+    }
     assertMandateActionValidation('generate', {
       packetId: resolvedPacketId,
       versionId: latestVersion?.id,
@@ -4322,21 +4432,43 @@ export default function LegalDocumentWorkspace({
     setSignerBusy(true)
     setLoadError('')
     setActionFeedback('')
+    setActionProgressMessage('Preparing signature fields…')
     try {
-      const signingVersion = getSigningVersionSnapshot(statusState, latestVersion)
-      const prepared = await prepareSigningFields({
-        packetId: resolvedPacketId,
-        packetType,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
-        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
-        context: statusState?.packet?.source_context_json || {},
-      })
+      setActionProgressMessage('Saving signer details…')
+      const savedCount = await saveSignerDetails({ includeOptional: true })
+      let workingStatus = statusStateRef.current || statusState
+      if (savedCount > 0) {
+        try {
+          const refreshed = await refreshWorkspaceData()
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+            workingStatus = refreshed.resolved
+          }
+        } catch (refreshError) {
+          console.warn('[LegalDocumentWorkspace] signer save was confirmed but the status refresh was slow.', refreshError)
+        }
+      }
+      setActionProgressMessage('Preparing signature fields…')
+      const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
+      const prepared = await withWorkspaceTimeout(
+        prepareSigningFields({
+          packetId: resolvedPacketId,
+          packetType,
+          organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+          placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
+          context: workingStatus?.packet?.source_context_json || {},
+        }),
+        'Signature preparation could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+        SIGNING_PREPARATION_TIMEOUT_MS,
+      )
       applyPreparedSigningState(prepared)
-      setActionFeedback('Signer fields prepared. Review signer details and send when ready.')
+      setActionFeedback(savedCount > 0 ? 'Signer details saved and signature fields prepared.' : 'Signature fields prepared. Signer details were already up to date.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare signer fields right now.'))
     } finally {
       setSignerBusy(false)
+      setActionProgressMessage('')
     }
   }
 
@@ -4418,28 +4550,49 @@ export default function LegalDocumentWorkspace({
   async function ensureSignerReadinessBeforeSend({ isResend = false, targetSignerRole = '' } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
+    const verifiedVersion = getGeneratedPacketVersionForSigning(workingStatus?.versions || [])
+    if (!verifiedVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(workingStatus?.versions || [])
+      throw createWorkspaceError(
+        pilotVersion ? 'PILOT_FALLBACK_REVIEW_REQUIRED' : 'NO_GENERATED_VERSION',
+        pilotVersion
+          ? 'This is an internal review preview, not a signable mandate. Generate a verified mandate before sending.'
+          : 'Generate a verified mandate before sending it for signature.',
+      )
+    }
     let preparedVersionId = ''
+    let preparedDuringSend = false
     const ensurePrepared = async () => {
+      preparedDuringSend = true
+      setActionProgressMessage('Preparing signature fields…')
       const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
-      const prepared = await prepareSigningFields({
-        packetId: normalizeText(workingStatus?.packet?.id || packetId),
-        packetType,
-        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
-        context: workingStatus?.packet?.source_context_json || {},
-      })
+      const prepared = await withWorkspaceTimeout(
+        prepareSigningFields({
+          packetId: normalizeText(workingStatus?.packet?.id || packetId),
+          packetType,
+          organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+          placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
+          context: workingStatus?.packet?.source_context_json || {},
+        }),
+        'Signature preparation could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+        SIGNING_PREPARATION_TIMEOUT_MS,
+      )
       preparedVersionId = normalizeText(prepared?.version?.id) || preparedVersionId
       workingStatus = applyPreparedSigningState(prepared, workingStatus)
     }
 
+    const alreadyPrepared = Number(workingStatus?.signingSummary?.signerCount || 0) > 0 &&
+      Number(workingStatus?.signingSummary?.fieldCount || 0) > 0
     if (isResend) {
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || statusStateRef.current || statusState || workingStatus
-    } else {
+    } else if (!alreadyPrepared) {
       await ensurePrepared()
+    } else {
+      preparedVersionId = normalizeText(getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id)
     }
 
-    let latestRoster = resolveSignerRoster({
+    const persistedRoster = resolveSignerRoster({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
       mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
@@ -4447,7 +4600,8 @@ export default function LegalDocumentWorkspace({
       signerDefaults,
       sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
       legalSignerProfile,
-    }).map((row) => {
+    })
+    const latestRoster = persistedRoster.map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
       return {
@@ -4462,36 +4616,11 @@ export default function LegalDocumentWorkspace({
       lifecycleState: normalizeLifecycleState(workingStatus?.state),
     })
 
-    if (!check.isReady && !isResend) {
-      await ensurePrepared()
-      latestRoster = resolveSignerRoster({
-        packetType,
-        signers: workingStatus?.signingSummary?.signers || [],
-        mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
-        secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
-        signerDefaults,
-        sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
-        legalSignerProfile,
-      }).map((row) => {
-        const draft = signerDraftByRole[row.role] || null
-        if (!draft) return row
-        return {
-          ...row,
-          signerName: normalizeText(draft.signerName || row.signerName),
-          signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
-        }
-      })
-      check = validateSignerRoster({
-        roster: latestRoster,
-        lifecycleState: normalizeLifecycleState(workingStatus?.state),
-      })
-    }
-
     if (!check.isReady) {
       throw new Error(`Cannot send: ${check.blockers[0]}`)
     }
 
-    const hasDraftOverrides = latestRoster.some((row) => {
+    const hasDraftOverrides = persistedRoster.some((row) => {
       const draft = signerDraftByRole[row.role] || {}
       const nextName = normalizeText(draft.signerName)
       const nextEmail = normalizeText(draft.signerEmail).toLowerCase()
@@ -4506,9 +4635,8 @@ export default function LegalDocumentWorkspace({
       return !row.signer && (row.required || signerEmail) && signerName && isValidEmail(signerEmail)
     })
     if ((hasDraftOverrides || needsSignerPersistence) && !isResend) {
+      setActionProgressMessage('Saving signer details…')
       await saveSignerDetails({ includeOptional: true })
-      const refreshed = await refreshWorkspaceData()
-      workingStatus = refreshed?.resolved || workingStatus
     }
 
     const resolvedPacketId = normalizeText(workingStatus?.packet?.id || packetId)
@@ -4529,16 +4657,21 @@ export default function LegalDocumentWorkspace({
       },
     })
 
+    setActionProgressMessage(preparedDuringSend ? 'Creating secure signing links…' : 'Refreshing secure signing links…')
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
-    const linkResult = await generateSigningLinks({
-      packetId: resolvedPacketId,
-      packetVersionId: versionId,
-      expiresInHours: 168,
-      baseUrl: origin,
-      organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-      regenerate: Boolean(isResend),
-      targetSignerRole,
-    })
+    const linkResult = await withWorkspaceTimeout(
+      generateSigningLinks({
+        packetId: resolvedPacketId,
+        packetVersionId: versionId,
+        expiresInHours: 168,
+        baseUrl: origin,
+        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+        regenerate: Boolean(isResend),
+        targetSignerRole,
+      }),
+      'Secure signing links could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+      SIGNING_PREPARATION_TIMEOUT_MS,
+    )
 
     if (isResend) {
       await appendDocumentPacketEvent({
@@ -4875,7 +5008,7 @@ export default function LegalDocumentWorkspace({
     return nextSummary
   }
 
-  async function transitionLifecycleState(nextState, { validateReadiness = false } = {}) {
+  async function transitionLifecycleState(nextState, { validateReadiness = false, sourceContextPatch = {} } = {}) {
     const target = normalizeLifecycleState(nextState)
     const currentStatus = statusStateRef.current || statusState
     let packet = currentStatus?.packet
@@ -4897,7 +5030,10 @@ export default function LegalDocumentWorkspace({
       packetId: packet.id,
       nextState: target,
       versionId: latestVersion?.id || null,
-      sourceContextPatch: target === 'sent' ? { sentAt: nowIso } : {},
+      sourceContextPatch: {
+        ...(target === 'sent' ? { sentAt: nowIso } : {}),
+        ...(sourceContextPatch && typeof sourceContextPatch === 'object' ? sourceContextPatch : {}),
+      },
       eventPayload: {
         versionNumber: latestVersion?.version_number || null,
         contentFingerprint:
@@ -4926,7 +5062,8 @@ export default function LegalDocumentWorkspace({
 
   async function ensurePersistedPacketBeforeSend() {
     let currentStatus = statusStateRef.current || statusState
-    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+    const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(currentStatus?.versions || [])?.id)
+    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId) && !hasGeneratedVersion) {
       try {
         const refreshed = await refreshWorkspaceData()
         currentStatus = refreshed?.resolved || statusStateRef.current || currentStatus
@@ -5045,6 +5182,16 @@ export default function LegalDocumentWorkspace({
   }
 
   async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
+    const sendStartedAt = Date.now()
+    const logSendStage = (stage, metadata = {}) => {
+      console.info('[LegalDocumentWorkspace] mandate signing timing', {
+        stage,
+        elapsedMs: Date.now() - sendStartedAt,
+        packetId: normalizeText(statusStateRef.current?.packet?.id || packetId) || null,
+        resend,
+        ...metadata,
+      })
+    }
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
@@ -5064,7 +5211,8 @@ export default function LegalDocumentWorkspace({
         ? persistedStatus.packet
         : await ensureTemplateReferenceBeforeSend()
       const blockers = getSendReadinessBlockers({
-        requireSignerReadiness: true,
+        // Signer fields are prepared by the send flow below when they do not exist yet.
+        requireSignerReadiness: false,
         packetOverride: packetForSend,
         statusOverride: persistedStatus,
       })
@@ -5175,15 +5323,9 @@ export default function LegalDocumentWorkspace({
       : 'signer'
     setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
+    logSendStage('signers_ready')
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
-    }
-    if (!resend) {
-      const packetAfterLinkPreparation = await fetchDocumentPacket(
-        normalizeText(linkResult?.packetId || persistedStatus?.packet?.id || packetId),
-        { includeVersions: false, includeEvents: false },
-      )
-      lifecycleBeforeSend = resolveDocumentLifecycleStateFromPacket(packetAfterLinkPreparation)
     }
     if (!resend && lifecycleBeforeSend === 'pdf_generated') {
       await transitionLifecycleState('ready_to_send', { validateReadiness: true })
@@ -5210,31 +5352,28 @@ export default function LegalDocumentWorkspace({
     const signerEmails = linkSigners.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
 
     if (!resend && lifecycleBeforeSend !== 'sent') {
-      await transitionLifecycleState('sent')
+      await transitionLifecycleState('sent', {
+        sourceContextPatch: {
+          signing_method: 'digital',
+          signingMethod: 'digital',
+          signing_status: workflowSigningStatus,
+          signingStatus: workflowSigningStatus,
+          mandateStatus: workflowSigningStatus,
+          lifecycle_state: 'sent',
+          sentAt: currentPacket?.sent_at || nowIso,
+          sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
+          signerEmails,
+          signerCount: signerEmails.length,
+          signingLinkPreparedAt: nowIso,
+          signingLinkLastSentAt: nowIso,
+          signingLinkResentAt: resend ? nowIso : null,
+          lastSigningRecipientRole: linkRecipientRole || null,
+        },
+      })
     }
+    logSendStage('packet_marked_sent')
 
-    await updateWorkspacePacket(currentPacketId, {
-      sourceContextJson: {
-        ...(currentPacket?.source_context_json || {}),
-        signing_method: 'digital',
-        signingMethod: 'digital',
-        signing_status: workflowSigningStatus,
-        signingStatus: workflowSigningStatus,
-        mandateStatus: workflowSigningStatus,
-        lifecycle_state: 'sent',
-        sentAt: currentPacket?.sent_at || nowIso,
-        sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
-        signerEmails,
-        signerCount: signerEmails.length,
-        signingLinkPreparedAt: nowIso,
-        signingLinkLastSentAt: nowIso,
-        signingLinkResentAt: resend ? nowIso : null,
-        lastSigningRecipientRole: linkRecipientRole || null,
-      },
-      allowSigningMetadataUpdate: true,
-    })
-
-    await appendDocumentPacketEvent({
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
       organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
@@ -5247,6 +5386,8 @@ export default function LegalDocumentWorkspace({
         targetSignerRole: linkRecipientRole || null,
         preparedAt: nowIso,
       },
+    }).catch((eventError) => {
+      console.warn('[LegalDocumentWorkspace] could not record signing preparation event', eventError)
     })
 
     setActionProgressMessage(resend ? 'Sending resend notifications…' : 'Sending signer notifications…')
@@ -5256,14 +5397,19 @@ export default function LegalDocumentWorkspace({
     } else {
       try {
         if (typeof onSend !== 'function') throw new Error('Signing email delivery is not configured for this workspace.')
-        sendResult = await onSend({
-          resend,
-          signerLinks: linkSigners,
-          packetId: currentPacketId,
-          targetSignerRole: linkRecipientRole,
-          signingStatus: workflowSigningStatus,
-        })
-        await completeAppliedEnvelopeDispatch({
+        sendResult = await withWorkspaceTimeout(
+          Promise.resolve(onSend({
+            resend,
+            signerLinks: linkSigners,
+            packetId: currentPacketId,
+            targetSignerRole: linkRecipientRole,
+            signingStatus: workflowSigningStatus,
+          })),
+          'The signing link is ready, but email delivery was not confirmed within 12 seconds. Refresh the signer status before resending.',
+          SIGNING_DELIVERY_TIMEOUT_MS,
+        )
+        logSendStage('email_confirmed')
+        void completeAppliedEnvelopeDispatch({
           dispatchId: linkResult?.dispatchId,
           success: true,
           deliveryEvidence: {
@@ -5274,6 +5420,8 @@ export default function LegalDocumentWorkspace({
             recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
             emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
           },
+        }).catch((dispatchError) => {
+          console.warn('[LegalDocumentWorkspace] could not complete signing dispatch record', dispatchError)
         })
       } catch (sendError) {
         if (linkResult?.dispatchId) {
@@ -5291,21 +5439,25 @@ export default function LegalDocumentWorkspace({
       }
     }
 
-    const refreshed = await resolveDocumentPacketStatus({
+    setActionProgressMessage('Finalizing send…')
+    void resolveDocumentPacketStatus({
       packetType,
       packetId: currentPacketId,
       transactionId,
       organisationId,
+    }).then((refreshed) => {
+      statusStateRef.current = refreshed
+      setStatusState(refreshed)
+    }).catch((statusError) => {
+      console.warn('[LegalDocumentWorkspace] signing status refresh failed after send.', statusError)
     })
-    statusStateRef.current = refreshed
-    setStatusState(refreshed)
-    await appendDocumentPacketEvent({
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
-      organisationId: refreshed?.packet?.organisation_id || currentPacket?.organisation_id || organisationId || null,
+      organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
       eventType: resend ? 'mandate_signing_email_resent' : 'mandate_sent_for_digital_signing',
       eventPayload: {
-        transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
+        transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
         signingStatus: workflowSigningStatus,
@@ -5317,6 +5469,8 @@ export default function LegalDocumentWorkspace({
         recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
         recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
+    }).catch((auditError) => {
+      console.warn('[LegalDocumentWorkspace] signing email audit write skipped.', auditError)
     })
   }
 
@@ -5417,14 +5571,19 @@ export default function LegalDocumentWorkspace({
   }
 
   useEffect(() => {
-    if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
+    if (!open || !isMandatePacket || effectiveMode !== 'generate' || actionBusy || loading) return
     if (!autoGenerateEnabled) return
     if (!legalPermissions.canGenerate || typeof onGenerate !== 'function') return
+    if (editableDirty || autosavePromiseRef.current) return
+    const existingGeneratedVersion = getGeneratedPacketVersionForSigning(statusState?.versions || [])
+    if (statusState?.packet?.id && existingGeneratedVersion?.id) return
     const autoGenerateKey = [
       packetType,
-      normalizeText(packetId),
+      normalizeText(statusState?.packet?.id || packetId),
       normalizeText(transactionId),
       normalizeText(statusState?.state || 'NO_PACKET'),
+      normalizeText(existingGeneratedVersion?.id || 'NO_GENERATED_VERSION'),
+      editableSections.length,
     ].join(':')
     if (autoGenerateGuardRef.current === autoGenerateKey) return
     autoGenerateGuardRef.current = autoGenerateKey
@@ -5439,7 +5598,7 @@ export default function LegalDocumentWorkspace({
       setActionBusy(true)
       setLoadError('')
       setActionFeedback('')
-      setActionProgressMessage('Generating draft…')
+      setActionProgressMessage(statusState?.packet?.id ? 'Generating mandate PDF…' : 'Generating draft…')
       try {
         const generationResult = await onGenerate({
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
@@ -5485,6 +5644,8 @@ export default function LegalDocumentWorkspace({
     void generateInitialDraft()
   }, [
     actionBusy,
+    editableDirty,
+    editableSections.length,
     effectiveMode,
     isMandatePacket,
     legalPermissions.canGenerate,
@@ -5497,17 +5658,13 @@ export default function LegalDocumentWorkspace({
     refreshWorkspaceData,
     statusState?.packet?.id,
     statusState?.state,
+    statusState?.versions,
     transactionId,
     autoGenerateEnabled,
   ])
 
   async function runReviewAction(actionKey, options = {}) {
-    if (actionKey === 'send_signature' && options.confirmedSend !== true) {
-      recordWorkspaceExperience('commit_opened', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-      setSendConfirmationOpen(true)
-      return
-    }
-    if (actionBusyRef.current) return
+    if (actionBusyRef.current) return false
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
@@ -5545,32 +5702,23 @@ export default function LegalDocumentWorkspace({
         await onView?.()
       }
 
-      await onRefreshContext?.()
-      await refreshWorkspaceData()
+      if (['send_signature', 'resend_signature', 'remind_signer'].includes(actionKey)) {
+        void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+          console.warn('[LegalDocumentWorkspace] background context refresh failed after signing action.', refreshError)
+        })
+      } else {
+        await onRefreshContext?.()
+        await refreshWorkspaceData()
+      }
+      return true
     } catch (error) {
       await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
+      return false
     } finally {
       actionBusyRef.current = false
       setActionBusy(false)
-    }
-  }
-
-  async function handleSaveSignerDetails() {
-    if (signerBusyRef.current) return
-    signerBusyRef.current = true
-    setSignerBusy(true)
-    setLoadError('')
-    setActionFeedback('')
-    try {
-      const savedCount = await saveSignerDetails({ includeOptional: true })
-      await refreshWorkspaceData()
-      setActionFeedback(savedCount > 0 ? `Saved ${savedCount} signer update(s).` : 'Signer details are already up to date.')
-    } catch (error) {
-      setLoadError(toFriendlyWorkspaceError(error, 'Unable to save signer details right now.'))
-    } finally {
-      signerBusyRef.current = false
-      setSignerBusy(false)
+      setActionProgressMessage('')
     }
   }
 
@@ -5625,7 +5773,7 @@ export default function LegalDocumentWorkspace({
         allowSigningMetadataUpdate: true,
       })
       if (!isRuntimePacketId(statusState.packet.id)) {
-        await appendDocumentPacketEvent({
+        void appendDocumentPacketEvent({
           packetId: statusState.packet.id,
           organisationId: statusState?.packet?.organisation_id || organisationId || null,
           versionId: latestVersion?.id || null,
@@ -5635,8 +5783,9 @@ export default function LegalDocumentWorkspace({
             previousMethod,
             selectedMethod: method,
           },
+        }).catch((auditError) => {
+          console.warn('[LegalDocumentWorkspace] signing method audit write skipped.', auditError)
         })
-        await refreshWorkspaceData()
       }
       setActionFeedback(`${resolveSigningMethodLabel(method)} selected.`)
     } catch (error) {
@@ -6021,15 +6170,16 @@ export default function LegalDocumentWorkspace({
     legalPermissions.canGenerate &&
     typeof onGenerate === 'function' &&
     (isMandatePacket || isOtpPacket) &&
-    (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
+    normalizeKey(statusState?.state) !== 'loading' &&
+    !hasGeneratedMandateVersion
   const handleSendForSignatureIntent = () => {
-    if (isMandatePacket && signingMethod === 'digital' && signerValidation.blockers.length) {
-      setSignerPrepOpen(true)
-      setLoadError('')
-      setActionFeedback('Review signer details before sending the mandate.')
-      return
-    }
-    void runReviewAction('send_signature')
+    setLoadError('')
+    setActionFeedback('')
+    setSendSignatureReviewOpen(true)
+  }
+  const handleConfirmSendForSignature = async () => {
+    const sent = await runReviewAction('send_signature')
+    if (sent) setSendSignatureReviewOpen(false)
   }
   const handleGeneratePacketDraft = async () => {
     if (typeof onGenerate !== 'function' || actionBusyRef.current) return
@@ -6043,12 +6193,13 @@ export default function LegalDocumentWorkspace({
     const generationBaseline = captureLegalDocumentGenerationBaseline(statusStateRef.current)
     let renderFreeze = null
     try {
+      const renderEditedRevision = Boolean(editableDirty || autosavePromiseRef.current)
       let renderSourceVersion = editableVersion
-      if (editableDirty || autosavePromiseRef.current) {
+      if (renderEditedRevision) {
         setActionProgressMessage('Saving the latest wording…')
         renderSourceVersion = await saveEditableDraftVersion({ reviewState: draftReviewState, source: 'generation' })
       }
-      if (renderSourceVersion?.id && Array.isArray(renderSourceVersion?.editable_content_json?.sections) && renderSourceVersion.editable_content_json.sections.length) {
+      if (renderEditedRevision && renderSourceVersion?.id && Array.isArray(renderSourceVersion?.editable_content_json?.sections) && renderSourceVersion.editable_content_json.sections.length) {
         setActionProgressMessage('Freezing the saved document revision…')
         renderFreeze = await freezeEditableDocumentRevisionForRender({
           packetId: normalizeText(statusState?.packet?.id || packetId),
@@ -6057,8 +6208,7 @@ export default function LegalDocumentWorkspace({
         })
       }
       const generationResult = await onGenerate({
-        editableSections,
-        renderFreeze,
+        ...(renderFreeze?.freezeId ? { editableSections, renderFreeze } : {}),
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
       })
       if (generationResult?.status) {
@@ -6068,16 +6218,20 @@ export default function LegalDocumentWorkspace({
       const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
       const generatedVersion = getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])
       if (renderFreeze?.freezeId && generatedVersion?.id) {
-        await verifyFrozenEditableRenderOutput({
-          packetId: normalizeText(statusState?.packet?.id || packetId),
-          freezeId: renderFreeze.freezeId,
-          generatedVersionId: generatedVersion.id,
-        })
-        await verifyServerAttestedNativePdfRender({
-          packetId: normalizeText(statusState?.packet?.id || packetId),
-          freezeId: renderFreeze.freezeId,
-          generatedVersionId: generatedVersion.id,
-        })
+        setActionProgressMessage('Verifying generated PDF…')
+        await Promise.all([
+          verifyFrozenEditableRenderOutput({
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            freezeId: renderFreeze.freezeId,
+            generatedVersionId: generatedVersion.id,
+          }),
+          verifyServerAttestedNativePdfRender({
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            freezeId: renderFreeze.freezeId,
+            generatedVersionId: generatedVersion.id,
+          }),
+        ])
+        setActionProgressMessage('Saving generated PDF…')
         await persistGeneratedPdfToTransaction({
           packetId: normalizeText(statusState?.packet?.id || packetId),
           generatedVersionId: generatedVersion.id,
@@ -6109,16 +6263,20 @@ export default function LegalDocumentWorkspace({
           setStatusState(refreshed.resolved)
           const refreshedGeneratedVersion = getGeneratedPacketVersionForSigning(refreshed.resolved.versions || [])
           if (renderFreeze?.freezeId && refreshedGeneratedVersion?.id) {
-            await verifyFrozenEditableRenderOutput({
-              packetId: normalizeText(statusState?.packet?.id || packetId),
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId: refreshedGeneratedVersion.id,
-            })
-            await verifyServerAttestedNativePdfRender({
-              packetId: normalizeText(statusState?.packet?.id || packetId),
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId: refreshedGeneratedVersion.id,
-            })
+            setActionProgressMessage('Verifying generated PDF…')
+            await Promise.all([
+              verifyFrozenEditableRenderOutput({
+                packetId: normalizeText(statusState?.packet?.id || packetId),
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId: refreshedGeneratedVersion.id,
+              }),
+              verifyServerAttestedNativePdfRender({
+                packetId: normalizeText(statusState?.packet?.id || packetId),
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId: refreshedGeneratedVersion.id,
+              }),
+            ])
+            setActionProgressMessage('Saving generated PDF…')
             await persistGeneratedPdfToTransaction({
               packetId: normalizeText(statusState?.packet?.id || packetId),
               generatedVersionId: refreshedGeneratedVersion.id,
@@ -6287,6 +6445,9 @@ export default function LegalDocumentWorkspace({
   const documentLabel = resolveDocumentLabel(packetType)
   const previewDownloadUrl = signedPreviewUrl || generatedPreviewUrl || ''
   const hasPreviewSurface = Boolean(generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml)
+  const showInlineEditor = Boolean(editableAllowed && centerTab === 'editor' && statusState?.packet?.id)
+  const showInlinePreview = Boolean(statusState?.packet?.id && hasPreviewSurface && (!editableAllowed || centerTab === 'preview'))
+  const showPreviewUnavailable = Boolean(statusState?.packet?.id && !hasPreviewSurface && (!editableAllowed || centerTab === 'preview'))
   const shellClassName = isPageMode
     ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[28px] border border-[#dfe8f3] bg-[#f5f7fb]'
     : 'mx-auto flex h-full w-full max-w-[1760px] flex-col overflow-hidden rounded-[30px] border border-[#dfe8f3] bg-[#f5f7fb] shadow-[0_28px_70px_rgba(10,24,42,0.24)]'
@@ -6322,18 +6483,6 @@ export default function LegalDocumentWorkspace({
     contentTargetId: 'document-workspace-content',
     actionsTargetId: 'document-workspace-actions',
   })
-  const sendConfirmation = buildDocumentCommitConfirmation({
-    action: 'send_signature',
-    packetType,
-    signerCount: signerValidation.isReady ? effectiveSignerRoster.filter((row) => row.required).length : 0,
-  })
-
-  async function handleConfirmedSend() {
-    recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-    await runReviewAction('send_signature', { confirmedSend: true })
-    setSendConfirmationOpen(false)
-  }
-
   function handleMobileAction(actionId) {
     if (actionId === 'workspace_primary') handleWorkspacePrimaryAction()
     else handleHelpRecoveryAction(actionId)
@@ -6375,7 +6524,40 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 self-start">
+              <div id="document-workspace-actions" className="flex scroll-mt-24 flex-wrap items-start gap-2 self-start">
+                {editableAllowed && legalPermissions.canEditDraft ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      centerTabPreferenceRef.current = 'editor'
+                      setCenterTab('editor')
+                    }}
+                    disabled={loading || actionBusy}
+                  >
+                    <FileText size={14} />
+                    Edit
+                  </Button>
+                ) : null}
+                {hasPreviewSurface ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (generatedPreviewUrl && typeof onView === 'function') {
+                        void onView()
+                        return
+                      }
+                      handleFocusPreview()
+                    }}
+                    disabled={loading || actionBusy}
+                  >
+                    <Eye size={14} />
+                    Preview
+                  </Button>
+                ) : null}
                 {showGeneratePdfButton ? (
                   <Button
                     type="button"
@@ -6498,21 +6680,11 @@ export default function LegalDocumentWorkspace({
             <div className="mb-5">
               <DocumentJourneyProgress model={documentJourney} />
             </div>
-            <div className="mb-5">
-              <SigningOperationalStatusCard status={signingOperationalStatus} />
-            </div>
-            <div className="mb-5">
-              <DocumentRoleGuidanceCard guidance={roleGuidance} />
-            </div>
-            <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
-              <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
-            </div>
-            <div className="mb-5">
-              <DocumentResponsibilityCard model={responsibility} />
-            </div>
-            <div className="mb-5">
-              <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
-            </div>
+            {!isMandatePacket ? (
+              <div className="mb-5">
+                <SigningOperationalStatusCard status={signingOperationalStatus} />
+              </div>
+            ) : null}
             {statusState?.signingSummary?.signers?.length ? (
               <div id="legal-document-signer-progress" className="mb-5 scroll-mt-24">
                 <SigningProgressTimeline
@@ -6522,7 +6694,7 @@ export default function LegalDocumentWorkspace({
                   onSignerAction={(action, signer) => {
                     if (action === 'resend') void runReviewAction('resend_signature', { targetSignerRole: signer.role })
                     else if (action === 'remind') void runReviewAction('remind_signer', { targetSignerRole: signer.role })
-                    else if (action === 'send') void runReviewAction('send_signature')
+                    else if (action === 'send') handleSendForSignatureIntent()
                   }}
                 />
               </div>
@@ -6578,7 +6750,9 @@ export default function LegalDocumentWorkspace({
                   <div data-testid="final-completion-state" className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${finalCompletionState.ready ? 'border-[#c8e5d4] bg-white text-[#1d5b3c]' : 'border-[#f1dfb9] bg-[#fff9ec] text-[#7d520d]'}`}>
                     <p className="font-semibold">{finalCompletionState.ready ? 'Completed everywhere' : 'Signed PDF safe — completion pending'}</p>
                     <p className="mt-1">
-                      Transaction: {finalCompletionState.transactionDocumentId ? 'saved' : 'pending'} · Recipient delivery: {finalCompletionState.deliveredRecipientCount || 0}/{finalCompletionState.recipientCount || 0}
+                      Transaction: {finalCompletionState.transactionDocumentId ? 'saved' : 'pending'}
+                      {finalCompletionState.ready && finalCompletionState.deliveryReady === false ? ` · Final email delivery pending: ${finalCompletionState.deliveredRecipientCount || 0}/${finalCompletionState.recipientCount || 0}` : ''}
+                      {!finalCompletionState.ready ? ` · Recipient delivery: ${finalCompletionState.deliveredRecipientCount || 0}/${finalCompletionState.recipientCount || 0}` : ''}
                     </p>
                     {!finalCompletionState.ready && finalCompletionState.retryable && legalPermissions.canFinalize ? (
                       <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void handleRetryFinalCompletion()} disabled={finalCompletionBusy || actionBusy}>
@@ -6630,7 +6804,9 @@ export default function LegalDocumentWorkspace({
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">
                       {editableAllowed ? 'Document Editor' : 'Document Preview'}
                     </h3>
-                    <p className="mt-1 text-sm text-[#6b7c93]">Preview stays tied to the existing packet generation and signing pipeline.</p>
+                    {!isMandatePacket ? (
+                      <p className="mt-1 text-sm text-[#6b7c93]">Preview stays tied to the existing packet generation and signing pipeline.</p>
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {editableAllowed ? (
@@ -6654,7 +6830,7 @@ export default function LegalDocumentWorkspace({
                                 : 'Saved'}
                     </span>
                   ) : null}
-                  {editableAllowed ? (
+                  {editableAllowed && !isMandatePacket ? (
                     <div className="inline-flex items-center rounded-full border border-[#dbe5f0] bg-[#f7faff] p-1">
                       <button
                         type="button"
@@ -6676,7 +6852,7 @@ export default function LegalDocumentWorkspace({
                       </button>
                     </div>
                   ) : null}
-                    {generatedPreviewUrl && typeof onView === 'function' ? (
+                    {!isMandatePacket && generatedPreviewUrl && typeof onView === 'function' ? (
                       <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
                         Open Draft
                       </Button>
@@ -6699,12 +6875,23 @@ export default function LegalDocumentWorkspace({
                   {!loading && !statusState?.packet?.id ? (
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <FileText size={24} className="text-[#7287a0]" />
-                      <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
-                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Arch9 will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
+                      <p className="mt-3 text-base font-semibold text-[#102033]">Mandate setup is ready.</p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Generate the mandate when you are ready to create the signing copy.</p>
+                      {showGeneratePdfButton ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-5"
+                          onClick={() => void handleGeneratePacketDraft()}
+                          disabled={actionBusy}
+                        >
+                          {actionBusy ? 'Working…' : `Generate ${isOtpPacket ? 'OTP' : 'Mandate'}`}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
 
-                  {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
+                  {!loading && showInlineEditor ? (
                     !editableSections.length ? (
                       <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                         <AlertCircle size={24} className="text-[#9b6b1c]" />
@@ -6723,7 +6910,7 @@ export default function LegalDocumentWorkspace({
                     )
                   ) : null}
 
-                  {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !hasPreviewSurface ? (
+                  {!loading && showPreviewUnavailable ? (
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <AlertCircle size={24} className="text-[#9b6b1c]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">
@@ -6735,7 +6922,7 @@ export default function LegalDocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {!loading && (!editableAllowed || centerTab === 'preview') && hasPreviewSurface ? (
+                  {!loading && showInlinePreview ? (
                     <div className="space-y-4">
                       <div className="mx-auto max-w-[900px] rounded-[28px] bg-white p-4 shadow-[0_18px_48px_rgba(16,32,51,0.09)] sm:p-6">
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -6801,11 +6988,9 @@ export default function LegalDocumentWorkspace({
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
-                    onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     canResend={canResendSignatureLinks}
                     onResend={() => runReviewAction('resend_signature')}
                     resendSummary={resendSignatureSummary}
-                    signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className={reviewRailPanelClassName}
                   />
@@ -7007,46 +7192,31 @@ export default function LegalDocumentWorkspace({
       </Drawer>
 
       <Drawer
-        open={signerPrepOpen}
-        onClose={() => setSignerPrepOpen(false)}
-        title="Prepare for Signature"
-        subtitle="Confirm the agent and all required seller-side signers before sending secure links."
+        open={sendSignatureReviewOpen}
+        onClose={() => setSendSignatureReviewOpen(false)}
+        title="Send for Signature"
+        subtitle="Confirm the recipients before secure signing links are created and sent."
         widthClassName="max-w-[760px]"
       >
-                <SignerPreparationPanel
-                  packetType={packetType}
-                  lifecycleState={normalizedLifecycleState}
-                  signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
-                  canManageSigners={legalPermissions.canManageSigners}
-                  roster={effectiveSignerRoster}
-                  draftByRole={signerDraftByRole}
-                  onDraftChange={handleSignerDraftChange}
-                  validation={signerValidation}
-                  onPrepare={handlePrepareSignerFields}
-                  onSave={handleSaveSignerDetails}
-                  onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
-                  onRefresh={handleRefreshSignerStatus}
-                  signingLayout={signingFieldLayout}
-                  signingLayoutRevision={signingFieldLayoutRevision}
-                  signingLayoutBusy={signingFieldLayoutBusy}
-                  pdfPreviewUrl={generatedPreviewUrl}
-                  onSigningPdfPageCountChange={setSigningPdfPageCount}
-                  onAddSigningBlock={handleAddSigningBlock}
-                  onSigningBlockChange={handleSigningBlockChange}
-                  onRemoveSigningBlock={handleRemoveSigningBlock}
-                  onSaveSigningLayout={handleSaveSigningLayout}
-                  onApplySigningLayout={handleApplySigningLayout}
-                  busy={actionBusy || signerBusy || loading}
-                />
+        <SendForSignatureReviewPanel
+          packetType={packetType}
+          lifecycleState={normalizedLifecycleState}
+          roster={signatureSendReview.rows}
+          recipientRoles={signatureSendReview.recipientRoles}
+          recipientSummary={signatureSendReview.recipientSummary}
+          routeNote={signatureSendReview.routeNote}
+          validation={signerValidation}
+          draftByRole={signerDraftByRole}
+          canManageSigners={legalPermissions.canManageSigners}
+          canSend={legalPermissions.canSend}
+          busy={actionBusy || loading}
+          loadError={loadError}
+          onDraftChange={handleSignerDraftChange}
+          onConfirm={handleConfirmSendForSignature}
+          onClose={() => setSendSignatureReviewOpen(false)}
+        />
       </Drawer>
 
-      <DocumentCommitConfirmation
-        model={sendConfirmation}
-        open={sendConfirmationOpen}
-        busy={actionBusy}
-        onCancel={() => setSendConfirmationOpen(false)}
-        onConfirm={() => void handleConfirmedSend()}
-      />
     </>
   )
 }

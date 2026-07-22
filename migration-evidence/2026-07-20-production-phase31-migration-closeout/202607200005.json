@@ -1,0 +1,21 @@
+{
+  "version": "202607200005",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "applicationMode": "forward_sql_then_ledger_record",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 31 instruction)",
+  "verification": {
+    "migrationTablePresent": true,
+    "rowLevelSecurityEnabled": true,
+    "policyCount": 2,
+    "lifecycleFunctionCount": 4,
+    "migrationAuditRows": 0,
+    "invalidPacketTypeRejected": true,
+    "invalidPacketTypeSqlstate": "22023"
+  }
+}

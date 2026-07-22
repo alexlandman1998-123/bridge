@@ -2,6 +2,9 @@ import { listConditionalPackDataRules } from './conditionalPackDataRules.js'
 import { listLegalDocumentDefinitions } from './legalDocumentCatalog.js'
 import { classifyLegalDocumentEditorSection } from './legalDocumentEditorScope.js'
 import { buildLegalDocumentTemplateCoverageAudit } from './legalDocumentTemplateRouting.js'
+import { evaluateConditionalMasterCoverage } from './conditionalMasterCoverageReadiness.js'
+import { evaluateConditionalMasterMigration } from './conditionalMasterMigration.js'
+import { evaluateConditionalMasterMigrationVerification } from './conditionalMasterMigrationVerification.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -133,7 +136,7 @@ function getPlannedSigningRoles(sections = []) {
   return [...roles]
 }
 
-function buildDocumentModel(definition = {}, templates = []) {
+function buildDocumentModel(definition = {}, templates = [], migrationRecord = null, verificationReceipt = null) {
   const matchingTemplates = templates.filter((template) => templateMatchesDefinition(template, definition)).sort(compareTemplates)
   const primaryTemplate = matchingTemplates[0] || null
   const liveTemplate = matchingTemplates.find(isLiveTemplate) || null
@@ -150,14 +153,29 @@ function buildDocumentModel(definition = {}, templates = []) {
     .filter((section) => classifyLegalDocumentEditorSection(section, { packetType: definition.packetType }).isStandard)
     .map((section) => buildSectionSummary(section))
   const signingRoles = getPlannedSigningRoles(sections)
-  const routingAudit = definition.key === 'otp'
+  const legacyRoutingAudit = definition.key === 'otp'
     ? buildLegalDocumentTemplateCoverageAudit(matchingTemplates.filter((template) => isLiveTemplate(template)), { packetType: 'otp' })
+    : null
+  const coverageReadiness = definition.kind !== 'addendum' && liveTemplate
+    ? evaluateConditionalMasterCoverage({
+        packetType: definition.packetType,
+        template: liveTemplate,
+      })
     : null
   const coverageReady = definition.kind === 'addendum'
     ? Boolean(liveTemplate)
-    : definition.key === 'otp'
-      ? Boolean(routingAudit?.hasGenericFallback) && routingAudit.conflictCount === 0
-      : Boolean(liveTemplate)
+    : Boolean(liveTemplate && coverageReadiness?.ready)
+  const migrationReadiness = definition.kind !== 'addendum'
+    ? evaluateConditionalMasterMigration({ packetType: definition.packetType, templates: matchingTemplates, migrationRecord })
+    : null
+  const verificationReadiness = definition.kind !== 'addendum'
+    ? evaluateConditionalMasterMigrationVerification({
+        packetType: definition.packetType,
+        templates: matchingTemplates,
+        migrationRecord,
+        verificationReceipt,
+      })
+    : null
 
   return {
     ...definition,
@@ -180,15 +198,26 @@ function buildDocumentModel(definition = {}, templates = []) {
     signerRuleCount: signingRoles.length,
     signingRoles,
     coverageReady,
-    routingAudit,
+    coverageReadiness,
+    migrationReadiness,
+    verificationReadiness,
+    legacyRoutingAudit,
+    routingAudit: legacyRoutingAudit,
   }
 }
 
-export function buildLegalDocumentLibraryModel({ templatesByType = {}, packetTypes = [] } = {}) {
+export function buildLegalDocumentLibraryModel({
+  templatesByType = {},
+  migrationsByType = {},
+  verificationsByType = {},
+  packetTypes = [],
+} = {}) {
   const definitions = listLegalDocumentDefinitions({ packetTypes })
   const documents = definitions.map((definition) => buildDocumentModel(
     definition,
     Array.isArray(templatesByType[definition.packetType]) ? templatesByType[definition.packetType] : [],
+    migrationsByType[definition.packetType] || null,
+    verificationsByType[definition.packetType] || null,
   ))
   const liveCount = documents.filter((document) => document.hasLiveTemplate).length
   const draftCount = documents.reduce((total, document) => total + document.draftCount, 0)

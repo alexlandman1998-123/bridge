@@ -32,4 +32,22 @@ const suppressedEventAudit = buildMvpTransactionAuditRecovery({
 })
 assert.equal(suppressedEventAudit.actions.some((item) => item.actionKey === 'prepare_notification_retry'), false)
 
+const preparedNotificationAudit = buildMvpTransactionAuditRecovery({
+  transaction: { id: 'tx-audit-4', accepted_offer_id: 'offer-audit-4', creation_idempotency_key: 'key-audit-4' },
+  health: {
+    creation: { acceptedOfferId: 'offer-audit-4', idempotencyKey: 'key-audit-4', confirmed: true },
+    testData: { isTestData: false },
+  },
+  notificationOutbox: [{ id: 'event-4', status: 'prepared', handoffRequired: true }],
+})
+assert.equal(preparedNotificationAudit.status, 'review_required')
+assert.equal(preparedNotificationAudit.actions.some((item) => item.key === 'review_notification_delivery'), true)
+
+const unconfirmedCreationAudit = buildMvpTransactionAuditRecovery({
+  transaction: { id: 'tx-audit-5', accepted_offer_id: 'offer-audit-5' },
+  health: { creation: { acceptedOfferId: 'offer-audit-5', confirmed: false } },
+})
+assert.equal(unconfirmedCreationAudit.status, 'action_required')
+assert.equal(unconfirmedCreationAudit.issues.some((item) => item.key === 'creation:unconfirmed'), true)
+
 console.log('mvp-transaction-audit-recovery: passed')

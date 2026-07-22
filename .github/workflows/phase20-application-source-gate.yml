@@ -1,0 +1,54 @@
+name: Phase 20 Application Source Gate
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/src/**'
+      - 'the-it-guy/server/**'
+      - 'the-it-guy/api/**'
+      - 'the-it-guy/public/**'
+      - 'the-it-guy/index.html'
+      - 'the-it-guy/package.json'
+      - 'the-it-guy/package-lock.json'
+      - 'the-it-guy/vite.config.js'
+      - 'the-it-guy/vercel.json'
+      - 'the-it-guy/postcss.config.js'
+      - 'the-it-guy/tailwind.config.js'
+      - 'deployment-evidence/2026-07-20-phase20/application-source.json'
+      - 'scripts/phase20-application-source.test.mjs'
+      - '.github/workflows/phase20-application-source-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'the-it-guy/src/**'
+      - 'the-it-guy/server/**'
+      - 'the-it-guy/api/**'
+      - 'the-it-guy/public/**'
+      - 'the-it-guy/index.html'
+      - 'the-it-guy/package.json'
+      - 'the-it-guy/package-lock.json'
+      - 'the-it-guy/vite.config.js'
+      - 'the-it-guy/vercel.json'
+      - 'the-it-guy/postcss.config.js'
+      - 'the-it-guy/tailwind.config.js'
+      - 'deployment-evidence/2026-07-20-phase20/application-source.json'
+      - 'scripts/phase20-application-source.test.mjs'
+      - '.github/workflows/phase20-application-source-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  application-source:
+    name: Verify committed production source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run application:phase20:verify

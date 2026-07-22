@@ -34,6 +34,8 @@ as $$
   );
 $$;
 
+revoke all on function public.attorney_user_is_firm_admin(uuid) from public, anon;
+revoke all on function public.attorney_user_is_firm_lead(uuid) from public, anon;
 grant execute on function public.attorney_user_is_firm_admin(uuid) to authenticated;
 grant execute on function public.attorney_user_is_firm_lead(uuid) to authenticated;
 
@@ -107,6 +109,8 @@ begin
 end;
 $$;
 
+revoke all on function public.bridge_sync_attorney_professional_profile() from public, anon, authenticated;
+revoke all on function public.bootstrap_attorney_firm_admin_membership(uuid) from public, anon;
 grant execute on function public.bootstrap_attorney_firm_admin_membership(uuid) to authenticated;
 
 update public.attorney_firm_members

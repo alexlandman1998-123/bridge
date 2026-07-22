@@ -1,0 +1,29 @@
+{
+  "version": "202607180051",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "concurrencyFunctionCount": 4,
+    "concurrencyTriggerCount": 2,
+    "uniquePacketVersionIndexPresent": true,
+    "serviceRoleProbeExecuteGranted": true,
+    "authenticatedProbeExecuteRevoked": true,
+    "probeContract": "i1-generator-v1",
+    "currentPointerMatchesMax": true,
+    "duplicateVersionNumberCount": 0,
+    "versionCreatedEventMismatchCount": 0,
+    "orphanVersionEventCount": 0,
+    "insertGuardPresent": true,
+    "probeMutatedData": false,
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "ledgerRecordedBeforeRepair": false
+  }
+}

@@ -33,6 +33,24 @@ function normalizeText(value) {
 function resolvePacketErrorFeedback(error = null) {
   const code = normalizeText(error?.code)
   if (code === 'VALIDATION_BLOCKED') {
+    const legalScenarioConflicts = Array.isArray(error?.validation?.legalDocumentConflictingFacts)
+      ? error.validation.legalDocumentConflictingFacts
+      : []
+    if (legalScenarioConflicts.length) {
+      return {
+        label: 'Legal setup conflict',
+        message: `Resolve conflicting ${legalScenarioConflicts.map((fact) => String(fact.field).replace(/_/g, ' ')).join(', ')} before generating the document.`,
+      }
+    }
+    const legalScenarioInvalid = Array.isArray(error?.validation?.legalDocumentInvalidFacts)
+      ? error.validation.legalDocumentInvalidFacts
+      : []
+    if (legalScenarioInvalid.length) {
+      return {
+        label: 'Legal setup invalid',
+        message: `Choose recognised values for ${legalScenarioInvalid.map((fact) => String(fact.field).replace(/_/g, ' ')).join(', ')} before generating the document.`,
+      }
+    }
     const legalScenarioMissing = Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
       ? error.validation.legalDocumentMissingRoutingFacts
       : []

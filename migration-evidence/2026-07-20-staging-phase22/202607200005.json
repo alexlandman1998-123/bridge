@@ -1,0 +1,21 @@
+{
+  "version": "202607200005",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex Phase 22 controlled staging certification",
+  "verification": {
+    "migrationTablePresent": true,
+    "rowLevelSecurityEnabled": true,
+    "policyCount": 2,
+    "lifecycleFunctionCount": 4,
+    "migrationAuditRows": 0,
+    "invalidPacketTypeRejected": true,
+    "invalidPacketTypeSqlstate": "22023"
+  },
+  "productionMutated": false
+}

@@ -1739,13 +1739,6 @@ Deno.serve(async (req: Request) => {
         error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
       });
     }
-    const SUPABASE_FUNCTION_AUTH_KEY =
-      Deno.env.get("SUPABASE_ANON_KEY") ||
-      Deno.env.get("SUPABASE_FUNCTION_AUTH_KEY") ||
-      Deno.env.get("FUNCTION_AUTH_KEY") ||
-      Deno.env.get("VITE_SUPABASE_ANON_KEY") ||
-      SUPABASE_SERVICE_ROLE_KEY;
-
     const payload = (await req.json()) as {
       action?: string;
       token?: string;
@@ -2060,8 +2053,8 @@ Deno.serve(async (req: Request) => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "apikey": SUPABASE_FUNCTION_AUTH_KEY,
-              "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
+              "apikey": SUPABASE_SERVICE_ROLE_KEY,
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({ packetId, packetVersionId, finalisedBy: null }),
           });
@@ -2071,6 +2064,7 @@ Deno.serve(async (req: Request) => {
               success: false,
               error: "Your signature is safe, but final document generation still needs to be retried.",
               errorCode: retryBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
+              details: retryBody,
               signerCompleted: true,
               retryable: true,
             });
@@ -2334,8 +2328,8 @@ Deno.serve(async (req: Request) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "apikey": SUPABASE_FUNCTION_AUTH_KEY,
-            "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           },
           body: JSON.stringify({
             packetId,
@@ -2354,6 +2348,7 @@ Deno.serve(async (req: Request) => {
             success: false,
             error: "Your signature was saved, but the final signed document could not be generated. It is safe to retry finalisation.",
             errorCode: finalBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
+            details: finalBody,
             signerCompleted: true,
             retryable: true,
           });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   appendDocumentStartLegalScenarioParams,
+  buildDocumentStartLegalScenarioFromSellerOnboarding,
   getDocumentStartLegalScenarioInclusions,
   normalizeDocumentStartLegalScenario,
   readDocumentStartLegalScenarioParams,
@@ -65,4 +66,52 @@ test('round trips the scenario through workspace query parameters', () => {
   assert.equal(scenario.buyerEntityType, 'trust')
   assert.equal(scenario.propertyTitleType, 'full_title')
   assert.equal(scenario.financeType, 'cash')
+})
+
+test('uses the canonical resolver contract without silent defaults', () => {
+  const scenario = normalizeDocumentStartLegalScenario({}, 'otp')
+
+  assert.equal(scenario.resolverVersion, 'canonical_legal_document_scenario_v1')
+  assert.equal(scenario.complete, false)
+  assert.deepEqual(scenario.missingFields, [
+    'seller_entity_type',
+    'buyer_entity_type',
+    'property_title_type',
+    'finance_type',
+  ])
+})
+
+test('builds mandate legal setup from seller onboarding form data', () => {
+  const scenario = buildDocumentStartLegalScenarioFromSellerOnboarding({
+    packetType: 'mandate',
+    formData: {
+      sellerType: 'Individual',
+      ownershipType: 'married_cop',
+      propertyStructureType: 'sectional title',
+    },
+  })
+
+  assert.equal(scenario.complete, true)
+  assert.equal(scenario.sellerEntityType, 'individual')
+  assert.equal(scenario.sellerMaritalRegime, 'in_community')
+  assert.equal(scenario.propertyTitleType, 'sectional_title')
+  assert.deepEqual(scenario.missingFields, [])
+})
+
+test('uses listing and lead fallbacks when onboarding omits legal setup facts', () => {
+  const scenario = buildDocumentStartLegalScenarioFromSellerOnboarding({
+    packetType: 'mandate',
+    listing: {
+      sellerType: 'Trust',
+      propertyType: 'Farm',
+    },
+    lead: {
+      sellerMaritalStatus: 'single',
+    },
+  })
+
+  assert.equal(scenario.complete, true)
+  assert.equal(scenario.sellerEntityType, 'trust')
+  assert.equal(scenario.sellerMaritalRegime, '')
+  assert.equal(scenario.propertyTitleType, 'full_title')
 })

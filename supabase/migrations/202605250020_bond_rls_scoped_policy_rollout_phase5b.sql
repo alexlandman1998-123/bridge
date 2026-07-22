@@ -1,4 +1,46 @@
 begin;
+alter table if exists public.transaction_role_players
+  add column if not exists user_id uuid references public.profiles(id) on delete set null,
+  add column if not exists legal_role text;
+alter table if exists public.transaction_subprocesses
+  add column if not exists visibility_scope text not null default 'internal';
+create or replace function public.bridge_current_profile_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.role
+  from public.profiles p
+  where p.id = auth.uid()
+  limit 1
+$$;
+create or replace function public.bridge_is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organisation_users ou
+    where ou.user_id = auth.uid()
+      and ou.role = 'admin'
+      and ou.status = 'active'
+  )
+$$;
+create or replace function public.bridge_is_internal_user()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.bridge_is_admin()
+    or public.bridge_current_profile_role() in ('developer', 'agent', 'attorney', 'bond_originator')
+$$;
 create or replace function public.bridge_is_bond_transaction_canonical_ready(transaction_id uuid)
 returns boolean
 language sql

@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-07-20T12:45:54.964Z",
+  "status": "PRODUCTION_ACCESS_CONFIGURED",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "productionProjectStatus": "ACTIVE_HEALTHY",
+  "accessMode": "linked_ephemeral",
+  "credentialType": "supabase_cli_short_lived_login_role",
+  "linkedProjectVerified": true,
+  "databaseConnectivityCheck": "pass",
+  "databaseName": "postgres",
+  "databaseRoleAcquired": true,
+  "transactionReadOnly": false,
+  "productionLedgerCount": 433,
+  "staticDatabaseUrlConfigured": false,
+  "recoveryEvidenceValidated": true,
+  "runtimeRecoveryConfirmationConfigured": true,
+  "approvedBy": "Alexander Landman",
+  "approvalSource": "explicit_phase13_user_instruction",
+  "productionMutated": false
+}

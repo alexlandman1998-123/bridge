@@ -39,6 +39,7 @@ const REVENUE_FORECAST_WEIGHTS = {
   transfer: 0.9,
   registration: 1,
 }
+const DASHBOARD_SOURCE_TIMEOUT_MS = 10000
 
 export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
   { key: 'last_30_days', label: 'Last 30 Days' },
@@ -187,6 +188,53 @@ function isMissingSourceError(error) {
   )
 }
 
+function isPermissionDeniedError(error) {
+  if (!error) return false
+  const code = normalizeKey(error.code)
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = normalizeKey(error.message)
+  const details = normalizeKey(error.details)
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === '401' ||
+    code === '403' ||
+    code === '42501' ||
+    code === 'permission_denied' ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    details.includes('permission denied') ||
+    details.includes('row-level security')
+  )
+}
+
+function isRecoverableDashboardReadError(error) {
+  return error?.code === 'DASHBOARD_SOURCE_TIMEOUT' || isMissingSourceError(error) || isPermissionDeniedError(error)
+}
+
+function createDashboardReadTimeoutError(table, timeoutMs) {
+  const error = new Error(`Dashboard source "${table}" did not respond within ${timeoutMs}ms.`)
+  error.name = 'DashboardSourceTimeoutError'
+  error.code = 'DASHBOARD_SOURCE_TIMEOUT'
+  error.table = table
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+async function withDashboardReadTimeout(task, { table, timeoutMs = DASHBOARD_SOURCE_TIMEOUT_MS } = {}) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => reject(createDashboardReadTimeoutError(table, timeoutMs)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
+}
+
 function getMissingColumnName(error) {
   const message = normalizeText(error?.message)
   if (!message) return ''
@@ -195,6 +243,16 @@ function getMissingColumnName(error) {
     message.match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]?\s+column/i)?.[1] ||
     ''
   )
+}
+
+function logSlowDashboardRead(table, startedAt, extra = {}) {
+  const durationMs = Date.now() - startedAt
+  if (durationMs < 1500) return
+  console.debug('[PrincipalDashboard] Slow source read.', {
+    table,
+    durationMs,
+    ...extra,
+  })
 }
 
 function removeColumnFromSelect(fields, columnName) {
@@ -207,6 +265,7 @@ function removeColumnFromSelect(fields, columnName) {
 
 async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
+  const startedAt = Date.now()
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
   for (const selectFields of variants) {
@@ -217,7 +276,15 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
       if (agencyId && agencyColumn) query = query.eq(agencyColumn, agencyId)
       if (order) query = query.order(order, { ascending })
       if (limit) query = query.limit(limit)
-      const { data, error } = await query
+      let result = null
+      try {
+        result = await withDashboardReadTimeout(query, { table })
+      } catch (error) {
+        lastError = error
+        if (!isRecoverableDashboardReadError(error)) throw error
+        break
+      }
+      const { data, error } = result
       if (!error) return data || []
       lastError = error
       const missingColumn = getMissingColumnName(error)
@@ -227,11 +294,16 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isRecoverableDashboardReadError(error)) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', { table, message: lastError?.message })
+  logSlowDashboardRead(table, startedAt, { empty: true })
+  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', {
+    table,
+    code: lastError?.code || null,
+    message: lastError?.message,
+  })
   return []
 }
 
@@ -239,6 +311,7 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
+  const startedAt = Date.now()
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
   for (const selectFields of variants) {
@@ -248,7 +321,15 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
       let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
       if (order) query = query.order(order, { ascending })
       if (limit) query = query.limit(limit)
-      const { data, error } = await query
+      let result = null
+      try {
+        result = await withDashboardReadTimeout(query, { table })
+      } catch (error) {
+        lastError = error
+        if (!isRecoverableDashboardReadError(error)) throw error
+        break
+      }
+      const { data, error } = result
       if (!error) return data || []
       lastError = error
       const missingColumn = getMissingColumnName(error)
@@ -258,15 +339,21 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isRecoverableDashboardReadError(error)) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
+  logSlowDashboardRead(table, startedAt, { empty: true, idCount: normalizedIds.length })
+  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', {
+    table,
+    code: lastError?.code || null,
+    message: lastError?.message,
+  })
   return []
 }
 
 async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
+  const startedAt = Date.now()
   if (!isSupabaseConfigured || !supabase) return { byUserId: {}, byEmail: {} }
   const userIds = [...new Set(rows.map((row) => normalizeText(row?.user_id || row?.userId)).filter(Boolean))]
   const emails = [...new Set(rows.map((row) => normalizeKey(row?.email)).filter(Boolean))]
@@ -274,14 +361,25 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
 
   async function fetchProfilesBy(column, values) {
     if (!values.length) return []
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, avatar_url')
-      .in(column, values)
-      .limit(1000)
+    let result = null
+    try {
+      result = await withDashboardReadTimeout(
+        supabase
+          .from('profiles')
+          .select('id, email, avatar_url')
+          .in(column, values)
+          .limit(1000),
+        { table: 'profiles:avatars' },
+      )
+    } catch (error) {
+      if (isRecoverableDashboardReadError(error)) return []
+      throw error
+    }
+
+    const { data, error } = result
 
     if (error) {
-      if (isMissingSourceError(error) || getMissingColumnName(error) === 'avatar_url') return []
+      if (isRecoverableDashboardReadError(error) || getMissingColumnName(error) === 'avatar_url') return []
       throw error
     }
 
@@ -293,7 +391,7 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
     fetchProfilesBy('email', emails),
   ])
 
-  return [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
+  const result = [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
     const avatarUrl = normalizeText(row?.avatar_url)
     if (!avatarUrl) return accumulator
     const id = normalizeText(row?.id)
@@ -302,10 +400,20 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
     if (email) accumulator.byEmail[email] = avatarUrl
     return accumulator
   }, { byUserId: {}, byEmail: {} })
+  logSlowDashboardRead('profiles:avatars', startedAt, { userCount: userIds.length, emailCount: emails.length })
+  return result
 }
 
 async function enrichOrganisationUsersWithProfileAvatars(rows = []) {
-  const avatarLookup = await fetchProfileAvatarsForOrganisationUsers(rows)
+  let avatarLookup = { byUserId: {}, byEmail: {} }
+  try {
+    avatarLookup = await fetchProfileAvatarsForOrganisationUsers(rows)
+  } catch (error) {
+    console.debug('[PrincipalDashboard] Profile avatar enrichment unavailable; continuing without avatars.', {
+      code: error?.code || null,
+      message: error?.message,
+    })
+  }
   return rows.map((row) => ({
     ...row,
     avatar_url:
@@ -1567,8 +1675,9 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, bond_originator, next_action, seller_name, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at',
   ]
 
   const [
@@ -1589,7 +1698,7 @@ export async function getPrincipalDashboardData({
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
     safeSelect('organisation_users', [
-      'id, organisation_id, user_id, branch_id, first_name, last_name, email, avatar_url, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
+      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
@@ -1638,7 +1747,7 @@ export async function getPrincipalDashboardData({
     safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
     safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
     safeSelectByIds('transaction_role_players', [
-      'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
+      'id, transaction_id, role_type, selection_source, partner_role_configuration_id, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
       'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
     ], [...transactionIds], { order: 'updated_at', limit: 3000 }),
     safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),

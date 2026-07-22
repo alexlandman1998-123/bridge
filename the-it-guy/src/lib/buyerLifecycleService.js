@@ -4,6 +4,7 @@ import { resolveTransactionRoutingProfile } from '../services/transactionRouting
 import { prepareAgentLegalHandoff } from '../services/agentLegalHandoffService.js'
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
 import { updatePrivateListing } from '../services/privateListingService.js'
+import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mvpAcceptedOfferConversionReceipt.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -2596,6 +2597,11 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     error.details = { acceptedOfferId: scopedOfferId, conversionCandidate: candidateResult.candidate }
     throw error
   }
+  const conversionReceipt = assertMvpAcceptedOfferConversionReceipt({
+    candidate: candidateResult.candidate,
+    result: created,
+    acceptedOfferId: scopedOfferId,
+  })
   await finalizeAcceptedOfferTransactionLinkage({
     organisationId: scopedOrganisationId,
     offerId: scopedOfferId,
@@ -2606,7 +2612,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     payload,
   })
 
-  return attachLegalHandoff(created, transactionId)
+  return attachLegalHandoff({ ...created, conversionReceipt }, transactionId)
 }
 
 export async function upsertAcceptedOfferOnboardingPrefill({ transactionId = '', offer = null, payload = {} } = {}) {

@@ -1,0 +1,23 @@
+{
+  "version": "202607180025",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting prerequisite repair verification",
+  "repairReason": "The staging ledger recorded the version but all four canonical accounting tables were absent.",
+  "verification": {
+    "canonicalTablesLive": 4,
+    "canonicalTablesInitiallyEmpty": true,
+    "rlsEnabledTables": 4,
+    "scopedPoliciesLive": 11,
+    "balanceViewLive": true,
+    "anonymousDirectTablePrivilegesRevoked": true,
+    "authenticatedTablePrivilegesLeastPrivilege": true,
+    "anonymousAuthorizationHelperExecuteRevoked": true,
+    "authenticatedAuthorizationHelperExecuteGranted": true,
+    "eligibleParticipantsForAmountFreeBackfill": 318,
+    "existingLedgerEntryChanged": false
+  }
+}

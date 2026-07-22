@@ -1,0 +1,19 @@
+{
+  "version": "202607180041",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 24 instruction)",
+  "verification": {
+    "integrityViewLive": true,
+    "authenticatedSelectGranted": true,
+    "anonymousSelectRevoked": true,
+    "integrityRows": 9,
+    "blockingIntegrityRowsDetected": 1,
+    "ineligibleOpenAssignmentsDetected": 43,
+    "reviewedPhase10RemediationRequiredBeforeCloseout": true
+  }
+}

@@ -56,7 +56,7 @@ begin
       'lifecycle_state', v_next_state,
       'lifecycle_previous_state', case when tg_op = 'UPDATE' then v_previous_state else null end,
       'lifecycle_updated_at', case
-        when tg_op = 'INSERT' or new.status is distinct from old.status then now()
+        when tg_op = 'INSERT' or new.status is distinct from old.status then to_jsonb(now())
         else coalesce(new.source_context_json->'lifecycle_updated_at', to_jsonb(now()))
       end
     );

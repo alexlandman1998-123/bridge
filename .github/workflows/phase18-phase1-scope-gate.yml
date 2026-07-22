@@ -1,0 +1,38 @@
+name: Phase 18 Phase 1 Scope Gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/phase-18-phase-1-release-scope.md'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'scripts/phase18-phase1-release-scope.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase18-phase1-scope-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/phase-18-phase-1-release-scope.json'
+      - 'docs/phase-18-phase-1-release-scope.md'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'scripts/phase18-phase1-release-scope.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase18-phase1-scope-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  phase1-scope:
+    name: Verify locked Phase 1 scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/phase18-phase1-release-scope.test.mjs

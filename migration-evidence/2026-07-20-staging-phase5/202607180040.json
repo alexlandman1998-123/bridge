@@ -1,0 +1,26 @@
+{
+  "version": "202607180040",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access staging verification",
+  "applicationMode": "corrective",
+  "verification": {
+    "professionalPermissionFunctionsLive": true,
+    "adminAndLeadChecksUseProfessionalRole": true,
+    "bootstrapWritesProfessionalProfile": true,
+    "compatibilityRoleDerivedFromProfessionalRole": true,
+    "privilegedRpcFunctionsPrivateFromAnonymous": true,
+    "authenticatedFirmAdminCheck": true,
+    "authenticatedFirmLeadCheck": true,
+    "memberCompatibilityMismatches": 0,
+    "invitationCompatibilityMismatches": 0,
+    "unauthenticatedBootstrapDenied": "42501",
+    "rollbackBootstrapProfessionalRole": "firm_admin",
+    "rollbackBootstrapCompatibilityRole": "firm_admin",
+    "rollbackBootstrapQualifications": [],
+    "rollbackClean": true
+  }
+}

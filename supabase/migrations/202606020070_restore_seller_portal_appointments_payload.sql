@@ -3,6 +3,8 @@ begin;
 alter table if exists public.private_listings
   add column if not exists mandate_packet_id uuid,
   add column if not exists mandate_status text not null default 'not_started';
+alter table if exists public.private_listing_documents
+  add column if not exists category text;
 
 create or replace function public.bridge_private_listing_seller_portal_payload(p_token text)
 returns jsonb

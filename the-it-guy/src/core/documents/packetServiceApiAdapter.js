@@ -6,6 +6,7 @@ export {
   createDocumentSigningFields,
   createDocumentPacket as createPacket,
   createDocumentPacketVersion,
+  certifyNativeStructuredLegalPdf,
   claimDocumentPacketGenerationLease,
   generateFinalSignedDocument,
   getDocumentPacketGenerationLeaseStatus,

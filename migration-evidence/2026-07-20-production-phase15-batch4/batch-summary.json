@@ -1,0 +1,22 @@
+{
+  "status": "PRODUCTION_BATCH_4_COMPLETE",
+  "phase": 15,
+  "batch": 4,
+  "scope": "editable_pdf_runtime",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "approvedBy": "Alexander Landman",
+  "versions": ["202607180006", "202607180007", "202607180008", "202607180009", "202607180010", "202607180011", "202607180012", "202607180013"],
+  "sqlAppliedCount": 8,
+  "productionLedgerRecordedCount": 8,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "productionLedgerCountBefore": 451,
+  "productionLedgerCountAfter": 459,
+  "closeoutEvidenceComplete": 26,
+  "closeoutEvidenceTotal": 64,
+  "documentPacketRows": 50,
+  "documentPacketVersionRows": 94,
+  "documentRows": 82,
+  "phase0FreezeRemainsActive": true
+}

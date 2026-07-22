@@ -1219,6 +1219,36 @@ function querySummary(error = {}) {
   }
 }
 
+function getMissingColumnName(error = {}) {
+  const summary = querySummary(error)
+  if (summary.columns?.length) return summary.columns[0]
+  const text = [
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].map((value) => normalizeText(value)).filter(Boolean).join(' ')
+  return (
+    text.match(/column\s+(?:\S+\.)?["']?([a-zA-Z0-9_]+)["']?\s+does not exist/i)?.[1] ||
+    text.match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]?\s+column/i)?.[1] ||
+    ''
+  )
+}
+
+function removeColumnFromSelectFields(selectFields = '', columnName = '') {
+  const normalizedColumn = normalizeText(columnName).toLowerCase()
+  if (!normalizedColumn) return selectFields
+  const fields = normalizeText(selectFields)
+    .split(',')
+    .map((field) => normalizeText(field))
+    .filter(Boolean)
+  if (!fields.length) return selectFields
+  const nextFields = fields.filter((field) => {
+    const normalizedField = field.replace(/\s+as\s+.+$/i, '').trim().toLowerCase()
+    return normalizedField !== normalizedColumn
+  })
+  return nextFields.length === fields.length ? selectFields : nextFields.join(', ')
+}
+
 async function runSelectWithFallback(buildQuery, selectVariants, tableName = '') {
   const failureState = getSelectFallbackState(tableName)
   if (failureState?.reason === 'missingTable') {
@@ -1248,20 +1278,32 @@ async function runSelectWithFallback(buildQuery, selectVariants, tableName = '')
   }
 
   for (const selectFields of orderedVariants) {
-    const query = await buildQuery(selectFields)
-    if (!query?.error) {
-      if (tableKey && cachedVariant !== selectFields) PRIVATE_LISTING_SELECT_VARIANT_CACHE.set(tableKey, selectFields)
-      return { data: query.data || [] }
-    }
-    lastError = query.error
-    if (isMissingTableError(query.error, tableName)) {
-      rememberMissingTable(tableName)
-      setSelectFallbackState(tableName, { reason: 'missingTable', error: query.error })
-      return { missingTable: true, error: query.error }
-    }
-    if (!isMissingColumnError(query.error)) {
-      allErrorsWereColumnMissing = false
-      return { error: query.error }
+    let fields = selectFields
+    const removedColumns = new Set()
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const query = await buildQuery(fields)
+      if (!query?.error) {
+        if (tableKey && cachedVariant !== fields) PRIVATE_LISTING_SELECT_VARIANT_CACHE.set(tableKey, fields)
+        return { data: query.data || [] }
+      }
+      lastError = query.error
+      if (isMissingTableError(query.error, tableName)) {
+        rememberMissingTable(tableName)
+        setSelectFallbackState(tableName, { reason: 'missingTable', error: query.error })
+        return { missingTable: true, error: query.error }
+      }
+      if (!isMissingColumnError(query.error)) {
+        allErrorsWereColumnMissing = false
+        return { error: query.error }
+      }
+      const missingColumn = getMissingColumnName(query.error)
+      const nextFields = removeColumnFromSelectFields(fields, missingColumn)
+      if (missingColumn && nextFields !== fields && !removedColumns.has(missingColumn)) {
+        removedColumns.add(missingColumn)
+        fields = nextFields
+        continue
+      }
+      break
     }
   }
   if (allErrorsWereColumnMissing) {
@@ -1862,6 +1904,12 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     ? onboardingFormData.portalBranding
     : {}
   const resolvedPortalBranding = resolveOnboardingBranding(portalBranding)
+  const portalBrandingOrganisationId = normalizeUuid(
+    portalBranding.organisationId ||
+      portalBranding.organisation_id ||
+      portalBranding.organizationId ||
+      portalBranding.organization_id,
+  )
   const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
   const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
   const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
@@ -1963,7 +2011,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
 
   const mapped = {
     id: row.id,
-    organisationId: row.organisation_id || null,
+    organisationId: row.organisation_id || portalBrandingOrganisationId || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
     assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
@@ -2402,8 +2450,11 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const logoDarkUrl = resolvedBranding.logoDarkUrl
     const logoIconUrl = resolvedBranding.logoIconUrl
     const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
+    const primaryColour = resolvedBranding.primaryColour
+    const secondaryColour = resolvedBranding.secondaryColour
+    const accentColour = resolvedBranding.accentColour
 
-    if (!organisationName && !logoUrl) return null
+    if (!organisationName && !logoUrl && !primaryColour && !secondaryColour && !accentColour) return null
     return {
       organisationId: normalizedOrganisationId,
       organisationName,
@@ -2414,9 +2465,9 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       logoIconUrl,
       logoDark: logoDarkUrl,
       logoLight: logoLightUrl,
-      primaryColour: pickFirstText(resolvedBranding.primaryColour, '#274C69'),
-      secondaryColour: pickFirstText(resolvedBranding.secondaryColour, '#10273A'),
-      accentColour: resolvedBranding.accentColour,
+      primaryColour: pickFirstText(primaryColour, '#274C69'),
+      secondaryColour: pickFirstText(secondaryColour, '#10273A'),
+      accentColour: pickFirstText(accentColour, '#F7CF22'),
     }
   } catch (error) {
     console.warn('[Private Listings] organisation branding snapshot unavailable for seller onboarding.', {
@@ -5039,6 +5090,8 @@ export async function sendSellerOnboarding(
     includePortalBranding = true,
     deferStatusTransition = false,
     performedBy = '',
+    transferAttorneyPreferredPartnerId = '',
+    transferAttorneyPartnerOrganisationId = '',
   } = {},
 ) {
   const client = requireClient()
@@ -5049,6 +5102,51 @@ export async function sendSellerOnboarding(
   }
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
+
+  let requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  const requestedPartnerOrganisationId = normalizeText(transferAttorneyPartnerOrganisationId)
+  if (requestedPartnerOrganisationId) {
+    const resolution = await client.rpc('bridge_resolve_seller_connected_transfer_attorney', {
+      p_organisation_id: listing.organisationId,
+      p_partner_organisation_id: requestedPartnerOrganisationId,
+    })
+    if (resolution.error) throw resolution.error
+    requestedPreferredAttorneyId = normalizeText(resolution.data?.id)
+    if (!requestedPreferredAttorneyId) {
+      throw new Error('The selected attorney is no longer connected to this agency.')
+    }
+  }
+  const preferredAttorneyOptions = await client.rpc('bridge_list_organisation_partner_assignment_options', {
+    p_organisation_id: listing.organisationId,
+  })
+  if (preferredAttorneyOptions.error) throw preferredAttorneyOptions.error
+  if (preferredAttorneyOptions.data?.success === false) {
+    throw new Error(preferredAttorneyOptions.data.code || 'Unable to load transfer-attorney partners.')
+  }
+  const activeTransferAttorneys = (Array.isArray(preferredAttorneyOptions.data?.partners)
+    ? preferredAttorneyOptions.data.partners
+    : []).filter((partner) => partner.partner_type === 'transfer_attorney' && partner.is_active !== false)
+  const preferredAttorney = requestedPreferredAttorneyId
+    ? activeTransferAttorneys.find((partner) => normalizeText(partner.id) === requestedPreferredAttorneyId)
+    : activeTransferAttorneys[0]
+  if (!preferredAttorney?.id || !normalizeText(preferredAttorney.company_name)) {
+    throw new Error(requestedPreferredAttorneyId
+      ? 'The selected transfer attorney is no longer active for this agency.'
+      : 'Configure an active preferred transfer attorney before sending seller onboarding.')
+  }
+  if (!normalizeText(preferredAttorney.partner_organisation_id)) {
+    throw new Error('The selected transfer attorney must be connected to an attorney organisation before onboarding can be sent.')
+  }
+  const preferredTransferAttorney = {
+    partnerRoleConfigurationId: preferredAttorney.partner_role_configuration_id || null,
+    preferredPartnerId: preferredAttorney.id,
+    partnerOrganisationId: preferredAttorney.partner_organisation_id || null,
+    companyName: normalizeText(preferredAttorney.company_name),
+    contactPerson: normalizeText(preferredAttorney.contact_person),
+    email: normalizeText(preferredAttorney.email_address).toLowerCase(),
+    phone: normalizeText(preferredAttorney.phone_number),
+    selectionSource: 'agency_recommended',
+  }
 
   const existingQuery = await client
     .from('private_listing_seller_onboarding')
@@ -5082,6 +5180,15 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
+  const existingAcceptedAttorneyId = normalizeText(
+    existingFormData.preferredTransferAttorneyAcceptance?.preferredPartnerId,
+  )
+  const sameRecommendedAttorney = normalizeText(
+    existingFormData.preferredTransferAttorney?.preferredPartnerId,
+  ) === preferredTransferAttorney.preferredPartnerId
+  const preserveAttorneyAcceptance =
+    existingFormData.preferredTransferAttorneyAccepted === true &&
+    existingAcceptedAttorneyId === preferredTransferAttorney.preferredPartnerId
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -5100,6 +5207,17 @@ export async function sendSellerOnboarding(
       email: resolvedSellerEmail,
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
+      preferredTransferAttorney,
+      preferredTransferAttorneyAccepted: preserveAttorneyAcceptance,
+      preferredTransferAttorneyDecision: sameRecommendedAttorney
+        ? normalizeText(existingFormData.preferredTransferAttorneyDecision)
+        : '',
+      preferredTransferAttorneyAcceptance: preserveAttorneyAcceptance
+        ? existingFormData.preferredTransferAttorneyAcceptance
+        : null,
+      sellerNominatedTransferAttorney: sameRecommendedAttorney
+        ? existingFormData.sellerNominatedTransferAttorney || null
+        : null,
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',
@@ -5343,10 +5461,29 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
+  const preferredAttorneyId = normalizeText(formData.preferredTransferAttorney?.preferredPartnerId)
+  const acceptedAttorneyId = normalizeText(formData.preferredTransferAttorneyAcceptance?.preferredPartnerId)
+  const attorneyDecision = normalizeText(formData.preferredTransferAttorneyDecision).toLowerCase()
+  const nominatedAttorney = formData.sellerNominatedTransferAttorney && typeof formData.sellerNominatedTransferAttorney === 'object'
+    ? formData.sellerNominatedTransferAttorney
+    : {}
+  if (!preferredAttorneyId) {
+    throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
+  }
+  if (attorneyDecision === 'accept_preferred' && (formData.preferredTransferAttorneyAccepted !== true || acceptedAttorneyId !== preferredAttorneyId)) {
+    throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+  }
+  if (attorneyDecision === 'nominate_other' && (!normalizeText(nominatedAttorney.companyName) || !normalizeText(nominatedAttorney.email))) {
+    throw new Error('Provide the nominated attorney firm name and email before submitting seller onboarding.')
+  }
+  if (!['accept_preferred', 'nominate_other'].includes(attorneyDecision)) {
+    throw new Error('Accept the preferred transferring attorney or nominate another firm before submitting seller onboarding.')
+  }
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
     p_token: normalizedToken,
-    p_form_data: payload.formData && typeof payload.formData === 'object' ? payload.formData : {},
+    p_form_data: formData,
     p_seller_type: normalizeNullableText(payload.sellerType),
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),

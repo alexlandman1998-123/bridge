@@ -8,7 +8,7 @@ import { buildMvpWorkflowGateBoard } from './mvpWorkflowGateBoard.js'
 
 export const MVP_TRANSACTION_TRUTH_VERSION = 'arch9_mvp_transaction_truth_v1'
 
-const COMPLETE_DOCUMENT_STATUSES = new Set(['approved', 'completed', 'signed', 'waived', 'not_applicable'])
+const COMPLETE_DOCUMENT_STATUSES = new Set(['approved', 'completed', 'verified', 'satisfied', 'signed', 'waived', 'not_applicable'])
 const INACTIVE_PARTICIPANT_STATUSES = new Set(['removed', 'inactive', 'declined', 'expired'])
 
 const STAGE_META = Object.freeze({

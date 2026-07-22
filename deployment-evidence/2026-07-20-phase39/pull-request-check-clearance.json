@@ -1,0 +1,133 @@
+{
+  "phase": 39,
+  "status": "SUPABASE_PREVIEW_PASSED_VERCEL_RATE_LIMITED",
+  "verifiedAt": "2026-07-20",
+  "pullRequest": {
+    "repository": "alexlandman1998-123/bridge",
+    "number": 1,
+    "branch": "codex/mvp-pilot-readiness"
+  },
+  "productionBaseline": {
+    "sourceCommit": "333c08eb420742a95330b07483d3c373f4978d6a",
+    "deploymentId": "dpl_GMPqoX7FK5phT4XRko6ZSHtWhwdT",
+    "domain": "https://app.arch9.co.za",
+    "status": "READY",
+    "stillCertified": true
+  },
+  "releaseCandidate": {
+    "runtimeSourceCommit": "b7b9760f7b25c9e7901b3acbb25e9e68e8041c76",
+    "runtimeSourceTree": "aa9c341a0a084ec70cddba85514b0673d534ebab",
+    "runtimeBuildInputFingerprint": "9263fe4d3c7fb9a4155f02a2d23f271c40e267591ee4cbefdbdbdee07130fe28",
+    "fullRuntimeBuildInputFingerprint": "2d64f38e92dee5699e55425ccb249a838f791b72cb92d4a6ea22e26fddcad796",
+    "differsFromProductionBaseline": true,
+    "promotedToProduction": false,
+    "build": {
+      "isolatedDetachedWorktree": true,
+      "freshLockfileInstall": true,
+      "nodeVersion": "22.23.1",
+      "applicationTestSuite": "9_of_9_pass",
+      "guardedBuild": "pass",
+      "modulesTransformed": 3490,
+      "criticalAssetCount": 427,
+      "releaseManifestId": "b7b9760f7b25c9e7901b3acbb25e9e68e8041c76",
+      "performanceBudget": "pass"
+    }
+  },
+  "sourceCheckRepairs": [
+    {
+      "phase": 20,
+      "repair": "Verify the immutable production baseline and the clean PR candidate as separate artifacts."
+    },
+    {
+      "phase": 26,
+      "repair": "Certify the current candidate build without falsely marking it as promoted."
+    },
+    {
+      "phase": 33,
+      "repair": "Approve exactly eight mandate-generation correction paths and retain the deny-by-default scope lock."
+    },
+    {
+      "phase": 34,
+      "repair": "Preserve the production certification while explicitly recording candidate divergence."
+    }
+  ],
+  "externalChecks": {
+    "supabasePreview": {
+      "status": "PASS",
+      "firstPassingCommit": "86c06ca0baef54c4127fc711c328dc572ed3c812",
+      "previewMailer": "supabase_restricted_development_mailer",
+      "productionMailer": "resend_remote_override",
+      "productionProjectRef": "isdowlnollckzvltkasn",
+      "secretCapturedInEvidence": false,
+      "previewBaseline": {
+        "migration": "202605090000_production_schema_baseline.sql",
+        "sourceCommit": "4ee5387b8bbc1540e5545c11c22fedfbd552d4d0",
+        "sha256": "de50f64fe54f172391c4211faa27338b03558fc8c9bef88d455060956b3baaa2",
+        "source": "the-it-guy/sql/schema.sql immediately before the first incremental migration, with forward transaction foreign keys deferred and missing document, signing, and private-listing foundations restored before their first dependent objects",
+        "bootstrapRepairs": [
+          "defer transaction foreign keys until public.transactions exists",
+          "restore the six missing May 8 document and signing sources before their first dependent object",
+          "declare public.set_updated_at_timestamp before document triggers use it",
+          "declare tenant-isolation helpers before document policies use them",
+          "restore the missing private-listing foundation before activity migrations use it",
+          "remove embedded transaction wrappers so every restored source executes inside the baseline migration"
+        ],
+        "productionLedgerAttestationRequiredBeforeMerge": true
+      },
+      "idempotencyRepairs": [
+        "202605110003_organisation_branches_foundation.sql adds legacy-table columns before indexing them",
+        "202605110004_organisation_branding_foundation.sql adds legacy-table columns before inserting defaults",
+        "202605250020_bond_rls_scoped_policy_rollout_phase5b.sql adds role-player and subprocess visibility columns plus the missing internal-user helpers before its access rules reference them",
+        "202606020060_transaction_finance_command_centre_phase1.sql restores the transaction and development client-token helper chain before finance and legacy scoped policies reference it",
+        "202606020070_restore_seller_portal_appointments_payload.sql adds the document category column before mandate backfill uses it",
+        "202606280002_development_financials_rls.sql restores the missing development-participant foundation and access helpers before scoped policies use them",
+        "202607090001_agency_tasks_foundation.sql upgrades the legacy tasks table with its canonical identity, transaction, creator, and metadata columns before indexing them",
+        "202607140009_private_listing_transfer_attorney_allocation_phase1.sql extends placeholder scope and data-type constraints before registering private-listing attorney fields",
+        "202607140018_legacy_demo_rls_scoped_replacement.sql restores the internal transaction-access and external-workspace request helper chains before replacing legacy demo policies",
+        "202607160012_attorney_client_financial_documents_phase1.sql declares firm-membership and transaction-scoped conveyancer access before financial-document policies use it",
+        "202607170012_seller_document_transaction_continuity_p0_6.sql adds and backfills the document-request, required-document, and shared-document lifecycle columns before its triggers and continuity view reference them",
+        "20260719201000_mvp_atomic_transaction_creation_grant_hardening.sql conditionally hardens the recovered operator fallback because that production-only function is absent from a data-free preview"
+      ],
+      "previewReset": {
+        "deletedProjectRef": "ybvgipeppmpfsrjwvwvw",
+        "intermediateProjectRef": "kpxwhrfksgubewkypbly",
+        "previousProjectRef": "qiyhfidehxcpgdivjknk",
+        "createdProjectRef": "plftvjnfgytigdxdgpfy",
+        "createdBranchId": "cd736d71-7091-43cc-b2a5-688bdb33ab23",
+        "branch": "codex/mvp-pilot-readiness",
+        "withData": false,
+        "reason": "rerun the repaired bootstrap from zero after an earlier partial baseline was recorded",
+        "productionAffected": false,
+        "stagingAffected": false,
+        "recreatedAfterPrecisionNormalization": true
+      },
+      "migrationPrecisionNormalization": {
+        "status": "SECOND_PRECISION_PREFIX_COLLISIONS_REMOVED",
+        "filesRenamed": 18,
+        "collisionPrefixesBefore": 17,
+        "collisionPrefixesAfter": 0,
+        "productionLedgerMutated": false,
+        "stagingLedgerMutated": false
+      }
+    },
+    "vercelPreview": {
+      "statusAtCertification": "RATE_LIMITED",
+      "previouslyPassed": true,
+      "affectedProjects": [
+        "bridge",
+        "bridge-admin"
+      ],
+      "reportedAt": "2026-07-20T22:14:39Z",
+      "providerMessage": "Deployment rate limited — retry in 24 hours.",
+      "applicationSourceChangedSinceLastPass": false
+    }
+  },
+  "safety": {
+    "productionApplicationPromoted": false,
+    "productionDatabaseMutated": false,
+    "stagingDatabaseMutated": false,
+    "migrationInventoryChanged": true,
+    "productionSmtpCredentialChanged": false,
+    "unrelatedRuntimePathsApproved": false
+  }
+}

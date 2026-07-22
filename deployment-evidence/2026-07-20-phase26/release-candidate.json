@@ -1,0 +1,51 @@
+{
+  "status": "RELEASE_CANDIDATE_CERTIFIED",
+  "phase": 26,
+  "verifiedAt": "2026-07-20T17:46:03Z",
+  "repository": {
+    "branch": "codex/mvp-pilot-readiness",
+    "runtimeBaselineCommit": "f387e49ffc1dd65728e9c56708d84f0600775deb",
+    "runtimeSourceTree": "e3b906f98e318326f41bb95b71d7f4c23470666d",
+    "runtimeBuildInputFingerprint": "ec63af749229266c665c9c1d19973a149317557bc71384b67579613b0517b473",
+    "concurrentWorkingTreeChangesExcluded": true,
+    "uncommittedRuntimePathCountAtCertification": 35
+  },
+  "build": {
+    "isolatedDetachedWorktree": true,
+    "freshLockfileInstall": true,
+    "nodeVersion": "22.23.1",
+    "npmVersion": "10.9.8",
+    "guardedBuild": "pass",
+    "modulesTransformed": 3490,
+    "criticalAssetCount": 428,
+    "performanceBudget": "pass",
+    "applicationTestSuite": "9_of_9_pass",
+    "repeatBuild": "pass",
+    "outputFileCount": 445,
+    "deterministicFileCount": 444,
+    "intentionalNonDeterministicFiles": [
+      "release-manifest.json:generatedAt"
+    ]
+  },
+  "deployment": {
+    "provider": "Vercel",
+    "project": "bridge",
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "strategy": "git_bound_production_build",
+    "releaseSourceMarkerForcesFreshBuild": true,
+    "productionDeploymentStarted": false
+  },
+  "dependencyAudit": {
+    "lockfileChanged": false,
+    "total": 13,
+    "low": 2,
+    "moderate": 4,
+    "high": 7,
+    "treatment": "carry_forward_existing_lockfile_and_open_separate_dependency_remediation"
+  },
+  "safety": {
+    "databaseMutated": false,
+    "applicationPromoted": false,
+    "phase0MigrationFreezeRemainsActive": true
+  }
+}

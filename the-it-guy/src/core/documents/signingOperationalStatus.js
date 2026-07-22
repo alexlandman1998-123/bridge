@@ -76,7 +76,12 @@ export function resolveSigningOperationalStatus({
     state = 'completed'
     tone = 'success'
     title = 'Completed everywhere'
-    summary = `The final signed ${label} is saved to the transaction, visible in the portal, and delivered to ${finalCompletion.deliveredRecipientCount || counts.total} of ${finalCompletion.recipientCount || counts.total} recipients.`
+    const recipientCount = Number(finalCompletion.recipientCount || 0)
+    const deliveredRecipientCount = Number(finalCompletion.deliveredRecipientCount || 0)
+    const deliveryReady = finalCompletion.deliveryReady !== false || recipientCount === 0 || deliveredRecipientCount >= recipientCount
+    summary = deliveryReady
+      ? `The final signed ${label} is saved to the transaction, visible in the portal, and ready for authorised parties.`
+      : `The final signed ${label} is saved to the transaction and visible in the portal. Final email delivery is pending for ${Math.max(recipientCount - deliveredRecipientCount, 0)} recipient${recipientCount - deliveredRecipientCount === 1 ? '' : 's'}.`
     nextAction = `Open or download the final signed ${label}.`
   } else if (hasFinalArtifact) {
     state = 'publishing'

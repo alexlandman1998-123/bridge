@@ -1,0 +1,24 @@
+{
+  "version": "202607170029",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "uniquePacketVersionIndexPresent": true,
+    "atomicVersionFunctionPresent": true,
+    "authenticatedExecuteGranted": true,
+    "anonymousExecuteRevoked": true,
+    "authenticatedDirectInsertRevoked": true,
+    "missingPacketRejected": true,
+    "missingPacketSqlstate": "P0002",
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "ledgerRecordedBeforeRepair": false
+  }
+}

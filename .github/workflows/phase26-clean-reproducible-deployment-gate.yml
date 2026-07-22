@@ -1,0 +1,36 @@
+name: Phase 26 Clean Reproducible Deployment Gate
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/public/release-source.json'
+      - 'deployment-evidence/2026-07-20-phase26/**'
+      - 'docs/phase-26-clean-reproducible-application-deployment.md'
+      - 'scripts/phase26-clean-reproducible-deployment.test.mjs'
+      - '.github/workflows/phase26-clean-reproducible-deployment-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'the-it-guy/public/release-source.json'
+      - 'deployment-evidence/2026-07-20-phase26/**'
+      - 'docs/phase-26-clean-reproducible-application-deployment.md'
+      - 'scripts/phase26-clean-reproducible-deployment.test.mjs'
+      - '.github/workflows/phase26-clean-reproducible-deployment-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  release-candidate:
+    name: Verify clean reproducible release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run application:phase26:verify

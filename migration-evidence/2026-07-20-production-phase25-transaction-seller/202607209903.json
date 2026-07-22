@@ -1,0 +1,22 @@
+{
+  "version": "202607209903",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)",
+  "verification": {
+    "anonymousTablePrivilegesRevoked": true,
+    "authenticatedSelectGranted": true,
+    "authenticatedWritesRevoked": true,
+    "rlsEnabled": true,
+    "memberSelectPolicyCount": 1,
+    "authenticatedCreationRpcGranted": true,
+    "anonymousCreationRpcRevoked": true,
+    "unauthenticatedCreationRejected": "42501",
+    "transactionRows": 285,
+    "offerRows": 2
+  }
+}

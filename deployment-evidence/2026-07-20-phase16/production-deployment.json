@@ -1,0 +1,46 @@
+{
+  "status": "PRODUCTION_APPLICATION_DEPLOYED",
+  "phase": 16,
+  "provider": "Vercel",
+  "project": "bridge",
+  "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+  "productionDomain": "https://app.arch9.co.za",
+  "previewDeployment": {
+    "id": "dpl_24BpZL5J9Pxe2vAfConDQGqgnV82",
+    "url": "https://bridge-7cic6zl4m-alexs-projects-f5496a21.vercel.app",
+    "status": "READY"
+  },
+  "productionDeployment": {
+    "id": "dpl_5cGZ8ii4g7KVJtSSjCMB4s5siiD7",
+    "url": "https://bridge-kp97oo7dm-alexs-projects-f5496a21.vercel.app",
+    "status": "READY",
+    "target": "production"
+  },
+  "source": {
+    "branch": "codex/mvp-pilot-readiness",
+    "commit": "1298a956",
+    "workingTreeIncluded": true,
+    "workingTreeHadUncommittedApplicationChanges": true
+  },
+  "verification": {
+    "guardedBuild": "pass",
+    "releaseIntegrityContract": "pass",
+    "releaseManifest": "pass",
+    "criticalAssetCount": 428,
+    "listingDetailAssetDetected": true,
+    "performanceBudget": "pass",
+    "previewIndexStatus": 200,
+    "previewAuthRouteStatus": 200,
+    "productionManifestStatus": 200,
+    "productionManifestMatchesPreview": true,
+    "productionBrowserRoute": "https://app.arch9.co.za/auth",
+    "productionBrowserTitle": "Arch9 | Platform",
+    "productionBrowserErrors": 0,
+    "productionRuntimeErrorLogs": 0,
+    "productionHttp500Logs": 0
+  },
+  "databaseMigrationCloseoutEvidence": "36/64",
+  "phase0MigrationFreezeRemainsActive": true,
+  "deployedBy": "Alexander Landman (explicit Phase 16 instruction)",
+  "deployedAt": "2026-07-20T14:35:35Z"
+}

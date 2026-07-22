@@ -1,0 +1,22 @@
+{
+  "version": "202607200004",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "applicationMode": "forward_sql_then_ledger_record",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 31 instruction)",
+  "verification": {
+    "publishedV2GlobalMasters": 2,
+    "archivedV1GlobalMasters": 2,
+    "revisionLinks": 2,
+    "mandateConditionalSections": 6,
+    "otpConditionalSections": 13,
+    "mandateSignatureSections": 1,
+    "otpSignatureSections": 1,
+    "invalidSections": 0
+  }
+}

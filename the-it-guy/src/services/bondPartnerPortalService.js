@@ -201,7 +201,10 @@ function normalizeAssignment(row = {}) {
     transactionId: normalizeText(row.transaction_id || row.transactionId),
     agencyOrganisationId: normalizeText(row.agency_organisation_id || row.agencyOrganisationId || row.agency_organization_id || row.agencyOrganizationId),
     partnerOrganisationId: normalizeText(row.partner_organisation_id || row.partnerOrganisationId || row.partner_organization_id || row.partnerOrganizationId),
-    partnerConnectionId: normalizeText(row.partner_connection_id || row.partnerConnectionId),
+    partnerRelationshipId: normalizeText(row.partner_relationship_id || row.partnerRelationshipId),
+    partnerConnectionId: normalizeText(
+      row.partner_relationship_id || row.partnerRelationshipId || row.partner_connection_id || row.partnerConnectionId,
+    ),
     partnerServiceType: normalizeText(row.partner_service_type || row.partnerServiceType),
     partnerRole: normalizeText(row.partner_role || row.partnerRole),
     assignedPersonId: normalizeText(row.assigned_person_id || row.assignedPersonId),

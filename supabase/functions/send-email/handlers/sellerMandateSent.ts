@@ -28,8 +28,9 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   }
 
   const sellerName = normalizeText(payload.sellerName) || "there";
-  const recipientRole = normalizeText(payload.recipientRole).toLowerCase() === "agent" ? "agent" : "seller";
-  const recipientName = normalizeText(payload.recipientName) || (recipientRole === "agent" ? normalizeText(payload.agentName) || "there" : sellerName);
+  const recipientRole = normalizeText(payload.recipientRole).toLowerCase() || "signer";
+  const isAgencyRecipient = recipientRole === "agent";
+  const recipientName = normalizeText(payload.recipientName) || (isAgencyRecipient ? normalizeText(payload.agentName) || "there" : sellerName);
   const propertyTitle = normalizeText(payload.propertyTitle) || "your property";
   const mandateType = normalizeText(payload.mandateType) || "mandate";
   const isReminder = payload.reminder === true;
@@ -77,7 +78,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const subject = isReminder
     ? `Reminder: ${mandateType} awaiting your signature – ${propertyTitle}`
     : normalizeText(templateOverrides?.subject) ||
-    (recipientRole === "agent"
+    (isAgencyRecipient
       ? `${mandateType} ready for agency signature: ${propertyTitle}`
       : `${mandateType} ready for review: ${propertyTitle}`);
   const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) && templateOverrides.introParagraphs.length
@@ -87,7 +88,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
         `This is a reminder that the ${mandateType.toLowerCase()} for ${propertyTitle} is still awaiting your signature.`,
         "Your existing secure signing link remains active; no new link has been created.",
       ]
-    : recipientRole === "agent"
+    : isAgencyRecipient
       ? [
         `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature.`,
         isOtp ? "Please review the offer carefully before signing." : "Please review and sign first. The seller will receive their signing invitation automatically after your signature is complete.",
@@ -98,7 +99,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
     ? templateOverrides.processSteps
-    : recipientRole === "agent"
+    : isAgencyRecipient
       ? [
         `Open the secure ${isOtp ? "offer" : "mandate"} link.`,
         `Review the ${isOtp ? "offer" : "mandate"} details and signature area.`,
@@ -110,7 +111,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
         `Sign the ${isOtp ? "offer" : "mandate"}, or contact your agent if anything needs attention.`,
       ];
   const ctaLabel = normalizeText(templateOverrides?.ctaLabel) ||
-    (isOtp ? "Review & Sign Offer" : recipientRole === "agent" ? "Review & Sign as Agent" : "Review & Sign Mandate");
+    (isOtp ? "Review & Sign Offer" : isAgencyRecipient ? "Review & Sign as Agent" : "Review & Sign Mandate");
   const contentHtml = [
     renderBridgeIntroParagraphs(introParagraphs),
     renderBridgeSummaryCard(
@@ -132,10 +133,10 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   ].join("");
   const html = renderBridgeEmailLayout({
     preheader: normalizeText(templateOverrides?.preheader) ||
-      (recipientRole === "agent"
-        ? `Agency signature is required before the seller can sign ${propertyTitle}.`
+      (isAgencyRecipient
+        ? (isOtp ? `Agency signature is required for the offer for ${propertyTitle}.` : `Agency signature is required before the seller can sign ${propertyTitle}.`)
         : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`),
-    title: isReminder ? `${mandateType} Signature Reminder` : normalizeText(templateOverrides?.title) || (recipientRole === "agent" ? `${mandateType} Ready for Agent Signature` : `${mandateType} Ready`),
+    title: isReminder ? `${mandateType} Signature Reminder` : normalizeText(templateOverrides?.title) || (isAgencyRecipient ? `${mandateType} Ready for Agent Signature` : `${mandateType} Ready`),
     greeting: `Hi ${recipientName},`,
     contentHtml,
     securityTitle: normalizeText(templateOverrides?.securityTitle) || (isOtp ? "Secure Offer Review" : "Secure Mandate Review"),
@@ -150,8 +151,10 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     "",
     isReminder
       ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is still awaiting your signature. Your current secure link remains active.`
-      : recipientRole === "agent"
-      ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature. The seller will be invited after you sign.`
+      : isAgencyRecipient
+      ? (isOtp
+        ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature.`
+        : `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature. The seller will be invited after you sign.`)
       : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
     "",
     `${isOtp ? "Offer" : "Mandate"} Summary:`,

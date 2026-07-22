@@ -1,0 +1,66 @@
+{
+  "status": "RELEASE_BRANCH_PUSHED_REVIEWED_DRAFT",
+  "phase": 21,
+  "reviewedAt": "2026-07-20T15:14:00Z",
+  "repository": "alexlandman1998-123/bridge",
+  "branch": {
+    "name": "codex/mvp-pilot-readiness",
+    "remote": "origin/codex/mvp-pilot-readiness",
+    "reviewedHead": "f12d13e0",
+    "pushed": true,
+    "aheadOfRemoteAfterPush": 0,
+    "workingTreeCleanAfterPush": true
+  },
+  "pullRequest": {
+    "number": 1,
+    "url": "https://github.com/alexlandman1998-123/bridge/pull/1",
+    "title": "Prepare controlled Arch9 pilot release",
+    "base": "main",
+    "head": "codex/mvp-pilot-readiness",
+    "draft": true,
+    "mergeable": true,
+    "humanReviewDecision": "pending",
+    "labels": ["database-reconciliation"]
+  },
+  "reviewedCommits": [
+    "7951132d chore: lock phase 1 pilot release scope",
+    "9fbeead1 chore: repair phase 19 migration inventory",
+    "7799dffe chore: stabilise phase 20 application source",
+    "1d60a5dd ci: repair release review gates",
+    "f12d13e0 chore: synchronize root dependency lock"
+  ],
+  "checks": {
+    "successful": 12,
+    "skipped": 1,
+    "pending": 0,
+    "failedRepositoryOwned": 0,
+    "failedExternal": 1,
+    "externalFailure": {
+      "name": "Supabase Preview",
+      "provider": "Supabase",
+      "detailsUrl": "https://supabase.com/dashboard/project/ybvgipeppmpfsrjwvwvw",
+      "actionableLogAvailable": false
+    }
+  },
+  "ciRepairs": [
+    "Installed declared root dependencies before the Phase 6 staging gate.",
+    "Updated the stale Phase 6 manifest assertion from 63 to 64 certified rows.",
+    "Made the production recovery attestation fail before linked-project inspection so CI can test it without production access.",
+    "Synchronized the root package lock for clean npm 10 and Node 22 installs."
+  ],
+  "safety": {
+    "pullRequestMerged": false,
+    "applicationManuallyPromotedByPhase21": false,
+    "automaticProductionDeploymentTriggeredByPush": true,
+    "observedProductionDeploymentStatus": "READY",
+    "liveReleaseIdAfterPush": "785b7ef1365d1b7f8fefe4bb8865da3648607a6b",
+    "databaseMutatedByPhase21": false,
+    "phase0MigrationFreezeRemainsActive": true
+  },
+  "remainingReviewActions": [
+    "Review why codex/mvp-pilot-readiness is configured to trigger automatic production deployments before future pushes.",
+    "Investigate or explicitly waive the external Supabase Preview failure before marking the pull request ready.",
+    "Obtain human pull-request approval before merge.",
+    "Keep the pull request unmerged until the controlled release sequence authorizes merge."
+  ]
+}

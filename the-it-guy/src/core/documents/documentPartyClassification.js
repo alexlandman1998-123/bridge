@@ -59,7 +59,7 @@ function normalizeBooleanSignal(value) {
 
 export function normalizeDocumentPartyEntityType(value = '') {
   const normalized = normalizeKey(value)
-  if (!normalized) return 'individual'
+  if (!normalized) return ''
   if (['company', 'pty_ltd', 'proprietary_limited', 'private_company', 'public_company', 'close_corporation', 'cc'].includes(normalized)) {
     return normalized === 'close_corporation' || normalized === 'cc' ? 'close_corporation' : 'company'
   }
@@ -73,7 +73,12 @@ export function normalizeDocumentPartyEntityType(value = '') {
 export function normalizeDocumentMaritalRegime(value = '') {
   const normalized = normalizeKey(value)
   if (!normalized) return ''
-  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)(_|$)/.test(normalized)) return 'single'
+  if (
+    /(^|_)(single|unmarried|divorced|widowed|not_married|never_married)(_|$)/.test(normalized) ||
+    ['not_applicable', 'not_applicable_marital_regime', 'n_a', 'na'].includes(normalized)
+  ) {
+    return 'single'
+  }
   if (
     normalized === 'married_anc' ||
     normalized === 'anc' ||
@@ -212,7 +217,7 @@ export function isMarriedInCommunityBuyer(input = {}) {
 
 export function normalizeDealFinanceType(value = '') {
   const normalized = normalizeKey(value)
-  if (!normalized) return 'cash'
+  if (!normalized) return ''
   if (['bond', 'mortgage', 'home_loan', 'loan'].includes(normalized)) return 'bond'
   if (['combination', 'hybrid', 'cash_and_bond', 'bond_and_cash', 'part_cash_part_bond'].includes(normalized)) return 'combination'
   if (['cash', 'cash_sale', 'cash_buyer', 'cash_only'].includes(normalized)) return 'cash'

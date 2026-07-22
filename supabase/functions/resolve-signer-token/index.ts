@@ -995,7 +995,6 @@ Deno.serve(async (req: Request) => {
           version_number: version.version_number,
           render_status: version.render_status,
           rendered_document_id: version.rendered_document_id,
-          rendered_file_path: version.rendered_file_path,
           rendered_file_name: version.rendered_file_name,
         },
         previewVersion: {

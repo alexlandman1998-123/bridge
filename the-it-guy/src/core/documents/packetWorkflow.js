@@ -1267,10 +1267,10 @@ export function resolveOtpPacketPlaceholders({
     transactionMetadata,
     source,
   ]
-  const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboarding.purchaserType || onboarding.purchaser_type || 'individual').toLowerCase()
+  const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboarding.purchaserType || onboarding.purchaser_type).toLowerCase()
   const developmentSeller = resolveDevelopmentSellerDetails({ unit, transaction, contextSellerDetails: sellerDetails })
   const sellerSignatory = developmentSeller.signatory || {}
-  const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
+  const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type).toLowerCase()
   const sellerRegistrationNumber =
     normalizeNullableText(developmentSeller.registrationNumber) ||
     normalizeNullableText(transaction?.seller_registration_number) ||
@@ -1445,8 +1445,8 @@ export function resolveOtpPacketPlaceholders({
     buyer_spouse_id_number: normalizeNullableText(firstText(onboarding.spouseIdNumber, onboarding.spouse_id_number)),
     buyer_spouse_email: normalizeNullableText(firstText(onboarding.spouseEmail, onboarding.spouse_email)),
     buyer_spouse_consent_required: buyerSpouseConsentRequired,
-    buyer_entity_type: toTitleCase(buyerEntityTypeRaw || 'individual'),
-    'buyer.entity_type_raw': buyerEntityTypeRaw || 'individual',
+    buyer_entity_type: toTitleCase(buyerEntityTypeRaw),
+    'buyer.entity_type_raw': buyerEntityTypeRaw,
     buyer_company_registration_number: buyerEntityTypeRaw === 'trust' ? null : buyerCompanyRegistrationNumber,
     buyer_representative_name: buyerRepresentativeName,
     buyer_representative_capacity: buyerRepresentativeCapacity,
@@ -1465,8 +1465,8 @@ export function resolveOtpPacketPlaceholders({
     seller_id_number: normalizeNullableText(primarySeller.idNumber) || sellerRegistrationNumber,
     seller_email: normalizeNullableText(primarySeller.email) || normalizeNullableText(developmentSeller.email) || null,
     seller_phone: normalizeNullableText(primarySeller.phone) || normalizeNullableText(developmentSeller.phone) || null,
-    seller_entity_type: toTitleCase(sellerEntityTypeRaw || 'company'),
-    'seller.entity_type_raw': sellerEntityTypeRaw || 'company',
+    seller_entity_type: toTitleCase(sellerEntityTypeRaw),
+    'seller.entity_type_raw': sellerEntityTypeRaw,
     seller_marital_status: sellerMaritalStatus,
     seller_marital_regime: sellerMaritalRegime,
     seller_spouse_full_name: sellerSpouseFullName,
@@ -1518,8 +1518,8 @@ export function resolveOtpPacketPlaceholders({
 
     purchase_price: formatCurrency(purchasePrice),
     deposit_amount: formatCurrency(transaction?.deposit_amount),
-    finance_type: toTitleCase(String(transaction?.finance_type || 'cash').replace('combination', 'hybrid')),
-    'transaction.finance_type_raw': normalizeText(transaction?.finance_type || 'cash').toLowerCase(),
+    finance_type: toTitleCase(String(transaction?.finance_type || '').replace('combination', 'hybrid')),
+    'transaction.finance_type_raw': normalizeText(transaction?.finance_type).toLowerCase(),
     bond_amount: formatCurrency(transaction?.bond_amount),
     cash_amount: formatCurrency(cashAmount),
     occupation_date: normalizeNullableText(firstText(offerConditions.occupationDate, offerConditions.occupation_date, offer.occupationDate, offer.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),

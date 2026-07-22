@@ -1,0 +1,23 @@
+{
+  "version": "202607180039",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access staging verification",
+  "verification": {
+    "eligibilityFunctionLive": true,
+    "assignmentGuardTriggerEnabled": true,
+    "eligibilityAndTriggerFunctionsPrivate": true,
+    "activeAssignmentsAudited": 59,
+    "historicalIneligibleAttorneySlots": 43,
+    "historicalIneligibleSecretarySlots": 0,
+    "historicalIneligibleAdminSlots": 0,
+    "firmAdministratorEligibilityPass": true,
+    "missingMemberEligibilityDenied": true,
+    "ineligibleAssignmentUpdateDenied": "23514",
+    "historicalRowsRewritten": false,
+    "rollbackClean": true
+  }
+}

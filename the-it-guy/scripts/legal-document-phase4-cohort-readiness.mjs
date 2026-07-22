@@ -32,7 +32,7 @@ function hasUsableTemplate(templates, organisationId, packetType) {
     normalize(row.packet_type) === packetType &&
     normalize(row.status) === 'published' &&
     row.is_active !== false &&
-    Boolean(row.template_storage_path || normalize(row.template_format) === 'html')
+    Boolean(row.template_storage_path || ['html', 'structured', 'json', 'native_structured'].includes(normalize(row.template_format)))
   ))
 }
 

@@ -82,6 +82,8 @@ for each row
 when (new.status = 'accepted')
 execute function public.bridge_apply_accepted_attorney_invitation_profile();
 
+revoke all on function public.bridge_apply_accepted_attorney_invitation_profile() from public, anon, authenticated;
+
 comment on column public.workspace_access_requests.requested_attorney_professional_role is
   'Requested attorney profile only. Public signup is fixed to viewer until a protected invitation or administrator approval assigns a professional role.';
 comment on column public.workspace_access_requests.requested_attorney_practice_qualifications is

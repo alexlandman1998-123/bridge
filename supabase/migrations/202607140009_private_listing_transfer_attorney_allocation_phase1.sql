@@ -220,6 +220,18 @@ comment on table public.private_listing_role_players is
 comment on column public.private_listing_role_players.allocation_status is
   'Phase 1 starts at awaiting_buyer. Later phases promote the same allocation through offer and instruction states.';
 
+alter table public.document_placeholder_registry
+  drop constraint if exists document_placeholder_registry_entity_scope_check;
+alter table public.document_placeholder_registry
+  add constraint document_placeholder_registry_entity_scope_check
+  check (entity_scope in ('organisation', 'transaction', 'property', 'buyer', 'seller', 'agent', 'branch', 'private_listing', 'custom'));
+
+alter table public.document_placeholder_registry
+  drop constraint if exists document_placeholder_registry_data_type_check;
+alter table public.document_placeholder_registry
+  add constraint document_placeholder_registry_data_type_check
+  check (data_type in ('text', 'number', 'currency', 'date', 'boolean', 'enum', 'json', 'email', 'phone'));
+
 insert into public.document_placeholder_registry (
   packet_type,
   placeholder_key,

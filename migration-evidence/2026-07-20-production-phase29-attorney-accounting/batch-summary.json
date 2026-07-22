@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-07-20T18:24:00Z",
+  "status": "PRODUCTION_PHASE_29_COMPLETE",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "prerequisiteRepairVersion": "202607180025",
+  "requestedVersions": ["202607180026", "202607180027", "202607180028", "202607180029", "202607180030", "202607180031", "202607180035", "202607180036"],
+  "productionLedgerCountBefore": 492,
+  "productionLedgerCountAfter": 500,
+  "phase29LedgerRows": 8,
+  "closeoutEvidenceComplete": 67,
+  "closeoutEvidenceTotal": 71,
+  "remainingProductionPromotions": 4,
+  "partyAccountsCreated": 318,
+  "bootstrapAuditEventsCreated": 318,
+  "nonZeroOpeningBalances": 0,
+  "financialDocumentsCreated": 0,
+  "financialEntriesCreated": 0,
+  "documentRequestsCreated": 0,
+  "phase0FreezeRemainsActive": true
+}

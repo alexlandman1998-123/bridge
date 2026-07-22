@@ -1,0 +1,57 @@
+{
+  "version": "arch9_tomorrow_morning_mvp_scope_freeze_v1",
+  "status": "FROZEN",
+  "frozenAt": "2026-07-20",
+  "targetOperationalDate": "2026-07-21",
+  "objective": "Run one bounded real-estate operating loop: capture leads, reach out, send onboarding links, generate Mandates and OTPs, send signing links, and let the required roleplayers work together from the shared transaction context.",
+  "launchPath": [
+    "manual_lead_capture",
+    "lead_outreach_logging",
+    "seller_onboarding_link",
+    "buyer_onboarding_link",
+    "mandate_generation",
+    "mandate_signing_link",
+    "accepted_offer_to_transaction",
+    "otp_generation",
+    "otp_signing_link",
+    "roleplayer_workspace_access"
+  ],
+  "mustHaveCapabilities": [
+    "Create or import a seller or buyer lead in the agency CRM.",
+    "Log outbound calls, emails, WhatsApps, meetings, and notes against the lead.",
+    "Create or link a seller listing shell from a seller lead.",
+    "Send or copy a seller onboarding link after selecting a transfer attorney.",
+    "Complete seller onboarding through seller self-service or agent-assisted capture.",
+    "Generate a Mandate from the completed seller facts.",
+    "Send or copy a Mandate signing link and open it through the signer portal.",
+    "Create or capture an accepted offer and convert it to a transaction.",
+    "Send or copy a buyer onboarding link.",
+    "Generate an OTP from saved transaction, offer, and onboarding context.",
+    "Send or copy an OTP signing link and open it through the signer portal.",
+    "Verify agent, principal, seller, buyer, attorney, and invited partner access to their relevant workspace or portal."
+  ],
+  "explicitlyDeferred": [
+    "multi_organisation_rollout",
+    "attorney_accounting_depth",
+    "attorney_calendar_depth",
+    "bond_workflow_depth",
+    "commercial_pipeline_scope",
+    "advanced_dashboard_polish",
+    "settings_cosmetic_work",
+    "dependency_audit_remediation",
+    "broad_migration_freeze_retirement",
+    "non_blocking_governance_recertification",
+    "inbound_email_capture_if_manual_capture_is_operational"
+  ],
+  "blockerPolicy": [
+    "A defect blocks launch only if it prevents the launchPath from completing with real users, real links, and the bounded launch organisation.",
+    "Manual link copy is an acceptable fallback when provider delivery is slow, provided the generated link opens and activity is logged.",
+    "Inbound email capture is not a blocker when manual lead creation and outreach logging work.",
+    "New runtime capability, new migrations, and unrelated UI work are out of scope unless they repair a mustHaveCapability."
+  ],
+  "changeControl": {
+    "owner": "launch operator",
+    "rule": "No capability may enter tomorrow morning's launch path unless it names the affected files or configuration, the exact must-have capability it unblocks, the verification command or live smoke, and the rollback or fallback.",
+    "defaultDecision": "defer"
+  }
+}

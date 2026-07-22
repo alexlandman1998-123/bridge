@@ -73,13 +73,31 @@ function canonicalSection(section = {}) {
   }
 }
 
-async function storageDigest(client, template) {
+function usesNativeStructuredSource(template = {}) {
+  const metadata = template.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const format = String(template.template_format || '').trim().toLowerCase()
+  const renderMode = String(metadata.render_mode || '').trim().toLowerCase()
+  return ['structured', 'json', 'native_structured'].includes(format) || renderMode === 'native_structured'
+}
+
+async function storageDigest(client, template, sections = []) {
+  if (usesNativeStructuredSource(template)) {
+    return {
+      digest: sha256(stableJson({
+        sourceMode: 'native_structured_sections',
+        sections,
+      })),
+      available: true,
+      error: null,
+      sourceMode: 'native_structured_sections',
+    }
+  }
   const bucket = String(template.template_storage_bucket || '').trim()
   const objectPath = String(template.template_storage_path || '').trim()
   if (!bucket || !objectPath) return { digest: null, available: false, error: 'Template storage bucket/path is missing.' }
   const result = await client.storage.from(bucket).download(objectPath)
   if (result.error || !result.data) return { digest: null, available: false, error: result.error?.message || 'Template storage object is missing.' }
-  return { digest: sha256(Buffer.from(await result.data.arrayBuffer())), available: true, error: null }
+  return { digest: sha256(Buffer.from(await result.data.arrayBuffer())), available: true, error: null, sourceMode: 'legacy_storage_object' }
 }
 
 export async function buildLegalDocumentReviewSnapshot({ configPath = 'config/legal-document-pilot.json' } = {}) {
@@ -105,7 +123,7 @@ export async function buildLegalDocumentReviewSnapshot({ configPath = 'config/le
   const entries = []
   for (const template of templates.sort((left, right) => left.id.localeCompare(right.id))) {
     const sections = (sectionsResult.data || []).filter((row) => row.template_id === template.id).map(canonicalSection)
-    const source = await storageDigest(client, template)
+    const source = await storageDigest(client, template, sections)
     const sourceSha256 = source.digest
     const sectionsSha256 = sha256(stableJson(sections))
     const reviewDefinition = {
@@ -138,6 +156,7 @@ export async function buildLegalDocumentReviewSnapshot({ configPath = 'config/le
       sourceSha256,
       sourceAvailable: source.available,
       sourceError: source.error,
+      sourceMode: source.sourceMode || null,
       sectionsSha256,
       sectionCount: sections.length,
       contentDigest: `sha256:${sha256(stableJson(reviewDefinition))}`,

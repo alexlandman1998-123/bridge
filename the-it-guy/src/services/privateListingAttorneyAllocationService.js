@@ -26,6 +26,9 @@ export function buildPrivateListingAttorneyAllocationInput({
 
   return {
     p_private_listing_id: listingId,
+    p_partner_role_configuration_id: normalizeNullableUuid(
+      attorney.partnerRoleConfigurationId || attorney.partner_role_configuration_id,
+    ),
     p_preferred_partner_id: normalizeNullableUuid(attorney.preferredPartnerId || attorney.preferred_partner_id || attorney.id),
     p_company_name: companyName,
     p_contact_person: normalizeText(attorney.contactPerson || attorney.contact_person) || null,
@@ -47,6 +50,7 @@ export function normalizePrivateListingAttorneyAllocation(row = {}) {
     organisationId: row.organisation_id || null,
     privateListingId: row.private_listing_id || null,
     roleType: row.role_type || 'transfer_attorney',
+    partnerRoleConfigurationId: row.partner_role_configuration_id || null,
     preferredPartnerId: row.preferred_partner_id || null,
     partnerOrganisationId: row.partner_organisation_id || null,
     companyName: normalizeText(row.company_name),
@@ -68,9 +72,27 @@ export async function allocatePrivateListingTransferAttorney(input = {}) {
   }
 
   const payload = buildPrivateListingAttorneyAllocationInput(input)
-  const { data, error } = await supabase.rpc('bridge_allocate_private_listing_transfer_attorney', payload)
-  if (error) throw error
-  return normalizePrivateListingAttorneyAllocation(data || {})
+  if (!payload.p_partner_role_configuration_id) {
+    throw new Error('Select a canonical transfer-attorney partner before allocating the mandate.')
+  }
+  const canonicalPayload = {
+    p_private_listing_id: payload.p_private_listing_id,
+    p_partner_role_configuration_id: payload.p_partner_role_configuration_id,
+    p_company_name: payload.p_company_name,
+    p_contact_person: payload.p_contact_person,
+    p_email_address: payload.p_email_address,
+    p_phone_number: payload.p_phone_number,
+    p_selection_source: payload.p_selection_source,
+    p_mandate_packet_id: payload.p_mandate_packet_id,
+    p_mandate_signed_at: payload.p_mandate_signed_at,
+    p_metadata: payload.p_metadata,
+  }
+  const canonicalResult = await supabase.rpc(
+    'bridge_allocate_private_listing_transfer_attorney_v2',
+    canonicalPayload,
+  )
+  if (canonicalResult.error) throw canonicalResult.error
+  return normalizePrivateListingAttorneyAllocation(canonicalResult.data || {})
 }
 
 export async function getPrivateListingTransferAttorneyAllocation(privateListingId) {

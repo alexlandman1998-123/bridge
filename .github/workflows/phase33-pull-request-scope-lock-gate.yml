@@ -1,0 +1,30 @@
+name: Phase 33 pull-request scope lock gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase33-pull-request-scope-lock-gate.yml'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-33-pull-request-scope-lock.md'
+      - 'package.json'
+      - 'scripts/phase33-pull-request-scope-lock.test.mjs'
+      - 'supabase/migrations/**'
+      - 'the-it-guy/**'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scope-lock:
+    name: Verify locked PR release scope
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/phase33-pull-request-scope-lock.test.mjs

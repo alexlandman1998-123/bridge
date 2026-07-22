@@ -1,0 +1,25 @@
+{
+  "version": "202607180037",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access corrective verification",
+  "applicationMode": "corrective_migration_required",
+  "verification": {
+    "professionalProfileColumnsLive": 9,
+    "validatedConstraintsLive": 10,
+    "synchronisationTriggersEnabled": 5,
+    "supportingIndexesLive": 4,
+    "attorneyMembers": 8,
+    "canonicalFirmAdministrators": 8,
+    "missingOrganisationLinks": 0,
+    "compatibilityMismatches": 0,
+    "organisationExtensionMismatches": 0,
+    "normalizationFunctionsPass": true,
+    "anonymousTriggerFunctionExecuteRevoked": true,
+    "lastFirmAdministratorGuardPreserved": true,
+    "rollbackSynchronisationPass": true
+  }
+}

@@ -15,7 +15,9 @@ import { useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { getLegalDocumentDefinition } from '../../core/documents/legalDocumentCatalog'
 import {
+  LEGAL_DOCUMENT_PREVIEW_OPTIONS,
   listLegalDocumentPreviewScenarios,
+  resolveLegalDocumentPreviewSelection,
   resolveLegalDocumentPreviewScenario,
 } from '../../core/documents/legalDocumentPreviewScenarios'
 import {
@@ -35,6 +37,8 @@ const EMPTY_PREVIEW = Object.freeze({
   dataRequirements: [],
   sectionManifest: [],
   profile: null,
+  conditionalMasterAudit: null,
+  signingAudit: null,
   error: '',
 })
 
@@ -59,21 +63,60 @@ export default function LegalDocumentPreviewPage() {
   const document = definition ? documentsByKey[definition.key] : null
   const scenarios = listLegalDocumentPreviewScenarios()
   const [scenarioKey, setScenarioKey] = useState(scenarios[0].key)
+  const [scenarioSelection, setScenarioSelection] = useState(() => resolveLegalDocumentPreviewSelection({
+    scenarioKey: scenarios[0].key,
+    packetType: definition?.packetType,
+  }))
   const [preview, setPreview] = useState(EMPTY_PREVIEW)
   const [previewing, setPreviewing] = useState(false)
   const previewRequestIdRef = useRef(0)
 
   if (!definition) return <Navigate to={buildLegalDocumentsLandingPath()} replace />
 
-  const selectedScenario = scenarios.find((scenario) => scenario.key === scenarioKey) || scenarios[0]
+  const selectedScenario = scenarios.find((scenario) => scenario.key === scenarioKey) || {
+    key: 'custom',
+    label: 'Custom scenario',
+    description: 'Your selected party, property and finance combination.',
+  }
   const overviewPath = buildLegalDocumentOverviewPath(definition.key)
   const editorPath = buildLegalDocumentEditorPath(definition.key)
   const issueCount = preview.critical.length + preview.warnings.length
   const canPreview = Boolean(document?.primaryTemplate) && !loading && !previewing
+  const projectedScenario = resolveLegalDocumentPreviewScenario({
+    scenarioKey,
+    selection: scenarioSelection,
+    packetType: definition.packetType,
+    organisationId,
+    template: document?.primaryTemplate || null,
+  })
+  const displayedScenario = preview.profile
+    ? {
+        ...projectedScenario,
+        profile: preview.profile,
+        conditionalMasterAudit: preview.conditionalMasterAudit || projectedScenario.conditionalMasterAudit,
+        signingAudit: preview.signingAudit || projectedScenario.signingAudit,
+      }
+    : projectedScenario
 
   const handleScenarioChange = (nextScenarioKey) => {
     previewRequestIdRef.current += 1
     setScenarioKey(nextScenarioKey)
+    setScenarioSelection(resolveLegalDocumentPreviewSelection({
+      scenarioKey: nextScenarioKey,
+      packetType: definition.packetType,
+    }))
+    setPreview(EMPTY_PREVIEW)
+    setPreviewing(false)
+  }
+
+  const handleScenarioFieldChange = (field, value) => {
+    previewRequestIdRef.current += 1
+    setScenarioKey('custom')
+    setScenarioSelection((current) => resolveLegalDocumentPreviewSelection({
+      scenarioKey: 'company',
+      packetType: definition.packetType,
+      selection: { ...current, [field]: value },
+    }))
     setPreview(EMPTY_PREVIEW)
     setPreviewing(false)
   }
@@ -87,13 +130,15 @@ export default function LegalDocumentPreviewPage() {
     try {
       const scenario = resolveLegalDocumentPreviewScenario({
         scenarioKey,
+        selection: scenarioSelection,
         packetType: definition.packetType,
         organisationId,
+        template: document.primaryTemplate,
       })
       const result = await renderPacketPreview({
         packetType: definition.packetType,
         context: scenario.context,
-        title: `${definition.label} · ${scenario.scenario.label} preview`,
+        title: `${definition.label} · ${selectedScenario.label} preview`,
         template: document.primaryTemplate,
         validationAction: 'template_preview',
       })
@@ -105,6 +150,8 @@ export default function LegalDocumentPreviewPage() {
         dataRequirements: Array.isArray(result?.dataRequirements) ? result.dataRequirements : [],
         sectionManifest: Array.isArray(result?.sectionManifest) ? result.sectionManifest : [],
         profile: result?.legalDocumentScenarioProfile || scenario.profile,
+        conditionalMasterAudit: result?.conditionalEngineAudit || scenario.conditionalMasterAudit,
+        signingAudit: result?.conditionalSigningAudit || scenario.signingAudit,
         error: '',
       })
     } catch (previewError) {
@@ -183,6 +230,79 @@ export default function LegalDocumentPreviewPage() {
                 )
               })}
             </div>
+            <div className="mt-5 space-y-3 border-t border-[#e4ebf1] pt-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.13em] text-[#7b8da2]">Adjust the facts</p>
+              <label className="block text-xs font-semibold text-[#52667d]">
+                Seller type
+                <select
+                  value={scenarioSelection.sellerEntityType}
+                  onChange={(event) => handleScenarioFieldChange('sellerEntityType', event.target.value)}
+                  className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                >
+                  {LEGAL_DOCUMENT_PREVIEW_OPTIONS.partyTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              {scenarioSelection.sellerEntityType === 'individual' ? (
+                <label className="block text-xs font-semibold text-[#52667d]">
+                  Seller marital position
+                  <select
+                    value={scenarioSelection.sellerMaritalRegime}
+                    onChange={(event) => handleScenarioFieldChange('sellerMaritalRegime', event.target.value)}
+                    className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                  >
+                    {LEGAL_DOCUMENT_PREVIEW_OPTIONS.maritalRegimes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {definition.packetType === 'otp' ? (
+                <>
+                  <label className="block text-xs font-semibold text-[#52667d]">
+                    Buyer type
+                    <select
+                      value={scenarioSelection.buyerEntityType}
+                      onChange={(event) => handleScenarioFieldChange('buyerEntityType', event.target.value)}
+                      className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                    >
+                      {LEGAL_DOCUMENT_PREVIEW_OPTIONS.partyTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  {scenarioSelection.buyerEntityType === 'individual' ? (
+                    <label className="block text-xs font-semibold text-[#52667d]">
+                      Buyer marital position
+                      <select
+                        value={scenarioSelection.buyerMaritalRegime}
+                        onChange={(event) => handleScenarioFieldChange('buyerMaritalRegime', event.target.value)}
+                        className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                      >
+                        {LEGAL_DOCUMENT_PREVIEW_OPTIONS.maritalRegimes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+              <label className="block text-xs font-semibold text-[#52667d]">
+                Property title
+                <select
+                  value={scenarioSelection.propertyTitleType}
+                  onChange={(event) => handleScenarioFieldChange('propertyTitleType', event.target.value)}
+                  className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                >
+                  {LEGAL_DOCUMENT_PREVIEW_OPTIONS.propertyTitleTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              {definition.packetType === 'otp' ? (
+                <label className="block text-xs font-semibold text-[#52667d]">
+                  Finance
+                  <select
+                    value={scenarioSelection.financeType}
+                    onChange={(event) => handleScenarioFieldChange('financeType', event.target.value)}
+                    className="mt-1.5 min-h-10 w-full rounded-[10px] border border-[#d8e2eb] bg-white px-3 text-sm font-medium text-[#26394f]"
+                  >
+                    {LEGAL_DOCUMENT_PREVIEW_OPTIONS.financeTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
             <button
               type="button"
               disabled={!canPreview}
@@ -194,20 +314,48 @@ export default function LegalDocumentPreviewPage() {
             </button>
           </section>
 
-          {preview.profile ? (
+          {displayedScenario.profile ? (
             <section className="rounded-[18px] border border-[#dfe7ef] bg-white p-5" aria-labelledby="included-wording-heading">
               <div className="flex items-center justify-between gap-3">
                 <h2 id="included-wording-heading" className="text-sm font-semibold text-[#24364b]">Wording included</h2>
-                <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-xs font-semibold text-[#1c7446]">{preview.profile.activeClausePacks?.length || 0}</span>
+                <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-xs font-semibold text-[#1c7446]">{displayedScenario.includedPackKeys?.length || 0}</span>
               </div>
               <ul className="mt-3 space-y-2">
-                {(preview.profile.activeClausePacks || []).map((pack) => (
+                {(displayedScenario.includedPackKeys || []).map((pack) => (
                   <li key={pack} className="flex items-start gap-2 text-xs leading-5 text-[#607387]">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#2b9a5d]" aria-hidden="true" />
                     {formatPackLabel(pack)}
                   </li>
                 ))}
               </ul>
+              {displayedScenario.excludedPackKeys?.length ? (
+                <details className="mt-4 border-t border-[#e6edf3] pt-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-[#6d7f92]">Excluded wording ({displayedScenario.excludedPackKeys.length})</summary>
+                  <ul className="mt-2 space-y-1.5 text-xs leading-5 text-[#8391a1]">
+                    {displayedScenario.excludedPackKeys.map((pack) => <li key={pack}>{formatPackLabel(pack)}</li>)}
+                  </ul>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
+
+          {displayedScenario.signingAudit ? (
+            <section className="rounded-[18px] border border-[#dfe7ef] bg-white p-5" aria-labelledby="scenario-signers-heading">
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="scenario-signers-heading" className="text-sm font-semibold text-[#24364b]">Who signs</h2>
+                <span className="rounded-full bg-[#f1f5fa] px-2.5 py-1 text-xs font-semibold text-[#52667d]">{displayedScenario.signingAudit.signers?.length || 0}</span>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {(displayedScenario.signingAudit.signers || []).map((signer) => (
+                  <li key={signer.role} className="rounded-[10px] border border-[#e2eaf1] bg-[#fafcfe] px-3 py-2">
+                    <span className="block text-xs font-semibold text-[#354a61]">{signer.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-[#7a8b9d]">{signer.reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className={`mt-3 text-xs font-semibold ${displayedScenario.ready ? 'text-[#26744a]' : 'text-[#a05b18]'}`}>
+                {displayedScenario.ready ? 'Scenario decision verified' : 'Scenario decision needs review'}
+              </p>
             </section>
           ) : null}
         </aside>

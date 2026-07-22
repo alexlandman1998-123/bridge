@@ -1,0 +1,28 @@
+{
+  "version": "202607180043",
+  "batch": "phase15_batch6_document_runtime_enforcement",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 6 instruction)",
+  "verification": {
+    "tables": 3,
+    "rlsTables": 3,
+    "policies": 3,
+    "indexes": 2,
+    "functions": 2,
+    "rolloutMutationServiceRoleExecute": true,
+    "rolloutMutationAuthenticatedExecute": false,
+    "runtimeAccessAuthenticatedExecute": true,
+    "runtimeAccessAnonExecute": false,
+    "unconfiguredAccessAllowed": false,
+    "controlRows": 0,
+    "enrolmentRows": 0,
+    "auditRows": 0,
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94
+  }
+}

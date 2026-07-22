@@ -1,4 +1,5 @@
 import { isUnsafeFallbackAllowed } from './envValidation'
+import { sanitizePrivateListingRows } from './privateListingRecordIntegrity'
 
 const AGENT_PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const AGENT_SELLER_LEADS_STORAGE_KEY = 'itg:agent-seller-leads:v1'
@@ -141,12 +142,16 @@ export function buildSellerClientPortalLink(token, baseUrl = '') {
 
 export function readAgentPrivateListings() {
   const deletedIds = readDeletedListingIds()
-  return readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY).filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row))
+  return sanitizePrivateListingRows(readRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY))
+    .filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row))
 }
 
 export function writeAgentPrivateListings(rows) {
   const deletedIds = readDeletedListingIds()
-  writeRows(AGENT_PRIVATE_LISTINGS_STORAGE_KEY, (Array.isArray(rows) ? rows : []).filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row)))
+  writeRows(
+    AGENT_PRIVATE_LISTINGS_STORAGE_KEY,
+    sanitizePrivateListingRows(rows).filter((row) => !listingMatchesDeletedIds(row, deletedIds) && !isDeletedListingRecord(row)),
+  )
 }
 
 export function readAgentSellerLeads() {
@@ -203,13 +208,14 @@ function listingMatchesDeletedIds(record = {}, deletedIds = new Set()) {
 }
 
 function isDeletedListingRecord(record = {}) {
-  const status = String(record.listingStatus || record.listing_status || record.status || record.lifecycleStatus || '').trim().toLowerCase()
-  const visibility = String(record.listingVisibility || record.listing_visibility || '').trim().toLowerCase()
+  const source = record && typeof record === 'object' ? record : {}
+  const status = String(source.listingStatus || source.listing_status || source.status || source.lifecycleStatus || '').trim().toLowerCase()
+  const visibility = String(source.listingVisibility || source.listing_visibility || '').trim().toLowerCase()
   return Boolean(
-    record.deleted_at ||
-      record.deletedAt ||
-      record.is_deleted ||
-      record.isDeleted ||
+    source.deleted_at ||
+      source.deletedAt ||
+      source.is_deleted ||
+      source.isDeleted ||
       ['withdrawn', 'deleted', 'archived'].includes(status) ||
       ['archived', 'deleted'].includes(visibility),
   )

@@ -86,10 +86,13 @@ function resolveSectionCondition(section = {}) {
   )
 }
 
-function hasConditionSignal(condition = {}) {
+function hasConditionSignal(condition = {}, depth = 0) {
+  if (depth > 4) return false
   const source = asRecord(condition)
   if (!Object.keys(source).length) return false
   if (normalizeText(source.field || source.fact || source.path || source.key)) return true
+  if (hasConditionSignal(source.rule, depth + 1)) return true
+  if (hasConditionSignal(source.when, depth + 1)) return true
   if (Array.isArray(source.all) && source.all.length) return true
   if (Array.isArray(source.any) && source.any.length) return true
   if (Array.isArray(source.conditions) && source.conditions.length) return true
@@ -197,6 +200,7 @@ export function detectMandateTemplateSectionSignals(section = {}, signalGroups =
         remediation: group.remediation || '',
         sectionKey: normalizedSection.sectionKey,
         sectionLabel: normalizedSection.sectionLabel,
+        sectionType: normalizedSection.sectionType,
         conditionalPackKey: normalizedSection.sectionKey === group.packKey ? group.packKey : '',
         hasCondition: normalizedSection.hasCondition,
         hits,
@@ -223,7 +227,7 @@ function buildMissingRequiredIssue(group = {}, rule = {}) {
 function buildForbiddenIssue(signal = {}, rule = {}) {
   const group = getMandateTemplateSignalGroup(signal.signalGroupKey) || {}
   return {
-    severity: 'blocking',
+    severity: group.severity === 'warning' ? 'warning' : 'blocking',
     code: 'FORBIDDEN_UNCONDITIONAL_SIGNAL',
     routeKey: rule.key,
     routeLabel: rule.label,
@@ -256,6 +260,14 @@ function buildMissingConditionIssue(signal = {}, rule = {}) {
 
 function routeAllowsSignal(rule = {}, signal = {}) {
   if ((rule.requiredSignalGroups || []).includes(signal.signalGroupKey)) return true
+  if (
+    rule.key === 'default' &&
+    signal.sectionKey === 'property_details' &&
+    signal.sectionType === 'dynamic_fields' &&
+    ['full_title', 'sectional_title'].includes(signal.signalGroupKey)
+  ) {
+    return true
+  }
   if ((rule.forbiddenUnconditionalSignalGroups || []).includes(signal.signalGroupKey)) {
     return Boolean(
       signal.conditionalPackKey &&

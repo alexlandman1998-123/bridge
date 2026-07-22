@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-07-20T13:34:48.000Z",
+  "version": "202607170023",
+  "batch": "phase15_batch2_legal_review_assurance",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 2 instruction)",
+  "verification": {
+    "finalArtifactEvidenceTableLive": true,
+    "rlsEnabled": true,
+    "anonymousTableAccessRevoked": true,
+    "authenticatedTableAccessRevoked": true,
+    "serviceRoleRecorderExecuteGranted": true,
+    "functionsLive": 4,
+    "triggersEnabled": 3,
+    "invalidArtifactDenied": "23502",
+    "evidenceRows": 0,
+    "packetRows": 50,
+    "versionRows": 94,
+    "behaviorProbeResidue": false
+  }
+}

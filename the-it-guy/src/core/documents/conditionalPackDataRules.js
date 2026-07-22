@@ -465,6 +465,21 @@ export const CONDITIONAL_PACK_DATA_RULES = Object.freeze([
     requiredMergeFields: Object.freeze(['finance_type', 'cash_amount']),
     documentTriggers: Object.freeze(['proof_of_funds']),
   }),
+  Object.freeze({
+    key: 'cash_contribution_pack',
+    label: 'Combination finance cash contribution pack',
+    role: 'finance',
+    packetTypes: Object.freeze(['otp']),
+    activation: 'combination_finance',
+    requiredOnboardingFields: Object.freeze([
+      'finance.cash_amount',
+      'finance.proof_of_funds_available',
+      'finance.source_of_funds',
+    ]),
+    optionalOnboardingFields: Object.freeze(['finance.bank_statements_available', 'finance.cash_contribution_available']),
+    requiredMergeFields: Object.freeze(['finance_type', 'cash_amount', 'bond_amount']),
+    documentTriggers: Object.freeze(['proof_of_funds']),
+  }),
 ])
 
 function isPacketTypeMatch(rule = {}, packetType = 'otp') {
@@ -498,6 +513,8 @@ function isRuleActive(rule = {}, classifiers = {}, signals = {}) {
       return signals.finance && finance.isBond
     case 'cash_sale':
       return signals.finance && finance.isCash
+    case 'combination_finance':
+      return signals.finance && finance.isHybrid
     default:
       return false
   }

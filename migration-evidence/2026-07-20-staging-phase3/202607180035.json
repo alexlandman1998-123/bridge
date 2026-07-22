@@ -1,0 +1,28 @@
+{
+  "version": "202607180035",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting staging verification",
+  "verification": {
+    "documentRequestTableLive": true,
+    "rlsEnabled": true,
+    "scopedPolicies": 3,
+    "updatedAtTriggerEnabled": true,
+    "requestIndexesLive": 2,
+    "requestAwarePortalReadModelLive": true,
+    "requestAwareProofUploadLive": true,
+    "legacyProofUploadSignatureRemoved": true,
+    "anonymousDirectTablePrivilegesRevoked": true,
+    "authenticatedTablePrivileges": ["select", "insert", "update"],
+    "visibleActiveRequestShown": true,
+    "internalAndCancelledRequestsHidden": true,
+    "requestSummaryCountsAccurate": true,
+    "proofUploadLinkedToRequest": true,
+    "requestMovedToAwaitingReview": true,
+    "uploadDidNotPostLedgerEntry": true,
+    "rollbackClean": true
+  }
+}

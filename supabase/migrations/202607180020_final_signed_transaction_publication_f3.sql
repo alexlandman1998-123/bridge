@@ -95,13 +95,13 @@ begin
       transaction_id,name,file_path,file_bucket,category,document_type,status,visibility_scope,is_client_visible,
       uploaded_by_role,stage_key,created_at,updated_at
     ) values (
-      v_packet.transaction_id,v_evidence.file_name,v_evidence.path,v_evidence.bucket,v_category,v_type,'signed','shared',true,
+      v_packet.transaction_id,v_evidence.file_name,v_evidence.path,v_evidence.bucket,v_category,v_type,'approved','shared',true,
       'system','final_signed',v_now,v_now
     ) returning * into v_document;
   else
     update public.documents set
       transaction_id=v_packet.transaction_id,name=v_evidence.file_name,file_path=v_evidence.path,file_bucket=v_evidence.bucket,
-      category=v_category,document_type=v_type,status='signed',visibility_scope='shared',is_client_visible=true,
+      category=v_category,document_type=v_type,status='approved',visibility_scope='shared',is_client_visible=true,
       stage_key='final_signed',updated_at=v_now
     where id=v_document.id returning * into v_document;
   end if;

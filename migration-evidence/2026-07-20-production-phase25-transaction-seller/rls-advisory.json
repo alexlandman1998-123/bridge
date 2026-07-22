@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-07-20T17:29:00Z",
+  "status": "REVIEW_REQUIRED_NO_AUTOMATIC_REMEDIATION",
+  "stagingAffected": true,
+  "productionAffected": true,
+  "rlsDisabledTables": [
+    "public.bond_rls_cutover_exclusions",
+    "public.matter_number_sequences",
+    "public.transaction_commissions",
+    "public.transaction_document_requirements",
+    "public.transaction_lifecycle_workflows",
+    "public.transaction_rollup_validation",
+    "public.workspace_regions",
+    "public.workspace_units"
+  ],
+  "reasonNotAutomaticallyChanged": "Enabling RLS without reviewed policies can block legitimate application access. Each table requires an explicit access and policy design.",
+  "phase25TargetTableAffected": false,
+  "databaseMutatedByAdvisoryCheck": false
+}

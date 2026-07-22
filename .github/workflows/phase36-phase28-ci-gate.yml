@@ -1,0 +1,31 @@
+name: Phase 36 Phase 28 CI repair gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase28-pilot-execution-gate.yml'
+      - '.github/workflows/phase36-phase28-ci-gate.yml'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-36-repair-phase28-ci-test.md'
+      - 'package.json'
+      - 'scripts/phase28-pilot-operations.mjs'
+      - 'scripts/phase28-pilot-operations.test.mjs'
+      - 'scripts/phase36-phase28-ci.test.mjs'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  phase28-ci-contract:
+    name: Verify Phase 28 CI dependency contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run application:phase28:verify
+      - run: npm run application:phase36:verify

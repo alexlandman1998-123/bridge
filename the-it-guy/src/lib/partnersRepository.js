@@ -493,6 +493,7 @@ function mapOrganisation(row = {}) {
   const settings = row.settings_json && typeof row.settings_json === 'object' ? row.settings_json : {}
   return {
     id: normalizeText(row.id),
+    externalPartnerId: normalizeText(row.external_partner_id || row.externalPartnerId),
     name: normalizeText(row.display_name || row.displayName || row.name) || 'Arch9 Organisation',
     displayName: normalizeText(row.display_name || row.displayName || row.name) || 'Arch9 Organisation',
     legalName: normalizeText(row.legal_name || row.legalName),
@@ -968,7 +969,7 @@ async function fetchInvitationRows(scopedOrganisationId) {
     const baseResult = await supabase
       .from('partner_invitations')
       .select(
-        'id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at',
+        'id, sender_organisation_id, recipient_email, recipient_organisation_id, external_partner_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at',
       )
       .or(`sender_organisation_id.eq.${scopedOrganisationId},recipient_organisation_id.eq.${scopedOrganisationId}`)
       .order('created_at', { ascending: false })
@@ -1062,6 +1063,7 @@ function buildInvitePayloadBase({
   scopedOrganisationId,
   recipientEmail,
   recipientOrganisationId,
+  externalPartnerId,
   relationshipType,
   userId,
   workspaceType,
@@ -1082,6 +1084,7 @@ function buildInvitePayloadBase({
     sender_organisation_id: scopedOrganisationId,
     recipient_email: storageRecipientEmail,
     recipient_organisation_id: recipientOrganisationId || null,
+    external_partner_id: normalizeNullableUuid(externalPartnerId),
     from_organisation_name: fromOrganisationName,
     to_organisation_name: recipientOrganisationName || null,
     from_workspace_type: normalizeOrganisationType(workspaceType),
@@ -1272,6 +1275,12 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
       id: relationship.id,
       organisationId: relationship.partner?.id || relationship.counterpartOrganisationId,
       companyName: relationship.partner?.name || 'Connected partner',
+      logoUrl: relationship.partner?.logoUrl || relationship.partner?.logoIconUrl || '',
+      city: relationship.partner?.city || '',
+      province: relationship.partner?.province || '',
+      specialties: relationship.partner?.specialties || [],
+      serviceType: relationship.partner?.specialties?.[0] || (roleType === 'transfer_attorney' ? 'Conveyancing' : ''),
+      branch: relationship.scopeType === 'branch' ? getPartnerScopeBadge(relationship).label.replace(/^Branch:\s*/i, '') : '',
       email: relationship.partner?.contactEmails?.[0] || '',
       relationshipType: relationship.relationshipType,
       preferred: Boolean(relationship.preferred || preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))),
@@ -1313,6 +1322,7 @@ export async function createPartnerInvitation({
   organisationId = '',
   recipientEmail = '',
   recipientOrganisationId = '',
+  externalPartnerId = '',
   relationshipType = 'approved',
   toWorkspaceType = '',
   recipientOrganisationName = '',
@@ -1343,9 +1353,7 @@ export async function createPartnerInvitation({
     return (
       normalizeText(mapped.fromOrganisationId) === scopedOrganisationId &&
       recipientMatches &&
-      (normalizeLower(mapped.status) || 'pending') === 'pending' &&
-      normalizePartnerScopeType(mapped.scopeType) === normalizedScopeType &&
-      normalizeText(mapped.scopeId) === normalizedScopeId
+      (normalizeLower(mapped.status) || 'pending') === 'pending'
     )
   }
 
@@ -1369,6 +1377,7 @@ export async function createPartnerInvitation({
       fromWorkspaceType: normalizeOrganisationType(workspaceType),
       toWorkspaceType: fallbackType,
       invitedEmail: email,
+      externalPartnerId: normalizeText(externalPartnerId),
       message: normalizeText(message),
       invitedByUserId: normalizeText(userId) || '',
       createdAt: new Date().toISOString(),
@@ -1383,11 +1392,9 @@ export async function createPartnerInvitation({
 
   let existingQuery = supabase
     .from('partner_invitations')
-    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, external_partner_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
     .eq('sender_organisation_id', scopedOrganisationId)
     .eq('status', 'pending')
-    .eq('scope_type', normalizedScopeType)
-    .eq('scope_id', normalizedScopeId)
 
   existingQuery = resolvedRecipientId
     ? existingQuery.eq('recipient_organisation_id', resolvedRecipientId)
@@ -1410,6 +1417,7 @@ export async function createPartnerInvitation({
     scopedOrganisationId,
     recipientEmail: email,
     recipientOrganisationId: resolvedRecipientId,
+    externalPartnerId,
     relationshipType,
     userId,
     workspaceType,
@@ -1426,10 +1434,28 @@ export async function createPartnerInvitation({
   const result = await supabase
     .from('partner_invitations')
     .insert(payload)
-    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, external_partner_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
     .single()
 
   if (result.error) {
+    if (String(result.error.code || '') === '23505') {
+      let conflictQuery = supabase
+        .from('partner_invitations')
+        .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, external_partner_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+        .eq('sender_organisation_id', scopedOrganisationId)
+        .eq('status', 'pending')
+      conflictQuery = resolvedRecipientId
+        ? conflictQuery.eq('recipient_organisation_id', resolvedRecipientId)
+        : conflictQuery.eq('recipient_email', email)
+      const conflictResult = await conflictQuery.order('created_at', { ascending: true }).limit(1).maybeSingle()
+      if (conflictResult.error) throw conflictResult.error
+      if (conflictResult.data) {
+        const existingInvitation = mapInvitation(conflictResult.data)
+        const emailResult = await sendPartnerInvitationEmail(existingInvitation)
+        assertPartnerInvitationEmailSent(emailResult, email)
+        return existingInvitation
+      }
+    }
     if (isRecoverablePartnerSchemaError(result.error)) {
       const fallbackResult = await supabase
         .from('partner_invitations')
@@ -1467,7 +1493,7 @@ export async function createPartnerInvitation({
 async function fetchInvitationForManagement(id) {
   const fullQuery = await supabase
     .from('partner_invitations')
-    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
+    .select('id, sender_organisation_id, recipient_email, recipient_organisation_id, external_partner_id, invited_email, from_organisation_name, to_organisation_name, from_workspace_type, to_workspace_type, partner_type, relationship_type, scope_type, scope_id, scope_name, preferred, status, message, created_at, expires_at, invited_by_user_id, responded_by_user_id, responded_at')
     .eq('id', id)
     .single()
 
@@ -1719,13 +1745,16 @@ function resolveWorkspaceTypeFromId({ recipientOrganisationId = '', toWorkspaceT
   return 'agency'
 }
 
-async function updateInvitationResponse({ invitationId = '', status = 'accepted', userId = '' }) {
+async function updateInvitationResponse({ invitationId = '', status = 'accepted', userId = '', recipientOrganisationId = '' }) {
   const now = new Date().toISOString()
   const payload = {
     status,
     responded_at: now,
   }
   if (status === 'accepted') payload.accepted_at = now
+  if (status === 'accepted' && normalizeText(recipientOrganisationId)) {
+    payload.recipient_organisation_id = normalizeText(recipientOrganisationId)
+  }
   const withActor = normalizeText(userId) ? { ...payload, responded_by_user_id: normalizeText(userId) } : payload
   const result = await supabase.from('partner_invitations').update(withActor).eq('id', invitationId)
   if (result.error) {
@@ -1734,6 +1763,9 @@ async function updateInvitationResponse({ invitationId = '', status = 'accepted'
         status: status === 'declined' ? 'revoked' : status,
       }
       if (status === 'accepted') legacyPayload.accepted_at = now
+      if (status === 'accepted' && normalizeText(recipientOrganisationId)) {
+        legacyPayload.recipient_organisation_id = normalizeText(recipientOrganisationId)
+      }
       const fallback = await supabase.from('partner_invitations').update(legacyPayload).eq('id', invitationId)
       if (fallback.error) throw fallback.error
       return
@@ -1908,7 +1940,12 @@ export async function acceptPartnerInvitation({
   }
   const resolvedRecipientOrganisationId = recipientId || normalizeText(organisationId)
 
-  await updateInvitationResponse({ invitationId: id, status: 'accepted', userId })
+  await updateInvitationResponse({
+    invitationId: id,
+    status: 'accepted',
+    userId,
+    recipientOrganisationId: resolvedRecipientOrganisationId,
+  })
   await ensureOrganisationRelationship({
     senderOrganisationId: normalizeText(invitation.sender_organisation_id),
     recipientOrganisationId: resolvedRecipientOrganisationId,

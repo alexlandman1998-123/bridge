@@ -1,0 +1,1 @@
+{"version":"202607180005","targetProjectRef":"vaszuxjeoajeuhlcnzzf","sqlApplied":true,"catalogChecks":"pass","behaviorChecks":"pass","rollbackOrNoResidue":"pass","reviewedBy":"Codex automated staging verification","checks":{"expectedObjects":9,"liveObjects":9,"packetSnapshotTargets":21,"packetSnapshotsCaptured":21,"auditTriggerRestored":true}}

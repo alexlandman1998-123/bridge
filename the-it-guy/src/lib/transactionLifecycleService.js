@@ -1075,7 +1075,7 @@ export async function createTransactionFromLeadOverride({
     })
     if (atomicResult.error) throw atomicResult.error
 
-    assertMvpAtomicTransactionCreation({
+    const atomicCreation = assertMvpAtomicTransactionCreation({
       result: atomicResult.data,
       organisationId: nextOrganisationId,
       listingId: nextListingId,
@@ -1120,6 +1120,7 @@ export async function createTransactionFromLeadOverride({
       }),
       persisted: true,
       existing,
+      atomicCreation,
       warning: existing ? 'existing_transaction_reused' : null,
     }
   } catch (error) {

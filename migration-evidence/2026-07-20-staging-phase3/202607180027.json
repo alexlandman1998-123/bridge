@@ -1,0 +1,23 @@
+{
+  "version": "202607180027",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney-accounting corrective migration verification",
+  "correctiveReview": {
+    "matchingSharedRequestHelpers": 3,
+    "missingPortalAccountFunctionBefore": true,
+    "portalAccountFunctionLiveAfter": true,
+    "securityDefiner": true,
+    "stable": true,
+    "fixedSearchPath": true,
+    "anonymousTokenSessionExecuteGranted": true,
+    "authenticatedTokenSessionExecuteGranted": true,
+    "publicExecuteRevoked": true,
+    "missingTokenReturnsEmptyModel": true,
+    "invalidTokenDenied": true,
+    "validTokenScopedToRequestedPartyRole": true
+  }
+}

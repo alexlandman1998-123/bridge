@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Download, FileCheck2, Loader2, LockKeyhole, PenLine, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { Check, ChevronRight, Download, FileCheck2, Loader2, LockKeyhole, Minus, PenLine, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -338,7 +338,7 @@ function SigningCanvas({ mode, signerName, onSave, onCancel, saving = false }) {
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7389a2]">{fieldTypeLabel(mode)} Required</p>
             <h2 className="mt-1 text-lg font-bold text-[#122238]">Add your {fieldTypeLabel(mode).toLowerCase()}</h2>
           </div>
-          <button type="button" onClick={onCancel} className="rounded-full border border-[#d8e3ef] p-2 text-[#47627c]">
+          <button type="button" onClick={onCancel} aria-label="Close signature capture" className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d8e3ef] text-[#47627c]">
             <X className="h-4 w-4" />
           </button>
         </header>
@@ -388,15 +388,15 @@ function SigningCanvas({ mode, signerName, onSave, onCancel, saving = false }) {
           )}
         </div>
 
-        <footer className="flex flex-col-reverse gap-2 border-t border-[#e5edf5] px-5 py-4 sm:flex-row sm:justify-between">
-          <button type="button" onClick={clearCanvas} className="min-h-[46px] rounded-[12px] border border-[#cad8e8] px-4 text-sm font-semibold text-[#284761]">
+        <footer className="flex flex-col gap-2 border-t border-[#e5edf5] px-5 py-4 sm:flex-row sm:justify-between">
+          <button type="button" onClick={clearCanvas} className="min-h-[48px] w-full rounded-[12px] border border-[#cad8e8] px-4 text-sm font-semibold text-[#284761] sm:w-auto">
             Clear
           </button>
           <button
             type="button"
             onClick={() => void save()}
             disabled={saving || (tab === 'draw' && !hasInk) || (tab === 'type' && !normalizeText(typedName))}
-            className="min-h-[46px] rounded-[12px] bg-[#12385f] px-5 text-sm font-bold text-white disabled:opacity-50"
+            className="min-h-[48px] w-full rounded-[12px] bg-[#12385f] px-5 text-sm font-bold text-white disabled:opacity-50 sm:w-auto"
           >
             {saving ? 'Saving...' : `Save ${fieldTypeLabel(mode)}`}
           </button>
@@ -461,10 +461,10 @@ function PdfPage({ page, pageNumber, fields, activeFieldId, onFieldClick, zoom =
           const fieldType = normalizeKey(field?.field_type)
           const completed = isCompleted(field)
           const active = activeFieldId === fieldId
-          const left = numberOr(field?.x_position, 0) * pageScale
-          const top = numberOr(field?.y_position, 0) * pageScale
-          const width = Math.max(54, numberOr(field?.width, 110) * pageScale)
-          const height = Math.max(32, numberOr(field?.height, 34) * pageScale)
+          const width = Math.min(display.width, Math.max(76, numberOr(field?.width, 110) * pageScale))
+          const height = Math.min(display.height, Math.max(44, numberOr(field?.height, 34) * pageScale))
+          const left = Math.min(Math.max(0, numberOr(field?.x_position, 0) * pageScale), Math.max(0, display.width - width))
+          const top = Math.min(Math.max(0, numberOr(field?.y_position, 0) * pageScale), Math.max(0, display.height - height))
           return (
             <button
               id={`sign-field-${fieldId}`}
@@ -543,16 +543,16 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
   }, [fields])
 
   return (
-    <section className="min-h-0 rounded-[22px] border border-[#d6e2ef] bg-[#e8eef5] shadow-[0_22px_70px_rgba(10,30,52,0.12)]">
-      <header className="sticky top-[88px] z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ef] bg-white/95 px-4 py-3 backdrop-blur md:top-0">
+    <section className="min-h-0 overflow-hidden rounded-[16px] border border-[#d6e2ef] bg-[#e8eef5] shadow-[0_22px_70px_rgba(10,30,52,0.12)] sm:rounded-[22px]">
+      <header className="z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ef] bg-white/95 px-4 py-3 backdrop-blur md:sticky md:top-0">
         <div>
           <h2 className="text-sm font-bold text-[#142132]">Document Preview</h2>
           <p className="text-xs text-[#607387]">{pdf ? `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}` : 'Review the document before signing.'}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">-</button>
+          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => setZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))} className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#ccd9e8] text-[#35546c]"><Minus className="h-4 w-4" /></button>
           <span className="min-w-12 text-center text-xs font-bold text-[#607387]">{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">+</button>
+          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))} className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#ccd9e8] text-[#35546c]"><Plus className="h-4 w-4" /></button>
         </div>
       </header>
 
@@ -574,11 +574,11 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
             />
           ))
         ) : fallbackHtml ? (
-          <div className="h-[72vh] bg-white">
+          <div className="h-[min(72svh,680px)] bg-white md:h-[72vh]">
             <iframe title="signer-document-preview" srcDoc={fallbackHtml} className="h-full w-full border-0 bg-white" />
           </div>
         ) : documentUrl ? (
-          <div className="h-[72vh] bg-white">
+          <div className="h-[min(72svh,680px)] bg-white md:h-[72vh]">
             <iframe title="signer-document-preview" src={documentUrl} className="h-full w-full border-0 bg-white" />
           </div>
         ) : (
@@ -1026,32 +1026,44 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
     <main className="min-h-screen bg-[#eef3f8] pb-[calc(7rem+env(safe-area-inset-bottom))] text-[#142132] md:pb-0">
       <DocumentAccessibilityNavigation model={signerAccessibility} />
       <header className="sticky top-0 z-40 border-b border-[#d7e2ef] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
-          <Arch9Mark />
-          <div className="min-w-0 flex-1 text-center md:flex-none">
+        <div className="mx-auto grid max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 md:flex md:flex-wrap md:justify-between">
+          <div className="min-w-0"><Arch9Mark /></div>
+          <div className="order-2 flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46] md:order-3">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            {sessionBinding?.certified ? 'Certified' : 'Secure'}
+          </div>
+          <div className="order-3 col-span-2 min-w-0 border-t border-[#edf2f7] pt-2 text-left md:order-2 md:col-span-1 md:flex-1 md:border-0 md:pt-0 md:text-center">
             <h1 className="truncate text-sm font-bold text-[#142132] sm:text-base">{packet?.title || 'Document Packet'}</h1>
             <p className="text-xs text-[#607387]">Version {version?.version_number || '—'} · {signer?.signer_name || 'Signer'}</p>
             <p className="mt-1 text-xs font-semibold text-[#35546c]">{signerInstruction}</p>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46]">
-            <ShieldCheck className="h-4 w-4" />
-            {sessionBinding?.certified ? 'Certified document' : 'Secure'}
-          </div>
         </div>
       </header>
 
-      <div className="sticky top-[65px] z-30 border-b border-[#d7e2ef] bg-[#f8fbfd]/95 px-4 py-3 backdrop-blur md:hidden">
-        <div className="mb-2 flex items-center justify-between text-xs font-bold text-[#35546c]">
-          <span>{progress.completedCount}/{progress.requiredCount} completed</span>
-          <span>{progress.percent}%</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
-          <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
+      <div className="border-b border-[#d7e2ef] bg-[#f8fbfd] px-4 py-3 md:hidden">
+        <div className="mx-auto max-w-[620px]">
+          <div className="mb-2 flex items-center justify-between text-xs font-bold text-[#35546c]">
+            <span>{progress.completedCount}/{progress.requiredCount} completed</span>
+            <span>{progress.percent}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
+            <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
+          </div>
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-[1500px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px] lg:p-5">
+      <div className="mx-auto grid max-w-[1500px] gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_390px] lg:p-5">
         <div id="signer-document-content" tabIndex={-1} className="min-w-0 scroll-mt-24 focus:outline-none">
+          <section className="mb-3 border-b border-[#d7e2ef] px-1 pb-3 md:hidden" aria-label="Current signing step">
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#7389a2]">Current step</p>
+            <p className="mt-1 text-sm font-semibold leading-5 text-[#203a55]">
+              {progress.nextField
+                ? `Use the action below to go to your ${fieldLocationLabel(progress.nextField).toLowerCase()}.`
+                : canCompleteSigning
+                  ? 'All required fields are complete. Submit your secure signing when ready.'
+                  : 'Review the document and complete the highlighted fields.'}
+            </p>
+          </section>
           <DocumentPreview
             documentUrl={documentPreviewUrl}
             fallbackHtml={fallbackPreviewHtml}
@@ -1061,12 +1073,13 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
           />
         </div>
 
-        <aside id="signer-document-actions" tabIndex={-1} className="scroll-mt-24 space-y-4 focus:outline-none lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
-          <DocumentJourneyProgress model={signerJourney} compact />
-          <DocumentRoleGuidanceCard guidance={signerGuidance} compact />
-          <DocumentRoleActionBar model={signerActions} busy={Boolean(busyAction)} compact onAction={handleSignerRoleAction} />
-          <DocumentResponsibilityCard model={signerResponsibility} compact />
-          <DocumentHelpRecoveryCard model={signerHelpRecovery} busy={Boolean(busyAction) || loading} compact onAction={handleHelpRecoveryAction} />
+        <aside id="signer-document-actions" tabIndex={-1} className="scroll-mt-24 focus:outline-none lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
+          <div className="hidden space-y-4 lg:block">
+            <DocumentJourneyProgress model={signerJourney} compact />
+            <DocumentRoleGuidanceCard guidance={signerGuidance} compact />
+            <DocumentRoleActionBar model={signerActions} busy={Boolean(busyAction)} compact onAction={handleSignerRoleAction} />
+            <DocumentResponsibilityCard model={signerResponsibility} compact />
+            <DocumentHelpRecoveryCard model={signerHelpRecovery} busy={Boolean(busyAction) || loading} compact onAction={handleHelpRecoveryAction} />
           <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1133,6 +1146,12 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
             <LockKeyhole className="h-5 w-5" />
             {busyAction === 'complete_signing' ? 'Completing...' : 'Complete Signing'}
           </button>
+          </div>
+
+          <div className="space-y-3 lg:hidden">
+            {errorMessage ? <p className="rounded-[14px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15]">{errorMessage}</p> : null}
+            {statusMessage ? <DocumentOutcomeNotice model={signerOutcomeFeedback} onDismiss={() => setStatusMessage('')} /> : null}
+          </div>
         </aside>
       </div>
 

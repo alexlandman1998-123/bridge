@@ -277,9 +277,16 @@ const SECTION_CARD_CLASS =
 const INNER_PANEL_CLASS =
   'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#138a3d]/45 focus:ring-2 focus:ring-[#138a3d]/10 sm:rounded-[18px]'
+  'box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium leading-5 text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[color:var(--seller-brand-primary)] focus:ring-2 focus:ring-[color:var(--seller-brand-primary-soft)] sm:rounded-[18px]'
+const DETAIL_TEXTAREA_CLASS =
+  'box-border w-full min-w-0 max-w-full rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-sm font-medium leading-5 text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[color:var(--seller-brand-primary)] focus:ring-2 focus:ring-[color:var(--seller-brand-primary-soft)] sm:rounded-[18px] sm:text-[15px]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
+const SELLER_BRAND_DEFAULTS = {
+  primary: '#494b8a',
+  secondary: '#000000',
+  accent: '#ceac69',
+}
 const STEP_META = [
   {
     label: 'Seller Information',
@@ -318,6 +325,42 @@ function resolveSellerOnboardingSubmitError(error) {
 function areCanonicalSellerFactsEnabled() {
   const raw = String(import.meta.env?.[CANONICAL_SELLER_FACTS_FLAG] ?? '').trim().toLowerCase()
   return !['0', 'false', 'no', 'off', 'disabled'].includes(raw)
+}
+
+function normalizeBrandHex(value = '', fallback = SELLER_BRAND_DEFAULTS.primary) {
+  const text = String(value || '').trim()
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text
+  if (/^[0-9a-f]{6}$/i.test(text)) return `#${text}`
+  return fallback
+}
+
+function hexToRgbParts(hex = SELLER_BRAND_DEFAULTS.primary) {
+  const normalized = normalizeBrandHex(hex)
+  const value = normalized.slice(1)
+  return [
+    Number.parseInt(value.slice(0, 2), 16),
+    Number.parseInt(value.slice(2, 4), 16),
+    Number.parseInt(value.slice(4, 6), 16),
+  ].join(' ')
+}
+
+function getSellerBrandStyle(brand = {}) {
+  const primary = normalizeBrandHex(brand?.primaryColour, SELLER_BRAND_DEFAULTS.primary)
+  const secondary = normalizeBrandHex(brand?.secondaryColour, SELLER_BRAND_DEFAULTS.secondary)
+  const accent = normalizeBrandHex(brand?.accentColour, SELLER_BRAND_DEFAULTS.accent)
+  return {
+    '--seller-brand-primary': primary,
+    '--seller-brand-secondary': secondary,
+    '--seller-brand-accent': accent,
+    '--seller-brand-primary-rgb': hexToRgbParts(primary),
+    '--seller-brand-secondary-rgb': hexToRgbParts(secondary),
+    '--seller-brand-accent-rgb': hexToRgbParts(accent),
+    '--seller-brand-primary-soft': `rgb(${hexToRgbParts(primary)} / 0.12)`,
+    '--seller-brand-primary-tint': `rgb(${hexToRgbParts(primary)} / 0.08)`,
+    '--seller-brand-primary-border': `rgb(${hexToRgbParts(primary)} / 0.38)`,
+    '--seller-brand-accent-soft': `rgb(${hexToRgbParts(accent)} / 0.14)`,
+    '--seller-brand-accent-border': `rgb(${hexToRgbParts(accent)} / 0.44)`,
+  }
 }
 
 function getRuntimeTimestampMs() {
@@ -412,7 +455,7 @@ async function notifySellerOnboardingSubmitted(updated = {}, form = {}) {
 function choiceCardClass(isActive) {
   return `w-full rounded-[14px] border px-3 py-2.5 text-left transition duration-150 ease-out sm:rounded-[20px] sm:px-5 sm:py-5 ${
     isActive
-      ? 'border-[#138a3d]/55 bg-[#f0fbf4] shadow-[0_12px_28px_rgba(19,138,61,0.10)]'
+      ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] shadow-[0_12px_28px_rgb(var(--seller-brand-primary-rgb)/0.10)]'
       : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
   }`
 }
@@ -432,14 +475,14 @@ function getPropertyStructureOptionsByCategory(category) {
 
 function chipChoiceClass(isActive) {
   return `inline-flex items-center gap-2 rounded-full border px-3.5 py-2.5 text-xs font-semibold transition ${
-    isActive ? 'border-[#138a3d]/55 bg-[#f0fbf4] text-[#126b34]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
+    isActive ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
   }`
 }
 
 function disclosureAnswerClass(isActive) {
   return `inline-flex min-h-[44px] items-center justify-center rounded-[14px] border px-3 text-sm font-semibold transition ${
     isActive
-      ? 'border-[#138a3d] bg-[#eaf8ef] text-[#126b34] shadow-[0_10px_22px_rgba(19,138,61,0.12)]'
+      ? 'border-[color:var(--seller-brand-primary)] bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)] shadow-[0_10px_22px_rgb(var(--seller-brand-primary-rgb)/0.12)]'
       : 'border-[#d8e2ec] bg-white text-[#4f6378]'
   }`
 }
@@ -482,25 +525,64 @@ function getSpecialMandateConditionLabels(conditions = {}) {
 }
 
 function resolveAgencyBrand(listing = {}) {
-  const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
+  const sellerOnboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const sellerOnboardingSnakeFormData = listing?.seller_onboarding?.form_data && typeof listing.seller_onboarding.form_data === 'object'
+    ? listing.seller_onboarding.form_data
+    : {}
+  const onboardingFormData = listing?.onboardingFormData?.formData && typeof listing.onboardingFormData.formData === 'object'
+    ? listing.onboardingFormData.formData
+    : {}
+  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingSnakeFormData.portalBranding || onboardingFormData.portalBranding || {}
   const listingBranding = {
     agencyOrganisation: listing?.agencyOrganisation,
+    agency_organisation: listing?.agency_organisation,
     organisationName: listing?.organisationName,
+    organisation_name: listing?.organisation_name,
     agencyName: listing?.agencyName,
+    agency_name: listing?.agency_name,
     assignedAgencyName: listing?.assignedAgencyName,
+    assigned_agency_name: listing?.assigned_agency_name,
     agencyLogoUrl: listing?.agencyLogoUrl,
+    agency_logo_url: listing?.agency_logo_url,
     agencyLogoDarkUrl: listing?.agencyLogoDarkUrl,
+    agency_logo_dark_url: listing?.agency_logo_dark_url,
     agencyLogoLightUrl: listing?.agencyLogoLightUrl,
+    agency_logo_light_url: listing?.agency_logo_light_url,
     organisationLogoUrl: listing?.organisationLogoUrl,
+    organisation_logo_url: listing?.organisation_logo_url,
     organisationLogoDarkUrl: listing?.organisationLogoDarkUrl,
+    organisation_logo_dark_url: listing?.organisation_logo_dark_url,
     organisationLogoLightUrl: listing?.organisationLogoLightUrl,
+    organisation_logo_light_url: listing?.organisation_logo_light_url,
+    primaryColour: listing?.primaryColour,
+    primary_colour: listing?.primary_colour,
+    primaryColor: listing?.primaryColor,
+    primary_color: listing?.primary_color,
+    secondaryColour: listing?.secondaryColour,
+    secondary_colour: listing?.secondary_colour,
+    secondaryColor: listing?.secondaryColor,
+    secondary_color: listing?.secondary_color,
+    accentColour: listing?.accentColour,
+    accent_colour: listing?.accent_colour,
+    accentColor: listing?.accentColor,
+    accent_color: listing?.accent_color,
   }
   const brandingSources = [
     listing?.branding,
     onboardingBranding,
+    sellerOnboardingFormData.branding,
+    sellerOnboardingSnakeFormData.branding,
+    onboardingFormData.branding,
+    listing?.sellerOnboarding?.portalBranding,
+    listing?.sellerOnboarding?.portal_branding,
+    listing?.seller_onboarding?.portalBranding,
+    listing?.seller_onboarding?.portal_branding,
     listingBranding,
     listing?.agency,
     listing?.organisation,
+    listing?.organization,
   ]
   const branding = resolveOnboardingBranding(...brandingSources)
   const hasAgencyName = hasResolvedOnboardingBrandingValue(
@@ -654,8 +736,8 @@ function getDraftSaveStatusMeta(status = 'idle', savedAt = '', fallback = '') {
     const timeLabel = formatDraftSavedAt(savedAt)
     return {
       label: timeLabel ? `Saved ${timeLabel}` : 'Draft saved',
-      dotClass: 'bg-[#1f7d44]',
-      className: 'border-[#d8ecdf] bg-[#eefbf3] text-[#1f7d44]',
+      dotClass: 'bg-[color:var(--seller-brand-primary)]',
+      className: 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)]',
     }
   }
   return {
@@ -1113,6 +1195,9 @@ function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
 function normalizeFormData(listing) {
   const seller = listing?.seller || {}
   const existing = listing?.sellerOnboarding?.formData || {}
+  const preferredTransferAttorney = existing.preferredTransferAttorney && typeof existing.preferredTransferAttorney === 'object'
+    ? existing.preferredTransferAttorney
+    : null
   const canonicalFacts = getCanonicalSellerFacts(listing)
   const flow = getFlowContract(existing, listing, canonicalFacts)
   const split = splitName(existing.fullName || seller.name || '')
@@ -1506,6 +1591,20 @@ function normalizeFormData(listing) {
     cancellationRequired: existing.cancellationRequired !== undefined ? Boolean(existing.cancellationRequired) : Boolean(existing.existingBond),
     cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
+    preferredTransferAttorney,
+    preferredTransferAttorneyAccepted: Boolean(existing.preferredTransferAttorneyAccepted),
+    preferredTransferAttorneyDecision:
+      existing.preferredTransferAttorneyDecision ||
+      (existing.preferredTransferAttorneyAccepted ? 'accept_preferred' : '') ||
+      (existing.sellerNominatedTransferAttorney?.companyName ? 'nominate_other' : ''),
+    preferredTransferAttorneyAcceptance:
+      existing.preferredTransferAttorneyAcceptance && typeof existing.preferredTransferAttorneyAcceptance === 'object'
+        ? existing.preferredTransferAttorneyAcceptance
+        : null,
+    sellerNominatedTransferAttorney:
+      existing.sellerNominatedTransferAttorney && typeof existing.sellerNominatedTransferAttorney === 'object'
+        ? existing.sellerNominatedTransferAttorney
+        : { companyName: '', contactPerson: '', email: '', phone: '' },
 
     gasInstallation: Boolean(existing.gasInstallation || existing.gasGeyser || existing.gas_geyser || canonicalFacts?.compliance?.gas_installation || canonicalFacts?.compliance?.gas_geyser),
     gasGeyser: normalizedFeatures.includes('gas_geyser'),
@@ -1560,13 +1659,13 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
 function SellerBrandBar({ brand }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-3 sm:pb-5">
+    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--seller-brand-accent-border)] pb-3 sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
-        <AgencyMark brand={brand} tone="light" />
+        <AgencyMark brand={brand} tone="dark" />
       </div>
-      <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
+      <div className="flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--seller-brand-accent-border)] bg-white/6 px-2.5 py-1.5 text-[10px] font-semibold text-white/75 sm:gap-3 sm:px-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
-        <span className="rounded-full bg-white px-2 py-0.5 text-[#101827] sm:px-2.5 sm:py-1">arch9</span>
+        <span className="rounded-full bg-[color:var(--seller-brand-accent)] px-2 py-0.5 text-[color:var(--seller-brand-secondary)] sm:px-2.5 sm:py-1">arch9</span>
       </div>
     </div>
   )
@@ -1578,32 +1677,38 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="hidden overflow-hidden rounded-[22px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:block sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
+    <section
+      className="hidden overflow-hidden rounded-[22px] border p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] sm:block sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]"
+      style={{
+        borderColor: 'rgb(var(--seller-brand-primary-rgb) / 0.62)',
+        background: 'linear-gradient(135deg, var(--seller-brand-primary) 0%, var(--seller-brand-secondary) 56%, var(--seller-brand-primary) 100%)',
+      }}
+    >
       <SellerBrandBar brand={brand} />
       <div className="mt-4 grid gap-4 sm:mt-6 sm:gap-5 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
           <h1 className="max-w-3xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-white sm:text-4xl lg:text-5xl">
             Complete your seller onboarding
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:mt-4 sm:text-base lg:text-[1.05rem]">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80 sm:mt-4 sm:text-base lg:text-[1.05rem]">
             A guided intake for your seller, property, compliance, and mandate details. We’ll only ask what matters next.
           </p>
         </div>
-        <div className="rounded-[18px] border border-white/10 bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
+        <div className="rounded-[18px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
           <div className="grid gap-2.5 sm:gap-3">
             <article>
-              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Seller</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--seller-brand-accent)] sm:text-xs">Seller</p>
               <p className="mt-1 break-words text-sm font-semibold text-white">{sellerName}</p>
             </article>
             <article>
-              <p className="text-[10px] uppercase tracking-[0.12em] text-white/45 sm:text-xs">Property</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--seller-brand-accent)] sm:text-xs">Property</p>
               <p className="mt-1 break-words text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
             </article>
             <div className="grid gap-2 pt-1 sm:grid-cols-2">
-              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+              <span className="rounded-[14px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-3 py-2 text-xs text-white/70">
                 Agent<br /><strong className="text-white">{agentName}</strong>
               </span>
-              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+              <span className="rounded-[14px] border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-3 py-2 text-xs text-white/70">
                 Status<br /><strong className="text-white">{statusLabel}</strong>
               </span>
             </div>
@@ -1612,8 +1717,8 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
       </div>
       <div className="mt-4 flex flex-wrap gap-2 sm:mt-6 lg:mt-7">
         {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
-          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[10px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
-            <BadgeCheck size={13} />
+          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--seller-brand-accent-border)] bg-white/8 px-2.5 py-1.5 text-[10px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
+            <BadgeCheck size={13} className="text-[color:var(--seller-brand-accent)]" />
             {item}
           </span>
         ))}
@@ -1632,7 +1737,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
   return (
     <PremiumOnboardingLanding
       portalType="seller"
-      agencyLogo={brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl || ''}
+      agencyLogo={brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl || ''}
       agencyName={brand?.name || ''}
       personName={welcomeName}
       propertyAddress={propertyAddress}
@@ -1650,16 +1755,16 @@ function SellerStepProgress({ currentStep, progress }) {
     <section className="rounded-[24px] border border-[#dce6ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:rounded-[28px] sm:bg-white/90 sm:p-5 sm:shadow-[0_12px_30px_rgba(15,23,42,0.04)] lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#137a4a]">Step {currentStep + 1} of {STEPS.length}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--seller-brand-primary)]">Step {currentStep + 1} of {STEPS.length}</p>
           <h2 className="mt-1 break-words text-[1.45rem] font-semibold leading-tight tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
-        <span className="shrink-0 rounded-full bg-[#eaf8ef] px-3 py-1.5 text-xs font-semibold text-[#126b34]">{progress}%</span>
+        <span className="shrink-0 rounded-full bg-[color:var(--seller-brand-primary-tint)] px-3 py-1.5 text-xs font-semibold text-[color:var(--seller-brand-primary)]">{progress}%</span>
       </div>
       <p className="mt-2 text-[13px] leading-5 text-[#516981] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
-          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[color:var(--seller-brand-primary)] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1667,7 +1772,7 @@ function SellerStepProgress({ currentStep, progress }) {
         {STEP_META.map((step, index) => (
           <span
             key={step.label}
-            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[#138a3d]' : 'w-1.5 bg-[#d8e2ee]'}`}
+            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[color:var(--seller-brand-primary)]' : 'w-1.5 bg-[#d8e2ee]'}`}
           />
         ))}
       </div>
@@ -1677,11 +1782,11 @@ function SellerStepProgress({ currentStep, progress }) {
           <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
           <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
         </div>
-        <span className="rounded-full bg-[#f0fbf4] px-3 py-1 text-xs font-semibold text-[#126b34]">{progress}% complete</span>
+        <span className="rounded-full bg-[color:var(--seller-brand-primary-tint)] px-3 py-1 text-xs font-semibold text-[color:var(--seller-brand-primary)]">{progress}% complete</span>
       </div>
       <div className="mt-4 hidden h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:block">
         <span
-          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[color:var(--seller-brand-primary)] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1696,15 +1801,15 @@ function SellerStepProgress({ currentStep, progress }) {
               type="button"
               className={`flex items-center gap-3 rounded-[18px] border px-3 py-3.5 text-left transition ${
                 isActive
-                  ? 'border-[#138a3d]/65 bg-[#f0fbf4] shadow-[0_12px_26px_rgba(19,138,61,0.10)]'
+                  ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] shadow-[0_12px_26px_rgb(var(--seller-brand-primary-rgb)/0.10)]'
                   : isComplete
-                    ? 'border-[#d8ecdf] bg-[#f5fbf7]'
+                    ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)]'
                     : 'border-[#e1e9f3] bg-white/90'
               }`}
               disabled
             >
               <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                isComplete ? 'bg-[#1f7d44] text-white' : isActive ? 'bg-[#172334] text-white' : 'bg-white text-[#7890a8]'
+                isComplete ? 'bg-[color:var(--seller-brand-primary)] text-white' : isActive ? 'bg-[color:var(--seller-brand-secondary)] text-white' : 'bg-white text-[#7890a8]'
               }`}>
                 {isComplete ? <CheckCircle2 size={17} /> : <Icon size={17} />}
               </span>
@@ -1738,13 +1843,13 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, illustration = '', children, mobilePane = true, mobilePaneIndex = null }) {
   const { paneIndex, mobilePaneClassName } = useMobileQuestionPane(mobilePane, mobilePaneIndex)
   return (
-    <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
+    <section data-mobile-question-pane={mobilePane ? paneIndex : undefined} className={`min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 sm:rounded-[22px] sm:border sm:border-[#dfe7f1] sm:bg-[#fbfcfe] sm:p-5 lg:rounded-[24px] lg:p-6 ${mobilePaneClassName}`}>
       {illustration ? (
         <div className="mb-5 sm:hidden">
           <SellerOnboardingIllustration variant={illustration} />
         </div>
       ) : null}
-      <OnboardingSectionHeader icon={icon || Circle} title={title} description={description} accent="green" />
+      <OnboardingSectionHeader icon={icon || Circle} title={title} description={description} accent="brand" />
       <div className="mt-4 sm:mt-5">{children}</div>
     </section>
   )
@@ -1759,7 +1864,7 @@ function ChoiceCard({ active, title, description, icon = Circle, onClick }) {
       className={`${choiceCardClass(active)} flex min-h-[62px] items-start gap-3 sm:min-h-[92px]`}
     >
       <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
-        active ? 'border-[#138a3d]/30 bg-white text-[#138a3d]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
+        active ? 'border-[color:var(--seller-brand-primary-border)] bg-white text-[color:var(--seller-brand-primary)]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
       }`}>
         {createElement(icon, { size: 18, strokeWidth: 2.2 })}
       </span>
@@ -1980,20 +2085,20 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
   return (
     <section className={`rounded-[22px] border p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:p-5 ${
       ready
-        ? 'border-[#cfe8da] bg-[#f2fbf5]'
+        ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)]'
         : 'border-[#f2dcc0] bg-[#fff9ef]'
     }`}>
       <div className="flex items-start gap-3">
         <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
-          ready ? 'bg-[#1f7d44] text-white' : 'bg-[#fff2d8] text-[#b45309]'
+          ready ? 'bg-[color:var(--seller-brand-primary)] text-white' : 'bg-[#fff2d8] text-[#b45309]'
         }`}>
           {ready ? <CheckCircle2 size={22} /> : <ClipboardCheck size={21} />}
         </span>
         <div className="min-w-0">
-          <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
+          <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[color:var(--seller-brand-primary)]' : 'text-[#7a4b10]'}`}>
             {ready ? 'Ready to submit' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
           </p>
-          <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
+          <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#4f6378]' : 'text-[#8a5a18]'}`}>
             {ready
               ? 'Everything required for this onboarding has been captured. Submit when the summary looks correct.'
               : 'Open the highlighted sections below and finish the missing details before submitting.'}
@@ -2018,7 +2123,7 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
           const content = (
             <>
               <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                hasMissing ? 'bg-[#fff2d8] text-[#b45309]' : 'bg-[#e7f6ed] text-[#1f7d44]'
+                hasMissing ? 'bg-[#fff2d8] text-[#b45309]' : 'bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)]'
               }`}>
                 {hasMissing ? <Circle size={13} /> : <CheckCircle2 size={16} />}
               </span>
@@ -2111,7 +2216,7 @@ function PropertyDisclosureSection({
                     return (
                       <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                         <div className="flex items-start gap-3">
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--seller-brand-primary-tint)] text-sm font-semibold text-[color:var(--seller-brand-primary)]">
                             {question.number}
                           </span>
                           <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
@@ -2200,7 +2305,7 @@ function PropertyDisclosureSection({
             <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
               21. Comments or explanation for any of the above
               <textarea
-                className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
+                className={`${DETAIL_TEXTAREA_CLASS} min-h-[150px] resize-y`}
                 value={normalized.comments}
                 onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
                 placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
@@ -2216,7 +2321,7 @@ function PropertyDisclosureSection({
             description="Sign only when the disclosure information is true and complete to the best of your knowledge."
             mobilePaneIndex={declarationPaneIndex}
           >
-            <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
+            <div className="rounded-[18px] border border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] p-4 text-sm leading-6 text-[#4f6378]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -2313,20 +2418,20 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
   return (
     <section className="overflow-hidden rounded-[28px] border border-[#d8e2ec] bg-white/95 shadow-[0_20px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[32px] lg:rounded-[36px] lg:shadow-[0_28px_60px_rgba(15,23,42,0.09)]">
       <div className="grid gap-0 lg:grid-cols-[0.92fr_1.08fr]">
-        <div className="bg-[#eefbf3] p-5 text-center sm:p-7 lg:p-8 lg:text-left">
+        <div className="bg-[color:var(--seller-brand-primary-tint)] p-5 text-center sm:p-7 lg:p-8 lg:text-left">
           <div className="flex justify-center lg:justify-start">
-            <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_18px_36px_rgba(31,125,68,0.24)]">
+            <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--seller-brand-primary)] text-white shadow-[0_18px_36px_rgb(var(--seller-brand-primary-rgb)/0.24)]">
               <CheckCircle2 size={32} />
             </span>
           </div>
-          <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#1f7d44]">Seller onboarding</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#14532d] sm:text-3xl">You're all set</h2>
-          <p className="mt-2 text-sm font-semibold text-[#25603d]">Thank you, {sellerName}.</p>
-          <p className="mx-auto mt-3 max-w-[420px] text-sm leading-6 text-[#25603d] lg:mx-0">
+          <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--seller-brand-primary)]">Seller onboarding</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[color:var(--seller-brand-primary)] sm:text-3xl">You're all set</h2>
+          <p className="mt-2 text-sm font-semibold text-[#4f6378]">Thank you, {sellerName}.</p>
+          <p className="mx-auto mt-3 max-w-[420px] text-sm leading-6 text-[#4f6378] lg:mx-0">
             Your seller information has been submitted. {agentName} will review the details and prepare the next mandate step.
           </p>
 
-          <div className="mt-5 rounded-[20px] border border-[#cfe8da] bg-white/80 p-4 text-left">
+          <div className="mt-5 rounded-[20px] border border-[color:var(--seller-brand-primary-border)] bg-white/80 p-4 text-left">
             <div className="flex items-start gap-3">
               <AgencyMark brand={brand} tone="light" />
               <div className="min-w-0">
@@ -2341,7 +2446,7 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
               <button
                 type="button"
                 onClick={onDownloadDisclosure}
-                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] shadow-[0_12px_24px_rgba(31,125,68,0.08)]"
+                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] border border-[color:var(--seller-brand-primary-border)] bg-white px-4 py-3 text-sm font-semibold text-[color:var(--seller-brand-primary)] shadow-[0_12px_24px_rgb(var(--seller-brand-primary-rgb)/0.08)]"
               >
                 <Download size={15} />
                 Download Disclosure
@@ -2357,7 +2462,7 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
               {journeyItems.map((item) => (
                 <div key={item.label} className="flex gap-3 rounded-[16px] border border-[#dfe8f2] bg-white p-3">
                   <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    item.complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef3f8] text-[#35546c]'
+                    item.complete ? 'bg-[color:var(--seller-brand-primary)] text-white' : 'bg-[#eef3f8] text-[#35546c]'
                   }`}>
                     {item.complete ? <CheckCircle2 size={17} /> : <Circle size={13} />}
                   </span>
@@ -3332,6 +3437,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!form.idNumber) {
           return 'Please provide ID number / passport details.'
         }
+        if (!resolveSellerResidentialAddress(form)) {
+          return 'Please provide the seller residential address.'
+        }
       }
 
       if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
@@ -3396,9 +3504,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Each owner needs a name, surname, and email address before onboarding links can be sent.'
           }
         } else {
-          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.residentialAddress || !owner.consentToSell)
           if (incompleteOwner) {
-            return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
+            return 'Each owner needs a name, surname, ID/passport number, residential address, and consent to sell.'
           }
         }
       }
@@ -3521,10 +3629,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (!form || submitting) return
     setError('')
     setSuccess('')
+    const attorneyDecision = String(form.preferredTransferAttorneyDecision || '').trim().toLowerCase()
+    const nominatedAttorney = form.sellerNominatedTransferAttorney || {}
+    const attorneyDecisionMissing = attorneyDecision === 'accept_preferred'
+      ? []
+      : attorneyDecision === 'nominate_other'
+        ? [
+            !String(nominatedAttorney.companyName || '').trim() && 'Attorney: Enter the nominated firm name',
+            !String(nominatedAttorney.email || '').trim() && 'Attorney: Enter the nominated attorney email',
+          ].filter(Boolean)
+        : ['Attorney: Accept the preferred attorney or nominate another firm']
     const finalRequiredMissing = [
       ...sellerMissing.map((item) => `Seller: ${item}`),
       ...propertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(form.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
+      ...(!form.preferredTransferAttorney?.preferredPartnerId ? ['Attorney: Preferred transferring attorney is not configured'] : []),
+      ...attorneyDecisionMissing,
     ]
     if (finalRequiredMissing.length) {
       setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
@@ -3544,6 +3664,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const finalForm = {
         ...(form || {}),
+        preferredTransferAttorneyAccepted: attorneyDecision === 'accept_preferred',
+        preferredTransferAttorneyDecision: attorneyDecision,
+        preferredTransferAttorneyAcceptance: attorneyDecision === 'accept_preferred'
+          ? {
+              preferredPartnerId: form.preferredTransferAttorney.preferredPartnerId,
+              companyName: form.preferredTransferAttorney.companyName,
+              acceptedAt: new Date().toISOString(),
+              acceptedByName: getSellerDisplayName(listing, form),
+              source: 'seller_onboarding',
+            }
+          : null,
+        sellerNominatedTransferAttorney: attorneyDecision === 'nominate_other'
+          ? {
+              ...nominatedAttorney,
+              companyName: String(nominatedAttorney.companyName || '').trim(),
+              contactPerson: String(nominatedAttorney.contactPerson || '').trim(),
+              email: String(nominatedAttorney.email || '').trim().toLowerCase(),
+              phone: String(nominatedAttorney.phone || '').trim(),
+              nominatedAt: new Date().toISOString(),
+              nominatedByName: getSellerDisplayName(listing, form),
+              source: 'seller_onboarding',
+            }
+          : null,
         propertyDisclosure: {
           ...(form.propertyDisclosure || {}),
           generatedDocument: disclosureDocument,
@@ -3796,12 +3939,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.sellerSurname && 'Seller surname',
     !form.email && 'Email',
     !form.phone && 'Phone',
+    (ownershipBranch === 'individual' || ownershipBranch === 'married') && !resolveSellerResidentialAddress(form) && 'Residential address',
   ].filter(Boolean)
   const mandateMissing = [
     !form.mandateType && 'Mandate type',
     !form.mandateStartDate && 'Start date',
     !form.mandateEndDate && 'End date',
     mandateDatesInvalid && 'End date must be after start date',
+  ].filter(Boolean)
+  const attorneyMissing = [
+    !form.preferredTransferAttorney?.preferredPartnerId && 'Preferred transferring attorney is not configured',
+    form.preferredTransferAttorney?.preferredPartnerId && !form.preferredTransferAttorneyDecision && 'Accept or nominate another attorney',
+    form.preferredTransferAttorneyDecision === 'nominate_other' && !form.sellerNominatedTransferAttorney?.companyName && 'Nominated firm name',
+    form.preferredTransferAttorneyDecision === 'nominate_other' && !form.sellerNominatedTransferAttorney?.email && 'Nominated attorney email',
   ].filter(Boolean)
   const propertyMissing = [
     !propertyAddressDetails.line1 && 'Property address',
@@ -3833,6 +3983,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
+    { label: 'Transferring attorney', missing: attorneyMissing, onEdit: () => setCurrentStep(FINAL_STEP_INDEX) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
@@ -3868,7 +4019,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {success ? (
           <p
             aria-live="polite"
-            className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]"
+            className="mt-4 whitespace-pre-line rounded-[14px] border border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] px-4 py-3 text-sm text-[color:var(--seller-brand-primary)]"
           >
             {success}
           </p>
@@ -3984,6 +4135,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       {ownershipFieldLabels.idNumber}
                       <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                    </label>
+                  ) : null}
+
+                  {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                      {ownershipFieldLabels.address}
+                      <input className={DETAIL_INPUT_CLASS} autoComplete="street-address" value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
                     </label>
                   ) : null}
 
@@ -4260,7 +4418,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <div className="mt-3 grid grid-cols-1 gap-3">
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Authority Details
-                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.executorAuthorityDetails} onChange={(event) => handleFormUpdate('executorAuthorityDetails', event.target.value)} placeholder="Letters of executorship, master's office reference, or other authority detail" />
+                          <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.executorAuthorityDetails} onChange={(event) => handleFormUpdate('executorAuthorityDetails', event.target.value)} placeholder="Letters of executorship, master's office reference, or other authority detail" />
                         </label>
                       </div>
                     </article>
@@ -4306,7 +4464,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <div className="mt-3 grid grid-cols-1 gap-3">
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Authority Details
-                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.powerOfAttorneyAuthorityDetails} onChange={(event) => handleFormUpdate('powerOfAttorneyAuthorityDetails', event.target.value)} placeholder="Reference number, scope of authority, or signing instruction" />
+                          <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.powerOfAttorneyAuthorityDetails} onChange={(event) => handleFormUpdate('powerOfAttorneyAuthorityDetails', event.target.value)} placeholder="Reference number, scope of authority, or signing instruction" />
                         </label>
                       </div>
                     </article>
@@ -4385,6 +4543,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 Phone (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.phone} onChange={(event) => updateMultipleOwner(owner.id, 'phone', event.target.value)} />
                               </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                Residential address
+                                <input className={DETAIL_INPUT_CLASS} value={owner.residentialAddress} onChange={(event) => updateMultipleOwner(owner.id, 'residentialAddress', event.target.value)} />
+                              </label>
                               {isMultipleOwnerInviteMode ? null : (
                                 <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                                   <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
@@ -4429,12 +4591,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       ))}
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                  <div className="grid min-w-0 max-w-full gap-4 sm:grid-cols-2">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate start date
                       <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateStartDate || ''} onChange={(event) => handleFormUpdate('mandateStartDate', event.target.value)} />
                     </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate end date
                       <input className={DETAIL_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
                     </label>
@@ -4452,7 +4614,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                               ...(form.specialMandateConditions || {}),
                               [option.key]: event.target.checked,
                             })}
-                            className="mt-1 h-4 w-4 rounded border-[#b8c7d8] accent-[#138a3d]"
+                            className="mt-1 h-4 w-4 rounded border-[#b8c7d8] accent-[var(--seller-brand-primary)]"
                           />
                           <span className="min-w-0">
                             <span className="block font-semibold text-[#172334]">{option.label}</span>
@@ -4465,7 +4627,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Anything else to include? (optional)
                     <textarea
-                      className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
+                      className={`${DETAIL_TEXTAREA_CLASS} min-h-[120px] resize-y`}
                       value={form.additionalConditions || ''}
                       onChange={(event) => handleFormUpdate('additionalConditions', event.target.value)}
                       placeholder="Access rules, timing, exclusions, or anything your agent should include in the mandate."
@@ -4809,7 +4971,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                         Operating context
                         <textarea
-                          className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`}
+                          className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`}
                           value={form.commercialUseDescription}
                           onChange={(event) => handleFormUpdate('commercialUseDescription', event.target.value)}
                           placeholder="Offices, retail, tenant mix, storage, services, trading, etc."
@@ -4967,7 +5129,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                       Notes (optional)
-                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about utility accounts, costs, or pricing" />
+                      <textarea className={`${DETAIL_TEXTAREA_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about utility accounts, costs, or pricing" />
                     </label>
                   </div>
                 </FormSection>
@@ -5166,6 +5328,75 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
                   ]}
                 />
+                <div className={`rounded-[20px] border p-4 ${attorneyMissing.length ? 'border-[#efb6ad] bg-[#fff8f6]' : 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)]'}`}>
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 rounded-full bg-white p-2 text-[color:var(--seller-brand-primary)] shadow-sm">
+                      <Landmark size={18} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[#172334]">Preferred transferring attorney</p>
+                      {form.preferredTransferAttorney ? (
+                        <>
+                          <p className="mt-2 font-semibold text-[#243b53]">{form.preferredTransferAttorney.companyName}</p>
+                          <p className="mt-1 text-sm text-[#60748b]">
+                            {[form.preferredTransferAttorney.contactPerson, form.preferredTransferAttorney.email, form.preferredTransferAttorney.phone].filter(Boolean).join(' · ')}
+                          </p>
+                          <p className="mt-4 text-sm font-semibold text-[#243b53]">This is our preferred transferring attorney. Do you accept?</p>
+                          <label className={`mt-3 flex cursor-pointer items-start gap-3 rounded-[14px] border px-4 py-3 text-sm leading-5 ${form.preferredTransferAttorneyDecision === 'accept_preferred' ? 'border-[color:var(--seller-brand-primary-border)] bg-[color:var(--seller-brand-primary-tint)] text-[color:var(--seller-brand-primary)]' : 'border-[#d9e2ee] bg-white text-[#35546c]'}`}>
+                            <input
+                              type="radio"
+                              name="preferred-transfer-attorney-decision"
+                              className="mt-0.5"
+                              checked={form.preferredTransferAttorneyDecision === 'accept_preferred'}
+                              onChange={() => handleFormUpdate('preferredTransferAttorneyDecision', 'accept_preferred')}
+                            />
+                            <span>
+                              <strong className="block">Yes, I accept</strong>
+                              I nominate <strong>{form.preferredTransferAttorney.companyName}</strong> as the transferring attorney for this sale.
+                            </span>
+                          </label>
+                          <label className={`mt-2 flex cursor-pointer items-start gap-3 rounded-[14px] border px-4 py-3 text-sm leading-5 ${form.preferredTransferAttorneyDecision === 'nominate_other' ? 'border-[#7aaee0] bg-[#f4f9ff] text-[#244f76]' : 'border-[#d9e2ee] bg-white text-[#35546c]'}`}>
+                            <input
+                              type="radio"
+                              name="preferred-transfer-attorney-decision"
+                              className="mt-0.5"
+                              checked={form.preferredTransferAttorneyDecision === 'nominate_other'}
+                              onChange={() => handleFormUpdate('preferredTransferAttorneyDecision', 'nominate_other')}
+                            />
+                            <span>
+                              <strong className="block">No, I want to nominate someone else</strong>
+                              Provide the attorney firm’s details below so your agent can verify the nomination.
+                            </span>
+                          </label>
+                          {form.preferredTransferAttorneyDecision === 'nominate_other' ? (
+                            <div className="mt-3 grid gap-3 rounded-[14px] border border-[#d9e2ee] bg-white p-4 sm:grid-cols-2">
+                              <label className="grid gap-1.5 text-sm font-semibold text-[#2a4057]">
+                                Attorney firm name
+                                <input className={DETAIL_INPUT_CLASS} value={form.sellerNominatedTransferAttorney?.companyName || ''} onChange={(event) => handleFormUpdate('sellerNominatedTransferAttorney', { ...(form.sellerNominatedTransferAttorney || {}), companyName: event.target.value })} />
+                              </label>
+                              <label className="grid gap-1.5 text-sm font-semibold text-[#2a4057]">
+                                Contact person (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={form.sellerNominatedTransferAttorney?.contactPerson || ''} onChange={(event) => handleFormUpdate('sellerNominatedTransferAttorney', { ...(form.sellerNominatedTransferAttorney || {}), contactPerson: event.target.value })} />
+                              </label>
+                              <label className="grid gap-1.5 text-sm font-semibold text-[#2a4057]">
+                                Email
+                                <input type="email" className={DETAIL_INPUT_CLASS} value={form.sellerNominatedTransferAttorney?.email || ''} onChange={(event) => handleFormUpdate('sellerNominatedTransferAttorney', { ...(form.sellerNominatedTransferAttorney || {}), email: event.target.value })} />
+                              </label>
+                              <label className="grid gap-1.5 text-sm font-semibold text-[#2a4057]">
+                                Phone (optional)
+                                <input type="tel" className={DETAIL_INPUT_CLASS} value={form.sellerNominatedTransferAttorney?.phone || ''} onChange={(event) => handleFormUpdate('sellerNominatedTransferAttorney', { ...(form.sellerNominatedTransferAttorney || {}), phone: event.target.value })} />
+                              </label>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="mt-2 text-sm font-semibold text-[#a33b2f]">
+                          Your agent must configure the preferred transferring attorney before you can submit this onboarding.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <ReviewCard
                   title="Selling Context"
                   onEdit={() => setCurrentStep(0)}
@@ -5222,13 +5453,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </Button>
             ) : null}
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[color:var(--seller-brand-primary)] text-white hover:opacity-90 sm:w-auto">
                 Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[color:var(--seller-brand-primary)] text-white hover:opacity-90 sm:w-auto">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
@@ -5238,7 +5469,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       </section>
       )}
 
-      <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      <footer className="hidden flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] md:flex md:flex-row md:items-center md:justify-between md:text-left">
         <span>Secure seller onboarding powered by arch9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
       </footer>
@@ -5256,15 +5487,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   ) : formContent
 
   if (embedded) {
-    return <div className="w-full">{content}</div>
+    return <div className="w-full" style={getSellerBrandStyle(agencyBrand)}>{content}</div>
   }
 
   const sellerMainClass = shouldShowWelcome
     ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] font-sans antialiased text-white'
-    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
+    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
 
   return (
-    <main className={sellerMainClass}>
+    <main className={sellerMainClass} style={getSellerBrandStyle(agencyBrand)}>
       {!shouldShowWelcome ? (
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
@@ -5276,14 +5507,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {content}
       </div>
       {!shouldShowWelcome && !isCompleted ? (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+      <div className="relative z-10 mt-4 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
         <div className={PAGE_CONTAINER_CLASS}>
           <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))]">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <DraftSaveStatus
                 status={saving ? 'saving' : draftSyncStatus}
                 savedAt={lastDraftSavedAt}
-                fallback="Secure seller onboarding"
+                fallback=""
               />
               <div className="flex shrink-0 items-center gap-1.5">
                 {currentStep > 0 || activeMobilePaneIndex > 0 ? (
@@ -5303,17 +5534,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </div>
             </div>
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
+              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[color:var(--seller-brand-primary)] text-white shadow-[0_14px_28px_rgb(var(--seller-brand-primary-rgb)/0.22)] hover:opacity-90">
                 {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[color:var(--seller-brand-primary)] text-white shadow-[0_14px_28px_rgb(var(--seller-brand-primary-rgb)/0.22)] hover:opacity-90">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
             ) : null}
+            <footer className="flex flex-col gap-1 pt-1 text-center text-xs leading-5 text-[#7d8ea3]">
+              <span>Secure seller onboarding powered by arch9</span>
+              <span>Need help? Contact {resolveAgentName(listing)}.</span>
+            </footer>
           </div>
         </div>
       </div>

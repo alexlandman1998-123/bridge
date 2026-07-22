@@ -1,0 +1,20 @@
+{
+  "version": "202607209903",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex Phase 25 transaction creation least-privilege verification",
+  "applicationMode": "reviewed_privilege_correction",
+  "productionMutated": false,
+  "verification": {
+    "anonymousTablePrivilegesRevoked": true,
+    "authenticatedSelectGranted": true,
+    "authenticatedWritesRevoked": true,
+    "rlsEnabled": true,
+    "memberSelectPolicyCount": 1,
+    "transactionCreationRpcRemainsAuthenticated": true
+  }
+}

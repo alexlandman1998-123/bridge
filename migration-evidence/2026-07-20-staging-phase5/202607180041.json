@@ -1,0 +1,22 @@
+{
+  "version": "202607180041",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access staging verification",
+  "verification": {
+    "integrityViewLive": true,
+    "securityInvoker": true,
+    "anonymousSelectDenied": true,
+    "authenticatedSelectGranted": true,
+    "healthyMemberRows": 8,
+    "blockingRows": 1,
+    "historicalIneligibleAssignmentsVisible": 43,
+    "missingActiveMemberRows": 1,
+    "falseHealthyBlindSpotCorrected": true,
+    "historicalRowsRewritten": false,
+    "releaseGateStatus": "blocked"
+  }
+}

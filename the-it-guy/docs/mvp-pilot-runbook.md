@@ -1,6 +1,6 @@
 # Arch9 MVP controlled-pilot support runbook
 
-This is the operating procedure for the first agencies and attorneys. It is deliberately designed for a controlled pilot: at most 10 new transactions in a batch and at most 100 in a month. It is not a substitute for production deployment verification in [the deployment runbook](mvp-deployment-runbook.md).
+This is the operating procedure for the first agencies and attorneys. It is deliberately designed for a controlled pilot: at most 2 new transactions in a batch and at most 100 in a month. It is not a substitute for production deployment verification in [the deployment runbook](mvp-deployment-runbook.md).
 
 ## Operating rule
 
@@ -16,10 +16,11 @@ Only real pilot work belongs in a live batch. Synthetic records must use the con
    ```bash
    node scripts/mvp-launch-readiness.mjs
    node scripts/mvp-pilot-session-check.mjs
+   node scripts/mvp-pilot-go-no-go.mjs --evidence=path/to/staging-exposure-evidence.json
    ```
 
-   Continue only when the first command returns `ready_for_mvp_launch` and the second returns `go_for_controlled_pilot`.
-3. Confirm the batch has fewer than 10 newly created transactions. If the previous batch has not been closed, close it first.
+   Continue only when the first command returns `ready_for_mvp_launch`, the second returns `go_for_controlled_pilot`, and the Phase 8 gate returns `ready_for_controlled_exposure`.
+3. Confirm the batch has fewer than 2 newly created transactions. If the previous batch has not been closed, close it first.
 4. Open the transaction health panel. The pilot lead must be able to see the current gate, next action, participant/document counts, and recovery recommendation before accepting new work.
 
 ## For every transaction
@@ -39,7 +40,7 @@ Only real pilot work belongs in a live batch. Synthetic records must use the con
    node scripts/mvp-postdeploy-transaction-check.mjs --transaction-id=<transaction-uuid>
    ```
 
-   The output includes a `batchRecord`. Copy that object into the open batch file. It contains the transaction id, idempotency key, and participant/document/workflow bootstrap confirmations.
+   The output includes a `batchRecord`. Copy that object into the open batch file. It confirms the accepted-offer conversion and the participant/document/workflow bootstrap. It deliberately marks the health and notification review fields as `false`: set each to `true` only after the pilot lead has completed the corresponding review in the app.
 4. Before moving to the next main stage, use the health panel and audit recommendation. Resolve the listed blocker in its proper workspace; do not change a stage merely to make a panel look green.
 
 ## Closing a batch
@@ -48,14 +49,17 @@ Create a local evidence file such as `pilot-batch-01.json`; do not put personal 
 
 ```json
 {
-  "batchLimit": 10,
+  "batchLimit": 2,
   "transactions": [
     {
       "transactionId": "<uuid>",
       "idempotencyKey": "<creation-idempotency-key>",
       "participantBootstrapComplete": true,
       "documentBootstrapComplete": true,
-      "workflowBootstrapComplete": true
+      "workflowBootstrapComplete": true,
+      "conversionConfirmed": true,
+      "healthAudited": true,
+      "notificationDeliveryReviewed": true
     }
   ]
 }

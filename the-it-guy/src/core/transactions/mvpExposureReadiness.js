@@ -30,7 +30,10 @@ function scenarioPasses(scenario = {}) {
     Boolean(text(batch.idempotencyKey)) &&
     batch.participantBootstrapComplete === true &&
     batch.documentBootstrapComplete === true &&
-    batch.workflowBootstrapComplete === true
+    batch.workflowBootstrapComplete === true &&
+    batch.conversionConfirmed === true &&
+    batch.healthAudited === true &&
+    batch.notificationDeliveryReviewed === true
 }
 
 /**

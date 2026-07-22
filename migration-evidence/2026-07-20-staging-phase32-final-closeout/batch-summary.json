@@ -1,0 +1,22 @@
+{
+  "phase": 32,
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "status": "STAGING_CERTIFIED",
+  "ledgerRowsAfter": 511,
+  "governedManifestRows": 78,
+  "versions": ["202607200002", "202607200008", "202607200009", "202607200010", "202607200011", "202607200012", "202607200013"],
+  "repairOnlyVersions": ["202607200002"],
+  "appliedVersions": ["202607200008", "202607200009", "202607200010", "202607200011", "202607200012", "202607200013"],
+  "checks": {
+    "unresolvedPartnerAliases": 0,
+    "pendingDuplicateIdentityGroups": 0,
+    "unmappedRelationships": 0,
+    "unmappedAssignments": 0,
+    "invalidRoleConfigurations": 0,
+    "canonicalAssignmentGaps": 0,
+    "legacyAuthenticatedWritesAvailable": false,
+    "canonicalPartnerApisAvailable": true
+  },
+  "approvedBy": "Alexander Landman (explicit Phase 32 instruction)"
+}

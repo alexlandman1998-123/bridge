@@ -1,6 +1,23 @@
 begin;
 
+alter table if exists public.document_requests
+  add column if not exists document_key text,
+  add column if not exists document_id uuid references public.documents(id) on delete set null;
+
+alter table if exists public.transaction_required_documents
+  add column if not exists requirement_key text,
+  add column if not exists document_type text;
+
+update public.transaction_required_documents
+set requirement_key = coalesce(requirement_key, document_key),
+    document_type = coalesce(document_type, document_key)
+where requirement_key is null
+   or document_type is null;
+
 alter table if exists public.documents
+  add column if not exists status text not null default 'uploaded',
+  add column if not exists bucket_key text,
+  add column if not exists updated_at timestamptz not null default now(),
   add column if not exists source_requirement_id uuid,
   add column if not exists source_canonical_requirement_instance_id uuid,
   add column if not exists source_approval_status text,

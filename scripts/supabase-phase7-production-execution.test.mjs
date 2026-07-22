@@ -2,13 +2,15 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase7-production-execution.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
+const governedCount = manifest.rows.length
 
 function run(args, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -17,7 +19,7 @@ function run(args, extraEnv = {}) {
     env: {
       ...process.env,
       SUPABASE_PRODUCTION_PROJECT_REF: '',
-      SUPABASE_PRODUCTION_DB_URL: '',
+      SUPABASE_PRODUCTION_ACCESS_MODE: '',
       SUPABASE_PRODUCTION_RECOVERY_CONFIRMED: '',
       ...extraEnv,
     },
@@ -26,7 +28,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 63)
+assert.equal(JSON.parse(plan.stdout).count, governedCount)
 
 const streamPlan = run(['--plan', '--stream', 'attorney_calendar', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
@@ -62,6 +64,9 @@ assert.match(missingStagingEvidence.stderr, /--staging-evidence is required/)
 
 const tempDir = mkdtempSync(path.join(os.tmpdir(), 'phase7-production-gate-'))
 const stagingEvidencePath = path.join(tempDir, 'staging-evidence.json')
+const phaseEvidencePath = path.join(tempDir, 'phase-evidence.json')
+const stagingReadinessPath = path.join(tempDir, 'staging-readiness.json')
+const recoveryEvidencePath = path.join(tempDir, 'recovery-evidence.json')
 writeFileSync(stagingEvidencePath, JSON.stringify({
   version: '202607170026',
   stagingProjectRef: 'stagingtestref',
@@ -71,10 +76,70 @@ writeFileSync(stagingEvidencePath, JSON.stringify({
   rollbackOrNoResidue: 'pass',
   approvedBy: 'test reviewer',
 }))
+writeFileSync(phaseEvidencePath, JSON.stringify({
+  version: '202607170026',
+  targetProjectRef: 'stagingtestref',
+  sqlApplied: true,
+  catalogChecks: 'pass',
+  behaviorChecks: 'pass',
+  rollbackOrNoResidue: 'pass',
+  reviewedBy: 'test reviewer',
+}))
+writeFileSync(recoveryEvidencePath, JSON.stringify({
+  status: 'PRODUCTION_DATABASE_RECOVERY_PROVEN',
+  productionProjectRef: 'isdowlnollckzvltkasn',
+  restoredProjectRef: 'vaszuxjeoajeuhlcnzzf',
+  databaseConnectivityCheck: 'pass',
+  databaseRestoreValidation: 'pass',
+  sourceBackup: { predatesRestoredProject: true },
+  matchedRelationCount: 5,
+  matchedIdentityRowCount: 671,
+  productionLedgerCount: 433,
+  restoredProductionLedgerCount: 433,
+  approvedBy: 'test approver',
+  productionMutated: false,
+}))
+
+const missingStagingReadiness = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(missingStagingReadiness.status, 1)
+assert.match(missingStagingReadiness.stderr, /--staging-readiness is required/)
+
+const approvedStagingReadinessWithoutProductionTarget = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+  '--staging-readiness', 'docs/supabase-phase-7-staging-readiness.json',
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(approvedStagingReadinessWithoutProductionTarget.status, 1)
+assert.match(approvedStagingReadinessWithoutProductionTarget.stderr, /--recovery-evidence is required/)
+
+const phaseEvidenceCompatibility = run([
+  '--apply-sql', '--version', '202607170026', '--staging-evidence', phaseEvidencePath,
+  '--staging-readiness', 'docs/supabase-phase-7-staging-readiness.json',
+  '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(phaseEvidenceCompatibility.status, 1)
+assert.match(phaseEvidenceCompatibility.stderr, /--recovery-evidence is required/)
+
+writeFileSync(stagingReadinessPath, JSON.stringify({
+  status: 'READY_FOR_PRODUCTION_PROMOTION',
+  productionProjectRef: 'isdowlnollckzvltkasn',
+  stagingProjectRef: 'stagingtestref',
+  manifestRowCount: governedCount,
+  stagingLedgerRecordedCount: governedCount,
+  stagingEvidenceComplete: true,
+  attorneyIntegrityGate: 'pass',
+  attorneyIntegrityBlockingAssignments: 0,
+  approvedBy: 'test approver',
+}))
 
 const wrongProject = run(
   [
     '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
+    '--recovery-evidence', recoveryEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   { SUPABASE_PRODUCTION_PROJECT_REF: 'wrongprojectref' },
@@ -85,15 +150,31 @@ assert.match(wrongProject.stderr, /SUPABASE_PRODUCTION_PROJECT_REF must equal/)
 const missingRecovery = run(
   [
     '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
+    '--recovery-evidence', recoveryEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   {
     SUPABASE_PRODUCTION_PROJECT_REF: 'isdowlnollckzvltkasn',
-    SUPABASE_PRODUCTION_DB_URL: 'postgresql://postgres.isdowlnollckzvltkasn@example.invalid/postgres',
+    SUPABASE_PRODUCTION_ACCESS_MODE: 'linked_ephemeral',
   },
 )
 assert.equal(missingRecovery.status, 1)
 assert.match(missingRecovery.stderr, /only after recovery has been tested/)
+
+const missingAccessMode = run(
+  [
+    '--apply-sql', '--version', '202607170026', '--staging-evidence', stagingEvidencePath,
+    '--staging-readiness', stagingReadinessPath,
+    '--recovery-evidence', recoveryEvidencePath,
+    '--confirm', 'APPLY_TO_PRODUCTION',
+  ],
+  {
+    SUPABASE_PRODUCTION_PROJECT_REF: 'isdowlnollckzvltkasn',
+  },
+)
+assert.equal(missingAccessMode.status, 1)
+assert.match(missingAccessMode.stderr, /SUPABASE_PRODUCTION_ACCESS_MODE must equal linked_ephemeral/)
 
 rmSync(tempDir, { recursive: true })
 

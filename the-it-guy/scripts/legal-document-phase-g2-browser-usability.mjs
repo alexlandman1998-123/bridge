@@ -34,8 +34,8 @@ async function settle(page) {
 }
 async function signIn(page, settings) {
   await page.goto(`${settings.appUrl}/auth`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-  await page.getByLabel(/email/i).fill(settings.email)
-  await page.getByLabel(/password/i).fill(settings.password)
+  await page.getByRole('textbox', { name: /email/i }).fill(settings.email)
+  await page.getByRole('textbox', { name: /^password$/i }).fill(settings.password)
   await page.getByRole('button', { name: /sign in securely|launch workspace|sign in/i }).first().click()
   await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 60_000 })
 }

@@ -1,7 +1,8 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createDevelopmentWorkspace, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
+import { createDevelopmentWorkspace, fetchDeveloperAccessOptions } from '../lib/api'
+import { listOrganisationPreferredPartners } from '../lib/settingsApi'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -824,9 +825,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       try {
         setPartnerDefaultsLoading(true)
         setPartnerDefaultsError('')
-        const snapshot = await fetchDeveloperPartnersWorkspace({ organisationId: workspaceId })
+        const partners = await listOrganisationPreferredPartners()
         if (cancelled) return
-        const defaults = (snapshot.defaults || []).filter((item) => item?.isActive && item?.isPreferredDefault)
+        const defaults = (partners || []).filter((item) => item?.isActive && item?.isPreferredDefault)
         setPartnerDefaults(defaults)
         if (defaults.length) {
           const defaultPatch = buildTransactionDefaultPatch(defaults)

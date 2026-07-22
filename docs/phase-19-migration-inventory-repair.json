@@ -1,0 +1,46 @@
+{
+  "status": "MIGRATION_INVENTORY_REPAIRED",
+  "phase": 19,
+  "generatedAt": "2026-07-20",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "inventory": {
+    "migrationFiles": 501,
+    "uniqueVersions": 501,
+    "duplicateVersions": [],
+    "preservedMigration": "202607200002_seller_onboarding_connected_attorney_resolution.sql"
+  },
+  "conditionalMasterChain": [
+    {
+      "oldFile": "202607200001_conditional_legal_masters_phase4.sql",
+      "newFile": "202607200004_conditional_legal_masters_phase4.sql",
+      "version": "202607200004",
+      "sha256": "97a67ec1a88f1d4d2a21047797457f37e0263cf71e227c5c99bb138c9cd600f4"
+    },
+    {
+      "oldFile": "202607200002_conditional_legal_master_migration_phase10.sql",
+      "newFile": "202607200005_conditional_legal_master_migration_phase10.sql",
+      "version": "202607200005",
+      "sha256": "2162fc21c375791a0d950494c8f6cdb573461953de1477d0815c924823cf788e"
+    },
+    {
+      "oldFile": "202607200003_conditional_legal_master_verification_phase11.sql",
+      "newFile": "202607200006_conditional_legal_master_verification_phase11.sql",
+      "version": "202607200006",
+      "sha256": "9e88803dfbb53397100312cf5fa613791309e9cde5791ab1b3bd56671f6e1b78"
+    }
+  ],
+  "allocationEvidence": {
+    "localVersionsUnusedBeforeRepair": true,
+    "productionLedgerQuery": "pass_empty",
+    "productionLedgerVersionsFound": [],
+    "certifiedStagingManifestVersionsFound": [],
+    "liveStagingRecheckRequiredBeforeCertification": true
+  },
+  "scope": {
+    "sqlAppliedToStaging": false,
+    "sqlAppliedToProduction": false,
+    "productionLedgerChanged": false,
+    "phase0MigrationFreezeRemainsActive": true
+  },
+  "nextRequiredAction": "add_the_three_version_chain_to_the_governed_manifest_and_certify_it_on_staging"
+}

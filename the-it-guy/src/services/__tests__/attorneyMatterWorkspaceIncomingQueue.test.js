@@ -64,6 +64,7 @@ try {
         documents: {},
         nextAction: 'Await a buyer before the formal transfer instruction is activated.',
         assignedAttorney: { id: 'firm-1', name: 'Arch9 Attorneys', initials: 'AA' },
+        assignedFrom: { id: 'agency-1', name: 'Mandate Realty', logoUrl: 'https://cdn.example.test/mandate.png' },
         assignedSecretary: {},
         assignedAdminHandler: {},
         actionHref: '/legal-documents/packet-1',
@@ -99,6 +100,11 @@ try {
           name: 'Sarah Conveyancer',
           initials: 'SC',
         },
+        assignedFrom: {
+          id: 'agency-2',
+          name: 'Transfer Realty',
+          logoUrl: 'https://cdn.example.test/transfer.png',
+        },
         assignedSecretary: {
           id: '',
           name: '',
@@ -124,6 +130,10 @@ try {
     assert.equal(workspace.tableRows[0].rowKind, 'pre_instruction')
     assert.equal(workspace.tableRows[0].status, 'Awaiting Buyer')
     assert.equal(workspace.tableRows[0].statusKey, 'awaiting_buyer')
+    assert.equal(workspace.tableRows[0].assignedFrom.name, 'Mandate Realty')
+    assert.equal(workspace.tableRows[0].assignedFrom.logoUrl, 'https://cdn.example.test/mandate.png')
+    assert.equal(workspace.tableRows[1].assignedFrom.name, 'Transfer Realty')
+    assert.equal(workspace.tableRows[1].assignedFrom.logoUrl, 'https://cdn.example.test/transfer.png')
     assert.equal(workspace.tableRows[0].nextAction, 'Await a buyer before the formal transfer instruction is activated.')
     assert.equal(workspace.summary.incomingMatters, 2)
     assert.equal(workspace.summary.awaitingBuyer, 1)

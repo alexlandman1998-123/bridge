@@ -9,6 +9,8 @@ assert.equal(
 )
 
 const workspaceSource = await readFile(new URL('../src/components/documents/LegalDocumentWorkspace.jsx', import.meta.url), 'utf8')
+const workspacePageSource = await readFile(new URL('../src/pages/LegalDocumentWorkspacePage.jsx', import.meta.url), 'utf8')
+const statusResolverSource = await readFile(new URL('../src/core/documents/packetStatusResolver.js', import.meta.url), 'utf8')
 
 for (const token of [
   'resolveMandateRoutingSnapshot',
@@ -37,5 +39,12 @@ for (const token of [
 const panelIndex = workspaceSource.indexOf('<MandateRoutePanel routing={mandateRoutingSnapshot} />')
 const signingIndex = workspaceSource.indexOf('<SigningMethodPanel')
 assert.ok(panelIndex > -1 && signingIndex > panelIndex, 'Mandate route panel should appear before signing controls.')
+
+assert.match(workspaceSource, /leadId = ''/)
+assert.match(workspaceSource, /leadId,\n\s*organisationId,\n\s*includeActivity: false/)
+assert.doesNotMatch(workspaceSource, /skippedInitialPageRefreshRef/)
+assert.match(workspacePageSource, /leadId=\{routeLeadId\}/)
+assert.match(statusResolverSource, /includeActivity = true/)
+assert.match(statusResolverSource, /includeActivity \? 'activity' : 'status'/)
 
 console.log('Mandate template workspace Phase 7 contract passed.')

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pairSplitLedgerVersions, REVIEWED_SPLIT_BASELINE } from './supabase-reviewed-split-baseline.mjs'
 
 const REPORT_PATH = path.join('docs', 'supabase-migration-phase-5-module-drift-report.md')
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
@@ -20,29 +21,6 @@ const MODULE_RULES = [
   ['attorney', /(?:^|_)(?:attorney|matter|transfer|conveyancer|firm)(?:_|$)/],
   ['workspace_platform', /(?:^|_)(?:workspace|onboarding|signup|organisation|organization|profile|avatar|settings|entitlement|billing|module|hierarchy|arch9|hq|demo|admin)(?:_|$)/],
 ]
-
-// These minute-level rows are recorded remotely with matching names. They appear
-// on both sides of the CLI comparison only because an applied second-level
-// migration shares the same filename prefix. Phase 6 owns the evidence review.
-const REVIEWED_SPLIT_BASELINE = new Set([
-  '202606010001',
-  '202606030007',
-  '202606030008',
-  '202606030009',
-  '202606030010',
-  '202606030011',
-  '202606040001',
-  '202606040002',
-  '202606040004',
-  '202606040005',
-  '202606050001',
-  '202606080002',
-  '202606090010',
-  '202606110004',
-  '202606110005',
-  '202606110006',
-  '202606110007',
-])
 
 function findRepoRoot(startDir) {
   let current = startDir
@@ -250,7 +228,7 @@ function ledgerBuckets(rows) {
 
   const localOnlyVersions = new Set(localOnly.map((row) => row.local))
   const remoteOnlyVersions = new Set(remoteOnly.map((row) => row.remote))
-  const splitVersions = [...localOnlyVersions].filter((version) => remoteOnlyVersions.has(version)).sort()
+  const { splitVersions, splitRemoteVersions } = pairSplitLedgerVersions(localOnlyVersions, remoteOnlyVersions)
   const splitSet = new Set(splitVersions)
 
   return {
@@ -260,7 +238,7 @@ function ledgerBuckets(rows) {
     divergent,
     splitVersions,
     pureLocalOnly: localOnly.filter((row) => !splitSet.has(row.local)),
-    pureRemoteOnly: remoteOnly.filter((row) => !splitSet.has(row.remote)),
+    pureRemoteOnly: remoteOnly.filter((row) => !splitRemoteVersions.has(row.remote)),
   }
 }
 
@@ -444,6 +422,7 @@ const DEPLOYMENT_STREAM_ORDER = [
   'settings_governance',
   'legal_review_assurance',
   'legal_document_runtime',
+  'conditional_legal_masters',
   'document_generation',
   'attorney_accounting',
   'attorney_calendar',
@@ -457,6 +436,7 @@ function deploymentStream(row) {
   if (name.includes('settings_')) return 'settings_governance'
   if (/legal_(document_counsel|document_review|draft_review|draft_immutable|signing_envelope|signer_session|final_signed|final_delivery)/.test(name)) return 'legal_review_assurance'
   if (name.includes('document_generator') || name.includes('legal_generation')) return 'document_generation'
+  if (name.includes('conditional_legal_master')) return 'conditional_legal_masters'
   if (name.includes('attorney_accounting')) return 'attorney_accounting'
   if (name.includes('attorney_calendar')) return 'attorney_calendar'
   if (/attorney_(professional|signup|assignment|role)/.test(name)) return 'attorney_identity_access'

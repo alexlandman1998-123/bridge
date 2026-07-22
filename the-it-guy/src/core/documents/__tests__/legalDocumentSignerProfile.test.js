@@ -99,3 +99,24 @@ test('reports missing signer contact facts before a signing journey starts', () 
   ])
   assert.equal(profile.complete, false)
 })
+
+test('uses the same canonical signer profile for a mandate', () => {
+  const profile = resolveLegalDocumentSignerProfile({
+    packetType: 'mandate',
+    placeholders: {
+      seller_entity_type: 'individual',
+      seller_marital_regime: 'in_community',
+      seller_full_name: 'Seller One',
+      seller_email: 'seller@example.com',
+      seller_spouse_full_name: 'Seller Spouse',
+      seller_spouse_email: 'spouse@example.com',
+      property_title_type: 'full_title',
+      agent_full_name: 'Estate Agent',
+      agent_email: 'agent@example.com',
+    },
+  })
+
+  assert.deepEqual(profile.signers.map((signer) => signer.role), ['seller', 'seller_spouse', 'agent'])
+  assert.equal(profile.version, 'conditional-signing-profile-v1')
+  assert.equal(profile.complete, true)
+})

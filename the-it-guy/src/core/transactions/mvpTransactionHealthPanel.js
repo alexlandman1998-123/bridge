@@ -1,4 +1,4 @@
-export const MVP_TRANSACTION_HEALTH_PANEL_VERSION = 'arch9_mvp_transaction_health_panel_v1'
+export const MVP_TRANSACTION_HEALTH_PANEL_VERSION = 'arch9_mvp_transaction_health_panel_v2'
 
 function text(value) {
   return String(value || '').trim()
@@ -11,6 +11,41 @@ function number(value) {
 
 function items(value) {
   return Array.isArray(value) ? value : []
+}
+
+function notificationSummary(events = []) {
+  const rows = items(events)
+  const count = (predicate) => rows.filter(predicate).length
+  return {
+    total: rows.length,
+    prepared: count((event) => text(event?.status).toLowerCase() === 'prepared'),
+    queued: count((event) => text(event?.status).toLowerCase() === 'queued'),
+    failed: count((event) => text(event?.status).toLowerCase() === 'failed'),
+    sent: count((event) => ['sent', 'delivered'].includes(text(event?.status).toLowerCase())),
+    suppressed: count((event) => text(event?.status).toLowerCase() === 'skipped' || event?.metadata?.notificationSuppressed === true),
+    agentHandoffs: count((event) => event?.handoffRequired === true || event?.metadata?.handoffRequired === true),
+  }
+}
+
+function creationSummary(transaction = {}, conversionReceipt = null) {
+  const receipt = conversionReceipt && typeof conversionReceipt === 'object'
+    ? conversionReceipt
+    : (transaction.conversionReceipt || transaction.conversion_receipt || {})
+  const acceptedOfferId = text(
+    receipt.acceptedOfferId || transaction.acceptedOfferId || transaction.accepted_offer_id,
+  )
+  const idempotencyKey = text(
+    transaction.creationIdempotencyKey || transaction.creation_idempotency_key || receipt.idempotencyKey,
+  )
+  const hasEvidence = Boolean(acceptedOfferId || idempotencyKey || receipt.transactionId)
+  const receiptReady = receipt.ready === true && text(receipt.transactionId)
+  return {
+    acceptedOfferId: acceptedOfferId || null,
+    idempotencyKey: idempotencyKey || null,
+    receiptStatus: text(receipt.status) || null,
+    confirmed: hasEvidence ? Boolean(acceptedOfferId && idempotencyKey) && (receipt.ready !== false) : null,
+    receiptVerified: receiptReady || null,
+  }
 }
 
 function currentGateKey(stage = {}) {
@@ -77,7 +112,14 @@ function buildAttentionItems({ blockers = [], currentGate, participantRoster = {
  * needs attention next?” It is presentation-safe and does not change workflow
  * state or gate decisions.
  */
-export function buildMvpTransactionHealthPanel({ truth = {}, transaction = {}, participantRoster = {}, documentRoster = {} } = {}) {
+export function buildMvpTransactionHealthPanel({
+  truth = {},
+  transaction = {},
+  participantRoster = {},
+  documentRoster = {},
+  conversionReceipt = null,
+  notificationOutbox = [],
+} = {}) {
   const readiness = truth.readiness || {}
   const stage = truth.stage || { key: 'UNKNOWN', label: 'Stage not set', rank: 0 }
   const status = displayStatus(readiness)
@@ -94,6 +136,8 @@ export function buildMvpTransactionHealthPanel({ truth = {}, transaction = {}, p
   })
   const testDataProtection = transaction.testDataProtection || transaction.test_data_protection || {}
   const isTestData = testDataProtection.isTestData === true || testDataProtection.is_test_data === true
+  const creation = creationSummary(transaction, conversionReceipt)
+  const notifications = notificationSummary(notificationOutbox)
 
   return {
     version: MVP_TRANSACTION_HEALTH_PANEL_VERSION,
@@ -119,8 +163,15 @@ export function buildMvpTransactionHealthPanel({ truth = {}, transaction = {}, p
       documentsRequired: number(documentSummary.required ?? documentSummary.requiredCount),
       outstandingDocuments: number(documentSummary.outstanding ?? documentSummary.outstandingCount),
       attentionCount: attention.length,
+      failedNotifications: notifications.failed,
+      pendingNotificationReview: notifications.prepared + notifications.agentHandoffs,
     },
     attention: attention.slice(0, 5),
+    creation,
+    notifications: {
+      ...notifications,
+      reviewRequired: notifications.failed > 0 || notifications.prepared > 0 || notifications.agentHandoffs > 0,
+    },
     testData: {
       isTestData,
       marker: isTestData ? text(testDataProtection.marker) || 'TEST — DO NOT ACTION' : '',

@@ -1,0 +1,21 @@
+{
+  "version": "202607170031",
+  "phase": 23,
+  "stream": "document_generation",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 23 instruction)",
+  "verification": {
+    "supportLifecycleIndexCount": 2,
+    "partialPredicatesPresent": true,
+    "lifecycleIndexUnique": true,
+    "documentPacketEventRows": 660,
+    "documentPacketRows": 50,
+    "documentPacketVersionRows": 94,
+    "ledgerRecordedBeforeRepair": false
+  }
+}

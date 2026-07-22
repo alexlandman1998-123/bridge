@@ -54,8 +54,8 @@ export default function LegalDocumentsLandingPage() {
   const coverageLabel = summary.allCovered ? 'All' : `${summary.coveredCount} of ${summary.documentCount}`
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-10" aria-labelledby="legal-documents-title">
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+    <div className="w-full max-w-none space-y-5 pb-6" aria-labelledby="legal-documents-title">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 id="legal-documents-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">Legal Documents</h1>
           <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#62758a]">
@@ -100,7 +100,7 @@ export default function LegalDocumentsLandingPage() {
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-3" aria-label="Legal document status">
-        <Link to={primaryActionDocument ? buildLegalDocumentOverviewPath(primaryActionDocument.key) : buildLegalDocumentOverviewPath('otp')} className="flex min-h-[112px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition hover:border-[#e1c884] hover:bg-[#fffdf8]">
+        <Link to={primaryActionDocument ? buildLegalDocumentOverviewPath(primaryActionDocument.key) : buildLegalDocumentOverviewPath('otp')} className="flex min-h-[96px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition hover:border-[#e1c884] hover:bg-[#fffdf8]">
           <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] border border-[#d3e9dc] bg-[#f0faf4] text-[#16804d]">
             <FileText className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -111,7 +111,7 @@ export default function LegalDocumentsLandingPage() {
           {!loading ? <CheckCircle2 className="ml-auto h-5 w-5 shrink-0 text-[#32a268]" aria-hidden="true" /> : null}
         </Link>
 
-        <article className="flex min-h-[112px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <article className="flex min-h-[96px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
           <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] border border-[#d3e9dc] bg-[#f0faf4] text-[#16804d]">
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -122,7 +122,7 @@ export default function LegalDocumentsLandingPage() {
           {!loading && summary.allCovered ? <CheckCircle2 className="ml-auto h-5 w-5 shrink-0 text-[#32a268]" aria-hidden="true" /> : null}
         </article>
 
-        <article className="flex min-h-[112px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <article className="flex min-h-[96px] items-center gap-4 rounded-[18px] border border-[#dde6ee] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
           <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] border border-[#f0dfb6] bg-[#fff9ea] text-[#a06b0d]">
             <FilePenLine className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -137,13 +137,13 @@ export default function LegalDocumentsLandingPage() {
       <section aria-labelledby="document-library-heading">
         <div className="mb-4">
           <h2 id="document-library-heading" className="text-xl font-semibold tracking-[-0.02em] text-[#142033]">Document library</h2>
-          <p className="mt-1 text-sm leading-6 text-[#6c7e91]">Choose a document to manage its standard wording, situations and signing setup.</p>
+          <p className="mt-1 text-sm leading-5 text-[#6c7e91]">Choose a document to manage its standard wording, situations and signing setup.</p>
         </div>
 
         {loading ? (
           <div className="grid gap-4 lg:grid-cols-2" aria-label="Loading legal documents">
             {[0, 1, 2, 3].map((item) => (
-              <div key={item} className="h-[210px] animate-pulse rounded-[18px] border border-[#e2e9f0] bg-white p-6">
+              <div key={item} className="h-[190px] animate-pulse rounded-[18px] border border-[#e2e9f0] bg-white p-5">
                 <div className="h-14 w-14 rounded-[15px] bg-[#edf2f5]" />
                 <div className="mt-5 h-5 w-44 rounded bg-[#edf2f5]" />
                 <div className="mt-3 h-4 w-4/5 rounded bg-[#f1f4f7]" />
@@ -159,9 +159,9 @@ export default function LegalDocumentsLandingPage() {
         )}
       </section>
 
-      <section className="rounded-[20px] border border-[#dde6ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6" aria-labelledby="build-flow-heading">
+      <section className="rounded-[20px] border border-[#dde6ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]" aria-labelledby="build-flow-heading">
         <h2 id="build-flow-heading" className="text-lg font-semibold tracking-[-0.01em] text-[#142033]">How documents are built</h2>
-        <ol className="mt-5 grid gap-5 lg:grid-cols-3">
+        <ol className="mt-4 grid gap-4 lg:grid-cols-3">
           {BUILD_STEPS.map((step, index) => {
             const StepIcon = step.Icon
             return (

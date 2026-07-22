@@ -20,6 +20,17 @@ create table if not exists public.tasks (
   updated_at timestamptz not null default now()
 );
 
+-- `create table if not exists` does not add columns to the legacy task table.
+-- Bring that table forward before the canonical indexes and API surface use them.
+alter table public.tasks
+  add column if not exists id uuid generated always as (task_id) stored;
+alter table public.tasks
+  add column if not exists transaction_id uuid references public.transactions(id) on delete cascade;
+alter table public.tasks
+  add column if not exists created_by uuid references auth.users(id) on delete set null;
+alter table public.tasks
+  add column if not exists metadata jsonb not null default '{}'::jsonb;
+
 create unique index if not exists tasks_id_unique_idx on public.tasks (id);
 create index if not exists tasks_org_updated_idx on public.tasks (organisation_id, updated_at desc);
 create index if not exists tasks_org_lead_idx on public.tasks (organisation_id, lead_id, updated_at desc) where lead_id is not null;

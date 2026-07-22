@@ -1,0 +1,26 @@
+{
+  "version": "20260719194500",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 25 instruction)",
+  "verification": {
+    "acceptanceGuardFunctionLive": true,
+    "acceptanceGuardTriggerEnabled": true,
+    "triggerFunctionPrivateFromAnonymous": true,
+    "triggerFunctionPrivateFromAuthenticated": true,
+    "triggerFunctionSecurityDefiner": true,
+    "triggerFunctionFixedSearchPath": true,
+    "missingPreferredAttorneyRejected": "23514",
+    "nominatedAlternativeCompletionPassed": true,
+    "rollbackClean": true,
+    "persistentOnboardingRows": 29,
+    "persistentIncompleteOnboardingRows": 15,
+    "persistentRolePlayerRows": 0,
+    "persistentPreferredPartnerRows": 0,
+    "connectedPreferredAcceptanceAvailableAfterPartnerConfiguration": true
+  }
+}

@@ -129,6 +129,7 @@ const BUYER_COLUMNS = ['id', 'name', 'email']
 const UNIT_COLUMNS = ['id', 'development_id', 'unit_number', 'unit_label', 'phase', 'block', 'status']
 const DEVELOPMENT_COLUMNS = ['id', 'name', 'development_name', 'code']
 const PROFILE_COLUMNS = ['id', 'full_name', 'first_name', 'last_name', 'email']
+const ORGANISATION_COLUMNS = ['id', 'name', 'display_name', 'logo_url', 'type']
 
 const STATUS_SORT_RANK = {
   awaiting_buyer: -1,
@@ -193,6 +194,44 @@ function getPersonName(profile = null, fallback = 'Unassigned') {
     [profile.first_name, profile.last_name].filter(Boolean).join(' '),
     profile.email,
   ])[0] || fallback
+}
+
+function getOrganisationName(organisation = null, fallback = 'Source agency') {
+  if (!organisation) return fallback
+  return compact([
+    organisation.display_name,
+    organisation.displayName,
+    organisation.name,
+    organisation.companyName,
+    organisation.agencyName,
+  ])[0] || fallback
+}
+
+function getOrganisationLogoUrl(organisation = null) {
+  if (!organisation) return ''
+  return normalizeText(
+    organisation.logo_url ||
+      organisation.logoUrl ||
+      organisation.primary_logo_url ||
+      organisation.primaryLogoUrl ||
+      organisation.organisationLogoUrl ||
+      organisation.agencyLogoUrl,
+  )
+}
+
+function buildSourceOrganisation(source = null, fallback = {}) {
+  const id = normalizeText(source?.id || fallback.id)
+  const name = getOrganisationName(source, fallback.name || 'Source agency')
+  const logoUrl = getOrganisationLogoUrl(source) || normalizeText(fallback.logoUrl || fallback.logo_url)
+  return {
+    id,
+    name,
+    displayName: name,
+    logoUrl,
+    logo_url: logoUrl,
+    initials: getInitials(name),
+    type: source?.type || fallback.type || 'agency',
+  }
 }
 
 function getMatterReference(transaction = {}, fallbackId = '') {
@@ -389,13 +428,14 @@ function buildSearchText(row = {}) {
     row.statusLabel,
     row.nextAction,
     row.assignedAttorney?.name,
+    row.sourceOrganisation?.name,
     row.agent,
     row.otpStatus?.label,
     ...(row.waitingOnLabels || []),
   ].map((value) => normalizeKey(value)).join(' ')
 }
 
-export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
+export function buildAttorneyPreInstructionRow(allocation = {}, firm = null, sourceOrganisation = null) {
   const allocationId = allocation.allocation_id || allocation.allocationId || allocation.id || ''
   const listingId = allocation.private_listing_id || allocation.privateListingId || ''
   const mandatePacketId = allocation.mandate_packet_id || allocation.mandatePacketId || ''
@@ -405,6 +445,12 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
   const sellerName = allocation.seller_name || allocation.sellerName || 'Seller pending'
   const reference = allocation.listing_reference || allocation.listingReference || `PL-${String(listingId).slice(0, 8).toUpperCase()}`
   const agent = allocation.assigned_agent_name || allocation.assignedAgentName || allocation.assigned_agent_email || allocation.assignedAgentEmail || ''
+  const sourceOrganisationId = allocation.agency_organisation_id || allocation.agencyOrganisationId || allocation.organisation_id || allocation.organisationId || ''
+  const assignedFrom = buildSourceOrganisation(sourceOrganisation, {
+    id: sourceOrganisationId,
+    name: allocation.agency_name || allocation.agencyName || allocation.organisation_name || allocation.organisationName || agent || 'Source agency',
+    logoUrl: allocation.agency_logo_url || allocation.agencyLogoUrl || allocation.logo_url || allocation.logoUrl,
+  })
   const row = {
     rowKind: 'pre_instruction',
     isPreInstruction: true,
@@ -450,6 +496,8 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
       initials: getInitials(firmName),
       email: '',
     },
+    sourceOrganisation: assignedFrom,
+    assignedFrom,
     assignedSecretary: { id: '', name: '', initials: '', email: '' },
     assignedAdminHandler: { id: '', name: '', initials: '', email: '' },
     agent,
@@ -460,7 +508,7 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
   return row
 }
 
-function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById }) {
+function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById, sourceOrganisationsById = {} }) {
   const normalizedAssignment = normalizeAssignment(assignment)
   const contract = buildAttorneyIncomingMatterContract({
     assignment: normalizedAssignment,
@@ -475,6 +523,11 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
   const documentSummary = buildDocumentSummary(documentRequests)
   const incomingSince = getIncomingSince({ transaction, assignment: normalizedAssignment, onboarding, status: contract.status })
   const assignedAttorneyName = getPersonName(primaryProfile, normalizedAssignment.attorney_firm_name || 'Unassigned')
+  const sourceOrganisation = buildSourceOrganisation(sourceOrganisationsById[transaction.organisation_id], {
+    id: transaction.organisation_id || '',
+    name: transaction.agency_name || transaction.agencyName || transaction.organisation_name || transaction.organisationName || 'Source agency',
+    logoUrl: transaction.agency_logo_url || transaction.agencyLogoUrl || transaction.logo_url || transaction.logoUrl,
+  })
   const waitingOnLabels = contract.waitingOn.map((item) => WAITING_ON_LABELS[item] || item)
   const row = {
     id: normalizedAssignment.id,
@@ -516,6 +569,8 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
       initials: getInitials(assignedAttorneyName),
       email: primaryProfile?.email || '',
     },
+    sourceOrganisation,
+    assignedFrom: sourceOrganisation,
     assignedSecretary: {
       id: normalizedAssignment.secretary_id || '',
       name: getPersonName(secretaryProfile, ''),
@@ -614,6 +669,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   developments = [],
   profiles = [],
   preInstructionAllocations = [],
+  sourceOrganisations = [],
 } = {}, options = {}) {
   const transactionsById = mapById(transactions)
   const onboardingByTransactionId = groupBy(onboardingRows, 'transaction_id')
@@ -622,6 +678,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   const unitsById = mapById(units)
   const developmentsById = mapById(developments)
   const profilesById = mapById(profiles)
+  const sourceOrganisationsById = mapById(sourceOrganisations)
 
   const instructionRows = (assignments || [])
     .map(normalizeAssignment)
@@ -642,12 +699,22 @@ export function buildAttorneyIncomingMatterQueueFromSources({
         unit,
         development,
         profilesById,
+        sourceOrganisationsById,
       })
     })
     .filter(Boolean)
 
   const preInstructionRows = (preInstructionAllocations || []).map((allocation) =>
-    buildAttorneyPreInstructionRow(allocation, firm),
+    buildAttorneyPreInstructionRow(
+      allocation,
+      firm,
+      sourceOrganisationsById[
+        allocation.agency_organisation_id ||
+          allocation.agencyOrganisationId ||
+          allocation.organisation_id ||
+          allocation.organisationId
+      ],
+    ),
   )
   const allRows = [...preInstructionRows, ...instructionRows]
 
@@ -844,6 +911,10 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     ...transactions.map((transaction) => transaction.development_id),
     ...units.map((unit) => unit.development_id),
   ])
+  const sourceOrganisationIds = unique([
+    ...transactions.map((transaction) => transaction.organisation_id),
+    ...preInstructionAllocations.map((allocation) => allocation.agency_organisation_id || allocation.agencyOrganisationId),
+  ])
   const profileIds = unique(transferAssignments.flatMap((assignment) => [
     assignment.primary_attorney_id,
     assignment.attorney_user_id,
@@ -852,10 +923,11 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     assignment.assigned_user_id,
   ]))
 
-  const [buyers, developments, profiles] = await Promise.all([
+  const [buyers, developments, profiles, sourceOrganisations] = await Promise.all([
     fetchRowsByIds(client, 'buyers', BUYER_COLUMNS, buyerIds),
     fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds),
     fetchRowsByIds(client, 'profiles', PROFILE_COLUMNS, profileIds),
+    fetchRowsByIds(client, 'organisations', ORGANISATION_COLUMNS, sourceOrganisationIds),
   ])
 
   return buildAttorneyIncomingMatterQueueFromSources({
@@ -870,6 +942,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     developments,
     profiles,
     preInstructionAllocations,
+    sourceOrganisations,
   }, options)
 }
 

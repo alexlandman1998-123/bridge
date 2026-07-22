@@ -1,0 +1,18 @@
+{
+  "version": "202607180038",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex attorney identity/access staging verification",
+  "verification": {
+    "attorneyRequestColumnsLive": 2,
+    "attorneyRequestConstraintsLive": 2,
+    "acceptedInvitationTriggerEnabled": true,
+    "acceptedInvitationTriggerFunctionPrivate": true,
+    "validRequestedProfileStored": true,
+    "invalidRequestedRoleDenied": "23514",
+    "rollbackClean": true
+  }
+}

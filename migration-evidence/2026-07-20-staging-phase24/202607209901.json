@@ -1,0 +1,24 @@
+{
+  "version": "202607209901",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex Phase 24 attorney identity/access corrective verification",
+  "applicationMode": "reviewed_idempotent_correction",
+  "productionMutated": false,
+  "verification": {
+    "professionalProfileColumnsLive": 9,
+    "validatedConstraintsLive": 10,
+    "synchronisationTriggersEnabled": 5,
+    "supportingIndexesLive": 4,
+    "attorneyMembers": 8,
+    "canonicalFirmAdministrators": 8,
+    "missingOrganisationLinks": 0,
+    "compatibilityMismatches": 0,
+    "organisationExtensionMismatches": 0,
+    "normalizationFunctionsPass": true
+  }
+}

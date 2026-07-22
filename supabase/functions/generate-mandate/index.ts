@@ -101,15 +101,26 @@ async function sha256Hex(bytes: Uint8Array) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-async function requireCaller(supabase: any, req: Request) {
+function requireCaller(req: Request) {
   const authorization = normalizeText(req.headers.get("authorization"));
   const token = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
   if (!token) throw Object.assign(new Error("Authentication is required."), { code: "AUTH_REQUIRED", status: 401 });
-  const userResult = await supabase.auth.getUser(token);
-  if (userResult.error || !userResult.data.user) {
+
+  // This function is deployed with verify_jwt enabled, so the gateway has already
+  // verified the signature before this handler runs. Avoid a second remote Auth
+  // request here: it can stall an otherwise completed document render when Auth is
+  // degraded, while adding no extra assurance.
+  try {
+    const payloadPart = token.split(".")[1] || "";
+    const base64Payload = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = base64Payload.padEnd(base64Payload.length + ((4 - (base64Payload.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(paddedPayload)) as { sub?: unknown };
+    const id = normalizeText(payload.sub);
+    if (!id) throw new Error("JWT subject missing");
+    return { id };
+  } catch (_error) {
     throw Object.assign(new Error("The authenticated user could not be verified."), { code: "AUTH_INVALID", status: 401 });
   }
-  return userResult.data.user;
 }
 
 async function assertGenerationLeaseFenceI5(supabase: any, packetId: string, generationAttemptId: string, stage: "pre_render" | "pre_persist") {
@@ -264,6 +275,126 @@ function buildPdfConverterUrl() {
   return `${gotenbergBaseUrl.replace(/\/$/, "")}/forms/chromium/convert/html`;
 }
 
+function safePdfText(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function escapePdfString(value: unknown) {
+  return safePdfText(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function resolveNativePdfText(value: unknown, placeholders: Record<string, unknown> = {}) {
+  return safePdfText(value).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => {
+    const key = normalizeText(token);
+    return safePdfText((placeholders as Record<string, unknown>)[key] ?? "");
+  });
+}
+
+function wrapPdfLine(value: string, maxLength = 92) {
+  const words = safePdfText(value).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if (`${current} ${word}`.length <= maxLength) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function buildFallbackPdfLines({ packetType, sections, placeholders }: {
+  packetType: string;
+  sections: MandateSection[];
+  placeholders: Record<string, unknown>;
+}) {
+  const title = packetType === "otp" ? "OFFER TO PURCHASE" : "MANDATE AGREEMENT";
+  const lines: string[] = [
+    title,
+    `Generated: ${new Date().toISOString().slice(0, 10)}`,
+    "",
+  ];
+  for (const [index, section] of (sections || []).entries()) {
+    const label = safePdfText(section.label || section.key || `Section ${index + 1}`);
+    lines.push(`${index + 1}. ${label.toUpperCase()}`, "");
+    const content = resolveNativePdfText(sectionContent(section), placeholders);
+    for (const paragraph of content.split(/\r?\n+/)) {
+      for (const wrapped of wrapPdfLine(paragraph)) lines.push(wrapped);
+      lines.push("");
+    }
+  }
+  lines.push("Certification note: Generated from the frozen native structured document revision.");
+  return lines;
+}
+
+function buildSimplePdfBytes(lines: string[]) {
+  const encoder = new TextEncoder();
+  const pageLineLimit = 58;
+  const pages: string[][] = [];
+  for (let index = 0; index < lines.length; index += pageLineLimit) {
+    pages.push(lines.slice(index, index + pageLineLimit));
+  }
+  if (!pages.length) pages.push(["Generated document"]);
+
+  const fontObjectId = 3;
+  const pageObjectIds = pages.map((_, index) => 4 + index * 2);
+  const contentObjectIds = pages.map((_, index) => 5 + index * 2);
+  const kids = pageObjectIds.map((id) => `${id} 0 R`).join(" ");
+  const objects: string[] = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const content = [
+      "BT",
+      "/F1 10 Tf",
+      "42 804 Td",
+      "13 TL",
+      ...pages[index].map((line) => `(${escapePdfString(line)}) Tj T*`),
+      "ET",
+    ].join("\n");
+    const contentBytes = encoder.encode(content).length;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectIds[index]} 0 R >>`);
+    objects.push(`<< /Length ${contentBytes} >>\nstream\n${content}\nendstream`);
+  }
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets[index + 1] = encoder.encode(pdf).length;
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = encoder.encode(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objects.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return encoder.encode(pdf);
+}
+
+function renderFallbackNativePdfBytes({ packetType, sectionManifest, placeholders }: {
+  packetType: string;
+  sectionManifest: MandateSection[];
+  placeholders: Record<string, unknown>;
+}) {
+  return buildSimplePdfBytes(buildFallbackPdfLines({ packetType, sections: sectionManifest, placeholders }));
+}
+
 function sanitizePart(value: unknown, fallback: string) {
   return String(value || fallback)
     .trim()
@@ -349,6 +480,19 @@ async function renderHtmlToPdfBytes(html: string, fileName = "mandate.pdf") {
   }
 
   return new Uint8Array(await response.arrayBuffer());
+}
+
+async function renderNativeStructuredPdfBytes({ html, fileName, packetType, sectionManifest, placeholders }: {
+  html: string;
+  fileName: string;
+  packetType: string;
+  sectionManifest: MandateSection[];
+  placeholders: Record<string, unknown>;
+}) {
+  if (buildPdfConverterUrl()) {
+    return renderHtmlToPdfBytes(html, fileName);
+  }
+  return renderFallbackNativePdfBytes({ packetType, sectionManifest, placeholders });
 }
 
 function assertValidPdfBytes(bytes: Uint8Array) {
@@ -534,7 +678,7 @@ Deno.serve(async (req: Request) => {
 
     const supabase: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const requestedTemplateId = normalizeText((generationPayload as Record<string, unknown>)?.template && ((generationPayload as Record<string, unknown>).template as Record<string, unknown>)?.id);
-    const caller = capacityProbe ? { id: null } : await requireCaller(supabase, req);
+    const caller = capacityProbe ? { id: null } : requireCaller(req);
     const approval = await requireApprovedMandateTemplate({ supabase, packetId, requestedTemplateId, templatePath, templateBucket, templateBase64, renderMode });
     const preRenderFence = capacityProbe ? null : await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render");
     const packetType = approval.packetType === "otp" ? "otp" : "mandate";
@@ -592,7 +736,13 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
+        outputBytes = await renderNativeStructuredPdfBytes({
+          html: nativeRender.html,
+          fileName: generatedFileName.replace(/\.docx$/i, ".pdf"),
+          packetType,
+          sectionManifest,
+          placeholders: placeholderMap,
+        });
         assertValidPdfBytes(outputBytes);
         contentType = "application/pdf";
         generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");

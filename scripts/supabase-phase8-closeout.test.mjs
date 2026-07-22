@@ -2,11 +2,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase8-closeout.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
+const governedCount = manifest.rows.length
 
 function run(args) {
   return spawnSync(process.execPath, [runner, ...args], { cwd: repoRoot, encoding: 'utf8' })
@@ -17,11 +20,18 @@ assert.equal(plan.status, 0, plan.stderr)
 const result = JSON.parse(plan.stdout)
 assert.equal(result.status, 'LOCAL_CLOSEOUT_NOT_READY')
 assert.equal(result.readyForFreezeRetirement, false)
-assert.equal(result.manifestRowCount, 63)
+assert.equal(result.manifestRowCount, governedCount)
 assert.equal(result.duplicateVersions.length, 0)
 assert.equal(result.missingManifestFiles.length, 0)
-assert.equal(result.evidence.complete.length + result.evidence.incomplete.length, 63)
+assert.equal(result.phase7Readiness.status, 'READY_FOR_PRODUCTION_PROMOTION')
+assert.equal(result.phase7Readiness.ready, true)
+assert.equal(result.phase7Readiness.attorneyIntegrityGate, 'pass')
+assert.equal(result.phase7Readiness.attorneyIntegrityBlockingAssignments, 0)
+assert.equal(result.phase7Readiness.approved, true)
+assert.equal(result.evidence.complete.length + result.evidence.incomplete.length, governedCount)
 assert.equal(result.evidence.duplicates.length, 0)
+assert.equal(result.recoveryEvidence.valid, true)
+assert.equal(result.recoveryEvidence.approvedBy, 'Alexander Landman')
 assert.equal(result.live, null)
 
 const unknown = run(['--not-a-real-option'])

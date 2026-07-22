@@ -15,8 +15,8 @@ const files = {
 
 for (const token of [
   "label: 'Organisation'",
-  "type: 'third-party'",
-  "label: 'Third Party'",
+  "type: 'partner'",
+  "label: 'Partner'",
   "helper: 'Add an attorney, bond originator, or referral agency'",
   "to: '/partners'",
   'openAddThirdParty: true',
@@ -24,7 +24,7 @@ for (const token of [
   'data-testid={`quick-create-${item.type}`}',
   'navigate(item.to, state ? { state } : undefined)',
 ]) {
-  assert(files.quickCreate.includes(token), `QuickCreateDropdown should expose the third-party create route contract: ${token}`)
+  assert(files.quickCreate.includes(token), `QuickCreateDropdown should expose the partner create route contract: ${token}`)
 }
 
 assert(
@@ -49,8 +49,8 @@ for (const token of [
   'setThirdPartyFormError(\'\')',
   'role="alert"',
   'source: \'third_party_directory\'',
-  'Third party added and invite sent.',
-  'Save third party',
+  'Partner added and invite sent.',
+  'Save partner',
   'handleResendInvitation',
   'handleRevokeInvitation',
   'handleDeleteInvitation',

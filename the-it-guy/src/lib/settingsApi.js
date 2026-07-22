@@ -387,9 +387,26 @@ function getMissingColumnNameFromError(error) {
   const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/)
   if (quotedMatch?.[1]) return quotedMatch[1]
   const details = String(error.details || '')
-  const detailsMatch = details.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
+  const detailsMatch = details.match(/column\s+(?:[a-zA-Z0-9_]+\.)?"?([a-zA-Z0-9_]+)"?/i)
   if (detailsMatch?.[1]) return detailsMatch[1]
+  const messageMatch = message.match(/column\s+(?:[a-zA-Z0-9_]+\.)?"?([a-zA-Z0-9_]+)"?/i)
+  if (messageMatch?.[1]) return messageMatch[1]
   return ''
+}
+
+function removeColumnFromSelectClause(selectClause = '', columnName = '') {
+  const normalizedColumn = normalizeText(columnName).toLowerCase()
+  if (!normalizedColumn) return selectClause
+  const fields = normalizeText(selectClause)
+    .split(',')
+    .map((field) => normalizeText(field))
+    .filter(Boolean)
+  if (!fields.length) return selectClause
+  const nextFields = fields.filter((field) => {
+    const normalizedField = field.replace(/\s+as\s+.+$/i, '').trim().toLowerCase()
+    return normalizedField !== normalizedColumn
+  })
+  return nextFields.length === fields.length ? selectClause : nextFields.join(', ')
 }
 
 function isRlsPolicyError(error) {
@@ -477,6 +494,56 @@ function buildOrganisationContextResult({
     profile,
     persisted,
   }
+}
+
+const ORGANISATION_CONTEXT_SELECT_FIELDS = `
+  id,
+  name,
+  display_name,
+  type,
+  workspace_kind,
+  logo_url,
+  settings_json,
+  company_email,
+  company_phone,
+  website,
+  address_line_1,
+  address_line_2,
+  city,
+  province,
+  postal_code,
+  country,
+  support_email,
+  support_phone,
+  primary_contact_person
+`
+
+async function fetchOrganisationContextRow(client, organisationId) {
+  let fields = ORGANISATION_CONTEXT_SELECT_FIELDS
+  let lastError = null
+  const removedColumns = new Set()
+
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const query = await client
+      .from('organisations')
+      .select(fields)
+      .eq('id', organisationId)
+      .maybeSingle()
+
+    if (!query.error) return query
+    lastError = query.error
+    if (!isMissingColumnError(query.error, '')) return query
+
+    const missingColumn = getMissingColumnNameFromError(query.error)
+    const nextFields = removeColumnFromSelectClause(fields, missingColumn)
+    if (!missingColumn || nextFields === fields || removedColumns.has(missingColumn)) {
+      return query
+    }
+    removedColumns.add(missingColumn)
+    fields = nextFields
+  }
+
+  return { data: null, error: lastError }
 }
 
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
@@ -818,11 +885,6 @@ function createLocalPartnerId() {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-const ORGANISATION_PREFERRED_PARTNER_SELECT =
-  'id, partner_type, developer_partner_relationship_id, partner_organisation_id, source, scope_type, scope_json, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
-const ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT =
-  'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at'
-
 function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
   const partnerType = normalizePreferredPartnerType(input.partnerType || fallback.partnerType || 'transfer_attorney')
   const sourceId = String(input.id || fallback.id || '').trim()
@@ -830,6 +892,9 @@ function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
 
   return {
     id: normalizedId,
+    partnerRoleConfigurationId: normalizeText(
+      input.partnerRoleConfigurationId || fallback.partnerRoleConfigurationId,
+    ),
     partnerType: PREFERRED_PARTNER_TYPE_VALUES.includes(partnerType) ? partnerType : 'transfer_attorney',
     developerPartnerRelationshipId: normalizeText(input.developerPartnerRelationshipId || fallback.developerPartnerRelationshipId),
     partnerOrganisationId: normalizeText(input.partnerOrganisationId || fallback.partnerOrganisationId),
@@ -864,8 +929,9 @@ function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
 function normalizePreferredPartnerRow(row = {}) {
   return normalizePreferredPartnerRecord({
     id: row.id,
+    partnerRoleConfigurationId: row.partner_role_configuration_id || row.partnerRoleConfigurationId,
     partnerType: row.partner_type,
-    developerPartnerRelationshipId: row.developer_partner_relationship_id,
+    developerPartnerRelationshipId: row.relationship_id || row.developer_partner_relationship_id,
     partnerOrganisationId: row.partner_organisation_id,
     source: row.source,
     scopeType: row.scope_type,
@@ -2514,31 +2580,7 @@ async function ensureOrganisationContext(client) {
     let organisation = null
 
     if (membership?.organisation_id) {
-      const orgQuery = await client
-        .from('organisations')
-        .select(`
-          id,
-          name,
-          display_name,
-          type,
-          workspace_kind,
-          logo_url,
-          settings_json,
-          company_email,
-          company_phone,
-          website,
-          address_line_1,
-          address_line_2,
-          city,
-          province,
-          postal_code,
-          country,
-          support_email,
-          support_phone,
-          primary_contact_person
-        `)
-        .eq('id', membership.organisation_id)
-        .maybeSingle()
+      const orgQuery = await fetchOrganisationContextRow(client, membership.organisation_id)
 
       if (!orgQuery.error) {
         organisation = normalizeOrganisationRow(orgQuery.data, profile)
@@ -2614,31 +2656,7 @@ async function ensureOrganisationContext(client) {
         throw membershipInsert.result.error
       }
 
-      const orgQuery = await client
-        .from('organisations')
-        .select(`
-          id,
-          name,
-          display_name,
-          type,
-          workspace_kind,
-          logo_url,
-          settings_json,
-          company_email,
-          company_phone,
-          website,
-          address_line_1,
-          address_line_2,
-          city,
-          province,
-          postal_code,
-          country,
-          support_email,
-          support_phone,
-          primary_contact_person
-        `)
-        .eq('id', organisationId)
-        .maybeSingle()
+      const orgQuery = await fetchOrganisationContextRow(client, organisationId)
 
       if (!orgQuery.error) {
         organisation = normalizeOrganisationRow(orgQuery.data || organisationInsertPayload, profile)
@@ -3196,6 +3214,110 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   }
 }
 
+function buildSellerOnboardingPortalBrandingSnapshot({ organisation = {}, onboarding = {} } = {}) {
+  const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
+    ? onboarding.agencyInformation
+    : {}
+  const branding = onboarding?.branding && typeof onboarding.branding === 'object'
+    ? onboarding.branding
+    : {}
+  const brandColours = branding.brandColours && typeof branding.brandColours === 'object'
+    ? branding.brandColours
+    : {}
+  const organisationName = normalizeText(
+    agencyInformation.tradingName ||
+      agencyInformation.agencyName ||
+      organisation.displayName ||
+      organisation.display_name ||
+      organisation.name,
+  )
+  const logoLightUrl = normalizeText(branding.logoLight || branding.logoLightUrl || branding.logo_light_url || organisation.logoUrl || organisation.logo_url)
+  const logoDarkUrl = normalizeText(branding.logoDark || branding.logoDarkUrl || branding.logo_dark_url)
+  const logoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || branding.logo_icon_url || organisation.logoIconUrl || organisation.logo_icon_url)
+  const logoUrl = logoDarkUrl || logoLightUrl || logoIconUrl
+
+  return {
+    organisationId: normalizeText(organisation.id),
+    organisationName,
+    agencyName: organisationName,
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+    logoIconUrl,
+    logoDark: logoDarkUrl,
+    logoLight: logoLightUrl,
+    primaryColour: normalizeText(brandColours.primary || branding.primaryColour || branding.primaryColor),
+    secondaryColour: normalizeText(brandColours.secondary || branding.secondaryColour || branding.secondaryColor),
+    accentColour: normalizeText(brandColours.accent || branding.accentColour || branding.accentColor),
+  }
+}
+
+async function refreshSellerOnboardingPortalBrandingSnapshots(client, { organisationId = '', portalBranding = null } = {}) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!client || !normalizedOrganisationId || !portalBranding) return { updated: 0, skipped: true }
+
+  const listingsQuery = await client
+    .from('private_listings')
+    .select('id')
+    .eq('organisation_id', normalizedOrganisationId)
+
+  if (listingsQuery.error) {
+    if (
+      isMissingTableError(listingsQuery.error, 'private_listings') ||
+      isPermissionDeniedError(listingsQuery.error)
+    ) {
+      return { updated: 0, skipped: true, reason: listingsQuery.error.message }
+    }
+    throw listingsQuery.error
+  }
+
+  const listingIds = (listingsQuery.data || []).map((row) => normalizeText(row.id)).filter(Boolean)
+  if (!listingIds.length) return { updated: 0, skipped: false }
+
+  let updated = 0
+  const batchSize = 100
+  for (let index = 0; index < listingIds.length; index += batchSize) {
+    const batchIds = listingIds.slice(index, index + batchSize)
+    const onboardingQuery = await client
+      .from('private_listing_seller_onboarding')
+      .select('id, form_data')
+      .in('private_listing_id', batchIds)
+
+    if (onboardingQuery.error) {
+      if (
+        isMissingTableError(onboardingQuery.error, 'private_listing_seller_onboarding') ||
+        isPermissionDeniedError(onboardingQuery.error)
+      ) {
+        return { updated, skipped: true, reason: onboardingQuery.error.message }
+      }
+      throw onboardingQuery.error
+    }
+
+    for (const row of onboardingQuery.data || []) {
+      const formData = row.form_data && typeof row.form_data === 'object' && !Array.isArray(row.form_data)
+        ? row.form_data
+        : {}
+      const update = await client
+        .from('private_listing_seller_onboarding')
+        .update({
+          form_data: {
+            ...formData,
+            portalBranding: {
+              ...(formData.portalBranding && typeof formData.portalBranding === 'object' ? formData.portalBranding : {}),
+              ...portalBranding,
+            },
+          },
+        })
+        .eq('id', row.id)
+
+      if (update.error) throw update.error
+      updated += 1
+    }
+  }
+
+  return { updated, skipped: false }
+}
+
 export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
@@ -3261,6 +3383,18 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
 
   if (error) {
     throw error
+  }
+
+  try {
+    await refreshSellerOnboardingPortalBrandingSnapshots(client, {
+      organisationId: context.organisation.id,
+      portalBranding: buildSellerOnboardingPortalBrandingSnapshot({
+        organisation: context.organisation,
+        onboarding: mergedDraft,
+      }),
+    })
+  } catch (brandingSnapshotError) {
+    console.warn('[Settings] seller onboarding branding snapshot refresh skipped.', brandingSnapshotError)
   }
 
   if (shouldSyncCommercialAccess && commercialSync.installed) {
@@ -3755,42 +3889,18 @@ export async function listOrganisationPreferredPartners() {
     return readPreferredPartnersFromSettings(context.organisationSettings)
   }
 
-  let query = await client
-    .from('organisation_preferred_partners')
-    .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
-    .eq('organisation_id', context.organisation.id)
-    .order('company_name', { ascending: true })
-
-  if (
-    query.error &&
-    [
-      'developer_partner_relationship_id',
-      'partner_organisation_id',
-      'source',
-      'scope_type',
-      'scope_json',
-    ].some((column) => isMissingColumnError(query.error, column))
-  ) {
-    query = await client
-      .from('organisation_preferred_partners')
-      .select(ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT)
-      .eq('organisation_id', context.organisation.id)
-      .order('company_name', { ascending: true })
+  const canonicalOptions = await client.rpc('bridge_list_organisation_partner_assignment_options', {
+    p_organisation_id: context.organisation.id,
+  })
+  if (canonicalOptions.error) throw canonicalOptions.error
+  if (canonicalOptions.data?.success === false) {
+    throw new Error(canonicalOptions.data.code || 'Unable to load partner assignment options.')
   }
-
-  if (!query.error) {
-    return sortPreferredPartners((query.data || []).map(normalizePreferredPartnerRow))
-  }
-
-  if (
-    !isMissingTableError(query.error, 'organisation_preferred_partners') &&
-    !isMissingColumnError(query.error, 'partner_type') &&
-    !isMissingColumnError(query.error, 'is_preferred_default')
-  ) {
-    throw query.error
-  }
-
-  return readPreferredPartnersFromSettings(context.organisationSettings)
+  return sortPreferredPartners(
+    (Array.isArray(canonicalOptions.data?.partners) ? canonicalOptions.data.partners : []).map(
+      normalizePreferredPartnerRow,
+    ),
+  )
 }
 
 export async function saveOrganisationPreferredPartner(input = {}) {
@@ -3807,77 +3917,44 @@ export async function saveOrganisationPreferredPartner(input = {}) {
     return normalizedInput
   }
 
-  const existing = await listOrganisationPreferredPartners()
-  const withUpdated = (() => {
-    const hasExisting = existing.some((item) => String(item.id) === String(normalizedInput.id))
-    const rows = hasExisting
-      ? existing.map((item) => (String(item.id) === String(normalizedInput.id) ? normalizePreferredPartnerRecord(normalizedInput, item) : item))
-      : [...existing, normalizedInput]
-
-    return rows.map((item) => {
-      if (normalizePreferredPartnerType(item.partnerType) !== normalizePreferredPartnerType(normalizedInput.partnerType)) {
-        return item
-      }
-      if (!normalizedInput.isPreferredDefault) {
-        return item
-      }
-      return String(item.id) === String(normalizedInput.id) ? { ...item, isPreferredDefault: true } : { ...item, isPreferredDefault: false }
-    })
-  })()
-
   const rowPayload = mapPreferredPartnerToRow(normalizedInput, context.organisation.id)
-  if (!looksLikeUuid(rowPayload.id)) {
-    delete rowPayload.id
+  const rpcResult = await client.rpc('bridge_save_organisation_partner', {
+    p_organisation_id: context.organisation.id,
+    p_partner_role_configuration_id: looksLikeUuid(normalizedInput.partnerRoleConfigurationId)
+      ? normalizedInput.partnerRoleConfigurationId
+      : null,
+    p_external_partner_id: looksLikeUuid(rowPayload.id) ? rowPayload.id : null,
+    p_partner_organisation_id: rowPayload.partner_organisation_id,
+    p_role_type: rowPayload.partner_type,
+    p_company_name: rowPayload.company_name,
+    p_contact_person: rowPayload.contact_person,
+    p_email_address: rowPayload.email_address,
+    p_phone_number: rowPayload.phone_number,
+    p_website: rowPayload.website,
+    p_physical_address: rowPayload.physical_address,
+    p_province: rowPayload.province,
+    p_notes: rowPayload.notes,
+    p_is_active: rowPayload.is_active,
+    p_is_preferred_default: rowPayload.is_preferred_default,
+    p_source: rowPayload.source,
+    p_scope_type: rowPayload.scope_type,
+    p_scope_json: rowPayload.scope_json,
+  })
+
+  if (rpcResult.error) throw rpcResult.error
+  if (rpcResult.data?.success === false) {
+    throw new Error(rpcResult.data.code || 'Unable to save partner.')
   }
-
-  if (normalizedInput.isPreferredDefault) {
-    const clearDefaultResult = await client
-      .from('organisation_preferred_partners')
-      .update({ is_preferred_default: false, updated_at: new Date().toISOString() })
-      .eq('organisation_id', context.organisation.id)
-      .eq('partner_type', normalizePreferredPartnerType(normalizedInput.partnerType))
-
-    if (
-      clearDefaultResult.error &&
-      !isMissingTableError(clearDefaultResult.error, 'organisation_preferred_partners') &&
-      !isMissingColumnError(clearDefaultResult.error, 'is_preferred_default')
-    ) {
-      throw clearDefaultResult.error
-    }
-  }
-
-  const saveResult = await client
-    .from('organisation_preferred_partners')
-    .upsert(rowPayload, { onConflict: 'id' })
-    .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
-    .single()
-
-  if (!saveResult.error) {
-    return normalizePreferredPartnerRow(saveResult.data)
-  }
-
-  if (
-    !isMissingTableError(saveResult.error, 'organisation_preferred_partners') &&
-    !isMissingColumnError(saveResult.error, 'partner_type') &&
-    !isMissingColumnError(saveResult.error, 'developer_partner_relationship_id') &&
-    !isMissingColumnError(saveResult.error, 'partner_organisation_id') &&
-    !isMissingColumnError(saveResult.error, 'source') &&
-    !isMissingColumnError(saveResult.error, 'scope_type') &&
-    !isMissingColumnError(saveResult.error, 'scope_json') &&
-    !isMissingColumnError(saveResult.error, 'is_preferred_default') &&
-    !isOnConflictConstraintError(saveResult.error, 'id')
-  ) {
-    throw saveResult.error
-  }
-
-  const fallback = await persistPreferredPartnersToSettings(client, context, withUpdated)
-  return fallback.find((item) => String(item.id) === String(normalizedInput.id)) || normalizePreferredPartnerRecord(normalizedInput)
+  if (!rpcResult.data?.partner) throw new Error('Partner save did not return a canonical record.')
+  return normalizePreferredPartnerRow(rpcResult.data.partner)
 }
 
-export async function removeOrganisationPreferredPartner(partnerId) {
-  const normalizedId = String(partnerId || '').trim()
-  if (!normalizedId) {
-    throw new Error('Preferred partner id is required.')
+export async function removeOrganisationPreferredPartner(partner = {}) {
+  const roleConfigurationId = String(
+    partner?.partnerRoleConfigurationId || partner?.partner_role_configuration_id || '',
+  ).trim()
+  if (!looksLikeUuid(roleConfigurationId)) {
+    throw new Error('Canonical partner role configuration id is required.')
   }
 
   if (!isSupabaseConfigured || !supabase) {
@@ -3891,34 +3968,14 @@ export async function removeOrganisationPreferredPartner(partnerId) {
     return true
   }
 
-  const removeResult = await client
-    .from('organisation_preferred_partners')
-    .delete({ count: 'exact' })
-    .eq('id', normalizedId)
-    .eq('organisation_id', context.organisation.id)
-  if (!removeResult.error) {
-    if (Number(removeResult.count || 0) < 1) {
-      const existing = readPreferredPartnersFromSettings(context.organisationSettings)
-      if (existing.some((item) => String(item.id) === normalizedId)) {
-        const next = existing.filter((item) => String(item.id) !== normalizedId)
-        await persistPreferredPartnersToSettings(client, context, next)
-        return true
-      }
-      throw new Error('Third party could not be removed. Refresh the page and try again.')
-    }
-    return true
+  const removeResult = await client.rpc('bridge_remove_organisation_partner', {
+    p_organisation_id: context.organisation.id,
+    p_partner_role_configuration_id: roleConfigurationId,
+  })
+  if (removeResult.error) throw removeResult.error
+  if (removeResult.data?.success === false) {
+    throw new Error(removeResult.data.code || 'Unable to remove partner.')
   }
-
-  if (
-    !isMissingTableError(removeResult.error, 'organisation_preferred_partners') &&
-    !isMissingColumnError(removeResult.error, 'partner_type')
-  ) {
-    throw removeResult.error
-  }
-
-  const existing = readPreferredPartnersFromSettings(context.organisationSettings)
-  const next = existing.filter((item) => String(item.id) !== normalizedId)
-  await persistPreferredPartnersToSettings(client, context, next)
   return true
 }
 

@@ -1,0 +1,15 @@
+{
+  "version": "202607180031",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 29 instruction)",
+  "verification": {
+    "paymentInstructionModelLive": true,
+    "missingTokenReturnsEmptyModel": true,
+    "publicExecuteRevoked": true
+  }
+}

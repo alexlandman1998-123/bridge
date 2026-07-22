@@ -1,0 +1,36 @@
+name: Phase 34 production application source recertification gate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase34-production-application-source-recertification-gate.yml'
+      - 'deployment-evidence/2026-07-20-phase34/**'
+      - 'docs/phase-33-pull-request-scope-lock.json'
+      - 'docs/phase-34-production-application-source-recertification.md'
+      - 'package.json'
+      - 'scripts/phase20-application-source.test.mjs'
+      - 'scripts/phase26-clean-reproducible-deployment.test.mjs'
+      - 'scripts/phase33-pull-request-scope-lock.test.mjs'
+      - 'scripts/phase34-production-application-source-recertification.test.mjs'
+      - 'the-it-guy/**'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-recertification:
+    name: Verify certified production source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run application:phase20:verify
+      - run: npm run application:phase26:verify
+      - run: npm run release:phase33:verify
+      - run: npm run application:phase34:verify

@@ -1,5 +1,45 @@
 begin;
 create extension if not exists "pgcrypto";
+
+create or replace function public.bridge_conveyancer_can_access_record(
+  target_organisation_id uuid,
+  target_attorney_firm_id uuid,
+  target_transaction_id uuid default null
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select auth.uid() is not null
+    and exists (
+      select 1
+      from public.attorney_firms firm
+      join public.attorney_firm_members member on member.firm_id = firm.id
+      where firm.id = target_attorney_firm_id
+        and firm.organisation_id = target_organisation_id
+        and firm.is_active = true
+        and member.user_id = auth.uid()
+        and member.status = 'active'
+    )
+    and (
+      target_transaction_id is null
+      or exists (
+        select 1
+        from public.transaction_attorney_assignments assignment
+        where assignment.transaction_id = target_transaction_id
+          and coalesce(assignment.attorney_firm_id, assignment.firm_id) = target_attorney_firm_id
+          and coalesce(assignment.assignment_status, assignment.status, 'active') <> 'removed'
+      )
+    )
+$$;
+
+revoke all on function public.bridge_conveyancer_can_access_record(uuid, uuid, uuid)
+  from public, anon;
+grant execute on function public.bridge_conveyancer_can_access_record(uuid, uuid, uuid)
+  to authenticated;
+
 insert into public.document_packs (
   key,
   display_label,

@@ -24,6 +24,16 @@ create table if not exists public.organisation_branches (
   constraint organisation_branches_name_not_blank check (length(trim(name)) > 0),
   constraint organisation_branches_agent_count_nonnegative check (agent_count >= 0)
 );
+alter table public.organisation_branches
+  add column if not exists slug text,
+  add column if not exists province text,
+  add column if not exists city text,
+  add column if not exists address text,
+  add column if not exists principal_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists phone text,
+  add column if not exists email text,
+  add column if not exists logo_url text,
+  add column if not exists cover_image_url text;
 create unique index if not exists organisation_branches_org_slug_unique
   on public.organisation_branches (organisation_id, lower(slug))
   where slug is not null and length(trim(slug)) > 0;

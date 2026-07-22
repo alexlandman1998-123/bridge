@@ -2,11 +2,13 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase6-staging-execution.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
 
 function run(args, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -24,7 +26,11 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 63)
+assert.equal(JSON.parse(plan.stdout).count, manifest.rows.length)
+
+const conditionalMasterPlan = run(['--plan', '--stream', 'conditional_legal_masters', '--json'])
+assert.equal(conditionalMasterPlan.status, 0, conditionalMasterPlan.stderr)
+assert.deepEqual(JSON.parse(conditionalMasterPlan.stdout).rows.map((row) => row.version), ['202607200004', '202607200005', '202607200006'])
 
 const streamPlan = run(['--plan', '--stream', 'settings_governance', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)

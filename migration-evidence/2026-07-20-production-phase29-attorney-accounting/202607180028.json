@@ -1,0 +1,19 @@
+{
+  "version": "202607180028",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 29 instruction)",
+  "verification": {
+    "proofUploadFunctionLive": true,
+    "securityDefiner": true,
+    "volatile": true,
+    "fixedSearchPath": true,
+    "anonymousExecuteGranted": true,
+    "authenticatedExecuteGranted": true,
+    "publicExecuteRevoked": true
+  }
+}

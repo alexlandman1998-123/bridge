@@ -34,3 +34,21 @@ test('reports completed only from verified cross-surface completion', () => {
   assert.equal(result.viewerRole, 'attorney')
   assert.equal(result.progress.percent, 100)
 })
+
+test('does not block legal completion on final email delivery', () => {
+  const result = resolveSigningOperationalStatus({
+    packetType: 'mandate',
+    versions: [{ final_signed_file_path: 'signed/mandate.pdf' }],
+    signingSummary: signers(['signed', 'signed']),
+    finalCompletion: {
+      ready: true,
+      stage: 'completed_everywhere',
+      deliveryReady: false,
+      recipientCount: 2,
+      deliveredRecipientCount: 0,
+    },
+  })
+  assert.equal(result.state, 'completed')
+  assert.equal(result.completionReady, true)
+  assert.match(result.summary, /Final email delivery is pending/)
+})

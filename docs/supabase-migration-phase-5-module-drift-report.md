@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-07-18T22:03:40.698Z
+Generated: 2026-07-20T09:22:01.207Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,17 +12,17 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Field | Value |
 | --- | --- |
 | Status | MODULE_AUDIT_READY |
-| Local migration files | 487 |
+| Local migration files | 497 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 407 |
+| Matched rows | 416 |
 | Split local/remote versions | 17 |
 | Reviewed split baseline | 17 |
 | Unreviewed split versions | 0 |
-| Pure local-only rows | 63 |
+| Pure local-only rows | 64 |
 | Pure remote-only rows | 0 |
-| Application manifest rows | 63 |
-| Extracted objects checked | 489 |
+| Application manifest rows | 64 |
+| Extracted objects checked | 491 |
 
 ## Module Summary
 
@@ -31,10 +31,10 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | other | 23 | 1 | 0 | 0 | 1 | 22 | 1 | Needs object-level review; do not repair as a batch yet. |
 | canonical_documents | 19 | 0 | 0 | 0 | 0 | 19 | 0 | Needs object-level review; do not repair as a batch yet. |
 | attorney | 14 | 0 | 0 | 1 | 3 | 10 | 0 | Needs object-level review; do not repair as a batch yet. |
-| transaction_network | 5 | 1 | 0 | 1 | 0 | 5 | 0 | Needs object-level review; do not repair as a batch yet. |
+| transaction_network | 5 | 1 | 0 | 2 | 0 | 4 | 0 | Needs object-level review; do not repair as a batch yet. |
 | workspace_platform | 2 | 4 | 0 | 4 | 0 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | commercial | 0 | 5 | 0 | 5 | 0 | 0 | 0 | No local-only work. |
-| lead_capture_crm | 0 | 4 | 0 | 4 | 0 | 0 | 0 | No local-only work. |
+| lead_capture_crm | 1 | 4 | 0 | 4 | 0 | 1 | 0 | Needs object-level review; do not repair as a batch yet. |
 | bond_finance | 0 | 1 | 0 | 0 | 0 | 0 | 1 | No local-only work. |
 | notification_automation | 0 | 1 | 0 | 1 | 0 | 0 | 0 | No local-only work. |
 
@@ -67,6 +67,7 @@ These pure local-only migrations have all statically extracted objects present i
 | Version | Module | File | Objects Live |
 | --- | --- | --- | --- |
 | 202607180047 | attorney | 202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql | 10/10 |
+| 202607180046 | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | 6/6 |
 
 ## Needs Object Review
 
@@ -104,6 +105,7 @@ These pure local-only migrations have all statically extracted objects present i
 | 202607180050 | canonical_documents | 202607180050_document_generator_public_signer_surface_h4.sql | none_live | 0/1 |
 | 202607180051 | canonical_documents | 202607180051_document_generator_concurrency_i1.sql | none_live | 0/6 |
 | 202607180052 | canonical_documents | 202607180052_document_generator_backpressure_i3.sql | none_live | 0/3 |
+| 20260719194500 | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live | 0/2 |
 | 202607170018 | other | 202607170018_legal_draft_review_gate_e1.sql | none_live | 0/2 |
 | 202607170019 | other | 202607170019_legal_draft_immutable_lock_e2.sql | none_live | 0/6 |
 | 202607170020 | other | 202607170020_legal_signing_envelope_assurance_e3.sql | none_live | 0/6 |
@@ -130,7 +132,6 @@ These pure local-only migrations have all statically extracted objects present i
 | 202607180012 | transaction_network | 202607180012_durable_transaction_pdf_link_d3.sql | none_live | 0/6 |
 | 202607180020 | transaction_network | 202607180020_final_signed_transaction_publication_f3.sql | none_live | 0/7 |
 | 202607180039 | transaction_network | 202607180039_attorney_assignment_qualification_phase6.sql | none_live | 0/3 |
-| 202607180046 | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | none_live | 0/6 |
 | 202607170026 | workspace_platform | 202607170026_settings_job_title_governance_phase3_1.sql | none_live | 0/9 |
 | 202607170027 | workspace_platform | 202607170027_settings_role_permission_governance_phase3_2.sql | none_live | 0/4 |
 
@@ -143,7 +144,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | apply_original_after_dependency_check | 58 |
 | corrective_migration_required | 3 |
 | manual_data_review | 1 |
-| repair_only_after_smoke | 1 |
+| repair_only_after_smoke | 2 |
 
 | Version | Stream | Depends On | Module | File | Evidence | Action | Required Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -209,7 +210,8 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180040 | attorney_identity_access | 202607180039 | attorney | 202607180040_attorney_professional_permission_cutover_phase7.sql | partial_live (3/4) | corrective_migration_required | Diff live definitions, create an idempotent corrective migration, and verify both outcomes. |
 | 202607180041 | attorney_identity_access | 202607180040 | attorney | 202607180041_attorney_role_integrity_gate_phase8.sql | none_live (0/1) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 202607180042 | attorney_identity_access | 202607180041 | attorney | 202607180042_attorney_role_release_certification_phase9.sql | none_live (0/5) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
-| 202607180046 | transaction_creation | stream preflight | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | none_live (0/6) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
+| 202607180046 | transaction_creation | stream preflight | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | all_live (6/6) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
+| 20260719194500 | other | stream preflight | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live (0/2) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 
 ## Local-Only Drift Detail
 
@@ -258,6 +260,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202606030008 | split_local_remote | lead_capture_crm | 202606030008_lead_listing_suggestions.sql | all_live | 11/11 |
 | 202606030009 | split_local_remote | lead_capture_crm | 202606030009_lead_recommendations.sql | all_live | 11/11 |
 | 202606030010 | split_local_remote | lead_capture_crm | 202606030010_lead_saved_searches.sql | all_live | 11/11 |
+| 20260719194500 | pure_local_only | lead_capture_crm | 20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql | none_live | 0/2 |
 | 202606030011 | split_local_remote | notification_automation | 202606030011_communication_delivery_preferences.sql | all_live | 19/19 |
 | 202606090010 | split_local_remote | other | 202606090010_created_by_access_remediation.sql | partial_live | 27/30 |
 | 202607170018 | pure_local_only | other | 202607170018_legal_draft_review_gate_e1.sql | none_live | 0/2 |
@@ -288,7 +291,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 202607180012 | pure_local_only | transaction_network | 202607180012_durable_transaction_pdf_link_d3.sql | none_live | 0/6 |
 | 202607180020 | pure_local_only | transaction_network | 202607180020_final_signed_transaction_publication_f3.sql | none_live | 0/7 |
 | 202607180039 | pure_local_only | transaction_network | 202607180039_attorney_assignment_qualification_phase6.sql | none_live | 0/3 |
-| 202607180046 | pure_local_only | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | none_live | 0/6 |
+| 202607180046 | pure_local_only | transaction_network | 202607180046_mvp_atomic_transaction_creation_phase2a.sql | all_live | 6/6 |
 | 202606040001 | split_local_remote | workspace_platform | 202606040001_onboarding_role_contract_phase2.sql | all_live | 8/8 |
 | 202606040002 | split_local_remote | workspace_platform | 202606040002_workspace_entitlements_phase4.sql | all_live | 11/11 |
 | 202606040004 | split_local_remote | workspace_platform | 202606040004_workspace_entitlement_enforcement_phase5.sql | all_live | 15/15 |
@@ -300,8 +303,8 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 489 |
-| Catalog rows returned | 489 |
+| Static objects extracted | 491 |
+| Catalog rows returned | 491 |
 | Object check command | ok |
 
 ## Command Evidence
@@ -309,7 +312,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-83392.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-59473.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

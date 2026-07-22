@@ -1,0 +1,33 @@
+name: Phase 28 Pilot Execution Gate
+
+on:
+  pull_request:
+    paths:
+      - 'deployment-evidence/2026-07-20-phase28/**'
+      - 'docs/phase-28-execute-the-pilot.md'
+      - 'scripts/phase28-pilot-operations.mjs'
+      - 'scripts/phase28-pilot-operations.test.mjs'
+      - '.github/workflows/phase28-pilot-execution-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployment-evidence/2026-07-20-phase28/**'
+      - 'docs/phase-28-execute-the-pilot.md'
+      - 'scripts/phase28-pilot-operations.mjs'
+      - 'scripts/phase28-pilot-operations.test.mjs'
+      - '.github/workflows/phase28-pilot-execution-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run application:phase28:verify

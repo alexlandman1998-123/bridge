@@ -1540,7 +1540,6 @@ function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, profile, agencyWorkflowMode, currentMembership } = useWorkspace()
-
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [workflowMessage, setWorkflowMessage] = useState('')
@@ -2948,10 +2947,10 @@ function AgentListings({ initialTab = null } = {}) {
     event.preventDefault()
     if (isListingSaving) return
 
-    setIsListingSaving(true)
     setError('')
     setWorkflowMessage('')
     try {
+      setIsListingSaving(true)
       await performSaveListing()
     } catch (saveError) {
       console.error('[Listings] listing save failed', saveError)

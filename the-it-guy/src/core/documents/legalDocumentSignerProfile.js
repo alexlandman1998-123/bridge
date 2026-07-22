@@ -1,5 +1,7 @@
 import { resolveLegalDocumentScenarioProfile } from './legalDocumentScenarioProfile.js'
 
+export const LEGAL_DOCUMENT_SIGNER_PROFILE_VERSION = 'conditional-signing-profile-v1'
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -44,20 +46,13 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
     context,
   })
 
-  if (scenarioProfile.packetType !== 'otp') {
-    return {
-      packetType: scenarioProfile.packetType,
-      scenarioProfile,
-      signers: [],
-      missingRequiredSignerFacts: [],
-      complete: true,
-    }
-  }
-
+  const packetType = scenarioProfile.packetType
   const buyerIsEntity = ['company', 'trust'].includes(scenarioProfile.buyerClauseProfile)
   const sellerIsEntity = ['company', 'trust'].includes(scenarioProfile.sellerClauseProfile)
-  const signers = [
-    buildSigner({
+  const signers = []
+
+  if (packetType === 'otp') {
+    signers.push(buildSigner({
       role: 'purchaser_1',
       label: buyerIsEntity ? 'Buyer representative' : 'Buyer',
       name: buyerIsEntity
@@ -67,8 +62,8 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
         ? firstText(placeholders.buyer_representative_email, buyer.representativeEmail, buyer.representative_email, placeholders.buyer_email, buyer.email)
         : firstText(placeholders.buyer_email, placeholders['buyer.email'], buyer.email),
       reason: buyerIsEntity ? 'Authorised representative for the buyer entity' : 'Buyer party to the OTP',
-    }),
-  ]
+    }))
+  }
 
   const coBuyerName = firstText(
     placeholders.buyer_2_full_name,
@@ -90,7 +85,7 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
     onboarding.coBuyerEmail,
     onboarding.co_buyer_email,
   )
-  if (coBuyerName || coBuyerEmail) {
+  if (packetType === 'otp' && !buyerIsEntity && (coBuyerName || coBuyerEmail)) {
     signers.push(buildSigner({
       role: 'purchaser_2',
       label: 'Second buyer',
@@ -100,7 +95,7 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
     }))
   }
 
-  if (scenarioProfile.buyerClauseProfile === 'individual_spouse_consent') {
+  if (packetType === 'otp' && scenarioProfile.buyerClauseProfile === 'individual_spouse_consent') {
     signers.push(buildSigner({
       role: 'buyer_spouse',
       label: 'Buyer spouse',
@@ -132,16 +127,45 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
     }))
   }
 
+  if (packetType === 'mandate') {
+    const agent = asRecord(options.agent || context.agent)
+    signers.push(buildSigner({
+      role: 'agent',
+      label: 'Estate agent',
+      name: firstText(
+        placeholders.agent_full_name,
+        placeholders['agent.display_name'],
+        agent.fullName,
+        agent.full_name,
+        agent.name,
+        context.generatedByName,
+        transaction.assigned_agent,
+      ),
+      email: firstText(
+        placeholders.agent_email,
+        placeholders['agent.email'],
+        agent.email,
+        context.agentEmail,
+        context.generatedByUserEmail,
+        transaction.assigned_agent_email,
+      ),
+      reason: 'Estate agent appointed under the mandate',
+    }))
+  }
+
   const missingRequiredSignerFacts = signers.flatMap((signer) => [
     ...(!signer.signerName ? [{ role: signer.role, field: 'name', label: `${signer.label} name` }] : []),
     ...(!signer.signerEmail ? [{ role: signer.role, field: 'email', label: `${signer.label} email` }] : []),
   ])
 
   return {
-    packetType: 'otp',
+    version: LEGAL_DOCUMENT_SIGNER_PROFILE_VERSION,
+    packetType,
     scenarioProfile,
     signers,
+    requiredSignerRoles: signers.filter((signer) => signer.required).map((signer) => signer.role),
+    selectedSignerRoles: signers.map((signer) => signer.role),
     missingRequiredSignerFacts,
-    complete: missingRequiredSignerFacts.length === 0,
+    complete: Boolean(scenarioProfile.complete) && missingRequiredSignerFacts.length === 0,
   }
 }

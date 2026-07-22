@@ -4,6 +4,10 @@ import {
   classifyLegalDocumentEditorSection,
   listScopedLegalDocumentSectionEntries,
 } from '../legalDocumentEditorScope.js'
+import {
+  listLegalDocumentEditorSituationGroups,
+  listLegalDocumentEditorSituations,
+} from '../legalDocumentEditorSituations.js'
 
 const sections = [
   { sectionKey: 'parties', sectionLabel: 'Parties' },
@@ -42,4 +46,38 @@ test('keeps sections selectable when a template has no signing setup yet', () =>
 test('does not treat an explicitly disabled condition as situation wording', () => {
   const section = { sectionKey: 'optional_note', conditionJson: { enabled: false, field: 'property_type', operator: 'equals' } }
   assert.equal(classifyLegalDocumentEditorSection(section, { packetType: 'otp' }).isStandard, true)
+})
+
+test('derives the exact conditional-section catalogue from each master manifest', () => {
+  const mandateSections = listLegalDocumentEditorSituations({ packetType: 'mandate' })
+  const otpSections = listLegalDocumentEditorSituations({ packetType: 'otp' })
+  assert.equal(mandateSections.length, 6)
+  assert.equal(otpSections.length, 13)
+  assert.equal(new Set(otpSections.map((item) => item.key)).size, 13)
+  assert.ok(otpSections.every((item) => item.sectionKeys.length === 1 && item.sectionKeys[0] === item.key))
+  assert.ok(otpSections.every((item) => item.activationLabel && item.locked))
+})
+
+test('keeps purchaser and seller authority packs separate in the focused editor', () => {
+  const authoritySections = [
+    { sectionKey: 'buyer_company_authority_pack', conditionJson: { enabled: true } },
+    { sectionKey: 'seller_company_authority_pack', conditionJson: { enabled: true } },
+  ]
+  assert.deepEqual(
+    listScopedLegalDocumentSectionEntries(authoritySections, {
+      scope: 'situations',
+      packetType: 'otp',
+      situationKey: 'buyer_company_authority_pack',
+    }).map((entry) => entry.classification.key),
+    ['buyer_company_authority_pack'],
+  )
+})
+
+test('groups OTP conditional sections by legal dimension without changing pack identity', () => {
+  const groups = listLegalDocumentEditorSituationGroups({ packetType: 'otp' })
+  assert.deepEqual(groups.map((group) => group.key), ['seller', 'seller_consent', 'buyer', 'buyer_consent', 'property', 'finance'])
+  assert.deepEqual(
+    groups.find((group) => group.key === 'finance').items.map((item) => item.key),
+    ['bond_finance_pack', 'cash_sale_pack', 'cash_contribution_pack'],
+  )
 })

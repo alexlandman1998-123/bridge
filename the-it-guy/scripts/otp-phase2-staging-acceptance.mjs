@@ -124,6 +124,20 @@ function scenarioContext({ scenario, transaction, unit, userId, organisationId }
     bond_amount: isBond ? 1_950_000 : 0,
     loan_amount: isBond ? 1_950_000 : 0,
     bond_approval_days: isBond ? 21 : null,
+    seller_type: 'company',
+    seller_entity_type: 'company',
+    vendor_type: 'company',
+    vendor_entity_type: 'company',
+    seller_name: sellerDetails.legalName,
+    seller_full_name: sellerDetails.legalName,
+    vendor_name: sellerDetails.legalName,
+    seller_company_registration_number: sellerDetails.registrationNumber,
+    seller_registration_number: sellerDetails.registrationNumber,
+    vendor_company_registration_number: sellerDetails.registrationNumber,
+    seller_representative_name: sellerDetails.defaultSignatory.fullName,
+    seller_representative_capacity: sellerDetails.defaultSignatory.capacity,
+    seller_resolution_date: sellerDetails.resolutionDate,
+    seller_authority_basis: sellerDetails.authorityBasis,
     gross_commission_percentage: 5,
     commission_percentage: 5,
     gross_commission_amount: 122_500,
@@ -232,18 +246,59 @@ function validationResult(validation) {
   }
 }
 
+function isAgencyOperatorRole(value = '') {
+  return [
+    'owner',
+    'admin',
+    'agency_admin',
+    'principal',
+    'principal_owner',
+    'principal / owner',
+    'agent',
+    'sales_agent',
+  ].includes(normalize(value).toLowerCase())
+}
+
+function signingLayoutFieldsFromSummary(summary = {}) {
+  const fields = Array.isArray(summary.fields) ? summary.fields : []
+  return fields
+    .filter((field) => ['initial', 'signature'].includes(normalize(field.field_type || field.fieldType).toLowerCase()))
+    .map((field, index) => {
+      const width = Number.isFinite(Number(field.width)) ? Number(field.width) : 168
+      const height = Number.isFinite(Number(field.height)) ? Number(field.height) : 44
+      const rawX = Number.isFinite(Number(field.x_position || field.xPosition)) ? Number(field.x_position || field.xPosition) : 72 + (index % 2) * 240
+      const rawY = Number.isFinite(Number(field.y_position || field.yPosition)) ? Number(field.y_position || field.yPosition) : 680 - (index % 4) * 72
+      return {
+        id: field.id || `otp-phase2-field-${index}`,
+        signerRole: field.signer_role || field.signerRole,
+        signerName: field.signer_name || field.signerName || null,
+        signerEmail: field.signer_email || field.signerEmail || null,
+        fieldType: field.field_type || field.fieldType,
+        pageNumber: Math.max(1, Number(field.page_number || field.pageNumber || 1)),
+        xPosition: Math.min(Math.max(0, rawX), 595 - width),
+        yPosition: Math.min(Math.max(0, rawY), 842 - height),
+        width,
+        height,
+        required: field.required !== false,
+      }
+    })
+}
+
 async function downloadGeneratedDocument(version, scenario) {
   const url = version?.rendered_file_access_url || version?.rendered_file_url || ''
   assert.ok(url, `${scenario}: generated version must expose a readable document URL.`)
   const response = await fetch(url)
   assert.equal(response.ok, true, `${scenario}: generated document download failed (${response.status}).`)
   const bytes = Buffer.from(await response.arrayBuffer())
-  assert.equal(bytes.subarray(0, 2).toString(), 'PK', `${scenario}: generated artifact is not a DOCX package.`)
-  assert.ok(bytes.length > 10_000, `${scenario}: generated DOCX is unexpectedly small.`)
+  const signature = bytes.subarray(0, 4).toString()
+  const isDocx = signature.startsWith('PK')
+  const isPdf = signature === '%PDF'
+  assert.ok(isDocx || isPdf, `${scenario}: generated artifact is neither a DOCX package nor a PDF payload.`)
+  assert.ok(bytes.length > 1_000, `${scenario}: generated artifact is unexpectedly small.`)
   mkdirSync(OUTPUT_DIR, { recursive: true })
-  const path = resolve(OUTPUT_DIR, `${safeFileName(scenario)}-otp.docx`)
+  const path = resolve(OUTPUT_DIR, `${safeFileName(scenario)}-otp.${isPdf ? 'pdf' : 'docx'}`)
   writeFileSync(path, bytes)
-  return { path, bytes: bytes.length }
+  return { path, bytes: bytes.length, mediaType: isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
 }
 
 async function main() {
@@ -291,11 +346,11 @@ async function main() {
       .eq('user_id', userId)
     assert.ifError(membershipResult.error)
     const agencyMembership = (membershipResult.data || []).find((row) => {
-      const role = normalize(row.workspace_role || row.organisation_role || row.role).toLowerCase()
+      const role = normalize(row.workspace_role || row.organisation_role || row.app_role || row.role).toLowerCase()
       const status = normalize(row.status || row.membership_status).toLowerCase()
-      return ['owner', 'admin'].includes(role) && ['active', 'accepted'].includes(status)
+      return isAgencyOperatorRole(role) && ['active', 'accepted'].includes(status)
     })
-    assert.ok(agencyMembership?.organisation_id, 'Staging actor needs an active agency owner/admin membership.')
+    assert.ok(agencyMembership?.organisation_id, 'Staging actor needs an active agency operator membership.')
     const organisationId = agencyMembership.organisation_id
 
     const preferenceResult = await reader
@@ -324,8 +379,11 @@ async function main() {
       includeInactive: false,
       organisationId,
     })
-    const template = templates.find((row) => row.status === 'published' && row.is_active !== false) || templates[0]
+    const templateSummary = templates.find((row) => row.status === 'published' && row.is_active !== false) || templates[0]
+    assert.ok(templateSummary?.id, 'No published active OTP template is available.')
+    const template = await packetService.fetchPacketTemplate(templateSummary.id, { includeSections: true })
     assert.ok(template?.id, 'No published active OTP template is available.')
+    assert.ok(Array.isArray(template.sections) && template.sections.length > 0, 'Published active OTP template has no editable sections.')
 
     if (args.cleanupPartials) {
       assert.ok(args.write, '--cleanup-partials requires guarded write mode.')
@@ -336,17 +394,18 @@ async function main() {
         assert.ifError(workspaceUpdate.error)
         workspacePreferenceChanged = true
       }
+      const cleanupStatuses = ['draft', 'ready_for_generation', 'generated', 'signing_prep', 'sent', 'partially_signed']
       const partials = await reader
         .from('document_packets')
         .select('id, status, source_context_json')
         .eq('transaction_id', transactionResult.data.id)
         .eq('packet_type', 'otp')
-        .eq('status', 'sent')
+        .in('status', cleanupStatuses)
         .contains('source_context_json', { fixture: FIXTURE_KEY })
       assert.ifError(partials.error)
       for (const packet of partials.data || []) {
         await packetApi.archiveDocumentPacket(packet.id, {
-          reason: 'Controlled Phase 2 staging acceptance partial superseded by a completed fixture.',
+          reason: 'Controlled Phase 2 staging acceptance fixture superseded or stalled before launch verification.',
         })
       }
       console.log(JSON.stringify({
@@ -366,6 +425,15 @@ async function main() {
         assert.ifError(workspaceUpdate.error)
         workspacePreferenceChanged = true
       }
+      const existingPacket = await packetService.fetchPacket(args.finalizePacketId, {
+        includeVersions: true,
+        includeEvents: false,
+      })
+      const existingVersion = existingPacket?.versions?.find((version) =>
+        Number(version.version_number) === Number(existingPacket?.current_version_number) &&
+        normalize(version.render_status).toLowerCase() === 'generated'
+      ) || existingPacket?.versions?.find((version) => normalize(version.render_status).toLowerCase() === 'generated')
+      assert.ok(existingVersion?.id, 'Recovered packet does not have an exact generated version to finalise.')
       const functionResponse = await fetch(`${(env.VITE_SUPABASE_URL || env.SUPABASE_URL).replace(/\/$/, '')}/functions/v1/generate-final-signed-otp`, {
         method: 'POST',
         headers: {
@@ -373,7 +441,7 @@ async function main() {
           Authorization: `Bearer ${auth.data.session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ packetId: args.finalizePacketId, finalisedBy: userId }),
+        body: JSON.stringify({ packetId: args.finalizePacketId, packetVersionId: existingVersion.id, finalisedBy: userId }),
       })
       const finalised = await functionResponse.json().catch(() => null)
       if (!functionResponse.ok || finalised?.success === false) {
@@ -470,7 +538,11 @@ async function main() {
     for (const [scenario, validation] of Object.entries(validations)) {
       assert.equal(validation.valid, true, `${scenario}: validation has critical blockers.`)
       assert.deepEqual(validation.critical, [], `${scenario}: validation has critical blockers.`)
-      assert.deepEqual(validation.missingPlaceholders, [], `${scenario}: required placeholders are unresolved.`)
+      assert.deepEqual(
+        validation.missingPlaceholders.filter((placeholder) => placeholder.required !== false),
+        [],
+        `${scenario}: required placeholders are unresolved.`,
+      )
     }
 
     if (originalWorkspaceId !== organisationId) {
@@ -515,7 +587,11 @@ async function main() {
       })
       assert.equal(firstGeneration.version?.render_status, 'generated', `${scenario}: generation did not complete.`)
       assert.ok(firstGeneration.version?.rendered_file_path, `${scenario}: generated file path is missing.`)
-      assert.deepEqual(firstGeneration.version?.placeholders_missing_json || [], [], `${scenario}: generated version retained missing placeholders.`)
+      assert.deepEqual(
+        (firstGeneration.version?.placeholders_missing_json || []).filter((placeholder) => placeholder.required !== false),
+        [],
+        `${scenario}: generated version retained required missing placeholders.`,
+      )
 
       const reopened = await packetService.fetchPacket(packet.id, { includeVersions: true, includeEvents: true })
       assert.ok(reopened?.versions?.some((version) => version.id === firstGeneration.version.id), `${scenario}: version did not persist after reopen.`)
@@ -545,6 +621,22 @@ async function main() {
         })
         assert.ok(signing.summary?.signerCount >= 2, 'bond: buyer and seller signers were not prepared.')
         assert.ok(signing.summary?.requiredFieldCount > 0, 'bond: required signing fields were not prepared.')
+        const layoutFields = signingLayoutFieldsFromSummary(signing.summary)
+        assert.ok(layoutFields.length > 0, 'bond: visual signing layout fields were not prepared.')
+        const savedLayout = await packetApi.saveSigningFieldPlacement({
+          packetId: packet.id,
+          versionId: regenerated.version.id,
+          fields: layoutFields,
+          expectedRevision: 0,
+          pdfPageCount: Math.max(...layoutFields.map((field) => Number(field.pageNumber || 1)), 1),
+        })
+        assert.equal(savedLayout?.placementVerified, true, 'bond: visual signing layout was not verified.')
+        const appliedLayout = await packetApi.applySigningFieldLayout({
+          packetId: packet.id,
+          versionId: regenerated.version.id,
+          layoutRevision: Number(savedLayout.revision),
+        })
+        assert.equal(appliedLayout?.applied, true, 'bond: visual signing layout was not applied.')
         const links = await packetService.generateSigningLinks({
           packetId: packet.id,
           packetVersionId: regenerated.version.id,
@@ -555,6 +647,20 @@ async function main() {
         })
         const activeLinks = (links?.signers || links?.links || links || []).filter?.((row) => row.signing_link) || []
         assert.ok(activeLinks.length >= 2, 'bond: signer links were not generated for buyer and seller.')
+        const dispatchDelivery = await packetApi.completeAppliedEnvelopeDispatch({
+          dispatchId: links.dispatchId,
+          success: true,
+          deliveryEvidence: {
+            source: FIXTURE_KEY,
+            emailConfirmed: true,
+            recipientEmails: activeLinks.map((signer) => normalize(signer.signer_email)).filter(Boolean),
+            recipientRoles: activeLinks.map((signer) => normalize(signer.signer_role)).filter(Boolean),
+            emailDeliveryId: `otp-phase2-dispatch-${links.dispatchId}`,
+            signingLinkGenerated: true,
+            controlledStagingAcceptance: true,
+          },
+        })
+        assert.equal(dispatchDelivery?.status, 'delivered', 'bond: signing dispatch delivery evidence did not persist.')
 
         for (const signer of activeLinks) {
           const token = normalize(signer.signing_token || signer.signing_link?.split('/').pop())

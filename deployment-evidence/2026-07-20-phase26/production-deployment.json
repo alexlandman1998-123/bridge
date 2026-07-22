@@ -1,0 +1,71 @@
+{
+  "status": "CLEAN_REPRODUCIBLE_APPLICATION_DEPLOYED",
+  "phase": 26,
+  "verifiedAt": "2026-07-20T17:57:00Z",
+  "repository": {
+    "branch": "codex/mvp-pilot-readiness",
+    "releaseCommit": "2dabb3def53608519d5962c37f33a0a4a03f5680",
+    "releaseCommitRemoteTracked": true,
+    "runtimeSourceTree": "e3b906f98e318326f41bb95b71d7f4c23470666d",
+    "runtimeRootTree": "7ff4b49c23ee01e34ea4f2d349a898ab5a7b7bfd",
+    "runtimeBuildInputFingerprint": "769b866db1103c83ae0635ac18f2356f2705c7e1e9e7422bc9a0be86c4111ce5",
+    "concurrentWorkingTreeChangesExcluded": true
+  },
+  "previewDeployment": {
+    "id": "dpl_9FpAikJWLAgTpuGqUfXG3Ep6NzLV",
+    "url": "https://bridge-nety9oziw-alexs-projects-f5496a21.vercel.app",
+    "target": "preview",
+    "status": "READY",
+    "releaseId": "2dabb3def53608519d5962c37f33a0a4a03f5680",
+    "criticalAssetCount": 428,
+    "representativeAssetsHealthy": true
+  },
+  "productionDeployment": {
+    "provider": "Vercel",
+    "project": "bridge",
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "id": "dpl_8wDQV2UxYamoqkxbto4jzAMgdpda",
+    "url": "https://bridge-bw6gm1zxv-alexs-projects-f5496a21.vercel.app",
+    "domain": "https://app.arch9.co.za",
+    "target": "production",
+    "status": "READY",
+    "releaseId": "2dabb3def53608519d5962c37f33a0a4a03f5680",
+    "createdAt": "2026-07-20T17:53:24Z",
+    "buildCompletedInSeconds": 69,
+    "framework": "vite"
+  },
+  "verification": {
+    "releaseSourceMarker": "pass",
+    "guardedProductionBuild": "pass",
+    "releaseIntegrityContract": "pass",
+    "performanceBudget": "pass",
+    "productionCriticalAssetCount": 428,
+    "productionCriticalAssetsHealthy": true,
+    "productionFailedCriticalAssets": 0,
+    "manifestCacheControl": "no-cache, no-store, must-revalidate",
+    "browserRoute": "/auth",
+    "browserHttpStatus": 200,
+    "browserTitle": "Arch9 | Platform",
+    "browserSignInControlsPresent": true,
+    "browserConsoleErrors": 0,
+    "browserPageErrors": 0,
+    "authenticatedApiGuardStatus": 401,
+    "boundedRuntimeErrorScan": 0
+  },
+  "rollback": {
+    "available": true,
+    "previousProductionDeploymentId": "dpl_HoRcGD3XuPsu7tH8Eq9bEZbcHozY",
+    "previousProductionUrl": "https://bridge-da1n1cvwr-alexs-projects-f5496a21.vercel.app",
+    "previousReleaseId": "785b7ef1365d1b7f8fefe4bb8865da3648607a6b"
+  },
+  "safety": {
+    "databaseMutatedByPhase26": false,
+    "phase0MigrationFreezeRemainsActive": true,
+    "uncommittedApplicationChangesDeployed": false,
+    "dependencyLockfileChanged": false
+  },
+  "advisories": [
+    "The unchanged dependency lockfile reports 13 audit findings: 2 low, 4 moderate, and 7 high.",
+    "Dependency remediation requires a separate reviewed application-security phase."
+  ]
+}

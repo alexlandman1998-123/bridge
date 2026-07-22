@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildLegalDocumentScenarioPlaceholders,
+  resolveCanonicalLegalDocumentScenario,
   resolveLegalDocumentScenarioProfile,
 } from '../legalDocumentScenarioProfile.js'
 import { resolveMandateScenarioProfile } from '../mandateScenarioProfile.js'
@@ -44,6 +45,7 @@ test('resolves seller, buyer, property, and finance dimensions for an OTP', () =
     'buyer_spouse_consent_pack',
     'property_sectional_title_pack',
     'bond_finance_pack',
+    'cash_contribution_pack',
   ])
 })
 
@@ -60,6 +62,115 @@ test('records unknown legal-routing facts without silently completing the scenar
   assert.deepEqual(profile.missingRoutingFacts, ['buyer_entity_type', 'finance_type'])
   assert.equal(profile.buyerClauseProfile, 'party_unknown')
   assert.equal(profile.financeClauseProfile, 'finance_unknown')
+})
+
+test('does not invent defaults when an OTP has no routing facts', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({ packetType: 'otp' })
+
+  assert.equal(profile.complete, false)
+  assert.equal(profile.sellerEntityType, '')
+  assert.equal(profile.buyerEntityType, '')
+  assert.equal(profile.propertyTitleType, '')
+  assert.equal(profile.financeType, '')
+  assert.deepEqual(profile.activePackKeys, [])
+  assert.deepEqual(profile.missingFacts, [
+    'seller_entity_type',
+    'buyer_entity_type',
+    'property_title_type',
+    'finance_type',
+  ])
+})
+
+test('records provenance and blocks contradictory source values', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    placeholders: {
+      seller_entity_type: 'company',
+      property_title_type: 'full_title',
+    },
+    seller: { entityType: 'trust' },
+  })
+
+  assert.equal(profile.complete, false)
+  assert.equal(profile.sellerEntityType, 'company')
+  assert.equal(profile.sourceProvenance.seller_entity_type.source, 'placeholders')
+  assert.deepEqual(profile.conflictingFacts.map((fact) => fact.field), ['seller_entity_type'])
+  assert.deepEqual(
+    profile.conflictingFacts[0].values.map((entry) => entry.value),
+    ['company', 'trust'],
+  )
+})
+
+test('blocks unsupported values instead of coercing them to a legal type', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'partnership' },
+    property: { titleType: 'full_title' },
+  })
+
+  assert.equal(profile.complete, false)
+  assert.deepEqual(profile.invalidFacts.map((fact) => fact.field), ['seller_entity_type'])
+  assert.deepEqual(profile.missingFacts, ['seller_entity_type'])
+})
+
+test('blocks a rejected source candidate even when another source is valid', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    placeholders: {
+      seller_entity_type: 'company',
+      property_title_type: 'full_title',
+    },
+    seller: { entityType: 'partnership' },
+  })
+
+  assert.equal(profile.sellerEntityType, 'company')
+  assert.equal(profile.complete, false)
+  assert.deepEqual(profile.invalidFacts.map((fact) => fact.field), ['seller_entity_type'])
+  assert.equal(profile.sourceProvenance.seller_entity_type.rejectedCandidates[0].source, 'seller')
+})
+
+test('maps not applicable marital regime to single for individual mandate routing', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'individual', maritalRegime: 'not_applicable' },
+    property: { titleType: 'full_title' },
+  })
+
+  assert.equal(profile.complete, true)
+  assert.equal(profile.sellerMaritalRegime, 'single')
+  assert.equal(profile.scenarioKey, 'individual_full_title')
+  assert.deepEqual(profile.invalidFacts, [])
+})
+
+test('retains close corporation as a canonical fact while using company wording', () => {
+  const profile = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'Close Corporation' },
+    property: { titleType: 'full_title' },
+  })
+  const placeholders = buildLegalDocumentScenarioPlaceholders(profile)
+
+  assert.equal(profile.complete, true)
+  assert.equal(profile.sellerEntityType, 'close_corporation')
+  assert.equal(profile.sellerClauseProfile, 'company')
+  assert.equal(placeholders.seller_entity_type, 'close_corporation')
+  assert.ok(profile.activePackKeys.includes('seller_company_authority_pack'))
+})
+
+test('maps legacy property aliases into the canonical two-way title model', () => {
+  const sectional = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'company' },
+    property: { titleType: 'share block' },
+  })
+  const fullTitle = resolveCanonicalLegalDocumentScenario({
+    packetType: 'mandate',
+    seller: { entityType: 'trust' },
+    property: { titleType: 'agricultural holding' },
+  })
+
+  assert.equal(sectional.propertyTitleType, 'sectional_title')
+  assert.equal(fullTitle.propertyTitleType, 'full_title')
 })
 
 test('keeps the mandate compatibility wrapper on the shared resolver', () => {

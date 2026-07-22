@@ -1,0 +1,32 @@
+{
+  "version": "202607180047",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "applicationMode": "repair_only_after_production_smoke",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 30 instruction)",
+  "verification": {
+    "rsvpCapabilityColumnsLive": 3,
+    "rescheduleRequestTableLive": true,
+    "rlsEnabled": true,
+    "scopedPolicies": 4,
+    "requiredIndexesLive": 2,
+    "rsvpFunctionsLive": 2,
+    "contractTestsPassed": true,
+    "liveBehaviorSuitePassed": true,
+    "invalidTokenReturnsNoRows": true,
+    "rescheduleReplayIdempotent": true,
+    "changedCompletedResponseDenied": true,
+    "persistentAppointmentsBefore": 5,
+    "persistentAppointmentsAfter": 5,
+    "persistentParticipantsBefore": 5,
+    "persistentParticipantsAfter": 5,
+    "persistentRescheduleRequestsBefore": 0,
+    "persistentRescheduleRequestsAfter": 0,
+    "persistentPhase4FixtureEventsAfter": 0
+  }
+}

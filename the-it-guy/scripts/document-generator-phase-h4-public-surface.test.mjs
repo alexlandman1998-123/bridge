@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { documentGeneratorProtectedTables } from '../src/core/documents/documentGeneratorAccessBoundary.js'
 
-const migration = fs.readFileSync('../supabase/migrations/202607180027_document_generator_public_signer_surface_h4.sql', 'utf8')
+const migration = fs.readFileSync('../supabase/migrations/202607180050_document_generator_public_signer_surface_h4.sql', 'utf8')
 for (const token of ['bridge_get_public_signer_surface_contract_h4', "'h4-generator-v1'", 'certifiedPdfBound', 'signersWithoutFields', 'signersWithoutRequiredSignature', 'ambiguousUnscopedFieldCount', 'internalIdentifiersExcluded', "'mutatedData',false"]) assert.match(migration, new RegExp(token))
 assert.doesNotMatch(migration, /\binsert\s+into\b|\bupdate\s+public\.|\bdelete\s+from\b/i)
 

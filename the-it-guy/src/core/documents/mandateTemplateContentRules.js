@@ -78,7 +78,7 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
       'title deed',
       'municipal rates',
       'rates account',
-      'servitude',
+      'servitude details',
       'land extent',
     ],
     remediation: 'Use this wording only in a full-title route or the Full Title Property Pack.',
@@ -128,7 +128,6 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
     packKey: MANDATE_TEMPLATE_CONTENT_PACK_KEYS.sellerIndividualCapacity,
     fieldKeys: [
       'seller_marital_status',
-      'seller_id_number',
     ],
     phrases: [
       'individual seller',
@@ -184,10 +183,8 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
       'seller_spouse_full_name',
       'seller_spouse_id_number',
       'seller_spouse_email',
-      'seller_spouse_consent_required',
     ],
     phrases: [
-      'spouse consent',
       'married in community of property',
       'spouse recorded below',
       'spouse will sign',

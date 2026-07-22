@@ -27,18 +27,18 @@ const THEMES = {
     shadow: '0 20px 48px rgba(15, 95, 88, 0.20)',
   },
   seller: {
-    primary: '#145ea8',
-    primaryDark: '#0d3f72',
-    primarySoft: '#e8f1fb',
-    page: '#eef2f6',
-    ringTrack: '#dce7f4',
-    shadow: '0 20px 48px rgba(20, 94, 168, 0.20)',
+    primary: '#494b8a',
+    primaryDark: '#000000',
+    primarySoft: '#eeeef7',
+    page: '#f4f4f7',
+    ringTrack: '#dedfea',
+    shadow: '0 20px 48px rgba(73, 75, 138, 0.20)',
   },
 }
 
 const STATUS_STYLES = {
   completed: 'border-[#b7dfd3] bg-[#e8f6ef] text-[#0f6a51]',
-  active: 'border-[#bfd6ef] bg-[#e8f1fb] text-[#145ea8]',
+  active: 'border-[#c7c8e3] bg-[#eeeef7] text-[#494b8a]',
   waiting: 'border-[#e8ddbb] bg-[#f8f2df] text-[#8a6818]',
   blocked: 'border-[#f2c4c4] bg-[#fff0f0] text-[#a73434]',
   upcoming: 'border-[#dce2e7] bg-[#f3f5f6] text-[#6f7b86]',

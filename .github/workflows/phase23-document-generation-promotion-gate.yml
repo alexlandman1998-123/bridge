@@ -1,0 +1,48 @@
+name: Phase 23 Document Generation Promotion Gate
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/202607200007_*'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'docs/phase-23-document-generation-promotion.md'
+      - 'migration-evidence/2026-07-20-staging-phase23/**'
+      - 'migration-evidence/2026-07-20-production-phase23-document-generation/**'
+      - 'deployment-evidence/2026-07-20-phase23/**'
+      - 'scripts/phase23-document-generation-*.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase23-document-generation-promotion-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/202607200007_*'
+      - 'docs/supabase-phase-5-application-manifest.json'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'docs/supabase-phase-8-closeout-evidence.json'
+      - 'docs/phase-23-document-generation-promotion.md'
+      - 'migration-evidence/2026-07-20-staging-phase23/**'
+      - 'migration-evidence/2026-07-20-production-phase23-document-generation/**'
+      - 'deployment-evidence/2026-07-20-phase23/**'
+      - 'scripts/phase23-document-generation-*.test.mjs'
+      - 'package.json'
+      - '.github/workflows/phase23-document-generation-promotion-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  document-generation:
+    name: Verify document-generation promotion evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run supabase:phase23:verify

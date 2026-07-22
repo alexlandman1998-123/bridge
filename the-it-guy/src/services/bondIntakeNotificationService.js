@@ -318,11 +318,12 @@ async function fetchRolePlayers(client, transaction = {}) {
   if (!transactionId) return []
   let query = await client
     .from('transaction_role_players')
-    .select('id, transaction_id, role_type, partner_name, contact_person, email_address, phone_number, preferred_partner_id, partner_relationship_id, organisation_id, snapshot_json, status, assignment_status, activated_at, selection_source')
+    .select('id, transaction_id, role_type, partner_name, contact_person, email_address, phone_number, partner_role_configuration_id, preferred_partner_id, partner_relationship_id, organisation_id, snapshot_json, status, assignment_status, activated_at, selection_source')
     .eq('transaction_id', transactionId)
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'partner_relationship_id') ||
+    (isMissingColumnError(query.error, 'partner_role_configuration_id') ||
+      isMissingColumnError(query.error, 'partner_relationship_id') ||
       isMissingColumnError(query.error, 'organisation_id') ||
       isMissingColumnError(query.error, 'assignment_status') ||
       isMissingColumnError(query.error, 'activated_at'))
@@ -358,19 +359,15 @@ async function fetchParticipants(client, transaction = {}) {
 async function fetchDefaultBondPartner(client, transaction = {}) {
   const organisationId = normalizeText(transaction.organisation_id || transaction.organisationId || transaction.agency_organisation_id || transaction.agencyOrganisationId)
   if (!organisationId) return null
-  const query = await client
-    .from('organisation_preferred_partners')
-    .select('id, partner_type, company_name, contact_person, email_address, is_active, is_preferred_default')
-    .eq('organisation_id', organisationId)
-    .eq('partner_type', 'bond_originator')
-    .eq('is_active', true)
-    .order('is_preferred_default', { ascending: false })
-    .limit(1)
-  if (query.error) {
-    if (isMissingTableError(query.error, 'organisation_preferred_partners') || isPermissionDeniedError(query.error)) return null
-    throw query.error
+  const query = await client.rpc('bridge_list_organisation_partner_assignment_options', {
+    p_organisation_id: organisationId,
+  })
+  if (query.error) throw query.error
+  if (query.data?.success === false) {
+    throw new Error(query.data.code || 'Unable to load bond-originator partners.')
   }
-  const row = Array.isArray(query.data) ? query.data[0] : query.data
+  const row = (Array.isArray(query.data?.partners) ? query.data.partners : [])
+    .find((partner) => partner.partner_type === 'bond_originator' && partner.is_active !== false)
   return row ? makeRecipient({ ...row, name: row.contact_person || row.company_name, email: row.email_address, source: 'default_preferred_partner' }, 'bond_originator') : null
 }
 

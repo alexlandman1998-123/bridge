@@ -8,6 +8,7 @@ on:
       - 'scripts/supabase-phase6-staging-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-6-implementation-status.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase6-staging-gate.yml'
   push:
@@ -19,6 +20,7 @@ on:
       - 'scripts/supabase-phase6-staging-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-6-implementation-status.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase6-staging-gate.yml'
 
@@ -39,9 +41,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install gate dependencies
+        run: npm ci --ignore-scripts
+
       - name: Test staging execution gate
         run: node scripts/supabase-phase6-staging-execution.test.mjs
 
       - name: Verify manifest coverage
-        run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"
+        run: npm run supabase:phase35:verify

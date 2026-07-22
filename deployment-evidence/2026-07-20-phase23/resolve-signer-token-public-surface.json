@@ -1,0 +1,25 @@
+{
+  "status": "PUBLIC_SIGNER_SURFACE_HARDENED",
+  "phase": 23,
+  "function": "resolve-signer-token",
+  "change": "removed_internal_rendered_file_path_from_public_session_payload",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingDeployment": "pass",
+  "stagingInvalidTokenProbe": {
+    "httpStatus": 404,
+    "errorCode": "INVALID_SIGNING_TOKEN",
+    "internalPathExposed": false
+  },
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "productionDeployment": "pass",
+  "productionFunctionStatus": "ACTIVE",
+  "productionFunctionVersion": 54,
+  "verifyJwt": false,
+  "productionInvalidTokenProbe": {
+    "httpStatus": 404,
+    "errorCode": "INVALID_SIGNING_TOKEN",
+    "internalPathExposed": false
+  },
+  "frontendApplicationDeployed": false,
+  "databaseMutatedByFunctionDeployment": false
+}

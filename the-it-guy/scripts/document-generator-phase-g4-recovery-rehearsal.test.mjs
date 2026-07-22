@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const migration = fs.readFileSync('../supabase/migrations/202607180025_document_generator_recovery_rehearsal_g4.sql', 'utf8')
+const migration = fs.readFileSync('../supabase/migrations/202607180048_document_generator_recovery_rehearsal_g4.sql', 'utf8')
 for (const token of ['bridge_rehearse_final_completion_recovery_g4', "'contract','g4-v1'", 'legal_final_artifact_evidence', 'legal_final_transaction_publications', 'legal_final_completion_receipts', 'legal_final_delivery_claims', 'legal_final_completion_retry_attempts', "'mutatedData',false"]) assert.match(migration, new RegExp(token))
 assert.doesNotMatch(migration, /\binsert\s+into\b|\bupdate\s+public\.|\bdelete\s+from\b/i)
 

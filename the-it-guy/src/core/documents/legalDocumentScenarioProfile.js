@@ -1,6 +1,4 @@
 import {
-  classifyBuyerParty,
-  classifySellerParty,
   normalizeDocumentMaritalRegime,
   normalizeDocumentPartyEntityType,
 } from './documentPartyClassification.js'
@@ -33,25 +31,6 @@ function readPath(source = {}, path = '') {
   ), source)
 }
 
-function firstValue(sources = [], paths = []) {
-  for (const path of paths) {
-    for (const source of sources) {
-      const value = readPath(asRecord(source), path)
-      if (value !== null && value !== undefined && normalizeText(value) !== '') return value
-    }
-  }
-  return ''
-}
-
-function normalizeBooleanSignal(value) {
-  if (typeof value === 'boolean') return value
-  const normalized = normalizeKey(value)
-  if (!normalized) return null
-  if (['true', 'yes', 'y', '1', 'required', 'consent_required'].includes(normalized)) return true
-  if (['false', 'no', 'n', '0', 'not_required', 'not_applicable', 'not_provided', 'n_a', 'na'].includes(normalized)) return false
-  return null
-}
-
 export function normalizeLegalPartyEntityType(value = '') {
   if (!normalizeText(value)) return ''
   const normalized = normalizeDocumentPartyEntityType(value)
@@ -69,10 +48,10 @@ export function normalizeLegalPropertyTitleType(value = '') {
   if (!normalized) return ''
   if (['sectional', 'sectional_title', 'apartment', 'flat', 'unit', 'duet', 'scheme'].includes(normalized)) return 'sectional_title'
   if (normalized.includes('sectional') || normalized.includes('apartment') || normalized.includes('flat')) return 'sectional_title'
-  if (normalized === 'share_block' || normalized.includes('share_block')) return 'share_block'
+  if (normalized === 'share_block' || normalized.includes('share_block')) return 'sectional_title'
   if (['full_title', 'freehold', 'free_hold', 'house', 'estate_hoa', 'estate', 'cluster'].includes(normalized)) return 'full_title'
   if (normalized.includes('freehold') || normalized.includes('full_title')) return 'full_title'
-  if (['agricultural', 'agricultural_holding', 'farm', 'smallholding', 'vacant_land', 'land'].includes(normalized)) return 'agricultural_holding'
+  if (['agricultural', 'agricultural_holding', 'farm', 'smallholding', 'vacant_land', 'land'].includes(normalized)) return 'full_title'
   return ''
 }
 
@@ -104,58 +83,6 @@ function resolveFinanceClauseProfile(financeType = '') {
   return 'finance_unknown'
 }
 
-function resolvePropertyTitleType(sources = []) {
-  const explicit = firstValue(sources, [
-    'property_title_type',
-    'property.title_type',
-    'property.title_type_raw',
-    'property_title_type_raw',
-    'property_structure_type',
-    'property.structure_type',
-    'property.property_structure_type',
-    'propertyStructureType',
-    'property_type',
-    'property.property_type',
-    'propertyType',
-    'property_branch',
-    'flow.property_branch',
-    'canonicalFacts.property.property_type',
-    'canonical_facts.property.property_type',
-  ])
-  const normalizedExplicit = normalizeLegalPropertyTitleType(explicit)
-  if (normalizedExplicit) return normalizedExplicit
-
-  const sectionalSignal = normalizeBooleanSignal(firstValue(sources, [
-    'sectional_title',
-    'property.sectional_title',
-    'propertySectionalTitle',
-    'sectionalTitle',
-  ]))
-  if (sectionalSignal === true) return 'sectional_title'
-
-  const shareBlockSignal = normalizeBooleanSignal(firstValue(sources, [
-    'share_block',
-    'property.share_block',
-    'shareBlock',
-  ]))
-  if (shareBlockSignal === true) return 'share_block'
-
-  const sectionalDetail = firstValue(sources, [
-    'property_unit_number',
-    'unit_number',
-    'property.unit_number',
-    'property_section_number',
-    'section_number',
-    'property.section_number',
-    'sectional_title_number',
-    'property.sectional_title_number',
-    'property_sectional_title_scheme',
-    'property.complex_name',
-    'property_complex_name',
-  ])
-  return sectionalDetail ? 'sectional_title' : ''
-}
-
 function buildPartyPacks(role = 'seller', clauseProfile = '') {
   return [
     clauseProfile === 'company' ? `${role}_company_authority_pack` : '',
@@ -167,6 +94,145 @@ function buildPartyPacks(role = 'seller', clauseProfile = '') {
 
 function unique(values = []) {
   return Array.from(new Set(values.filter(Boolean)))
+}
+
+function buildCandidateSources(options = {}) {
+  const sourceContext = asRecord(options.sourceContext || options.context)
+  return {
+    placeholders: asRecord(options.placeholders),
+    seller: asRecord(options.seller),
+    buyer: asRecord(options.buyer || options.purchaser),
+    property: asRecord(options.property),
+    transaction: asRecord(options.transaction),
+    flow: asRecord(options.flow || sourceContext.flow),
+    facts: asRecord(options.facts || sourceContext.canonicalFacts || sourceContext.canonical_facts),
+    source_context: sourceContext,
+    input: asRecord(options),
+  }
+}
+
+function collectFactCandidates(sourceDefinitions = [], normalize = (value) => value) {
+  const candidates = []
+  const invalid = []
+
+  for (const definition of sourceDefinitions) {
+    const source = asRecord(definition.source)
+    for (const path of definition.paths || []) {
+      const rawValue = readPath(source, path)
+      if (rawValue === null || rawValue === undefined || normalizeText(rawValue) === '') continue
+      const value = normalize(rawValue)
+      const candidate = {
+        source: definition.key,
+        path,
+        rawValue,
+        value: normalizeText(value),
+      }
+      if (candidate.value) candidates.push(candidate)
+      else invalid.push(candidate)
+    }
+  }
+
+  const selected = candidates[0] || null
+  const values = new Map()
+  for (const candidate of candidates) {
+    const entries = values.get(candidate.value) || []
+    entries.push(candidate)
+    values.set(candidate.value, entries)
+  }
+
+  return {
+    value: selected?.value || '',
+    selected,
+    candidates,
+    invalid,
+    conflict: values.size > 1
+      ? {
+          selectedValue: selected?.value || '',
+          selectedSource: selected?.source || null,
+          values: Array.from(values.entries()).map(([value, entries]) => ({
+            value,
+            sources: entries.map(({ source, path }) => ({ source, path })),
+          })),
+        }
+      : null,
+  }
+}
+
+function resolveCanonicalFact(field, sourceDefinitions, normalize) {
+  const result = collectFactCandidates(sourceDefinitions, normalize)
+  return {
+    field,
+    ...result,
+    provenance: {
+      value: result.value,
+      source: result.selected?.source || null,
+      path: result.selected?.path || null,
+      rawValue: result.selected?.rawValue ?? null,
+      candidates: result.candidates.map(({ source, path, rawValue, value }) => ({ source, path, rawValue, value })),
+      rejectedCandidates: result.invalid.map(({ source, path, rawValue }) => ({ source, path, rawValue })),
+    },
+  }
+}
+
+function sourceDefinition(key, source, paths) {
+  return { key, source, paths }
+}
+
+function partyFactSources(sources, role = 'seller', field = 'entity') {
+  const isBuyer = role === 'buyer'
+  const roleSource = isBuyer ? sources.buyer : sources.seller
+  const rolePrefix = isBuyer ? 'buyer' : 'seller'
+  const partyAlias = isBuyer ? 'purchaser' : 'seller'
+  const directPaths = field === 'entity'
+    ? ['entityType', 'entity_type', 'sellerType', 'seller_type', 'buyerType', 'buyer_type', 'purchaserType', 'purchaser_type', 'ownershipType', 'ownership_type', 'ownershipStructure', 'ownership_structure']
+    : ['maritalRegime', 'marital_regime', 'maritalStatus', 'marital_status', 'marriageRegime', 'marriage_regime']
+  const scopedPaths = field === 'entity'
+    ? [
+        `${rolePrefix}_entity_type`, `${rolePrefix}.entity_type_raw`, `${rolePrefix}.entity_type`, `${rolePrefix}EntityType`,
+        `${rolePrefix}_type`, `${rolePrefix}Type`, `${partyAlias}_entity_type`, `${partyAlias}.entity_type`, `${partyAlias}Type`,
+      ]
+    : [
+        `${rolePrefix}_marital_regime`, `${rolePrefix}_marital_status`, `${rolePrefix}.marital_regime`, `${rolePrefix}.marital_status`,
+        `${rolePrefix}MaritalRegime`, `${rolePrefix}MaritalStatus`, `${partyAlias}_marital_regime`, `${partyAlias}_marital_status`,
+      ]
+  return [
+    sourceDefinition('placeholders', sources.placeholders, scopedPaths),
+    sourceDefinition(rolePrefix, roleSource, directPaths),
+    sourceDefinition('transaction', sources.transaction, scopedPaths),
+    sourceDefinition('flow', sources.flow, scopedPaths),
+    sourceDefinition('canonical_facts', sources.facts, scopedPaths),
+    sourceDefinition('source_context', sources.source_context, scopedPaths),
+    sourceDefinition('input', sources.input, scopedPaths),
+  ]
+}
+
+function propertyFactSources(sources) {
+  const scopedPaths = [
+    'property_title_type', 'property.title_type_raw', 'property.title_type', 'propertyTitleType',
+    'property_structure_type', 'property.structure_type', 'propertyStructureType',
+    'property_type', 'property.property_type', 'propertyType',
+  ]
+  return [
+    sourceDefinition('placeholders', sources.placeholders, scopedPaths),
+    sourceDefinition('property', sources.property, ['titleType', 'title_type', 'propertyTitleType', 'property_title_type', 'structureType', 'structure_type', 'propertyType', 'property_type']),
+    sourceDefinition('transaction', sources.transaction, scopedPaths),
+    sourceDefinition('flow', sources.flow, scopedPaths),
+    sourceDefinition('canonical_facts', sources.facts, scopedPaths),
+    sourceDefinition('source_context', sources.source_context, scopedPaths),
+    sourceDefinition('input', sources.input, scopedPaths),
+  ]
+}
+
+function financeFactSources(sources) {
+  const paths = ['finance_type', 'transaction.finance_type_raw', 'transaction.finance_type', 'financeType', 'offer.finance_type', 'offer.financeType']
+  return [
+    sourceDefinition('placeholders', sources.placeholders, paths),
+    sourceDefinition('transaction', sources.transaction, ['financeType', 'finance_type']),
+    sourceDefinition('flow', sources.flow, paths),
+    sourceDefinition('canonical_facts', sources.facts, paths),
+    sourceDefinition('source_context', sources.source_context, paths),
+    sourceDefinition('input', sources.input, paths),
+  ]
 }
 
 function getRoutingFacts({
@@ -188,56 +254,45 @@ function getRoutingFacts({
   return missing
 }
 
-export function resolveLegalDocumentScenarioProfile(options = {}) {
+export function resolveCanonicalLegalDocumentScenario(options = {}) {
   const packetType = normalizeKey(options.packetType || options.packet_type || 'mandate') === 'otp' ? 'otp' : 'mandate'
-  const placeholders = asRecord(options.placeholders)
-  const seller = asRecord(options.seller)
-  const buyer = asRecord(options.buyer || options.purchaser)
-  const property = asRecord(options.property)
-  const transaction = asRecord(options.transaction)
-  const sourceContext = asRecord(options.sourceContext || options.context)
-  const facts = asRecord(options.facts || sourceContext.canonicalFacts || sourceContext.canonical_facts)
-  const flow = asRecord(options.flow || sourceContext.flow)
-  const sources = [placeholders, seller, buyer, property, transaction, flow, facts, sourceContext, options]
-  const sellerSources = [placeholders, seller, transaction, flow, facts, sourceContext, options]
-  const buyerSources = [placeholders, buyer, transaction, flow, facts, sourceContext, options]
-
-  const sellerEntitySignal = normalizeLegalPartyEntityType(firstValue(sellerSources, [
-    'seller_entity_type', 'seller.entity_type_raw', 'seller.entity_type', 'sellerEntityType', 'seller_type', 'sellerType', 'ownershipType', 'entityType', 'entity_type',
-  ])) || (options.assumeIndividualSeller ? 'individual' : '')
-  const sellerMaritalSignal = normalizeLegalMaritalRegime(firstValue(sellerSources, [
-    'seller_marital_regime', 'seller_marital_status', 'seller.marital_regime', 'seller.marital_status', 'sellerMaritalRegime', 'sellerMaritalStatus', 'maritalRegime', 'maritalStatus', 'marital_regime', 'marital_status',
-  ]))
-  const buyerEntitySignal = normalizeLegalPartyEntityType(firstValue(buyerSources, [
-    'buyer_entity_type', 'buyer.entity_type_raw', 'buyer.entity_type', 'buyerEntityType', 'buyer_type', 'buyerType', 'purchaser_type', 'purchaserType', 'entityType', 'entity_type',
-  ]))
-  const buyerMaritalSignal = normalizeLegalMaritalRegime(firstValue(buyerSources, [
-    'buyer_marital_regime', 'buyer_marital_status', 'buyer.marital_regime', 'buyer.marital_status', 'buyerMaritalRegime', 'buyerMaritalStatus', 'purchaser_marital_status', 'maritalRegime', 'maritalStatus', 'marital_regime', 'marital_status',
-  ]))
-  const propertyTitleType = resolvePropertyTitleType(sources)
-  const financeType = packetType === 'otp'
-    ? normalizeLegalFinanceType(firstValue(sources, [
-        'finance_type', 'financeType', 'transaction.finance_type_raw', 'transaction.finance_type', 'offer.finance_type', 'offer.financeType',
-      ]))
-    : ''
-
-  const classifierPlaceholders = {
-    ...placeholders,
-    ...(sellerEntitySignal ? { seller_entity_type: sellerEntitySignal } : {}),
-    ...(sellerMaritalSignal ? { seller_marital_status: sellerMaritalSignal } : {}),
-    ...(buyerEntitySignal ? { buyer_entity_type: buyerEntitySignal } : {}),
-    ...(buyerMaritalSignal ? { buyer_marital_status: buyerMaritalSignal } : {}),
-    ...(financeType ? { finance_type: financeType } : {}),
+  const sources = buildCandidateSources(options)
+  const resolvedFacts = {
+    seller_entity_type: resolveCanonicalFact('seller_entity_type', partyFactSources(sources, 'seller', 'entity'), normalizeLegalPartyEntityType),
+    seller_marital_regime: resolveCanonicalFact('seller_marital_regime', partyFactSources(sources, 'seller', 'marital'), normalizeLegalMaritalRegime),
+    property_title_type: resolveCanonicalFact('property_title_type', propertyFactSources(sources), normalizeLegalPropertyTitleType),
+    ...(packetType === 'otp'
+      ? {
+          buyer_entity_type: resolveCanonicalFact('buyer_entity_type', partyFactSources(sources, 'buyer', 'entity'), normalizeLegalPartyEntityType),
+          buyer_marital_regime: resolveCanonicalFact('buyer_marital_regime', partyFactSources(sources, 'buyer', 'marital'), normalizeLegalMaritalRegime),
+          finance_type: resolveCanonicalFact('finance_type', financeFactSources(sources), normalizeLegalFinanceType),
+        }
+      : {}),
   }
-  const classifierContext = { ...sourceContext, seller, buyer, property, transaction, flow, facts }
-  const sellerClassification = classifySellerParty({ ...options, placeholders: classifierPlaceholders, context: classifierContext })
+  const sellerEntitySignal = resolvedFacts.seller_entity_type.value
+  const sellerMaritalSignal = sellerEntitySignal === 'individual' ? resolvedFacts.seller_marital_regime.value : ''
+  const buyerEntitySignal = packetType === 'otp' ? resolvedFacts.buyer_entity_type.value : ''
+  const buyerMaritalSignal = buyerEntitySignal === 'individual' ? resolvedFacts.buyer_marital_regime.value : ''
+  const propertyTitleType = resolvedFacts.property_title_type.value
+  const financeType = packetType === 'otp' ? resolvedFacts.finance_type.value : ''
+  const sellerClassification = {
+    isCompany: ['company', 'close_corporation'].includes(sellerEntitySignal),
+    isTrust: sellerEntitySignal === 'trust',
+    isIndividual: sellerEntitySignal === 'individual',
+    isMarriedInCommunity: sellerEntitySignal === 'individual' && sellerMaritalSignal === 'in_community',
+    maritalRegime: sellerMaritalSignal,
+  }
   const buyerClassification = packetType === 'otp'
-    ? classifyBuyerParty({ ...options, placeholders: classifierPlaceholders, context: classifierContext })
+    ? {
+        isCompany: ['company', 'close_corporation'].includes(buyerEntitySignal),
+        isTrust: buyerEntitySignal === 'trust',
+        isIndividual: buyerEntitySignal === 'individual',
+        isMarriedInCommunity: buyerEntitySignal === 'individual' && buyerMaritalSignal === 'in_community',
+        maritalRegime: buyerMaritalSignal,
+      }
     : null
   const sellerClauseProfile = resolvePartyClauseProfile(sellerClassification, Boolean(sellerEntitySignal))
-  const buyerClauseProfile = packetType === 'otp'
-    ? resolvePartyClauseProfile(buyerClassification, Boolean(buyerEntitySignal))
-    : ''
+  const buyerClauseProfile = packetType === 'otp' ? resolvePartyClauseProfile(buyerClassification, Boolean(buyerEntitySignal)) : ''
   const propertyClauseProfile = resolvePropertyClauseProfile(propertyTitleType)
   const financeClauseProfile = packetType === 'otp' ? resolveFinanceClauseProfile(financeType) : ''
   const missingRoutingFacts = getRoutingFacts({
@@ -249,6 +304,22 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     propertyTitleType,
     financeType,
   })
+  const relevantFields = new Set([
+    'seller_entity_type',
+    ...(sellerEntitySignal === 'individual' ? ['seller_marital_regime'] : []),
+    'property_title_type',
+    ...(packetType === 'otp' ? ['buyer_entity_type', 'finance_type'] : []),
+    ...(packetType === 'otp' && buyerEntitySignal === 'individual' ? ['buyer_marital_regime'] : []),
+  ])
+  const conflictingFacts = Object.values(resolvedFacts)
+    .filter((fact) => relevantFields.has(fact.field) && fact.conflict)
+    .map((fact) => ({ field: fact.field, ...fact.conflict }))
+  const invalidFacts = Object.values(resolvedFacts)
+    .filter((fact) => relevantFields.has(fact.field) && fact.invalid.length)
+    .map((fact) => ({
+      field: fact.field,
+      candidates: fact.invalid.map(({ source, path, rawValue }) => ({ source, path, rawValue })),
+    }))
   const mandateVariant = `${sellerClauseProfile}_${propertyClauseProfile}`
   const scenarioKey = packetType === 'mandate'
     ? mandateVariant
@@ -260,9 +331,11 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     propertyClauseProfile === 'sectional_title' ? 'property_sectional_title_pack' : '',
     packetType === 'otp' && financeClauseProfile === 'cash' ? 'cash_sale_pack' : '',
     packetType === 'otp' && ['bond', 'combination'].includes(financeClauseProfile) ? 'bond_finance_pack' : '',
+    packetType === 'otp' && financeClauseProfile === 'combination' ? 'cash_contribution_pack' : '',
   ])
 
   return {
+    resolverVersion: 'canonical_legal_document_scenario_v1',
     packetType,
     scenarioKey,
     clauseProfile: scenarioKey,
@@ -280,15 +353,47 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     financeType,
     financeClauseProfile,
     activeClausePacks,
+    activePackKeys: activeClausePacks,
+    facts: {
+      sellerEntityType: sellerEntitySignal,
+      sellerMaritalRegime: sellerMaritalSignal,
+      buyerEntityType: buyerEntitySignal,
+      buyerMaritalRegime: buyerMaritalSignal,
+      propertyTitleType,
+      financeType,
+    },
+    sourceProvenance: Object.fromEntries(Object.entries(resolvedFacts).map(([field, fact]) => [field, fact.provenance])),
+    conflictingFacts,
+    invalidFacts,
+    missingFacts: missingRoutingFacts,
     missingRoutingFacts,
-    complete: missingRoutingFacts.length === 0,
+    complete: missingRoutingFacts.length === 0 && conflictingFacts.length === 0 && invalidFacts.length === 0,
   }
+}
+
+export function resolveLegalDocumentScenarioProfile(options = {}) {
+  return resolveCanonicalLegalDocumentScenario(options)
 }
 
 export function buildLegalDocumentScenarioPlaceholders(profile = {}) {
   const activeClausePacks = Array.isArray(profile.activeClausePacks) ? profile.activeClausePacks : []
   return {
     legal_document_scenario: normalizeText(profile.scenarioKey),
+    seller_entity_type: normalizeText(profile.sellerEntityType),
+    'seller.entity_type_raw': normalizeText(profile.sellerEntityType),
+    seller_marital_regime: normalizeText(profile.sellerMaritalRegime),
+    seller_marital_status: normalizeText(profile.sellerMaritalRegime),
+    seller_spouse_consent_required: profile.sellerEntityType === 'individual'
+      ? profile.sellerSpouseConsentRequired ? 'Yes' : 'No'
+      : '',
+    buyer_entity_type: normalizeText(profile.buyerEntityType),
+    'buyer.entity_type_raw': normalizeText(profile.buyerEntityType),
+    buyer_marital_regime: normalizeText(profile.buyerMaritalRegime),
+    buyer_marital_status: normalizeText(profile.buyerMaritalRegime),
+    buyer_spouse_consent_required: profile.buyerEntityType === 'individual'
+      ? profile.buyerSpouseConsentRequired ? 'Yes' : 'No'
+      : '',
+    finance_type: normalizeText(profile.financeType),
     seller_clause_profile: normalizeText(profile.sellerClauseProfile),
     buyer_clause_profile: normalizeText(profile.buyerClauseProfile),
     property_clause_profile: normalizeText(profile.propertyClauseProfile),

@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-07-20T13:19:56.000Z",
+  "version": "202607170027",
+  "batch": "phase15_batch1_settings_governance",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alexander Landman (explicit Phase 15 Batch 1 instruction)",
+  "verification": {
+    "authorityFunctionLive": true,
+    "roleGuardFunctionLive": true,
+    "roleSetterFunctionLive": true,
+    "roleGuardTriggerEnabled": true,
+    "authorityLevels": {
+      "owner": 500,
+      "principal": 400,
+      "branchManager": 300,
+      "agent": 100,
+      "unknown": 0
+    },
+    "authenticatedFunctionExecuteGranted": true,
+    "anonymousFunctionExecuteRevoked": true,
+    "unauthenticatedSetterDenied": "42501",
+    "selfRoleChangeDenied": "42501",
+    "membershipRowsAfterRollbackChecks": 58,
+    "behaviorProbeResidue": false
+  }
+}

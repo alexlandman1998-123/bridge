@@ -14,6 +14,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { useState } from 'react'
 import LegalDocumentBuildingBlockCard from '../../components/legal-documents/LegalDocumentBuildingBlockCard'
 import { getLegalDocumentDefinition } from '../../core/documents/legalDocumentCatalog'
 import {
@@ -24,6 +25,13 @@ import {
 import { resolveLegalDocumentOrganisationId } from '../../core/documents/legalDocumentWorkspace'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useLegalDocumentLibrary } from '../../hooks/useLegalDocumentLibrary'
+import {
+  activateConditionalMasterMigration,
+  finalizeConditionalMasterMigration,
+  prepareConditionalMasterMigration,
+  rollbackConditionalMasterMigration,
+  verifyConditionalMasterMigration,
+} from '../../lib/documentPacketsApi'
 
 const STATUS_PRESENTATION = Object.freeze({
   live: { label: 'Live and ready', Icon: CheckCircle2, classes: 'border-[#ccead8] bg-[#eefaf2] text-[#187442]' },
@@ -31,10 +39,21 @@ const STATUS_PRESENTATION = Object.freeze({
   missing: { label: 'Set up required', Icon: CircleAlert, classes: 'border-[#dce5ef] bg-[#f6f8fb] text-[#607387]' },
 })
 
+const MIGRATION_PRESENTATION = Object.freeze({
+  blocked: { label: 'Migration blocked', detail: 'The global conditional master is not available.' },
+  needs_draft: { label: 'Migration not started', detail: 'Prepare an organisation-owned draft before changing the live document.' },
+  draft_blocked: { label: 'Draft needs review', detail: 'Resolve coverage or legacy-wording conflicts before activation.' },
+  ready_to_activate: { label: 'Ready for controlled activation', detail: 'Coverage is complete. Activation will open a 14-day rollback window.' },
+  rollback_window: { label: 'Rollback window open', detail: 'Legacy templates remain live and recoverable during the observation window.' },
+  ready_to_archive: { label: 'Legacy archival available', detail: 'The rollback window has closed; archival remains a separate explicit action.' },
+  rolled_back: { label: 'Migration rolled back', detail: 'The previous default has been restored and no legacy wording was deleted.' },
+  complete: { label: 'Migration complete', detail: 'The conditional master is live and legacy variants are archived as immutable history.' },
+})
+
 const ASSEMBLY_STEPS = Object.freeze([
   { key: 'standard', label: 'Standard wording', Icon: FileText },
   { key: 'answers', label: 'Onboarding answers', Icon: UserRound },
-  { key: 'situations', label: 'Situation clauses', Icon: Puzzle },
+  { key: 'situations', label: 'Conditional sections', Icon: Puzzle },
   { key: 'ready', label: 'Ready-to-sign document', Icon: FileCheck2 },
 ])
 
@@ -58,7 +77,10 @@ export default function LegalDocumentOverviewPage() {
   const definition = getLegalDocumentDefinition(documentKey)
   const { currentWorkspace, organisationMembership } = useWorkspace()
   const organisationId = resolveLegalDocumentOrganisationId(currentWorkspace, organisationMembership)
-  const { documentsByKey, loading, error, refresh } = useLegalDocumentLibrary({ organisationId: organisationId || null })
+  const { documentsByKey, migrationsByType, loading, error, refresh } = useLegalDocumentLibrary({ organisationId: organisationId || null })
+  const [migrationAction, setMigrationAction] = useState('')
+  const [migrationMessage, setMigrationMessage] = useState('')
+  const [migrationError, setMigrationError] = useState('')
   const document = definition ? documentsByKey[definition.key] : null
 
   if (!definition) return <Navigate to={buildLegalDocumentsLandingPath()} replace />
@@ -76,6 +98,70 @@ export default function LegalDocumentOverviewPage() {
   const signingItems = (document?.signingRoles || []).map((role) => ({ key: role, label: formatRole(role) }))
   const coverageReady = Boolean(document?.coverageReady)
   const hasUnpublishedChanges = document?.status === 'draft'
+  const migration = document?.migrationReadiness || null
+  const migrationPresentation = MIGRATION_PRESENTATION[migration?.state] || null
+  const migrationRecord = migrationsByType?.[definition.packetType] || null
+  const verification = document?.verificationReadiness || null
+
+  async function runMigrationAction(action, operation) {
+    try {
+      setMigrationAction(action)
+      setMigrationError('')
+      setMigrationMessage('')
+      await operation()
+      await refresh()
+      setMigrationMessage(action === 'prepare'
+        ? 'Migration draft prepared. Review its wording and scenario coverage before activation.'
+        : action === 'activate'
+          ? 'Conditional master activated. The 14-day rollback window is now open.'
+          : action === 'rollback'
+            ? 'The previous default was restored. Existing documents were not changed.'
+            : action === 'verify'
+              ? 'Verification completed and a durable evidence receipt was recorded.'
+            : 'Legacy variants were archived after the rollback window closed.')
+    } catch (actionError) {
+      await refresh()
+      setMigrationError(actionError?.message || 'Unable to update the legal-document migration.')
+    } finally {
+      setMigrationAction('')
+    }
+  }
+
+  function handlePrepareMigration() {
+    void runMigrationAction('prepare', () => prepareConditionalMasterMigration({
+      packetType: definition.packetType,
+      organisationId,
+    }))
+  }
+
+  function handleActivateMigration() {
+    const confirmed = window.confirm('Activate this conditional master and begin the 14-day rollback window? Confirm that you reviewed the reconciled wording and scenario preview.')
+    if (!confirmed) return
+    void runMigrationAction('activate', () => activateConditionalMasterMigration({
+      migrationId: migrationRecord?.id,
+      candidateTemplateId: migration?.candidate?.id,
+      wordingReviewed: true,
+    }))
+  }
+
+  function handleRollbackMigration() {
+    const confirmed = window.confirm('Restore the previous default template? Existing generated documents will remain unchanged.')
+    if (!confirmed) return
+    void runMigrationAction('rollback', () => rollbackConditionalMasterMigration(migrationRecord?.id))
+  }
+
+  function handleFinalizeMigration() {
+    const confirmed = window.confirm('Archive the recorded legacy variants now that the rollback window has closed? Their immutable history will remain available.')
+    if (!confirmed) return
+    void runMigrationAction('finalize', () => finalizeConditionalMasterMigration(migrationRecord?.id))
+  }
+
+  function handleVerifyMigration() {
+    void runMigrationAction('verify', () => verifyConditionalMasterMigration({
+      migrationId: migrationRecord?.id,
+      candidateTemplateId: migration?.candidate?.id,
+    }))
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-6 pb-10" aria-labelledby="document-overview-title">
@@ -89,7 +175,7 @@ export default function LegalDocumentOverviewPage() {
         <div className="max-w-3xl">
           <h1 id="document-overview-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">{definition.label}</h1>
           <p className="mt-2 text-[15px] leading-7 text-[#62758a]">
-            Bridge automatically builds the correct {definition.shortLabel || definition.label} from your standard wording and situation clauses.
+            Bridge automatically builds the correct {definition.shortLabel || definition.label} from your standard wording and conditional sections.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -139,6 +225,50 @@ export default function LegalDocumentOverviewPage() {
         </div>
       </section>
 
+      {!loading && migrationPresentation ? (
+        <section className="rounded-[18px] border border-[#d9e4ed] bg-[#f8fafc] p-5" aria-labelledby="conditional-master-migration-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+            <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${migration?.state === 'complete' ? 'bg-[#e7f7ed] text-[#187442]' : 'bg-[#fff4d8] text-[#8a650f]'}`}>
+              {migration?.state === 'complete' ? <ShieldCheck className="h-4 w-4" aria-hidden="true" /> : <CircleAlert className="h-4 w-4" aria-hidden="true" />}
+            </span>
+            <div>
+              <h2 id="conditional-master-migration-heading" className="text-sm font-semibold text-[#273a4f]">{migrationPresentation.label}</h2>
+              <p className="mt-1 text-sm leading-6 text-[#687b90]">{migrationPresentation.detail}</p>
+              {migration?.rollbackUntil && migration?.state === 'rollback_window' ? (
+                <p className="mt-1 text-xs font-semibold text-[#7b5b13]">Rollback available until {formatDate(migration.rollbackUntil)}</p>
+              ) : null}
+            </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {migration?.canPrepare ? <button type="button" disabled={Boolean(migrationAction)} onClick={handlePrepareMigration} className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white disabled:opacity-50">Prepare migration draft</button> : null}
+              {migration?.candidate && !['complete', 'rollback_window', 'ready_to_archive', 'rolled_back'].includes(migration?.state) ? (
+                <Link to={fullEditorPath} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] border border-[#c7d6e2] bg-white px-4 text-sm font-semibold text-[#40566d] transition hover:border-[#98b8a7] hover:text-[#176f46]">Review draft<ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+              ) : null}
+              {migrationRecord?.state === 'prepared' && migration?.coverage?.ready ? <button type="button" disabled={Boolean(migrationAction)} onClick={handleActivateMigration} className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#0f7f4f] bg-white px-4 text-sm font-semibold text-[#167347] disabled:opacity-50">Review and activate</button> : null}
+              {migration?.canRollback && migrationRecord?.id ? <button type="button" disabled={Boolean(migrationAction)} onClick={handleRollbackMigration} className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#d8b976] bg-white px-4 text-sm font-semibold text-[#7a5710] disabled:opacity-50">Roll back</button> : null}
+              {migration?.canFinalize && migrationRecord?.id ? <button type="button" disabled={Boolean(migrationAction)} onClick={handleFinalizeMigration} className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#d5dee7] bg-white px-4 text-sm font-semibold text-[#4d6074] disabled:opacity-50">Archive legacy variants</button> : null}
+            </div>
+          </div>
+          {migrationMessage ? <p className="mt-4 text-sm font-medium text-[#187442]" role="status">{migrationMessage}</p> : null}
+          {migrationError ? <p className="mt-4 text-sm font-medium text-[#a0442f]" role="alert">{migrationError}</p> : null}
+          {['activated', 'completed'].includes(migrationRecord?.state) ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-[#dce5ed] pt-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Migration verification">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#78899a]">Phase 11 verification</p>
+                <p className={`mt-1 text-sm font-semibold ${verification?.state === 'verified' ? 'text-[#187442]' : verification?.state === 'blocked' ? 'text-[#a0442f]' : 'text-[#52667d]'}`}>
+                  {verification?.state === 'verified' ? 'Verified with a current receipt' : verification?.state === 'blocked' ? 'Verification blocked' : 'Ready to verify'}
+                </p>
+                {verification?.issues?.[0]?.message ? <p className="mt-1 text-xs text-[#8a5a4d]">{verification.issues[0].message}</p> : null}
+              </div>
+              {verification?.canVerify ? (
+                <button type="button" disabled={Boolean(migrationAction)} onClick={handleVerifyMigration} className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#9dc9af] bg-white px-4 text-sm font-semibold text-[#167347] disabled:opacity-50">Run verification</button>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {loading ? (
         <div className="grid gap-4 lg:grid-cols-3" aria-label={`Loading ${definition.label}`}>
           {[0, 1, 2].map((item) => <div key={item} className="h-[320px] animate-pulse rounded-[18px] border border-[#e2e9f0] bg-white" />)}
@@ -156,12 +286,12 @@ export default function LegalDocumentOverviewPage() {
             Icon={FileText}
           />
           <LegalDocumentBuildingBlockCard
-            title="Special situations"
-            description="Extra wording Bridge adds only when it applies."
-            countLabel={`${document?.situationClauseCount || 0} situation clauses`}
+            title="Conditional sections"
+            description="Protected sections Bridge includes automatically when the transaction facts match."
+            countLabel={`${document?.situationClauseCount || 0} conditional sections`}
             items={situationItems}
-            emptyLabel="No automatic situation wording has been set up yet."
-            actionLabel="Manage situation clauses"
+            emptyLabel="No conditional sections have been set up yet."
+            actionLabel="Manage conditional sections"
             actionTo={situationsEditorPath}
             Icon={Puzzle}
             itemDisplay="tags"

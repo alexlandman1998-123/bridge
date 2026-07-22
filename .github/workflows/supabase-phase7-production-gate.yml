@@ -7,7 +7,36 @@ on:
       - 'scripts/supabase-phase7-production-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'scripts/supabase-phase12-production-recovery.mjs'
+      - 'scripts/supabase-phase12-production-recovery.test.mjs'
+      - 'migration-evidence/2026-07-20-production-recovery-phase12/**'
+      - 'scripts/supabase-phase13-production-access.mjs'
+      - 'scripts/supabase-phase13-production-access.test.mjs'
+      - 'migration-evidence/2026-07-20-production-access-phase13/**'
+      - 'scripts/supabase-phase14-production-ledger-reconciliation.mjs'
+      - 'scripts/supabase-phase14-production-ledger-reconciliation.test.mjs'
+      - 'migration-evidence/2026-07-20-production-ledger-phase14/**'
+      - 'scripts/supabase-phase15-batch1.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch1/**'
+      - 'docs/supabase-phase-15-batch-1-production-report.md'
+      - 'scripts/supabase-phase15-batch2.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch2/**'
+      - 'docs/supabase-phase-15-batch-2-production-report.md'
+      - 'scripts/supabase-phase15-batch3.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch3/**'
+      - 'docs/supabase-phase-15-batch-3-production-report.md'
+      - 'scripts/supabase-phase15-batch4.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch4/**'
+      - 'docs/supabase-phase-15-batch-4-production-report.md'
+      - 'scripts/supabase-phase15-batch5.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch5/**'
+      - 'docs/supabase-phase-15-batch-5-production-report.md'
+      - 'scripts/supabase-phase15-batch6.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch6/**'
+      - 'docs/supabase-phase-15-batch-6-production-report.md'
       - 'docs/database-release-runbook.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
   push:
@@ -18,7 +47,36 @@ on:
       - 'scripts/supabase-phase7-production-execution.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-7-implementation-status.md'
+      - 'docs/supabase-phase-7-staging-readiness.json'
+      - 'scripts/supabase-phase12-production-recovery.mjs'
+      - 'scripts/supabase-phase12-production-recovery.test.mjs'
+      - 'migration-evidence/2026-07-20-production-recovery-phase12/**'
+      - 'scripts/supabase-phase13-production-access.mjs'
+      - 'scripts/supabase-phase13-production-access.test.mjs'
+      - 'migration-evidence/2026-07-20-production-access-phase13/**'
+      - 'scripts/supabase-phase14-production-ledger-reconciliation.mjs'
+      - 'scripts/supabase-phase14-production-ledger-reconciliation.test.mjs'
+      - 'migration-evidence/2026-07-20-production-ledger-phase14/**'
+      - 'scripts/supabase-phase15-batch1.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch1/**'
+      - 'docs/supabase-phase-15-batch-1-production-report.md'
+      - 'scripts/supabase-phase15-batch2.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch2/**'
+      - 'docs/supabase-phase-15-batch-2-production-report.md'
+      - 'scripts/supabase-phase15-batch3.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch3/**'
+      - 'docs/supabase-phase-15-batch-3-production-report.md'
+      - 'scripts/supabase-phase15-batch4.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch4/**'
+      - 'docs/supabase-phase-15-batch-4-production-report.md'
+      - 'scripts/supabase-phase15-batch5.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch5/**'
+      - 'docs/supabase-phase-15-batch-5-production-report.md'
+      - 'scripts/supabase-phase15-batch6.test.mjs'
+      - 'migration-evidence/2026-07-20-production-phase15-batch6/**'
+      - 'docs/supabase-phase-15-batch-6-production-report.md'
       - 'docs/database-release-runbook.md'
+      - 'scripts/phase35-governed-migration-counts.test.mjs'
       - 'package.json'
       - '.github/workflows/supabase-phase7-production-gate.yml'
 
@@ -43,5 +101,25 @@ jobs:
         run: node scripts/supabase-phase7-production-execution.test.mjs
 
       - name: Verify manifest coverage
-        run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"
+        run: npm run supabase:phase35:verify
+
+      - name: Test production ledger reconciliation guard
+        run: node scripts/supabase-phase14-production-ledger-reconciliation.test.mjs
+
+      - name: Test Phase 15 Batch 1 production evidence
+        run: node scripts/supabase-phase15-batch1.test.mjs
+
+      - name: Test Phase 15 Batch 2 production evidence
+        run: node scripts/supabase-phase15-batch2.test.mjs
+
+      - name: Test Phase 15 Batch 3 production evidence
+        run: node scripts/supabase-phase15-batch3.test.mjs
+
+      - name: Test Phase 15 Batch 4 production evidence
+        run: node scripts/supabase-phase15-batch4.test.mjs
+
+      - name: Test Phase 15 Batch 5 production evidence
+        run: node scripts/supabase-phase15-batch5.test.mjs
+
+      - name: Test Phase 15 Batch 6 production evidence
+        run: node scripts/supabase-phase15-batch6.test.mjs

@@ -24,15 +24,14 @@ const renderer = fs.readFileSync('../supabase/functions/generate-mandate/index.t
 const preRender = renderer.indexOf(
   'assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render")',
 )
-const render = renderer.indexOf('renderHtmlToPdfBytes(', preRender)
 const prePersist = renderer.indexOf(
   'assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_persist")',
-  render,
+  preRender,
 )
 const upload = renderer.indexOf('.upload(', prePersist)
 assert.ok(
-  preRender > 0 && render > preRender && prePersist > render && upload > prePersist,
-  'renderer must fence before render and immediately before upload',
+  preRender > 0 && prePersist > preRender && upload > prePersist,
+  'renderer must fence before rendering and immediately before upload',
 )
 assert.match(renderer, /GENERATION_LEASE_FENCE_REJECTED/)
 assert.match(renderer, /generationFence:/)
@@ -40,16 +39,19 @@ assert.match(renderer, /generationFence:/)
 const packetService = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
 const timeout = packetService.indexOf("if (failureCode === 'GENERATION_TIMEOUT')")
 const fenceFailure = packetService.indexOf("if (failureCode === 'GENERATION_LEASE_FENCE_REJECTED')", timeout)
-const previewOnlyBranch = packetService.indexOf("if (validation.packetType === 'mandate'", fenceFailure)
+const preflightFailure = packetService.indexOf("if (failureCode === 'GENERATION_PREFLIGHT_BLOCKED')", fenceFailure)
+const failedRenderHandling = packetService.indexOf('// A failed render is never a generated legal document.', preflightFailure)
 const timeoutBranch = packetService.slice(timeout, fenceFailure)
 assert.match(timeoutBranch, /deferGenerationLeaseRelease = true/)
 assert.match(timeoutBranch, /generation_result_ambiguous/)
 assert.doesNotMatch(timeoutBranch, /recordGenerationFailure|releaseDocumentPacketGenerationLease/)
 assert.ok(
-  fenceFailure > timeout && previewOnlyBranch > fenceFailure,
-  'renderer fence rejection must stop generation before preview-only fallback',
+  fenceFailure > timeout && preflightFailure > fenceFailure && failedRenderHandling > preflightFailure,
+  'renderer fence rejection must stop generation before failed-render persistence',
 )
-assert.match(packetService.slice(fenceFailure, previewOnlyBranch), /safeToRetry: false/)
+assert.match(packetService.slice(fenceFailure, preflightFailure), /safeToRetry: false/)
+assert.match(packetService.slice(failedRenderHandling), /recordGenerationFailure/)
+assert.doesNotMatch(packetService, /continuing with a generated preview-only draft/)
 assert.match(packetService, /This generation attempt is no longer active\. Refresh the packet before trying again\./)
 assert.match(packetService, /!deferGenerationLeaseRelease/)
 

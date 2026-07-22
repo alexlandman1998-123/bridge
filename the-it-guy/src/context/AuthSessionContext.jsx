@@ -13,7 +13,7 @@ import { trackAuthMetric, trackWorkspaceBrandingMetric } from '../services/obser
 import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
-const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 8000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 
 const EMPTY_AUTH_STATE = Object.freeze({
@@ -290,9 +290,12 @@ export function AuthSessionProvider({ children }) {
     if (sessionLoading) return
 
     if (!sessionUserId) {
-      setAuthState({
-        ...EMPTY_AUTH_STATE,
-        status: 'unauthenticated',
+      setAuthState((previous) => {
+        if (previous.status === 'error' && previous.bootError) return previous
+        return {
+          ...EMPTY_AUTH_STATE,
+          status: 'unauthenticated',
+        }
       })
       return
     }
@@ -352,7 +355,16 @@ export function AuthSessionProvider({ children }) {
         })
       } catch (error) {
         if (!active) return
-        console.error('[AUTH] bridge-boot:failed', error)
+        const backendUnavailable = error?.code === 'AUTH_BACKEND_UNAVAILABLE'
+        const bootError = backendUnavailable
+          ? 'Arch9’s data service is temporarily unavailable. Your sign-in is still active; please try again in a moment.'
+          : error?.message || 'Unable to load your Arch9 workspace.'
+        console.error('[AUTH] bridge-boot:failed', {
+          error,
+          userId: session.user.id,
+          selectedWorkspaceId: selectedWorkspaceId || null,
+          activeSteps: getActiveAuthBootStepDiagnostics(),
+        })
         void reportError(error, {
           userId: session.user.id,
           operation: 'bridge_auth_boot',
@@ -363,7 +375,7 @@ export function AuthSessionProvider({ children }) {
           status: 'error',
           session,
           user: session.user,
-          bootError: error?.message || 'Unable to load your Arch9 workspace.',
+          bootError,
         })
       }
     }
