@@ -13,6 +13,7 @@
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:otp-signing-send-responsiveness": "node scripts/otp-signing-send-responsiveness.test.mjs",
     "test:signer-mobile-experience": "node scripts/signer-mobile-experience.test.mjs",
+    "test:legal-template-source-of-truth": "node scripts/legal-template-source-of-truth.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",
     "test:workspace-branding-observability": "node scripts/workspace-branding-observability.test.mjs",
     "test:workspace-branding-integrity-phase6": "node scripts/workspace-branding-integrity-phase6.test.mjs",

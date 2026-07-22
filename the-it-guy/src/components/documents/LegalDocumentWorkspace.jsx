@@ -3686,18 +3686,29 @@ export default function LegalDocumentWorkspace({
         }
       }
 
+      const statusRequest = resolveDocumentPacketStatus({
+        packetType,
+        packetId: currentPacketId,
+        transactionId,
+        leadId,
+        organisationId,
+        includeActivity: false,
+      })
       const resolved = await withWorkspaceTimeout(
-        resolveDocumentPacketStatus({
-          packetType,
-          packetId: currentPacketId,
-          transactionId,
-          leadId,
-          organisationId,
-          includeActivity: false,
-        }),
+        statusRequest,
         'Packet status is taking too long to load.',
       ).catch((error) => {
         console.warn('[LegalDocumentWorkspace] packet status refresh timed out; keeping workspace usable.', error)
+        // Keep the delayed request alive. It contains the packet's actual
+        // template id and replaces the temporary draft as soon as Supabase
+        // responds, instead of requiring the user to leave and reopen.
+        void statusRequest.then((lateResolved) => {
+          if (!lateResolved?.packet?.id) return
+          statusStateRef.current = lateResolved
+          setStatusState(lateResolved)
+        }).catch((lateStatusError) => {
+          console.warn('[LegalDocumentWorkspace] delayed packet status refresh failed.', lateStatusError)
+        })
         return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
       })
       setStatusState(resolved)
@@ -3941,13 +3952,21 @@ export default function LegalDocumentWorkspace({
       : Array.isArray(templateDetail?.sections)
         ? templateDetail.sections
         : []
-    // Old editable revisions were seeded with just the introduction section. Prefer the
-    // real generated/template outline whenever it has more than that stale placeholder.
-    const manifest = generatedManifest.length > 1
-      ? generatedManifest
-      : templateManifest.length > 1
-        ? templateManifest
-        : editableManifest
+    const currentPacketTemplateId = normalizeText(statusState?.packet?.template_id)
+    const currentTemplateId = normalizeText(templateDetail?.id)
+    const canAdoptCurrentTemplate = ['draft', 'ready_for_generation', 'pdf_generated', 'ready_to_send']
+      .includes(normalizedLifecycleState) &&
+      Boolean(currentPacketTemplateId) &&
+      currentPacketTemplateId === currentTemplateId
+    // Before signing starts, the legal-template page is the source of truth.
+    // Generated manifests remain a historical record once a packet is sent.
+    const manifest = canAdoptCurrentTemplate && templateManifest.length
+      ? templateManifest
+      : generatedManifest.length > 1
+        ? generatedManifest
+        : templateManifest.length > 1
+          ? templateManifest
+          : editableManifest
     const placeholderMap = editableVersion?.placeholders_resolved_json && typeof editableVersion.placeholders_resolved_json === 'object'
       ? editableVersion.placeholders_resolved_json
       : {}
@@ -3976,7 +3995,7 @@ export default function LegalDocumentWorkspace({
       }
       return currentTab
     })
-  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, latestVersion?.section_manifest_json, mode, open, packetType, templateDetail?.canonical_definition?.sections, templateDetail?.sections])
+  }, [editableAllowed, editableSnapshot, editableVersion?.id, editableVersion?.placeholders_resolved_json, editableVersion?.section_manifest_json, editableVersion?.validation_summary_json?.review_state, latestVersion?.section_manifest_json, mode, normalizedLifecycleState, open, packetType, statusState?.packet?.template_id, templateDetail?.canonical_definition?.sections, templateDetail?.id, templateDetail?.sections])
 
   useEffect(() => {
     if (!editableDirty || !open || !editableAllowed || !editableSections.length || actionBusy) return undefined

@@ -1145,6 +1145,18 @@ function shouldUseNativeGeneration(template = null, packetType = '') {
   return false
 }
 
+function templateUsesConditionalMaster(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const masterFlag = metadata.conditional_master
+  const masterVersion = normalizeText(metadata.conditional_master_version)
+  return masterFlag === true || String(masterFlag || '').toLowerCase() === 'true' ||
+    (Boolean(masterVersion) && masterFlag !== false && String(masterFlag || '').toLowerCase() !== 'false')
+}
+
 function extractGeneratedArtifact(result = {}) {
   return {
     renderedDocumentId: normalizeNullableText(
@@ -1912,14 +1924,19 @@ async function resolveSeededSectionManifest({ packetType, template = null, place
     }
   }
 
-  const conditionalEngineAudit = evaluateConditionalMasterSections({
-    packetType,
-    sections,
-    placeholders,
-    canonicalPlaceholders: scenarioProfile ? buildLegalDocumentScenarioPlaceholders(scenarioProfile) : placeholders,
-    scenarioProfile,
-  })
-  const decisions = conditionalEngineAudit.applies ? conditionalEngineAudit.sections : []
+  // A normal legal-template revision owns its own ordered wording. Only the
+  // explicitly marked conditional master is allowed to replace that wording
+  // with scenario-specific packs.
+  const conditionalEngineAudit = templateUsesConditionalMaster(hydratedTemplate)
+    ? evaluateConditionalMasterSections({
+        packetType,
+        sections,
+        placeholders,
+        canonicalPlaceholders: scenarioProfile ? buildLegalDocumentScenarioPlaceholders(scenarioProfile) : placeholders,
+        scenarioProfile,
+      })
+    : null
+  const decisions = conditionalEngineAudit?.applies ? conditionalEngineAudit.sections : []
 
   return {
     sectionManifest: sections
@@ -2126,7 +2143,7 @@ function mapMandateTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { re
 function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
   if (normalizeText(validation?.packetType).toLowerCase() !== 'mandate') return null
   const template = templateResolution?.template || null
-  if (!template?.id) return null
+  if (!template?.id || !templateUsesConditionalMaster(template)) return null
 
   // The live mandate is a conditional master. Scan it as the universal route:
   // scenario-specific wording is valid only inside correctly conditioned packs.
@@ -2157,8 +2174,12 @@ function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolut
 function withConditionalMasterTemplateValidation(validation = {}, templateResolution = null) {
   const templateResolutionSource =
     normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
+  const coverageTemplate = templateResolution?.template || null
+  const isConditionalMaster = templateUsesConditionalMaster(coverageTemplate)
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
-  const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution)
+  const launchReadiness = isConditionalMaster
+    ? buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution)
+    : null
   const launchReadinessBlockers = (launchReadiness?.blockers || []).map((issue) =>
     mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, { required: true }),
   )
@@ -2171,8 +2192,7 @@ function withConditionalMasterTemplateValidation(validation = {}, templateResolu
   const contentGateWarnings = (contentGate?.warnings || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: false }),
   )
-  const coverageTemplate = templateResolution?.template || null
-  const conditionalMasterCoverageReadiness = ['mandate', 'otp'].includes(normalizeText(validation?.packetType).toLowerCase())
+  const conditionalMasterCoverageReadiness = isConditionalMaster && ['mandate', 'otp'].includes(normalizeText(validation?.packetType).toLowerCase())
     ? evaluateConditionalMasterCoverage({
         packetType: validation.packetType,
         template: coverageTemplate,
