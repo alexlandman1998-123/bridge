@@ -30,7 +30,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ResidentialCommandCenterGrid,
   ResidentialDashboardModeToggle,
@@ -42,6 +42,11 @@ import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
+import {
+  DASHBOARD_PERFORMANCE_METRICS,
+  createDashboardPerformanceTrace,
+  persistDashboardPerformanceTrace,
+} from '../services/observability/dashboardPerformanceTelemetry'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -2263,6 +2268,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const navigate = useNavigate()
+  const location = useLocation()
   const [dateRange, setDateRange] = useState('last_30_days')
   const [residentialMode, setResidentialMode] = useState('sales')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
@@ -2272,6 +2278,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const dashboardHasLoadedRef = useRef(false)
+  const dashboardLoadSequenceRef = useRef(0)
   const profileCanViewAllTransactions = useMemo(
     () =>
       canAccessPrincipalExperience({
@@ -2313,19 +2321,33 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     }
   }, [agencyId])
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async ({ forceRefresh = false } = {}) => {
+    const dashboardLoadSequence = dashboardLoadSequenceRef.current + 1
+    dashboardLoadSequenceRef.current = dashboardLoadSequence
+    const isLatestDashboardLoad = () => dashboardLoadSequenceRef.current === dashboardLoadSequence
+
     if (!resolvedAgencyId) {
       if (!agencyResolutionComplete) {
-        setLoading(true)
+        if (isLatestDashboardLoad()) setLoading(true)
         return
       }
-      setError('Organisation context is required before loading dashboard totals.')
-      setLoading(false)
+      if (isLatestDashboardLoad()) {
+        setError('Organisation context is required before loading dashboard totals.')
+        setLoading(false)
+      }
       return
     }
 
     setLoading(true)
     setError('')
+    const isInitialDashboardLoad = !dashboardHasLoadedRef.current
+    const dashboardTrace = createDashboardPerformanceTrace({
+      metricName: DASHBOARD_PERFORMANCE_METRICS.principalSummary,
+      resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+    })
+    let dashboardOutcome = 'success'
+    let dashboardResult = null
+    let scopeNormalized = false
     try {
       const result = await getPrincipalDashboardData({
         agencyId: resolvedAgencyId,
@@ -2335,18 +2357,52 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         canViewAllTransactions,
         actorId: profile?.id || profile?.userId || '',
         actorEmail: profile?.email || '',
+        forceRefresh,
       })
+      dashboardResult = result
+      if (!isLatestDashboardLoad()) {
+        dashboardOutcome = 'cancelled'
+        return
+      }
+      scopeNormalized = Boolean(
+        result?.filters?.selectedWorkspaceId &&
+        result.filters.selectedWorkspaceId !== selectedWorkspaceId,
+      )
       setData(result)
-      if (result?.filters?.selectedWorkspaceId && result.filters.selectedWorkspaceId !== selectedWorkspaceId) {
+      dashboardHasLoadedRef.current = true
+      if (scopeNormalized) {
         setSelectedWorkspaceId(result.filters.selectedWorkspaceId)
       }
     } catch (loadError) {
+      if (!isLatestDashboardLoad()) {
+        dashboardOutcome = 'cancelled'
+        return
+      }
+      dashboardOutcome = 'failed'
       console.error('[PrincipalDashboard] load failed', loadError)
       setError(loadError?.message || 'We couldn’t load the principal dashboard data.')
     } finally {
-      setLoading(false)
+      void persistDashboardPerformanceTrace(dashboardTrace, {
+        userId: profile?.id || profile?.userId || '',
+        workspaceId: resolvedAgencyId,
+        route: location.pathname,
+        appRole: profile?.role || 'unknown',
+        dashboardKind: 'principal',
+        lifecycle: isInitialDashboardLoad ? 'initial' : 'refresh',
+        outcome: dashboardOutcome,
+        preset: dateRange,
+        resultCount: dashboardResult?.kpis?.activeTransactions || 0,
+        hasData: Boolean(dashboardResult && !dashboardResult?.meta?.isEmpty),
+        isInitialLoad: isInitialDashboardLoad,
+        selectedWorkspaceProvided: selectedWorkspaceId !== 'all',
+        agencyResolutionFallback: !agencyId,
+        scopeNormalized,
+        cacheHit: Boolean(dashboardResult?.meta?.cacheHit),
+        deduplicated: Boolean(dashboardResult?.meta?.deduplicated),
+      })
+      if (isLatestDashboardLoad()) setLoading(false)
     }
-  }, [agencyResolutionComplete, canViewAllTransactions, dateRange, overviewMode, profile?.email, profile?.id, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
+  }, [agencyId, agencyResolutionComplete, canViewAllTransactions, dateRange, location.pathname, overviewMode, profile?.email, profile?.id, profile?.role, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
 
   useEffect(() => {
     void loadDashboard()
@@ -2354,7 +2410,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
   useEffect(() => {
     function refresh() {
-      void loadDashboard()
+      void loadDashboard({ forceRefresh: true })
     }
     window.addEventListener('itg:transaction-created', refresh)
     window.addEventListener('itg:transaction-updated', refresh)
@@ -2419,7 +2475,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
           <section className="rounded-[18px] border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="inline-flex items-center gap-2"><AlertTriangle size={16} /> We couldn’t load the principal dashboard data.</span>
-              <button type="button" onClick={loadDashboard} className="rounded-lg border border-[#f0b8b8] bg-white px-3 py-1.5 text-xs font-semibold">Retry</button>
+              <button type="button" onClick={() => void loadDashboard({ forceRefresh: true })} className="rounded-lg border border-[#f0b8b8] bg-white px-3 py-1.5 text-xs font-semibold">Retry</button>
             </div>
           </section>
         ) : null}

@@ -8,7 +8,11 @@ import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { reportError } from '../services/observability/errorTracking'
-import { measureAsyncOperation } from '../services/observability/performanceMetrics'
+import {
+  DASHBOARD_PERFORMANCE_METRICS,
+  createDashboardPerformanceTrace,
+  persistDashboardPerformanceTrace,
+} from '../services/observability/dashboardPerformanceTelemetry'
 import { trackAuthMetric, trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
@@ -216,6 +220,13 @@ export function AuthSessionProvider({ children }) {
     let active = true
 
     async function loadSession() {
+      const sessionTrace = createDashboardPerformanceTrace({
+        metricName: DASHBOARD_PERFORMANCE_METRICS.authSessionRestore,
+        resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+      })
+      let sessionOutcome = 'success'
+      let restoredSessionUserId = ''
+      let hasSession = false
       setSessionLoading(true)
       setAuthState((previous) => ({ ...previous, status: 'loading', bootError: '' }))
       try {
@@ -224,18 +235,25 @@ export function AuthSessionProvider({ children }) {
           timeoutMs: SESSION_BOOTSTRAP_TIMEOUT_MS,
           phase: 'session',
         })
-        if (!active) return
+        if (!active) {
+          sessionOutcome = 'cancelled'
+          return
+        }
         if (error) {
           if (isUnsupportedJwtAlgorithmError(error)) await clearSupabaseLocalAuthState()
           throw error
         }
-        setSession(data?.session || null)
-        console.debug('[AUTH] session-bootstrap:success', { hasSession: Boolean(data?.session) })
-        void trackAuthMetric(data?.session ? 'session_restored' : 'no_session', {
-          userId: data?.session?.user?.id || '',
+        const restoredSession = data?.session || null
+        restoredSessionUserId = restoredSession?.user?.id || ''
+        hasSession = Boolean(restoredSession)
+        setSession(restoredSession)
+        console.debug('[AUTH] session-bootstrap:success', { hasSession })
+        void trackAuthMetric(restoredSession ? 'session_restored' : 'no_session', {
+          userId: restoredSessionUserId,
           metadata: { source: 'session_bootstrap' },
         })
       } catch (error) {
+        sessionOutcome = active ? 'failed' : 'cancelled'
         if (!active) return
         console.error('[AUTH] session-bootstrap:failed', error)
         void reportError(error, {
@@ -250,6 +268,15 @@ export function AuthSessionProvider({ children }) {
           bootError: error?.message || 'Unable to restore your session.',
         })
       } finally {
+        void persistDashboardPerformanceTrace(sessionTrace, {
+          userId: restoredSessionUserId,
+          route: typeof window !== 'undefined' ? window.location.pathname : '',
+          appRole: 'unknown',
+          dashboardKind: 'auth',
+          lifecycle: 'initial',
+          outcome: sessionOutcome,
+          hasSession,
+        })
         if (active) setSessionLoading(false)
       }
     }
@@ -300,6 +327,12 @@ export function AuthSessionProvider({ children }) {
     let active = true
 
     async function bootBridgeState() {
+      const bridgeTrace = createDashboardPerformanceTrace({
+        metricName: DASHBOARD_PERFORMANCE_METRICS.authBridgeBoot,
+        resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+      })
+      let bridgeOutcome = 'success'
+      let resolvedBridgeState = null
       setAuthState((previous) => ({
         ...previous,
         status: 'loading',
@@ -314,16 +347,16 @@ export function AuthSessionProvider({ children }) {
           attempt: bootAttempt + 1,
           timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
         })
-        const nextState = await measureAsyncOperation(
-          'auth_bridge_boot',
-          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
-            timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
-            phase: 'bridge',
-            getDiagnostics: getActiveAuthBootStepDiagnostics,
-          }),
-          { userId: session.user.id, route: typeof window !== 'undefined' ? window.location.pathname : '' },
-        )
-        if (!active) return
+        const nextState = await withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
+          timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+          phase: 'bridge',
+          getDiagnostics: getActiveAuthBootStepDiagnostics,
+        })
+        resolvedBridgeState = nextState
+        if (!active) {
+          bridgeOutcome = 'cancelled'
+          return
+        }
         setAuthState(nextState)
         void trackAuthMetric('auth_boot_success', {
           userId: session.user.id,
@@ -351,6 +384,7 @@ export function AuthSessionProvider({ children }) {
           onboardingRequiredReason: nextState.onboardingRequiredReason || null,
         })
       } catch (error) {
+        bridgeOutcome = active ? 'failed' : 'cancelled'
         if (!active) return
         console.error('[AUTH] bridge-boot:failed', error)
         void reportError(error, {
@@ -364,6 +398,24 @@ export function AuthSessionProvider({ children }) {
           session,
           user: session.user,
           bootError: error?.message || 'Unable to load your Arch9 workspace.',
+        })
+      } finally {
+        const bridgeWorkspaceId =
+          resolvedBridgeState?.workspaceType === WORKSPACE_TYPES.agency ||
+          resolvedBridgeState?.currentWorkspace?.type === WORKSPACE_TYPES.agency
+            ? resolvedBridgeState?.currentWorkspace?.id || ''
+            : ''
+        void persistDashboardPerformanceTrace(bridgeTrace, {
+          userId: session.user.id,
+          workspaceId: bridgeWorkspaceId,
+          route: typeof window !== 'undefined' ? window.location.pathname : '',
+          appRole: resolvedBridgeState?.appRole || 'unknown',
+          dashboardKind: 'auth',
+          lifecycle: bootAttempt > 0 ? 'retry' : 'initial',
+          outcome: bridgeOutcome,
+          hasData: Boolean(resolvedBridgeState),
+          selectedWorkspaceProvided: Boolean(selectedWorkspaceId),
+          activeMembershipCount: resolvedBridgeState?.activeMemberships?.length,
         })
       }
     }

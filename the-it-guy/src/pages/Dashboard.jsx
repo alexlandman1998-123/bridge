@@ -61,19 +61,24 @@ import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTra
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
-import { listOrganisationUsers } from '../lib/settingsApi'
+import { listOrganisationUserAssignmentAliases } from '../lib/settingsApi'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
   getScopedDashboardTransactions,
   logDashboardPipelineDiagnostics,
 } from '../lib/dashboardTransactionIntegrity'
-import { canAccessPrincipalExperience } from '../lib/organisationAccess'
+import { resolveAgentDashboardViewMode } from '../lib/dashboardRoleView'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAgentCommissionTracker } from '../services/commissionService'
-import { getAgentPrivateListings } from '../services/privateListingService'
+import { getAgentPrivateListingSummaries } from '../services/privateListingService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
+import {
+  DASHBOARD_PERFORMANCE_METRICS,
+  createDashboardPerformanceTrace,
+  persistDashboardPerformanceTrace,
+} from '../services/observability/dashboardPerformanceTelemetry'
 import {
   getListingSourceLabel,
   getPropertyCategoryLabel,
@@ -647,18 +652,6 @@ function getActivityAgentName(row = {}) {
   ).trim() || 'Unassigned'
 }
 
-function mergeDashboardListingRows(...groups) {
-  const rowsByKey = new Map()
-  for (const group of groups) {
-    for (const row of Array.isArray(group) ? group : []) {
-      const key = String(row?.id || row?.listingId || row?.listing_id || row?.listingReference || '').trim()
-      if (!key) continue
-      rowsByKey.set(key, row)
-    }
-  }
-  return [...rowsByKey.values()]
-}
-
 function normalizeDashboardText(value) {
   return String(value || '').trim()
 }
@@ -670,8 +663,10 @@ function normalizeDashboardContact(value) {
 function resolveDashboardAgentAssignmentIds(profile = {}, organisationUsers = []) {
   const profileId = normalizeDashboardText(profile?.id)
   const profileUserId = normalizeDashboardText(profile?.userId)
+  const membershipId = normalizeDashboardText(profile?.membershipId)
+  const membershipUserId = normalizeDashboardText(profile?.membershipUserId)
   const profileEmail = normalizeDashboardContact(profile?.email)
-  const ids = new Set([profileId, profileUserId].filter(Boolean))
+  const ids = new Set([profileId, profileUserId, membershipId, membershipUserId].filter(Boolean))
 
   for (const user of Array.isArray(organisationUsers) ? organisationUsers : []) {
     const userIds = [
@@ -694,35 +689,46 @@ function resolveDashboardAgentAssignmentIds(profile = {}, organisationUsers = []
   return Array.from(ids)
 }
 
-async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId = '' } = {}) {
+async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId = '', route = '' } = {}) {
   if (!profile?.id || !organisationId) return []
 
+  const privateListingTrace = createDashboardPerformanceTrace({
+    metricName: DASHBOARD_PERFORMANCE_METRICS.agentPrivateListings,
+    resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+  })
+  let privateListingOutcome = 'success'
+  let privateListingResultCount = 0
   try {
-    const organisationUsers = await listOrganisationUsers()
+    const organisationUsers = await listOrganisationUserAssignmentAliases({
+      organisationId,
+      profile,
+    })
     const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
-    const [byAgentId, byAgentEmail] = await Promise.all([
-      getAgentPrivateListings(profile.id, {
-        organisationId,
-        assignedAgentEmail: '',
-        assignedAgentIds: assignmentIds,
-      }).catch((listingError) => {
-        console.warn('[dashboard] Unable to load agent private listings by assignment id.', listingError)
-        return []
-      }),
-      profile?.email
-        ? getAgentPrivateListings('', {
-            organisationId,
-            assignedAgentEmail: profile.email,
-          }).catch((listingError) => {
-            console.warn('[dashboard] Unable to load agent private listings by email.', listingError)
-            return []
-          })
-        : Promise.resolve([]),
-    ])
-    return mergeDashboardListingRows(byAgentId, byAgentEmail)
+    const listingRows = await getAgentPrivateListingSummaries(profile.id, {
+      organisationId,
+      assignedAgentEmail: profile.email,
+      assignedAgentIds: assignmentIds,
+      includeCommissionTerms: true,
+    })
+    privateListingResultCount = Array.isArray(listingRows) ? listingRows.length : 0
+    return listingRows
   } catch (listingError) {
+    privateListingOutcome = 'failed'
     console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
     return []
+  } finally {
+    void persistDashboardPerformanceTrace(privateListingTrace, {
+      userId: profile?.id || profile?.userId || '',
+      workspaceId: organisationId,
+      route,
+      appRole: 'agent',
+      dashboardKind: 'agent',
+      lifecycle: 'background',
+      outcome: privateListingOutcome,
+      resultCount: privateListingResultCount,
+      hasData: privateListingResultCount > 0,
+      isInitialLoad: false,
+    })
   }
 }
 
@@ -1761,14 +1767,11 @@ function Dashboard() {
     [location.pathname, navigate],
   )
 
-  const normalizedMembershipRole = String(organisationMembershipRole || '').trim().toLowerCase()
-  const principalFromMembership = canAccessPrincipalExperience({
+  const resolvedAgentViewMode = resolveAgentDashboardViewMode({
     appRole: role,
-    membershipRole: normalizedMembershipRole,
-  })
-  const resolvedAgentViewMode = role !== 'agent'
-    ? 'agent'
-    : (principalFromMembership ? 'principal' : 'agent')
+    hydratedMembershipRole,
+    fallbackMembershipRole: organisationMembershipRole,
+  }).mode
   const isPrincipalAgentView = role === 'agent' && resolvedAgentViewMode === 'principal'
   const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
 
@@ -1842,6 +1845,9 @@ function Dashboard() {
       return
     }
 
+    let agentSummaryTrace = null
+    let agentSummaryOutcome = 'success'
+    let agentSummaryResultCount = 0
     try {
       setError('')
       if (!canReuseDashboardShell) {
@@ -1858,11 +1864,20 @@ function Dashboard() {
             organisationId: currentOrganisationId,
           })
         } else if (profile?.id) {
+          if (role === 'agent') {
+            agentSummaryTrace = createDashboardPerformanceTrace({
+              metricName: DASHBOARD_PERFORMANCE_METRICS.agentSummary,
+              resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+            })
+          }
           participantRows = await fetchTransactionsByParticipantSummary({
             userId: profile.id,
             roleType,
             organisationId: role === 'agent' ? currentOrganisationId : '',
           })
+          if (role === 'agent') {
+            agentSummaryResultCount = Array.isArray(participantRows) ? participantRows.length : 0
+          }
           shouldLoadAgentPrivateListings = role === 'agent' && Boolean(currentOrganisationId)
         }
         if (role === 'agent' && shouldLoadAgentPrivateListings && !canReuseDashboardShell) {
@@ -1925,8 +1940,11 @@ function Dashboard() {
               id: profile?.id,
               userId: profile?.userId,
               email: profile?.email,
+              membershipId: currentMembership?.id,
+              membershipUserId: currentMembership?.userId,
             },
             organisationId: currentOrganisationId,
+            route: location.pathname,
           }).then((listingRows) => {
             if (agentPrivateListingLoadRef.current === privateListingLoadId) {
               setAgentPrivateListingRows(listingRows)
@@ -1945,21 +1963,38 @@ function Dashboard() {
         dashboardLoadKeyRef.current = dashboardLoadKey
       }
     } catch (loadError) {
+      if (agentSummaryTrace) agentSummaryOutcome = 'failed'
       if (role === 'agent') {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
       }
       setError(loadError.message)
     } finally {
+      if (agentSummaryTrace) {
+        void persistDashboardPerformanceTrace(agentSummaryTrace, {
+          userId: profile?.id || profile?.userId || '',
+          workspaceId: currentOrganisationId,
+          route: location.pathname,
+          appRole: 'agent',
+          dashboardKind: 'agent',
+          lifecycle: canReuseDashboardShell ? 'refresh' : 'initial',
+          outcome: agentSummaryOutcome,
+          resultCount: agentSummaryResultCount,
+          hasData: agentSummaryResultCount > 0,
+          isInitialLoad: !canReuseDashboardShell,
+        })
+      }
       setLoading(false)
     }
-  }, [currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
+  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, location.pathname, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
   }, [loadDashboard])
 
   useEffect(() => {
+    if (isPrincipalAgentView) return undefined
+
     function refreshDashboard() {
       void loadDashboard()
     }
@@ -1970,7 +2005,7 @@ function Dashboard() {
       window.removeEventListener('itg:transaction-created', refreshDashboard)
       window.removeEventListener('itg:transaction-updated', refreshDashboard)
     }
-  }, [loadDashboard])
+  }, [isPrincipalAgentView, loadDashboard])
 
   useEffect(() => {
     if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
@@ -4616,8 +4651,7 @@ function renderActiveTransactionsBlock({
     return (
       <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
         <PrincipalDashboard
-          agencyId={organisationIdForAppointments}
-          workspaceId={workspace.id}
+          agencyId={currentOrganisationId}
           canViewAllTransactions={isPrincipalAgentView}
         />
       </Suspense>

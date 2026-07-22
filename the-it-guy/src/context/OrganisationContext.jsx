@@ -4,6 +4,11 @@ import { useAuthSession } from './AuthSessionContext'
 import { fetchAgencyOnboardingSettings } from '../lib/organisationBootstrapApi'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import {
+  DASHBOARD_PERFORMANCE_METRICS,
+  createDashboardPerformanceTrace,
+  persistDashboardPerformanceTrace,
+} from '../services/observability/dashboardPerformanceTelemetry'
 
 const EMPTY_ORGANISATION_BRANDING = Object.freeze({
   logoUrl: '',
@@ -157,6 +162,18 @@ function getAuthWorkspaceId(authState = {}) {
   )
 }
 
+function getOrganisationMetricWorkspaceId(authState = {}, snapshot = null) {
+  const hydratedWorkspaceId = getOrganisationSnapshotWorkspaceId(snapshot)
+  if (hydratedWorkspaceId) return hydratedWorkspaceId
+  if (
+    authState.workspaceType === WORKSPACE_TYPES.agency ||
+    authState.currentWorkspace?.type === WORKSPACE_TYPES.agency
+  ) {
+    return getAuthWorkspaceId(authState)
+  }
+  return ''
+}
+
 function isDevAuthOrganisation(authState) {
   return authState.currentMembership?.source === 'dev_auth_bypass'
 }
@@ -237,13 +254,31 @@ export function OrganisationProvider({ children }) {
     setLoading(true)
     setError('')
 
+    const bootstrapTrace = createDashboardPerformanceTrace({
+      metricName: DASHBOARD_PERFORMANCE_METRICS.organisationBootstrap,
+      resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+    })
+    let bootstrapOutcome = 'success'
+    let nextState = null
     try {
-      const nextState = await fetchAgencyOnboardingSettings({ forceRefresh })
+      nextState = await fetchAgencyOnboardingSettings({ forceRefresh })
       return applyOrganisationState(nextState)
     } catch (refreshError) {
+      bootstrapOutcome = 'failed'
       setError(refreshError?.message || 'Unable to load organisation settings.')
       throw refreshError
     } finally {
+      void persistDashboardPerformanceTrace(bootstrapTrace, {
+        userId: authState.user.id,
+        workspaceId: getOrganisationMetricWorkspaceId(authState, nextState),
+        route: typeof window !== 'undefined' ? window.location.pathname : '',
+        appRole: authState.appRole || 'unknown',
+        dashboardKind: 'organisation',
+        lifecycle: 'refresh',
+        outcome: bootstrapOutcome,
+        hasData: Boolean(nextState),
+        isInitialLoad: false,
+      })
       setLoading(false)
     }
   }, [applyOrganisationState, authState])
@@ -284,16 +319,39 @@ export function OrganisationProvider({ children }) {
         setError('')
       }
 
+      const bootstrapTrace = createDashboardPerformanceTrace({
+        metricName: DASHBOARD_PERFORMANCE_METRICS.organisationBootstrap,
+        resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
+      })
+      let bootstrapOutcome = 'success'
+      let nextState = null
       try {
-        const nextState = await fetchAgencyOnboardingSettings({ forceRefresh: true })
+        // Auth and workspace changes already clear the scoped runtime cache.
+        // Keep initial hydration coalescible for StrictMode and colocated
+        // consumers; explicit user-triggered refreshes still force a reload.
+        nextState = await fetchAgencyOnboardingSettings()
         if (active) {
           applyOrganisationState(nextState)
+        } else {
+          bootstrapOutcome = 'cancelled'
         }
       } catch (hydrateError) {
+        bootstrapOutcome = active ? 'failed' : 'cancelled'
         if (active) {
           setError(hydrateError?.message || 'Unable to load organisation settings.')
         }
       } finally {
+        void persistDashboardPerformanceTrace(bootstrapTrace, {
+          userId: authState.user.id,
+          workspaceId: getOrganisationMetricWorkspaceId(authState, nextState),
+          route: typeof window !== 'undefined' ? window.location.pathname : '',
+          appRole: authState.appRole || 'unknown',
+          dashboardKind: 'organisation',
+          lifecycle: 'initial',
+          outcome: bootstrapOutcome,
+          hasData: Boolean(nextState),
+          isInitialLoad: true,
+        })
         if (active) {
           setLoading(false)
         }

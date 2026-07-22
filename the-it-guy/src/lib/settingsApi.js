@@ -5464,6 +5464,54 @@ export async function listOrganisationUsers() {
   return organisationUsersInflight
 }
 
+// This is intentionally narrower than listOrganisationUsers: dashboard KPI
+// reads only need the durable membership aliases used by legacy listing
+// assignments. Avoiding profile/avatar enrichment keeps that non-blocking
+// dashboard follow-up to a single small organisation_users request.
+export async function listOrganisationUserAssignmentAliases({ organisationId = '', profile = {} } = {}) {
+  if (!isSupabaseConfigured || !supabase) return []
+
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!normalizedOrganisationId) return []
+
+  const validUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const identityIds = Array.from(new Set([
+    profile?.id,
+    profile?.userId,
+    profile?.membershipId,
+    profile?.membershipUserId,
+  ].map((value) => normalizeText(value)).filter((value) => validUuid.test(value))))
+  const normalizedEmail = normalizeEmail(profile?.email)
+  const filters = [
+    ...identityIds.map((id) => `id.eq.${id}`),
+    ...identityIds.map((id) => `user_id.eq.${id}`),
+  ]
+  if (normalizedEmail) {
+    const escapedEmail = normalizedEmail.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    filters.push(`email.eq."${escapedEmail}"`)
+  }
+  if (!filters.length) return []
+
+  const client = requireClient()
+  const query = await client
+    .from('organisation_users')
+    .select('id, user_id, email')
+    .eq('organisation_id', normalizedOrganisationId)
+    .or(filters.join(','))
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'organisation_users')) return []
+    throw query.error
+  }
+
+  return (query.data || []).map((row) => ({
+    id: row?.id || null,
+    userId: row?.user_id || null,
+    user_id: row?.user_id || null,
+    email: normalizeText(row?.email),
+  }))
+}
+
 export async function inviteOrganisationUser(input = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
