@@ -1219,6 +1219,36 @@ function querySummary(error = {}) {
   }
 }
 
+function getMissingColumnName(error = {}) {
+  const summary = querySummary(error)
+  if (summary.columns?.length) return summary.columns[0]
+  const text = [
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].map((value) => normalizeText(value)).filter(Boolean).join(' ')
+  return (
+    text.match(/column\s+(?:\S+\.)?["']?([a-zA-Z0-9_]+)["']?\s+does not exist/i)?.[1] ||
+    text.match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]?\s+column/i)?.[1] ||
+    ''
+  )
+}
+
+function removeColumnFromSelectFields(selectFields = '', columnName = '') {
+  const normalizedColumn = normalizeText(columnName).toLowerCase()
+  if (!normalizedColumn) return selectFields
+  const fields = normalizeText(selectFields)
+    .split(',')
+    .map((field) => normalizeText(field))
+    .filter(Boolean)
+  if (!fields.length) return selectFields
+  const nextFields = fields.filter((field) => {
+    const normalizedField = field.replace(/\s+as\s+.+$/i, '').trim().toLowerCase()
+    return normalizedField !== normalizedColumn
+  })
+  return nextFields.length === fields.length ? selectFields : nextFields.join(', ')
+}
+
 async function runSelectWithFallback(buildQuery, selectVariants, tableName = '') {
   const failureState = getSelectFallbackState(tableName)
   if (failureState?.reason === 'missingTable') {
@@ -1248,20 +1278,32 @@ async function runSelectWithFallback(buildQuery, selectVariants, tableName = '')
   }
 
   for (const selectFields of orderedVariants) {
-    const query = await buildQuery(selectFields)
-    if (!query?.error) {
-      if (tableKey && cachedVariant !== selectFields) PRIVATE_LISTING_SELECT_VARIANT_CACHE.set(tableKey, selectFields)
-      return { data: query.data || [] }
-    }
-    lastError = query.error
-    if (isMissingTableError(query.error, tableName)) {
-      rememberMissingTable(tableName)
-      setSelectFallbackState(tableName, { reason: 'missingTable', error: query.error })
-      return { missingTable: true, error: query.error }
-    }
-    if (!isMissingColumnError(query.error)) {
-      allErrorsWereColumnMissing = false
-      return { error: query.error }
+    let fields = selectFields
+    const removedColumns = new Set()
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const query = await buildQuery(fields)
+      if (!query?.error) {
+        if (tableKey && cachedVariant !== fields) PRIVATE_LISTING_SELECT_VARIANT_CACHE.set(tableKey, fields)
+        return { data: query.data || [] }
+      }
+      lastError = query.error
+      if (isMissingTableError(query.error, tableName)) {
+        rememberMissingTable(tableName)
+        setSelectFallbackState(tableName, { reason: 'missingTable', error: query.error })
+        return { missingTable: true, error: query.error }
+      }
+      if (!isMissingColumnError(query.error)) {
+        allErrorsWereColumnMissing = false
+        return { error: query.error }
+      }
+      const missingColumn = getMissingColumnName(query.error)
+      const nextFields = removeColumnFromSelectFields(fields, missingColumn)
+      if (missingColumn && nextFields !== fields && !removedColumns.has(missingColumn)) {
+        removedColumns.add(missingColumn)
+        fields = nextFields
+        continue
+      }
+      break
     }
   }
   if (allErrorsWereColumnMissing) {

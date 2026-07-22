@@ -387,9 +387,26 @@ function getMissingColumnNameFromError(error) {
   const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/)
   if (quotedMatch?.[1]) return quotedMatch[1]
   const details = String(error.details || '')
-  const detailsMatch = details.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
+  const detailsMatch = details.match(/column\s+(?:[a-zA-Z0-9_]+\.)?"?([a-zA-Z0-9_]+)"?/i)
   if (detailsMatch?.[1]) return detailsMatch[1]
+  const messageMatch = message.match(/column\s+(?:[a-zA-Z0-9_]+\.)?"?([a-zA-Z0-9_]+)"?/i)
+  if (messageMatch?.[1]) return messageMatch[1]
   return ''
+}
+
+function removeColumnFromSelectClause(selectClause = '', columnName = '') {
+  const normalizedColumn = normalizeText(columnName).toLowerCase()
+  if (!normalizedColumn) return selectClause
+  const fields = normalizeText(selectClause)
+    .split(',')
+    .map((field) => normalizeText(field))
+    .filter(Boolean)
+  if (!fields.length) return selectClause
+  const nextFields = fields.filter((field) => {
+    const normalizedField = field.replace(/\s+as\s+.+$/i, '').trim().toLowerCase()
+    return normalizedField !== normalizedColumn
+  })
+  return nextFields.length === fields.length ? selectClause : nextFields.join(', ')
 }
 
 function isRlsPolicyError(error) {
@@ -477,6 +494,56 @@ function buildOrganisationContextResult({
     profile,
     persisted,
   }
+}
+
+const ORGANISATION_CONTEXT_SELECT_FIELDS = `
+  id,
+  name,
+  display_name,
+  type,
+  workspace_kind,
+  logo_url,
+  settings_json,
+  company_email,
+  company_phone,
+  website,
+  address_line_1,
+  address_line_2,
+  city,
+  province,
+  postal_code,
+  country,
+  support_email,
+  support_phone,
+  primary_contact_person
+`
+
+async function fetchOrganisationContextRow(client, organisationId) {
+  let fields = ORGANISATION_CONTEXT_SELECT_FIELDS
+  let lastError = null
+  const removedColumns = new Set()
+
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const query = await client
+      .from('organisations')
+      .select(fields)
+      .eq('id', organisationId)
+      .maybeSingle()
+
+    if (!query.error) return query
+    lastError = query.error
+    if (!isMissingColumnError(query.error, '')) return query
+
+    const missingColumn = getMissingColumnNameFromError(query.error)
+    const nextFields = removeColumnFromSelectClause(fields, missingColumn)
+    if (!missingColumn || nextFields === fields || removedColumns.has(missingColumn)) {
+      return query
+    }
+    removedColumns.add(missingColumn)
+    fields = nextFields
+  }
+
+  return { data: null, error: lastError }
 }
 
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
@@ -2513,31 +2580,7 @@ async function ensureOrganisationContext(client) {
     let organisation = null
 
     if (membership?.organisation_id) {
-      const orgQuery = await client
-        .from('organisations')
-        .select(`
-          id,
-          name,
-          display_name,
-          type,
-          workspace_kind,
-          logo_url,
-          settings_json,
-          company_email,
-          company_phone,
-          website,
-          address_line_1,
-          address_line_2,
-          city,
-          province,
-          postal_code,
-          country,
-          support_email,
-          support_phone,
-          primary_contact_person
-        `)
-        .eq('id', membership.organisation_id)
-        .maybeSingle()
+      const orgQuery = await fetchOrganisationContextRow(client, membership.organisation_id)
 
       if (!orgQuery.error) {
         organisation = normalizeOrganisationRow(orgQuery.data, profile)
@@ -2613,31 +2656,7 @@ async function ensureOrganisationContext(client) {
         throw membershipInsert.result.error
       }
 
-      const orgQuery = await client
-        .from('organisations')
-        .select(`
-          id,
-          name,
-          display_name,
-          type,
-          workspace_kind,
-          logo_url,
-          settings_json,
-          company_email,
-          company_phone,
-          website,
-          address_line_1,
-          address_line_2,
-          city,
-          province,
-          postal_code,
-          country,
-          support_email,
-          support_phone,
-          primary_contact_person
-        `)
-        .eq('id', organisationId)
-        .maybeSingle()
+      const orgQuery = await fetchOrganisationContextRow(client, organisationId)
 
       if (!orgQuery.error) {
         organisation = normalizeOrganisationRow(orgQuery.data || organisationInsertPayload, profile)
