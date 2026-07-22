@@ -903,7 +903,7 @@ async function getAuthenticatedUser(client) {
     cachedPacketAuthUser = authResult.data.user
     cachedPacketAuthUserAt = Date.now()
     return cachedPacketAuthUser
-  })
+  })()
     .finally(() => {
       pendingPacketAuthUserPromise = null
     })
