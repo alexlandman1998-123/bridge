@@ -3538,6 +3538,16 @@ function formatSellerMobileUploadSize(bytes = 0) {
   return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
 }
 
+function getSellerMobileDocumentBucket(document = {}) {
+  const statusBucket = String(document?.statusBucket || '').trim().toLowerCase()
+  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
+  if (document?.actionRequired || statusBucket === 'outstanding' || status === 'rejected') return 'action'
+  if (document?.reviewRequired || statusBucket === 'received' || ['uploaded', 'under_review', 'reviewed', 'received'].includes(status)) return 'review'
+  if (document?.satisfied || statusBucket === 'approved' || ['approved', 'completed', 'verified', 'signed'].includes(status)) return 'approved'
+  if (document?.linkedDocument || document?.hasUploadedDocument || document?.uploaded) return 'review'
+  return 'action'
+}
+
 function SellerMobilePortal({
   token,
   workspaceNavigationScope,
@@ -3555,6 +3565,7 @@ function SellerMobilePortal({
   sellerAgentEmail,
   sellerAgentPhone,
   sellerDocumentsNeedingAttention,
+  sellerDocumentItems = [],
   sellerDocumentTracker,
   sellerOfferItems,
   activeSellerOfferCount,
@@ -3574,6 +3585,7 @@ function SellerMobilePortal({
   const [selectedUploadFile, setSelectedUploadFile] = useState(null)
   const [selectedUploadPreviewUrl, setSelectedUploadPreviewUrl] = useState('')
   const [mobileUploadFeedback, setMobileUploadFeedback] = useState({ tone: '', message: '' })
+  const [mobileDocumentFilter, setMobileDocumentFilter] = useState('action')
   const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
   const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
     ? requestedMobileSection
@@ -3583,7 +3595,27 @@ function SellerMobilePortal({
     sellerJourneyStages[0]
   const safeProgress = Math.max(0, Math.min(100, Number(sellerProgressPercent) || 0))
   const primaryDocumentAction = sellerDocumentsNeedingAttention[0] || null
-  const visibleDocuments = sellerDocumentsNeedingAttention.slice(0, 4)
+  const visibleActionDocuments = sellerDocumentsNeedingAttention.slice(0, 4)
+  const allMobileDocumentItems = (sellerDocumentItems.length ? sellerDocumentItems : sellerDocumentsNeedingAttention)
+    .filter((item) => item?.applicable !== false)
+  const mobileDocumentCounts = allMobileDocumentItems.reduce((counts, item) => {
+    const bucket = getSellerMobileDocumentBucket(item)
+    counts.all += 1
+    counts[bucket] += 1
+    return counts
+  }, { action: 0, review: 0, approved: 0, all: 0 })
+  const mobileDocumentFilters = [
+    { key: 'action', label: 'Pending', count: mobileDocumentCounts.action },
+    { key: 'review', label: 'Review', count: mobileDocumentCounts.review },
+    { key: 'approved', label: 'Approved', count: mobileDocumentCounts.approved },
+    { key: 'all', label: 'All', count: mobileDocumentCounts.all },
+  ]
+  const activeMobileDocumentFilter = mobileDocumentFilters.some((filter) => filter.key === mobileDocumentFilter)
+    ? mobileDocumentFilter
+    : 'action'
+  const visibleDocuments = allMobileDocumentItems
+    .filter((item) => activeMobileDocumentFilter === 'all' || getSellerMobileDocumentBucket(item) === activeMobileDocumentFilter)
+    .slice(0, 8)
   const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const ringStyle = {
@@ -3609,6 +3641,7 @@ function SellerMobilePortal({
   )
   const selectedUploadBusy = selectedIsUploading || mobileUploadFeedback.tone === 'loading'
   const selectedLinkedDocument = selectedDocumentAction?.linkedDocument || selectedDocumentAction?.document || null
+  const selectedDocumentBucket = selectedDocumentAction ? getSellerMobileDocumentBucket(selectedDocumentAction) : 'action'
   const selectedOpenKey = String(selectedLinkedDocument?.file_path || selectedLinkedDocument?.storage_path || selectedLinkedDocument?.id || '').trim()
   const selectedIsOpening = Boolean(selectedOpenKey && openingDocumentPath === selectedOpenKey)
 
@@ -3624,6 +3657,29 @@ function SellerMobilePortal({
       URL.revokeObjectURL(previewUrl)
     }
   }, [selectedUploadFile])
+
+  useEffect(() => {
+    if (activeMobileDocumentFilter === 'all' || mobileDocumentCounts[activeMobileDocumentFilter] > 0 || mobileDocumentCounts.all === 0) {
+      return
+    }
+    if (mobileDocumentCounts.action > 0) {
+      setMobileDocumentFilter('action')
+      return
+    }
+    if (mobileDocumentCounts.review > 0) {
+      setMobileDocumentFilter('review')
+      return
+    }
+    if (mobileDocumentCounts.approved > 0) {
+      setMobileDocumentFilter('approved')
+    }
+  }, [
+    activeMobileDocumentFilter,
+    mobileDocumentCounts.action,
+    mobileDocumentCounts.approved,
+    mobileDocumentCounts.all,
+    mobileDocumentCounts.review,
+  ])
 
   function openDocumentActionSheet(document) {
     setSelectedDocumentAction(document)
@@ -3860,7 +3916,7 @@ function SellerMobilePortal({
             emptyText="No immediate seller tasks are open."
             items={[
               sellerNextStep ? { id: 'next', title: sellerNextStep.title, description: sellerNextStep.description, to: sellerNextStep.to || 'documents' } : null,
-              ...visibleDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
+              ...visibleActionDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
             ].filter(Boolean)}
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
@@ -3872,10 +3928,34 @@ function SellerMobilePortal({
             <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Documents</p>
             <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.percent || 0}% approved</h3>
             <p className="mt-1 text-sm leading-6 text-[#667085]">
-              {visibleDocuments.length
-                ? `${visibleDocuments.length} item${visibleDocuments.length === 1 ? '' : 's'} need attention.`
+              {mobileDocumentCounts.action
+                ? `${mobileDocumentCounts.action} item${mobileDocumentCounts.action === 1 ? '' : 's'} need seller action.`
                 : 'Your seller document list is up to date.'}
             </p>
+            <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
+              <div className="grid grid-cols-4 gap-1">
+                {mobileDocumentFilters.map((filter) => {
+                  const isActive = filter.key === activeMobileDocumentFilter
+                  return (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => setMobileDocumentFilter(filter.key)}
+                      className={`inline-flex min-h-[44px] min-w-0 items-center justify-center gap-1 rounded-[14px] px-1.5 text-[0.68rem] font-semibold transition ${
+                        isActive
+                          ? 'bg-white text-[#10213a] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                          : 'text-[#7b8491]'
+                      }`}
+                    >
+                      <span className="truncate">{filter.label}</span>
+                      <span className={`inline-flex min-w-[20px] shrink-0 justify-center rounded-full px-1 py-0.5 text-[0.64rem] ${isActive ? 'bg-[#eef2f6] text-[#344054]' : 'bg-white/75 text-[#667085]'}`}>
+                        {filter.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <div className="mt-4 grid gap-3">
               {visibleDocuments.length ? visibleDocuments.map((item) => {
                 const target = resolveSellerMobileDocumentUploadTarget(item)
@@ -3884,6 +3964,18 @@ function SellerMobilePortal({
                     uploadingDocumentKey &&
                     (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
                 )
+                const bucket = getSellerMobileDocumentBucket(item)
+                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : UploadCloud
+                const statusClasses = bucket === 'approved'
+                  ? 'bg-[#eefbf3] text-[#1f7a46]'
+                  : bucket === 'review'
+                    ? 'bg-[#fff7e8] text-[#a76012]'
+                    : 'bg-[#fff1f1] text-[#b42318]'
+                const statusLabel = bucket === 'approved'
+                  ? 'Approved'
+                  : bucket === 'review'
+                    ? 'Awaiting review'
+                    : item.statusLabel || 'Upload required'
                 return (
                   <button
                     key={item.id || item.key || item.title}
@@ -3892,19 +3984,30 @@ function SellerMobilePortal({
                     className="flex min-h-[76px] items-center justify-between gap-4 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3 text-left transition active:scale-[0.99]"
                   >
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-[#101823]">{item.title || item.label || 'Requested document'}</span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="block text-sm font-semibold text-[#101823]">{item.title || item.label || 'Requested document'}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${statusClasses}`}>
+                          {isUploading ? 'Uploading' : statusLabel}
+                        </span>
+                      </span>
                       <span className="mt-1 block text-xs leading-5 text-[#667085]">
-                        {isUploading ? 'Uploading...' : item.statusLabel || item.message || item.description || 'Action required'}
+                        {isUploading ? 'Uploading to your secure document record...' : item.message || item.description || item.stageLabel || 'Tap to manage this document.'}
                       </span>
                     </span>
                     <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
-                      <UploadCloud size={17} />
+                      <Icon size={17} />
                     </span>
                   </button>
                 )
               }) : (
                 <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
-                  New requests from your property team will appear here.
+                  {activeMobileDocumentFilter === 'action'
+                    ? 'No seller documents need action right now.'
+                    : activeMobileDocumentFilter === 'review'
+                      ? 'No documents are awaiting review right now.'
+                      : activeMobileDocumentFilter === 'approved'
+                        ? 'Approved seller documents will appear here.'
+                        : 'New requests from your property team will appear here.'}
                 </p>
               )}
             </div>
@@ -3991,6 +4094,19 @@ function SellerMobilePortal({
                   <h3 id="seller-mobile-upload-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
                     {selectedDocumentAction.title || selectedDocumentAction.label || 'Requested document'}
                   </h3>
+                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    selectedDocumentBucket === 'approved'
+                      ? 'bg-[#eefbf3] text-[#1f7a46]'
+                      : selectedDocumentBucket === 'review'
+                        ? 'bg-[#fff7e8] text-[#a76012]'
+                        : 'bg-[#fff1f1] text-[#b42318]'
+                  }`}>
+                    {selectedDocumentBucket === 'approved'
+                      ? 'Approved'
+                      : selectedDocumentBucket === 'review'
+                        ? 'Awaiting review'
+                        : selectedDocumentAction.statusLabel || 'Upload required'}
+                  </span>
                   <p className="mt-1 text-sm leading-6 text-[#667085]">
                     {selectedDocumentAction.message || selectedDocumentAction.description || 'Take a photo or upload a saved file for review.'}
                   </p>
@@ -4036,7 +4152,7 @@ function SellerMobilePortal({
                 >
                   <span className="inline-flex items-center gap-3">
                     {selectedUploadBusy ? <Clock3 size={18} /> : <Camera size={18} />}
-                    {selectedUploadBusy ? 'Uploading...' : 'Take photo'}
+                    {selectedUploadBusy ? 'Uploading...' : selectedLinkedDocument ? 'Replace with photo' : 'Take photo'}
                   </span>
                   <ChevronRight size={18} />
                 </button>
@@ -4048,7 +4164,7 @@ function SellerMobilePortal({
                 >
                   <span className="inline-flex items-center gap-3">
                     {selectedUploadBusy ? <Clock3 size={18} /> : <UploadCloud size={18} />}
-                    {selectedUploadBusy ? 'Uploading...' : 'Upload file'}
+                    {selectedUploadBusy ? 'Uploading...' : selectedLinkedDocument ? 'Upload replacement' : 'Upload file'}
                   </span>
                   <ChevronRight size={18} />
                 </button>
@@ -8434,6 +8550,7 @@ function ClientPortal() {
             sellerAgentEmail={sellerAgentEmail}
             sellerAgentPhone={sellerAgentPhone}
             sellerDocumentsNeedingAttention={sellerDocumentsNeedingAttention}
+            sellerDocumentItems={sellerDocumentExperience.items}
             sellerDocumentTracker={sellerDocumentTracker}
             sellerOfferItems={sellerOfferItems}
             activeSellerOfferCount={activeSellerOfferCount}
