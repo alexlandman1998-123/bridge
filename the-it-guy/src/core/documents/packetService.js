@@ -1,6 +1,6 @@
 import { generateMandateDocumentFromTemplate, generateOtpDocumentFromTemplate } from '../../lib/api'
 import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
-import { buildPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
+import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
 import { assertGeneratedDraftVersion, buildDraftLegalProvenance } from './draftGenerationAssurance'
 import { assertGeneratedDraftArtifact, buildDraftArtifactProvenance } from './draftArtifactAssurance'
 import {
@@ -3003,9 +3003,6 @@ export async function generatePacketVersion({
       renderedFileUrl: null,
     }
     let renderStatus = 'generated'
-    let previewOnlyGeneration = false
-    let previewOnlyReason = ''
-    let previewOnlyFailureCode = ''
     const useEditableNativeRenderer = Array.isArray(context?.editableSections) && context.editableSections.length > 0
     const useNativeRendererForTemplate = shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
 
@@ -3187,53 +3184,38 @@ export async function generatePacketVersion({
         throw error
       }
 
-      if (validation.packetType === 'mandate' || (validation.packetType === 'otp' && useEditableNativeRenderer)) {
-        console.warn('[PACKETS] mandate render failed; continuing with a generated preview-only draft.', {
-          packetId: packet.id,
-          failureCode,
-          failureMessage,
-        })
-        previewOnlyGeneration = true
-        previewOnlyReason = failureMessage
-        previewOnlyFailureCode = failureCode
-      } else {
-        await releaseDocumentPacketGenerationLease({
-          packetId: packet.id,
-          generationAttemptId,
-        }).catch(() => false)
-        const failedVersion = await recordGenerationFailure({
-          packet,
-          template: effectiveTemplate,
-          validation,
-          artifact,
-          failureCode,
-          failureMessage,
-          pdfPlaceholders,
-          generationPayload,
-          templateVersion,
-          templateResolution: prepared.templateResolution || null,
-          generatedAt,
-          sourceContextSnapshot,
-          context,
-        })
+      // A failed render is never a generated legal document. Persist the failed attempt
+      // for support/audit purposes, then return a clear error to the workflow.
+      await releaseDocumentPacketGenerationLease({
+        packetId: packet.id,
+        generationAttemptId,
+      }).catch(() => false)
+      const failedVersion = await recordGenerationFailure({
+        packet,
+        template: effectiveTemplate,
+        validation,
+        artifact,
+        failureCode,
+        failureMessage,
+        pdfPlaceholders,
+        generationPayload,
+        templateVersion,
+        templateResolution: prepared.templateResolution || null,
+        generatedAt,
+        sourceContextSnapshot,
+        context,
+      })
 
-        const error = createPacketError(failureCode, failureMessage, {
-          failedVersionId: failedVersion.id,
-          failedVersionNumber: failedVersion.version_number,
-        })
-        error.validation = validation
-        error.packetId = packet.id
-        throw error
-      }
+      const error = createPacketError(failureCode, failureMessage, {
+        failedVersionId: failedVersion.id,
+        failedVersionNumber: failedVersion.version_number,
+      })
+      error.validation = validation
+      error.packetId = packet.id
+      throw error
     }
 
-    const pilotFallback = previewOnlyGeneration
-      ? buildPilotDocumentFallback({
-          packetType: validation.packetType,
-          reason: previewOnlyReason,
-          failureCode: previewOnlyFailureCode,
-        })
-      : null
+    const pilotFallback = null
 
     const renderProvenance = buildRenderProvenance({
       packetType: validation.packetType,
@@ -3246,29 +3228,27 @@ export async function generatePacketVersion({
     })
     const artifactProvenance = buildDraftArtifactProvenance(artifact)
 
-    if (!previewOnlyGeneration) {
-      assertGeneratedDraftArtifact({
-        artifact,
-        packetType: validation.packetType,
-      })
-      assertGeneratedDraftVersion({
-        packet,
-        template: effectiveTemplate,
-        version: {
-          render_status: renderStatus,
-          rendered_document_id: artifact.renderedDocumentId,
-          rendered_file_path: artifact.renderedFilePath,
-          rendered_file_url: artifact.renderedFileUrl,
-          placeholders_missing_json: validation.missingPlaceholders,
-          generated_at: generatedAt,
-          validation_summary_json: {
-            generationStatus: 'generated',
-            previewOnly: false,
-            render_provenance: renderProvenance,
-          },
+    assertGeneratedDraftArtifact({
+      artifact,
+      packetType: validation.packetType,
+    })
+    assertGeneratedDraftVersion({
+      packet,
+      template: effectiveTemplate,
+      version: {
+        render_status: renderStatus,
+        rendered_document_id: artifact.renderedDocumentId,
+        rendered_file_path: artifact.renderedFilePath,
+        rendered_file_url: artifact.renderedFileUrl,
+        placeholders_missing_json: validation.missingPlaceholders,
+        generated_at: generatedAt,
+        validation_summary_json: {
+          generationStatus: 'generated',
+          previewOnly: false,
+          render_provenance: renderProvenance,
         },
-      })
-    }
+      },
+    })
 
     const version = await createDocumentPacketVersionSafely({
       packetId: packet.id,
@@ -3282,9 +3262,9 @@ export async function generatePacketVersion({
       sectionManifestJson: validation.sectionManifest,
       validationSummaryJson: {
         ...buildValidationSummary(validation),
-        generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
-        previewOnly: previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
+        generationStatus: 'generated',
+        previewOnly: false,
+        previewOnlyReason: null,
         pilotFallback,
         generationPayload,
         templateVersion,
@@ -3311,8 +3291,8 @@ export async function generatePacketVersion({
       sourceContextJson: {
         ...(packet?.source_context_json || {}),
         lastGeneratedVersion: version.version_number,
-        previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
+        previewOnlyGeneration: false,
+        previewOnlyReason: null,
         pilotFallback,
         generationPayload,
         templateVersion,
@@ -3346,17 +3326,13 @@ export async function generatePacketVersion({
       packetId: packet.id,
       organisationId: packet.organisation_id,
       versionId: version.id,
-      eventType: previewOnlyGeneration
-        ? 'draft_preview_generated'
-        : version.version_number > 1
-          ? 'packet_regenerated'
-          : 'version_generated',
+      eventType: version.version_number > 1
+        ? 'packet_regenerated'
+        : 'version_generated',
       eventPayload: {
-        activity_type: previewOnlyGeneration
-          ? 'mandate_draft_preview_generated'
-          : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
-            ? 'commercial_document_generated'
-            : 'mandate_generated',
+        activity_type: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'commercial_document_generated'
+          : 'mandate_generated',
         leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
         transactionId: context?.transaction?.id || context?.transactionId || null,
         versionNumber: version.version_number,
@@ -3364,8 +3340,8 @@ export async function generatePacketVersion({
         renderStatus: version.render_status,
         renderedDocumentId: version.rendered_document_id,
         renderedFilePath: version.rendered_file_path,
-        previewOnly: previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
+        previewOnly: false,
+        previewOnlyReason: null,
         pilotFallback,
         templateResolutionSource: generationPayload.templateResolutionSource || null,
         mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
@@ -3377,17 +3353,14 @@ export async function generatePacketVersion({
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
         conditionalMasterCoverageReadiness: generationPayload.conditionalMasterCoverageReadiness || null,
-        message: previewOnlyGeneration
-          ? 'Mandate draft preview was generated.'
-          : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
-            ? 'Commercial document was generated successfully.'
-            : 'Mandate was generated successfully.',
+        message: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'Commercial document was generated successfully.'
+          : 'Mandate was generated successfully.',
       },
     })
 
     if (
       (validation.packetType === 'mandate' || COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)) &&
-      !previewOnlyGeneration &&
       version.rendered_file_path
     ) {
       await addPacketEvent({
