@@ -885,14 +885,25 @@ async function getAuthenticatedUser(client) {
     return pendingPacketAuthUserPromise
   }
 
-  pendingPacketAuthUserPromise = client.auth.getUser()
-    .then((authResult) => {
-      if (authResult.error) throw authResult.error
-      if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
-      cachedPacketAuthUser = authResult.data.user
+  pendingPacketAuthUserPromise = (async () => {
+    // Packet reads run throughout the mandate workspace. The session is already
+    // established by the application gate, and RLS still validates its access
+    // token server-side. Avoid making every cold packet read wait on auth.getUser.
+    const sessionResult = await client.auth.getSession().catch(() => null)
+    const sessionUser = sessionResult?.data?.session?.user || null
+    if (sessionUser?.id) {
+      cachedPacketAuthUser = sessionUser
       cachedPacketAuthUserAt = Date.now()
       return cachedPacketAuthUser
-    })
+    }
+
+    const authResult = await client.auth.getUser()
+    if (authResult.error) throw authResult.error
+    if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
+    cachedPacketAuthUser = authResult.data.user
+    cachedPacketAuthUserAt = Date.now()
+    return cachedPacketAuthUser
+  })
     .finally(() => {
       pendingPacketAuthUserPromise = null
     })
