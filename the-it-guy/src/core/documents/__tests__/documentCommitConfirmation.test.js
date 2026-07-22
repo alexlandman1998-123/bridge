@@ -9,6 +9,16 @@ test('summarises the exact number of signing invitations before send', () => {
   assert.match(model.summary, /lock this document version/)
 })
 
+test('includes the exact recipient email addresses in the send confirmation', () => {
+  const model = buildDocumentCommitConfirmation({
+    action: 'send_signature',
+    signerCount: 1,
+    recipients: [{ label: 'Seller', name: 'Ada Seller', email: 'ADA@EXAMPLE.COM' }],
+  })
+
+  assert.deepEqual(model.recipients, [{ label: 'Seller', name: 'Ada Seller', email: 'ada@example.com' }])
+})
+
 test('blocks send confirmation when there are no signing parties', () => {
   const model = buildDocumentCommitConfirmation({ action: 'send_signature', signerCount: 0 })
   assert.equal(model.canConfirm, false)

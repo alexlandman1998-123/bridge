@@ -2401,82 +2401,15 @@ function SignerPreparationPanel({
   )
 }
 
-function SignaturePreparationCard({
-  packetType = 'mandate',
-  roster = [],
-  validation = { blockers: [], warnings: [] },
-  busy = false,
-  canManageSigners = true,
-  onOpen = null,
-}) {
-  const rows = Array.isArray(roster) ? roster : []
-  const requiredRows = rows.filter((row) => row.required)
-  const readyRows = requiredRows.filter((row) => normalizeText(row.signerName) && isValidEmail(row.signerEmail))
-  const blockerCount = Array.isArray(validation?.blockers) ? validation.blockers.length : 0
-  const warningCount = Array.isArray(validation?.warnings) ? validation.warnings.length : 0
-  const readyLabel = requiredRows.length
-    ? `${readyRows.length}/${requiredRows.length} ready`
-    : 'No required signers'
-
-  return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">Prepare for Signature</h4>
-          <p className="mt-1 text-xs leading-5 text-[#6f839b]">Signer details open in a popup so this page stays tidy.</p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-[#5a738d]">
-            {resolveDocumentLabel(packetType)}
-          </span>
-          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-            blockerCount ? 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]' : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-          }`}>
-            {readyLabel}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2">
-        {rows.map((row) => {
-          const rowReady = normalizeText(row.signerName) && isValidEmail(row.signerEmail)
-          return (
-            <div key={row.role} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#edf3fa] bg-[#fbfdff] px-3 py-2">
-              <span className="min-w-0 truncate text-xs font-semibold text-[#20344b]">{row.label}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${rowReady ? 'bg-[#effaf4] text-[#2e7b4f]' : 'bg-[#fff8ec] text-[#8a5b12]'}`}>
-                {rowReady ? 'Ready' : 'Needs details'}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-
-      {blockerCount || warningCount ? (
-        <p className="mt-3 text-xs text-[#8a6a1d]">
-          {blockerCount ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention.` : `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review.`}
-        </p>
-      ) : (
-        <p className="mt-3 text-xs text-[#2e7b4f]">Signer identities are ready to send.</p>
-      )}
-
-      <Button type="button" size="sm" className="mt-3 w-full" onClick={() => onOpen?.()} disabled={busy || !canManageSigners}>
-        {busy ? 'Working…' : 'Open Signature Prep'}
-      </Button>
-    </section>
-  )
-}
-
 function SigningMethodPanel({
   method = 'not_selected',
   packetType = 'mandate',
   canChange = false,
   lockedReason = '',
   onSelect = null,
-  onOpenSignaturePrep = null,
   canResend = false,
   onResend = null,
   resendSummary = '',
-  signaturePrepSummary = null,
   busy = false,
   className = '',
 }) {
@@ -2486,7 +2419,7 @@ function SigningMethodPanel({
       title: 'Digital Signing',
       description: 'Send the mandate to the required seller-side signers to review and sign online.',
       Icon: Link2,
-      next: 'Next step: prepare signers and send secure signing links.',
+      next: 'Next step: confirm the recipient email and send a secure signing link.',
     },
     {
       key: 'physical',
@@ -2556,63 +2489,29 @@ function SigningMethodPanel({
           })}
         </div>
 
-        <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
-              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                Open signer details in a popup so this panel stays compact.
-              </p>
-            </div>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-              signaturePrepSummary?.tone === 'amber'
-                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
-                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-            }`}>
-              {signaturePrepSummary?.statusLabel || 'Ready to open'}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {resolveDocumentLabel(packetType)}
-            </span>
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {signaturePrepSummary?.readyLabel || 'Signer details ready'}
-            </span>
-          </div>
-          {lockedReason ? (
-            <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-              {lockedReason}
-            </p>
-          ) : !canChange ? (
-            <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-          ) : null}
-          {canResend ? (
-            <div className="mt-3 rounded-[16px] border border-[#dbe8f6] bg-white px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#102033]">Resend signing links</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                    {resendSummary || 'Refresh and resend links to outstanding signers without changing the mandate.'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
-                    {busy ? 'Working…' : 'Resend Links'}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-                    Choose Recipient
-                  </Button>
-                </div>
+        {lockedReason ? (
+          <p className="rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+            {lockedReason}
+          </p>
+        ) : !canChange ? (
+          <p className="text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+        ) : null}
+
+        {canResend ? (
+          <div className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#102033]">Signing links</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                  {resendSummary || 'Refresh links to outstanding signers without changing the mandate.'}
+                </p>
               </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
+                {busy ? 'Working…' : 'Resend Links'}
+              </Button>
             </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-              Open Signature Prep
-            </Button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   )
@@ -3525,26 +3424,35 @@ export default function LegalDocumentWorkspace({
       percent,
     }
   }, [signerRoster])
-  const signaturePrepSummary = useMemo(() => {
-    const blockerCount = Array.isArray(signerValidation.blockers) ? signerValidation.blockers.length : 0
-    const warningCount = Array.isArray(signerValidation.warnings) ? signerValidation.warnings.length : 0
-    return {
-      readyLabel: signerProgressMeta.totalRequired
-        ? `${signerProgressMeta.signedRequired}/${signerProgressMeta.totalRequired} ready`
-        : 'No required signers',
-      statusLabel: blockerCount
-        ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention`
-        : warningCount
-          ? `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review`
-          : 'Signer identities ready',
-      tone: blockerCount || warningCount ? 'amber' : 'green',
-    }
-  }, [
-    signerProgressMeta.signedRequired,
-    signerProgressMeta.totalRequired,
-    signerValidation.blockers,
-    signerValidation.warnings,
-  ])
+
+  const sendSignatureRecipients = useMemo(() => {
+    const rows = effectiveSignerRoster.map((row) => {
+      const draft = signerDraftByRole[row.role] || null
+      return draft
+        ? {
+          ...row,
+          signerName: normalizeText(draft.signerName || row.signerName),
+          signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
+        }
+        : row
+    })
+    const agentRow = rows.find((row) => normalizeKey(row.role) === 'agent') || null
+    const agentHasSigned = Boolean(agentRow?.signedAt) || normalizeKey(agentRow?.statusRaw || agentRow?.status) === 'signed'
+    const requiredRows = rows.filter((row) => row.required)
+    const outstandingRows = requiredRows.filter((row) => !['signed', 'declined'].includes(normalizeKey(row.statusRaw || row.status)))
+    const recipients = isMandatePacket && agentRow && !agentHasSigned
+      ? [agentRow]
+      : (outstandingRows.length ? outstandingRows : requiredRows)
+
+    return recipients.map((row) => ({
+      label: row.label,
+      name: row.signerName,
+      email: row.signerEmail,
+    }))
+  }, [effectiveSignerRoster, isMandatePacket, signerDraftByRole])
+  const sendRecipientEmailMissing = sendSignatureRecipients.some((recipient) => (
+    !isValidEmail(recipient.email) || recipient.email.endsWith('@bridge.local')
+  ))
 
   const editablePreviewHtml = useMemo(() => {
     if (!editableSections.length) return ''
@@ -6163,7 +6071,7 @@ export default function LegalDocumentWorkspace({
     (isMandatePacket || isOtpPacket) &&
     (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
   const handleSendForSignatureIntent = () => {
-    if (isMandatePacket && signingMethod === 'digital' && signerValidation.blockers.length) {
+    if (isMandatePacket && signingMethod === 'digital' && (signerValidation.blockers.length || sendRecipientEmailMissing)) {
       setSignerPrepOpen(true)
       setLoadError('')
       setActionFeedback('Review signer details before sending the mandate.')
@@ -6458,7 +6366,8 @@ export default function LegalDocumentWorkspace({
   const sendConfirmation = buildDocumentCommitConfirmation({
     action: 'send_signature',
     packetType,
-    signerCount: signerValidation.isReady ? effectiveSignerRoster.filter((row) => row.required).length : 0,
+    signerCount: signerValidation.isReady && !sendRecipientEmailMissing ? sendSignatureRecipients.length : 0,
+    recipients: sendSignatureRecipients,
   })
 
   async function handleConfirmedSend() {
@@ -6934,11 +6843,9 @@ export default function LegalDocumentWorkspace({
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
-                    onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     canResend={canResendSignatureLinks}
                     onResend={() => runReviewAction('resend_signature')}
                     resendSummary={resendSignatureSummary}
-                    signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className={reviewRailPanelClassName}
                   />
