@@ -887,6 +887,7 @@ function convertManifestToEditableSections({
   manifest = [],
   placeholders = {},
   editableSnapshot = null,
+  includeSnapshotOnlySections = true,
 } = {}) {
   const snapshotSections = Array.isArray(editableSnapshot?.sections) ? editableSnapshot.sections : []
   const snapshotByKey = new Map(snapshotSections.map((row) => [normalizeText(row?.key), row]))
@@ -921,7 +922,7 @@ function convertManifestToEditableSections({
     const key = normalizeText(section?.key)
     return key && !sourceKeySet.has(key) && !protectedConditionalPackKeys.has(key)
   })
-  if (snapshotOnlyRows.length) {
+  if (includeSnapshotOnlySections && snapshotOnlyRows.length) {
     sourceRows = [...sourceRows, ...snapshotOnlyRows]
   }
 
@@ -3975,6 +3976,7 @@ export default function LegalDocumentWorkspace({
       manifest,
       placeholders: placeholderMap,
       editableSnapshot,
+      includeSnapshotOnlySections: !canAdoptCurrentTemplate,
     })
     setEditableSections(sections)
     setEditableDirty(false)
