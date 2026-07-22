@@ -2390,6 +2390,7 @@ export default function LegalDocumentWorkspacePage() {
   const [runtimeRolloutAccess, setRuntimeRolloutAccess] = useState({ organisationId: '', decision: null })
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
+  const hydratedRouteContextKeyRef = useRef('')
 
   useEffect(() => {
     initialStatusRef.current = initialStatus
@@ -2595,11 +2596,21 @@ export default function LegalDocumentWorkspacePage() {
   }, [])
 
   const loadRouteContext = useCallback(async () => {
+    const nextRouteContextKey = [
+      requestedPacketType,
+      routePacketId,
+      routeLeadId,
+      routeListingId,
+      routeTransactionId,
+    ].map(normalizeText).join(':')
+    const hasRenderedCurrentRoute = hasRenderedContextRef.current &&
+      hydratedRouteContextKeyRef.current === nextRouteContextKey
+
     setContextHydrated(false)
-    setRouteContextSettled(hasRenderedContextRef.current)
-    setLoadingContext(!hasRenderedContextRef.current)
+    setRouteContextSettled(hasRenderedCurrentRoute)
+    setLoadingContext(!hasRenderedCurrentRoute)
     setPageError('')
-    setValidatedRoutePacketId('')
+    if (!hasRenderedCurrentRoute) setValidatedRoutePacketId('')
     let renderedFallback = false
     try {
       let resolvedOrganisationId = null
@@ -2609,19 +2620,41 @@ export default function LegalDocumentWorkspacePage() {
       const packetOwnershipWarnings = []
 
       if (routePacketId) {
-        const packet = await withLegalWorkspaceTimeout(
-          fetchDocumentPacket(routePacketId, { includeVersions: false, includeEvents: false }),
-          'Packet lookup is taking too long.',
-        )
-        if (routeLeadId && !documentPacketBelongsToLead(packet, routeLeadId)) {
-          effectiveRoutePacketId = ''
-          packetOwnershipWarnings.push('The packet in this link belongs to another lead, so Arch9 ignored it for this workspace.')
+        let packet = null
+        try {
+          packet = await withLegalWorkspaceTimeout(
+            fetchDocumentPacket(routePacketId, { includeVersions: false, includeEvents: false }),
+            'Packet lookup is taking too long.',
+          )
+        } catch (packetLookupError) {
+          const canContinueWithoutRoutePacket = Boolean(
+            routeTransactionId ||
+              routeLeadId ||
+              routeListingId ||
+              hasRenderedCurrentRoute ||
+              normalizeText(initialStatusValueRef.current?.packet?.id),
+          )
+          if (!isLegalWorkspaceTimeoutError(packetLookupError) || !canContinueWithoutRoutePacket) {
+            throw packetLookupError
+          }
+          // Keep the known route packet id for the lightweight status request
+          // below. Clearing it forces a second broad packet lookup and leaves
+          // the editor on its placeholder longer than necessary.
+          effectiveRoutePacketId = routePacketId || normalizeText(initialStatusValueRef.current?.packet?.id)
+          packetOwnershipWarnings.push('Packet lookup timed out. Arch9 kept this workspace open from the available lead or transaction context.')
+          console.warn('[LegalDocumentWorkspacePage] route packet lookup timed out; continuing with available route context.', packetLookupError)
         }
-        resolvedPacketType = resolvedPacketType || normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
-        if (effectiveRoutePacketId) {
-          resolvedTransactionId = resolvedTransactionId || normalizeText(packet?.transaction_id || packet?.transactionId)
+        if (packet) {
+          if (routeLeadId && !documentPacketBelongsToLead(packet, routeLeadId)) {
+            effectiveRoutePacketId = ''
+            packetOwnershipWarnings.push('The packet in this link belongs to another lead, so Arch9 ignored it for this workspace.')
+          }
+          resolvedPacketType = resolvedPacketType || normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
+          if (effectiveRoutePacketId) {
+            resolvedTransactionId = resolvedTransactionId || normalizeText(packet?.transaction_id || packet?.transactionId)
+          }
+          resolvedOrganisationId = normalizeText(packet?.organisation_id || packet?.organisationId) || null
         }
-        resolvedOrganisationId = normalizeText(packet?.organisation_id || packet?.organisationId) || null
       }
 
       if (!['mandate', 'otp'].includes(resolvedPacketType)) {
@@ -2903,6 +2936,7 @@ export default function LegalDocumentWorkspacePage() {
           transactionId: resolvedTransactionId,
           leadId: routeLeadId,
           organisationId: resolvedOrganisationId,
+          includeActivity: false,
         })
         status = await withLegalWorkspaceTimeout(
           statusRequest,
@@ -2914,7 +2948,7 @@ export default function LegalDocumentWorkspacePage() {
           // template-backed status as soon as it arrives.
           void statusRequest.then((lateStatus) => {
             if ((hydratedRouteContextKeyRef.current && hydratedRouteContextKeyRef.current !== nextRouteContextKey) || !lateStatus?.packet?.id) return
-            applyInitialStatus(lateStatus)
+            setInitialStatus(lateStatus)
             setValidatedRoutePacketId(normalizeText(lateStatus.packet.id))
           }).catch((lateStatusError) => {
             console.warn('[LegalDocumentWorkspacePage] delayed packet status refresh failed.', lateStatusError)
@@ -2974,6 +3008,7 @@ export default function LegalDocumentWorkspacePage() {
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
       setValidatedRoutePacketId(normalizeText(status?.packet?.id || effectiveRoutePacketId))
+      hydratedRouteContextKeyRef.current = nextRouteContextKey
       setContextHydrated(true)
     } catch (error) {
       if (renderedFallback) {
