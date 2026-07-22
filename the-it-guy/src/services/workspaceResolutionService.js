@@ -93,6 +93,54 @@ function profileRepairReason(profile = null) {
   return ''
 }
 
+function inferAppRoleFromWorkspaceType(workspaceType = '') {
+  const normalized = normalizeWorkspaceType(workspaceType, '')
+  if (normalized === WORKSPACE_TYPES.agency) return APP_ROLES.agent
+  if (normalized === WORKSPACE_TYPES.developerCompany) return APP_ROLES.developer
+  if (normalized === WORKSPACE_TYPES.attorneyFirm) return APP_ROLES.attorney
+  if (normalized === WORKSPACE_TYPES.bondOriginator) return APP_ROLES.bondOriginator
+  return ''
+}
+
+function inferAppRoleFromMembershipRows(organisationMembershipRows = [], attorneyMembershipRows = []) {
+  if ((attorneyMembershipRows || []).length) return APP_ROLES.attorney
+
+  for (const row of organisationMembershipRows || []) {
+    const rowRole = normalizeCanonicalAppRole(row?.app_role, '')
+    if (isCanonicalAppRole(rowRole)) return rowRole
+
+    const workspaceRole = inferAppRoleFromWorkspaceType(row?.workspace_type)
+    if (workspaceRole) return workspaceRole
+  }
+
+  return ''
+}
+
+function enrichFallbackProfileFromMembershipRows(profile = null, organisationMembershipRows = [], attorneyMembershipRows = []) {
+  if (!profile?.id) return profile
+
+  const matchingRows = [
+    ...(organisationMembershipRows || []),
+    ...(attorneyMembershipRows || []),
+  ].filter(Boolean)
+  const inferredRole = isCanonicalAppRole(profile.role)
+    ? profile.role
+    : inferAppRoleFromMembershipRows(organisationMembershipRows, attorneyMembershipRows)
+  const nameRow = matchingRows.find((row) => normalizeText(row.first_name) || normalizeText(row.last_name)) || null
+  const firstName = normalizeText(profile.firstName) || normalizeText(nameRow?.first_name)
+  const lastName = normalizeText(profile.lastName) || normalizeText(nameRow?.last_name)
+
+  if (!inferredRole && firstName === profile.firstName && lastName === profile.lastName) return profile
+
+  return normalizeProfile({
+    ...profile,
+    firstName,
+    lastName,
+    role: inferredRole || profile.role,
+    onboardingCompleted: profile.onboardingCompleted || Boolean(inferredRole),
+  })
+}
+
 function normalizeOrganisationRow(row = null, fallback = {}) {
   if (!row) return null
   const type = normalizeWorkspaceType(row.type || row.workspace_type, inferWorkspaceTypeFromAppRole(fallback.appRole))
@@ -542,10 +590,10 @@ export function buildWorkspaceResolution({
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
 } = {}) {
-  const profile = normalizeProfile(profileInput)
+  let profile = normalizeProfile(profileInput)
   const userEmail = normalizeEmail(user?.email || profile?.email)
   const userId = normalizeText(user?.id || profile?.id)
-  const appRole = normalizeCanonicalAppRole(profile?.role, '')
+  let appRole = normalizeCanonicalAppRole(profile?.role, '')
   const organisationById = new Map((organisationRows || []).map((row) => [row.id, normalizeOrganisationRow(row, { appRole })]))
   const firmById = new Map((attorneyFirmRows || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
   const firmByOrganisationId = new Map(
@@ -618,6 +666,8 @@ export function buildWorkspaceResolution({
     [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending].includes(normalizeMembershipStatus(membership.status)),
   )
   const suspendedMemberships = memberships.filter((membership) => BLOCKED_MEMBERSHIP_STATUSES.has(normalizeMembershipStatus(membership.status)))
+  profile = enrichFallbackProfileFromMembershipRows(profile, organisationMembershipRows, attorneyMembershipRows)
+  appRole = normalizeCanonicalAppRole(profile?.role, '')
   const repairReason = profileRepairReason(profile)
 
   if (!userId) {

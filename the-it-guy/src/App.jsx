@@ -809,14 +809,14 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     )
   }
 
-  if (authState.status === 'unauthenticated' || !session) {
-    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
-    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
-    return <Navigate to="/auth" replace state={{ from: location }} />
-  }
-
   if (authState.status === 'error') {
-    const dataServiceUnavailable = String(profileError || '').includes('data service is temporarily unavailable')
+    const normalizedProfileError = String(profileError || '').toLowerCase()
+    const dataServiceUnavailable =
+      normalizedProfileError.includes('data service is temporarily unavailable') ||
+      normalizedProfileError.includes('authentication bootstrap timed out') ||
+      normalizedProfileError.includes('failed to fetch') ||
+      normalizedProfileError.includes('lock broken') ||
+      normalizedProfileError.includes('aborterror')
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -841,6 +841,12 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
         </div>
       </section>
     )
+  }
+
+  if (authState.status === 'unauthenticated' || !session) {
+    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
+    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
+    return <Navigate to="/auth" replace state={{ from: location }} />
   }
 
   const onAnyOnboardingRoute = isOnboardingRoute(location.pathname)

@@ -2341,7 +2341,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         setSelectedWorkspaceId(result.filters.selectedWorkspaceId)
       }
     } catch (loadError) {
-      console.error('[PrincipalDashboard] load failed', loadError)
+      console.error('[PrincipalDashboard] load failed', {
+        name: loadError?.name || null,
+        code: loadError?.code || null,
+        message: loadError?.message || String(loadError || ''),
+        details: loadError?.details || null,
+        hint: loadError?.hint || null,
+        status: loadError?.status || loadError?.statusCode || null,
+      })
       setError(loadError?.message || 'We couldn’t load the principal dashboard data.')
     } finally {
       setLoading(false)

@@ -13,7 +13,7 @@ import { trackAuthMetric, trackWorkspaceBrandingMetric } from '../services/obser
 import { setActiveWorkspacePreference } from '../services/workspaceResolutionService'
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
-const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 8000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 
 const EMPTY_AUTH_STATE = Object.freeze({
@@ -290,9 +290,12 @@ export function AuthSessionProvider({ children }) {
     if (sessionLoading) return
 
     if (!sessionUserId) {
-      setAuthState({
-        ...EMPTY_AUTH_STATE,
-        status: 'unauthenticated',
+      setAuthState((previous) => {
+        if (previous.status === 'error' && previous.bootError) return previous
+        return {
+          ...EMPTY_AUTH_STATE,
+          status: 'unauthenticated',
+        }
       })
       return
     }

@@ -18,9 +18,9 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
 ])
 
-const PROFILE_BOOT_TIMEOUT_MS = 8000
+const PROFILE_BOOT_TIMEOUT_MS = 3500
 const SIGNUP_INTENT_BOOT_TIMEOUT_MS = 4000
-const WORKSPACE_BOOT_TIMEOUT_MS = 12000
+const WORKSPACE_BOOT_TIMEOUT_MS = 5000
 
 function createAuthBackendTimeoutError(step, timeoutMs) {
   const error = new Error(`Arch9 data service did not respond while loading ${step}.`)
@@ -250,6 +250,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
   let profile = buildDefaultProfileFromUser(user)
+  let profileBootTimedOut = false
   try {
     profile = await runAuthBootStep(
       'profile.getOrCreate',
@@ -261,6 +262,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     )
   } catch (error) {
     if (error?.code !== 'AUTH_BACKEND_UNAVAILABLE') throw error
+    profileBootTimedOut = true
     console.warn('[AUTH] profile bootstrap timed out; using session profile fallback.', {
       userId: user.id,
       error,
@@ -268,7 +270,11 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   }
 
   let loadedSignupIntent = getSignupIntentFallbackForUser(user)
-  if (!loadedSignupIntent) {
+  if (!loadedSignupIntent && profileBootTimedOut) {
+    console.warn('[AUTH] signup intent bootstrap skipped after profile timeout; workspace membership fallback will be used.', {
+      userId: user.id,
+    })
+  } else if (!loadedSignupIntent) {
     try {
       loadedSignupIntent = await runAuthBootStep(
         'signupIntent.load',
@@ -303,7 +309,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       })
     }
   }
-  const appRole = normalizeCanonicalAppRole(profile?.role)
+  let appRole = normalizeCanonicalAppRole(profile?.role)
 
   if (!isCanonicalAppRole(appRole)) {
     console.warn('[AUTH] profile role requires repair before dashboard access', {
@@ -328,6 +334,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null,
     },
   )
+  if (!isCanonicalAppRole(appRole) && isCanonicalAppRole(workspaceResolution?.profile?.role)) {
+    profile = {
+      ...profile,
+      ...workspaceResolution.profile,
+      onboardingCompleted: profile.onboardingCompleted || workspaceResolution.profile.onboardingCompleted,
+    }
+    appRole = normalizeCanonicalAppRole(profile.role)
+    console.warn('[AUTH] profile role inferred from workspace membership after profile bootstrap fallback.', {
+      userId: user.id,
+      role: appRole,
+    })
+  }
   let memberships = workspaceResolution.memberships
   let activeMemberships = workspaceResolution.activeMemberships
   let pendingMemberships = workspaceResolution.pendingMemberships

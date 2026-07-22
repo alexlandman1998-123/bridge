@@ -39,6 +39,7 @@ const REVENUE_FORECAST_WEIGHTS = {
   transfer: 0.9,
   registration: 1,
 }
+const DASHBOARD_SOURCE_TIMEOUT_MS = 10000
 
 export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
   { key: 'last_30_days', label: 'Last 30 Days' },
@@ -187,6 +188,53 @@ function isMissingSourceError(error) {
   )
 }
 
+function isPermissionDeniedError(error) {
+  if (!error) return false
+  const code = normalizeKey(error.code)
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = normalizeKey(error.message)
+  const details = normalizeKey(error.details)
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === '401' ||
+    code === '403' ||
+    code === '42501' ||
+    code === 'permission_denied' ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    details.includes('permission denied') ||
+    details.includes('row-level security')
+  )
+}
+
+function isRecoverableDashboardReadError(error) {
+  return error?.code === 'DASHBOARD_SOURCE_TIMEOUT' || isMissingSourceError(error) || isPermissionDeniedError(error)
+}
+
+function createDashboardReadTimeoutError(table, timeoutMs) {
+  const error = new Error(`Dashboard source "${table}" did not respond within ${timeoutMs}ms.`)
+  error.name = 'DashboardSourceTimeoutError'
+  error.code = 'DASHBOARD_SOURCE_TIMEOUT'
+  error.table = table
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+async function withDashboardReadTimeout(task, { table, timeoutMs = DASHBOARD_SOURCE_TIMEOUT_MS } = {}) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => reject(createDashboardReadTimeoutError(table, timeoutMs)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
+}
+
 function getMissingColumnName(error) {
   const message = normalizeText(error?.message)
   if (!message) return ''
@@ -195,6 +243,16 @@ function getMissingColumnName(error) {
     message.match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]?\s+column/i)?.[1] ||
     ''
   )
+}
+
+function logSlowDashboardRead(table, startedAt, extra = {}) {
+  const durationMs = Date.now() - startedAt
+  if (durationMs < 1500) return
+  console.debug('[PrincipalDashboard] Slow source read.', {
+    table,
+    durationMs,
+    ...extra,
+  })
 }
 
 function removeColumnFromSelect(fields, columnName) {
@@ -207,6 +265,7 @@ function removeColumnFromSelect(fields, columnName) {
 
 async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
+  const startedAt = Date.now()
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
   for (const selectFields of variants) {
@@ -217,7 +276,15 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
       if (agencyId && agencyColumn) query = query.eq(agencyColumn, agencyId)
       if (order) query = query.order(order, { ascending })
       if (limit) query = query.limit(limit)
-      const { data, error } = await query
+      let result = null
+      try {
+        result = await withDashboardReadTimeout(query, { table })
+      } catch (error) {
+        lastError = error
+        if (!isRecoverableDashboardReadError(error)) throw error
+        break
+      }
+      const { data, error } = result
       if (!error) return data || []
       lastError = error
       const missingColumn = getMissingColumnName(error)
@@ -227,11 +294,16 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isRecoverableDashboardReadError(error)) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', { table, message: lastError?.message })
+  logSlowDashboardRead(table, startedAt, { empty: true })
+  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', {
+    table,
+    code: lastError?.code || null,
+    message: lastError?.message,
+  })
   return []
 }
 
@@ -239,6 +311,7 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
+  const startedAt = Date.now()
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
   for (const selectFields of variants) {
@@ -248,7 +321,15 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
       let query = supabase.from(table).select(fields).in(idColumn, normalizedIds)
       if (order) query = query.order(order, { ascending })
       if (limit) query = query.limit(limit)
-      const { data, error } = await query
+      let result = null
+      try {
+        result = await withDashboardReadTimeout(query, { table })
+      } catch (error) {
+        lastError = error
+        if (!isRecoverableDashboardReadError(error)) throw error
+        break
+      }
+      const { data, error } = result
       if (!error) return data || []
       lastError = error
       const missingColumn = getMissingColumnName(error)
@@ -258,15 +339,21 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isRecoverableDashboardReadError(error)) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
+  logSlowDashboardRead(table, startedAt, { empty: true, idCount: normalizedIds.length })
+  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', {
+    table,
+    code: lastError?.code || null,
+    message: lastError?.message,
+  })
   return []
 }
 
 async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
+  const startedAt = Date.now()
   if (!isSupabaseConfigured || !supabase) return { byUserId: {}, byEmail: {} }
   const userIds = [...new Set(rows.map((row) => normalizeText(row?.user_id || row?.userId)).filter(Boolean))]
   const emails = [...new Set(rows.map((row) => normalizeKey(row?.email)).filter(Boolean))]
@@ -274,14 +361,25 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
 
   async function fetchProfilesBy(column, values) {
     if (!values.length) return []
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, avatar_url')
-      .in(column, values)
-      .limit(1000)
+    let result = null
+    try {
+      result = await withDashboardReadTimeout(
+        supabase
+          .from('profiles')
+          .select('id, email, avatar_url')
+          .in(column, values)
+          .limit(1000),
+        { table: 'profiles:avatars' },
+      )
+    } catch (error) {
+      if (isRecoverableDashboardReadError(error)) return []
+      throw error
+    }
+
+    const { data, error } = result
 
     if (error) {
-      if (isMissingSourceError(error) || getMissingColumnName(error) === 'avatar_url') return []
+      if (isRecoverableDashboardReadError(error) || getMissingColumnName(error) === 'avatar_url') return []
       throw error
     }
 
@@ -293,7 +391,7 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
     fetchProfilesBy('email', emails),
   ])
 
-  return [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
+  const result = [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
     const avatarUrl = normalizeText(row?.avatar_url)
     if (!avatarUrl) return accumulator
     const id = normalizeText(row?.id)
@@ -302,10 +400,20 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
     if (email) accumulator.byEmail[email] = avatarUrl
     return accumulator
   }, { byUserId: {}, byEmail: {} })
+  logSlowDashboardRead('profiles:avatars', startedAt, { userCount: userIds.length, emailCount: emails.length })
+  return result
 }
 
 async function enrichOrganisationUsersWithProfileAvatars(rows = []) {
-  const avatarLookup = await fetchProfileAvatarsForOrganisationUsers(rows)
+  let avatarLookup = { byUserId: {}, byEmail: {} }
+  try {
+    avatarLookup = await fetchProfileAvatarsForOrganisationUsers(rows)
+  } catch (error) {
+    console.debug('[PrincipalDashboard] Profile avatar enrichment unavailable; continuing without avatars.', {
+      code: error?.code || null,
+      message: error?.message,
+    })
+  }
   return rows.map((row) => ({
     ...row,
     avatar_url:

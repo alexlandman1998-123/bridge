@@ -2457,17 +2457,145 @@ function SignaturePreparationCard({
   )
 }
 
+function SendForSignatureReviewPanel({
+  packetType = 'mandate',
+  lifecycleState = 'draft',
+  roster = [],
+  recipientRoles = new Set(),
+  recipientSummary = '',
+  routeNote = '',
+  validation = { blockers: [], warnings: [], isReady: false },
+  draftByRole = {},
+  canManageSigners = true,
+  canSend = true,
+  busy = false,
+  loadError = '',
+  onDraftChange = null,
+  onConfirm = null,
+  onClose = null,
+}) {
+  const rows = Array.isArray(roster) ? roster : []
+  const canEditRoster = canManageSigners && ['draft', 'pdf_generated', 'ready_to_send'].includes(normalizeLifecycleState(lifecycleState))
+  const blockerCount = Array.isArray(validation?.blockers) ? validation.blockers.length : 0
+  const warningCount = Array.isArray(validation?.warnings) ? validation.warnings.length : 0
+  const readyToSend = canSend && validation?.isReady && !blockerCount
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">Next send</p>
+            <h4 className="mt-1 text-lg font-semibold text-[#102033]">
+              {recipientSummary || 'Signer details'}
+            </h4>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+            readyToSend
+              ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+              : 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+          }`}>
+            {readyToSend ? 'Ready to send' : 'Needs review'}
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#6b7c93]">
+          {routeNote || `Confirm who will receive the ${resolveDocumentLabel(packetType).toLowerCase()} signing link before sending.`}
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        {rows.map((row) => {
+          const draft = draftByRole[row.role] || { signerName: row.signerName, signerEmail: row.signerEmail }
+          const signerName = normalizeText(draft.signerName || row.signerName)
+          const signerEmail = normalizeText(draft.signerEmail || row.signerEmail).toLowerCase()
+          const rowStatus = normalizeKey(row.statusRaw || row.status)
+          const willReceiveLink = recipientRoles.has(row.role)
+          const rowReady = signerName && isValidEmail(signerEmail) && !signerEmail.endsWith('@bridge.local')
+          const editableRow = canEditRoster && (!row.signer || !isValidEmail(row.signerEmail) || row.signerEmail.endsWith('@bridge.local'))
+          return (
+            <article key={row.role} className={`rounded-[16px] border p-3 ${
+              willReceiveLink ? 'border-[#cfe1ff] bg-[#f4f8ff]' : 'border-[#e3ebf5] bg-white'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#20344b]">
+                    {row.label}
+                    {row.required ? <span className="ml-1 text-[#7b8ea4]">*</span> : null}
+                  </p>
+                  <p className="mt-0.5 text-[0.68rem] text-[#6f839b]">
+                    {willReceiveLink ? 'Will receive this signing link' : rowStatus === 'signed' ? 'Already signed' : row.required ? 'Required signer' : 'Optional signer'}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${
+                  rowStatus === 'signed'
+                    ? 'bg-[#effaf4] text-[#2e7b4f]'
+                    : rowReady
+                      ? 'bg-[#eef5ff] text-[#0a66ff]'
+                      : 'bg-[#fff8ec] text-[#8a5b12]'
+                }`}>
+                  {rowStatus === 'signed' ? 'Signed' : rowReady ? 'Ready' : 'Needs details'}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={(event) => onDraftChange?.(row.role, 'signerName', event.target.value)}
+                  disabled={!editableRow || busy}
+                  placeholder={`${row.label} name`}
+                  className="rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4] disabled:cursor-not-allowed disabled:bg-[#f2f6fb] disabled:text-[#7b8fa5]"
+                />
+                <input
+                  type="email"
+                  value={signerEmail}
+                  onChange={(event) => onDraftChange?.(row.role, 'signerEmail', event.target.value.toLowerCase())}
+                  disabled={!editableRow || busy}
+                  placeholder={`${row.label} email`}
+                  className="rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4] disabled:cursor-not-allowed disabled:bg-[#f2f6fb] disabled:text-[#7b8fa5]"
+                />
+              </div>
+            </article>
+          )
+        })}
+      </section>
+
+      {blockerCount ? (
+        <div className="space-y-1 rounded-[14px] border border-[#f2d7d2] bg-[#fff4f2] px-4 py-3 text-sm text-[#a03a2a]">
+          {validation.blockers.map((item, index) => <p key={`send-blocker-${index}`}>{item}</p>)}
+        </div>
+      ) : null}
+      {warningCount ? (
+        <div className="space-y-1 rounded-[14px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+          {validation.warnings.map((item, index) => <p key={`send-warning-${index}`}>{item}</p>)}
+        </div>
+      ) : null}
+      {loadError ? (
+        <div className="rounded-[14px] border border-[#f2d7d2] bg-[#fff4f2] px-4 py-3 text-sm text-[#a03a2a]">
+          {loadError}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button type="button" size="md" variant="secondary" onClick={() => onClose?.()} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="button" size="md" onClick={() => void onConfirm?.()} disabled={busy || !readyToSend}>
+          {busy ? 'Sending…' : 'Confirm and Send'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function SigningMethodPanel({
   method = 'not_selected',
   packetType = 'mandate',
   canChange = false,
   lockedReason = '',
   onSelect = null,
-  onOpenSignaturePrep = null,
   canResend = false,
   onResend = null,
   resendSummary = '',
-  signaturePrepSummary = null,
   busy = false,
   className = '',
 }) {
@@ -2547,63 +2675,29 @@ function SigningMethodPanel({
           })}
         </div>
 
-        <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
-              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                Open signer details in a popup so this panel stays compact.
-              </p>
-            </div>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-              signaturePrepSummary?.tone === 'amber'
-                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
-                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-            }`}>
-              {signaturePrepSummary?.statusLabel || 'Ready to open'}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {resolveDocumentLabel(packetType)}
-            </span>
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {signaturePrepSummary?.readyLabel || 'Signer details ready'}
-            </span>
-          </div>
-          {lockedReason ? (
-            <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-              {lockedReason}
-            </p>
-          ) : !canChange ? (
-            <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-          ) : null}
-          {canResend ? (
-            <div className="mt-3 rounded-[16px] border border-[#dbe8f6] bg-white px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#102033]">Resend signing links</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                    {resendSummary || 'Refresh and resend links to outstanding signers without changing the mandate.'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
-                    {busy ? 'Working…' : 'Resend Links'}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-                    Choose Recipient
-                  </Button>
-                </div>
+        {lockedReason ? (
+          <p className="rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+            {lockedReason}
+          </p>
+        ) : !canChange ? (
+          <p className="text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+        ) : null}
+
+        {canResend ? (
+          <div className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#102033]">Signing links</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                  {resendSummary || 'Refresh links to outstanding signers without changing the mandate.'}
+                </p>
               </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
+                {busy ? 'Working…' : 'Resend Links'}
+              </Button>
             </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-              Open Signature Prep
-            </Button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   )
@@ -2969,7 +3063,7 @@ export default function LegalDocumentWorkspace({
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const [mergeDetailsOpen, setMergeDetailsOpen] = useState(false)
-  const [signerPrepOpen, setSignerPrepOpen] = useState(false)
+  const [sendSignatureReviewOpen, setSendSignatureReviewOpen] = useState(false)
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
@@ -3074,28 +3168,6 @@ export default function LegalDocumentWorkspace({
     const versions = Array.isArray(statusState?.versions) ? statusState.versions : []
     return getGeneratedPacketVersionForSigning(versions) || getUsablePacketVersionForSigning(versions) || versions[0] || null
   }, [statusState?.versions])
-
-  useEffect(() => {
-    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
-    const resolvedVersionId = normalizeText(latestVersion?.id)
-    if (!signerPrepOpen || !resolvedPacketId || !resolvedVersionId || latestVersion?.transaction_pdf_persisted !== true) return undefined
-    let cancelled = false
-    setSigningFieldLayoutBusy(true)
-    fetchSigningFieldLayout({ packetId: resolvedPacketId, versionId: resolvedVersionId })
-      .then((layout) => {
-        if (cancelled) return
-        setSigningFieldLayout(Array.isArray(layout?.fields) ? layout.fields : [])
-        setSigningFieldLayoutRevision(Number(layout?.revision || 0))
-        setSigningPdfPageCount(Number(layout?.pdfPageCount || 1))
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(toFriendlyWorkspaceError(error, 'Unable to load the signature block layout.'))
-      })
-      .finally(() => {
-        if (!cancelled) setSigningFieldLayoutBusy(false)
-      })
-    return () => { cancelled = true }
-  }, [latestVersion?.id, latestVersion?.transaction_pdf_persisted, packetId, signerPrepOpen, statusState?.packet?.id])
 
   const editableVersion = useMemo(() => {
     const versions = Array.isArray(statusState?.versions) ? statusState.versions : []
@@ -3463,26 +3535,39 @@ export default function LegalDocumentWorkspace({
       percent,
     }
   }, [signerRoster])
-  const signaturePrepSummary = useMemo(() => {
-    const blockerCount = Array.isArray(signerValidation.blockers) ? signerValidation.blockers.length : 0
-    const warningCount = Array.isArray(signerValidation.warnings) ? signerValidation.warnings.length : 0
+  const signatureSendReview = useMemo(() => {
+    const rows = effectiveSignerRoster.map((row) => {
+      const draft = signerDraftByRole[row.role] || null
+      if (!draft) return row
+      return {
+        ...row,
+        signerName: normalizeText(draft.signerName || row.signerName),
+        signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
+      }
+    })
+    const agentRow = rows.find((row) => normalizeKey(row.role) === 'agent') || null
+    const agentHasSigned = Boolean(agentRow?.signedAt) || normalizeKey(agentRow?.statusRaw || agentRow?.status) === 'signed'
+    const requiredRows = rows.filter((row) => row.required)
+    const outstandingRequiredRows = requiredRows.filter((row) => !['signed', 'declined'].includes(normalizeKey(row.statusRaw || row.status)))
+    const recipientRows = isMandatePacket && agentRow && !agentHasSigned
+      ? [agentRow]
+      : (outstandingRequiredRows.length ? outstandingRequiredRows : requiredRows)
+    const recipientRoles = new Set(recipientRows.map((row) => row.role))
+    const recipientSummary = recipientRows.length
+      ? recipientRows.map((row) => row.label).join(', ')
+      : 'No outstanding signers'
+    const routeNote = isMandatePacket && agentRow && !agentHasSigned
+      ? 'The agent receives the first secure signing link. Seller-side links follow once the agent has signed.'
+      : recipientRows.length > 1
+        ? 'These outstanding signers will receive secure signing links for the mandate.'
+        : 'This signer will receive the next secure signing link for the mandate.'
     return {
-      readyLabel: signerProgressMeta.totalRequired
-        ? `${signerProgressMeta.signedRequired}/${signerProgressMeta.totalRequired} ready`
-        : 'No required signers',
-      statusLabel: blockerCount
-        ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention`
-        : warningCount
-          ? `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review`
-          : 'Signer identities ready',
-      tone: blockerCount || warningCount ? 'amber' : 'green',
+      rows,
+      recipientRoles,
+      recipientSummary,
+      routeNote,
     }
-  }, [
-    signerProgressMeta.signedRequired,
-    signerProgressMeta.totalRequired,
-    signerValidation.blockers,
-    signerValidation.warnings,
-  ])
+  }, [effectiveSignerRoster, isMandatePacket, signerDraftByRole])
 
   const editablePreviewHtml = useMemo(() => {
     if (!editableSections.length) return ''
@@ -5579,7 +5664,7 @@ export default function LegalDocumentWorkspace({
   ])
 
   async function runReviewAction(actionKey, options = {}) {
-    if (actionBusyRef.current) return
+    if (actionBusyRef.current) return false
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
@@ -5625,9 +5710,11 @@ export default function LegalDocumentWorkspace({
         await onRefreshContext?.()
         await refreshWorkspaceData()
       }
+      return true
     } catch (error) {
       await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
+      return false
     } finally {
       actionBusyRef.current = false
       setActionBusy(false)
@@ -6086,7 +6173,13 @@ export default function LegalDocumentWorkspace({
     normalizeKey(statusState?.state) !== 'loading' &&
     !hasGeneratedMandateVersion
   const handleSendForSignatureIntent = () => {
-    void runReviewAction('send_signature')
+    setLoadError('')
+    setActionFeedback('')
+    setSendSignatureReviewOpen(true)
+  }
+  const handleConfirmSendForSignature = async () => {
+    const sent = await runReviewAction('send_signature')
+    if (sent) setSendSignatureReviewOpen(false)
   }
   const handleGeneratePacketDraft = async () => {
     if (typeof onGenerate !== 'function' || actionBusyRef.current) return
@@ -6601,7 +6694,7 @@ export default function LegalDocumentWorkspace({
                   onSignerAction={(action, signer) => {
                     if (action === 'resend') void runReviewAction('resend_signature', { targetSignerRole: signer.role })
                     else if (action === 'remind') void runReviewAction('remind_signer', { targetSignerRole: signer.role })
-                    else if (action === 'send') void runReviewAction('send_signature')
+                    else if (action === 'send') handleSendForSignatureIntent()
                   }}
                 />
               </div>
@@ -6895,11 +6988,9 @@ export default function LegalDocumentWorkspace({
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
-                    onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     canResend={canResendSignatureLinks}
                     onResend={() => runReviewAction('resend_signature')}
                     resendSummary={resendSignatureSummary}
-                    signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className={reviewRailPanelClassName}
                   />
@@ -7101,36 +7192,29 @@ export default function LegalDocumentWorkspace({
       </Drawer>
 
       <Drawer
-        open={signerPrepOpen}
-        onClose={() => setSignerPrepOpen(false)}
-        title="Prepare for Signature"
-        subtitle="Confirm the agent and all required seller-side signers before sending secure links."
+        open={sendSignatureReviewOpen}
+        onClose={() => setSendSignatureReviewOpen(false)}
+        title="Send for Signature"
+        subtitle="Confirm the recipients before secure signing links are created and sent."
         widthClassName="max-w-[760px]"
       >
-                <SignerPreparationPanel
-                  packetType={packetType}
-                  lifecycleState={normalizedLifecycleState}
-                  signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
-                  canManageSigners={legalPermissions.canManageSigners}
-                  roster={effectiveSignerRoster}
-                  draftByRole={signerDraftByRole}
-                  onDraftChange={handleSignerDraftChange}
-                  validation={signerValidation}
-                  onPrepare={handlePrepareSignerFields}
-                  onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
-                  onRefresh={handleRefreshSignerStatus}
-                  signingLayout={signingFieldLayout}
-                  signingLayoutRevision={signingFieldLayoutRevision}
-                  signingLayoutBusy={signingFieldLayoutBusy}
-                  pdfPreviewUrl={generatedPreviewUrl}
-                  onSigningPdfPageCountChange={setSigningPdfPageCount}
-                  onAddSigningBlock={handleAddSigningBlock}
-                  onSigningBlockChange={handleSigningBlockChange}
-                  onRemoveSigningBlock={handleRemoveSigningBlock}
-                  onSaveSigningLayout={handleSaveSigningLayout}
-                  onApplySigningLayout={handleApplySigningLayout}
-                  busy={actionBusy || signerBusy || loading}
-                />
+        <SendForSignatureReviewPanel
+          packetType={packetType}
+          lifecycleState={normalizedLifecycleState}
+          roster={signatureSendReview.rows}
+          recipientRoles={signatureSendReview.recipientRoles}
+          recipientSummary={signatureSendReview.recipientSummary}
+          routeNote={signatureSendReview.routeNote}
+          validation={signerValidation}
+          draftByRole={signerDraftByRole}
+          canManageSigners={legalPermissions.canManageSigners}
+          canSend={legalPermissions.canSend}
+          busy={actionBusy || loading}
+          loadError={loadError}
+          onDraftChange={handleSignerDraftChange}
+          onConfirm={handleConfirmSendForSignature}
+          onClose={() => setSendSignatureReviewOpen(false)}
+        />
       </Drawer>
 
     </>
