@@ -10,6 +10,7 @@ assert.equal(assessGeneratedDraftVersion({ packet, template, version }).ready, t
 assert.ok(assessGeneratedDraftVersion({ packet, template, version: { ...version, placeholders_missing_json: ['seller_name'] } }).reasons.includes('D1_UNRESOLVED_PLACEHOLDERS'))
 assert.ok(assessGeneratedDraftVersion({ packet, template: { ...template, metadata_json: { ...template.metadata_json, legal_approval_content_digest: 'sha256:changed' } }, version }).reasons.includes('D1_LEGAL_CONTENT_BINDING_MISSING'))
 assert.ok(assessGeneratedDraftVersion({ packet, template, version: { ...version, generated_at: '2026-07-17T09:00:00.000Z' } }).reasons.includes('D1_DRAFT_PREDATES_APPROVAL'))
+assert.equal(assessGeneratedDraftVersion({ packet, template: { id: 'template-1', metadata_json: {} }, version: { ...version, validation_summary_json: { ...version.validation_summary_json, render_provenance: { ...provenance, templateId: 'template-1' } } } }).ready, true)
 
 const service = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
 const assurance = fs.readFileSync('src/core/documents/draftGenerationAssurance.js', 'utf8')

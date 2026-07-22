@@ -29,6 +29,12 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
   const templateId = text(template.id)
   const packetTemplateId = text(packet.template_id || packet.templateId)
   const generatedAt = text(version.generated_at || version.generatedAt || provenance.generatedAt)
+  const requiresLegalApprovalBinding = Boolean(
+    legal.legalApprovalContentDigest ||
+    legal.legalCounselReviewEvidenceDigest ||
+    legal.legalB1ManifestDigest ||
+    legal.legalApprovedAt,
+  )
 
   if (!['otp', 'mandate'].includes(packetType)) reasons.push('D1_PACKET_TYPE_UNSUPPORTED')
   if (!templateId || packetTemplateId !== templateId || text(provenance.templateId) !== templateId) reasons.push('D1_TEMPLATE_PROVENANCE_MISMATCH')
@@ -38,12 +44,17 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
   if (validation.generationStatus !== 'generated' || validation.previewOnly === true) reasons.push('D1_NOT_A_PERSISTED_DRAFT')
   if (!text(provenance.templateVersion)) reasons.push('D1_TEMPLATE_VERSION_MISSING')
   for (const key of ['sectionManifestHash', 'placeholderHash', 'generationPayloadHash', 'contentFingerprint']) if (!text(provenance[key])) reasons.push(`D1_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}_MISSING`)
-  if (!legal.legalApprovalContentDigest || provenance.legalApprovalContentDigest !== legal.legalApprovalContentDigest) reasons.push('D1_LEGAL_CONTENT_BINDING_MISSING')
-  if (!legal.legalCounselReviewEvidenceDigest || provenance.legalCounselReviewEvidenceDigest !== legal.legalCounselReviewEvidenceDigest) reasons.push('D1_COUNSEL_EVIDENCE_BINDING_MISSING')
-  if (!legal.legalB1ManifestDigest || provenance.legalB1ManifestDigest !== legal.legalB1ManifestDigest) reasons.push('D1_B1_MANIFEST_BINDING_MISSING')
-  if (!legal.legalApprovedAt || provenance.legalApprovedAt !== legal.legalApprovedAt) reasons.push('D1_LEGAL_APPROVAL_TIME_BINDING_MISSING')
+  // Organisation templates that do not declare counsel-review metadata remain
+  // valid operational templates. Once any approval evidence is declared, all
+  // four values are immutable bindings for every generated draft.
+  if (requiresLegalApprovalBinding) {
+    if (!legal.legalApprovalContentDigest || provenance.legalApprovalContentDigest !== legal.legalApprovalContentDigest) reasons.push('D1_LEGAL_CONTENT_BINDING_MISSING')
+    if (!legal.legalCounselReviewEvidenceDigest || provenance.legalCounselReviewEvidenceDigest !== legal.legalCounselReviewEvidenceDigest) reasons.push('D1_COUNSEL_EVIDENCE_BINDING_MISSING')
+    if (!legal.legalB1ManifestDigest || provenance.legalB1ManifestDigest !== legal.legalB1ManifestDigest) reasons.push('D1_B1_MANIFEST_BINDING_MISSING')
+    if (!legal.legalApprovedAt || provenance.legalApprovedAt !== legal.legalApprovedAt) reasons.push('D1_LEGAL_APPROVAL_TIME_BINDING_MISSING')
+  }
   if (!generatedAt || !Number.isFinite(Date.parse(generatedAt))) reasons.push('D1_GENERATED_AT_MISSING')
-  if (Number.isFinite(Date.parse(generatedAt)) && Number.isFinite(Date.parse(legal.legalApprovedAt)) && Date.parse(generatedAt) < Date.parse(legal.legalApprovedAt)) reasons.push('D1_DRAFT_PREDATES_APPROVAL')
+  if (requiresLegalApprovalBinding && Number.isFinite(Date.parse(generatedAt)) && Number.isFinite(Date.parse(legal.legalApprovedAt)) && Date.parse(generatedAt) < Date.parse(legal.legalApprovedAt)) reasons.push('D1_DRAFT_PREDATES_APPROVAL')
 
   return { ready: reasons.length === 0, reasons: [...new Set(reasons)], packetType: packetType || null, packetId: text(packet.id) || null, templateId: templateId || null, versionId: text(version.id) || null, generatedAt: generatedAt || null, provenance }
 }
