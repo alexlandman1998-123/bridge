@@ -28384,123 +28384,215 @@ async function resolveProfileIdentityByUserId(client, userId) {
   }
 }
 
+function isMissingTransactionParticipantRelationshipError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = String(error.message || error.details || error.hint || '').toLowerCase()
+  return (
+    code === 'PGRST200' ||
+    message.includes('could not find a relationship') ||
+    message.includes('relationship between')
+  )
+}
+
+function getDirectParticipantTransactionIds(rows = [], normalizedRole = null) {
+  const transactionIds = new Set()
+  for (const row of rows || []) {
+    if (row?.removed_at) continue
+    if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') continue
+    if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
+      if (row?.transaction_id) transactionIds.add(row.transaction_id)
+    }
+  }
+  return transactionIds
+}
+
+async function fetchDirectParticipantRowsByIdentity(
+  client,
+  { identityColumn = '', identityValue = '', organisationId = '' } = {},
+) {
+  if (!identityColumn || !identityValue) {
+    return { rows: [], requiresOrganisationFilter: false }
+  }
+
+  const normalizedOrganisationId = normalizeTextValue(organisationId)
+  const runQuery = async ({ includeStatus = true, scoped = Boolean(normalizedOrganisationId) } = {}) => {
+    const selectFields = [
+      'transaction_id',
+      'role_type',
+      ...(includeStatus ? ['status', 'removed_at'] : []),
+      ...(scoped ? ['transaction:transactions!inner(organisation_id)'] : []),
+    ].join(', ')
+    let query = client
+      .from('transaction_participants')
+      .select(selectFields)
+      .eq(identityColumn, identityValue)
+    if (scoped) {
+      query = query.eq('transaction.organisation_id', normalizedOrganisationId)
+    }
+    return query
+  }
+
+  const runWithSchemaFallback = async ({ scoped } = {}) => {
+    let query = await runQuery({ scoped })
+    if (query.error && isMissingColumnError(query.error, 'user_id') && identityColumn === 'user_id') {
+      return { data: [], error: null }
+    }
+    if (
+      query.error &&
+      (isMissingColumnError(query.error, 'status') || isMissingColumnError(query.error, 'removed_at'))
+    ) {
+      query = await runQuery({ includeStatus: false, scoped })
+    }
+    return query
+  }
+
+  let query = await runWithSchemaFallback({ scoped: Boolean(normalizedOrganisationId) })
+  let requiresOrganisationFilter = false
+
+  // The current schema exposes the transaction FK relation. If an older schema
+  // cache does not, preserve compatibility by using the former identity query
+  // and filtering its IDs against transactions in one bounded follow-up query.
+  if (
+    query.error &&
+    normalizedOrganisationId &&
+    isMissingTransactionParticipantRelationshipError(query.error)
+  ) {
+    query = await runWithSchemaFallback({ scoped: false })
+    requiresOrganisationFilter = !query.error
+  }
+
+  if (query.error && !isMissingSchemaError(query.error)) {
+    throw query.error
+  }
+
+  return {
+    rows: query.data || [],
+    requiresOrganisationFilter,
+  }
+}
+
+async function filterTransactionIdsToOrganisation(client, transactionIds = [], organisationId = '') {
+  const normalizedOrganisationId = normalizeTextValue(organisationId)
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!normalizedOrganisationId || !ids.length) return new Set()
+
+  const runQuery = async ({ includeActive = true } = {}) => client
+    .from('transactions')
+    .select(includeActive ? 'id, is_active' : 'id')
+    .in('id', ids)
+    .eq('organisation_id', normalizedOrganisationId)
+
+  let query = await runQuery()
+  if (query.error && isMissingColumnError(query.error, 'is_active')) {
+    query = await runQuery({ includeActive: false })
+  }
+  if (query.error) {
+    if (isMissingSchemaError(query.error) || isMissingColumnError(query.error, 'organisation_id')) {
+      return new Set()
+    }
+    throw query.error
+  }
+
+  return new Set(
+    (query.data || [])
+      .filter((row) => row?.id && row?.is_active !== false)
+      .map((row) => row.id),
+  )
+}
+
+async function fetchLegacyAssignedTransactionIds(
+  client,
+  { participantEmail = '', roleType = null, organisationId = '' } = {},
+) {
+  const normalizedEmail = normalizeEmailAddress(participantEmail)
+  const normalizedOrganisationId = normalizeTextValue(organisationId)
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  const legacyAssignmentColumnByRole = {
+    attorney: 'assigned_attorney_email',
+    agent: 'assigned_agent_email',
+    bond_originator: 'assigned_bond_originator_email',
+  }
+  const legacyColumn = legacyAssignmentColumnByRole[normalizedRole || '']
+  if (!normalizedEmail || !legacyColumn) return new Set()
+
+  const runQuery = async ({ includeActive = true } = {}) => {
+    let query = client.from('transactions').select(includeActive ? 'id, is_active' : 'id')
+    if (normalizedOrganisationId) {
+      query = query.eq('organisation_id', normalizedOrganisationId)
+    }
+    return query.eq(legacyColumn, normalizedEmail)
+  }
+
+  let query = await runQuery()
+  if (query.error && isMissingColumnError(query.error, 'is_active')) {
+    query = await runQuery({ includeActive: false })
+  }
+  if (
+    query.error &&
+    !isMissingColumnError(query.error, legacyColumn) &&
+    !isMissingSchemaError(query.error)
+  ) {
+    throw query.error
+  }
+
+  return new Set(
+    (query.data || [])
+      .filter((row) => row?.id && row?.is_active !== false)
+      .map((row) => row.id),
+  )
+}
+
 async function fetchDirectTransactionIdsForUser(
   client,
-  { userId = null, participantEmail = '', participantName = '', roleType = null } = {},
+  { userId = null, participantEmail = '', participantName = '', roleType = null, organisationId = '' } = {},
 ) {
   const normalizedRole = roleType ? normalizeRoleType(roleType) : null
   const normalizedEmail = normalizeEmailAddress(participantEmail)
   const normalizedName = normalizeTextValue(participantName)
+  // Only the Agent dashboard supplies an organisation scope today. Preserve the
+  // wider compatibility behaviour for all other callers and roles.
+  const scopedOrganisationId = normalizedRole === 'agent' ? normalizeTextValue(organisationId) : ''
   const transactionIds = new Set()
 
-  if (userId) {
-    let byUserQuery = await client
-      .from('transaction_participants')
-      .select('transaction_id, role_type, status, removed_at')
-      .eq('user_id', userId)
+  const [participantRowsByUser, participantRowsByEmail, legacyTransactionIds] = await Promise.all([
+    fetchDirectParticipantRowsByIdentity(client, {
+      identityColumn: 'user_id',
+      identityValue: userId,
+      organisationId: scopedOrganisationId,
+    }),
+    fetchDirectParticipantRowsByIdentity(client, {
+      identityColumn: 'participant_email',
+      identityValue: normalizedEmail,
+      organisationId: scopedOrganisationId,
+    }),
+    fetchLegacyAssignedTransactionIds(client, {
+      participantEmail: normalizedEmail,
+      roleType: normalizedRole,
+      organisationId: scopedOrganisationId,
+    }),
+  ])
 
-    if (byUserQuery.error && isMissingColumnError(byUserQuery.error, 'user_id')) {
-      byUserQuery = { data: [], error: null }
-    }
-    if (
-      byUserQuery.error &&
-      (isMissingColumnError(byUserQuery.error, 'status') || isMissingColumnError(byUserQuery.error, 'removed_at'))
-    ) {
-      byUserQuery = await client
-        .from('transaction_participants')
-        .select('transaction_id, role_type')
-        .eq('user_id', userId)
-    }
+  const participantResults = [participantRowsByUser, participantRowsByEmail]
+  const relationshipFallbackIds = participantResults.flatMap((result) =>
+    result.requiresOrganisationFilter ? [...getDirectParticipantTransactionIds(result.rows, normalizedRole)] : [],
+  )
+  const scopedRelationshipFallbackIds = await filterTransactionIdsToOrganisation(
+    client,
+    relationshipFallbackIds,
+    scopedOrganisationId,
+  )
 
-    if (byUserQuery.error && !isMissingSchemaError(byUserQuery.error)) {
-      throw byUserQuery.error
-    }
-
-    for (const row of byUserQuery.data || []) {
-      if (row?.removed_at) {
-        continue
-      }
-      if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') {
-        continue
-      }
-      if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
-        transactionIds.add(row.transaction_id)
-      }
-    }
-  }
-
-  if (normalizedEmail) {
-    const byEmailQuery = await client
-      .from('transaction_participants')
-      .select('transaction_id, role_type, status, removed_at')
-      .eq('participant_email', normalizedEmail)
-
-    if (
-      byEmailQuery.error &&
-      (isMissingColumnError(byEmailQuery.error, 'status') || isMissingColumnError(byEmailQuery.error, 'removed_at'))
-    ) {
-      const fallbackByEmailQuery = await client
-        .from('transaction_participants')
-        .select('transaction_id, role_type')
-        .eq('participant_email', normalizedEmail)
-      if (fallbackByEmailQuery.error && !isMissingSchemaError(fallbackByEmailQuery.error)) {
-        throw fallbackByEmailQuery.error
-      }
-      for (const row of fallbackByEmailQuery.data || []) {
-        if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
-          transactionIds.add(row.transaction_id)
-        }
-      }
-    } else {
-      if (byEmailQuery.error && !isMissingSchemaError(byEmailQuery.error)) {
-        throw byEmailQuery.error
-      }
-
-      for (const row of byEmailQuery.data || []) {
-        if (row?.removed_at) {
-          continue
-        }
-        if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') {
-          continue
-        }
-        if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
-          transactionIds.add(row.transaction_id)
-        }
+  for (const result of participantResults) {
+    const ids = getDirectParticipantTransactionIds(result.rows, normalizedRole)
+    for (const transactionId of ids) {
+      if (!result.requiresOrganisationFilter || scopedRelationshipFallbackIds.has(transactionId)) {
+        transactionIds.add(transactionId)
       }
     }
   }
-
-  if (normalizedEmail) {
-    const legacyAssignmentColumnByRole = {
-      attorney: 'assigned_attorney_email',
-      agent: 'assigned_agent_email',
-      bond_originator: 'assigned_bond_originator_email',
-    }
-    const legacyColumn = legacyAssignmentColumnByRole[normalizedRole || '']
-    if (legacyColumn) {
-      let legacyQuery = await client.from('transactions').select('id, is_active').eq(legacyColumn, normalizedEmail)
-
-      if (legacyQuery.error && isMissingColumnError(legacyQuery.error, 'is_active')) {
-        legacyQuery = await client.from('transactions').select('id').eq(legacyColumn, normalizedEmail)
-      }
-
-      if (
-        legacyQuery.error &&
-        !isMissingColumnError(legacyQuery.error, legacyColumn) &&
-        !isMissingSchemaError(legacyQuery.error)
-      ) {
-        throw legacyQuery.error
-      }
-
-      for (const row of legacyQuery.data || []) {
-        if (row?.is_active === false) {
-          continue
-        }
-        if (row?.id) {
-          transactionIds.add(row.id)
-        }
-      }
-    }
+  for (const transactionId of legacyTransactionIds) {
+    transactionIds.add(transactionId)
   }
 
   if (normalizedRole === 'attorney') {
@@ -29036,6 +29128,7 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     participantEmail: identity.email,
     participantName: identity.fullName,
     roleType,
+    organisationId: normalizedOrganisationId,
   })
   if (normalizedRole === 'agent') {
     return [...directIds]

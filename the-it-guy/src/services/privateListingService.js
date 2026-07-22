@@ -1825,6 +1825,44 @@ function mergeSignedMandatePacketDocument(row = {}, documents = [], mandatePacke
   return existingSignedMandate ? rows : [syntheticDocument, ...rows]
 }
 
+function getPrivateListingCommissionTerms(formData = {}) {
+  const onboardingFormData = formData && typeof formData === 'object' ? formData : {}
+  return {
+    commission_type: pickFirstText(onboardingFormData.commissionType, onboardingFormData.commissionStructure),
+    commission_structure: pickFirstText(onboardingFormData.commissionStructure, onboardingFormData.commissionType),
+    commission_percentage: pickFirstText(
+      onboardingFormData.commissionPercentage,
+      onboardingFormData.commissionPercent,
+      onboardingFormData.commission_percentage,
+      onboardingFormData.commission_percent,
+      onboardingFormData.mandateCommissionPercentage,
+      onboardingFormData.mandateCommissionPercent,
+    ),
+    commission_amount: pickFirstText(
+      onboardingFormData.commissionAmount,
+      onboardingFormData.commission_amount,
+      onboardingFormData.mandateCommissionAmount,
+    ),
+    vat_handling: pickFirstText(onboardingFormData.vatHandling),
+    payment_responsibility: pickFirstText(onboardingFormData.paymentResponsibility),
+    mandate_terms: pickFirstText(onboardingFormData.mandateTerms, onboardingFormData.mandateCommissionTerms),
+    commission_notes: pickFirstText(onboardingFormData.commissionNotes),
+    commission_split: pickFirstText(
+      onboardingFormData.agencyCommissionStructureName,
+      onboardingFormData.agency_commission_structure_name,
+      onboardingFormData.commissionStructureName,
+    ),
+    commission_split_id: pickFirstText(
+      onboardingFormData.agencyCommissionStructureId,
+      onboardingFormData.agency_commission_structure_id,
+      onboardingFormData.commissionStructureId,
+    ),
+    updated_at: pickFirstText(onboardingFormData.commissionUpdatedAt),
+    updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
+    source: pickFirstText(onboardingFormData.commissionSource),
+  }
+}
+
 function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null, mandatePacketsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
@@ -1910,40 +1948,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     primaryMandateDocument?.fileUrl,
     primaryMandateDocument?.file_url,
   )
-  const commissionTerms = {
-    commission_type: pickFirstText(onboardingFormData.commissionType, onboardingFormData.commissionStructure),
-    commission_structure: pickFirstText(onboardingFormData.commissionStructure, onboardingFormData.commissionType),
-    commission_percentage: pickFirstText(
-      onboardingFormData.commissionPercentage,
-      onboardingFormData.commissionPercent,
-      onboardingFormData.commission_percentage,
-      onboardingFormData.commission_percent,
-      onboardingFormData.mandateCommissionPercentage,
-      onboardingFormData.mandateCommissionPercent,
-    ),
-    commission_amount: pickFirstText(
-      onboardingFormData.commissionAmount,
-      onboardingFormData.commission_amount,
-      onboardingFormData.mandateCommissionAmount,
-    ),
-    vat_handling: pickFirstText(onboardingFormData.vatHandling),
-    payment_responsibility: pickFirstText(onboardingFormData.paymentResponsibility),
-    mandate_terms: pickFirstText(onboardingFormData.mandateTerms, onboardingFormData.mandateCommissionTerms),
-    commission_notes: pickFirstText(onboardingFormData.commissionNotes),
-    commission_split: pickFirstText(
-      onboardingFormData.agencyCommissionStructureName,
-      onboardingFormData.agency_commission_structure_name,
-      onboardingFormData.commissionStructureName,
-    ),
-    commission_split_id: pickFirstText(
-      onboardingFormData.agencyCommissionStructureId,
-      onboardingFormData.agency_commission_structure_id,
-      onboardingFormData.commissionStructureId,
-    ),
-    updated_at: pickFirstText(onboardingFormData.commissionUpdatedAt),
-    updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
-    source: pickFirstText(onboardingFormData.commissionSource),
-  }
+  const commissionTerms = getPrivateListingCommissionTerms(onboardingFormData)
   const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
     ? canonicalSellerFacts.property
     : {}
@@ -2229,7 +2234,11 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   }
 }
 
-function mapPrivateListingSummaryRow(row = {}) {
+function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId = null) {
+  const onboardingCommissionRow = onboardingCommissionByListingId
+    ? onboardingCommissionByListingId.get(String(row?.id || '')) || null
+    : null
+  const commissionTerms = getPrivateListingCommissionTerms(onboardingCommissionRow?.form_data)
   const canonicalSellerFacts =
     row?.seller_canonical_facts_json && typeof row.seller_canonical_facts_json === 'object'
       ? row.seller_canonical_facts_json
@@ -2320,6 +2329,7 @@ function mapPrivateListingSummaryRow(row = {}) {
     listingPreviewDescription: row.listing_preview_description || '',
     internalListingNotes: row.internal_listing_notes || '',
     activeDeal: null,
+    commission: commissionTerms,
     seller: {
       name: '',
       email: '',
@@ -3252,6 +3262,29 @@ async function fetchOnboardingRowsForListings(client, listingIds = []) {
     .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
     .in('private_listing_id', ids)
     .order('created_at', { ascending: false })
+  if (query.error) {
+    if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return new Map()
+    throw query.error
+  }
+
+  const map = new Map()
+  for (const row of query.data || []) {
+    const listingId = String(row.private_listing_id || '')
+    if (!listingId || map.has(listingId)) continue
+    map.set(listingId, row)
+  }
+  return map
+}
+
+async function fetchOnboardingCommissionRowsForListings(client, listingIds = []) {
+  const ids = normalizeUuidList(listingIds)
+  if (!ids.length) return new Map()
+  const query = await client
+    .from('private_listing_seller_onboarding')
+    .select('private_listing_id, form_data')
+    .in('private_listing_id', ids)
+    .order('created_at', { ascending: false })
+
   if (query.error) {
     if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return new Map()
     throw query.error
@@ -4319,41 +4352,124 @@ export async function getAgentPrivateListingSummaries(
     organisationId = null,
     includeAllOrganisationListings = false,
     assignedAgentEmail = '',
+    assignedAgentIds = [],
+    includeCommissionTerms = false,
   } = {},
 ) {
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
   const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
-  if (!includeAllOrganisationListings && !normalizedAgentId && !normalizedAgentEmail) return []
+  const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
 
-  const queryBuilder = applyVisiblePrivateListingFilters(
-    client
-      .from('private_listings')
-      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, mandate_packet_id, asking_price, estimated_value, title, address_line_1, address_line_2, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
-  )
+  const createSummaryQuery = ({ includeAssignedAgentEmail = true, includeIsActive = true } = {}) => {
+    const selectColumns = [
+      'id',
+      'listing_reference',
+      'listing_status',
+      'listing_visibility',
+      'seller_onboarding_status',
+      'mandate_status',
+      'mandate_packet_id',
+      'asking_price',
+      'estimated_value',
+      'title',
+      'address_line_1',
+      'address_line_2',
+      'formatted_address',
+      'street_address',
+      'suburb',
+      'city',
+      'province',
+      'country',
+      'postal_code',
+      'latitude',
+      'longitude',
+      'google_place_id',
+      'seller_type',
+      'finance_context',
+      'mandate_type',
+      'property_category',
+      'property_type',
+      'property_structure_type',
+      'listing_category',
+      'listing_source',
+      'stock_source',
+      'seller_canonical_facts_json',
+      'seller_canonical_fact_readiness_json',
+      'seller_lead_id',
+      'seller_profile_id',
+      'property_profile_id',
+      'organisation_id',
+      'branch_id',
+      'assigned_agent_id',
+      ...(includeAssignedAgentEmail ? ['assigned_agent_email'] : []),
+      ...(includeIsActive ? ['is_active'] : []),
+      'created_at',
+      'updated_at',
+    ].join(', ')
+    const queryBuilder = applyVisiblePrivateListingFilters(
+      client
+        .from('private_listings')
+        .select(selectColumns),
+    )
 
-  if (normalizedOrgId) {
-    queryBuilder.eq('organisation_id', normalizedOrgId)
-  }
-  if (!includeAllOrganisationListings) {
-    if (normalizedAgentId && normalizedAgentEmail) {
-      const escapedEmail = String(normalizedAgentEmail).replace(/"/g, '\\"')
-      queryBuilder.or(`assigned_agent_id.eq.${normalizedAgentId},assigned_agent_email.eq."${escapedEmail}"`)
-    } else if (normalizedAgentId) {
-      queryBuilder.eq('assigned_agent_id', normalizedAgentId)
-    } else {
-      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+    if (normalizedOrgId) {
+      queryBuilder.eq('organisation_id', normalizedOrgId)
     }
+    if (!includeAllOrganisationListings) {
+      const assignmentFilters = []
+      if (normalizedAgentIds.length > 1) {
+        assignmentFilters.push(`assigned_agent_id.in.(${normalizedAgentIds.join(',')})`)
+      } else if (normalizedAgentIds.length === 1) {
+        assignmentFilters.push(`assigned_agent_id.eq.${normalizedAgentIds[0]}`)
+      }
+      if (includeAssignedAgentEmail && normalizedAgentEmail) {
+        const escapedEmail = String(normalizedAgentEmail).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        assignmentFilters.push(`assigned_agent_email.eq."${escapedEmail}"`)
+      }
+
+      if (assignmentFilters.length > 1) {
+        queryBuilder.or(assignmentFilters.join(','))
+      } else if (normalizedAgentIds.length > 1) {
+        queryBuilder.in('assigned_agent_id', normalizedAgentIds)
+      } else if (normalizedAgentIds.length === 1) {
+        queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
+      } else if (includeAssignedAgentEmail && normalizedAgentEmail) {
+        queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+      }
+    }
+
+    return queryBuilder.order('updated_at', { ascending: false })
   }
 
-  const query = await queryBuilder.order('updated_at', { ascending: false })
-  if (query.error) {
+  let includeAssignedAgentEmail = true
+  let includeIsActive = true
+  let query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+  while (query.error) {
+    const errorText = `${query.error?.message || ''} ${query.error?.details || ''} ${query.error?.hint || ''}`.toLowerCase()
+
+    if (includeAssignedAgentEmail && errorText.includes('assigned_agent_email')) {
+      if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
+      includeAssignedAgentEmail = false
+      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+      continue
+    }
+    if (includeIsActive && errorText.includes('is_active')) {
+      includeIsActive = false
+      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+      continue
+    }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
+
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
-  return rows.map((row) => mapPrivateListingSummaryRow(row)).filter(Boolean)
+  const onboardingCommissionByListingId = includeCommissionTerms
+    ? await fetchOnboardingCommissionRowsForListings(client, rows.map((row) => row.id))
+    : null
+  return rows.map((row) => mapPrivateListingSummaryRow(row, onboardingCommissionByListingId)).filter(Boolean)
 }
 
 export async function createPrivateListingActivity(payload = {}) {

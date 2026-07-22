@@ -1,5 +1,5 @@
-import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { trackTelemetryEvent } from './telemetry'
+import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
+import { trackTelemetryEvent } from './telemetry.js'
 
 const SLOW_OPERATION_MS = 1500
 const SLOW_ROUTE_MS = 2500

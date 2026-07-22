@@ -21,6 +21,13 @@ const OPEN_PACKET_STATUSES = ['draft', 'generated', 'ready', 'sent', 'viewed', '
 const FINANCE_PROCESS_KEYS = ['finance', 'bond', 'bond_origination', 'bond_originator']
 const ATTORNEY_PROCESS_KEYS = ['attorney', 'transfer', 'conveyancing']
 const ALL_BRANCHES_ID = 'all'
+export const PRINCIPAL_DASHBOARD_CACHE_TTL_MS = 12_000
+const PRINCIPAL_DASHBOARD_CACHE_MAX_ENTRIES = 24
+const principalDashboardResultCache = new Map()
+const principalDashboardInflight = new Map()
+const principalDashboardRefreshInflight = new Map()
+const principalDashboardCacheEpochByAgency = new Map()
+let principalDashboardGlobalCacheEpoch = 0
 const RESIDENTIAL_FUNNEL_STAGES = [
   { key: 'leads', label: 'Leads' },
   { key: 'mandates', label: 'Mandates' },
@@ -46,6 +53,23 @@ export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
   { key: 'last_90_days', label: 'Last 90 Days' },
   { key: 'ytd', label: 'YTD' },
 ]
+
+// Keep these projections aligned with the deployed schema. The dashboard's
+// presentation helpers already provide graceful fallbacks for optional seller,
+// image, and stage-history fields, so speculative columns here only create a
+// sequential PostgREST retry waterfall before the real query can succeed.
+export const PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS = Object.freeze([
+  'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+  'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+])
+
+// Avatar URLs are enriched from profiles below. Keeping them out of the
+// organisation_users projection avoids an unnecessary schema fallback while
+// preserving branch and role fields needed for Principal dashboard scoping.
+export const PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS = Object.freeze([
+  'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
+  'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -1548,7 +1572,85 @@ function buildActivityItem(item) {
   }
 }
 
-export async function getPrincipalDashboardData({
+function getPrincipalDashboardAgencyScope({ agencyId = '', organisationId = '' } = {}) {
+  return normalizeText(organisationId || agencyId).toLowerCase()
+}
+
+function getPrincipalDashboardCacheBaseKey(options = {}) {
+  const agencyScope = getPrincipalDashboardAgencyScope(options)
+  const actorId = normalizeText(options?.actorId).toLowerCase()
+  const actorEmail = normalizeText(options?.actorEmail).toLowerCase()
+  if (!agencyScope || (!actorId && !actorEmail)) return ''
+
+  return JSON.stringify({
+    agencyScope,
+    workspaceId: normalizeText(options?.workspaceId || ALL_BRANCHES_ID).toLowerCase() || ALL_BRANCHES_ID,
+    dateRange: normalizeKey(options?.dateRangePreset || options?.dateRange || 'this_month') || 'this_month',
+    startDate: normalizeText(options?.startDate),
+    endDate: normalizeText(options?.endDate),
+    overviewMode: normalizeKey(options?.overviewMode || 'pipeline') || 'pipeline',
+    canViewAllTransactions: options?.canViewAllTransactions !== false,
+    actorId,
+    actorEmail,
+  })
+}
+
+function getPrincipalDashboardAgencyCacheEpoch(agencyScope = '') {
+  return principalDashboardCacheEpochByAgency.get(agencyScope) || 0
+}
+
+function getPrincipalDashboardCacheEpoch(agencyScope = '') {
+  return `${principalDashboardGlobalCacheEpoch}:${getPrincipalDashboardAgencyCacheEpoch(agencyScope)}`
+}
+
+function getPrincipalDashboardCacheKey(baseKey = '', agencyScope = '') {
+  return `${baseKey}|${getPrincipalDashboardCacheEpoch(agencyScope)}`
+}
+
+function prunePrincipalDashboardResultCache() {
+  const now = Date.now()
+  for (const [key, entry] of principalDashboardResultCache) {
+    if (Number(entry?.expiresAt || 0) <= now) {
+      principalDashboardResultCache.delete(key)
+    }
+  }
+  while (principalDashboardResultCache.size > PRINCIPAL_DASHBOARD_CACHE_MAX_ENTRIES) {
+    const oldestKey = principalDashboardResultCache.keys().next().value
+    if (!oldestKey) break
+    principalDashboardResultCache.delete(oldestKey)
+  }
+}
+
+function withPrincipalDashboardCacheMetadata(result, { cacheHit = false, deduplicated = false } = {}) {
+  if (!result || typeof result !== 'object') return result
+  return {
+    ...result,
+    meta: {
+      ...(result.meta || {}),
+      cacheHit: Boolean(cacheHit),
+      deduplicated: Boolean(deduplicated),
+    },
+  }
+}
+
+export function clearPrincipalDashboardRuntimeCache({ agencyId = '', organisationId = '' } = {}) {
+  const agencyScope = getPrincipalDashboardAgencyScope({ agencyId, organisationId })
+  if (!agencyScope) {
+    principalDashboardResultCache.clear()
+    principalDashboardInflight.clear()
+    principalDashboardRefreshInflight.clear()
+    principalDashboardCacheEpochByAgency.clear()
+    principalDashboardGlobalCacheEpoch += 1
+    return
+  }
+
+  principalDashboardCacheEpochByAgency.set(agencyScope, getPrincipalDashboardAgencyCacheEpoch(agencyScope) + 1)
+  for (const [key, entry] of principalDashboardResultCache) {
+    if (entry?.agencyScope === agencyScope) principalDashboardResultCache.delete(key)
+  }
+}
+
+async function getPrincipalDashboardDataUncached({
   agencyId = '',
   organisationId = '',
   workspaceId = ALL_BRANCHES_ID,
@@ -1566,11 +1668,6 @@ export async function getPrincipalDashboardData({
   const resolvedAgencyId = normalizeText(organisationId || agencyId)
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
-  const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
-  ]
-
   const [
     rawTransactions,
     allLeads,
@@ -1581,17 +1678,14 @@ export async function getPrincipalDashboardData({
     allCommissionTargets,
     organisationBranches,
   ] = await Promise.all([
-    safeSelect('transactions', transactionFields, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
+    safeSelect('transactions', PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('leads', [
       'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
-    safeSelect('organisation_users', [
-      'id, organisation_id, user_id, branch_id, first_name, last_name, email, avatar_url, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
-      'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
-    ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
+    safeSelect('organisation_users', PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
@@ -1611,11 +1705,10 @@ export async function getPrincipalDashboardData({
           (scopedActorId && assignedUserId === scopedActorId) ||
           (scopedActorEmail && assignedEmail === scopedActorEmail),
         )
-      })
-  const enrichedOrganisationUsers = await enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers)
+  })
+  const organisationUserEnrichmentPromise = enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers)
   const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
   const leads = allLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
-  const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
   const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
   const documentPackets = allDocumentPackets.filter((packet) => {
@@ -1625,6 +1718,7 @@ export async function getPrincipalDashboardData({
   const packetIds = new Set(documentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
   const packetEvents = allPacketEvents.filter((event) => selectedBranchId === ALL_BRANCHES_ID || packetIds.has(normalizeText(event.packet_id)))
   const [
+    enrichedOrganisationUsers,
     documentRequests,
     documents,
     subprocesses,
@@ -1633,6 +1727,7 @@ export async function getPrincipalDashboardData({
     linkedDocumentPackets,
     linkedTransactionCommissions,
   ] = await Promise.all([
+    organisationUserEnrichmentPromise,
     safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
     safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
     safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
@@ -1644,6 +1739,7 @@ export async function getPrincipalDashboardData({
     safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
     safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
   ])
+  const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
   const effectivePacketIds = new Set(effectiveDocumentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
   const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300 })
@@ -2117,4 +2213,75 @@ export async function getPrincipalDashboardData({
       dateRange: range.key,
     },
   }
+}
+
+export async function getPrincipalDashboardData(options = {}) {
+  if (!isSupabaseConfigured || !supabase) return buildEmptyDashboard()
+
+  const baseKey = getPrincipalDashboardCacheBaseKey(options)
+  if (!baseKey) return getPrincipalDashboardDataUncached(options)
+
+  const agencyScope = getPrincipalDashboardAgencyScope(options)
+  const forceRefresh = Boolean(options?.forceRefresh)
+  if (forceRefresh) {
+    const refreshEpoch = getPrincipalDashboardCacheEpoch(agencyScope)
+    const existingRefresh = principalDashboardRefreshInflight.get(baseKey)
+    if (existingRefresh?.agencyScope === agencyScope && existingRefresh.epoch === refreshEpoch) {
+      return existingRefresh.promise.then((result) => withPrincipalDashboardCacheMetadata(result, { deduplicated: true }))
+    }
+    clearPrincipalDashboardRuntimeCache({ agencyId: agencyScope })
+  }
+
+  prunePrincipalDashboardResultCache()
+  const cacheKey = getPrincipalDashboardCacheKey(baseKey, agencyScope)
+  if (!forceRefresh) {
+    const cached = principalDashboardResultCache.get(cacheKey)
+    if (cached && Number(cached.expiresAt || 0) > Date.now()) {
+      return withPrincipalDashboardCacheMetadata(cached.result, { cacheHit: true })
+    }
+  }
+
+  const existing = principalDashboardInflight.get(cacheKey)
+  if (existing) {
+    return existing.then((result) => withPrincipalDashboardCacheMetadata(result, { deduplicated: true }))
+  }
+
+  const cacheEpoch = getPrincipalDashboardCacheEpoch(agencyScope)
+  let loadPromise
+  loadPromise = getPrincipalDashboardDataUncached(options)
+    .then((result) => {
+      if (getPrincipalDashboardCacheEpoch(agencyScope) === cacheEpoch) {
+        principalDashboardResultCache.set(cacheKey, {
+          agencyScope,
+          expiresAt: Date.now() + PRINCIPAL_DASHBOARD_CACHE_TTL_MS,
+          result,
+        })
+        prunePrincipalDashboardResultCache()
+      }
+      return result
+    })
+    .finally(() => {
+      if (principalDashboardInflight.get(cacheKey) === loadPromise) {
+        principalDashboardInflight.delete(cacheKey)
+      }
+      if (principalDashboardRefreshInflight.get(baseKey)?.promise === loadPromise) {
+        principalDashboardRefreshInflight.delete(baseKey)
+      }
+    })
+
+  principalDashboardInflight.set(cacheKey, loadPromise)
+  if (forceRefresh) {
+    principalDashboardRefreshInflight.set(baseKey, {
+      agencyScope,
+      epoch: cacheEpoch,
+      promise: loadPromise,
+    })
+  }
+  return loadPromise
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => {
+    clearPrincipalDashboardRuntimeCache()
+  })
 }
