@@ -85,7 +85,7 @@ function productionEnvironmentGuardPlugin() {
     configResolved(config) {
       const loadedEnv = loadEnv(config.mode, config.root, '')
       const env = { ...loadedEnv, ...process.env, MODE: config.mode }
-      const deploymentEnvironment = String(env.VITE_APP_ENV || env.VITE_DEPLOY_ENV || config.mode || '')
+      const deploymentEnvironment = String(env.VITE_APP_ENV || env.VITE_DEPLOY_ENV || env.VITE_VERCEL_ENV || env.VERCEL_ENV || '')
         .trim()
         .toLowerCase()
       const isProductionBuild = deploymentEnvironment === 'production'

@@ -84,7 +84,7 @@ export const UNSAFE_PRODUCTION_FLAG_NAMES = Object.freeze([
 ])
 
 export function getDeploymentEnvironment() {
-  return normalize(import.meta.env.VITE_APP_ENV || import.meta.env.VITE_DEPLOY_ENV || import.meta.env.MODE || 'development').toLowerCase()
+  return normalize(import.meta.env.VITE_APP_ENV || import.meta.env.VITE_DEPLOY_ENV || import.meta.env.VITE_VERCEL_ENV || 'development').toLowerCase()
 }
 
 export function isProductionEnvironment() {
