@@ -198,6 +198,30 @@ function normalizeAuthEmail(value = '') {
   return String(value || '').trim().toLowerCase()
 }
 
+function isSupabaseAuthUnavailableError(error) {
+  const name = String(error?.name || '').toLowerCase()
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  const details = String(error?.details || '').toLowerCase()
+  const combined = `${name} ${code} ${message} ${details}`
+  return (
+    combined.includes('authretryablefetcherror') ||
+    combined.includes('failed to fetch') ||
+    combined.includes('fetch failed') ||
+    combined.includes('networkerror') ||
+    combined.includes('connection timed out') ||
+    combined.includes('timeout') ||
+    combined.includes('522')
+  )
+}
+
+function getAuthRequestErrorMessage(error) {
+  if (isSupabaseAuthUnavailableError(error)) {
+    return 'Arch9 auth is temporarily unavailable. Please try again in a few minutes.'
+  }
+  return error?.message || 'Unable to complete authentication request.'
+}
+
 function resolveInviteEmailFromLocation(location) {
   const queryEmail = new URLSearchParams(location.search).get('email')
   if (queryEmail) return normalizeAuthEmail(queryEmail)
@@ -415,18 +439,26 @@ function Auth({ onDevBypass = null }) {
     }
 
     async function checkSession() {
-      console.debug('[AUTH] session:check:start')
-      const { data, error } = await supabase.auth.getSession()
-      if (error && isUnsupportedJwtAlgorithmError(error)) {
-        await clearSupabaseLocalAuthState()
-        return
-      }
-      if (data?.session) {
-        const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || redirectTo
-        clearPostLoginRedirect()
-        console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
-        navigate(target, { replace: true })
+      try {
+        console.debug('[AUTH] session:check:start')
+        const { data, error } = await supabase.auth.getSession()
+        if (error && isUnsupportedJwtAlgorithmError(error)) {
+          await clearSupabaseLocalAuthState()
+          return
+        }
+        if (error) throw error
+        if (data?.session) {
+          const pendingInvitePath = resolvePendingInvitePath(location)
+          const target = pendingInvitePath || redirectTo
+          clearPostLoginRedirect()
+          console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
+          navigate(target, { replace: true })
+        }
+      } catch (sessionError) {
+        console.warn('[AUTH] session:check:failed', sessionError)
+        if (isSupabaseAuthUnavailableError(sessionError)) {
+          setError(getAuthRequestErrorMessage(sessionError))
+        }
       }
     }
 
@@ -640,7 +672,7 @@ function Auth({ onDevBypass = null }) {
       setPassword('')
       setConfirmPassword('')
     } catch (submitError) {
-      setError(submitError.message || 'Unable to complete authentication request.')
+      setError(getAuthRequestErrorMessage(submitError))
     } finally {
       setLoading(false)
     }

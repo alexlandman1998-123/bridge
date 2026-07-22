@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { validateSupabaseBrowserKey } from './src/config/productionValidation.js'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
@@ -78,6 +79,40 @@ function releaseIntegrityPlugin() {
   }
 }
 
+function productionEnvironmentGuardPlugin() {
+  return {
+    name: 'arch9-production-environment-guard',
+    configResolved(config) {
+      const loadedEnv = loadEnv(config.mode, config.root, '')
+      const env = { ...loadedEnv, ...process.env, MODE: config.mode }
+      const deploymentEnvironment = String(env.VITE_APP_ENV || env.VITE_DEPLOY_ENV || config.mode || '')
+        .trim()
+        .toLowerCase()
+      const isProductionBuild = deploymentEnvironment === 'production'
+      if (!isProductionBuild) return
+
+      const missing = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'].filter((name) => !String(env[name] || '').trim())
+      const issues = []
+      if (missing.length) {
+        issues.push(`Missing required production environment variables: ${missing.join(', ')}.`)
+      }
+
+      if (!missing.includes('VITE_SUPABASE_ANON_KEY')) {
+        const keyValidation = validateSupabaseBrowserKey(env.VITE_SUPABASE_ANON_KEY)
+        if (!keyValidation.ok) issues.push(keyValidation.message)
+      }
+
+      if (!String(env.VITE_SUPABASE_ANON_KEY || '').trim() && String(env.VITE_SUPABASE_KEY || '').trim().startsWith('sb_publishable_')) {
+        issues.push('Remove VITE_SUPABASE_KEY=sb_publishable_* from production; browser auth must use VITE_SUPABASE_ANON_KEY.')
+      }
+
+      if (issues.length) {
+        throw new Error(`[PRODUCTION SAFETY] ${issues.join(' ')}`)
+      }
+    },
+  }
+}
+
 function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
@@ -110,7 +145,7 @@ function missionControlApiPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
+  plugins: [productionEnvironmentGuardPlugin(), documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
