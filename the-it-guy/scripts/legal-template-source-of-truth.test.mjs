@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 
 const packetService = await readFile(new URL('../src/core/documents/packetService.js', import.meta.url), 'utf8')
 const workspace = await readFile(new URL('../src/components/documents/LegalDocumentWorkspace.jsx', import.meta.url), 'utf8')
+const workspacePage = await readFile(new URL('../src/pages/LegalDocumentWorkspacePage.jsx', import.meta.url), 'utf8')
 
 assert.match(packetService, /function templateUsesConditionalMaster/, 'Template mode must be identified from the legal-template record.')
 assert.match(packetService, /templateUsesConditionalMaster\(hydratedTemplate\)/, 'Only explicit conditional masters may apply scenario section overrides.')
@@ -13,5 +14,7 @@ assert.match(workspace, /canAdoptCurrentTemplate && templateManifest\.length/, '
 assert.match(workspace, /includeSnapshotOnlySections: !canAdoptCurrentTemplate/, 'An adopted template must not inherit clauses from a stale generated draft.')
 assert.match(workspace, /void statusRequest\.then\(\(lateResolved\)/, 'A delayed packet status must replace the temporary workspace fallback.')
 assert.match(packetService, /templateUsesConditionalMaster\(hydratedTemplate\)/, 'A plain legal template must not be overwritten by conditional packs.')
+assert.match(workspacePage, /effectiveRoutePacketId = routePacketId \|\| normalizeText\(initialStatusValueRef\.current\?\.packet\?\.id\)/, 'A route packet id must survive a slow ownership lookup.')
+assert.match(workspacePage, /includeActivity: false/, 'Workspace bootstrap must not wait for activity history before rendering the legal template.')
 
 console.log('Legal template source-of-truth contract passed')

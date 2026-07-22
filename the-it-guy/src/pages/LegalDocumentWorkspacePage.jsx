@@ -2704,7 +2704,10 @@ export default function LegalDocumentWorkspacePage() {
           if (!isLegalWorkspaceTimeoutError(packetLookupError) || !canContinueWithoutRoutePacket) {
             throw packetLookupError
           }
-          effectiveRoutePacketId = normalizeText(initialStatusValueRef.current?.packet?.id)
+          // Keep the known route packet id for the lightweight status request
+          // below. Clearing it forces a second broad packet lookup and leaves
+          // the editor on its placeholder longer than necessary.
+          effectiveRoutePacketId = routePacketId || normalizeText(initialStatusValueRef.current?.packet?.id)
           packetOwnershipWarnings.push('Packet lookup timed out. Arch9 kept this workspace open from the available lead or transaction context.')
           console.warn('[LegalDocumentWorkspacePage] route packet lookup timed out; continuing with available route context.', packetLookupError)
         }
@@ -3021,6 +3024,7 @@ export default function LegalDocumentWorkspacePage() {
           transactionId: resolvedTransactionId,
           leadId: routeLeadId,
           organisationId: resolvedOrganisationId,
+          includeActivity: false,
         })
         status = await withLegalWorkspaceTimeout(
           statusRequest,
