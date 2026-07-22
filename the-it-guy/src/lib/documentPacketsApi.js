@@ -2037,7 +2037,15 @@ export async function fetchDocumentPacket(packetId, { includeVersions = true, in
       .select('id, packet_id, organisation_id, version_id, event_type, event_payload_json, created_by, created_at')
       .eq('packet_id', packetId)
       .order('created_at', { ascending: false })
-    if (error) throw error
+    if (error) {
+      console.warn('[PACKETS] document_packet_events unavailable; continuing without packet activity.', {
+        code: error?.code || null,
+        status: error?.status || error?.statusCode || null,
+        message: error?.message || null,
+      })
+      result.events = []
+      return result
+    }
     result.events = data || []
   }
 

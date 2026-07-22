@@ -1,3 +1,5 @@
+import { resolveMatterDocumentMetadata } from './matterDocumentMetadata.js'
+
 const DOCUMENT_VAULT_GROUP_DEFINITIONS = [
   {
     key: 'sale',
@@ -82,6 +84,11 @@ function getGroupByKey(groupKey) {
 }
 
 function inferGroupKeyFromDocument(requirement = {}) {
+  const metadata = resolveMatterDocumentMetadata(requirement)
+  if (metadata.confidence >= 0.86 && metadata.groupKey) {
+    return metadata.groupKey
+  }
+
   const explicitGroupKey = normalizeGroupKey(requirement.groupKey || requirement.group_key, '')
   if (explicitGroupKey) {
     return explicitGroupKey
@@ -117,6 +124,7 @@ function inferGroupKeyFromDocument(requirement = {}) {
     key.includes('payslip') ||
     key.includes('proof_of_funds') ||
     key.includes('grant') ||
+    key.includes('guarantee') ||
     key.includes('loan') ||
     group.includes('finance') ||
     group.includes('proof of funds')
@@ -126,7 +134,6 @@ function inferGroupKeyFromDocument(requirement = {}) {
 
   if (
     key.includes('transfer') ||
-    key.includes('guarantee') ||
     key.includes('clearance') ||
     key.includes('deeds') ||
     key.includes('attorney') ||
@@ -155,6 +162,11 @@ function inferGroupKeyFromDocument(requirement = {}) {
 }
 
 function inferExpectedFromRole(requirement = {}, groupKey = 'buyer_fica') {
+  const metadata = resolveMatterDocumentMetadata({ ...requirement, groupKey })
+  if (metadata.confidence >= 0.86 && metadata.requiredFromRole) {
+    return metadata.requiredFromRole
+  }
+
   const key = String(requirement.key || '').toLowerCase()
   const label = String(requirement.label || '').toLowerCase()
 
@@ -165,7 +177,7 @@ function inferExpectedFromRole(requirement = {}, groupKey = 'buyer_fica') {
     return 'developer'
   }
   if (groupKey === 'finance') {
-    if (key.includes('bond_approval') || key.includes('grant') || key.includes('loan')) {
+    if (key.includes('bond_approval') || key.includes('grant') || key.includes('loan') || key.includes('guarantee')) {
       return 'bond_originator'
     }
     return 'client'
@@ -214,7 +226,8 @@ function statusFromLegacyFlags({ isRequired = true, isUploaded = false } = {}) {
 }
 
 function buildDocumentTemplate(requirement = {}, sortOrder = 0) {
-  const groupKey = inferGroupKeyFromDocument(requirement)
+  const metadata = resolveMatterDocumentMetadata(requirement)
+  const groupKey = metadata.confidence >= 0.86 && metadata.groupKey ? metadata.groupKey : inferGroupKeyFromDocument(requirement)
   const group = getGroupByKey(groupKey)
   return {
     key: String(requirement.key || '').trim(),
@@ -224,9 +237,9 @@ function buildDocumentTemplate(requirement = {}, sortOrder = 0) {
       ? 'optional_required'
       : 'required',
     groupKey,
-    groupLabel: group.label,
-    expectedFromRole: inferExpectedFromRole(requirement, groupKey),
-    defaultVisibility: inferVisibilityScope(groupKey),
+    groupLabel: metadata.confidence >= 0.86 && metadata.groupLabel ? metadata.groupLabel : group.label,
+    expectedFromRole: metadata.confidence >= 0.86 && metadata.requiredFromRole ? metadata.requiredFromRole : inferExpectedFromRole(requirement, groupKey),
+    defaultVisibility: metadata.confidence >= 0.86 && metadata.visibilityScope ? metadata.visibilityScope : inferVisibilityScope(groupKey),
     allowMultiple: Boolean(requirement.allowMultiple),
     sortOrder: Number.isFinite(Number(requirement.sortOrder)) ? Number(requirement.sortOrder) : sortOrder,
     keywords: Array.isArray(requirement.keywords) ? requirement.keywords : [],

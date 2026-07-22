@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarCheck2,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
@@ -21,8 +22,10 @@ import {
   LockKeyhole,
   MapPin,
   MessageSquarePlus,
+  Minus,
   MoreHorizontal,
   Paperclip,
+  PencilLine,
   Plus,
   Search,
   Send,
@@ -58,6 +61,7 @@ import {
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { buildAttorneyMatterToday } from '../core/transactions/attorneyMatterToday'
+import { resolveMatterDocumentMetadata } from '../core/documents/matterDocumentMetadata'
 import {
   buildAttorneyDocumentControl,
   CONVEYANCING_DOCUMENT_SHORTCUTS,
@@ -67,6 +71,7 @@ import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/fi
 import {
   buildTransactionLifecycleSummaryFromRollup,
   formatTransactionRollupStatusLabel,
+  getVisibleMatterLifecycleStages,
   TRANSACTION_LIFECYCLE_STAGE_LABELS,
   TRANSACTION_LIFECYCLE_STAGE_ORDER,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
@@ -115,6 +120,8 @@ import {
   unarchiveTransactionLifecycle,
   updateBondApplication,
   updateBondHybridFinanceStage,
+  updateTransactionKeyDate,
+  updateTransactionMatterNumber,
   updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
@@ -288,12 +295,15 @@ const ATTORNEY_DOCUMENT_GROUPS = [
 ]
 
 function getAttorneyCategoryForRequiredDocument(requirement = {}) {
+  const metadata = resolveMatterDocumentMetadata(requirement)
+  if (metadata.confidence >= 0.86 && metadata.attorneyCategory) {
+    return metadata.attorneyCategory
+  }
+
   const groupKey = String(requirement?.groupKey || requirement?.group || '').trim().toLowerCase()
   const key = String(requirement?.key || '').trim().toLowerCase()
   const visibleSection = String(requirement?.visibleSection || '').trim().toLowerCase()
-  if (visibleSection === 'finance_documents' || groupKey === 'finance') {
-    return 'Internal Working Documents'
-  }
+  if (visibleSection === 'finance_documents' || groupKey === 'finance') return 'Guarantees'
   if (groupKey.includes('buyer') || key.startsWith('buyer_')) return 'Buyer FICA / Compliance'
   if (groupKey.includes('seller') || key.startsWith('seller_')) return 'Seller FICA / Compliance'
   if (key.includes('guarantee')) return 'Guarantees'
@@ -382,7 +392,7 @@ function inferLibraryCategoryFromTokens(tokens = '') {
   if (/(finance|proof of funds|income|payroll|payslip|bank statement|affordability)/.test(haystack)) {
     return 'finance'
   }
-  if (/(bond|guarantee|lender|approval letter|originator)/.test(haystack)) {
+  if (/(bond|guarantee|grant|lender|approval letter|originator)/.test(haystack)) {
     return 'bond'
   }
   if (/(seller)/.test(haystack)) {
@@ -399,6 +409,11 @@ function inferLibraryCategoryFromTokens(tokens = '') {
 }
 
 function resolveDocumentLibraryCategory(document = {}) {
+  const metadata = resolveMatterDocumentMetadata(document)
+  if (metadata.confidence >= 0.86 && metadata.libraryCategory) {
+    return metadata.libraryCategory
+  }
+
   const tokens = [
     document?.category,
     document?.portal_workspace_category,
@@ -424,6 +439,11 @@ function resolveDocumentLibraryCategory(document = {}) {
 }
 
 function resolveRequirementLibraryCategory(requirement = {}) {
+  const metadata = resolveMatterDocumentMetadata(requirement)
+  if (metadata.confidence >= 0.86 && metadata.libraryCategory) {
+    return metadata.libraryCategory
+  }
+
   const requirementTokens = `${String(requirement?.key || '').trim().toLowerCase()} ${String(requirement?.label || '').trim().toLowerCase()} ${String(
     requirement?.groupKey || requirement?.group_key || requirement?.group || '',
   )
@@ -4590,30 +4610,30 @@ function hasDocumentWithKeywords(documents = [], keywords = [], statuses = PRESE
 }
 
 function resolveProgressBlockerReason({
-  currentStage = 'confirmed',
+  currentStage = 'instruction',
   financeType = 'unknown',
   buyerOnboardingComplete = false,
   sellerOnboardingComplete = false,
   isPrivateMatter = false,
   otpSigned = false,
+  documentsComplete = false,
   proofOfFundsVerified = false,
   bondOfferAccepted = false,
   transferAttorneyAssigned = false,
-  transferReady = false,
+  transferDutyComplete = false,
+  lodgementSubmitted = false,
   registrationComplete = false,
 } = {}) {
-  if (currentStage === 'confirmed') {
-    if (!buyerOnboardingComplete) return 'Buyer onboarding still needs to be completed.'
+  if (currentStage === 'instruction') {
+    if (!buyerOnboardingComplete) return 'Buyer onboarding must be completed before this workflow can continue.'
     if (isPrivateMatter && !sellerOnboardingComplete) return 'Seller onboarding is still outstanding.'
     return 'Accepted offer or reservation confirmation is still outstanding.'
   }
-  if (currentStage === 'otp') {
-    return otpSigned ? '' : 'OTP must be signed before the matter can move into finance.'
+  if (currentStage === 'documents') {
+    if (!otpSigned) return 'Signed sale agreement or OTP must be on file before the matter can continue.'
+    return documentsComplete ? '' : 'Required buyer, seller, and matter documents still need to be collected or verified.'
   }
   if (currentStage === 'finance') {
-    if (financeType === 'cash') {
-      return proofOfFundsVerified ? '' : 'Proof of funds still needs to be verified.'
-    }
     if (financeType === 'bond') {
       return bondOfferAccepted ? '' : 'Bond offer acceptance is still outstanding.'
     }
@@ -4624,10 +4644,12 @@ function resolveProgressBlockerReason({
     }
     return 'Finance readiness still needs confirmation.'
   }
-  if (currentStage === 'transfer') {
+  if (currentStage === 'transfer_duty') {
     if (!transferAttorneyAssigned) return 'Transfer attorney still needs to be assigned.'
-    if (!transferReady) return 'Transfer documents and lodgement readiness are still outstanding.'
-    return 'Transfer workflow still needs final registration capture.'
+    return transferDutyComplete ? '' : 'Rates clearance, levy clearance, and transfer duty still need to be cleared before lodgement.'
+  }
+  if (currentStage === 'lodgement') {
+    return lodgementSubmitted ? '' : 'The matter is not lodged at the Deeds Office yet.'
   }
   if (currentStage === 'registration') {
     return registrationComplete ? '' : 'Registration has not been captured yet.'
@@ -4646,6 +4668,7 @@ function resolveTransactionProgress({
   isPrivateMatter = false,
 } = {}) {
   const financeType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const requiresFinanceStage = isBondFinanceType(financeType)
   const mainStage = String(transaction?.current_main_stage || '').trim().toUpperCase()
   const stageSignal = [
     transaction?.stage,
@@ -4669,11 +4692,21 @@ function resolveTransactionProgress({
       ['reserved', 'paid', 'verified', 'accepted', 'completed'].includes(reservationStatus) ||
       !['', 'AVAIL', 'NEW'].includes(mainStage) ||
       matchesSignalText(stageSignal, ['confirmed', 'reserved', 'otp', 'finance', 'transfer', 'registration']))
+  const instructionComplete = confirmedComplete && onboardingCompleted && (!isPrivateMatter || sellerOnboardingComplete)
   const otpSigned =
     hasTransactionEvent(transactionEvents, ['otp_signed', 'sale agreement signed', 'offer to purchase signed']) ||
     hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed']) ||
     hasDocumentWithKeywords(documents, ['signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
     ['FIN', 'ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage)
+  const outstandingDocumentCount = countOutstandingRequirements(requiredDocumentChecklist, [
+    'fica',
+    'id_document',
+    'proof_of_address',
+    'mandate',
+    'sale_agreement',
+    'otp',
+  ])
+  const documentsComplete = otpSigned && outstandingDocumentCount === 0
   const proofOfFundsVerified =
     hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
     hasDocumentWithKeywords(documents, ['proof_of_funds', 'cash proof'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
@@ -4690,7 +4723,7 @@ function resolveTransactionProgress({
     hasTransactionEvent(transactionEvents, ['finance_approved', 'quote_approved', 'bond offer accepted', 'bond grant accepted']) ||
     matchesSignalText(stageSignal, ['bond approved', 'finance approved', 'grant accepted'])
   const financeComplete =
-    financeType === 'cash'
+    !requiresFinanceStage
       ? proofOfFundsVerified
       : financeType === 'bond'
         ? bondOfferAccepted
@@ -4698,10 +4731,19 @@ function resolveTransactionProgress({
           ? proofOfFundsVerified && bondOfferAccepted
           : proofOfFundsVerified || bondOfferAccepted
   const transferAttorneyAssigned = Boolean(transaction?.assigned_attorney_email || transaction?.attorney)
-  const transferReady =
+  const transferDutyComplete =
+    hasRequirementStatus(requiredDocumentChecklist, ['rates_clearance', 'levy_clearance', 'transfer_duty'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasDocumentWithKeywords(documents, ['rates clearance', 'levy clearance', 'transfer duty'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasTransactionEvent(transactionEvents, ['rates_clearance_completed', 'rates clearance completed', 'transfer_duty_completed', 'transfer duty completed']) ||
+    matchesSignalText(stageSignal, ['rates clearance completed', 'transfer duty completed', 'transfer duty receipt'])
+  const lodgementReady =
     ['ready_for_lodgement', 'lodged_at_deeds_office', 'registered'].includes(transferStageKey) ||
     matchesSignalText(stageSignal, ['ready for lodgement', 'registration preparation', 'lodgement ready']) ||
     hasTransactionEvent(transactionEvents, ['lodgement_ready', 'registration_ready', 'lodgement submitted'])
+  const lodgementSubmitted =
+    ['lodged_at_deeds_office', 'registered'].includes(transferStageKey) ||
+    matchesSignalText(stageSignal, ['lodged', 'lodgement submitted', 'deeds office']) ||
+    hasTransactionEvent(transactionEvents, ['lodgement_submitted', 'lodged_at_deeds_office', 'deeds office'])
   const registrationComplete =
     Boolean(transaction?.registered_at || transaction?.registration_date || transaction?.title_deed_number) ||
     transferStageKey === 'registered' ||
@@ -4709,33 +4751,33 @@ function resolveTransactionProgress({
     hasTransactionEvent(transactionEvents, ['registration_completed', 'transaction registered'])
 
   const completedStages = []
-  let currentStage = 'confirmed'
+  let currentStage = 'instruction'
 
-  if (confirmedComplete) {
-    completedStages.push('confirmed')
-    currentStage = 'otp'
+  if (instructionComplete) {
+    completedStages.push('instruction')
+    currentStage = 'documents'
   }
-  if (completedStages.length === 1 && otpSigned) {
-    completedStages.push('otp')
-    currentStage = 'finance'
+  if (completedStages.length === 1 && documentsComplete) {
+    completedStages.push('documents')
+    currentStage = requiresFinanceStage ? 'finance' : 'transfer_duty'
   }
-  if (completedStages.length === 2 && financeComplete) {
+  if (requiresFinanceStage && completedStages.length === 2 && financeComplete) {
     completedStages.push('finance')
-    currentStage = 'transfer'
+    currentStage = 'transfer_duty'
   }
-  if (completedStages.length === 3 && transferReady) {
-    completedStages.push('transfer')
+  if (currentStage === 'transfer_duty' && transferDutyComplete) {
+    completedStages.push('transfer_duty')
+    currentStage = 'lodgement'
+  }
+  if (currentStage === 'lodgement' && (lodgementReady || lodgementSubmitted)) {
+    completedStages.push('lodgement')
     currentStage = 'registration'
   }
-  if (completedStages.length === 4 && registrationComplete) {
+  if (currentStage === 'registration' && registrationComplete) {
     completedStages.push('registration')
-    currentStage = 'registration'
+    currentStage = 'post_registration'
   }
 
-  const progressPercent =
-    completedStages.length >= TRANSACTION_LIFECYCLE_STAGE_ORDER.length
-      ? 100
-      : Math.round((completedStages.length / TRANSACTION_LIFECYCLE_STAGE_ORDER.length) * 100)
   const nextMilestone =
     TRANSACTION_LIFECYCLE_STAGE_LABELS[currentStage] ||
     TRANSACTION_LIFECYCLE_STAGE_LABELS[TRANSACTION_LIFECYCLE_STAGE_ORDER.at(-1)] ||
@@ -4747,39 +4789,67 @@ function resolveTransactionProgress({
     sellerOnboardingComplete: isPrivateMatter ? sellerOnboardingComplete : true,
     isPrivateMatter,
     otpSigned,
+    documentsComplete,
     proofOfFundsVerified,
     bondOfferAccepted,
     transferAttorneyAssigned,
-    transferReady,
+    transferDutyComplete,
+    lodgementSubmitted,
     registrationComplete,
   })
+  const blockersByStage = {
+    instruction: instructionComplete ? [] : [blockerReason],
+    documents: documentsComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'documents', otpSigned, documentsComplete })],
+    finance: !requiresFinanceStage || financeComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'finance', financeType, proofOfFundsVerified, bondOfferAccepted })],
+    transfer_duty: transferDutyComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'transfer_duty', transferAttorneyAssigned, transferDutyComplete })],
+    lodgement: lodgementSubmitted ? [] : [resolveProgressBlockerReason({ currentStage: 'lodgement', lodgementSubmitted })],
+    registration: registrationComplete ? [] : ['Registration capture outstanding'],
+    post_registration: [],
+  }
+  const stages = getVisibleMatterLifecycleStages({
+    transaction,
+    currentStage,
+    status: blockerReason ? 'blocked' : 'active',
+    blockersByStage,
+    completedStages,
+    subprocesses: transaction?.subprocesses || [],
+  })
+  const activeStageCount = stages.filter((stage) => stage.state !== 'not_required').length || stages.length || 1
+  const completedVisibleCount = stages.filter((stage) => stage.state === 'completed').length
+  const progressPercent = Math.min(100, Math.round((completedVisibleCount / Math.max(activeStageCount, 1)) * 100))
 
   return {
     currentStage,
     completedStages,
+    stages,
+    stageOrder: stages.map((stage) => stage.key),
+    stageLabels: stages.reduce((labels, stage) => {
+      labels[stage.key] = stage.label
+      return labels
+    }, {}),
     progressPercent,
     nextMilestone,
     blockerReason,
+    helperText: stages.find((stage) => stage.key === currentStage)?.helperText || '',
     lastUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
-    blockersByStage: {
-      confirmed: confirmedComplete ? [] : [blockerReason],
-      otp: otpSigned ? [] : ['OTP signature outstanding'],
-      finance: financeComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'finance', financeType, proofOfFundsVerified, bondOfferAccepted })],
-      transfer: transferReady ? [] : [resolveProgressBlockerReason({ currentStage: 'transfer', transferAttorneyAssigned, transferReady })],
-      registration: registrationComplete ? [] : ['Registration capture outstanding'],
-    },
+    blockersByStage,
     flags: {
       financeType,
       buyerOnboardingComplete: onboardingCompleted,
       sellerOnboardingSent,
       sellerOnboardingComplete,
       confirmedComplete,
+      instructionComplete,
       otpSigned,
+      documentsComplete,
+      outstandingDocumentCount,
       proofOfFundsVerified,
       bondOfferAccepted,
       financeComplete,
       transferAttorneyAssigned,
-      transferReady,
+      transferDutyComplete,
+      lodgementReady,
+      lodgementSubmitted,
       registrationComplete,
       openTransferRequirementCount: countOutstandingRequirements(requiredDocumentChecklist, ['transfer_signature', 'signed_transfer', 'transfer_document']),
     },
@@ -4797,6 +4867,7 @@ function resolveTransactionNextAction({
   documentRequests = [],
 } = {}) {
   const financeType = progressState?.flags?.financeType || normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const requiresFinanceStage = isBondFinanceType(financeType)
   const hasOpenDocumentRequest = (documentRequests || []).some((request) => {
     const status = normalizeWorkflowDocumentStatus(request?.status)
     return !['completed', 'cancelled', 'approved', 'rejected'].includes(status)
@@ -4848,7 +4919,7 @@ function resolveTransactionNextAction({
     }
   }
 
-  if (!progressState?.flags?.financeComplete) {
+  if (requiresFinanceStage && !progressState?.flags?.financeComplete) {
     const cashOrHybridNeedsProof = ['cash', 'combination'].includes(financeType) && !progressState?.flags?.proofOfFundsVerified
     if (cashOrHybridNeedsProof) {
       return {
@@ -4891,15 +4962,29 @@ function resolveTransactionNextAction({
     }
   }
 
-  if (!progressState?.flags?.transferReady) {
+  if (!progressState?.flags?.transferDutyComplete) {
     return {
-      title: 'Transfer documents outstanding',
-      description: 'The transfer pack is not ready for lodgement yet.',
+      title: 'Transfer duty and clearances outstanding',
+      description: 'Rates clearance, levy clearance, and transfer duty need to be cleared before lodgement.',
       status: 'pending',
       priority: progressState?.flags?.openTransferRequirementCount ? 'high' : 'normal',
       dueDate: transaction?.expected_transfer_date || transaction?.target_registration_date || null,
       primaryActionLabel: progressState?.flags?.openTransferRequirementCount ? 'Open Documents' : 'Open Transfer',
       primaryActionTarget: progressState?.flags?.openTransferRequirementCount ? 'documents' : 'transfer',
+      secondaryActionLabel: 'Add Note',
+      secondaryActionTarget: 'activity',
+    }
+  }
+
+  if (!progressState?.flags?.lodgementSubmitted) {
+    return {
+      title: 'Ready for lodgement',
+      description: 'The file is clear for lodgement. Record the Deeds Office lodgement once submitted.',
+      status: 'ready',
+      priority: 'normal',
+      dueDate: transaction?.lodgement_date || transaction?.expected_lodgement_date || transaction?.target_registration_date || null,
+      primaryActionLabel: 'Open Transfer',
+      primaryActionTarget: 'transfer',
       secondaryActionLabel: 'Add Note',
       secondaryActionTarget: 'activity',
     }
@@ -5362,7 +5447,6 @@ function ArchlineMatterHeader({
   backPath,
   backLabel,
   reference,
-  statusLabel,
   property,
   buyer,
   seller,
@@ -5373,7 +5457,13 @@ function ArchlineMatterHeader({
   activeTab,
   onTabChange,
   onMoreActions,
+  canEditReference = false,
+  referenceSaving = false,
+  referenceError = '',
+  onSaveReference,
 }) {
+  const [editingReference, setEditingReference] = useState(false)
+  const [referenceDraft, setReferenceDraft] = useState(reference || '')
   const metadata = [
     { key: 'property', label: 'Property', value: property || 'Property pending', icon: MapPin, wide: true },
     { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound },
@@ -5383,25 +5473,88 @@ function ArchlineMatterHeader({
     { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign },
   ]
 
+  async function handleReferenceSubmit(event) {
+    event.preventDefault()
+    const nextReference = referenceDraft.trim()
+    if (!nextReference || referenceSaving) return
+    if (nextReference === String(reference || '').trim()) {
+      setEditingReference(false)
+      return
+    }
+    const saved = await onSaveReference?.(nextReference)
+    if (saved !== false) setEditingReference(false)
+  }
+
   return (
-    <header className="no-print -mx-3 border-b border-slate-200 bg-white px-3 pt-3 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
+    <header className="no-print -mx-3 border-b border-slate-200 bg-white px-3 pt-4 md:-mx-4 md:px-4 md:pt-5 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px]">
-        <div className="flex flex-col gap-4 py-2 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
+        <div className="flex flex-col gap-5 py-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
             <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
               <ChevronRight size={15} className="rotate-180" />
               {backLabel || 'Back to Matters'}
             </Link>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <h1 className="break-words text-[1.85rem] font-semibold leading-tight tracking-[-0.02em] text-slate-950 md:text-[2.25rem]">
-                {reference || 'Matter'}
-              </h1>
-              <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
-            </div>
+            {editingReference ? (
+              <form onSubmit={handleReferenceSubmit} className="mt-4 max-w-2xl">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    value={referenceDraft}
+                    onChange={(event) => setReferenceDraft(event.target.value)}
+                    className="min-h-[58px] min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 text-3xl font-semibold tracking-[-0.02em] text-slate-950 shadow-sm outline-none transition focus:border-emerald-700 focus:ring-4 focus:ring-emerald-100 md:text-[2.4rem]"
+                    aria-label="Matter number"
+                    autoFocus
+                    disabled={referenceSaving}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="inline-flex size-11 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      disabled={referenceSaving || !referenceDraft.trim()}
+                      title="Save matter number"
+                    >
+                      <Check size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex size-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                      onClick={() => {
+                        setReferenceDraft(reference || '')
+                        setEditingReference(false)
+                      }}
+                      disabled={referenceSaving}
+                      title="Cancel"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+                {referenceError ? <p className="mt-2 text-sm font-medium text-red-600">{referenceError}</p> : null}
+              </form>
+            ) : (
+              <div className="mt-4 flex min-w-0 items-center gap-2">
+                <h1 className="break-words text-[2.2rem] font-semibold leading-none tracking-[-0.02em] text-slate-950 md:text-[2.85rem]">
+                  {reference || 'Matter'}
+                </h1>
+                {canEditReference ? (
+                  <button
+                    type="button"
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950"
+                    onClick={() => {
+                      setReferenceDraft(reference || '')
+                      setEditingReference(true)
+                    }}
+                    title="Edit matter number"
+                    aria-label="Edit matter number"
+                  >
+                    <PencilLine size={17} />
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
           <button
             type="button"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
             onClick={onMoreActions}
           >
             More Actions
@@ -5409,22 +5562,22 @@ function ArchlineMatterHeader({
           </button>
         </div>
 
-        <div className="grid gap-3 py-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]">
+        <div className="grid gap-x-8 gap-y-5 py-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[1.45fr_repeat(5,minmax(0,1fr))]">
           {metadata.map((item) => {
             const Icon = item.icon
             return (
-              <div key={item.key} className="flex min-w-0 items-start gap-2.5">
-                <Icon size={18} className="mt-0.5 shrink-0 text-slate-700" />
+              <div key={item.key} className="flex min-w-0 items-start gap-3">
+                <Icon size={20} className="mt-0.5 shrink-0 text-slate-700" />
                 <div className="min-w-0">
-                  <span className="block text-xs font-medium text-slate-500">{item.label}</span>
-                  <strong className="mt-1 block text-sm font-medium leading-5 text-slate-900">{item.value}</strong>
+                  <span className="block text-sm font-medium text-slate-500">{item.label}</span>
+                  <strong className="mt-1.5 block text-[1rem] font-medium leading-6 text-slate-900">{item.value}</strong>
                 </div>
               </div>
             )
           })}
         </div>
 
-        <nav className="flex gap-5 overflow-x-auto" aria-label="Matter navigation">
+        <nav className="grid w-full grid-flow-col auto-cols-max gap-2 overflow-x-auto border-t border-slate-100 lg:auto-cols-fr lg:gap-0" aria-label="Matter navigation">
           {tabs.map((tab) => {
             const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
             const active = tab.id === activeTab
@@ -5432,7 +5585,7 @@ function ArchlineMatterHeader({
               <button
                 key={tab.id}
                 type="button"
-                className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
+                className={`inline-flex h-14 min-w-[148px] items-center justify-center gap-2 border-b-2 px-3 text-sm font-semibold transition lg:min-w-0 ${
                   active
                     ? 'border-slate-950 text-slate-950'
                     : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-950'
@@ -5468,159 +5621,212 @@ function ArchlineProgressRing({ completed = 0, total = 0, label = 'Complete' }) 
   )
 }
 
+function ArchlineKeyDatesList({
+  rows = [],
+  canEdit = false,
+  savingKey = '',
+  error = '',
+  onSaveDate,
+}) {
+  const [editingKey, setEditingKey] = useState('')
+  const [draftValue, setDraftValue] = useState('')
+
+  const startEdit = (row) => {
+    setEditingKey(row.fieldKey)
+    setDraftValue(toInputDate(row.rawValue))
+  }
+
+  const cancelEdit = () => {
+    setEditingKey('')
+    setDraftValue('')
+  }
+
+  const submitEdit = async (event, row) => {
+    event.preventDefault()
+    const saved = await onSaveDate?.(row.fieldKey, draftValue)
+    if (saved !== false) cancelEdit()
+  }
+
+  return (
+    <>
+      <div className="divide-y divide-slate-100">
+        {rows.map((row) => {
+          const editing = editingKey === row.fieldKey
+          const saving = savingKey === row.fieldKey
+          return (
+            <div key={row.label} className="py-3 text-sm">
+              {editing ? (
+                <form className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" onSubmit={(event) => submitEdit(event, row)}>
+                  <label className="font-medium text-slate-600" htmlFor={`key-date-${row.fieldKey}`}>{row.label}</label>
+                  <span className="flex items-center gap-2">
+                    <input
+                      id={`key-date-${row.fieldKey}`}
+                      type="date"
+                      value={draftValue}
+                      onChange={(event) => setDraftValue(event.target.value)}
+                      className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-950 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100"
+                      disabled={saving}
+                    />
+                    <button type="submit" className="inline-flex size-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50" disabled={saving} aria-label={`Save ${row.label}`}>
+                      <Check size={15} />
+                    </button>
+                    <button type="button" className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-50" onClick={cancelEdit} disabled={saving} aria-label={`Cancel ${row.label} edit`}>
+                      <X size={15} />
+                    </button>
+                  </span>
+                </form>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-600">{row.label}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <strong className="text-right font-medium text-slate-950">{row.value}</strong>
+                    {canEdit && row.editable ? (
+                      <button
+                        type="button"
+                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+                        onClick={() => startEdit(row)}
+                        aria-label={`Edit ${row.label}`}
+                      >
+                        <PencilLine size={14} />
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {error ? <p className="mt-2 text-xs font-medium text-red-600">{error}</p> : null}
+    </>
+  )
+}
+
 function ArchlineOverviewWorkspace({
   lifecycleProgress,
-  overviewNextActions = [],
   roleplayerItems = [],
   requiredDocuments = [],
   documentHealthSummary = {},
   activityFeed = [],
   keyDates = [],
   financialRows = [],
+  canEditKeyDates = false,
+  keyDateSavingKey = '',
+  keyDateError = '',
   onOpenWorkspace,
-  onUploadDocument,
   onAddNote,
-  onRequestDocuments,
+  onSaveKeyDate,
 }) {
-  const progressStages = [
-    { key: 'instruction', label: 'Instruction' },
-    { key: 'documents', label: 'Documents' },
-    { key: 'finance', label: 'Finance' },
-    { key: 'transfer', label: 'Transfer' },
-    { key: 'registration', label: 'Registration' },
-    { key: 'post_registration', label: 'Post Registration' },
-  ]
+  const progressStages = lifecycleProgress?.stages?.length
+    ? lifecycleProgress.stages
+    : TRANSACTION_LIFECYCLE_STAGE_ORDER.map((key) => ({
+        key,
+        label: TRANSACTION_LIFECYCLE_STAGE_LABELS[key],
+        state: key === (lifecycleProgress?.currentStage || 'instruction') ? 'current' : 'upcoming',
+      }))
   const currentIndex = Math.max(0, progressStages.findIndex((stage) => stage.key === lifecycleProgress?.currentStage))
+  const currentStage = progressStages[currentIndex] || progressStages.find((stage) => stage.state === 'current') || progressStages[0]
   const completedDocs = documentHealthSummary.uploadedCount || 0
   const totalDocs = documentHealthSummary.requiredCount || requiredDocuments.length || 0
-  const taskRows = overviewNextActions.slice(0, 5)
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.36fr)]">
-      <div className="space-y-4">
-        <ArchlinePanel title="Matter Progress" className="p-4">
-          <div className="overflow-x-auto px-1 pb-2 pt-5">
-            <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
-              {progressStages.map((stage, index) => {
-                const completed = index < currentIndex
-                const current = index === currentIndex
-                return (
-                  <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
-                    {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
-                    <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
-                      completed ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50' : 'border-slate-300 text-slate-500'
-                    }`}>
-                      {completed ? <CheckCircle2 size={18} /> : <FileText size={17} />}
-                    </span>
-                    <div>
-                      <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
-                      <span className="mt-1 block text-xs text-slate-500">{current ? 'In Progress' : completed ? 'Completed' : 'Pending'}</span>
-                    </div>
+    <section className="space-y-4">
+      <ArchlinePanel title="Matter Progress" className="p-4">
+        <div className="overflow-x-auto px-1 pb-2 pt-5">
+          <div className="grid min-w-[760px] items-start gap-0" style={{ gridTemplateColumns: `repeat(${Math.max(progressStages.length, 1)}, minmax(0, 1fr))` }}>
+            {progressStages.map((stage, index) => {
+              const completed = stage.state === 'completed' || index < currentIndex
+              const current = stage.state === 'current' || stage.state === 'blocked'
+              const notRequired = stage.state === 'not_required'
+              return (
+                <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
+                  {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
+                  <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
+                    completed
+                      ? 'border-emerald-700 bg-emerald-700 text-white'
+                      : current
+                        ? stage.state === 'blocked'
+                          ? 'border-red-500 text-red-700 ring-4 ring-red-50'
+                          : 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50'
+                        : notRequired
+                          ? 'border-slate-200 bg-slate-50 text-slate-400'
+                          : 'border-slate-300 text-slate-500'
+                  }`}>
+                    {completed ? <CheckCircle2 size={18} /> : notRequired ? <Minus size={17} /> : <FileText size={17} />}
+                  </span>
+                  <div>
+                    <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
+                    <span className="mt-1 block text-xs text-slate-500">{stage.statusLabel || (current ? 'In Progress' : completed ? 'Completed' : notRequired ? 'Not Required' : 'Pending')}</span>
                   </div>
-                )
-              })}
-            </div>
+                </div>
+              )
+            })}
           </div>
-          <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
-              <div>
-                <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
+	            <div>
+	              <strong className="block text-sm font-semibold text-slate-950">You are currently in the {currentStage?.label || 'workflow'} stage.</strong>
+	              <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.helperText || currentStage?.helperText || 'Review the next actions and clear any open document or workflow items.'}</p>
+	            </div>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
+            View Transfer Timeline
+            <ChevronRight size={14} />
+          </Button>
+        </div>
+      </ArchlinePanel>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <ArchlinePanel title="Key Dates" className="p-4">
+          <ArchlineKeyDatesList
+            rows={keyDates.slice(0, 5)}
+            canEdit={canEditKeyDates}
+            savingKey={keyDateSavingKey}
+            error={keyDateError}
+            onSaveDate={onSaveKeyDate}
+          />
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Financial Summary" className="p-4">
+          <div className="divide-y divide-slate-100">
+            {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
+              <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <span className="font-medium text-slate-600">{label}</span>
+                <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
               </div>
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
-              View Transfer Timeline
-              <ChevronRight size={14} />
-            </Button>
+            ))}
           </div>
         </ArchlinePanel>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ArchlinePanel title="Key Dates" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {keyDates.slice(0, 5).map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span className="font-medium text-slate-600">{label}</span>
-                  <strong className="text-right font-medium text-slate-950">{value}</strong>
-                </div>
-              ))}
-            </div>
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Financial Summary" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
-                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span className="font-medium text-slate-600">{label}</span>
-                  <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
-                </div>
-              ))}
-            </div>
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Parties" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {roleplayerItems.slice(0, 4).map((item) => (
-                <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
-                    <span className="min-w-0">
-                      <span className="block text-xs text-slate-500">{item.label}</span>
-                      <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
-                    </span>
+        <ArchlinePanel title="Parties" className="p-4">
+          <div className="divide-y divide-slate-100">
+            {roleplayerItems.slice(0, 4).map((item) => (
+              <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
+                  <span className="min-w-0">
+                    <span className="block text-xs text-slate-500">{item.label}</span>
+                    <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
                   </span>
-                  <ChevronRight size={14} className="shrink-0 text-slate-400" />
-                </button>
-              ))}
-            </div>
-          </ArchlinePanel>
-        </div>
+                </span>
+                <ChevronRight size={14} className="shrink-0 text-slate-400" />
+              </button>
+            ))}
+          </div>
+        </ArchlinePanel>
+      </div>
 
-        <ArchlinePanel title="Matter Notes" action={<Button type="button" variant="ghost" size="sm" onClick={onAddNote}>Add Note</Button>} className="p-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.48fr)]">
+        <ArchlinePanel title="Matter Notes" action={<Button type="button" variant="ghost" size="sm" onClick={onAddNote}>Add Note</Button>} className="p-4 xl:min-h-full">
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">
             {activityFeed[0]?.body || activityFeed[0]?.title || 'No notes have been recorded yet.'}
           </div>
           {activityFeed[0]?.createdAt ? <p className="mt-3 text-xs text-slate-500">Last updated {formatDateTime(activityFeed[0].createdAt)}</p> : null}
         </ArchlinePanel>
-      </div>
 
-      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <ArchlinePanel title="Tasks" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>View all tasks</Button>} className="p-4">
-          <div className="divide-y divide-slate-100">
-            {taskRows.map((item) => (
-              <button key={`${item.title}-${item.workflow}`} type="button" className="flex w-full items-start gap-3 py-3 text-left" onClick={() => onOpenWorkspace?.(item.actionTarget || 'transfer')}>
-                <span className={`mt-1 size-3 rounded-full border ${item.priority === 'high' ? 'border-red-500' : 'border-slate-300'}`} />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-sm font-semibold text-slate-950">{item.title}</strong>
-                  <span className="mt-1 block text-xs text-slate-500">{item.description}</span>
-                </span>
-                <span className="shrink-0 text-xs font-semibold text-amber-700">{formatDate(item.dueDate, 'TBD')}</span>
-              </button>
-            ))}
-            {!taskRows.length ? <p className="py-3 text-sm text-slate-500">No urgent tasks right now.</p> : null}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Quick Actions" className="p-4">
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              ['Upload Document', Upload, onUploadDocument],
-              ['Send Email', Send, () => onOpenWorkspace?.('activity')],
-              ['Add Note', MessageSquarePlus, onAddNote],
-              ['Create Task', ListChecks, () => onOpenWorkspace?.('tasks')],
-              ['Request Document', FileText, onRequestDocuments],
-              ['Log Call', Bell, () => onOpenWorkspace?.('activity')],
-            ].map(([label, Icon, action]) => (
-              <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                {createElement(Icon, { size: 14 })}
-                {label}
-              </Button>
-            ))}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Document Checklist" className="p-4">
+        <ArchlinePanel title="Document Checklist" className="p-4 xl:min-h-full">
           <div className="flex items-center justify-between gap-4">
             <ArchlineProgressRing completed={completedDocs} total={totalDocs} label="Complete" />
             <div className="grid gap-2 text-sm">
@@ -5633,7 +5839,7 @@ function ArchlineOverviewWorkspace({
             View Checklist
           </Button>
         </ArchlinePanel>
-      </aside>
+      </div>
     </section>
   )
 }
@@ -5648,11 +5854,15 @@ function ArchlineWorkflowWorkspace({
   blockers = [],
   keyDates = [],
   activityFeed = [],
+  canEditKeyDates = false,
+  keyDateSavingKey = '',
+  keyDateError = '',
   saving = false,
   onUpdateStep,
   onUploadDocument,
   onAddNote,
   onOpenDocuments,
+  onSaveKeyDate,
 }) {
   const [statusDraft, setStatusDraft] = useState({ open: false, step: null, status: 'completed', note: '' })
   const canUpdateSteps = typeof onUpdateStep === 'function'
@@ -5879,14 +6089,13 @@ function ArchlineWorkflowWorkspace({
           ) : null}
 
           <ArchlinePanel title="Key Dates" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {keyDates.slice(0, 6).map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span className="text-slate-600">{label}</span>
-                  <strong className="text-right font-medium text-slate-950">{value}</strong>
-                </div>
-              ))}
-            </div>
+            <ArchlineKeyDatesList
+              rows={keyDates.slice(0, 6)}
+              canEdit={canEditKeyDates}
+              savingKey={keyDateSavingKey}
+              error={keyDateError}
+              onSaveDate={onSaveKeyDate}
+            />
           </ArchlinePanel>
         </aside>
       </section>
@@ -5948,12 +6157,206 @@ function ArchlineWorkflowWorkspace({
   )
 }
 
+const DOCUMENT_COLLECTION_GROUPS = [
+  {
+    key: 'buyer',
+    title: 'Buyer',
+    description: 'Buyer identity, compliance, finance, signing, and onboarding documents.',
+  },
+  {
+    key: 'seller',
+    title: 'Seller',
+    description: 'Seller identity, compliance, property, mandate, cancellation, and signing documents.',
+  },
+  {
+    key: 'matter',
+    title: 'Matter',
+    description: 'Transfer, clearances, lodgement, registration, generated, and internal legal documents.',
+  },
+]
+
+const DOCUMENT_COLLECTION_BUCKET_LABELS = {
+  fica: 'FICA / Compliance',
+  property: 'Property Docs',
+  finance: 'Bond / Finance',
+  signing: 'Signing',
+  clearances: 'Clearances',
+  lodgement: 'Lodgement & Registration',
+  internal: 'Internal / Generated',
+  other: 'Other',
+}
+
+function getDocumentCollectionSignal(row = {}) {
+  return [
+    row.displayName,
+    row.category,
+    row.categoryLabel,
+    row.requiredParty,
+    row.uploadedBy,
+    row.relatedWorkflow,
+    row.requiredDocumentKey,
+    row.requiredDocumentStatus,
+    row.visibility,
+    row.source,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function resolveDocumentCollectionGroupKey(row = {}) {
+  const metadata = resolveMatterDocumentMetadata(row)
+  if (metadata.confidence >= 0.86 && metadata.collectionGroupKey) return metadata.collectionGroupKey
+
+  const signal = getDocumentCollectionSignal(row)
+  if (/\bseller\b|vendor|seller_/.test(signal)) return 'seller'
+  if (/\bbuyer\b|purchaser|client|buyer_/.test(signal)) return 'buyer'
+  if (/bond|finance|guarantee|grant|bank|loan|proof.?of.?funds/.test(signal)) return 'buyer'
+  return 'matter'
+}
+
+function resolveDocumentCollectionBucketKey(row = {}) {
+  const metadata = resolveMatterDocumentMetadata(row)
+  if (metadata.confidence >= 0.86 && metadata.collectionBucketKey) return metadata.collectionBucketKey
+
+  const signal = getDocumentCollectionSignal(row)
+  if (/fica|identity|id.?document|proof.?of.?address|compliance|kyc/.test(signal)) return 'fica'
+  if (/bond|finance|grant|guarantee|bank|loan|mortgage|proof.?of.?funds|payslip/.test(signal)) return 'finance'
+  if (/sign|signed|signature|otp|offer.?to.?purchase|sale.?agreement|mandate/.test(signal)) return 'signing'
+  if (/rates|levy|clearance|transfer.?duty|sars|cancellation|figures/.test(signal)) return 'clearances'
+  if (/lodgement|lodged|registration|deeds|title.?deed/.test(signal)) return 'lodgement'
+  if (/property|municipal|rates.?account|plans|occupancy|certificate/.test(signal)) return 'property'
+  if (/generated|internal|draft|report|statement/.test(signal)) return 'internal'
+  return 'other'
+}
+
+function getDocumentCollectionRowAction(row = {}, handlers = {}) {
+  const document = row.linkedDocument || row.raw || {}
+  const requirement = row.requirement || row.requiredDocument
+  if (!row.fileUrl) {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => handlers.onUploadRequirement?.(row)}>
+        Upload
+      </Button>
+    )
+  }
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">
+        View
+      </a>
+      <Button type="button" variant="ghost" size="sm" onClick={() => handlers.onReplace?.(document, requirement)}>
+        Replace
+      </Button>
+      {handlers.onReview ? (
+        <Button type="button" variant="ghost" size="sm" onClick={() => handlers.onReview('approve', document, requirement)}>
+          Approve
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function buildDocumentCollectionGroups(rows = []) {
+  const groups = DOCUMENT_COLLECTION_GROUPS.map((group) => ({
+    ...group,
+    total: 0,
+    outstanding: 0,
+    complete: 0,
+    buckets: new Map(),
+  }))
+  const groupsByKey = new Map(groups.map((group) => [group.key, group]))
+  const bucketOrder = Object.keys(DOCUMENT_COLLECTION_BUCKET_LABELS)
+
+  for (const row of rows) {
+    const group = groupsByKey.get(resolveDocumentCollectionGroupKey(row)) || groupsByKey.get('matter')
+    const bucketKey = resolveDocumentCollectionBucketKey(row)
+    const bucket = group.buckets.get(bucketKey) || {
+      key: bucketKey,
+      label: DOCUMENT_COLLECTION_BUCKET_LABELS[bucketKey] || DOCUMENT_COLLECTION_BUCKET_LABELS.other,
+      rows: [],
+    }
+    bucket.rows.push(row)
+    group.buckets.set(bucketKey, bucket)
+    group.total += 1
+    if (['verified', 'uploaded', 'generated'].includes(normalizeDocumentCommandStatus(row.status, { hasDocument: Boolean(row.fileUrl) }))) {
+      group.complete += 1
+    } else {
+      group.outstanding += 1
+    }
+  }
+
+  return groups.map((group) => ({
+    ...group,
+    buckets: Array.from(group.buckets.values()).sort((left, right) => bucketOrder.indexOf(left.key) - bucketOrder.indexOf(right.key)),
+  }))
+}
+
+function DocumentCollectionRow({ row, handlers }) {
+  return (
+    <article className="grid gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <strong className="min-w-0 text-sm font-semibold text-slate-950">{row.displayName}</strong>
+          <span className={`rounded-lg border px-2 py-0.5 text-[0.68rem] font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+            {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+          </span>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+          <span>{row.requiredParty || row.uploadedBy || 'Matter team'}</span>
+          {row.categoryLabel ? <span aria-hidden="true">·</span> : null}
+          {row.categoryLabel ? <span>{row.categoryLabel}</span> : null}
+          {row.uploadedAt || row.updatedAt ? <span aria-hidden="true">·</span> : null}
+          {row.uploadedAt || row.updatedAt ? <span>{formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</span> : null}
+        </div>
+      </div>
+      {getDocumentCollectionRowAction(row, handlers)}
+    </article>
+  )
+}
+
+function DocumentCollectionGroup({ group, handlers }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-base font-semibold tracking-[-0.015em] text-slate-950">{group.title}</h4>
+          <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-600">{group.description}</p>
+        </div>
+        <div className="flex gap-2 text-xs font-semibold">
+          <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-600">{group.total} total</span>
+          <span className="rounded-lg border border-orange-100 bg-orange-50 px-2.5 py-1 text-orange-700">{group.outstanding} open</span>
+        </div>
+      </div>
+
+      {group.buckets.length ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {group.buckets.map((bucket) => (
+            <div key={bucket.key} className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <h5 className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{bucket.label}</h5>
+                <span className="text-xs font-semibold text-slate-400">{bucket.rows.length}</span>
+              </div>
+              <div className="grid gap-2">
+                {bucket.rows.map((row) => (
+                  <DocumentCollectionRow key={`${group.key}:${bucket.key}:${row.id}`} row={row} handlers={handlers} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">No documents are currently assigned to this group.</p>
+      )}
+    </section>
+  )
+}
+
 function ArchlineDocumentsWorkspace({
   documentHealthSummary = {},
   requiredRows = [],
   libraryRows = [],
   missingRows = [],
-  recentActivity = [],
   activeFilter = 'all',
   search = '',
   onFilterChange,
@@ -5964,204 +6367,101 @@ function ArchlineDocumentsWorkspace({
   onReplace,
   onReview,
 }) {
-  const kpis = [
-    ['Required', documentHealthSummary.requiredCount || requiredRows.length || 0, FileText, 'bg-blue-50 text-blue-700'],
-    ['Received', documentHealthSummary.uploadedCount || 0, Upload, 'bg-emerald-50 text-emerald-700'],
-    ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
-    ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
-  ]
+	  const kpis = [
+	    ['Required', documentHealthSummary.requiredCount || requiredRows.length || 0, FileText, 'bg-blue-50 text-blue-700'],
+	    ['Received', documentHealthSummary.uploadedCount || 0, Upload, 'bg-emerald-50 text-emerald-700'],
+	    ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
+	    ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
+	  ]
+  const collectionRows = requiredRows.length ? requiredRows : libraryRows
+  const collectionGroups = buildDocumentCollectionGroups(collectionRows)
+  const documentHandlers = { onUploadRequirement, onReplace, onReview }
 
-  return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
-      <div className="space-y-4">
-        <ArchlinePanel title="Document Readiness" className="p-4">
-          <div className="grid gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:items-center">
-            <div className="mx-auto grid size-36 place-items-center rounded-full" style={{ background: `conic-gradient(#087b4b ${documentHealthSummary.score || 0}%, #e8edf2 0)` }}>
-              <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
-                <div>
-                  <strong className="block text-3xl font-semibold text-slate-950">{documentHealthSummary.score || 0}%</strong>
-                  <span className="text-xs font-semibold text-slate-500">{documentHealthSummary.scoreLabel || 'Ready'}</span>
-                </div>
-              </div>
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                {documentHealthSummary.submissionReady
-                  ? 'All critical requirements are in place. Keep reviewing incoming uploads as the matter moves.'
-                  : 'Clear the missing or rejected requirements before this matter can move cleanly to the next stage.'}
-              </p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {kpis.map(([label, value, Icon, tone]) => (
-                  <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <span className={`inline-flex size-9 items-center justify-center rounded-lg ${tone}`}>
-                      {createElement(Icon, { size: 16 })}
-                    </span>
-                    <strong className="mt-3 block text-xl font-semibold text-slate-950">{value}</strong>
-                    <span className="text-xs font-medium text-slate-500">{label}</span>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </ArchlinePanel>
+	  return (
+	    <section className="space-y-4">
+	      <ArchlinePanel
+	        title="Document Readiness"
+	        action={(
+	          <div className="flex flex-wrap justify-end gap-2">
+	            <Button type="button" variant="secondary" size="sm" onClick={onUpload}>
+	              <Upload size={14} />
+	              Upload Document
+	            </Button>
+	            <Button type="button" variant="secondary" size="sm" onClick={onRequest}>
+	              <FileText size={14} />
+	              Request Document
+	            </Button>
+	          </div>
+	        )}
+	        className="p-4"
+	      >
+	        <div className="grid gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:items-center">
+	          <div className="mx-auto grid size-36 place-items-center rounded-full" style={{ background: `conic-gradient(#087b4b ${documentHealthSummary.score || 0}%, #e8edf2 0)` }}>
+	            <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
+	              <div>
+	                <strong className="block text-3xl font-semibold text-slate-950">{documentHealthSummary.score || 0}%</strong>
+	                <span className="text-xs font-semibold text-slate-500">{documentHealthSummary.scoreLabel || 'Ready'}</span>
+	              </div>
+	            </div>
+	          </div>
+	          <div className="min-w-0">
+	            <h2 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</h2>
+	            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+	              {documentHealthSummary.submissionReady
+	                ? 'All critical requirements are in place. Keep reviewing incoming uploads as the matter moves.'
+	                : 'Clear the missing or rejected requirements before this matter can move cleanly to the next stage.'}
+	            </p>
+	            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+	              {kpis.map(([label, value, Icon, tone]) => (
+	                <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
+	                  <span className={`inline-flex size-9 items-center justify-center rounded-lg ${tone}`}>
+	                    {createElement(Icon, { size: 16 })}
+	                  </span>
+	                  <strong className="mt-3 block text-xl font-semibold text-slate-950">{value}</strong>
+	                  <span className="text-xs font-medium text-slate-500">{label}</span>
+	                </article>
+	              ))}
+	            </div>
+	          </div>
+	        </div>
+	      </ArchlinePanel>
 
-        <ArchlinePanel title="Required Documents" className="overflow-hidden">
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Document</th>
-                  <th className="px-4 py-3">Owner</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {requiredRows.slice(0, 8).map((row) => {
-                  const document = row.linkedDocument || row.raw || {}
-                  return (
-                    <tr key={row.id}>
-                      <td className="px-4 py-4">
-                        <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                        <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel || row.category || 'Requirement'}</span>
-                      </td>
-                      <td className="px-4 py-4 text-slate-700">{row.requiredParty || 'Matter team'}</td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                          {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end gap-2">
-                          {row.fileUrl ? (
-                            <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">View</a>
-                          ) : (
-                            <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                              Upload
-                            </Button>
-                          )}
-                          {row.fileUrl ? (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
-                              Replace
-                            </Button>
-                          ) : null}
-                          {row.fileUrl && onReview ? (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => onReview('approve', document, row.requirement || row.requiredDocument)}>
-                              Approve
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="grid gap-3 p-4 md:hidden">
-            {requiredRows.slice(0, 8).map((row) => (
-              <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                    <span className="mt-1 block text-xs text-slate-500">{row.requiredParty || 'Matter team'}</span>
-                  </div>
-                  <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                    {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
-                  </span>
-                </div>
-                <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onUploadRequirement?.(row)}>
-                  {row.fileUrl ? 'Replace' : 'Upload'}
-                </Button>
-              </article>
-            ))}
-          </div>
-        </ArchlinePanel>
+	      <ArchlinePanel title="Document Collection" className="p-4">
+	        <div className="grid gap-4">
+	          {collectionGroups.map((group) => (
+	            <DocumentCollectionGroup key={group.key} group={group} handlers={documentHandlers} />
+	          ))}
+	        </div>
+	      </ArchlinePanel>
 
-        <ArchlinePanel title="Document Library" className="overflow-hidden">
-          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
-                  onClick={() => onFilterChange?.(filter.key)}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-            <label className="relative min-w-[220px]">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
-            </label>
-          </div>
-          <div className="divide-y divide-slate-100 border-t border-slate-200">
-            {libraryRows.slice(0, 12).map((row) => (
-              <article key={row.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                  <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel} · {formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                    {getDocumentCommandStatusLabel(row.status)}
-                  </span>
-                  {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-800">View</a> : null}
-                </div>
-              </article>
-            ))}
-            {!libraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
-          </div>
-        </ArchlinePanel>
-      </div>
-
-      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <ArchlinePanel title="Quick Actions" className="p-4">
-          <div className="grid gap-2">
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onUpload}>
-              <Upload size={14} />
-              Upload Document
-            </Button>
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onRequest}>
-              <FileText size={14} />
-              Request Document
-            </Button>
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onFilterChange?.('missing')}>
-              <AlertTriangle size={14} />
-              View Missing
-            </Button>
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Outstanding Items" className="p-4">
-          <div className="space-y-2">
-            {missingRows.slice(0, 5).map((row) => (
-              <button key={row.id} type="button" className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-left" onClick={() => onUploadRequirement?.(row)}>
-                <strong className="block text-sm font-semibold text-amber-950">{row.displayName}</strong>
-                <span className="mt-1 block text-xs text-amber-800">{row.requiredParty || 'Matter team'}</span>
-              </button>
-            ))}
-            {!missingRows.length ? <p className="text-sm text-slate-500">No critical missing documents.</p> : null}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Recent Activity" className="p-4">
-          <div className="space-y-2">
-            {recentActivity.slice(0, 5).map((row) => (
-              <article key={row.id} className="rounded-lg bg-slate-50 p-3">
-                <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
-                <span className="mt-1 block text-xs text-slate-500">{formatDateTime(row.timestamp, '')}</span>
-              </article>
-            ))}
-            {!recentActivity.length ? <p className="text-sm text-slate-500">No document activity yet.</p> : null}
-          </div>
-        </ArchlinePanel>
-      </aside>
-    </section>
-  )
+	      <ArchlinePanel title="Document Library" className="overflow-hidden">
+	        <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+	          <div className="flex gap-2 overflow-x-auto pb-1">
+	            {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+	              <button
+	                key={filter.key}
+	                type="button"
+	                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
+	                onClick={() => onFilterChange?.(filter.key)}
+	              >
+	                {filter.label}
+	              </button>
+	            ))}
+	          </div>
+	          <label className="relative min-w-[220px]">
+	            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+	            <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
+	          </label>
+	        </div>
+	        <div className="grid gap-2 border-t border-slate-200 p-4 lg:grid-cols-2">
+	          {libraryRows.slice(0, 16).map((row) => (
+	            <DocumentCollectionRow key={`library:${row.id}`} row={row} handlers={documentHandlers} />
+	          ))}
+	          {!libraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
+	        </div>
+	      </ArchlinePanel>
+	    </section>
+	  )
 }
 
 function ArchlineTasksWorkspace({ items = [], overviewItems = [], onOpenTask, onRunTask, onOpenWorkspace }) {
@@ -7535,15 +7835,23 @@ function MatterOverviewHeader({
 
         <section className="rounded-[22px] border border-borderDefault bg-white px-4 py-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)] md:px-5">
           <ProgressTimeline
-            currentStage={lifecycleProgress?.currentStage || 'confirmed'}
-            stages={TRANSACTION_LIFECYCLE_STAGE_ORDER}
-            stageLabelMap={TRANSACTION_LIFECYCLE_STAGE_LABELS}
+            currentStage={lifecycleProgress?.currentStage || 'instruction'}
+            stages={lifecycleProgress?.stageOrder || lifecycleProgress?.stages?.map((stage) => stage.key) || TRANSACTION_LIFECYCLE_STAGE_ORDER}
+            stageLabelMap={lifecycleProgress?.stageLabels || TRANSACTION_LIFECYCLE_STAGE_LABELS}
             framed={false}
             compact
             premium
             showCurrentSummary={false}
             progressPercent={lifecycleProgress?.progressPercent ?? 0}
             blockersByStage={lifecycleProgress?.blockersByStage || null}
+            stageStateMap={lifecycleProgress?.stages?.reduce((states, stage) => {
+              states[stage.key] = stage.state
+              return states
+            }, {}) || null}
+            stageStatusMap={lifecycleProgress?.stages?.reduce((statuses, stage) => {
+              statuses[stage.key] = stage.statusLabel
+              return statuses
+            }, {}) || null}
             helperText={
               lifecycleProgress?.blockerReason
                 ? lifecycleProgress.blockerReason
@@ -8793,6 +9101,10 @@ function AttorneyTransactionDetail() {
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
+  const [matterNumberSaving, setMatterNumberSaving] = useState(false)
+  const [matterNumberError, setMatterNumberError] = useState('')
+  const [keyDateSavingKey, setKeyDateSavingKey] = useState('')
+  const [keyDateError, setKeyDateError] = useState('')
 
   useEffect(() => {
     if (!location.state?.openBuyerOnboardingRoleplayers) return
@@ -9697,6 +10009,43 @@ function AttorneyTransactionDetail() {
     }) || null,
     [transactionRolePlayers],
   )
+  const canEditMatterNumber = useMemo(() => {
+    if (workspaceRole !== 'attorney' || !attorneyPermissionState.canEditTransferWorkflow) return false
+    const activeFirmId = String(
+      activeTransferRoleplayer?.organisationId ||
+        activeTransferRoleplayer?.organisation_id ||
+        savedTransferRoleplayer?.organisationId ||
+        savedTransferRoleplayer?.organisation_id ||
+        transferAttorney?.firmId ||
+        transferAttorney?.firm_id ||
+        '',
+    ).trim()
+    const currentFirmId = String(attorneyPermissionState.firmId || '').trim()
+    if (activeFirmId && currentFirmId) return activeFirmId === currentFirmId
+
+    const activeEmail = String(
+      activeTransferRoleplayer?.emailAddress ||
+        activeTransferRoleplayer?.email_address ||
+        savedTransferRoleplayer?.emailAddress ||
+        savedTransferRoleplayer?.email_address ||
+        transferAttorney?.participantEmail ||
+        transaction?.assigned_attorney_email ||
+        '',
+    ).trim().toLowerCase()
+    const currentEmail = String(profile?.email || '').trim().toLowerCase()
+    if (activeEmail && currentEmail) return activeEmail === currentEmail
+    return true
+  }, [
+    activeTransferRoleplayer,
+    attorneyPermissionState.canEditTransferWorkflow,
+    attorneyPermissionState.firmId,
+    profile?.email,
+    savedTransferRoleplayer,
+    transaction?.assigned_attorney_email,
+    transferAttorney,
+    workspaceRole,
+  ])
+  const canEditKeyDates = canEditMatterNumber
   const transferAttorneyReassignmentRequired = Boolean(
     isAgentTransactionView &&
     declinedTransferRoleplayer &&
@@ -10507,6 +10856,62 @@ function AttorneyTransactionDetail() {
     await loadData({ background: true })
   }
 
+  async function handleSaveMatterNumber(nextMatterNumber) {
+    if (!transaction?.id) {
+      setMatterNumberError('Transaction data is not available.')
+      return false
+    }
+    if (!canEditMatterNumber) {
+      setMatterNumberError('Only the transferring attorney can edit the matter number.')
+      return false
+    }
+
+    try {
+      setMatterNumberSaving(true)
+      setMatterNumberError('')
+      const nextDetail = await updateTransactionMatterNumber(transaction.id, nextMatterNumber, {
+        actorRole: workspaceRole,
+      })
+      if (nextDetail) setData(nextDetail)
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      return true
+    } catch (matterNumberSaveError) {
+      setMatterNumberError(matterNumberSaveError?.message || 'Unable to update the matter number.')
+      return false
+    } finally {
+      setMatterNumberSaving(false)
+    }
+  }
+
+  async function handleSaveKeyDate(fieldKey, value) {
+    if (!transaction?.id) {
+      setKeyDateError('Transaction data is not available.')
+      return false
+    }
+    if (!canEditKeyDates) {
+      setKeyDateError('Only the transferring attorney can edit key dates.')
+      return false
+    }
+
+    try {
+      setKeyDateSavingKey(fieldKey)
+      setKeyDateError('')
+      const nextDetail = await updateTransactionKeyDate(transaction.id, fieldKey, value || null, {
+        actorRole: workspaceRole,
+      })
+      if (nextDetail) setData(nextDetail)
+      await loadData({ background: true })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      return true
+    } catch (dateSaveError) {
+      setKeyDateError(dateSaveError?.message || 'Unable to update the key date.')
+      return false
+    } finally {
+      setKeyDateSavingKey('')
+    }
+  }
+
   async function handleResendProgressNotification(delivery) {
     if (!delivery?.id || notificationResendBusyId) return
     setNotificationResendBusyId(delivery.id)
@@ -11267,22 +11672,27 @@ function AttorneyTransactionDetail() {
   ].filter(Boolean).join(' • ')
   const rollupLifecycleSummary = useMemo(
     () =>
-      buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
-        transactionId: transaction?.id,
-        fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
-      }),
-    [transaction?.created_at, transaction?.id, transaction?.updated_at, transactionRollup],
-  )
+	      buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
+	        transactionId: transaction?.id,
+	        transaction,
+	        subprocesses: workflowLanes,
+	        fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
+	      }),
+	    [transaction, transaction?.created_at, transaction?.id, transaction?.updated_at, transactionRollup, workflowLanes],
+	  )
   const usingTransactionRollupOverview = USE_TRANSACTION_ROLLUP_OVERVIEW && Boolean(rollupLifecycleSummary)
   const displayedLifecycleProgress = usingTransactionRollupOverview
     ? {
         ...rollupLifecycleSummary,
-        blockerReason:
-          transactionRollup?.blockers?.[0]?.message ||
-          transactionRollup?.nextAction?.label ||
-          '',
-        nextMilestone: String(transactionRollup?.parentStage || 'workflow').replaceAll('_', ' '),
-      }
+	        blockerReason:
+	          transactionRollup?.blockers?.[0]?.message ||
+	          transactionRollup?.nextAction?.label ||
+	          '',
+	        nextMilestone:
+	          rollupLifecycleSummary.stageLabels?.[rollupLifecycleSummary.currentStage] ||
+	          TRANSACTION_LIFECYCLE_STAGE_LABELS[rollupLifecycleSummary.currentStage] ||
+	          String(transactionRollup?.parentStage || 'workflow').replaceAll('_', ' '),
+	      }
     : lifecycleProgressState
   const displayedLifecycleLabel = usingTransactionRollupOverview
     ? formatTransactionRollupStatusLabel(transactionRollup?.parentStatus)
@@ -11905,23 +12315,40 @@ function AttorneyTransactionDetail() {
     }
     openWorkspaceMenu(tabId)
   }, [activeLegalWorkflowDetailKey, closeLegalWorkflowDetail, openLegalWorkflowDetail, openWorkspaceMenu])
-  const archlineKeyDates = useMemo(() => [
-    ['Instruction Date', formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')],
-    ['Agreement Date', formatDate(transaction?.agreement_date || transaction?.offer_accepted_at || transaction?.created_at, 'TBD')],
-    ['Obligation Date', formatDate(transaction?.obligation_date || transaction?.finance_clause_expiry_date, 'TBD')],
-    ['Transfer Duty Due', formatDate(transaction?.transfer_duty_due_date || transaction?.transfer_duty_due_at, 'TBD')],
-    ['Lodgement Date', formatDate(transaction?.lodgement_date || transaction?.lodged_at, 'TBD')],
-    ['Expected Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date, 'TBD')],
-  ], [
+  const archlineKeyDates = useMemo(() => {
+    const instructionDate = transaction?.instruction_date || transaction?.instruction_at || transaction?.instructed_at || transaction?.created_at
+    const agreementDate = transaction?.agreement_date || transaction?.offer_accepted_at || transaction?.sale_date || transaction?.accepted_at
+    const obligationDate = transaction?.obligation_date || transaction?.finance_clause_expiry_date || transaction?.suspensive_condition_due_date
+    const transferDutyDue = transaction?.transfer_duty_due_date || transaction?.transfer_duty_due_at
+    const lodgementDate = transaction?.lodgement_date || transaction?.lodged_at || transaction?.expected_lodgement_date || transaction?.expected_lodgement_at
+    const expectedRegistration = transaction?.target_registration_date || transaction?.expected_transfer_date || transaction?.expected_registration_date
+
+    return [
+      { label: 'Instruction Date', value: formatDate(instructionDate, 'TBD'), fieldKey: 'instruction_date', rawValue: instructionDate },
+      { label: 'Agreement Date', value: formatDate(agreementDate, 'TBD'), fieldKey: 'agreement_date', rawValue: agreementDate },
+      { label: 'Obligation Date', value: formatDate(obligationDate, 'TBD'), fieldKey: 'obligation_date', rawValue: obligationDate, editable: true },
+      { label: 'Transfer Duty Due', value: formatDate(transferDutyDue, 'TBD'), fieldKey: 'transfer_duty_due_date', rawValue: transferDutyDue, editable: true },
+      { label: 'Lodgement Date', value: formatDate(lodgementDate, 'TBD'), fieldKey: 'lodgement_date', rawValue: lodgementDate, editable: true },
+      { label: 'Expected Registration', value: formatDate(expectedRegistration, 'TBD'), fieldKey: 'target_registration_date', rawValue: expectedRegistration },
+    ]
+  }, [
+    transaction?.accepted_at,
     transaction?.agreement_date,
     transaction?.created_at,
+    transaction?.expected_lodgement_at,
+    transaction?.expected_lodgement_date,
+    transaction?.expected_registration_date,
     transaction?.expected_transfer_date,
     transaction?.finance_clause_expiry_date,
+    transaction?.instructed_at,
+    transaction?.instruction_at,
     transaction?.instruction_date,
     transaction?.lodged_at,
     transaction?.lodgement_date,
     transaction?.obligation_date,
     transaction?.offer_accepted_at,
+    transaction?.sale_date,
+    transaction?.suspensive_condition_due_date,
     transaction?.target_registration_date,
     transaction?.transfer_duty_due_at,
     transaction?.transfer_duty_due_date,
@@ -13471,17 +13898,20 @@ function AttorneyTransactionDetail() {
             backPath={workspaceBackPath}
             backLabel={workspaceBackLabel}
             reference={workspaceReference}
-            statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
             property={propertyAddress || matterHeadline}
             buyer={buyerDisplayName}
             seller={sellerDisplayName}
             purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
-            instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')}
+            instructionDate={formatDate(transaction?.instruction_date || transaction?.instruction_at || transaction?.instructed_at || transaction?.created_at, 'TBD')}
             source={archlineSourceLabel}
             tabs={archlineWorkspaceTabs}
             activeTab={archlineActiveWorkspaceTab}
             onTabChange={handleArchlineTabChange}
             onMoreActions={() => openWorkspaceMenu('tasks')}
+            canEditReference={canEditMatterNumber}
+            referenceSaving={matterNumberSaving}
+            referenceError={matterNumberError}
+            onSaveReference={handleSaveMatterNumber}
           />
           {onboardingActionMessage ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
@@ -13674,17 +14104,18 @@ function AttorneyTransactionDetail() {
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
           <ArchlineOverviewWorkspace
             lifecycleProgress={displayedLifecycleProgress}
-            overviewNextActions={overviewNextActions}
             roleplayerItems={archlinePartyItems}
             requiredDocuments={requiredDocumentRows}
             documentHealthSummary={documentHealthSummary}
             activityFeed={overviewConversationEntries}
             keyDates={archlineKeyDates}
             financialRows={archlineFinancialRows}
+            canEditKeyDates={canEditKeyDates}
+            keyDateSavingKey={keyDateSavingKey}
+            keyDateError={keyDateError}
             onOpenWorkspace={openWorkspaceMenu}
-            onUploadDocument={() => openDocumentUploadModal()}
             onAddNote={handleQuickAddWorkflowNote}
-            onRequestDocuments={handleQuickRequestDocuments}
+            onSaveKeyDate={handleSaveKeyDate}
           />
         ) : null}
 
@@ -13704,11 +14135,15 @@ function AttorneyTransactionDetail() {
               blockers={archlineCancellationWorkflow?.blockers || []}
               keyDates={archlineKeyDates}
               activityFeed={overviewConversationEntries}
+              canEditKeyDates={canEditKeyDates}
+              keyDateSavingKey={keyDateSavingKey}
+              keyDateError={keyDateError}
               saving={workflowSaving}
               onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineCancellationWorkflow, step, status, note)}
               onUploadDocument={() => openDocumentUploadModal({ category: 'cancellation' })}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onSaveKeyDate={handleSaveKeyDate}
             />
           ) : (
             <ArchlineWorkflowWorkspace
@@ -13724,11 +14159,15 @@ function AttorneyTransactionDetail() {
               blockers={archlineTransferWorkflow?.blockers || []}
               keyDates={archlineKeyDates}
               activityFeed={overviewConversationEntries}
+              canEditKeyDates={canEditKeyDates}
+              keyDateSavingKey={keyDateSavingKey}
+              keyDateError={keyDateError}
               saving={workflowSaving}
               onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
               onUploadDocument={() => openDocumentUploadModal({ category: 'transfer' })}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onSaveKeyDate={handleSaveKeyDate}
             />
           )
         ) : null}
@@ -13744,10 +14183,14 @@ function AttorneyTransactionDetail() {
             blockers={archlineFinanceWorkflow.blockers || []}
             keyDates={archlineKeyDates}
             activityFeed={overviewConversationEntries}
+            canEditKeyDates={canEditKeyDates}
+            keyDateSavingKey={keyDateSavingKey}
+            keyDateError={keyDateError}
             saving={Boolean(bondHybridFinanceActionLoading)}
             onUploadDocument={() => openDocumentUploadModal({ category: 'finance' })}
             onAddNote={handleQuickAddWorkflowNote}
             onOpenDocuments={() => openWorkspaceMenu('documents')}
+            onSaveKeyDate={handleSaveKeyDate}
           />
         ) : null}
 

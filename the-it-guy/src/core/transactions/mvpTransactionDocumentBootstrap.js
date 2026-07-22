@@ -1,7 +1,9 @@
+import { applyMatterDocumentMetadata } from '../documents/matterDocumentMetadata.js'
+
 export const MVP_TRANSACTION_DOCUMENT_BOOTSTRAP_VERSION = 'arch9_mvp_transaction_document_bootstrap_v1'
 
 function requirement(key, label, requiredFromRole, groupKey, description) {
-  return { key, label, requiredFromRole, groupKey, description, required: true }
+  return applyMatterDocumentMetadata({ key, label, requiredFromRole, groupKey, description, required: true })
 }
 
 export function buildMvpTransactionDocumentBootstrap(profile = {}) {
@@ -16,7 +18,10 @@ export function buildMvpTransactionDocumentBootstrap(profile = {}) {
   if (profile.sellerEntityType === 'company') rows.push(requirement('seller_company_authority', 'Seller company authority', 'seller', 'seller_entity', 'Company registration and signing authority.'))
   if (profile.sellerEntityType === 'trust') rows.push(requirement('seller_trust_authority', 'Seller trust authority', 'seller', 'seller_entity', 'Trust deed, letters of authority, and trustee resolution.'))
   if (profile.financeType === 'cash' || profile.financeType === 'hybrid') rows.push(requirement('proof_of_funds', 'Proof of funds', 'buyer', 'finance', 'Evidence for the cash component of the purchase.'))
-  if (profile.financeType === 'bond' || profile.financeType === 'hybrid') rows.push(requirement('bond_preapproval', 'Bond pre-approval / application', 'bond_originator', 'finance', 'Bond application and approval evidence.'))
+  if (profile.financeType === 'bond' || profile.financeType === 'hybrid') {
+    rows.push(requirement('bond_preapproval', 'Bond pre-approval / application', 'bond_originator', 'finance', 'Bond application and approval evidence.'))
+    rows.push(requirement('bond_grant', 'Bond grant', 'bond_originator', 'finance', 'Formal bond grant or approval letter from the bond originator.'))
+  }
   if (profile.requiresCancellationAttorney) rows.push(requirement('bond_cancellation_figures', 'Existing bond cancellation figures', 'cancellation_attorney', 'cancellation', 'Cancellation figures for the seller’s existing bond.'))
   return Object.freeze({ version: MVP_TRANSACTION_DOCUMENT_BOOTSTRAP_VERSION, requirements: rows })
 }

@@ -153,6 +153,7 @@ function buildDocumentTiles(documentRows = [], requiredDocumentRows = []) {
     { key: 'consentForm', label: 'Consent Form', keywords: ['consent', 'declaration'] },
     { key: 'incomeProof', label: 'Payslip / Income Proof', keywords: ['payslip', 'income proof', 'proof of income', 'salary'] },
     { key: 'bankStatement', label: 'Bank Statement', keywords: ['bank statement', 'statements'] },
+    { key: 'bondGrant', label: 'Bond Grant', keywords: ['bond grant', 'grant letter', 'bond_grant', 'grant_letter', 'bond approval', 'guarantee'] },
   ].map((tile) => ({ ...tile, ...matchDocument(documents, tile.keywords) }))
 
   const matchedIds = new Set(tiles.flatMap((tile) => tile.rows.map((row) => String(row.id || row.displayName || ''))))

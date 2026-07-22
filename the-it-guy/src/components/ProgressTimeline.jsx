@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Minus } from 'lucide-react'
 import { STAGES, normalizeStageLabel } from '../lib/stages'
 
 function resolveCurrentIndex(list, currentStage) {
@@ -47,6 +47,8 @@ function ProgressTimeline({
   isStageSelectable = null,
   progressPercent = null,
   blockersByStage = null,
+  stageStateMap = null,
+  stageStatusMap = null,
   helperText = '',
   lastUpdatedLabel = '',
 }) {
@@ -61,6 +63,7 @@ function ProgressTimeline({
     typeof progressPercent === 'number' && Number.isFinite(progressPercent)
       ? Math.max(0, Math.min(100, Math.round(progressPercent)))
       : null
+  const animatedProgressTarget = normalizedProgress ?? 0
   const progressTone = resolveProgressTone(normalizedProgress)
   const shouldShowCurrentSummary = typeof showCurrentSummary === 'boolean' ? showCurrentSummary : !compact
   const trackHeightClass = premium ? (compact ? 'h-3' : 'h-3.5') : 'h-2.5'
@@ -79,16 +82,11 @@ function ProgressTimeline({
   }, [stepperFillPercent])
 
   useEffect(() => {
-    if (normalizedProgress === null) {
-      setAnimatedProgress(0)
-      return undefined
-    }
-
     const frame = window.requestAnimationFrame(() => {
-      setAnimatedProgress(normalizedProgress)
+      setAnimatedProgress(animatedProgressTarget)
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [normalizedProgress])
+  }, [animatedProgressTarget])
 
   const content = (
     <div className="relative">
@@ -111,9 +109,24 @@ function ProgressTimeline({
           />
 
           {safeStages.map((item, index) => {
-            const stepState = index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'future'
+            const explicitState = String(stageStateMap?.[item] || '').trim().toLowerCase()
+            const stepState = explicitState === 'completed'
+              ? 'complete'
+              : explicitState === 'not_required'
+                ? 'not_required'
+                : explicitState === 'blocked'
+                  ? 'blocked'
+                  : explicitState === 'current'
+                    ? 'current'
+                    : index < currentIndex
+                      ? 'complete'
+                      : index === currentIndex
+                        ? 'current'
+                        : 'future'
             const isComplete = stepState === 'complete'
-            const isCurrent = stepState === 'current'
+            const isCurrent = stepState === 'current' || stepState === 'blocked'
+            const isBlocked = stepState === 'blocked'
+            const isNotRequired = stepState === 'not_required'
             const blockers = Array.isArray(blockersByStage?.[item]) ? blockersByStage[item].filter(Boolean) : []
             const hasBlockers = blockers.length > 0
             const canSelect = isInteractive
@@ -123,7 +136,11 @@ function ProgressTimeline({
               : false
             const position = resolveNodePosition(index, safeStages.length)
 
-            const nodeClassName = isComplete
+            const nodeClassName = isBlocked
+              ? 'border-[2px] border-[#b4535a] bg-white text-[#b4535a] ring-[3px] ring-[rgba(180,83,90,0.12)] shadow-[0_4px_12px_rgba(180,83,90,0.14)]'
+              : isNotRequired
+                ? 'border border-dashed border-[#cbd5df] bg-white text-[#94a3b8]'
+                : isComplete
               ? premium
                 ? 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_8px_18px_rgba(31,47,63,0.24)]'
                 : 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_4px_10px_rgba(31,47,63,0.2)]'
@@ -159,6 +176,8 @@ function ProgressTimeline({
               >
                 {isComplete ? (
                   <Check size={compact ? 12 : 14} strokeWidth={2.5} />
+                ) : isNotRequired ? (
+                  <Minus size={compact ? 12 : 14} strokeWidth={2.5} />
                 ) : (
                   <span className={[compact ? 'h-1.5 w-1.5' : 'h-2 w-2', 'rounded-full', isCurrent ? 'bg-[#1f2f3f]' : 'bg-transparent'].join(' ')} />
                 )}
@@ -208,10 +227,25 @@ function ProgressTimeline({
           style={{ gridTemplateColumns: `repeat(${safeStages.length}, minmax(0, 1fr))` }}
         >
           {safeStages.map((item, index) => {
-            const stepState = index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'future'
-            const isCurrent = stepState === 'current'
+            const explicitState = String(stageStateMap?.[item] || '').trim().toLowerCase()
+            const stepState = explicitState === 'completed'
+              ? 'complete'
+              : explicitState === 'not_required'
+                ? 'not_required'
+                : explicitState === 'blocked'
+                  ? 'blocked'
+                  : explicitState === 'current'
+                    ? 'current'
+                    : index < currentIndex
+                      ? 'complete'
+                      : index === currentIndex
+                        ? 'current'
+                        : 'future'
+            const isCurrent = stepState === 'current' || stepState === 'blocked'
             const isComplete = stepState === 'complete'
+            const isNotRequired = stepState === 'not_required'
             const label = stageLabelMap?.[item] || item
+            const statusLabel = stageStatusMap?.[item] || ''
             const canSelect = isInteractive
               ? typeof isStageSelectable === 'function'
                 ? Boolean(isStageSelectable(item, index))
@@ -221,7 +255,9 @@ function ProgressTimeline({
               ? 'text-[#142132] font-semibold'
               : isComplete
                 ? 'text-[#334155] font-medium'
-                : 'text-[#8ba0b8] font-medium'
+                : isNotRequired
+                  ? 'text-[#94a3b8] font-medium'
+                  : 'text-[#8ba0b8] font-medium'
 
             return (
               <li key={`${item}-label-${index}`} className="min-w-0 text-center">
@@ -241,7 +277,10 @@ function ProgressTimeline({
                     }}
                     disabled={!canSelect}
                   >
-                    {label}
+                    <span className="block">{label}</span>
+                    {isNotRequired && statusLabel ? (
+                      <span className="mt-0.5 block text-[0.62rem] font-semibold uppercase leading-3 tracking-[0.08em] text-[#94a3b8]">{statusLabel}</span>
+                    ) : null}
                   </button>
                 ) : (
                   <span
@@ -251,7 +290,10 @@ function ProgressTimeline({
                       labelClassName,
                     ].join(' ')}
                   >
-                    {label}
+                    <span className="block">{label}</span>
+                    {isNotRequired && statusLabel ? (
+                      <span className="mt-0.5 block text-[0.62rem] font-semibold uppercase leading-3 tracking-[0.08em] text-[#94a3b8]">{statusLabel}</span>
+                    ) : null}
                   </span>
                 )}
               </li>

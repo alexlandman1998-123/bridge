@@ -655,10 +655,24 @@ async function safeReadAllOffers(organisationId = '') {
 
 async function safeReadTransactions(organisationId = '', context = {}) {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const fields = 'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_stage, current_main_stage, stage, status, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at'
-  let query = supabase.from('transactions').select(fields).eq('organisation_id', organisationId).order('updated_at', { ascending: false }).limit(1000)
-  if (context.convertedTransactionId) query = query.eq('id', context.convertedTransactionId)
-  const { data, error } = await query
+  const selectVariants = [
+    'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_stage, current_main_stage, stage, status, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at',
+    'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_main_stage, stage, status, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at',
+    'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_main_stage, stage, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at',
+    'id, organisation_id, buyer_contact_id, seller_contact_id, listing_id, stage, lifecycle_state, cancelled_at, created_at, updated_at',
+    'id, organisation_id, listing_id, stage, created_at, updated_at',
+    'id, organisation_id, created_at, updated_at',
+  ]
+  let data = []
+  let error = null
+  for (const fields of selectVariants) {
+    let query = supabase.from('transactions').select(fields).eq('organisation_id', organisationId).order('updated_at', { ascending: false }).limit(1000)
+    if (context.convertedTransactionId) query = query.eq('id', context.convertedTransactionId)
+    const result = await query
+    data = result.data
+    error = result.error
+    if (!error || !isRecoverableReadError(error, 'transactions')) break
+  }
   if (error) {
     if (isRecoverableReadError(error, 'transactions')) return []
     throw error
@@ -669,10 +683,12 @@ async function safeReadTransactions(organisationId = '', context = {}) {
 async function safeReadPrivateListings(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
   const selectVariants = [
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, property_address, suburb, city, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
-    'id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, address_line_2, formatted_address, street_address, suburb, city, province, postal_code, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, address_line_2, suburb, city, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, title, address_line_1, address_line_2, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, title, address_line_1, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, title, address_line_1, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, created_at, updated_at',
   ]
   let data = []
   let error = null

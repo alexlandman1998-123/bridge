@@ -391,12 +391,6 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
-  const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-  const routeContentKey = isSettingsRoute
-    ? '/settings'
-    : isBondRoute
-      ? location.pathname
-      : location.pathname
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||
@@ -626,11 +620,10 @@ function AppLayout({ onLogout, session = null, user }) {
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div
-            key={routeContentKey}
             className={`ui-content-container ${isDashboardRoute ? 'ui-content-container-dashboard' : ''} ${isAttorneyDashboardRoute ? 'ui-content-container-edge' : ''}`.trim()}
           >
-            <Suspense key={routeContentKey} fallback={<PageSkeleton label={isBondRoute ? 'Loading bond workspace' : 'Preparing workspace'} />}>
-              <Outlet key={routeContentKey} />
+            <Suspense fallback={<PageSkeleton label={isBondRoute ? 'Loading bond workspace' : 'Preparing workspace'} />}>
+              <Outlet />
             </Suspense>
           </div>
         </main>

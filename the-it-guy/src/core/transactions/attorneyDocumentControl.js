@@ -1,3 +1,5 @@
+import { resolveMatterDocumentMetadata } from '../documents/matterDocumentMetadata.js'
+
 export const CONVEYANCING_DOCUMENT_PURPOSES = [
   { key: 'client_compliance', label: 'Client identity and FICA', description: 'Buyer and seller identity, address, authority and compliance records.' },
   { key: 'instruction_property', label: 'Instruction and property', description: 'Instruction, OTP, title deed and property information.' },
@@ -49,6 +51,16 @@ export const CONVEYANCING_DOCUMENT_SHORTCUTS = [
     relatedWorkflow: 'bond',
     notes: 'Purchase price guarantee required in the form approved by the transferring attorney.',
   },
+  {
+    key: 'bond_grant',
+    label: 'Bond grant',
+    documentType: 'bond_grant',
+    category: 'Guarantees',
+    requestedFrom: 'bond_originator',
+    visibility: 'client_visible',
+    relatedWorkflow: 'bond',
+    notes: 'Formal bond grant or approval letter required from the bond originator.',
+  },
 ]
 
 const COMPLETE = new Set(['verified', 'approved', 'accepted', 'complete', 'completed', 'not_applicable'])
@@ -74,9 +86,14 @@ function tokens(row = {}) {
 }
 
 export function getConveyancingDocumentPurpose(row = {}) {
+  const metadata = resolveMatterDocumentMetadata(row)
+  if (metadata.collectionBucketKey === 'finance' || metadata.libraryCategory === 'bond') {
+    return 'finance_guarantees'
+  }
+
   const signal = tokens(row)
   if (/rates|municipal|levy|clearance|transfer.?duty|sars|hoa|body.?corporate/.test(signal)) return 'clearances'
-  if (/guarantee|bond|finance|proof.?of.?funds|loan|bank.?approval|payment/.test(signal)) return 'finance_guarantees'
+  if (/guarantee|grant|bond|finance|proof.?of.?funds|loan|bank.?approval|originator|payment/.test(signal)) return 'finance_guarantees'
   if (/lodg|deeds|registration|registered|close.?out|final.?account/.test(signal)) return 'lodgement_registration'
   if (/sign|signature|power.?of.?attorney|draft|prepare|resolution/.test(signal)) return 'signing'
   if (/fica|identity|id.?document|proof.?of.?address|marriage|company|trust|authority|compliance/.test(signal)) return 'client_compliance'

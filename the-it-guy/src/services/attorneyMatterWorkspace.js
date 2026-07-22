@@ -72,7 +72,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   all: {
     key: 'all',
     title: 'All Matters',
-    description: 'Every active firm matter across transfer, bond, cancellation, and development work.',
+    description: '',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Matters',
     itemLabel: 'matters',

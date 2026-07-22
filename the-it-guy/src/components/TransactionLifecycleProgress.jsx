@@ -35,13 +35,30 @@ function TransactionLifecycleProgress({
       mainStage,
       subprocesses,
     })
-  const currentStageLabel = TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleSummary.currentStage] || 'Confirmed'
-  const currentIndex = Math.max(TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(lifecycleSummary.currentStage), 0)
+  const stageOrder = lifecycleSummary.stageOrder?.length
+    ? lifecycleSummary.stageOrder
+    : lifecycleSummary.stages?.length
+      ? lifecycleSummary.stages.map((stage) => stage.key)
+      : TRANSACTION_LIFECYCLE_STAGE_ORDER
+  const stageLabelMap = lifecycleSummary.stageLabels || lifecycleSummary.stages?.reduce((labels, stage) => {
+    labels[stage.key] = stage.label
+    return labels
+  }, {}) || TRANSACTION_LIFECYCLE_STAGE_LABELS
+  const stageStateMap = lifecycleSummary.stages?.reduce((states, stage) => {
+    states[stage.key] = stage.state
+    return states
+  }, {}) || null
+  const stageStatusMap = lifecycleSummary.stages?.reduce((statuses, stage) => {
+    statuses[stage.key] = stage.statusLabel
+    return statuses
+  }, {}) || null
+  const currentStageLabel = stageLabelMap[lifecycleSummary.currentStage] || 'Instruction'
+  const currentIndex = Math.max(stageOrder.indexOf(lifecycleSummary.currentStage), 0)
   const progressPercent =
     Number.isFinite(Number(lifecycleSummary?.progressPercent))
       ? Number(lifecycleSummary.progressPercent)
-      : TRANSACTION_LIFECYCLE_STAGE_ORDER.length > 1
-        ? Math.round((currentIndex / (TRANSACTION_LIFECYCLE_STAGE_ORDER.length - 1)) * 100)
+      : stageOrder.length > 1
+        ? Math.round((currentIndex / (stageOrder.length - 1)) * 100)
         : 0
   const blockersByStage = lifecycleSummary?.blockersByStage || buildBlockersByStage(lifecycleSummary)
   const fallbackHelper = lifecycleSummary.subStatus?.label
@@ -66,14 +83,16 @@ function TransactionLifecycleProgress({
       ) : null}
       <ProgressTimeline
         currentStage={lifecycleSummary.currentStage}
-        stages={TRANSACTION_LIFECYCLE_STAGE_ORDER}
-        stageLabelMap={TRANSACTION_LIFECYCLE_STAGE_LABELS}
+        stages={stageOrder}
+        stageLabelMap={stageLabelMap}
         framed={framed}
         compact={compact}
         premium={premium}
         showCurrentSummary={!showHeader}
         progressPercent={progressPercent}
         blockersByStage={blockersByStage}
+        stageStateMap={stageStateMap}
+        stageStatusMap={stageStatusMap}
         helperText={helperText || fallbackHelper}
         lastUpdatedLabel={lifecycleSummary.lastUpdatedAt ? `Updated ${new Date(lifecycleSummary.lastUpdatedAt).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}` : ''}
         onStageClick={onStageClick}

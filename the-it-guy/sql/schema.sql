@@ -1156,6 +1156,23 @@ create table if not exists transactions (
   attorney_stage text,
   operational_state text,
   waiting_on_role text,
+  instruction_date date,
+  instruction_at timestamptz,
+  instructed_at timestamptz,
+  agreement_date date,
+  offer_accepted_at timestamptz,
+  accepted_at timestamptz,
+  obligation_date date,
+  finance_clause_expiry_date date,
+  suspensive_condition_due_date date,
+  transfer_duty_due_date date,
+  transfer_duty_due_at timestamptz,
+  lodgement_date date,
+  lodged_at timestamptz,
+  expected_lodgement_date date,
+  expected_lodgement_at timestamptz,
+  expected_registration_date date,
+  target_registration_date date,
   registration_date date,
   title_deed_number text,
   registration_confirmation_document_id uuid,
@@ -1223,6 +1240,23 @@ alter table if exists transactions add column if not exists comment text;
 alter table if exists transactions add column if not exists stage_date date;
 alter table if exists transactions add column if not exists risk_status text;
 alter table if exists transactions add column if not exists sale_date date;
+alter table if exists transactions add column if not exists instruction_date date;
+alter table if exists transactions add column if not exists instruction_at timestamptz;
+alter table if exists transactions add column if not exists instructed_at timestamptz;
+alter table if exists transactions add column if not exists agreement_date date;
+alter table if exists transactions add column if not exists offer_accepted_at timestamptz;
+alter table if exists transactions add column if not exists accepted_at timestamptz;
+alter table if exists transactions add column if not exists obligation_date date;
+alter table if exists transactions add column if not exists finance_clause_expiry_date date;
+alter table if exists transactions add column if not exists suspensive_condition_due_date date;
+alter table if exists transactions add column if not exists transfer_duty_due_date date;
+alter table if exists transactions add column if not exists transfer_duty_due_at timestamptz;
+alter table if exists transactions add column if not exists lodgement_date date;
+alter table if exists transactions add column if not exists lodged_at timestamptz;
+alter table if exists transactions add column if not exists expected_lodgement_date date;
+alter table if exists transactions add column if not exists expected_lodgement_at timestamptz;
+alter table if exists transactions add column if not exists expected_registration_date date;
+alter table if exists transactions add column if not exists target_registration_date date;
 alter table if exists transactions add column if not exists assigned_agent text;
 alter table if exists transactions add column if not exists assigned_agent_email text;
 alter table if exists transactions add column if not exists assigned_attorney_email text;
@@ -1411,7 +1445,11 @@ alter table transactions
 
 alter table transactions
   add constraint transactions_current_main_stage_check
-  check (current_main_stage in ('AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG'));
+  check (current_main_stage in (
+    'AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG',
+    'instruction', 'documents', 'finance', 'transfer_duty',
+    'lodgement', 'registration', 'post_registration'
+  ));
 
 alter table transactions
   add constraint transactions_risk_status_check

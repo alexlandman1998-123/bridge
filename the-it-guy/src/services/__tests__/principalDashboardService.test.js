@@ -11,7 +11,11 @@ const server = await createServer({
   server: { middlewareMode: true },
 })
 
-const { getDateRangeFromPreset, getResidentialDashboardMetrics } = await server.ssrLoadModule('/src/services/principalDashboardService.js')
+const {
+  getDateRangeFromPreset,
+  getResidentialDashboardMetrics,
+  shouldSoftFailPrincipalDashboardSourceError,
+} = await server.ssrLoadModule('/src/services/principalDashboardService.js')
 
 const now = new Date('2026-06-10T10:00:00.000Z')
 const range = {
@@ -20,6 +24,30 @@ const range = {
   end: new Date('2026-07-01T00:00:00.000Z'),
   previousStart: new Date('2026-05-01T00:00:00.000Z'),
   previousEnd: new Date('2026-06-01T00:00:00.000Z'),
+}
+
+{
+  assert.equal(
+    shouldSoftFailPrincipalDashboardSourceError(
+      { status: 403, code: '42501', message: 'permission denied for table transaction_subprocesses' },
+      { allowPermissionDenied: true },
+    ),
+    true,
+    'optional dashboard sources should degrade on permission denials',
+  )
+  assert.equal(
+    shouldSoftFailPrincipalDashboardSourceError(
+      { status: 403, code: '42501', message: 'permission denied for table transactions' },
+      { allowPermissionDenied: false },
+    ),
+    false,
+    'core dashboard sources should still fail loudly on permission denials',
+  )
+  assert.equal(
+    shouldSoftFailPrincipalDashboardSourceError({ code: '42703', message: 'column transactions.foo does not exist' }),
+    true,
+    'schema drift should remain a soft dashboard source failure',
+  )
 }
 
 function tx(overrides = {}) {

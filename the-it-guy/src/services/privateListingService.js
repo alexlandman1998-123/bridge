@@ -4252,50 +4252,43 @@ export async function getAgentPrivateListings(
   const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
   if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
-  const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
-  if (normalizedOrgId) {
-    queryBuilder.eq('organisation_id', normalizedOrgId)
-  }
-  if (!includeAllOrganisationListings) {
-    if (normalizedAgentIds.length > 1) {
-      queryBuilder.in('assigned_agent_id', normalizedAgentIds)
-    } else if (normalizedAgentIds.length === 1) {
-      queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
-    } else {
-      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+  async function runListingQuery({ includeVisibilityFilter = true, includeAssignedEmailFilter = true } = {}) {
+    let queryBuilder = client.from('private_listings').select('*')
+    queryBuilder = includeVisibilityFilter
+      ? applyVisiblePrivateListingFilters(queryBuilder)
+      : queryBuilder.neq('listing_status', 'withdrawn')
+
+    if (normalizedOrgId) {
+      queryBuilder.eq('organisation_id', normalizedOrgId)
     }
+    if (!includeAllOrganisationListings) {
+      if (normalizedAgentIds.length > 1) {
+        queryBuilder.in('assigned_agent_id', normalizedAgentIds)
+      } else if (normalizedAgentIds.length === 1) {
+        queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
+      } else if (includeAssignedEmailFilter) {
+        queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+      }
+    }
+
+    return queryBuilder.order('updated_at', { ascending: false })
   }
 
-  const query = await queryBuilder.order('updated_at', { ascending: false })
+  let includeVisibilityFilter = true
+  let includeAssignedEmailFilter = true
+  let query = await runListingQuery({ includeVisibilityFilter, includeAssignedEmailFilter })
+  if (query.error && isMissingColumnError(query.error, 'listing_visibility')) {
+    includeVisibilityFilter = false
+    query = await runListingQuery({ includeVisibilityFilter, includeAssignedEmailFilter })
+  }
+  if (query.error && isMissingColumnError(query.error, 'assigned_agent_email') && normalizedAgentIds.length) {
+    includeAssignedEmailFilter = false
+    query = await runListingQuery({ includeVisibilityFilter, includeAssignedEmailFilter })
+  }
   if (query.error) {
     if (isMissingColumnError(query.error, 'assigned_agent_email') && !normalizedAgentIds.length) {
       return []
-    }
-    if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentIds.length) {
-      const retryQuery = await applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
-        .eq('organisation_id', normalizedOrgId)
-        .order('updated_at', { ascending: false })
-      if (normalizedAgentIds.length > 1) {
-        retryQuery.in('assigned_agent_id', normalizedAgentIds)
-      } else {
-        retryQuery.eq('assigned_agent_id', normalizedAgentIds[0])
-      }
-      if (retryQuery.error) {
-        if (isMissingTableError(retryQuery.error, 'private_listings')) return []
-        throw retryQuery.error
-      }
-      const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
-      const retryListingIds = retryRows.map((row) => row.id)
-      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap] = await Promise.all([
-        fetchOnboardingRowsForListings(client, retryListingIds),
-        fetchRequirementRowsForListings(client, retryListingIds),
-        fetchDocumentRowsForListings(client, retryListingIds),
-        fetchExternalLinkRowsForListings(client, retryListingIds),
-        fetchPublicationRowsForListings(client, retryListingIds),
-        fetchMandatePacketRowsForListings(client, retryRows),
-      ])
-      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap)).filter(Boolean)
     }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error

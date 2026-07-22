@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
-  ClipboardCheck,
   Clock3,
   Flag,
   FileText,
@@ -13,7 +12,6 @@ import {
   Plus,
   Save,
   SlidersHorizontal,
-  UserRound,
   UsersRound,
   XCircle,
 } from 'lucide-react'
@@ -103,22 +101,6 @@ const WAITING_ON_STYLES = {
   Documents: 'border-blue-200 bg-blue-50 text-blue-700',
   'Attorney acceptance': 'border-violet-200 bg-violet-50 text-violet-700',
   'Instruction review': 'border-emerald-200 bg-emerald-50 text-[#00614f]',
-}
-
-const QUICK_FILTER_ICONS = {
-  today: CalendarDays,
-  this_week: CalendarDays,
-  needs_attention: AlertTriangle,
-  my_matters: UserRound,
-  unassigned: UsersRound,
-  awaiting_client: UsersRound,
-  awaiting_signed_otp: ClipboardCheck,
-  awaiting_documents: FileText,
-  ready_for_acceptance: CheckCircle2,
-  awaiting_buyer: UsersRound,
-  document_blockers: AlertTriangle,
-  delayed: AlertTriangle,
-  due_for_registration: Flag,
 }
 
 function classNames(...values) {
@@ -365,81 +347,43 @@ function UnifiedFilterBar({ workspace, filters, onFilterChange, onOpenMoreFilter
     : null
 
   return (
-    <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.35fr)_260px_auto] xl:items-end">
-      <FilterGroup
-        label="Status"
-        options={workspace.filters.statuses}
-        value={filters.status}
-        onChange={(value) => onFilterChange('status', value)}
-      />
-      {lockedMatterType ? (
-        <div className="min-w-0">
-          <p className="mb-2 text-xs font-semibold text-slate-600">Matter Type</p>
-          <span className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-[#00614f]">
-            <CheckCircle2 size={15} />
-            <span className="truncate">{lockedMatterTypeOption?.label || workspace.view.title}</span>
-          </span>
-        </div>
-      ) : (
+    <section className="flex w-full justify-end">
+      <div className="grid w-full gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm lg:w-auto lg:max-w-full lg:grid-cols-[minmax(190px,280px)_minmax(230px,360px)_220px_auto] lg:items-end">
         <FilterGroup
-          label="Matter Type"
-          options={workspace.filters.matterTypes}
-          value={filters.matterType}
-          onChange={(value) => onFilterChange('matterType', value)}
+          label="Status"
+          options={workspace.filters.statuses}
+          value={filters.status}
+          onChange={(value) => onFilterChange('status', value)}
         />
-      )}
-      <SelectFilter
-        label="Assignee"
-        value={filters.attorney}
-        options={workspace.filters.attorneys}
-        onChange={(value) => onFilterChange('attorney', value)}
-      />
-      <button
-        type="button"
-        onClick={onOpenMoreFilters}
-        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-      >
-        <SlidersHorizontal size={16} />
-        More Filters
-      </button>
-    </section>
-  )
-}
-
-function QuickFilters({ quickFilters = [], activeFilter, onChange, onSaveView }) {
-  return (
-    <section className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick Filters</p>
-      <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-        {quickFilters.map((filter) => {
-          const Icon = QUICK_FILTER_ICONS[filter.key] || CalendarDays
-          const active = activeFilter === filter.key
-          return (
-            <button
-              key={filter.key}
-              type="button"
-              onClick={() => onChange(active ? '' : filter.key)}
-              className={classNames(
-                'inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition',
-                active
-                  ? 'border-[#00614f] bg-emerald-50 text-[#00614f]'
-                  : filter.key === 'needs_attention' || filter.key === 'delayed'
-                    ? 'border-slate-200 bg-white text-red-600 hover:bg-red-50'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
-              )}
-            >
-              <Icon size={16} />
-              {filter.label}
-            </button>
-          )
-        })}
+        {lockedMatterType ? (
+          <div className="min-w-0">
+            <p className="mb-2 text-xs font-semibold text-slate-600">Matter Type</p>
+            <span className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-[#00614f]">
+              <CheckCircle2 size={15} />
+              <span className="truncate">{lockedMatterTypeOption?.label || workspace.view.title}</span>
+            </span>
+          </div>
+        ) : (
+          <FilterGroup
+            label="Matter Type"
+            options={workspace.filters.matterTypes}
+            value={filters.matterType}
+            onChange={(value) => onFilterChange('matterType', value)}
+          />
+        )}
+        <SelectFilter
+          label="Assignee"
+          value={filters.attorney}
+          options={workspace.filters.attorneys}
+          onChange={(value) => onFilterChange('attorney', value)}
+        />
         <button
           type="button"
-          onClick={onSaveView}
-          className="ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#00614f] transition hover:bg-emerald-50"
+          onClick={onOpenMoreFilters}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
         >
-          <Plus size={16} />
-          Save View
+          <SlidersHorizontal size={16} />
+          More Filters
         </button>
       </div>
     </section>
@@ -1092,24 +1036,6 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
   )
 }
 
-function SavedViewStrip({ savedViews = [], onApply }) {
-  if (!savedViews.length) return null
-  return (
-    <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
-      {savedViews.slice(0, 7).map((view) => (
-        <button
-          key={view.id}
-          type="button"
-          onClick={() => onApply(view)}
-          className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:text-[#00614f]"
-        >
-          {view.name}
-        </button>
-      ))}
-    </section>
-  )
-}
-
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
@@ -1119,7 +1045,6 @@ function AttorneyMattersPage() {
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
-  const [quickFilter, setQuickFilter] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -1168,7 +1093,7 @@ function AttorneyMattersPage() {
     setSelectedRows([])
     setIncomingAction({ pendingId: '', error: '' })
     setDeclineDialog({ row: null, reason: '' })
-  }, [filters, quickFilter, searchTerm, viewKey])
+  }, [filters, searchTerm, viewKey])
 
   useEffect(() => {
     setFilters((previous) => (
@@ -1184,11 +1109,10 @@ function AttorneyMattersPage() {
       view: viewKey,
       search: searchTerm,
       filters,
-      quickFilter,
       page,
       pageSize,
     })
-  }, [filters, page, pageSize, quickFilter, searchTerm, source, viewKey])
+  }, [filters, page, pageSize, searchTerm, source, viewKey])
 
   const savedViews = useMemo(() => [...(workspace?.savedViews || []), ...localSavedViews], [localSavedViews, workspace?.savedViews])
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
@@ -1198,25 +1122,23 @@ function AttorneyMattersPage() {
   }
 
   function handleSaveView() {
-    const label = quickFilter
-      ? workspace?.quickFilters?.find((filter) => filter.key === quickFilter)?.label
-      : workspace?.view?.lockedMatterType
-        ? workspace.view.title
+    const label = workspace?.view?.lockedMatterType
+      ? workspace.view.title
       : filters.matterType !== 'all'
         ? workspace?.filters?.matterTypes?.find((filter) => filter.key === filters.matterType)?.label
         : 'Custom View'
     const nextView = {
       id: `local-${Date.now()}`,
       name: `${label || 'Custom View'} ${localSavedViews.length + 1}`,
-      filters: { ...filters, quickFilter, searchTerm },
+      filters: { ...filters, searchTerm },
     }
     setLocalSavedViews((previous) => [...previous, nextView])
   }
 
   function handleApplySavedView(view) {
-    setFilters({ ...DEFAULT_FILTERS, ...(view.filters || {}) })
-    setQuickFilter(view.filters?.quickFilter || '')
-    setSearchTerm(view.filters?.searchTerm || '')
+    const { quickFilter: _ignoredQuickFilter, searchTerm: nextSearchTerm, ...nextFilters } = view.filters || {}
+    setFilters({ ...DEFAULT_FILTERS, ...nextFilters })
+    setSearchTerm(nextSearchTerm || '')
     setPage(1)
     setDrawerOpen(false)
   }
@@ -1326,24 +1248,9 @@ function AttorneyMattersPage() {
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
         <MatterWorkspaceHeader summary={workspace.summary} view={workspace.view} onSaveView={handleSaveView} />
-        <SavedViewStrip savedViews={savedViews} onApply={handleApplySavedView} />
-        <UnifiedFilterBar
-          workspace={workspace}
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onOpenMoreFilters={() => setDrawerOpen(true)}
-        />
-
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
         </section>
-
-        <QuickFilters
-          quickFilters={workspace.quickFilters}
-          activeFilter={quickFilter}
-          onChange={setQuickFilter}
-          onSaveView={handleSaveView}
-        />
 
         {incomingAction.error ? (
           <section className="flex items-start gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
@@ -1353,6 +1260,13 @@ function AttorneyMattersPage() {
         ) : null}
 
         <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} />
+
+        <UnifiedFilterBar
+          workspace={workspace}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onOpenMoreFilters={() => setDrawerOpen(true)}
+        />
 
         {workspace.tableRows.length ? (
           usesIncomingQueue ? (

@@ -173,6 +173,7 @@ function isMissingSourceError(error) {
   if (!error) return false
   const code = normalizeKey(error.code)
   const message = normalizeKey(error.message)
+  const details = normalizeKey(error.details)
   const status = Number(error.status || error.statusCode || 0)
   return (
     status === 404 ||
@@ -183,8 +184,59 @@ function isMissingSourceError(error) {
     code === 'pgrst205' ||
     message.includes('does not exist') ||
     message.includes('schema cache') ||
-    message.includes('could not find')
+    message.includes('could not find') ||
+    details.includes('does not exist') ||
+    details.includes('schema cache') ||
+    details.includes('could not find')
   )
+}
+
+function isPermissionDeniedSourceError(error) {
+  if (!error) return false
+  const code = normalizeKey(error.code)
+  const message = normalizeKey(error.message)
+  const details = normalizeKey(error.details)
+  const status = Number(error.status || error.statusCode || 0)
+  return (
+    status === 403 ||
+    code === '403' ||
+    code === '42501' ||
+    code === 'permission_denied' ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    message.includes('not authorized') ||
+    details.includes('permission denied') ||
+    details.includes('row-level security') ||
+    details.includes('not authorized')
+  )
+}
+
+function isServerSourceError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = normalizeKey(error?.code)
+  return status >= 500 || code.startsWith('5')
+}
+
+export function shouldSoftFailPrincipalDashboardSourceError(error, { allowPermissionDenied = false } = {}) {
+  return isMissingSourceError(error) || allowPermissionDenied
+}
+
+function logSoftSourceFallback(table, error, { scoped = false } = {}) {
+  const payload = {
+    table,
+    code: error?.code || '',
+    status: error?.status || error?.statusCode || '',
+    message: error?.message || '',
+  }
+  if (isPermissionDeniedSourceError(error)) {
+    console.warn(`[PrincipalDashboard] ${scoped ? 'Scoped source' : 'Source'} permission denied; using empty result.`, payload)
+    return
+  }
+  if (isServerSourceError(error)) {
+    console.warn(`[PrincipalDashboard] ${scoped ? 'Scoped source' : 'Source'} failed server-side; using empty result.`, payload)
+    return
+  }
+  console.debug(`[PrincipalDashboard] ${scoped ? 'Scoped source' : 'Source'} unavailable; using empty result.`, payload)
 }
 
 function getMissingColumnName(error) {
@@ -205,7 +257,7 @@ function removeColumnFromSelect(fields, columnName) {
   return nextParts.length === parts.length ? fields : nextParts.join(', ')
 }
 
-async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, allowPermissionDenied = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
@@ -227,15 +279,15 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!shouldSoftFailPrincipalDashboardSourceError(error, { allowPermissionDenied })) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', { table, message: lastError?.message })
+  logSoftSourceFallback(table, lastError)
   return []
 }
 
-async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000, allowPermissionDenied = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
@@ -258,11 +310,11 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!shouldSoftFailPrincipalDashboardSourceError(error, { allowPermissionDenied })) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
+  logSoftSourceFallback(table, lastError, { scoped: true })
   return []
 }
 
@@ -281,7 +333,7 @@ async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
       .limit(1000)
 
     if (error) {
-      if (isMissingSourceError(error) || getMissingColumnName(error) === 'avatar_url') return []
+      if (isMissingSourceError(error) || isPermissionDeniedSourceError(error) || getMissingColumnName(error) === 'avatar_url') return []
       throw error
     }
 
@@ -1567,8 +1619,10 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_user_id, owner_user_id, created_by, lifecycle_state, transaction_reference, sales_price, purchase_price, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
   ]
 
   const [
@@ -1586,14 +1640,14 @@ export async function getPrincipalDashboardData({
       'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
-    safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
-    safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
+    safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000, allowPermissionDenied: true }),
+    safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300, allowPermissionDenied: true }),
     safeSelect('organisation_users', [
       'id, organisation_id, user_id, branch_id, first_name, last_name, email, avatar_url, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
-    ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
-    safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
-    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
+    ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500, allowPermissionDenied: true }),
+    safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200, allowPermissionDenied: true }),
+    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100, allowPermissionDenied: true }),
     safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
   ])
 
@@ -1633,20 +1687,20 @@ export async function getPrincipalDashboardData({
     linkedDocumentPackets,
     linkedTransactionCommissions,
   ] = await Promise.all([
-    safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
-    safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
-    safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
-    safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
+    safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500, allowPermissionDenied: true }),
+    safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300, allowPermissionDenied: true }),
+    safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, allowPermissionDenied: true }),
+    safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, allowPermissionDenied: true }),
     safeSelectByIds('transaction_role_players', [
       'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
       'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
-    ], [...transactionIds], { order: 'updated_at', limit: 3000 }),
-    safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
-    safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
+    ], [...transactionIds], { order: 'updated_at', limit: 3000, allowPermissionDenied: true }),
+    safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, allowPermissionDenied: true }),
+    safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, allowPermissionDenied: true }),
   ])
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
   const effectivePacketIds = new Set(effectiveDocumentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
-  const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300 })
+  const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300, allowPermissionDenied: true })
   const effectivePacketEvents = dedupeRowsById([...packetEvents, ...linkedPacketEvents])
     .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])

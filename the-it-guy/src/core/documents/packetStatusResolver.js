@@ -457,7 +457,7 @@ export async function resolveDocumentPacketStatus({
           transactionId: normalizedTransactionId,
           leadId: normalizedLeadId,
           organisationId: scopedOrganisationId,
-          includeActivity: true,
+          includeActivity: false,
           activityLimit: 25,
         })
         fastPathResolved = true
@@ -487,7 +487,7 @@ export async function resolveDocumentPacketStatus({
     if (!fastPathResolved) {
       try {
         if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-          packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
+          packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
           if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
             warnings.push('The packet in the link belongs to another lead, so it was ignored.')
             packet = null
@@ -526,16 +526,6 @@ export async function resolveDocumentPacketStatus({
       }
 
       if (packet?.id) {
-        if (!Array.isArray(packet.events)) {
-          try {
-            const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
-            packet = packetWithEvents || packet
-          } catch (error) {
-            if (isPermissionDeniedError(error)) warnings.push('Signing activity is restricted by RLS for this role.')
-            else if (isMissingSchemaOrTableError(error)) warnings.push('Signing activity is unavailable in this project.')
-            else warnings.push(normalizeText(error?.message || 'Unable to load signing activity.'))
-          }
-        }
         try {
           versions = await listDocumentPacketVersions(packet.id)
         } catch (error) {

@@ -64,6 +64,7 @@ import {
   statusFromLegacyFlags,
 } from '../core/documents/documentVaultArchitecture'
 import { normalizePortalDocumentType, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import { resolveMatterDocumentMetadata } from '../core/documents/matterDocumentMetadata'
 import {
   CANONICAL_FINANCE_TYPES,
   deriveFinanceManagedBy,
@@ -7296,6 +7297,7 @@ function withCrossModuleRequirementMetadata(row = {}, context = {}) {
 }
 
 function getRequirementWorkflowMetadata(row = {}, context = {}) {
+  const matterDocumentMetadata = resolveMatterDocumentMetadata(row)
   const key = String(row?.document_key || row?.key || '')
     .trim()
     .toLowerCase()
@@ -7317,7 +7319,11 @@ function getRequirementWorkflowMetadata(row = {}, context = {}) {
   let visibleSection = 'transfer_documents'
   let blockingStage = 'ATTY'
 
-  if (groupKey === 'sale' || groupKey === 'buyer_fica') {
+  if (matterDocumentMetadata.confidence >= 0.86 && matterDocumentMetadata.owningWorkflow) {
+    owningWorkflow = matterDocumentMetadata.owningWorkflow
+    visibleSection = matterDocumentMetadata.visibleSection || visibleSection
+    blockingStage = matterDocumentMetadata.blockingStage || blockingStage
+  } else if (groupKey === 'sale' || groupKey === 'buyer_fica') {
     owningWorkflow = 'OTP / Buyer onboarding'
     visibleSection = 'buyer_documents'
     blockingStage = 'OTP'
@@ -7376,7 +7382,9 @@ function inferRequirementTriggeringCondition(row = {}, context = {}) {
     { allowUnknown: true },
   )
 
-  if (key === 'bond_approval' || key === 'grant_signed') return `finance_type = ${financeType || 'bond'}`
+  if (['bond_approval', 'bond_preapproval', 'bond_grant', 'grant_letter', 'grant_signed', 'purchase_price_guarantee'].includes(key)) {
+    return `finance_type = ${financeType || 'bond'}`
+  }
   if (key === 'proof_of_funds') return `finance_type = ${financeType || 'cash'}`
   if (key === 'proof_of_funds_cash_component') return 'finance_type = hybrid'
   if (key.includes('payslip') || key.includes('bank_statement') || key === 'proof_of_income') {
@@ -7455,8 +7463,30 @@ function withRequirementTraceMetadata(row = {}, context = {}) {
 function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = {}) {
   return rows
     .map((row) => {
-      const metadata = metadataByKey[row.document_key] || {}
-      const resolvedGroupKey = String(row.group_key || metadata.groupKey || 'buyer_fica')
+      const canonicalMetadata = resolveMatterDocumentMetadata({
+        ...row,
+        key: row.document_key,
+        label: row.document_label,
+        requiredFromRole: row.required_from_role,
+        visibilityScope: row.visibility_scope,
+      })
+      const metadata = {
+        ...(metadataByKey[row.document_key] || {}),
+        ...(canonicalMetadata.confidence >= 0.86
+          ? {
+              groupKey: canonicalMetadata.groupKey,
+              groupLabel: canonicalMetadata.groupLabel,
+              expectedFromRole: canonicalMetadata.requiredFromRole,
+              defaultVisibility: canonicalMetadata.visibilityScope,
+              documentType: canonicalMetadata.documentType,
+              owningWorkflow: canonicalMetadata.owningWorkflow,
+              visibleSection: canonicalMetadata.visibleSection,
+              blockingStage: canonicalMetadata.blockingStage,
+              financeLane: canonicalMetadata.financeLane,
+            }
+          : {}),
+      }
+      const resolvedGroupKey = String(metadata.groupKey || row.group_key || 'buyer_fica')
       const groupMeta = getGroupByKey(resolvedGroupKey)
       const isRequired = row.is_required !== false
       const isUploaded = Boolean(row.is_uploaded)
@@ -7476,16 +7506,16 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}, context = 
         key: row.document_key,
         label: row.document_label,
         groupKey: groupMeta.key,
-        groupLabel: row.group_label || metadata.groupLabel || groupMeta.label,
-        group: row.group_label || metadata.groupLabel || groupMeta.label,
+        groupLabel: metadata.groupLabel || row.group_label || groupMeta.label,
+        group: metadata.groupLabel || row.group_label || groupMeta.label,
         description,
         requirementLevel: metadata.requirementLevel || 'required',
         isRequired,
         isUploaded,
         status: normalizeRequiredStatus(row.status, statusFromLegacyFlags({ isRequired, isUploaded })),
         isEnabled: row.enabled !== false,
-        expectedFromRole: row.required_from_role || metadata.expectedFromRole || 'client',
-        visibilityScope: row.visibility_scope || metadata.defaultVisibility || 'client',
+        expectedFromRole: metadata.expectedFromRole || row.required_from_role || 'client',
+        visibilityScope: metadata.defaultVisibility || row.visibility_scope || 'client',
         allowMultiple: row.allow_multiple === true || metadata.allowMultiple === true,
         uploadedDocumentId: row.uploaded_document_id || null,
         uploadedAt: row.uploaded_at || null,
@@ -7818,21 +7848,24 @@ export async function ensureTransactionRequiredDocuments(
     return getMainStageIndex(resolvedMainStage) >= getMainStageIndex('FIN')
   })
   const metadataByKey = templates.reduce((accumulator, template) => {
+    const matterMetadata = resolveMatterDocumentMetadata(template)
     accumulator[template.key] = {
       label: template.label,
       group: template.group,
-      groupKey: template.groupKey,
-      groupLabel: template.groupLabel || template.group,
+      groupKey: matterMetadata.confidence >= 0.86 ? matterMetadata.groupKey : template.groupKey,
+      groupLabel: matterMetadata.confidence >= 0.86 ? matterMetadata.groupLabel : template.groupLabel || template.group,
       description: template.description,
       requirementLevel: template.requirementLevel || 'required',
-      expectedFromRole: template.expectedFromRole,
-      defaultVisibility: template.defaultVisibility,
+      expectedFromRole: matterMetadata.confidence >= 0.86 ? matterMetadata.requiredFromRole : template.expectedFromRole,
+      defaultVisibility: matterMetadata.confidence >= 0.86 ? matterMetadata.visibilityScope : template.defaultVisibility,
       allowMultiple: template.allowMultiple,
       sortOrder: template.sortOrder,
       keywords: template.keywords,
-      owningWorkflow: template.groupKey === 'finance' ? 'Finance' : undefined,
-      visibleSection: template.groupKey === 'finance' ? 'finance_documents' : undefined,
-      blockingStage: template.groupKey === 'finance' ? 'FIN' : undefined,
+      documentType: matterMetadata.confidence >= 0.86 ? matterMetadata.documentType : template.documentType,
+      owningWorkflow: matterMetadata.owningWorkflow || (template.groupKey === 'finance' ? 'Finance' : undefined),
+      visibleSection: matterMetadata.visibleSection || (template.groupKey === 'finance' ? 'finance_documents' : undefined),
+      blockingStage: matterMetadata.blockingStage || (template.groupKey === 'finance' ? 'FIN' : undefined),
+      financeLane: matterMetadata.financeLane || template.financeLane,
       preCollectionAllowed: FINANCE_PRE_COLLECTION_DOCUMENT_KEYS.has(
         String(template?.key || '')
           .trim()
@@ -11309,7 +11342,7 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
 
   await upsertTransactionLifecycleWorkflow(client, {
     transactionId,
-    currentStage: isCompleted ? 'transfer' : 'finance',
+    currentStage: isCompleted ? 'transfer_duty' : 'finance',
     status: 'active',
     actorUserId: activeProfile.userId || null,
     source: 'bond_hybrid_finance_workflow',
@@ -15080,7 +15113,7 @@ export async function undoTransactionRegistration({ transactionId, reason = '' }
 
   await upsertTransactionLifecycleWorkflow(client, {
     transactionId,
-    currentStage: 'transfer',
+    currentStage: 'transfer_duty',
     status: 'active',
     actorUserId: actorProfile.userId || null,
     source: 'registration_flow',
@@ -16122,7 +16155,7 @@ async function fetchActiveTransactionForUnit(client, unitId) {
   const withActiveFlag = await client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, comment, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, sale_date, instruction_date, instruction_at, instructed_at, agreement_date, offer_accepted_at, accepted_at, obligation_date, finance_clause_expiry_date, suspensive_condition_due_date, transfer_duty_due_date, transfer_duty_due_at, lodgement_date, lodged_at, expected_lodgement_date, expected_lodgement_at, expected_registration_date, target_registration_date, expected_transfer_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, comment, updated_at, created_at',
     )
     .eq('unit_id', unitId)
     .eq('is_active', true)
@@ -16158,9 +16191,28 @@ async function fetchActiveTransactionForUnit(client, unitId) {
     !isMissingColumnError(withActiveFlag.error, 'reservation_requested_at') &&
     !isMissingColumnError(withActiveFlag.error, 'reservation_email_sent_at') &&
     !isMissingColumnError(withActiveFlag.error, 'reservation_reviewed_at') &&
-    !isMissingColumnError(withActiveFlag.error, 'reservation_reviewed_by') &&
-    !isMissingColumnError(withActiveFlag.error, 'reservation_review_notes') &&
-    !isMissingColumnError(withActiveFlag.error, 'comment')
+      !isMissingColumnError(withActiveFlag.error, 'reservation_reviewed_by') &&
+      !isMissingColumnError(withActiveFlag.error, 'reservation_review_notes') &&
+      !isMissingColumnError(withActiveFlag.error, 'sale_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'instruction_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'instruction_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'instructed_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'agreement_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'offer_accepted_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'accepted_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'obligation_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'finance_clause_expiry_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'suspensive_condition_due_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'transfer_duty_due_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'transfer_duty_due_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'lodgement_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'lodged_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'expected_lodgement_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'expected_lodgement_at') &&
+      !isMissingColumnError(withActiveFlag.error, 'expected_registration_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'target_registration_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'expected_transfer_date') &&
+      !isMissingColumnError(withActiveFlag.error, 'comment')
   ) {
     throw withActiveFlag.error
   }
@@ -16168,7 +16220,7 @@ async function fetchActiveTransactionForUnit(client, unitId) {
   let fallback = await client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, comment, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, stage, current_main_stage, current_sub_stage_summary, sale_date, instruction_date, instruction_at, instructed_at, agreement_date, offer_accepted_at, accepted_at, obligation_date, finance_clause_expiry_date, suspensive_condition_due_date, transfer_duty_due_date, transfer_duty_due_at, lodgement_date, lodged_at, expected_lodgement_date, expected_lodgement_at, expected_registration_date, target_registration_date, expected_transfer_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, comment, updated_at, created_at',
     )
     .eq('unit_id', unitId)
     .order('updated_at', { ascending: false })
@@ -16186,10 +16238,29 @@ async function fetchActiveTransactionForUnit(client, unitId) {
       isMissingColumnError(fallback.error, 'assigned_bond_originator_email') ||
       isMissingColumnError(fallback.error, 'reservation_required') ||
       isMissingColumnError(fallback.error, 'reservation_amount') ||
-      isMissingColumnError(fallback.error, 'reservation_status') ||
-      isMissingColumnError(fallback.error, 'reservation_paid_date') ||
-      isMissingColumnError(fallback.error, 'reservation_proof_document') ||
-      isMissingColumnError(fallback.error, 'comment'))
+	      isMissingColumnError(fallback.error, 'reservation_status') ||
+	      isMissingColumnError(fallback.error, 'reservation_paid_date') ||
+	      isMissingColumnError(fallback.error, 'reservation_proof_document') ||
+	      isMissingColumnError(fallback.error, 'sale_date') ||
+	      isMissingColumnError(fallback.error, 'instruction_date') ||
+	      isMissingColumnError(fallback.error, 'instruction_at') ||
+	      isMissingColumnError(fallback.error, 'instructed_at') ||
+	      isMissingColumnError(fallback.error, 'agreement_date') ||
+	      isMissingColumnError(fallback.error, 'offer_accepted_at') ||
+	      isMissingColumnError(fallback.error, 'accepted_at') ||
+	      isMissingColumnError(fallback.error, 'obligation_date') ||
+	      isMissingColumnError(fallback.error, 'finance_clause_expiry_date') ||
+	      isMissingColumnError(fallback.error, 'suspensive_condition_due_date') ||
+	      isMissingColumnError(fallback.error, 'transfer_duty_due_date') ||
+	      isMissingColumnError(fallback.error, 'transfer_duty_due_at') ||
+	      isMissingColumnError(fallback.error, 'lodgement_date') ||
+	      isMissingColumnError(fallback.error, 'lodged_at') ||
+	      isMissingColumnError(fallback.error, 'expected_lodgement_date') ||
+	      isMissingColumnError(fallback.error, 'expected_lodgement_at') ||
+	      isMissingColumnError(fallback.error, 'expected_registration_date') ||
+	      isMissingColumnError(fallback.error, 'target_registration_date') ||
+	      isMissingColumnError(fallback.error, 'expected_transfer_date') ||
+	      isMissingColumnError(fallback.error, 'comment'))
   ) {
     fallback = await client
       .from('transactions')
@@ -16218,7 +16289,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, alteration_charge_treatment, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, alteration_charge_treatment, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, instruction_date, instruction_at, instructed_at, agreement_date, offer_accepted_at, accepted_at, obligation_date, finance_clause_expiry_date, suspensive_condition_due_date, transfer_duty_due_date, transfer_duty_due_at, lodgement_date, lodged_at, expected_lodgement_date, expected_lodgement_at, expected_registration_date, target_registration_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -16267,11 +16338,28 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'alteration_charge_treatment') ||
       isMissingColumnError(query.error, 'onboarding_status') ||
       isMissingColumnError(query.error, 'onboarding_completed_at') ||
-      isMissingColumnError(query.error, 'external_onboarding_submitted_at') ||
-      isMissingColumnError(query.error, 'current_main_stage') ||
-      isMissingColumnError(query.error, 'current_sub_stage_summary') ||
-      isMissingColumnError(query.error, 'risk_status') ||
-      isMissingColumnError(query.error, 'assigned_agent') ||
+	      isMissingColumnError(query.error, 'external_onboarding_submitted_at') ||
+	      isMissingColumnError(query.error, 'current_main_stage') ||
+	      isMissingColumnError(query.error, 'current_sub_stage_summary') ||
+	      isMissingColumnError(query.error, 'risk_status') ||
+	      isMissingColumnError(query.error, 'instruction_date') ||
+	      isMissingColumnError(query.error, 'instruction_at') ||
+	      isMissingColumnError(query.error, 'instructed_at') ||
+	      isMissingColumnError(query.error, 'agreement_date') ||
+	      isMissingColumnError(query.error, 'offer_accepted_at') ||
+	      isMissingColumnError(query.error, 'accepted_at') ||
+	      isMissingColumnError(query.error, 'obligation_date') ||
+	      isMissingColumnError(query.error, 'finance_clause_expiry_date') ||
+	      isMissingColumnError(query.error, 'suspensive_condition_due_date') ||
+	      isMissingColumnError(query.error, 'transfer_duty_due_date') ||
+	      isMissingColumnError(query.error, 'transfer_duty_due_at') ||
+	      isMissingColumnError(query.error, 'lodgement_date') ||
+	      isMissingColumnError(query.error, 'lodged_at') ||
+	      isMissingColumnError(query.error, 'expected_lodgement_date') ||
+	      isMissingColumnError(query.error, 'expected_lodgement_at') ||
+	      isMissingColumnError(query.error, 'expected_registration_date') ||
+	      isMissingColumnError(query.error, 'target_registration_date') ||
+	      isMissingColumnError(query.error, 'assigned_agent') ||
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
@@ -16336,10 +16424,27 @@ async function fetchTransactionRowById(client, transactionId) {
       'onboarding_status',
       'onboarding_completed_at',
       'external_onboarding_submitted_at',
-      'current_main_stage',
-      'current_sub_stage_summary',
-      'risk_status',
-      'assigned_agent',
+	      'current_main_stage',
+	      'current_sub_stage_summary',
+	      'risk_status',
+	      'instruction_date',
+	      'instruction_at',
+	      'instructed_at',
+	      'agreement_date',
+	      'offer_accepted_at',
+	      'accepted_at',
+	      'obligation_date',
+	      'finance_clause_expiry_date',
+	      'suspensive_condition_due_date',
+	      'transfer_duty_due_date',
+	      'transfer_duty_due_at',
+	      'lodgement_date',
+	      'lodged_at',
+	      'expected_lodgement_date',
+	      'expected_lodgement_at',
+	      'expected_registration_date',
+	      'target_registration_date',
+	      'assigned_agent',
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
@@ -33531,6 +33636,266 @@ export async function saveTransaction({
   return result.data
 }
 
+export async function updateTransactionMatterNumber(transactionId, matterNumber, { actorRole = 'attorney' } = {}) {
+  const client = requireClient()
+  const normalizedTransactionId = normalizeTextValue(transactionId)
+  const normalizedMatterNumber = normalizeTextValue(matterNumber)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+  if (!normalizedMatterNumber) throw new Error('Matter number is required.')
+
+  const normalizedActorRole = normalizeRoleType(actorRole)
+  if (normalizedActorRole !== 'attorney') {
+    throw new Error('Only the transferring attorney can edit the matter number.')
+  }
+
+  const { data: sessionData } = await client.auth.getSession()
+  const activeUser = sessionData?.session?.user || null
+  const activeEmail = normalizeEmailAddress(activeUser?.email || '')
+  const actorProfile = await resolveActiveProfileContext(client)
+
+  let existingQuery = await client
+    .from('transactions')
+    .select('id, matter_number, transaction_reference, assigned_attorney_email')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+  if (
+    existingQuery.error &&
+    (isMissingColumnError(existingQuery.error, 'matter_number') ||
+      isMissingColumnError(existingQuery.error, 'assigned_attorney_email'))
+  ) {
+    existingQuery = await client
+      .from('transactions')
+      .select('id, transaction_reference')
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+  if (existingQuery.error) throw existingQuery.error
+  const existingTransaction = existingQuery.data || null
+  if (!existingTransaction?.id) throw new Error('Transaction not found.')
+
+  let transferRoleplayer = null
+  const roleplayerQuery = await client
+    .from('transaction_role_players')
+    .select('id, role_type, organisation_id, email_address, status, assignment_status')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('role_type', 'transfer_attorney')
+  if (roleplayerQuery.error) {
+    if (
+      !isMissingTableError(roleplayerQuery.error, 'transaction_role_players') &&
+      !isMissingColumnError(roleplayerQuery.error, 'organisation_id') &&
+      !isPermissionDeniedError(roleplayerQuery.error)
+    ) {
+      throw roleplayerQuery.error
+    }
+  } else {
+    transferRoleplayer = (roleplayerQuery.data || []).find((row) => {
+      const status = String(row?.assignment_status || row?.status || '').trim().toLowerCase()
+      return !['removed', 'declined', 'rejected'].includes(status)
+    }) || null
+  }
+
+  const assignedFirmId = normalizeTextValue(transferRoleplayer?.organisation_id)
+  const assignedEmail = normalizeEmailAddress(
+    transferRoleplayer?.email_address || existingTransaction.assigned_attorney_email || '',
+  )
+  if (assignedFirmId && actorProfile.firmId && assignedFirmId !== actorProfile.firmId) {
+    throw new Error('Only the transferring attorney can edit the matter number.')
+  }
+  if (!assignedFirmId && assignedEmail && activeEmail && assignedEmail !== activeEmail) {
+    throw new Error('Only the transferring attorney can edit the matter number.')
+  }
+
+  const previousMatterNumber = normalizeTextValue(existingTransaction.matter_number || existingTransaction.transaction_reference)
+  if (previousMatterNumber === normalizedMatterNumber) {
+    return fetchTransactionById(normalizedTransactionId)
+  }
+
+  const now = new Date().toISOString()
+  const updatePayload = {
+    matter_number: normalizedMatterNumber,
+    transaction_reference: normalizedMatterNumber,
+    updated_at: now,
+  }
+  let updateResult = await client
+    .from('transactions')
+    .update(updatePayload)
+    .eq('id', normalizedTransactionId)
+    .select('id, matter_number, transaction_reference, updated_at')
+    .single()
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'matter_number') ||
+      isMissingColumnError(updateResult.error, 'updated_at'))
+  ) {
+    const fallbackPayload = { transaction_reference: normalizedMatterNumber }
+    updateResult = await client
+      .from('transactions')
+      .update(fallbackPayload)
+      .eq('id', normalizedTransactionId)
+      .select('id, transaction_reference')
+      .single()
+  }
+  if (updateResult.error) throw updateResult.error
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || normalizedActorRole,
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'update_transaction_matter_number',
+      field: 'matter_number',
+      previousMatterNumber,
+      matterNumber: normalizedMatterNumber,
+    },
+  })
+
+  return fetchTransactionById(normalizedTransactionId)
+}
+
+const TRANSACTION_KEY_DATE_FIELDS = {
+  obligation_date: {
+    label: 'Obligation Date',
+    columns: ['obligation_date', 'finance_clause_expiry_date'],
+  },
+  transfer_duty_due_date: {
+    label: 'Transfer Duty Due',
+    columns: ['transfer_duty_due_date', 'transfer_duty_due_at'],
+  },
+  lodgement_date: {
+    label: 'Lodgement Date',
+    columns: ['lodgement_date', 'lodged_at'],
+  },
+}
+
+function normalizeTransactionKeyDateValue(value) {
+  const normalized = normalizeNullableText(value)
+  if (!normalized) return null
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+    ? new Date(`${normalized}T00:00:00.000Z`)
+    : new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) throw new Error('Enter a valid date.')
+  return parsed.toISOString().slice(0, 10)
+}
+
+export async function updateTransactionKeyDate(transactionId, fieldKey, value, { actorRole = 'attorney' } = {}) {
+  const client = requireClient()
+  const normalizedTransactionId = normalizeTextValue(transactionId)
+  const config = TRANSACTION_KEY_DATE_FIELDS[normalizeTextValue(fieldKey)]
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+  if (!config) throw new Error('This key date cannot be edited here.')
+
+  const normalizedActorRole = normalizeRoleType(actorRole)
+  if (normalizedActorRole !== 'attorney') {
+    throw new Error('Only the transferring attorney can edit key dates.')
+  }
+
+  const { data: sessionData } = await client.auth.getSession()
+  const activeUser = sessionData?.session?.user || null
+  const activeEmail = normalizeEmailAddress(activeUser?.email || '')
+  const actorProfile = await resolveActiveProfileContext(client)
+
+  let existingQuery = await client
+    .from('transactions')
+    .select(`id, assigned_attorney_email, ${config.columns.join(', ')}`)
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+  if (
+    existingQuery.error &&
+    (isMissingColumnError(existingQuery.error, 'assigned_attorney_email') ||
+      config.columns.some((column) => isMissingColumnError(existingQuery.error, column)))
+  ) {
+    existingQuery = await client
+      .from('transactions')
+      .select('id, assigned_attorney_email')
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+  if (existingQuery.error) throw existingQuery.error
+  const existingTransaction = existingQuery.data || null
+  if (!existingTransaction?.id) throw new Error('Transaction not found.')
+
+  let transferRoleplayer = null
+  const roleplayerQuery = await client
+    .from('transaction_role_players')
+    .select('id, role_type, organisation_id, email_address, status, assignment_status')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('role_type', 'transfer_attorney')
+  if (roleplayerQuery.error) {
+    if (
+      !isMissingTableError(roleplayerQuery.error, 'transaction_role_players') &&
+      !isMissingColumnError(roleplayerQuery.error, 'organisation_id') &&
+      !isPermissionDeniedError(roleplayerQuery.error)
+    ) {
+      throw roleplayerQuery.error
+    }
+  } else {
+    transferRoleplayer = (roleplayerQuery.data || []).find((row) => {
+      const status = String(row?.assignment_status || row?.status || '').trim().toLowerCase()
+      return !['removed', 'declined', 'rejected'].includes(status)
+    }) || null
+  }
+
+  const assignedFirmId = normalizeTextValue(transferRoleplayer?.organisation_id)
+  const assignedEmail = normalizeEmailAddress(
+    transferRoleplayer?.email_address || existingTransaction.assigned_attorney_email || '',
+  )
+  if (assignedFirmId && actorProfile.firmId && assignedFirmId !== actorProfile.firmId) {
+    throw new Error('Only the transferring attorney can edit key dates.')
+  }
+  if (!assignedFirmId && assignedEmail && activeEmail && assignedEmail !== activeEmail) {
+    throw new Error('Only the transferring attorney can edit key dates.')
+  }
+
+  const normalizedDate = normalizeTransactionKeyDateValue(value)
+  const previousValue = config.columns.map((column) => existingTransaction[column]).find(Boolean) || null
+  const updatePayload = config.columns.reduce((payload, column) => {
+    payload[column] = normalizedDate
+    return payload
+  }, { updated_at: new Date().toISOString() })
+
+  let updateResult = await client
+    .from('transactions')
+    .update(updatePayload)
+    .eq('id', normalizedTransactionId)
+    .select(`id, ${config.columns.join(', ')}, updated_at`)
+    .single()
+
+  if (updateResult.error && config.columns.some((column) => isMissingColumnError(updateResult.error, column))) {
+    const fallbackPayload = { ...updatePayload }
+    for (const column of config.columns) {
+      if (isMissingColumnError(updateResult.error, column)) delete fallbackPayload[column]
+    }
+    if (!config.columns.some((column) => Object.prototype.hasOwnProperty.call(fallbackPayload, column))) {
+      throw new Error('Key date columns are not set up yet. Run the latest Supabase migrations and refresh.')
+    }
+    updateResult = await client
+      .from('transactions')
+      .update(fallbackPayload)
+      .eq('id', normalizedTransactionId)
+      .select('id, updated_at')
+      .single()
+  }
+  if (updateResult.error) throw updateResult.error
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || normalizedActorRole,
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'update_transaction_key_date',
+      field: normalizeTextValue(fieldKey),
+      label: config.label,
+      previousValue,
+      value: normalizedDate,
+      message: `${config.label} updated.`,
+    },
+  })
+
+  return fetchTransactionById(normalizedTransactionId)
+}
+
 export async function updateTransactionMainStage({ transactionId, unitId = null, mainStage, note = '', actorRole }) {
   void transactionId
   void unitId
@@ -44711,12 +45076,24 @@ export async function uploadDocument({
     documentType,
     category,
   })
+  const canonicalDocumentMetadata = resolveMatterDocumentMetadata({
+    key: requiredDocumentKey || canonicalTarget?.requiredDocumentKey,
+    documentType,
+    category,
+    label: file?.name,
+    requiredFromRole: uploadedByParty || activeProfile.role,
+  })
+  const hasCanonicalUploadMetadata = canonicalDocumentMetadata.confidence >= 0.86
+  const inferredUploadedByParty =
+    uploadedByParty ||
+    (hasCanonicalUploadMetadata && canonicalDocumentMetadata.requiredFromRole === activeProfile.role ? activeProfile.role : null) ||
+    (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.source : null)
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/${Date.now()}-${safeName}`
   const normalizedDocumentType =
     normalizePortalDocumentType(
-      documentType || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name,
+      documentType || (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.documentType : null) || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name,
     ) || 'general'
 
   await uploadToDocumentsBucket(client, filePath, file)
@@ -44725,17 +45102,17 @@ export async function uploadDocument({
     transaction_id: transactionId,
     name: file.name,
     file_path: filePath,
-    category: category || 'General',
+    category: category || (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.attorneyCategory : null) || 'General',
     document_type: normalizedDocumentType,
-    visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+    visibility_scope: visibilityScope || (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.visibilityScope : null) || (isClientVisible ? 'shared' : 'internal'),
     uploaded_by_user_id: activeProfile.userId || null,
     stage_key: stageKey || null,
     is_client_visible: Boolean(isClientVisible),
-    uploaded_by_party: normalizeNullableText(uploadedByParty),
-    bucket_key: normalizeNullableText(bucketKey),
+    uploaded_by_party: normalizeNullableText(inferredUploadedByParty),
+    bucket_key: normalizeNullableText(bucketKey || (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.groupKey : null)),
     source: normalizeNullableText(source),
     file_bucket: normalizeNullableText(fileBucket),
-    finance_lane: normalizeNullableText(financeLane),
+    finance_lane: normalizeNullableText(financeLane || (hasCanonicalUploadMetadata ? canonicalDocumentMetadata.financeLane : null)),
     related_entity_type: normalizeNullableText(relatedEntityType),
     related_entity_id: normalizeNullableUuid(relatedEntityId),
     ...(canonicalTarget?.canonicalRequirementInstanceId

@@ -175,7 +175,7 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
-const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+const WORKSPACE_REFRESH_TIMEOUT_MS = 15000
 const SIGNING_DELIVERY_TIMEOUT_MS = 12000
 const WORKSPACE_STATUS_FRESH_MS = 2500
 const WORKSPACE_STATUS_REVALIDATION_DELAYS_MS = [1000, 4000]
@@ -3151,6 +3151,7 @@ export default function LegalDocumentWorkspace({
   )
   const isMandatePacket = normalizeKey(packetType) === 'mandate'
   const isOtpPacket = normalizeKey(packetType) === 'otp'
+  const isFocusedMandatePage = isPageMode && isMandatePacket
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
@@ -3776,8 +3777,8 @@ export default function LegalDocumentWorkspace({
       if (isUuidLike(resolvedPacketId)) {
         try {
           const detail = await withWorkspaceTimeout(
-            fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
-            'Packet events are taking too long to load.',
+            fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: false }),
+            'Packet details are taking too long to load.',
           )
           setPacketDetail(detail || null)
           return {
@@ -6628,24 +6629,28 @@ export default function LegalDocumentWorkspace({
               </article>
             ) : null}
 
-            <div className="mb-5">
-              <DocumentJourneyProgress model={documentJourney} />
-            </div>
-            <div className="mb-5">
-              <SigningOperationalStatusCard status={signingOperationalStatus} />
-            </div>
-            <div className="mb-5">
-              <DocumentRoleGuidanceCard guidance={roleGuidance} />
-            </div>
-            <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
-              <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
-            </div>
-            <div className="mb-5">
-              <DocumentResponsibilityCard model={responsibility} />
-            </div>
-            <div className="mb-5">
-              <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
-            </div>
+            {!isFocusedMandatePage ? (
+              <>
+                <div className="mb-5">
+                  <DocumentJourneyProgress model={documentJourney} />
+                </div>
+                <div className="mb-5">
+                  <SigningOperationalStatusCard status={signingOperationalStatus} />
+                </div>
+                <div className="mb-5">
+                  <DocumentRoleGuidanceCard guidance={roleGuidance} />
+                </div>
+                <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
+                  <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
+                </div>
+                <div className="mb-5">
+                  <DocumentResponsibilityCard model={responsibility} />
+                </div>
+                <div className="mb-5">
+                  <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
+                </div>
+              </>
+            ) : null}
             {statusState?.signingSummary?.signers?.length ? (
               <div id="legal-document-signer-progress" className="mb-5 scroll-mt-24">
                 <SigningProgressTimeline

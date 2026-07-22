@@ -37,6 +37,32 @@ import {
   publishTransactionSharedProgress,
 } from '../transactionSharedProgressService.js'
 
+async function recomputeWorkflowRollupAfterAttorneyStep({
+  transactionId,
+  client,
+  actorId = null,
+  actorRole = '',
+  stepId = null,
+  stepKey = '',
+  status = '',
+} = {}) {
+  try {
+    const { recomputeTransactionWorkflow } = await import('../../../server/services/workflowRecomputeService.js')
+    await recomputeTransactionWorkflow({
+      transactionId,
+      client,
+      createdBy: actorId,
+      actorRole,
+      triggerType: 'attorney_workflow_step',
+      reasonCode: `attorney_${stepKey || 'workflow_step'}_${status || 'updated'}`,
+      triggerId: stepId,
+      source: 'attorney_workspace_step',
+    })
+  } catch (error) {
+    console.warn('[attorney-workflow] Transaction rollup recompute skipped after attorney step update.', error)
+  }
+}
+
 const LANE_META = {
   transfer: {
     laneKey: 'transfer',
@@ -95,11 +121,6 @@ function normalizeStepStatus(value, fallback = 'not_started') {
   if (normalized === 'complete') return 'completed'
   if (normalized === 'pending') return 'waiting'
   return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed'].includes(normalized) ? normalized : fallback
-}
-
-function isConstraintLikeError(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
-  return error?.code === '23514' || message.includes('constraint') || message.includes('violates')
 }
 
 function normalizeVisibility(value, fallback = 'internal') {
@@ -1367,17 +1388,27 @@ export async function updateAttorneyWorkflowStepStatus({
     throw atomicUpdate.error
   }
 
-  await publishAttorneySharedProgress(client, {
-    transactionId: normalizedTransactionId,
-    laneKey: normalizedLaneKey,
-    stepKey: resolvedStepKey,
-    status: normalizedStatus,
-    sourceType: 'attorney_workflow_step',
-    sourceId: stepResult.data.id,
-  })
+	  await publishAttorneySharedProgress(client, {
+	    transactionId: normalizedTransactionId,
+	    laneKey: normalizedLaneKey,
+	    stepKey: resolvedStepKey,
+	    status: normalizedStatus,
+	    sourceType: 'attorney_workflow_step',
+	    sourceId: stepResult.data.id,
+	  })
 
-  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
-}
+	  await recomputeWorkflowRollupAfterAttorneyStep({
+	    transactionId: normalizedTransactionId,
+	    client,
+	    actorId: actor.id,
+	    actorRole: LANE_META[normalizedLaneKey].attorneyRole,
+	    stepId: stepResult.data.id,
+	    stepKey: resolvedStepKey,
+	    status: normalizedStatus,
+	  })
+
+	  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+	}
 
 export async function getAttorneyUpdateOptionsForTransaction(transactionId, attorneyRole = 'transfer_attorney') {
   const client = requireClient()

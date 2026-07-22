@@ -94,6 +94,12 @@ import {
 import { getOffersForListing } from '../lib/listingOffersService'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
+import {
+  buildSellerMobileDocumentFilters,
+  formatSellerMobileUploadSize,
+  getSellerMobileDocumentBucket,
+  resolveSellerMobileDocumentUploadTarget,
+} from '../lib/sellerMobileDocumentModel'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -3482,72 +3488,6 @@ function SellerMyDetailsReadonlyPage({ sections = [] }) {
   )
 }
 
-function resolveSellerMobileDocumentUploadTarget(document = {}) {
-  const uploadSpec = document?.uploadSpec && typeof document.uploadSpec === 'object' ? document.uploadSpec : {}
-  const requirementKey = pickFirstText(
-    uploadSpec.requirementKey,
-    uploadSpec.documentDefinitionKey,
-    uploadSpec.document_definition_key,
-    document.key,
-    document.requirementKey,
-    document.requirement_key,
-    document.documentDefinitionKey,
-    document.document_definition_key,
-    document.documentType,
-    document.document_type,
-  )
-  const requirementInstanceId = pickFirstText(
-    uploadSpec.requirementInstanceId,
-    uploadSpec.canonicalRequirementInstanceId,
-    uploadSpec.canonical_requirement_instance_id,
-    document.canonicalRequirementInstanceId,
-    document.canonical_requirement_instance_id,
-    document.requirementInstanceId,
-    document.requirement_instance_id,
-  )
-  const normalizedRequirementKey = normalizeDocumentKey(requirementKey)
-  const category = pickFirstText(
-    uploadSpec.category,
-    document.sellerCategoryLabel,
-    document.stageLabel,
-    document.category,
-    'Seller Document',
-  )
-  const documentType = pickFirstText(
-    uploadSpec.documentType,
-    uploadSpec.document_type,
-    document.documentType,
-    document.document_type,
-    normalizedRequirementKey,
-    requirementKey,
-  )
-
-  return {
-    requirementKey: normalizedRequirementKey,
-    requirementInstanceId,
-    uploadingKey: requirementInstanceId || normalizedRequirementKey,
-    category,
-    documentType,
-  }
-}
-
-function formatSellerMobileUploadSize(bytes = 0) {
-  const size = Number(bytes) || 0
-  if (size <= 0) return ''
-  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-  return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
-}
-
-function getSellerMobileDocumentBucket(document = {}) {
-  const statusBucket = String(document?.statusBucket || '').trim().toLowerCase()
-  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
-  if (document?.actionRequired || statusBucket === 'outstanding' || status === 'rejected') return 'action'
-  if (document?.reviewRequired || statusBucket === 'received' || ['uploaded', 'under_review', 'reviewed', 'received'].includes(status)) return 'review'
-  if (document?.satisfied || statusBucket === 'approved' || ['approved', 'completed', 'verified', 'signed'].includes(status)) return 'approved'
-  if (document?.linkedDocument || document?.hasUploadedDocument || document?.uploaded) return 'review'
-  return 'action'
-}
-
 function SellerMobilePortal({
   token,
   workspaceNavigationScope,
@@ -3598,24 +3538,11 @@ function SellerMobilePortal({
   const visibleActionDocuments = sellerDocumentsNeedingAttention.slice(0, 4)
   const allMobileDocumentItems = (sellerDocumentItems.length ? sellerDocumentItems : sellerDocumentsNeedingAttention)
     .filter((item) => item?.applicable !== false)
-  const mobileDocumentCounts = allMobileDocumentItems.reduce((counts, item) => {
-    const bucket = getSellerMobileDocumentBucket(item)
-    counts.all += 1
-    counts[bucket] += 1
-    return counts
-  }, { action: 0, review: 0, approved: 0, all: 0 })
-  const mobileDocumentFilters = [
-    { key: 'action', label: 'Pending', count: mobileDocumentCounts.action },
-    { key: 'review', label: 'Review', count: mobileDocumentCounts.review },
-    { key: 'approved', label: 'Approved', count: mobileDocumentCounts.approved },
-    { key: 'all', label: 'All', count: mobileDocumentCounts.all },
-  ]
-  const activeMobileDocumentFilter = mobileDocumentFilters.some((filter) => filter.key === mobileDocumentFilter)
-    ? mobileDocumentFilter
-    : 'action'
-  const visibleDocuments = allMobileDocumentItems
-    .filter((item) => activeMobileDocumentFilter === 'all' || getSellerMobileDocumentBucket(item) === activeMobileDocumentFilter)
-    .slice(0, 8)
+  const mobileDocumentModel = buildSellerMobileDocumentFilters(allMobileDocumentItems, mobileDocumentFilter)
+  const mobileDocumentCounts = mobileDocumentModel.counts
+  const mobileDocumentFilters = mobileDocumentModel.filters
+  const activeMobileDocumentFilter = mobileDocumentModel.activeKey
+  const visibleDocuments = mobileDocumentModel.visibleItems.slice(0, 8)
   const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const ringStyle = {
