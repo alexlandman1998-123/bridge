@@ -46,14 +46,25 @@ if (!blockers.length && targets.length) {
       const validation = version.validation_summary_json || {}
       const artifact = validation.artifact_provenance || {}
       const templatePath = String(template.template_storage_path || '')
-      const renderMode = String(validation.render_provenance?.renderMode || validation.generationPayload?.template?.renderMode || template.metadata_json?.render_mode || 'legacy_docx')
+      const renderMode = target.packetType === 'otp'
+        ? 'native_structured'
+        : String(validation.render_provenance?.renderMode || validation.generationPayload?.template?.renderMode || template.metadata_json?.render_mode || 'legacy_docx')
       const generationPayload = { ...(validation.generationPayload || {}), template: { ...(validation.generationPayload?.template || {}), id: template.id } }
       const base = { capacityProbe: true, templatePath, templateBucket: template.template_storage_bucket, templateFilename: templatePath.split('/').pop() || null, outputBucket: artifact.bucket || 'documents' }
-      const payload = target.packetType === 'otp'
-        ? { ...base, templateId: template.id, transactionId: packet.transaction_id, placeholders: version.placeholders_resolved_json || {}, sourceContext: packet.source_context_json || {} }
-        : { ...base, packetId: packet.id, transactionId: packet.transaction_id, leadId: packet.lead_id, renderMode, placeholders: version.placeholders_resolved_json || {}, sectionManifest: version.section_manifest_json || [], generationPayload, sourceContext: packet.source_context_json || {}, branding: packet.branding_snapshot_json || {} }
+      const payload = {
+        ...base,
+        packetId: packet.id,
+        transactionId: packet.transaction_id,
+        leadId: packet.lead_id,
+        renderMode,
+        placeholders: version.placeholders_resolved_json || {},
+        sectionManifest: version.section_manifest_json || [],
+        generationPayload,
+        sourceContext: packet.source_context_json || {},
+        branding: packet.branding_snapshot_json || {},
+      }
       const prefix = String(artifact.path || '').split('/').slice(0, -1).join('/')
-      return { target, packet, version, artifact, prefix, payload, functionName: target.packetType === 'otp' ? 'generate-otp' : 'generate-mandate' }
+      return { target, packet, version, artifact, prefix, payload, functionName: 'generate-mandate' }
     })
 
     async function snapshot(context) {

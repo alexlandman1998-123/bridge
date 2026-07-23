@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   AtSign,
   Bell,
+  BriefcaseBusiness,
   Building2,
+  CalendarCheck2,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -15,7 +17,9 @@ import {
   FileCheck2,
   FileText,
   Landmark,
+  ListChecks,
   LockKeyhole,
+  MapPin,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
@@ -24,6 +28,7 @@ import {
   Send,
   Smile,
   Upload,
+  UserRound,
   UserCircle,
   UsersRound,
   Workflow,
@@ -171,11 +176,9 @@ const AGENT_WORKSPACE_TABS = [
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'application', label: 'Application' },
+  { id: 'workflow', label: 'Workflow' },
+  { id: 'application', label: 'Bond Application' },
   { id: 'documents', label: 'Documents' },
-  { id: 'banks_quotes', label: 'Banks & Quotes' },
-  { id: 'stakeholders', label: 'Roleplayers' },
-  { id: 'tasks', label: 'Tasks' },
   { id: 'activity', label: 'Activity' },
 ]
 
@@ -418,6 +421,16 @@ function resolveDocumentLibraryCategory(document = {}) {
   return 'buyer'
 }
 
+function isBondOriginatorFinanceDocument(document = {}) {
+  const category = resolveDocumentLibraryCategory(document)
+  if (['finance', 'bond'].includes(category)) return true
+  const tokens = [document?.name, document?.category, document?.document_type, document?.documentType, document?.key]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return /(bank statement|payslip|salary|income|affordability|credit|proof of funds|deposit|bond|grant|approval letter|identity|fica|passport)/.test(tokens)
+}
+
 function resolveRequirementLibraryCategory(requirement = {}) {
   const requirementTokens = `${String(requirement?.key || '').trim().toLowerCase()} ${String(requirement?.label || '').trim().toLowerCase()} ${String(
     requirement?.groupKey || requirement?.group_key || requirement?.group || '',
@@ -592,6 +605,80 @@ function getUploadCategoryForLibraryFilter(filterKey = '') {
   if (normalized === 'cancellation') return 'Clearance Documents'
   if (normalized === 'internal') return 'Internal Working Documents'
   return ATTORNEY_DOCUMENT_CATEGORIES[0]
+}
+
+const ATTORNEY_DOCUMENT_LANE_ROLES = {
+  transfer: 'transfer_attorney',
+  bond: 'bond_attorney',
+  cancellation: 'cancellation_attorney',
+}
+
+function normalizeAttorneyDocumentLaneKey(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (normalized.includes('cancellation')) return 'cancellation'
+  if (normalized.includes('bond') || normalized.includes('finance')) return 'bond'
+  if (normalized.includes('transfer')) return 'transfer'
+  if (['transfer', 'transfer_attorney', 'attorney'].includes(normalized)) return 'transfer'
+  if (['bond', 'bond_attorney', 'finance', 'bond_registration'].includes(normalized)) return 'bond'
+  if (['cancellation', 'cancellation_attorney', 'bond_cancellation'].includes(normalized)) return 'cancellation'
+  return null
+}
+
+function resolveAttorneyDocumentUploadLane({
+  laneKey = '',
+  relatedWorkflow = '',
+  category = '',
+  requirement = null,
+  document = null,
+  workflowLanes = [],
+} = {}) {
+  const candidates = [
+    laneKey,
+    requirement?.laneKey,
+    requirement?.lane_key,
+    requirement?.attorneyRole,
+    requirement?.attorney_role,
+    requirement?.owningWorkflow,
+    requirement?.visibleSection,
+    requirement?.groupKey,
+    requirement?.group,
+    document?.laneKey,
+    document?.lane_key,
+    document?.attorneyRole,
+    document?.attorney_role,
+    document?.stageKey,
+    document?.stage_key,
+    relatedWorkflow,
+  ]
+  const resolvedLaneKey = candidates.map(normalizeAttorneyDocumentLaneKey).find(Boolean)
+  if (resolvedLaneKey) {
+    return {
+      laneKey: resolvedLaneKey,
+      attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[resolvedLaneKey],
+    }
+  }
+
+  const categoryLaneKey = normalizeAttorneyDocumentLaneKey(normalizeLibraryCategory(category))
+  if (categoryLaneKey) {
+    return {
+      laneKey: categoryLaneKey,
+      attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[categoryLaneKey],
+    }
+  }
+
+  const fallbackLaneKey = (Array.isArray(workflowLanes) ? workflowLanes : [])
+    .find((lane) => lane?.permissions?.canUploadDocuments)
+    ?.laneKey
+  const normalizedFallbackLaneKey = normalizeAttorneyDocumentLaneKey(fallbackLaneKey)
+  if (!normalizedFallbackLaneKey) return null
+
+  return {
+    laneKey: normalizedFallbackLaneKey,
+    attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[normalizedFallbackLaneKey],
+  }
 }
 
 function resolveUploadedByLabel(document = {}, participants = []) {
@@ -5314,6 +5401,1048 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
   )
 }
 
+const ARCHLINE_TAB_ICONS = {
+  overview: Workflow,
+  documents: FileText,
+  transfer: Workflow,
+  finance: CircleDollarSign,
+  cancellation: X,
+  activity: Activity,
+  roleplayers: UsersRound,
+}
+
+function ArchlineStatusPill({ children, tone = 'success' }) {
+  const tones = {
+    success: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+    warning: 'border-amber-100 bg-amber-50 text-amber-800',
+    danger: 'border-red-100 bg-red-50 text-red-700',
+    neutral: 'border-slate-200 bg-slate-50 text-slate-700',
+  }
+  return (
+    <span className={`inline-flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-semibold uppercase ${tones[tone] || tones.neutral}`}>
+      <span className="size-1.5 rounded-full bg-current" />
+      {children}
+    </span>
+  )
+}
+
+function ArchlinePanel({ title, action = null, children, className = '' }) {
+  return (
+    <section className={`rounded-lg border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.035)] ${className}`.trim()}>
+      {title || action ? (
+        <header className="flex items-center justify-between gap-3 px-4 py-4">
+          {title ? <h3 className="text-base font-semibold tracking-[-0.015em] text-slate-950">{title}</h3> : <span />}
+          {action}
+        </header>
+      ) : null}
+      {children}
+    </section>
+  )
+}
+
+function ArchlineMatterHeader({
+  backPath,
+  backLabel,
+  reference,
+  statusLabel,
+  property,
+  buyer,
+  seller,
+  purchasePrice,
+  instructionDate,
+  source,
+  tabs = [],
+  activeTab,
+  onTabChange,
+  onMoreActions,
+}) {
+  const metadata = [
+    { key: 'property', label: 'Property', value: property || 'Property pending', icon: MapPin, wide: true },
+    { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound },
+    { key: 'seller', label: 'Seller', value: seller || 'Seller pending', icon: UserCircle },
+    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured', icon: BriefcaseBusiness },
+    { key: 'date', label: 'Instruction Date', value: instructionDate || 'Not set', icon: CalendarCheck2 },
+    { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign },
+  ]
+
+  return (
+    <header className="no-print -mx-3 border-b border-slate-200 bg-white px-3 pt-3 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
+      <div className="mx-auto max-w-[1680px]">
+        <div className="flex flex-col gap-4 py-2 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <ChevronRight size={15} className="rotate-180" />
+              {backLabel || 'Back to Matters'}
+            </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <h1 className="break-words text-[1.85rem] font-semibold leading-tight tracking-[-0.02em] text-slate-950 md:text-[2.25rem]">
+                {reference || 'Matter'}
+              </h1>
+              <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
+            onClick={onMoreActions}
+          >
+            More Actions
+            <ChevronRight size={15} className="rotate-90" />
+          </button>
+        </div>
+
+        <div className="grid gap-3 py-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]">
+          {metadata.map((item) => {
+            const Icon = item.icon
+            return (
+              <div key={item.key} className="flex min-w-0 items-start gap-2.5">
+                <Icon size={18} className="mt-0.5 shrink-0 text-slate-700" />
+                <div className="min-w-0">
+                  <span className="block text-xs font-medium text-slate-500">{item.label}</span>
+                  <strong className="mt-1 block text-sm font-medium leading-5 text-slate-900">{item.value}</strong>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <nav className="flex gap-5 overflow-x-auto" aria-label="Matter navigation">
+          {tabs.map((tab) => {
+            const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
+            const active = tab.id === activeTab
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
+                  active
+                    ? 'border-slate-950 text-slate-950'
+                    : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-950'
+                }`}
+                onClick={() => onTabChange?.(tab.id)}
+              >
+                <Icon size={16} />
+                {tab.label}
+                {tab.count ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[0.68rem] text-slate-600">{tab.count}</span> : null}
+              </button>
+            )
+          })}
+        </nav>
+      </div>
+    </header>
+  )
+}
+
+function ArchlineProgressRing({ completed = 0, total = 0, label = 'Complete' }) {
+  const percent = total ? Math.round((completed / total) * 100) : 0
+  return (
+    <div className="flex items-center gap-5">
+      <div
+        className="relative flex size-28 shrink-0 items-center justify-center rounded-full"
+        style={{ background: `conic-gradient(#087b4b ${percent}%, #e8edf2 0)` }}
+      >
+        <div className="flex size-20 flex-col items-center justify-center rounded-full bg-white">
+          <strong className="text-xl font-semibold text-slate-950">{completed} / {total || 0}</strong>
+          <span className="text-xs font-medium text-slate-500">{label}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ArchlineOverviewWorkspace({
+  lifecycleProgress,
+  overviewNextActions = [],
+  roleplayerItems = [],
+  requiredDocuments = [],
+  documentHealthSummary = {},
+  activityFeed = [],
+  keyDates = [],
+  financialRows = [],
+  onOpenWorkspace,
+  onUploadDocument,
+  onAddNote,
+  onRequestDocuments,
+}) {
+  const progressStages = [
+    { key: 'instruction', label: 'Instruction' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'finance', label: 'Finance' },
+    { key: 'transfer', label: 'Transfer' },
+    { key: 'registration', label: 'Registration' },
+    { key: 'post_registration', label: 'Post Registration' },
+  ]
+  const currentIndex = Math.max(0, progressStages.findIndex((stage) => stage.key === lifecycleProgress?.currentStage))
+  const completedDocs = documentHealthSummary.uploadedCount || 0
+  const totalDocs = documentHealthSummary.requiredCount || requiredDocuments.length || 0
+  const taskRows = overviewNextActions.slice(0, 5)
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.36fr)]">
+      <div className="space-y-4">
+        <ArchlinePanel title="Matter Progress" className="p-4">
+          <div className="overflow-x-auto px-1 pb-2 pt-5">
+            <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
+              {progressStages.map((stage, index) => {
+                const completed = index < currentIndex
+                const current = index === currentIndex
+                return (
+                  <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
+                    {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
+                    <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
+                      completed ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50' : 'border-slate-300 text-slate-500'
+                    }`}>
+                      {completed ? <CheckCircle2 size={18} /> : <FileText size={17} />}
+                    </span>
+                    <div>
+                      <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
+                      <span className="mt-1 block text-xs text-slate-500">{current ? 'In Progress' : completed ? 'Completed' : 'Pending'}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
+              <div>
+                <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
+              </div>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
+              View Transfer Timeline
+              <ChevronRight size={14} />
+            </Button>
+          </div>
+        </ArchlinePanel>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <ArchlinePanel title="Key Dates" className="p-4">
+            <div className="divide-y divide-slate-100">
+              {keyDates.slice(0, 5).map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <span className="font-medium text-slate-600">{label}</span>
+                  <strong className="text-right font-medium text-slate-950">{value}</strong>
+                </div>
+              ))}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Financial Summary" className="p-4">
+            <div className="divide-y divide-slate-100">
+              {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
+                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <span className="font-medium text-slate-600">{label}</span>
+                  <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
+                </div>
+              ))}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Parties" className="p-4">
+            <div className="divide-y divide-slate-100">
+              {roleplayerItems.slice(0, 4).map((item) => (
+                <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
+                    <span className="min-w-0">
+                      <span className="block text-xs text-slate-500">{item.label}</span>
+                      <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
+                    </span>
+                  </span>
+                  <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                </button>
+              ))}
+            </div>
+          </ArchlinePanel>
+        </div>
+
+        <ArchlinePanel title="Matter Notes" action={<Button type="button" variant="ghost" size="sm" onClick={onAddNote}>Add Note</Button>} className="p-4">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">
+            {activityFeed[0]?.body || activityFeed[0]?.title || 'No notes have been recorded yet.'}
+          </div>
+          {activityFeed[0]?.createdAt ? <p className="mt-3 text-xs text-slate-500">Last updated {formatDateTime(activityFeed[0].createdAt)}</p> : null}
+        </ArchlinePanel>
+      </div>
+
+      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+        <ArchlinePanel title="Tasks" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>View all tasks</Button>} className="p-4">
+          <div className="divide-y divide-slate-100">
+            {taskRows.map((item) => (
+              <button key={`${item.title}-${item.workflow}`} type="button" className="flex w-full items-start gap-3 py-3 text-left" onClick={() => onOpenWorkspace?.(item.actionTarget || 'transfer')}>
+                <span className={`mt-1 size-3 rounded-full border ${item.priority === 'high' ? 'border-red-500' : 'border-slate-300'}`} />
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm font-semibold text-slate-950">{item.title}</strong>
+                  <span className="mt-1 block text-xs text-slate-500">{item.description}</span>
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-amber-700">{formatDate(item.dueDate, 'TBD')}</span>
+              </button>
+            ))}
+            {!taskRows.length ? <p className="py-3 text-sm text-slate-500">No urgent tasks right now.</p> : null}
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Quick Actions" className="p-4">
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ['Upload Document', Upload, onUploadDocument],
+              ['Send Email', Send, () => onOpenWorkspace?.('activity')],
+              ['Add Note', MessageSquarePlus, onAddNote],
+              ['Create Task', ListChecks, () => onOpenWorkspace?.('tasks')],
+              ['Request Document', FileText, onRequestDocuments],
+              ['Log Call', Bell, () => onOpenWorkspace?.('activity')],
+            ].map(([label, Icon, action]) => (
+              <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
+                {createElement(Icon, { size: 14 })}
+                {label}
+              </Button>
+            ))}
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Document Checklist" className="p-4">
+          <div className="flex items-center justify-between gap-4">
+            <ArchlineProgressRing completed={completedDocs} total={totalDocs} label="Complete" />
+            <div className="grid gap-2 text-sm">
+              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Completed</span><strong>{completedDocs}</strong></span>
+              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Outstanding</span><strong>{documentHealthSummary.missingCount || 0}</strong></span>
+              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Not Required</span><strong>{Math.max(totalDocs - completedDocs - (documentHealthSummary.missingCount || 0), 0)}</strong></span>
+            </div>
+          </div>
+          <Button type="button" variant="ghost" size="sm" className="mt-4 w-full justify-center" onClick={() => onOpenWorkspace?.('documents')}>
+            View Checklist
+          </Button>
+        </ArchlinePanel>
+      </aside>
+    </section>
+  )
+}
+
+function ArchlineWorkflowWorkspace({
+  workflow = null,
+  workflowKey = 'transfer',
+  title = '',
+  badge = '',
+  summaryRows = [],
+  documents = [],
+  blockers = [],
+  keyDates = [],
+  activityFeed = [],
+  saving = false,
+  onUpdateStep,
+  onUploadDocument,
+  onAddNote,
+  onOpenDocuments,
+}) {
+  const [statusDraft, setStatusDraft] = useState({ open: false, step: null, status: 'completed', note: '' })
+  const canUpdateSteps = typeof onUpdateStep === 'function'
+  const workflowSteps = useMemo(() => {
+    if (workflowKey === 'finance') {
+      return buildBondHybridFinanceStageSteps(workflow?.financeData || {}).map((step) => ({
+        ...step,
+        displayStatus: step.status === 'current' ? 'in_progress' : step.status === 'upcoming' ? 'not_started' : step.status,
+        storedStep: step,
+      }))
+    }
+    return buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow?.lane, facts: workflow?.facts || {} })
+  }, [workflow, workflowKey])
+  const completedCount = workflowSteps.filter((step) => step.displayStatus === 'completed').length
+  const currentStep = workflowSteps.find((step) => step.isCurrent || step.displayStatus === 'in_progress') || workflowSteps.find((step) => step.displayStatus !== 'completed') || workflowSteps[0]
+  const progress = workflowSteps.length ? Math.round((completedCount / workflowSteps.length) * 100) : 0
+  const taskRows = workflowSteps.slice(0, 8)
+  const visibleDocuments = documents.slice(0, 6)
+
+  function openStatusDraft(step) {
+    if (!canUpdateSteps) return
+    setStatusDraft({ open: true, step, status: step.displayStatus === 'completed' ? 'completed' : 'in_progress', note: step.comment || '' })
+  }
+
+  function submitStatusDraft(event) {
+    event.preventDefault()
+    if (!statusDraft.step) return
+    void onUpdateStep?.(statusDraft.step, statusDraft.status, statusDraft.note)
+    setStatusDraft({ open: false, step: null, status: 'completed', note: '' })
+  }
+
+  return (
+    <>
+      <section className="grid gap-4 xl:grid-cols-[minmax(220px,0.24fr)_minmax(0,1fr)_minmax(300px,0.34fr)]">
+        <aside className="space-y-4">
+          <ArchlinePanel title={title || workflow?.title || 'Workflow'} action={badge ? <ArchlineStatusPill tone="neutral">{badge}</ArchlineStatusPill> : null} className="p-4">
+            <div className="relative space-y-1 py-2 before:absolute before:left-[10px] before:top-5 before:h-[calc(100%-2.5rem)] before:w-px before:bg-slate-200">
+              {workflowSteps.map((step, index) => {
+                const meta = WORKFLOW_STATUS_META[step.displayStatus] || WORKFLOW_STATUS_META.not_started
+                const active = step === currentStep
+                return (
+                  <button
+                    key={step.key || step.stepKey || index}
+                    type="button"
+                    className={`relative flex w-full items-start gap-3 rounded-lg px-2 py-3 text-left transition ${active ? 'bg-slate-50 ring-1 ring-slate-200' : canUpdateSteps ? 'hover:bg-slate-50' : ''}`}
+                    onClick={() => openStatusDraft(step)}
+                  >
+                    <span className={`relative z-10 mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-white ${meta.border} ${meta.text}`}>
+                      {step.displayStatus === 'completed' ? <CheckCircle2 size={13} /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block text-sm font-semibold text-slate-950">{index + 1}. {step.label || getWorkflowStepLabel(step)}</strong>
+                      <span className={`mt-1 block text-xs font-medium ${meta.text}`}>{meta.label}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Overall Progress" className="p-4">
+            <p className="text-sm text-slate-600">{completedCount} of {workflowSteps.length} stages complete</p>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-emerald-700" style={{ width: `${progress}%` }} />
+              </div>
+              <strong className="text-xs text-slate-700">{progress}%</strong>
+            </div>
+          </ArchlinePanel>
+
+          {summaryRows.length ? (
+            <ArchlinePanel title={`${title || 'Workflow'} Summary`} className="p-4">
+              <div className="divide-y divide-slate-100">
+                {summaryRows.map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span className="text-slate-600">{label}</span>
+                    <strong className="text-right font-medium text-slate-950">{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </ArchlinePanel>
+          ) : null}
+        </aside>
+
+        <main className="space-y-4">
+          <ArchlinePanel className="overflow-hidden">
+            <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <span className="text-xs font-medium text-slate-500">Current Stage</span>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-slate-950">{currentStep?.label || workflow?.nextStep || 'Workflow Review'}</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{currentStep?.description || workflow?.summary || 'Review the open work and update task status as the matter progresses.'}</p>
+              </div>
+              <div className="min-w-[180px]">
+                <span className="text-xs font-medium text-slate-500">Stage Progress</span>
+                <p className="mt-1 text-sm text-slate-700">{completedCount} / {workflowSteps.length} tasks completed</p>
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                    <div className="h-full rounded-full bg-emerald-700" style={{ width: `${progress}%` }} />
+                  </div>
+                  <strong className="text-xs">{progress}%</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full border-t border-slate-200 text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Task</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Assigned To</th>
+                    <th className="px-4 py-3">Due Date</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {taskRows.map((step, index) => {
+                    const meta = WORKFLOW_STATUS_META[step.displayStatus] || WORKFLOW_STATUS_META.not_started
+                    return (
+                      <tr key={step.key || step.stepKey || index}>
+                        <td className="px-5 py-4">
+                          <strong className="block text-sm font-semibold text-slate-950">{index + 1}. {step.label || getWorkflowStepLabel(step)}</strong>
+                          <span className="mt-1 block text-xs leading-5 text-slate-500">{step.description || step.comment || 'Update this task as work progresses.'}</span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>{meta.label}</span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">Matter team</td>
+                        <td className="px-4 py-4 text-slate-700">TBD</td>
+                        <td className="px-4 py-4 text-right">
+                          {canUpdateSteps ? (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => openStatusDraft(step)}>
+                              <MoreHorizontal size={15} />
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-3 border-t border-slate-200 p-4 md:hidden">
+              {taskRows.map((step, index) => {
+                const meta = WORKFLOW_STATUS_META[step.displayStatus] || WORKFLOW_STATUS_META.not_started
+                return (
+                  <button
+                    key={step.key || step.stepKey || index}
+                    type="button"
+                    className="rounded-lg border border-slate-200 bg-white p-4 text-left"
+                    onClick={() => openStatusDraft(step)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <strong className="text-sm font-semibold text-slate-950">{index + 1}. {step.label || getWorkflowStepLabel(step)}</strong>
+                      <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>{meta.label}</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">{step.description || 'Tap to update status.'}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel className="p-4">
+            <div className="flex gap-5 border-b border-slate-200">
+              <button type="button" className="border-b-2 border-slate-950 px-1 pb-3 text-sm font-semibold text-slate-950">Stage Notes</button>
+              <button type="button" className="px-1 pb-3 text-sm font-semibold text-slate-500">Internal Notes</button>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <input className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-700" placeholder="Add a note..." readOnly onFocus={onAddNote} />
+              <Button type="button" onClick={onAddNote}>Add Note</Button>
+            </div>
+            <div className="mt-5 space-y-3">
+              {activityFeed.slice(0, 2).map((item) => (
+                <article key={item.id} className="flex items-start gap-3 rounded-lg bg-slate-50 p-3">
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-700">{String(item.authorName || 'TM').slice(0, 2).toUpperCase()}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-slate-700"><strong className="text-slate-950">{item.authorName || 'Matter team'}</strong> {item.title || item.body}</p>
+                    <span className="mt-1 block text-xs text-slate-500">{formatDateTime(item.createdAt, '')}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </ArchlinePanel>
+        </main>
+
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <ArchlinePanel title={`${title || 'Workflow'} Documents`} action={<Button type="button" variant="ghost" size="sm" onClick={onOpenDocuments}>View all</Button>} className="p-4">
+            <div className="divide-y divide-slate-100">
+              {visibleDocuments.map((doc) => (
+                <div key={doc.id || doc.displayName} className="flex items-center justify-between gap-3 py-3">
+                  <span className="flex min-w-0 items-start gap-2">
+                    <FileText size={16} className="mt-0.5 shrink-0 text-slate-700" />
+                    <span className="min-w-0">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{doc.displayName || doc.name || 'Document'}</strong>
+                      <span className="mt-1 block text-xs text-slate-500">{formatDate(doc.uploadedAt || doc.updatedAt, 'Pending')}</span>
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">{doc.statusLabel || doc.status || 'Uploaded'}</span>
+                </div>
+              ))}
+              {!visibleDocuments.length ? <p className="py-3 text-sm text-slate-500">No documents linked to this workflow yet.</p> : null}
+            </div>
+            <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={onUploadDocument}>
+              <Upload size={14} />
+              Upload Document
+            </Button>
+          </ArchlinePanel>
+
+          {blockers.length ? (
+            <ArchlinePanel title="Outstanding Items" className="p-4">
+              <div className="space-y-2">
+                {blockers.slice(0, 4).map((item) => (
+                  <div key={item} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                    <AlertTriangle size={15} className="mr-2 inline" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </ArchlinePanel>
+          ) : null}
+
+          <ArchlinePanel title="Key Dates" className="p-4">
+            <div className="divide-y divide-slate-100">
+              {keyDates.slice(0, 6).map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <span className="text-slate-600">{label}</span>
+                  <strong className="text-right font-medium text-slate-950">{value}</strong>
+                </div>
+              ))}
+            </div>
+          </ArchlinePanel>
+        </aside>
+      </section>
+
+      <Modal
+        open={canUpdateSteps && statusDraft.open}
+        title="Update Task Status"
+        onClose={() => setStatusDraft({ open: false, step: null, status: 'completed', note: '' })}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setStatusDraft({ open: false, step: null, status: 'completed', note: '' })}>Cancel</Button>
+            <Button type="submit" form="archline-status-update-form" disabled={saving || (statusDraft.status === 'blocked' && !statusDraft.note.trim())}>
+              {saving ? 'Updating...' : 'Update Status'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="archline-status-update-form" onSubmit={submitStatusDraft} className="space-y-4">
+          <div>
+            <span className="text-xs font-medium text-slate-500">Task</span>
+            <strong className="mt-1 block text-sm font-semibold text-slate-950">{statusDraft.step?.label || getWorkflowStepLabel(statusDraft.step || {})}</strong>
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-500">Update Status</span>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {[
+                ['in_progress', 'In Progress'],
+                ['completed', 'Completed'],
+                ['blocked', 'Blocked'],
+                ['not_started', 'Not Required'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`h-10 rounded-lg border text-sm font-semibold ${
+                    statusDraft.status === value ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                  onClick={() => setStatusDraft((previous) => ({ ...previous, status: value }))}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Add Notes {statusDraft.status === 'blocked' ? <span className="text-red-600">*</span> : null}
+            <textarea
+              rows={4}
+              value={statusDraft.note}
+              onChange={(event) => setStatusDraft((previous) => ({ ...previous, note: event.target.value }))}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+              placeholder="Add notes about the status update..."
+            />
+          </label>
+          <p className="text-xs text-slate-500">This will be recorded in the matter activity feed.</p>
+        </form>
+      </Modal>
+    </>
+  )
+}
+
+function ArchlineDocumentsWorkspace({
+  documentHealthSummary = {},
+  requiredRows = [],
+  libraryRows = [],
+  missingRows = [],
+  recentActivity = [],
+  activeFilter = 'all',
+  search = '',
+  onFilterChange,
+  onSearchChange,
+  onUpload,
+  onRequest,
+  onUploadRequirement,
+  onReplace,
+  onReview,
+}) {
+  const kpis = [
+    ['Required', documentHealthSummary.requiredCount || requiredRows.length || 0, FileText, 'bg-blue-50 text-blue-700'],
+    ['Received', documentHealthSummary.uploadedCount || 0, Upload, 'bg-emerald-50 text-emerald-700'],
+    ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
+    ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
+  ]
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
+      <div className="space-y-4">
+        <ArchlinePanel title="Document Readiness" className="p-4">
+          <div className="grid gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:items-center">
+            <div className="mx-auto grid size-36 place-items-center rounded-full" style={{ background: `conic-gradient(#087b4b ${documentHealthSummary.score || 0}%, #e8edf2 0)` }}>
+              <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
+                <div>
+                  <strong className="block text-3xl font-semibold text-slate-950">{documentHealthSummary.score || 0}%</strong>
+                  <span className="text-xs font-semibold text-slate-500">{documentHealthSummary.scoreLabel || 'Ready'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                {documentHealthSummary.submissionReady
+                  ? 'All critical requirements are in place. Keep reviewing incoming uploads as the matter moves.'
+                  : 'Clear the missing or rejected requirements before this matter can move cleanly to the next stage.'}
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {kpis.map(([label, value, Icon, tone]) => (
+                  <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <span className={`inline-flex size-9 items-center justify-center rounded-lg ${tone}`}>
+                      {createElement(Icon, { size: 16 })}
+                    </span>
+                    <strong className="mt-3 block text-xl font-semibold text-slate-950">{value}</strong>
+                    <span className="text-xs font-medium text-slate-500">{label}</span>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Required Documents" className="overflow-hidden">
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-left text-sm">
+              <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Document</th>
+                  <th className="px-4 py-3">Owner</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {requiredRows.slice(0, 8).map((row) => {
+                  const document = row.linkedDocument || row.raw || {}
+                  return (
+                    <tr key={row.id}>
+                      <td className="px-4 py-4">
+                        <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                        <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel || row.category || 'Requirement'}</span>
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">{row.requiredParty || 'Matter team'}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                          {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          {row.fileUrl ? (
+                            <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">View</a>
+                          ) : (
+                            <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                              Upload
+                            </Button>
+                          )}
+                          {row.fileUrl ? (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
+                              Replace
+                            </Button>
+                          ) : null}
+                          {row.fileUrl && onReview ? (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => onReview('approve', document, row.requirement || row.requiredDocument)}>
+                              Approve
+                            </Button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="grid gap-3 p-4 md:hidden">
+            {requiredRows.slice(0, 8).map((row) => (
+              <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                    <span className="mt-1 block text-xs text-slate-500">{row.requiredParty || 'Matter team'}</span>
+                  </div>
+                  <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                    {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+                  </span>
+                </div>
+                <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onUploadRequirement?.(row)}>
+                  {row.fileUrl ? 'Replace' : 'Upload'}
+                </Button>
+              </article>
+            ))}
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Document Library" className="overflow-hidden">
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
+                  onClick={() => onFilterChange?.(filter.key)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <label className="relative min-w-[220px]">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
+            </label>
+          </div>
+          <div className="divide-y divide-slate-100 border-t border-slate-200">
+            {libraryRows.slice(0, 12).map((row) => (
+              <article key={row.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                  <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel} · {formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                    {getDocumentCommandStatusLabel(row.status)}
+                  </span>
+                  {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-800">View</a> : null}
+                </div>
+              </article>
+            ))}
+            {!libraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
+          </div>
+        </ArchlinePanel>
+      </div>
+
+      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+        <ArchlinePanel title="Quick Actions" className="p-4">
+          <div className="grid gap-2">
+            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onUpload}>
+              <Upload size={14} />
+              Upload Document
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onRequest}>
+              <FileText size={14} />
+              Request Document
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onFilterChange?.('missing')}>
+              <AlertTriangle size={14} />
+              View Missing
+            </Button>
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Outstanding Items" className="p-4">
+          <div className="space-y-2">
+            {missingRows.slice(0, 5).map((row) => (
+              <button key={row.id} type="button" className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-left" onClick={() => onUploadRequirement?.(row)}>
+                <strong className="block text-sm font-semibold text-amber-950">{row.displayName}</strong>
+                <span className="mt-1 block text-xs text-amber-800">{row.requiredParty || 'Matter team'}</span>
+              </button>
+            ))}
+            {!missingRows.length ? <p className="text-sm text-slate-500">No critical missing documents.</p> : null}
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel title="Recent Activity" className="p-4">
+          <div className="space-y-2">
+            {recentActivity.slice(0, 5).map((row) => (
+              <article key={row.id} className="rounded-lg bg-slate-50 p-3">
+                <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
+                <span className="mt-1 block text-xs text-slate-500">{formatDateTime(row.timestamp, '')}</span>
+              </article>
+            ))}
+            {!recentActivity.length ? <p className="text-sm text-slate-500">No document activity yet.</p> : null}
+          </div>
+        </ArchlinePanel>
+      </aside>
+    </section>
+  )
+}
+
+function ArchlineTasksWorkspace({ items = [], overviewItems = [], onOpenTask, onRunTask, onOpenWorkspace }) {
+  const visibleItems = items.length ? items : overviewItems
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.32fr)]">
+      <ArchlinePanel title="Tasks" className="overflow-hidden">
+        <div className="divide-y divide-slate-100 border-t border-slate-200">
+          {visibleItems.map((item, index) => {
+            const status = item.status || item.workflow?.statusKey || 'in_progress'
+            const meta = WORKFLOW_STATUS_META[status] || getAttorneyQueuePriorityMeta(item)
+            return (
+              <article key={item.id || `${item.title}-${index}`} className="px-4 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex size-7 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">{index + 1}</span>
+                      <strong className="text-sm font-semibold text-slate-950">{item.title}</strong>
+                      <span className={`rounded-lg border px-2 py-1 text-xs font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>{meta.label || toTitle(status)}</span>
+                    </div>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{item.description || item.workflow?.summary || 'Review the linked matter task.'}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs font-medium text-slate-500">
+                      <span>{item.workflow?.title || item.workflow || 'Matter'}</span>
+                      {item.dueDate ? <span>Due {formatDate(item.dueDate)}</span> : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => onOpenTask?.(item)}>
+                      Open
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => onRunTask?.(item)}>
+                      Start
+                    </Button>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+          {!visibleItems.length ? <p className="px-4 py-8 text-sm text-slate-500">No open tasks are visible right now.</p> : null}
+        </div>
+      </ArchlinePanel>
+
+      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+        <ArchlinePanel title="Quick Actions" className="p-4">
+          <div className="grid gap-2">
+            {[
+              ['Documents', FileText, 'documents'],
+              ['Transfer', Workflow, 'transfer'],
+              ['Finance', CircleDollarSign, 'finance'],
+              ['Activity', Activity, 'activity'],
+            ].map(([label, Icon, target]) => (
+              <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onOpenWorkspace?.(target)}>
+                {createElement(Icon, { size: 14 })}
+                {label}
+              </Button>
+            ))}
+          </div>
+        </ArchlinePanel>
+      </aside>
+    </section>
+  )
+}
+
+function ArchlineActivityWorkspace({
+  entries = [],
+  groupedEntries = [],
+  filters = [],
+  activeFilter = 'all',
+  onFilterChange,
+  composer,
+  onOpenWorkspace,
+}) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(330px,0.34fr)]">
+      <ArchlinePanel title="Matter Activity" className="overflow-hidden">
+        <div className="flex gap-2 overflow-x-auto border-t border-slate-200 px-4 py-4">
+          {filters.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
+              onClick={() => onFilterChange?.(filter.key)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-5 border-t border-slate-200 p-4">
+          {groupedEntries.map((group) => (
+            <div key={group.label}>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">{group.label}</span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <div className="space-y-3">
+                {group.items.map((entry) => {
+                  const meta = entry.meta || getActivityCategoryMeta(entry.category)
+                  return (
+                    <article key={entry.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="flex items-start gap-3">
+                        <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ${meta.icon}`}>
+                          {createElement(meta.Icon, { size: 16 })}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <strong className="block text-sm font-semibold text-slate-950">{entry.title}</strong>
+                              <span className="mt-1 block text-xs text-slate-500">{entry.authorName} · {formatDateTime(entry.createdAt)}</span>
+                            </div>
+                            <span className={`rounded-lg border px-2 py-1 text-xs font-semibold ${meta.badge}`}>{entry.categoryLabel || meta.label}</span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{entry.body}</p>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          {!entries.length ? <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No activity matches this filter.</p> : null}
+        </div>
+      </ArchlinePanel>
+
+      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+        {composer}
+        <ArchlinePanel title="Quick Actions" className="p-4">
+          <div className="grid gap-2">
+            {[
+              ['Documents', FileText, 'documents'],
+              ['Transfer', Workflow, 'transfer'],
+              ['Tasks', ListChecks, 'tasks'],
+            ].map(([label, Icon, target]) => (
+              <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onOpenWorkspace?.(target)}>
+                {createElement(Icon, { size: 14 })}
+                {label}
+              </Button>
+            ))}
+          </div>
+        </ArchlinePanel>
+      </aside>
+    </section>
+  )
+}
+
+function ArchlineRolePlayersWorkspace({ contacts = [], teamCards = [], onOpenAssignments, onOpenActivity }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
+      <ArchlinePanel title="Role Players" className="overflow-hidden">
+        <div className="grid gap-3 border-t border-slate-200 p-4 md:grid-cols-2">
+          {contacts.map((row) => (
+            <article key={row.key} className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-xs font-medium text-slate-500">{row.role}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-slate-950">{row.contact}</strong>
+                  <span className="mt-1 block truncate text-xs text-slate-500">{row.company}</span>
+                </div>
+                <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{row.status}</span>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                <span className="truncate">{row.email}</span>
+                <span className="truncate">{row.phone}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </ArchlinePanel>
+
+      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+        <ArchlinePanel title="Legal Team" className="p-4">
+          <div className="space-y-2">
+            {teamCards.map((card) => (
+              <article key={card.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <span className="block text-xs font-medium text-slate-500">{card.label}</span>
+                <strong className="mt-1 block text-sm font-semibold text-slate-950">{card.company}</strong>
+                <span className="mt-1 block text-xs text-slate-500">{card.status}</span>
+              </article>
+            ))}
+          </div>
+        </ArchlinePanel>
+        <ArchlinePanel title="Actions" className="p-4">
+          <div className="grid gap-2">
+            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onOpenAssignments}>
+              <UsersRound size={14} />
+              Manage Assignments
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onOpenActivity}>
+              <Activity size={14} />
+              View Activity
+            </Button>
+          </div>
+        </ArchlinePanel>
+      </aside>
+    </section>
+  )
+}
+
 function BondApplicationHeader({
   reference = '',
   buyerName = '',
@@ -7630,6 +8759,7 @@ function AttorneyTransactionDetail() {
     documentType: '',
     visibility: 'client_visible',
     relatedWorkflow: '',
+    attorneyLaneKey: '',
     satisfiesRequiredDocument: 'yes',
     requiredDocumentKey: '',
     requiredDocumentId: '',
@@ -7957,7 +9087,11 @@ function AttorneyTransactionDetail() {
       active = false
     }
   }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt])
-  const documents = data?.documents ?? EMPTY_ARRAY
+  const allDocuments = data?.documents ?? EMPTY_ARRAY
+  const documents = useMemo(
+    () => workspaceRole === 'bond_originator' ? allDocuments.filter(isBondOriginatorFinanceDocument) : allDocuments,
+    [allDocuments, workspaceRole],
+  )
   const routingDiagnostics = useMemo(
     () => (transaction ? buildTransactionRoutingDiagnostics(transaction) : null),
     [transaction],
@@ -7965,7 +9099,11 @@ function AttorneyTransactionDetail() {
   const canEditRoutingProfile = ['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(
     String(workspaceRole || '').trim().toLowerCase(),
   )
-  const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
+  const requiredDocumentChecklist = useMemo(() => {
+    const rows = data?.requiredDocumentChecklist || EMPTY_ARRAY
+    if (workspaceRole !== 'bond_originator') return rows
+    return rows.filter((requirement) => isBondOriginatorFinanceDocument(requirement))
+  }, [data?.requiredDocumentChecklist, workspaceRole])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -8062,7 +9200,7 @@ function AttorneyTransactionDetail() {
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
-    if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
+    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'tasks', 'stakeholders'].includes(workspaceMenu)) return 'workflow'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
@@ -8463,14 +9601,11 @@ function AttorneyTransactionDetail() {
     if (tab.id === 'application') {
       return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
     }
-    if (tab.id === 'banks_quotes') {
+    if (tab.id === 'workflow') {
       return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
     }
     if (tab.id === 'finance') {
       return { ...tab, meta: financeTypeLabel }
-    }
-    if (tab.id === 'tasks') {
-      return { ...tab, meta: 'Action hub' }
     }
     if (tab.id === 'activity') {
       return { ...tab, meta: `${visibleTransactionDiscussion.length + transactionEvents.length} updates` }
@@ -9424,6 +10559,19 @@ function AttorneyTransactionDetail() {
   }
   function handleOpenFinanceDocument(document = {}) {
     const url = document?.url || document?.publicUrl || document?.downloadUrl || ''
+    if (workspaceRole === 'bond_originator' && transaction?.id && isSupabaseConfigured && supabase) {
+      void supabase
+        .from('bond_finance_document_access_audit')
+        .insert({
+          transaction_id: transaction.id,
+          document_id: document?.id || null,
+          actor_user_id: profile?.id || profile?.userId || null,
+          action: 'download_requested',
+          metadata: { source: 'bond_finance_workspace', documentName: document?.name || document?.label || null },
+        })
+        .then(() => null)
+        .catch(() => null)
+    }
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
   const financeCommandCenterPanel = (
@@ -10109,7 +11257,7 @@ function AttorneyTransactionDetail() {
       return
     }
     if (normalizedTarget === 'finance') {
-      setWorkspaceMenu(workspaceRole === 'bond_originator' ? 'banks_quotes' : 'finance')
+      setWorkspaceMenu(workspaceRole === 'bond_originator' ? 'workflow' : 'finance')
       return
     }
     if (normalizedTarget === 'activity') {
@@ -10827,6 +11975,207 @@ function AttorneyTransactionDetail() {
     setShowDetailedCommunicationLog(true)
     setWorkspaceMenu('activity')
   }, [legalWorkflowModels])
+  const archlineWorkspaceTabs = useMemo(() => [
+    { id: 'overview', label: 'Overview' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'transfer', label: 'Transfer' },
+    { id: 'finance', label: 'Finance' },
+    ...(requiresCancellationWorkflow ? [{ id: 'cancellation', label: 'Cancellation', count: 1 }] : []),
+    { id: 'activity', label: 'Activity' },
+    { id: 'roleplayers', label: 'Role Players' },
+  ], [requiresCancellationWorkflow])
+  const archlineActiveWorkspaceTab = useMemo(() => {
+    if (activeLegalWorkflowDetailKey === 'bond-cancellation') return 'cancellation'
+    if (activeLegalWorkflowDetailKey === 'bond-registration') return 'finance'
+    if (activeWorkspaceMenu === 'stakeholders') return 'roleplayers'
+    if (activeWorkspaceMenu === 'today') return 'overview'
+    return archlineWorkspaceTabs.some((tab) => tab.id === activeWorkspaceMenu) ? activeWorkspaceMenu : 'overview'
+  }, [activeLegalWorkflowDetailKey, activeWorkspaceMenu, archlineWorkspaceTabs])
+  const handleArchlineTabChange = useCallback((tabId) => {
+    if (tabId === 'roleplayers') {
+      openWorkspaceMenu('stakeholders')
+      return
+    }
+    if (tabId === 'cancellation') {
+      openLegalWorkflowDetail('bond-cancellation')
+      return
+    }
+    if (tabId === 'transfer' && activeLegalWorkflowDetailKey) {
+      closeLegalWorkflowDetail()
+      return
+    }
+    openWorkspaceMenu(tabId)
+  }, [activeLegalWorkflowDetailKey, closeLegalWorkflowDetail, openLegalWorkflowDetail, openWorkspaceMenu])
+  const archlineKeyDates = useMemo(() => [
+    ['Instruction Date', formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')],
+    ['Agreement Date', formatDate(transaction?.agreement_date || transaction?.offer_accepted_at || transaction?.created_at, 'TBD')],
+    ['Obligation Date', formatDate(transaction?.obligation_date || transaction?.finance_clause_expiry_date, 'TBD')],
+    ['Transfer Duty Due', formatDate(transaction?.transfer_duty_due_date || transaction?.transfer_duty_due_at, 'TBD')],
+    ['Lodgement Date', formatDate(transaction?.lodgement_date || transaction?.lodged_at, 'TBD')],
+    ['Expected Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date, 'TBD')],
+  ], [
+    transaction?.agreement_date,
+    transaction?.created_at,
+    transaction?.expected_transfer_date,
+    transaction?.finance_clause_expiry_date,
+    transaction?.instruction_date,
+    transaction?.lodged_at,
+    transaction?.lodgement_date,
+    transaction?.obligation_date,
+    transaction?.offer_accepted_at,
+    transaction?.target_registration_date,
+    transaction?.transfer_duty_due_at,
+    transaction?.transfer_duty_due_date,
+  ])
+  const archlineFinancialRows = useMemo(() => [
+    ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
+    ['Deposit', formatCurrencyValue(
+      hasCapturedFinancials
+        ? transaction?.deposit_amount || transaction?.reservation_amount || transaction?.reservation_deposit_amount
+        : 0,
+      'Not captured',
+    )],
+    ['Bond Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback)],
+    ['Finance Type', financeTypeLabel],
+    ['Status', displayedLifecycleLabel, true],
+  ], [
+    bondAmountFallback,
+    displayPurchasePriceValue,
+    displayedLifecycleLabel,
+    financeTypeLabel,
+    hasCapturedFinancials,
+    transaction?.bond_amount,
+    transaction?.deposit_amount,
+    transaction?.reservation_amount,
+    transaction?.reservation_deposit_amount,
+  ])
+  const archlinePartyItems = useMemo(() => [
+    { key: 'buyer', label: 'Buyer', value: buyerDisplayName || 'Not assigned' },
+    { key: 'seller', label: 'Seller', value: sellerDisplayName || 'Not assigned' },
+    { key: 'agent', label: 'Agent', value: transaction?.assigned_agent || getParticipantDisplayName(assignedAgent) || 'Not assigned' },
+    { key: 'bond-originator', label: 'Bond Originator', value: assignedBondOriginator?.organisationName || transaction?.bond_originator || 'Not assigned' },
+  ], [assignedAgent, assignedBondOriginator?.organisationName, buyerDisplayName, sellerDisplayName, transaction?.assigned_agent, transaction?.bond_originator])
+  const archlineDocumentsByWorkflow = useMemo(() => {
+    const rows = [...allDocumentLibraryRows, ...requiredDocumentRows]
+    const dedupeRows = (items = []) => {
+      const seen = new Set()
+      return items.filter((row) => {
+        const key = String(row.id || `${row.displayName}:${row.relatedWorkflow}`)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    }
+    const pickRows = (tokens = []) => {
+      const matches = rows.filter((row) => {
+        const haystack = [
+          row.displayName,
+          row.category,
+          row.categoryLabel,
+          row.relatedWorkflow,
+          row.requiredDocumentKey,
+          row.requiredParty,
+        ].map((value) => String(value || '').toLowerCase()).join(' ')
+        return tokens.some((token) => haystack.includes(token))
+      })
+      return dedupeRows(matches.length ? matches : rows).slice(0, 8)
+    }
+    return {
+      transfer: pickRows(['transfer', 'registration', 'lodgement', 'instruction', 'signed', 'otp', 'title deed']),
+      finance: pickRows(['finance', 'bond', 'bank', 'payslip', 'statement', 'income', 'guarantee']),
+      cancellation: pickRows(['cancel', 'cancellation', 'existing bond', 'settlement']),
+    }
+  }, [allDocumentLibraryRows, requiredDocumentRows])
+  const archlineTransferWorkflow = useMemo(
+    () => legalWorkflowModels.find((workflow) => workflow.detailKey === 'transfer') || legalWorkflowModels[0] || null,
+    [legalWorkflowModels],
+  )
+  const archlineCancellationWorkflow = useMemo(
+    () => legalWorkflowModels.find((workflow) => workflow.detailKey === 'bond-cancellation') || null,
+    [legalWorkflowModels],
+  )
+  const archlineFinanceWorkflow = useMemo(() => {
+    const bondWorkflow = legalWorkflowModels.find((workflow) => workflow.detailKey === 'bond-registration') || null
+    return {
+      ...(bondWorkflow || {}),
+      key: 'finance',
+      detailKey: 'finance',
+      accentKey: 'finance',
+      title: 'Finance Workflow',
+      summary: bondWorkflowSummary?.currentStageLabel || bondWorkflow?.summary || 'Track bond application documents, bank submission, approval, guarantees, and fulfilment.',
+      statusLabel: bondWorkflow?.statusLabel || WORKFLOW_STATUS_META[getBondWorkflowStatusKey(transactionFinanceWorkflow)]?.label || 'In Progress',
+      financeData: transactionFinanceWorkflow,
+      lane: bondAttorneyWorkflowLane,
+      facts: routingDiagnostics?.facts || {},
+      blockers: [
+        ...(bondWorkflow?.blockers || []),
+        ...(Array.isArray(financeReadinessDashboard?.blockers) ? financeReadinessDashboard.blockers.map((item) => item.label || item.message || item.title).filter(Boolean) : []),
+      ],
+    }
+  }, [bondAttorneyWorkflowLane, bondWorkflowSummary?.currentStageLabel, financeReadinessDashboard?.blockers, legalWorkflowModels, routingDiagnostics?.facts, transactionFinanceWorkflow])
+  const archlineFinanceSummaryRows = useMemo(() => [
+    ['Loan Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback)],
+    ['Deposit', formatCurrencyValue(
+      hasCapturedFinancials
+        ? transaction?.deposit_amount || transaction?.reservation_amount || transaction?.reservation_deposit_amount
+        : 0,
+      'Not captured',
+    )],
+    ['Interest Rate', bondHybridFinanceSummary?.approvedQuote?.interestRate || bondHybridFinanceSummary?.acceptedOffer?.interestRate || 'TBD'],
+    ['Status', archlineFinanceWorkflow.statusLabel || 'In Progress'],
+  ], [
+    archlineFinanceWorkflow.statusLabel,
+    bondAmountFallback,
+    bondHybridFinanceSummary?.acceptedOffer?.interestRate,
+    bondHybridFinanceSummary?.approvedQuote?.interestRate,
+    hasCapturedFinancials,
+    transaction?.bond_amount,
+    transaction?.deposit_amount,
+    transaction?.reservation_amount,
+    transaction?.reservation_deposit_amount,
+  ])
+  const archlineTaskQueueItems = useMemo(
+    () => buildAttorneyDailyActionQueueItems(legalWorkflowModels),
+    [legalWorkflowModels],
+  )
+  const archlineSourceLabel =
+    transaction?.source ||
+    transaction?.lead_source ||
+    transaction?.source_name ||
+    transaction?.assigned_agency ||
+    assignedAgent?.organisationName ||
+    'Not captured'
+
+  async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note) {
+    const lane = workflow?.lane || null
+    if (!lane) return
+    const draft = buildWorkflowInlineStepDraft(lane, step, status)
+    await submitWorkflowStepUpdate({
+      ...draft,
+      note: typeof note === 'string' ? note : draft.note,
+    })
+  }
+
+  function handleArchlineTaskCommand(item = {}) {
+    if (item.kind === 'document') {
+      handleWorkflowActionCommand(item.workflow?.lane, item.action)
+      return
+    }
+    if (item.kind === 'coordination') {
+      handleWorkflowCoordinationCommand(item.workflow?.lane, item.coordinationItem, item.command)
+      return
+    }
+    if (item.kind === 'follow_up') {
+      handleWorkflowFollowUpCommand(item.workflow?.lane, item.followUpItem, item.command)
+      return
+    }
+    if (item.kind === 'workflow') {
+      handleWorkflowActionCommand(item.workflow?.lane, item.action, item.command)
+      return
+    }
+    handleOverviewActionTarget(item.actionTarget || item.primaryActionTarget || 'transfer')
+  }
+
   const transactionContactRows = [
     {
       key: 'buyer',
@@ -11909,11 +13258,25 @@ function AttorneyTransactionDetail() {
   function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
     const canonicalRequirementInstanceId = requirement ? getRequirementCanonicalId(requirement) || requirement.canonicalRequirementInstanceId || '' : ''
     const requiredDocumentKey = requirement?.key || requirement?.documentKey || requirement?.document_key || ''
+    const contextCategory = category || activeDocumentLibraryCategory
     const selectedCategory = requirement
       ? getAttorneyCategoryForRequiredDocument(requirement)
       : category
         ? getUploadCategoryForLibraryFilter(category)
         : getUploadCategoryForLibraryFilter(activeDocumentLibraryCategory)
+    const requirementWorkflow =
+      requirement?.laneKey ||
+      requirement?.lane_key ||
+      requirement?.owningWorkflow ||
+      requirement?.attorneyRole ||
+      requirement?.attorney_role ||
+      ''
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      relatedWorkflow: requirementWorkflow,
+      category: contextCategory,
+      requirement,
+      workflowLanes,
+    })
 
     setUploadDraft((previous) => ({
       ...previous,
@@ -11922,7 +13285,8 @@ function AttorneyTransactionDetail() {
       category: selectedCategory,
       documentType: requiredDocumentKey || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
-      relatedWorkflow: requirement?.owningWorkflow || requirement?.visibleSection || previous.relatedWorkflow || '',
+      relatedWorkflow: requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: requirement ? 'yes' : 'no',
       requiredDocumentKey,
       requiredDocumentId: requirement?.id || '',
@@ -11962,6 +13326,12 @@ function AttorneyTransactionDetail() {
   }
 
   function openConveyancingDocumentUpload(shortcut = {}) {
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: shortcut.laneKey || shortcut.lane_key || shortcut.attorneyRole || shortcut.attorney_role,
+      relatedWorkflow: shortcut.relatedWorkflow,
+      category: shortcut.category,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       file: null,
@@ -11969,7 +13339,8 @@ function AttorneyTransactionDetail() {
       category: shortcut.category || 'Internal Working Documents',
       documentType: shortcut.documentType || '',
       visibility: shortcut.visibility === 'internal_only' ? 'internal' : 'shared',
-      relatedWorkflow: shortcut.relatedWorkflow || 'transfer',
+      relatedWorkflow: shortcut.relatedWorkflow || attorneyLane?.laneKey || 'transfer',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
       requiredDocumentKey: '',
       requiredDocumentId: '',
@@ -12001,6 +13372,21 @@ function AttorneyTransactionDetail() {
         : null
     const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
     const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
+    const isAttorneyUpload = String(workspaceRole || '').trim().toLowerCase() === 'attorney'
+    const attorneyLane = isAttorneyUpload
+      ? resolveAttorneyDocumentUploadLane({
+          laneKey: uploadDraft.attorneyLaneKey,
+          relatedWorkflow: uploadDraft.relatedWorkflow,
+          category: uploadDraft.category,
+          requirement: linkedRequirement,
+          workflowLanes,
+        })
+      : null
+
+    if (isAttorneyUpload && !attorneyLane) {
+      setError('No editable attorney workflow lane is available for this upload.')
+      return
+    }
 
     try {
       setSaving(true)
@@ -12011,11 +13397,14 @@ function AttorneyTransactionDetail() {
         category: uploadDraft.category,
         isClientVisible: visibilityScope !== 'internal',
         visibilityScope,
-        stageKey: uploadDraft.relatedWorkflow || transferStageKey,
+        stageKey: uploadDraft.relatedWorkflow || attorneyLane?.laneKey || transferStageKey,
         requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
         documentType: uploadDraft.documentType || uploadDraft.requiredDocumentKey || null,
         canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
         documentRequestId: uploadDraft.documentRequestId || null,
+        source: isAttorneyUpload ? 'attorney_workspace' : 'internal',
+        attorneyLaneKey: attorneyLane?.laneKey || null,
+        attorneyRole: attorneyLane?.attorneyRole || null,
       })
       setUploadDraft((previous) => ({
         ...previous,
@@ -12051,12 +13440,22 @@ function AttorneyTransactionDetail() {
 
   function handleReplaceDocument(document, requirement) {
     const canonicalRequirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document)
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: requirement?.laneKey || requirement?.lane_key || document?.laneKey || document?.lane_key,
+      relatedWorkflow: requirement?.owningWorkflow || document?.stage_key || document?.stageKey,
+      category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : document?.category,
+      requirement,
+      document,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       canonicalRequirementInstanceId: canonicalRequirementInstanceId || '',
       requiredDocumentKey: requirement?.key || document?.document_type || '',
       category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
       visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
+      relatedWorkflow: attorneyLane?.laneKey || previous.relatedWorkflow,
+      attorneyLaneKey: attorneyLane?.laneKey || '',
     }))
     setWorkspaceMenu('documents')
     setUploadDocumentModalOpen(true)
@@ -12064,6 +13463,14 @@ function AttorneyTransactionDetail() {
   }
 
   function openDocumentRequestUploadModal(row = {}) {
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: row.laneKey || row.lane_key || row.attorneyRole || row.attorney_role,
+      relatedWorkflow: row.relatedWorkflow,
+      category: row.category,
+      requirement: row.requirement || row.requiredDocument || null,
+      document: row.raw || row.rawRequest || null,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       file: null,
@@ -12071,7 +13478,8 @@ function AttorneyTransactionDetail() {
       category: getUploadCategoryForLibraryFilter(row.category || 'finance'),
       documentType: row.requiredDocumentKey || row.displayName || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
-      relatedWorkflow: row.relatedWorkflow || previous.relatedWorkflow || 'finance',
+      relatedWorkflow: row.relatedWorkflow || attorneyLane?.laneKey || 'finance',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
       requiredDocumentKey: '',
       requiredDocumentId: '',
@@ -12217,7 +13625,31 @@ function AttorneyTransactionDetail() {
       printSubtitle={matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
-      headline={(
+      headline={workspaceRole === 'attorney' ? (
+        <div className="space-y-3">
+          <ArchlineMatterHeader
+            backPath={workspaceBackPath}
+            backLabel={workspaceBackLabel}
+            reference={workspaceReference}
+            statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+            property={propertyAddress || matterHeadline}
+            buyer={buyerDisplayName}
+            seller={sellerDisplayName}
+            purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
+            instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')}
+            source={archlineSourceLabel}
+            tabs={archlineWorkspaceTabs}
+            activeTab={archlineActiveWorkspaceTab}
+            onTabChange={handleArchlineTabChange}
+            onMoreActions={() => openWorkspaceMenu('tasks')}
+          />
+          {onboardingActionMessage ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+              {onboardingActionMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : (
         <div className="space-y-4">
           <Link
             to={workspaceBackPath}
@@ -12226,42 +13658,42 @@ function AttorneyTransactionDetail() {
             <ChevronRight size={15} className="rotate-180" />
             {workspaceBackLabel}
           </Link>
-            {workspaceRole === 'bond_originator' ? (
-              <BondApplicationHeader
-                reference={workspaceReference}
-                buyerName={buyerDisplayName}
-                propertyLabel={matterHeadline}
-                purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, '')}
-                ageLabel={daysBetween(transaction?.created_at)}
-                consultant={transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned'}
-                owner={transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned'}
-                statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
-              />
-            ) : (
-              <MatterOverviewHeader
-                title={workspaceReference}
-                clientTitle={buyerDisplayName}
-                transactionStageLabel={transferStageLabel}
-                transaction={transaction}
-                mainStage={mainStage}
-                statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
-                statusClassName={displayedLifecycleStatusClassName}
-                propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
-                subtitle={matterSubtitle}
-                buyerName={buyerDisplayName}
-                sellerName={sellerDisplayName}
-                agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
-                assignedFirms={matterAssignedFirms}
-                metrics={matterHeaderMetrics}
-                progressIndex={matterProgressIndex}
-                matterHealthLabel={displayedMatterHealthLabel}
-                daysActiveLabel={daysBetween(transaction?.created_at)}
-                updatedLabel={displayedUpdatedLabel}
-                lifecycleProgress={displayedLifecycleProgress}
-                actionButtons={headerWorkflowActionButtons}
-                isAgentView={isAgentTransactionView}
-              />
-            )}
+          {workspaceRole === 'bond_originator' ? (
+            <BondApplicationHeader
+              reference={workspaceReference}
+              buyerName={buyerDisplayName}
+              propertyLabel={matterHeadline}
+              purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, '')}
+              ageLabel={daysBetween(transaction?.created_at)}
+              consultant={transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned'}
+              owner={transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned'}
+              statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+            />
+          ) : (
+            <MatterOverviewHeader
+              title={workspaceReference}
+              clientTitle={buyerDisplayName}
+              transactionStageLabel={transferStageLabel}
+              transaction={transaction}
+              mainStage={mainStage}
+              statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+              statusClassName={displayedLifecycleStatusClassName}
+              propertyLabel={isAgentTransactionView ? (propertyAddress || matterHeadline) : matterHeadline}
+              subtitle={matterSubtitle}
+              buyerName={buyerDisplayName}
+              sellerName={sellerDisplayName}
+              agentName={transaction?.assigned_agent || getParticipantDisplayName(assignedAgent)}
+              assignedFirms={matterAssignedFirms}
+              metrics={matterHeaderMetrics}
+              progressIndex={matterProgressIndex}
+              matterHealthLabel={displayedMatterHealthLabel}
+              daysActiveLabel={daysBetween(transaction?.created_at)}
+              updatedLabel={displayedUpdatedLabel}
+              lifecycleProgress={displayedLifecycleProgress}
+              actionButtons={headerWorkflowActionButtons}
+              isAgentView={isAgentTransactionView}
+            />
+          )}
           <MatterWorkspaceTabs
             tabs={workspaceMenuTabs}
             activeTab={activeWorkspaceMenu}
@@ -12399,7 +13831,289 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {!isAgentTransactionView && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (
+        {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
+          <ArchlineOverviewWorkspace
+            lifecycleProgress={displayedLifecycleProgress}
+            overviewNextActions={overviewNextActions}
+            roleplayerItems={archlinePartyItems}
+            requiredDocuments={requiredDocumentRows}
+            documentHealthSummary={documentHealthSummary}
+            activityFeed={overviewConversationEntries}
+            keyDates={archlineKeyDates}
+            financialRows={archlineFinancialRows}
+            onOpenWorkspace={openWorkspaceMenu}
+            onUploadDocument={() => openDocumentUploadModal()}
+            onAddNote={handleQuickAddWorkflowNote}
+            onRequestDocuments={handleQuickRequestDocuments}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer' && activeLegalWorkflowDetailKey !== 'bond-registration' ? (
+          activeLegalWorkflowDetailKey === 'bond-cancellation' ? (
+            <ArchlineWorkflowWorkspace
+              workflow={archlineCancellationWorkflow}
+              workflowKey="cancellation"
+              title="Cancellation Workflow"
+              badge={requiresCancellationWorkflow ? 'Required' : 'Not Required'}
+              summaryRows={[
+                ['Assigned', archlineCancellationWorkflow?.assignedDisplay || 'Not assigned'],
+                ['Progress', `${archlineCancellationWorkflow?.progressPercent || 0}%`],
+                ['Next', archlineCancellationWorkflow?.nextStep || 'Review workflow'],
+              ]}
+              documents={archlineDocumentsByWorkflow.cancellation}
+              blockers={archlineCancellationWorkflow?.blockers || []}
+              keyDates={archlineKeyDates}
+              activityFeed={overviewConversationEntries}
+              saving={workflowSaving}
+              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineCancellationWorkflow, step, status, note)}
+              onUploadDocument={() => openDocumentUploadModal({ category: 'cancellation' })}
+              onAddNote={handleQuickAddWorkflowNote}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+            />
+          ) : (
+            <ArchlineWorkflowWorkspace
+              workflow={archlineTransferWorkflow}
+              workflowKey="transfer"
+              title="Transfer Progress"
+              summaryRows={[
+                ['Assigned', archlineTransferWorkflow?.assignedDisplay || 'Not assigned'],
+                ['Progress', `${archlineTransferWorkflow?.progressPercent || 0}%`],
+                ['Next', archlineTransferWorkflow?.nextStep || 'Review workflow'],
+              ]}
+              documents={archlineDocumentsByWorkflow.transfer}
+              blockers={archlineTransferWorkflow?.blockers || []}
+              keyDates={archlineKeyDates}
+              activityFeed={overviewConversationEntries}
+              saving={workflowSaving}
+              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
+              onUploadDocument={() => openDocumentUploadModal({ category: 'transfer' })}
+              onAddNote={handleQuickAddWorkflowNote}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+            />
+          )
+        ) : null}
+
+        {workspaceRole === 'attorney' && (activeWorkspaceMenu === 'finance' || activeLegalWorkflowDetailKey === 'bond-registration') ? (
+          <ArchlineWorkflowWorkspace
+            workflow={archlineFinanceWorkflow}
+            workflowKey="finance"
+            title="Finance Workflow"
+            badge={financeTypeLabel}
+            summaryRows={archlineFinanceSummaryRows}
+            documents={archlineDocumentsByWorkflow.finance}
+            blockers={archlineFinanceWorkflow.blockers || []}
+            keyDates={archlineKeyDates}
+            activityFeed={overviewConversationEntries}
+            saving={Boolean(bondHybridFinanceActionLoading)}
+            onUploadDocument={() => openDocumentUploadModal({ category: 'finance' })}
+            onAddNote={handleQuickAddWorkflowNote}
+            onOpenDocuments={() => openWorkspaceMenu('documents')}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'documents' ? (
+          <section className="space-y-4">
+            <ArchlineDocumentsWorkspace
+              documentHealthSummary={documentHealthSummary}
+              requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
+              libraryRows={documentLibraryRows}
+              missingRows={documentReadiness.missingDocuments || []}
+              recentActivity={documentHealthSummary.recentActivity}
+              activeFilter={activeDocumentLibraryCategory}
+              search={documentLibrarySearch}
+              onFilterChange={setActiveDocumentLibraryCategory}
+              onSearchChange={setDocumentLibrarySearch}
+              onUpload={() => openDocumentUploadModal()}
+              onRequest={() => openConveyancingDocumentRequest()}
+              onUploadRequirement={(row) => {
+                if (row.requirement || row.requiredDocument) {
+                  openDocumentUploadModal({ requirement: row.requirement || row.requiredDocument })
+                } else if (row.rawRequest || row.source === 'document_request') {
+                  openDocumentRequestUploadModal(row)
+                } else {
+                  openDocumentUploadModal()
+                }
+              }}
+              onReplace={handleReplaceDocument}
+              onReview={openReviewAction}
+            />
+
+            <Modal
+              open={requestDocumentModalOpen}
+              onClose={documentRequestSaving ? undefined : () => setRequestDocumentModalOpen(false)}
+              title="Request Document"
+              subtitle="Ask a buyer, seller, or roleplayer for an additional document."
+              className="max-w-2xl"
+              footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setRequestDocumentModalOpen(false)} disabled={documentRequestSaving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" form="archline-transaction-document-request-form" disabled={documentRequestSaving}>
+                    <Send size={14} />
+                    {documentRequestSaving ? 'Requesting...' : 'Request Document'}
+                  </Button>
+                </div>
+              )}
+            >
+              <form id="archline-transaction-document-request-form" onSubmit={handleCreateDocumentRequest} className="grid gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Document requested</span>
+                  <Field value={documentRequestForm.title} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))} placeholder="e.g. Rates clearance certificate" autoFocus />
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Requested from</span>
+                    <Field as="select" value={documentRequestForm.requestedFrom} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value }))}>
+                      {ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                    <Field as="select" value={documentRequestForm.visibility} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, visibility: event.target.value }))}>
+                      {ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Priority</span>
+                    <Field as="select" value={documentRequestForm.priority} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                      {ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Due date</span>
+                    <Field type="date" value={documentRequestForm.dueDate} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
+                  <Field as="textarea" rows={4} value={documentRequestForm.notes} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Add context for the buyer or roleplayer..." />
+                </label>
+              </form>
+            </Modal>
+
+            <Modal open={uploadDocumentModalOpen} onClose={() => setUploadDocumentModalOpen(false)} title="Upload Document" subtitle="Add a file to the canonical transaction document system." className="max-w-2xl">
+              <form onSubmit={handleUploadDocument} className="grid gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">File</span>
+                  <Field key={`archline-upload-input-${uploadInputVersion}`} type="file" onChange={(event) => {
+                    const file = event.target.files?.[0] || null
+                    setUploadDraft((previous) => ({ ...previous, file, fileName: file?.name || '' }))
+                  }} />
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Document type</span>
+                    <Field value={uploadDraft.documentType} onChange={(event) => setUploadDraft((previous) => ({ ...previous, documentType: event.target.value }))} placeholder="e.g. rates_clearance_certificate" />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Category</span>
+                    <Field as="select" value={uploadDraft.category} onChange={(event) => setUploadDraft((previous) => ({ ...previous, category: event.target.value }))}>
+                      {ATTORNEY_DOCUMENT_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                    <Field as="select" value={uploadDraft.visibility} onChange={(event) => setUploadDraft((previous) => ({ ...previous, visibility: event.target.value }))}>
+                      {DOCUMENT_VISIBILITY_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Related workflow</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.relatedWorkflow}
+                      onChange={(event) => {
+                        const relatedWorkflow = event.target.value
+                        const attorneyLaneKey = normalizeAttorneyDocumentLaneKey(relatedWorkflow)
+                        setUploadDraft((previous) => ({
+                          ...previous,
+                          relatedWorkflow,
+                          attorneyLaneKey: attorneyLaneKey || previous.attorneyLaneKey,
+                        }))
+                      }}
+                    >
+                      {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Field>
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Satisfies required document?</span>
+                  <Field as="select" value={uploadDraft.satisfiesRequiredDocument} onChange={(event) => setUploadDraft((previous) => ({ ...previous, satisfiesRequiredDocument: event.target.value }))}>
+                    <option value="no">General upload - do not satisfy a requirement</option>
+                    <option value="yes">Yes</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
+                  <Field as="textarea" rows={3} value={uploadDraft.notes} onChange={(event) => setUploadDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Optional upload note" />
+                </label>
+                <div className="flex flex-wrap justify-end gap-3 border-t border-borderSoft pt-4">
+                  <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={saving || !uploadDraft.file}>{saving ? 'Uploading...' : 'Upload Document'}</Button>
+                </div>
+              </form>
+            </Modal>
+          </section>
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'tasks' ? (
+          <ArchlineTasksWorkspace
+            items={archlineTaskQueueItems}
+            overviewItems={overviewNextActions}
+            onOpenTask={(item) => openWorkspaceMenu(getWorkspaceMenuForTask(item))}
+            onRunTask={handleArchlineTaskCommand}
+            onOpenWorkspace={openWorkspaceMenu}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'activity' ? (
+          <ArchlineActivityWorkspace
+            entries={filteredActivityFeed}
+            groupedEntries={groupedActivityFeed}
+            filters={ACTIVITY_FILTER_OPTIONS}
+            activeFilter={activityFilter}
+            onFilterChange={setActivityFilter}
+            onOpenWorkspace={openWorkspaceMenu}
+            composer={(
+              <form onSubmit={handleAddDiscussion} className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                <h3 className="text-base font-semibold text-slate-950">Add Update</h3>
+                <div className="mt-4 grid gap-3">
+                  <DiscussionComposerControls
+                    structured={structuredDiscussionComposer}
+                    discussionType={discussionType}
+                    setDiscussionType={setDiscussionType}
+                    discussionVisibility={discussionVisibility}
+                    setDiscussionVisibility={setDiscussionVisibility}
+                    visibilityOptions={effectiveDiscussionVisibilityOptions}
+                    laneOptions={discussionLaneOptions}
+                    discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
+                    setDiscussionLaneKey={setDiscussionLaneKey}
+                    actionOptions={discussionActionOptions}
+                    discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
+                    setDiscussionActionKey={setDiscussionActionKey}
+                  />
+                  <Field as="textarea" rows={5} value={discussionBody} onChange={(event) => setDiscussionBody(event.target.value)} placeholder="Share a matter update..." />
+                  <Button type="submit" disabled={discussionSubmitDisabled} className="justify-center">
+                    <Send size={14} />
+                    {saving ? 'Posting...' : 'Post Update'}
+                  </Button>
+                </div>
+              </form>
+            )}
+          />
+        ) : null}
+
+        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'stakeholders' ? (
+          <ArchlineRolePlayersWorkspace
+            contacts={transactionContactRows}
+            teamCards={transactionTeamCards}
+            onOpenAssignments={openRoleplayerConfirmation}
+            onOpenActivity={openRoleplayerActivityFeed}
+          />
+        ) : null}
+
+        {!isAgentTransactionView && workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (
           <AttorneyMatterTodayView
             model={attorneyMatterToday}
             onOpenWorkspace={handleOverviewActionTarget}
@@ -12408,7 +14122,7 @@ function AttorneyTransactionDetail() {
           />
         ) : null}
 
-        {workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
+        {workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
           <>
             <section className="space-y-5">
               <div className="space-y-4">
@@ -12726,13 +14440,17 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'documents' ? (
+        {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
             <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Documents</h2>
-                  <p className="mt-1 text-sm leading-6 text-textMuted">Manage all documents and requirements for this transaction.</p>
+                  <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">{workspaceRole === 'bond_originator' ? 'Finance Documents' : 'Documents'}</h2>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">
+                    {workspaceRole === 'bond_originator'
+                      ? 'Request and manage only the buyer finance documents required for this bond application.'
+                      : 'Manage all documents and requirements for this transaction.'}
+                  </p>
                 </div>
                 <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
                   documentHealthSummary.submissionReady
@@ -12882,9 +14600,9 @@ function AttorneyTransactionDetail() {
                               <td className="py-3 pl-4">
                                 <div className="flex items-center justify-end gap-2">
                                   {row.fileUrl ? (
-                                    <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenFinanceDocument({ ...document, url: row.fileUrl })}>
                                       View
-                                    </a>
+                                    </Button>
                                   ) : null}
                                   {!row.fileUrl || row.status === 'missing' || row.status === 'requested' ? (
                                     <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentUploadModal({ requirement: row.requirement })}>
@@ -13344,7 +15062,15 @@ function AttorneyTransactionDetail() {
                     <Field
                       as="select"
                       value={uploadDraft.relatedWorkflow}
-                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, relatedWorkflow: event.target.value }))}
+                      onChange={(event) => {
+                        const relatedWorkflow = event.target.value
+                        const attorneyLaneKey = normalizeAttorneyDocumentLaneKey(relatedWorkflow)
+                        setUploadDraft((previous) => ({
+                          ...previous,
+                          relatedWorkflow,
+                          attorneyLaneKey: attorneyLaneKey || previous.attorneyLaneKey,
+                        }))
+                      }}
                     >
                       {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -13780,7 +15506,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'banks_quotes' ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
           <section className="space-y-7">
             <BondBankSubmissionCommandCenter
               rows={bondBankCommandRows}
@@ -13838,7 +15564,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'finance' ? (
+        {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
             {workspaceRole === 'attorney' && transaction?.id ? (
               <AttorneyMatterAccountsPanel
@@ -13851,7 +15577,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -13886,7 +15612,7 @@ function AttorneyTransactionDetail() {
                     ['Request Documents', FileText, handleQuickRequestDocuments],
                     ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
                     ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
-                    ['Assign Consultant', UsersRound, () => setWorkspaceMenu('stakeholders')],
+                    ['View Application', UsersRound, () => setWorkspaceMenu('application')],
                     ['Add Note', MessageSquarePlus, () => setWorkspaceMenu('activity')],
                   ].map(([label, Icon, action]) => (
                     <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
@@ -13900,7 +15626,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
+        {workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -14009,7 +15735,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'activity' ? (
+        {activeWorkspaceMenu === 'activity' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
             {workspaceRole === 'attorney' ? (
               <AttorneyCommunicationCentre
@@ -14253,7 +15979,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'stakeholders' ? (
+        {activeWorkspaceMenu === 'stakeholders' && workspaceRole !== 'attorney' ? (
           <section className="space-y-6">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

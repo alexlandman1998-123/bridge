@@ -1,9 +1,51 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import {
+  assertLegalDocumentPilotRelease,
+  LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+} from "../_shared/legalDocumentPilotRelease.ts";
+import { assertLegalDocumentPilotLifecycleBinding } from "../_shared/legalDocumentPilotLifecycleTrace.ts";
 
 type JsonRecord = Record<string, unknown>;
 const FINALISER_CONTRACT = "h4-v1";
+const PHASE3_SIGNATURE_EVIDENCE_CONTRACT = "phase3-visual-signature-evidence-v1";
+const PHASE3_SIGNATURE_EVIDENCE_MODE = "visual_and_audit";
+const MAX_SIGNATURE_ASSET_BYTES = 20 * 1024 * 1024;
+const MAX_SIGNATURE_IMAGE_DIMENSION = 12_000;
+
+type SignatureAssetFingerprint = {
+  fieldId: string;
+  signerRole: string;
+  fieldType: string;
+  sha256: string;
+  byteLength: number;
+  imageFormat: "png" | "jpeg";
+};
+
+type InspectedSignatureImage = {
+  imageFormat: "png" | "jpeg";
+  hasTransparency: boolean;
+};
+
+type Phase3SignatureEvidence = {
+  signatureEvidenceContract: typeof PHASE3_SIGNATURE_EVIDENCE_CONTRACT;
+  signatureEvidenceMode: typeof PHASE3_SIGNATURE_EVIDENCE_MODE;
+  embeddedSignatureCount: number;
+  signatureAssetEvidenceSha256: string;
+  signatureAssetFingerprints: SignatureAssetFingerprint[];
+};
+
+class SignatureAssetEmbedError extends Error {
+  readonly errorCode = "SIGNATURE_ASSET_EMBED_FAILED";
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super("A required signature asset could not be embedded in the final PDF.");
+    this.name = "SignatureAssetEmbedError";
+    this.reason = reason;
+  }
+}
 
 type GenerateFinalSignedPayload = {
   packetId?: string;
@@ -37,6 +79,130 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * This is the only final-artifact shape allowed to leave the finaliser.
+ * Storage coordinates and signed URLs stay server-side: browser callers must
+ * ask the resolver to authorize and mint a short-lived download URL.
+ */
+function buildFinalArtifactAccessDescriptor({
+  packetId,
+  packetVersionId,
+  documentId,
+  fileName,
+  sha256,
+  byteLength,
+  finalisedAt,
+}: {
+  packetId: unknown;
+  packetVersionId: unknown;
+  documentId: unknown;
+  fileName: unknown;
+  sha256: unknown;
+  byteLength: unknown;
+  finalisedAt: unknown;
+}) {
+  return {
+    kind: "final_signed_document",
+    resolver: "resolve-final-signed-document-access",
+    ready: true,
+    packetId: normalizeText(packetId) || null,
+    packetVersionId: normalizeText(packetVersionId) || null,
+    documentId: normalizeText(documentId) || null,
+    fileName: normalizeText(fileName) || "signed-document.pdf",
+    sha256: normalizeText(sha256) || null,
+    byteLength: Number.isFinite(Number(byteLength)) && Number(byteLength) > 0 ? Number(byteLength) : null,
+    finalisedAt: normalizeText(finalisedAt) || null,
+  };
+}
+
+function buildFinalisationVersionDescriptor({
+  packetId,
+  version,
+  documentId,
+  fileName,
+  sha256,
+  byteLength,
+  finalisedAt,
+}: {
+  packetId: string;
+  version: Record<string, unknown> | null;
+  documentId: string;
+  fileName: string;
+  sha256: string;
+  byteLength: number;
+  finalisedAt: string | null;
+}) {
+  return {
+    id: normalizeText(version?.id) || null,
+    packetId: normalizeText(packetId) || null,
+    number: Number(version?.version_number) || null,
+    finalisedAt: normalizeText(finalisedAt || version?.finalised_at) || null,
+    finalArtifact: buildFinalArtifactAccessDescriptor({
+      packetId,
+      packetVersionId: version?.id,
+      documentId,
+      fileName,
+      sha256,
+      byteLength,
+      finalisedAt: finalisedAt || version?.finalised_at,
+    }),
+  };
+}
+
+function buildFinalDeliverySummary(value: unknown) {
+  const delivery = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const allDelivered = delivery.allDelivered === true;
+  const completed = delivery.success === true && allDelivered;
+  return {
+    status: completed ? "delivered" : "pending",
+    allDelivered,
+    portalSurface: normalizeText(delivery.portalSurface) || null,
+    recipientCount: Number.isFinite(Number(delivery.recipientCount)) ? Number(delivery.recipientCount) : null,
+    sentCount: Number.isFinite(Number(delivery.sentCount)) ? Number(delivery.sentCount) : null,
+    errorCode: normalizeText(delivery.errorCode) || null,
+  };
+}
+
+/**
+ * Do not log signer names, emails, storage paths, or provider data from this
+ * finaliser. Packet/version IDs and aggregate evidence are sufficient to
+ * correlate a failure with its durable audit record.
+ */
+function logFinalisation(
+  level: "info" | "error",
+  event: string,
+  details: {
+    requestId: string;
+    packetId?: string | null;
+    packetVersionId?: string | null;
+    packetType?: string | null;
+    durationMs?: number;
+    errorCode?: string | null;
+    evidenceMode?: string | null;
+    embeddedSignatureCount?: number;
+    outputBytes?: number | null;
+  },
+) {
+  const payload = JSON.stringify({
+    level,
+    event,
+    function: "generate-final-signed-document",
+    requestId: normalizeText(details.requestId),
+    packetId: normalizeText(details.packetId),
+    packetVersionId: normalizeText(details.packetVersionId),
+    packetType: normalizeText(details.packetType),
+    durationMs: Number.isFinite(Number(details.durationMs)) ? Number(details.durationMs) : null,
+    errorCode: normalizeText(details.errorCode) || null,
+    evidenceMode: normalizeText(details.evidenceMode) || null,
+    embeddedSignatureCount: Number.isFinite(Number(details.embeddedSignatureCount)) ? Number(details.embeddedSignatureCount) : null,
+    outputBytes: Number.isFinite(Number(details.outputBytes)) ? Number(details.outputBytes) : null,
+  });
+  if (level === "error") console.error(payload);
+  else console.log(payload);
+}
+
 async function authorizeFinalisation(req: Request, serviceClient: any, serviceKey: string, packet: JsonRecord) {
   const bearer = normalizeText(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
   if (bearer === serviceKey) return { service: true, userId: null };
@@ -66,9 +232,186 @@ async function dispatchFinalDelivery({ url, serviceKey, packetId, packetVersionI
       body: JSON.stringify({ packetId, packetVersionId }),
     });
     return await result.json().catch(() => ({ success: false, errorCode: `HTTP_${result.status}` }));
-  } catch (error) {
-    return { success: false, errorCode: "FINAL_DELIVERY_REQUEST_FAILED", error: String(error) };
+  } catch (_error) {
+    return { success: false, errorCode: "FINAL_DELIVERY_REQUEST_FAILED" };
   }
+}
+
+/**
+ * F2 is the authority for a final signed document. The supporting Documents
+ * row is deliberately created as an internal provisional record before F2,
+ * then promoted only after this check succeeds. This lookup lets a timeout
+ * reuse an already-committed F2 result. An absent row is deliberately still
+ * ambiguous: asynchronous database work may not be visible yet, so callers
+ * must retain the private provisional artifact rather than clean it up.
+ */
+async function readCommittedFinalArtifact({
+  supabase,
+  packetId,
+  packetVersionId,
+  bucket,
+  path,
+  sha256,
+  byteLength,
+}: {
+  supabase: any;
+  packetId: string;
+  packetVersionId: string;
+  bucket: string;
+  path: string;
+  sha256: string;
+  byteLength: number;
+}) {
+  const [versionResult, evidenceResult] = await Promise.all([
+    supabase
+      .from("document_packet_versions")
+      .select("id, final_signed_file_path, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at")
+      .eq("id", packetVersionId)
+      .eq("packet_id", packetId)
+      .maybeSingle(),
+    supabase
+      .from("legal_final_artifact_evidence")
+      .select("packet_id, packet_version_id, bucket, path, sha256, byte_length")
+      .eq("packet_id", packetId)
+      .eq("packet_version_id", packetVersionId)
+      .maybeSingle(),
+  ]);
+  if (versionResult.error || evidenceResult.error) return { committed: false, version: null };
+  const version = versionResult.data as Record<string, unknown> | null;
+  const evidence = evidenceResult.data as Record<string, unknown> | null;
+  const committed = Boolean(
+    version &&
+    evidence &&
+    normalizeText(version.final_signed_file_path) === path &&
+    normalizeText(version.final_signed_file_bucket) === bucket &&
+    normalizeText(evidence.packet_id) === packetId &&
+    normalizeText(evidence.packet_version_id) === packetVersionId &&
+    normalizeText(evidence.path) === path &&
+    normalizeText(evidence.bucket) === bucket &&
+    lower(evidence.sha256) === lower(sha256) &&
+    Number(evidence.byte_length) === byteLength,
+  );
+  return { committed, version: committed ? version : null };
+}
+
+async function publishFinalSignedDocument({
+  supabase,
+  documentId,
+  path,
+}: {
+  supabase: any;
+  documentId: string;
+  path: string;
+}) {
+  if (!documentId || !path) return false;
+  const result = await supabase
+    .from("documents")
+    .update({
+      visibility_scope: "shared",
+      is_client_visible: true,
+      stage_key: "final_signed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", documentId)
+    .eq("file_path", path)
+    .select("id")
+    .maybeSingle();
+  return !result.error && normalizeText(result.data?.id) === documentId;
+}
+
+async function createInternalFinalSignedDocument({
+  supabase,
+  transactionId,
+  fileName,
+  bucket,
+  path,
+  finalisedBy,
+  createdAt,
+}: {
+  supabase: any;
+  transactionId: string;
+  fileName: string;
+  bucket: string;
+  path: string;
+  finalisedBy: string | null;
+  createdAt: string;
+}) {
+  const result = await supabase
+    .from("documents")
+    .insert({
+      transaction_id: transactionId || null,
+      name: fileName,
+      file_path: path,
+      file_bucket: bucket,
+      category: "signed_documents",
+      document_type: "final_signed_packet",
+      visibility_scope: "internal",
+      is_client_visible: false,
+      uploaded_by_role: "system",
+      uploaded_by_user_id: finalisedBy,
+      stage_key: "final_signed_pending",
+      created_at: createdAt,
+      updated_at: createdAt,
+    })
+    .select("id")
+    .maybeSingle();
+  return result.error ? "" : normalizeText(result.data?.id);
+}
+
+async function linkFinalSignedDocumentToVersion({
+  supabase,
+  packetId,
+  packetVersionId,
+  documentId,
+}: {
+  supabase: any;
+  packetId: string;
+  packetVersionId: string;
+  documentId: string;
+}) {
+  const update = await supabase
+    .from("document_packet_versions")
+    .update({ final_signed_document_id: documentId })
+    .eq("id", packetVersionId)
+    .eq("packet_id", packetId)
+    .is("final_signed_document_id", null)
+    .select("final_signed_document_id")
+    .maybeSingle();
+  if (!update.error && normalizeText(update.data?.final_signed_document_id)) {
+    return normalizeText(update.data.final_signed_document_id);
+  }
+  const current = await supabase
+    .from("document_packet_versions")
+    .select("final_signed_document_id")
+    .eq("id", packetVersionId)
+    .eq("packet_id", packetId)
+    .maybeSingle();
+  return current.error ? "" : normalizeText(current.data?.final_signed_document_id);
+}
+
+async function cleanupUncommittedFinalisation({
+  supabase,
+  bucket,
+  path,
+  documentId,
+}: {
+  supabase: any;
+  bucket: string;
+  path: string;
+  documentId: string;
+}) {
+  const [documentResult, storageResult] = await Promise.all([
+    documentId
+      ? supabase.from("documents").delete().eq("id", documentId)
+      : Promise.resolve({ error: null }),
+    bucket && path
+      ? supabase.storage.from(bucket).remove([path])
+      : Promise.resolve({ error: null }),
+  ]);
+  return {
+    documentCleaned: !documentResult?.error,
+    storageCleaned: !storageResult?.error,
+  };
 }
 
 function parseBucketCandidates(...values: (string | undefined)[]) {
@@ -368,6 +711,281 @@ async function readImageBytes({
   return null;
 }
 
+function readUint32BigEndian(bytes: Uint8Array, offset: number) {
+  if (offset < 0 || offset + 4 > bytes.length) {
+    throw new SignatureAssetEmbedError("SIGNATURE_IMAGE_HEADER_TRUNCATED");
+  }
+  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, false);
+}
+
+function pngChunkType(bytes: Uint8Array, offset: number) {
+  if (offset < 0 || offset + 4 > bytes.length) {
+    throw new SignatureAssetEmbedError("SIGNATURE_PNG_CHUNK_TRUNCATED");
+  }
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+function inspectPngSignatureImage(bytes: Uint8Array): InspectedSignatureImage {
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 33 || !signature.every((value, index) => bytes[index] === value)) {
+    throw new SignatureAssetEmbedError("SIGNATURE_PNG_INVALID");
+  }
+
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = -1;
+  let sawHeader = false;
+  let sawEnd = false;
+  let hasTransparency = false;
+
+  while (offset + 12 <= bytes.length) {
+    const chunkLength = readUint32BigEndian(bytes, offset);
+    const chunkType = pngChunkType(bytes, offset + 4);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + chunkLength;
+    if (dataEnd + 4 > bytes.length) {
+      throw new SignatureAssetEmbedError("SIGNATURE_PNG_CHUNK_TRUNCATED");
+    }
+
+    if (!sawHeader) {
+      if (chunkType !== "IHDR" || chunkLength !== 13) {
+        throw new SignatureAssetEmbedError("SIGNATURE_PNG_HEADER_INVALID");
+      }
+      width = readUint32BigEndian(bytes, dataStart);
+      height = readUint32BigEndian(bytes, dataStart + 4);
+      bitDepth = bytes[dataStart + 8];
+      colorType = bytes[dataStart + 9];
+      const compression = bytes[dataStart + 10];
+      const filter = bytes[dataStart + 11];
+      const interlace = bytes[dataStart + 12];
+      const allowedDepths = new Map<number, number[]>([
+        [0, [1, 2, 4, 8, 16]],
+        [2, [8, 16]],
+        [3, [1, 2, 4, 8]],
+        [4, [8, 16]],
+        [6, [8, 16]],
+      ]);
+      if (
+        !width ||
+        !height ||
+        width > MAX_SIGNATURE_IMAGE_DIMENSION ||
+        height > MAX_SIGNATURE_IMAGE_DIMENSION ||
+        !allowedDepths.get(colorType)?.includes(bitDepth) ||
+        compression !== 0 ||
+        filter !== 0 ||
+        ![0, 1].includes(interlace)
+      ) {
+        throw new SignatureAssetEmbedError("SIGNATURE_PNG_UNSUPPORTED");
+      }
+      hasTransparency = colorType === 4 || colorType === 6;
+      sawHeader = true;
+    } else if (chunkType === "tRNS") {
+      // Indexed, grayscale, and RGB PNGs can carry alpha through tRNS too.
+      hasTransparency = true;
+    } else if (chunkType === "IEND") {
+      sawEnd = true;
+      break;
+    }
+
+    offset = dataEnd + 4;
+  }
+
+  if (!sawHeader || !sawEnd) {
+    throw new SignatureAssetEmbedError("SIGNATURE_PNG_INCOMPLETE");
+  }
+
+  return { imageFormat: "png", hasTransparency };
+}
+
+function inspectJpegSignatureImage(bytes: Uint8Array): InspectedSignatureImage {
+  if (bytes.length < 10 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    throw new SignatureAssetEmbedError("SIGNATURE_JPEG_INVALID");
+  }
+
+  const startOfFrameMarkers = new Set([
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+    0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+  ]);
+  let offset = 2;
+  while (offset < bytes.length) {
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+    if (offset >= bytes.length) break;
+    const marker = bytes[offset++];
+    if (marker === 0x00) continue;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.length) {
+      throw new SignatureAssetEmbedError("SIGNATURE_JPEG_SEGMENT_TRUNCATED");
+    }
+    const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) {
+      throw new SignatureAssetEmbedError("SIGNATURE_JPEG_SEGMENT_INVALID");
+    }
+    if (startOfFrameMarkers.has(marker)) {
+      if (segmentLength < 8) {
+        throw new SignatureAssetEmbedError("SIGNATURE_JPEG_FRAME_INVALID");
+      }
+      const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+      const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      const components = bytes[offset + 7];
+      if (!width || !height || width > MAX_SIGNATURE_IMAGE_DIMENSION || height > MAX_SIGNATURE_IMAGE_DIMENSION || !components) {
+        throw new SignatureAssetEmbedError("SIGNATURE_JPEG_UNSUPPORTED");
+      }
+      return { imageFormat: "jpeg", hasTransparency: false };
+    }
+    offset += segmentLength;
+  }
+
+  throw new SignatureAssetEmbedError("SIGNATURE_JPEG_FRAME_MISSING");
+}
+
+function inspectSignatureImage(bytes: Uint8Array): InspectedSignatureImage {
+  if (!bytes.length || bytes.length > MAX_SIGNATURE_ASSET_BYTES) {
+    throw new SignatureAssetEmbedError("SIGNATURE_ASSET_SIZE_INVALID");
+  }
+  if (bytes[0] === 0x89) return inspectPngSignatureImage(bytes);
+  if (bytes[0] === 0xff) return inspectJpegSignatureImage(bytes);
+  throw new SignatureAssetEmbedError("SIGNATURE_IMAGE_FORMAT_UNSUPPORTED");
+}
+
+function canonicalSignatureAssetFingerprints(value: unknown): SignatureAssetFingerprint[] | null {
+  if (!Array.isArray(value)) return null;
+  const fingerprints = value.map((entry) => {
+    const row = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as JsonRecord : {};
+    const fieldId = normalizeText(row.fieldId);
+    const signerRole = lower(row.signerRole);
+    const fieldType = lower(row.fieldType);
+    const sha256 = lower(row.sha256);
+    const byteLength = Number(row.byteLength);
+    const imageFormat = lower(row.imageFormat);
+    if (
+      !fieldId ||
+      !signerRole ||
+      !["signature", "initial"].includes(fieldType) ||
+      !/^[0-9a-f]{64}$/.test(sha256) ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 1 ||
+      byteLength > MAX_SIGNATURE_ASSET_BYTES ||
+      !["png", "jpeg"].includes(imageFormat)
+    ) {
+      return null;
+    }
+    return {
+      fieldId,
+      signerRole,
+      fieldType,
+      sha256,
+      byteLength,
+      imageFormat: imageFormat as "png" | "jpeg",
+    };
+  });
+  if (fingerprints.some((entry) => !entry)) return null;
+  const canonical = (fingerprints as SignatureAssetFingerprint[]).sort((left, right) => (
+    left.fieldId.localeCompare(right.fieldId) ||
+    left.signerRole.localeCompare(right.signerRole) ||
+    left.fieldType.localeCompare(right.fieldType) ||
+    left.sha256.localeCompare(right.sha256)
+  ));
+  if (new Set(canonical.map((entry) => entry.fieldId)).size !== canonical.length) return null;
+  return canonical;
+}
+
+async function signatureAssetEvidenceSha256(fingerprints: SignatureAssetFingerprint[]) {
+  return sha256Hex(JSON.stringify(canonicalSignatureAssetFingerprints(fingerprints) || []));
+}
+
+async function readPhase3SignatureEvidence(
+  payload: unknown,
+  expectedFinalArtifactSha256: string,
+  expectedFinalArtifactByteLength: number,
+): Promise<Phase3SignatureEvidence | null> {
+  const record = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as JsonRecord : {};
+  const fingerprints = canonicalSignatureAssetFingerprints(record.signatureAssetFingerprints);
+  const embeddedSignatureCount = Number(record.embeddedSignatureCount);
+  const evidenceSha256 = lower(record.signatureAssetEvidenceSha256);
+  if (
+    normalizeText(record.signatureEvidenceContract) !== PHASE3_SIGNATURE_EVIDENCE_CONTRACT ||
+    normalizeText(record.signatureEvidenceMode) !== PHASE3_SIGNATURE_EVIDENCE_MODE ||
+    !fingerprints ||
+    !Number.isSafeInteger(embeddedSignatureCount) ||
+    embeddedSignatureCount < 1 ||
+    fingerprints.length !== embeddedSignatureCount ||
+    !/^[0-9a-f]{64}$/.test(evidenceSha256) ||
+    lower(record.finalArtifactSha256) !== lower(expectedFinalArtifactSha256) ||
+    Number(record.finalArtifactByteLength) !== expectedFinalArtifactByteLength
+  ) {
+    return null;
+  }
+  if (await signatureAssetEvidenceSha256(fingerprints) !== evidenceSha256) return null;
+  return {
+    signatureEvidenceContract: PHASE3_SIGNATURE_EVIDENCE_CONTRACT,
+    signatureEvidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+    embeddedSignatureCount,
+    signatureAssetEvidenceSha256: evidenceSha256,
+    signatureAssetFingerprints: fingerprints,
+  };
+}
+
+function phase3SignatureEvidenceMatches(
+  left: Phase3SignatureEvidence,
+  right: Phase3SignatureEvidence,
+) {
+  return (
+    left.signatureEvidenceContract === right.signatureEvidenceContract &&
+    left.signatureEvidenceMode === right.signatureEvidenceMode &&
+    left.embeddedSignatureCount === right.embeddedSignatureCount &&
+    left.signatureAssetEvidenceSha256 === right.signatureAssetEvidenceSha256 &&
+    JSON.stringify(left.signatureAssetFingerprints) === JSON.stringify(right.signatureAssetFingerprints)
+  );
+}
+
+function drawVisibleSignatureFingerprint({
+  page,
+  font,
+  x,
+  y,
+  height,
+  sha256,
+  reserveForSignedDate = false,
+}: {
+  page: any;
+  font: any;
+  x: number;
+  y: number;
+  height: number;
+  sha256: string;
+  reserveForSignedDate?: boolean;
+}) {
+  const pageWidth = page.getWidth();
+  const pageHeight = page.getHeight();
+  const labelWidth = 184;
+  const labelX = Math.max(4, Math.min(x, pageWidth - labelWidth));
+  const belowY = y - (reserveForSignedDate ? 24 : 11);
+  const above = belowY < 9;
+  const firstLineY = above
+    ? Math.min(pageHeight - 12, y + height + 8)
+    : belowY;
+  const secondLineY = above
+    ? Math.min(pageHeight - 6, firstLineY + 5.5)
+    : Math.max(3, firstLineY - 5.5);
+  const safeSha256 = lower(sha256);
+  page.drawText(`SHA-256: ${safeSha256.slice(0, 32)}`, {
+    x: labelX,
+    y: firstLineY,
+    size: 4.8,
+    font,
+    color: rgb(0.22, 0.27, 0.34),
+  });
+  page.drawText(safeSha256.slice(32), {
+    x: labelX,
+    y: secondLineY,
+    size: 4.8,
+    font,
+    color: rgb(0.22, 0.27, 0.34),
+  });
+}
+
 function buildSignedFileName(packetType: string, versionNumber: number) {
   const safeType = normalizeText(packetType) || "packet";
   return `${safeType}-v${versionNumber}-final-signed.pdf`;
@@ -379,116 +997,6 @@ async function buildOverlayPdf({
   sourcePdfBytes: Uint8Array;
 }) {
   return PDFDocument.load(sourcePdfBytes);
-}
-
-async function buildOtpStructuredFinalPdfBytes({
-  packet,
-  version,
-}: {
-  packet: Record<string, unknown>;
-  version: Record<string, unknown>;
-}) {
-  const pdf = await PDFDocument.create();
-  const regular = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const placeholders = version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
-    ? version.placeholders_resolved_json as Record<string, unknown>
-    : {};
-  const navy = rgb(0.06, 0.13, 0.22);
-  const accent = rgb(0.11, 0.35, 0.47);
-  const muted = rgb(0.36, 0.41, 0.47);
-
-  const groups = [
-    {
-      title: "Offer to Purchase",
-      fields: [
-        ["Property", "property_address"], ["Agency", "organisation_name"], ["Agent", "agent_full_name"],
-        ["Purchaser", "buyer_full_name"], ["Purchaser identity / registration", "buyer_id_number"], ["Purchaser email", "buyer_email"],
-        ["Seller", "seller_full_name"], ["Seller identity / registration", "seller_id_number"], ["Seller email", "seller_email"],
-      ],
-      terms: ["This Offer to Purchase becomes a deed of sale when accepted by the Seller in writing. The schedules, standard terms, special conditions and annexures form one agreement."],
-    },
-    {
-      title: "Property and Purchase Price",
-      fields: [
-        ["Property address", "property_address"], ["Suburb", "property_suburb"], ["City", "property_city"],
-        ["Property type", "property_type"], ["Unit / section", "property_unit_number"], ["Scheme / complex", "property_complex_name"],
-        ["Purchase price", "purchase_price"], ["Deposit", "deposit_amount"],
-      ],
-      terms: ["The Purchase Price is payable in accordance with the accepted offer, guarantees, bond approval, cash undertakings and conveyancer requirements."],
-    },
-    {
-      title: "Finance, Occupation and Transfer",
-      fields: [
-        ["Finance type", "finance_type"], ["Bond amount", "bond_amount"], ["Cash contribution", "cash_amount"],
-        ["Occupation date", "occupation_date"], ["Expected transfer date", "transfer_date"],
-      ],
-      terms: [
-        firstPdfText(placeholders.suspensive_conditions, "The finance terms and any suspensive conditions recorded in the accepted offer apply."),
-        "Risk, benefits and obligations transfer according to the final agreement terms and applicable conveyancing requirements.",
-      ],
-    },
-    {
-      title: "Authority and Commission",
-      fields: [
-        ["Seller representative", "seller_representative_name"], ["Representative capacity", "seller_representative_capacity"],
-        ["Resolution date", "seller_resolution_date"], ["Authority basis", "seller_authority_basis"],
-        ["Gross commission percentage", "gross_commission_percentage"], ["Gross commission amount", "gross_commission_amount"],
-        ["Agency commission amount", "agency_commission_amount"], ["Agent commission amount", "agent_commission_amount"],
-      ],
-      terms: ["Each party warrants that they have the necessary capacity and authority to sign this agreement. Commission is earned and payable according to the accepted offer, mandate and applicable agency agreement."],
-    },
-    {
-      title: "Special and General Terms",
-      fields: [["Special conditions", "special_conditions"], ["Annexures", "annexures_list"]],
-      terms: [
-        "The Property is sold together with fixtures and fittings of a permanent nature unless expressly excluded in Special Conditions or an annexure.",
-        "The parties choose their recorded addresses for notices. No amendment or cancellation is valid unless reduced to writing and signed or accepted by the parties as required.",
-        "The parties consent to processing of personal information required for conveyancing, finance, verification, communication and transaction administration.",
-      ],
-    },
-    {
-      title: "Signatures",
-      fields: [["Purchaser", "buyer_full_name"], ["Seller", "seller_full_name"], ["Agency", "organisation_name"], ["Agent", "agent_full_name"]],
-      terms: ["The parties confirm that they have read, understood and accepted this agreement and its annexures."],
-    },
-  ];
-
-  for (const [pageIndex, group] of groups.entries()) {
-    const page = pdf.addPage([612, 792]);
-    const pageWidth = page.getWidth();
-    page.drawText("OFFER TO PURCHASE | FINAL SIGNED COPY", { x: 306, y: 754, size: 8, font: bold, color: muted });
-    page.drawText(group.title.toUpperCase(), { x: 54, y: 700, size: pageIndex === 0 ? 24 : 18, font: bold, color: pageIndex === 0 ? navy : accent });
-    let y = pageIndex === 0 ? 650 : 660;
-    for (const [label, key] of group.fields) {
-      const value = pdfSafeText(getPlaceholderValue(placeholders, key)) || "Not provided";
-      page.drawText(`${label}:`, { x: 54, y, size: 10, font: bold, color: navy });
-      const lines = wrapPdfText(value, pageWidth - 220, regular, 10);
-      for (const [lineIndex, line] of lines.slice(0, 3).entries()) {
-        page.drawText(line, { x: 190, y: y - lineIndex * 13, size: 10, font: regular, color: navy });
-      }
-      y -= Math.max(24, lines.slice(0, 3).length * 13 + 8);
-    }
-    for (const term of group.terms) {
-      y -= 8;
-      const lines = wrapPdfText(term, pageWidth - 108, regular, 9.5);
-      for (const line of lines) {
-        if (y < 90) break;
-        page.drawText(line, { x: 54, y, size: 9.5, font: regular, color: navy });
-        y -= 13;
-      }
-      y -= 6;
-    }
-    page.drawText(`Document ${pdfSafeText(placeholders.document_reference) || normalizeText(packet.id)} | Page ${pageIndex + 1} of ${groups.length}`, {
-      x: 54,
-      y: 32,
-      size: 8,
-      font: regular,
-      color: muted,
-    });
-  }
-
-  return pdf.save();
 }
 
 function getPlaceholderValue(placeholders: Record<string, unknown>, key: unknown) {
@@ -2058,6 +2566,37 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(405, { success: false, error: "Method not allowed." });
   }
 
+  const finalisationStartedAt = Date.now();
+  const finalisationRequestId = crypto.randomUUID();
+  let observedPacketId = "";
+  let observedPacketVersionId = "";
+  let observedPacketType = "";
+  let observedEmbeddedSignatureCount = 0;
+  let observedEvidenceMode = "";
+  let observedOutputBytes: number | null = null;
+  let finalisationSupabase: any = null;
+  let provisionalFinalBucket = "";
+  let provisionalFinalPath = "";
+  let provisionalFinalDocumentId = "";
+  let provisionalFinalSha256 = "";
+  let provisionalFinalByteLength = 0;
+  let f2FinalArtifactAttempted = false;
+  let f2FinalArtifactRecorded = false;
+  const finalisationFailureResponse = (statusCode: number, body: JsonRecord) => {
+    logFinalisation("error", "final_signed_finalisation_failed", {
+      requestId: finalisationRequestId,
+      packetId: observedPacketId || null,
+      packetVersionId: observedPacketVersionId || null,
+      packetType: observedPacketType || null,
+      durationMs: Date.now() - finalisationStartedAt,
+      errorCode: normalizeText(body.errorCode) || "FINAL_SIGNED_GENERATION_FAILED",
+      evidenceMode: observedEvidenceMode || null,
+      embeddedSignatureCount: observedEmbeddedSignatureCount,
+      outputBytes: observedOutputBytes,
+    });
+    return jsonResponse(statusCode, body);
+  };
+
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -2070,6 +2609,7 @@ Deno.serve(async (req: Request) => {
 
     const payload = (await req.json()) as GenerateFinalSignedPayload;
     const packetId = normalizeText(payload.packetId || payload.packet_id);
+    observedPacketId = packetId;
     if (!packetId) {
       return jsonResponse(400, {
         success: false,
@@ -2079,6 +2619,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedVersionId = normalizeText(payload.packetVersionId || payload.packet_version_id);
+    observedPacketVersionId = requestedVersionId;
     if (!requestedVersionId) {
       return jsonResponse(400, {
         success: false,
@@ -2090,7 +2631,15 @@ Deno.serve(async (req: Request) => {
     const explicitOutputBucket = normalizeText(payload.outputBucket || payload.output_bucket);
     const forceRegenerate = Boolean(payload.forceRegenerate || payload.force_regenerate || payload.replaceExisting || payload.replace_existing);
 
+    logFinalisation("info", "final_signed_finalisation_started", {
+      requestId: finalisationRequestId,
+      packetId,
+      packetVersionId: requestedVersionId,
+      evidenceMode: "pending",
+    });
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    finalisationSupabase = supabase;
 
     const packetResult = await supabase
       .from("document_packets")
@@ -2100,26 +2649,20 @@ Deno.serve(async (req: Request) => {
     if (packetResult.error) throw packetResult.error;
     const packet = packetResult.data as Record<string, unknown> | null;
     if (!packet) {
-      return jsonResponse(404, {
+      return finalisationFailureResponse(404, {
         success: false,
         error: "Packet not found.",
         errorCode: "PACKET_NOT_FOUND",
       });
     }
+    observedPacketType = lower(packet.packet_type);
     const authority = await authorizeFinalisation(req, supabase, SUPABASE_SERVICE_ROLE_KEY, packet);
-    if (!authority) return jsonResponse(403, { success: false, error: "You are not allowed to finalise this mandate.", errorCode: "FINALISATION_FORBIDDEN" });
+    if (!authority) return finalisationFailureResponse(403, { success: false, error: "You are not allowed to finalise this mandate.", errorCode: "FINALISATION_FORBIDDEN" });
     if (!authority.service) finalisedBy = authority.userId;
-    const packetSourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
-      ? packet.source_context_json as Record<string, unknown>
-      : {};
-    const fallbackBranding = await fetchOrganisationBranding(supabase, String(packet.organisation_id || ""));
-    mergeBrandingPayload(fallbackBranding, packetSourceContext.brandingSnapshot || packetSourceContext.branding_snapshot_json || packetSourceContext.branding);
-    mergeBrandingPayload(fallbackBranding, packet.branding_snapshot_json);
-
     const versionQuery = supabase
       .from("document_packet_versions")
       .select(
-        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at, placeholders_resolved_json, section_manifest_json, validation_summary_json",
+        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_bucket, rendered_file_path, rendered_file_name, rendered_file_url, rendered_media_type, rendered_byte_length, rendered_sha256, render_input_verified, transaction_pdf_persisted, native_pdf_verified, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_document_id, final_signed_file_name, finalised_at, placeholders_resolved_json, section_manifest_json, validation_summary_json",
       )
       .eq("id", requestedVersionId)
       .eq("packet_id", packetId)
@@ -2129,7 +2672,7 @@ Deno.serve(async (req: Request) => {
     if (versionResult.error) throw versionResult.error;
     const version = versionResult.data as Record<string, unknown> | null;
     if (!version) {
-      return jsonResponse(400, {
+      return finalisationFailureResponse(400, {
         success: false,
         error: "No generated packet version found.",
         errorCode: "NO_GENERATED_VERSION",
@@ -2142,7 +2685,7 @@ Deno.serve(async (req: Request) => {
       lower(version.render_status) === "generated" &&
       ["sent", "partially_signed", "completed"].includes(lower(packet.status));
     if (!finalVersionBindingValid) {
-      return jsonResponse(409, {
+      return finalisationFailureResponse(409, {
         success: false,
         error: "Finalisation is not bound to the exact current generated document version.",
         errorCode: "FINAL_VERSION_BINDING_INVALID",
@@ -2150,9 +2693,108 @@ Deno.serve(async (req: Request) => {
     }
 
     const renderedFilePath = normalizeText(version.rendered_file_path);
+    const renderedDocumentId = normalizeText(version.rendered_document_id);
+    const renderedFileBucket = normalizeText(version.rendered_file_bucket);
+    const renderedMediaType = lower(version.rendered_media_type);
+    const renderedByteLength = Number(version.rendered_byte_length);
+    const renderedSha256 = lower(version.rendered_sha256);
+    const sourcePdfCertified =
+      Boolean(version.render_input_verified) &&
+      Boolean(version.transaction_pdf_persisted) &&
+      Boolean(version.native_pdf_verified) &&
+      renderedMediaType === "application/pdf" &&
+      /^sha256:[0-9a-f]{64}$/.test(renderedSha256) &&
+      Number.isFinite(renderedByteLength) &&
+      renderedByteLength > 0;
+    if (!renderedDocumentId || !renderedFileBucket || !renderedFilePath || !isPdfPath(renderedFilePath) || !sourcePdfCertified) {
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "Finalisation requires the exact certified, persisted source PDF for this packet version.",
+        errorCode: "FINAL_SOURCE_PDF_REQUIRED",
+      });
+    }
+
+    const sourceDocumentResult = await supabase
+      .from("documents")
+      .select("id, legal_packet_id, legal_packet_version_id, generated_artifact_bucket, generated_artifact_sha256, file_path")
+      .eq("id", renderedDocumentId)
+      .maybeSingle();
+    if (sourceDocumentResult.error) throw sourceDocumentResult.error;
+    const sourceDocument = sourceDocumentResult.data as Record<string, unknown> | null;
+    if (
+      !sourceDocument ||
+      normalizeText(sourceDocument.legal_packet_id) !== packetId ||
+      normalizeText(sourceDocument.legal_packet_version_id) !== normalizeText(version.id) ||
+      normalizeText(sourceDocument.generated_artifact_bucket) !== renderedFileBucket ||
+      normalizeText(sourceDocument.file_path) !== renderedFilePath ||
+      lower(sourceDocument.generated_artifact_sha256) !== renderedSha256
+    ) {
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "The certified source PDF document link is missing or has changed.",
+        errorCode: "FINAL_SOURCE_PDF_LINK_INVALID",
+      });
+    }
+
+    // Finalisation creates the F2 artifact and can promote it to shared
+    // documents, transaction/portal surfaces, and mandate-listing state. Do
+    // not permit any of those writes merely because an older generated
+    // artifact has a binding: its immutable binding must name the exact plan
+    // currently active in the server release guard. Historical completed
+    // artifacts remain available only through the signer-bound resolver,
+    // which is intentionally read-only under a later release hold.
+    try {
+      const activeRelease = assertLegalDocumentPilotRelease({
+        organisationId: packet.organisation_id,
+        operation: "final_delivery",
+      });
+      await assertLegalDocumentPilotLifecycleBinding({
+        supabase,
+        packetId,
+        packetVersionId: normalizeText(version.id),
+        activeRelease,
+      });
+    } catch (error) {
+      const typed = error as { code?: unknown; status?: unknown; message?: unknown };
+      const status = Number(typed.status);
+      return finalisationFailureResponse(Number.isFinite(status) ? status : 403, {
+        success: false,
+        error: normalizeText(typed.message) || "Legal-document finalisation is not enabled for this packet organisation.",
+        errorCode: normalizeText(typed.code) || "LEGAL_DOCUMENT_PILOT_RELEASE_BLOCKED",
+        pilotReleaseContract: LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+      });
+    }
+
+    const sourceDownload = await supabase.storage.from(renderedFileBucket).download(renderedFilePath);
+    if (sourceDownload.error || !sourceDownload.data) {
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "The exact source PDF cannot be read from controlled storage.",
+        errorCode: "FINAL_SOURCE_PDF_UNREADABLE",
+      });
+    }
+    const sourcePdfBytes = new Uint8Array(await sourceDownload.data.arrayBuffer());
+    if (new TextDecoder().decode(sourcePdfBytes.subarray(0, 4)) !== "%PDF") {
+      return finalisationFailureResponse(422, {
+        success: false,
+        error: "The persisted source artifact is not a valid PDF.",
+        errorCode: "FINAL_SOURCE_PDF_INVALID",
+      });
+    }
+    if (
+      sourcePdfBytes.length !== renderedByteLength ||
+      `sha256:${await sha256Hex(sourcePdfBytes)}` !== renderedSha256
+    ) {
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "The persisted source PDF bytes do not match its certified record.",
+        errorCode: "FINAL_SOURCE_PDF_INTEGRITY_MISMATCH",
+      });
+    }
+    const sourceFormat = "pdf";
     const existingFinalPath = normalizeText(version.final_signed_file_path);
     if (existingFinalPath && forceRegenerate) {
-      return jsonResponse(409, {
+      return finalisationFailureResponse(409, {
         success: false,
         error: "The F2 final signed artifact is immutable and cannot be replaced.",
         errorCode: "FINAL_SIGNED_ARTIFACT_IMMUTABLE",
@@ -2161,76 +2803,180 @@ Deno.serve(async (req: Request) => {
     if (existingFinalPath && !forceRegenerate) {
       const existingEvidenceResult = await supabase
         .from("legal_final_artifact_evidence")
-        .select("bucket, path, file_name, media_type, sha256, byte_length, generated_at")
+        .select("bucket, path, file_name, media_type, sha256, byte_length, generated_at, signature_evidence_contract, signature_evidence_mode, embedded_signature_count, signature_asset_evidence_sha256, signature_asset_fingerprints_json")
         .eq("packet_version_id", requestedVersionId)
         .maybeSingle();
       if (existingEvidenceResult.error) throw existingEvidenceResult.error;
       const existingEvidence = existingEvidenceResult.data as Record<string, unknown> | null;
       if (!existingEvidence || normalizeText(existingEvidence.path) !== existingFinalPath) {
-        return jsonResponse(409, { success: false, error: "Existing final artifact has no matching F2 evidence.", errorCode: "FINAL_ARTIFACT_EVIDENCE_MISSING" });
+        return finalisationFailureResponse(409, { success: false, error: "Existing final artifact has no matching F2 evidence.", errorCode: "FINAL_ARTIFACT_EVIDENCE_MISSING" });
       }
       const existingDownload = await supabase.storage.from(normalizeText(existingEvidence.bucket)).download(existingFinalPath);
-      if (existingDownload.error || !existingDownload.data) return jsonResponse(409, { success: false, error: "Existing final artifact cannot be read.", errorCode: "FINAL_ARTIFACT_UNREADABLE" });
+      if (existingDownload.error || !existingDownload.data) return finalisationFailureResponse(409, { success: false, error: "Existing final artifact cannot be read.", errorCode: "FINAL_ARTIFACT_UNREADABLE" });
       const existingBytes = new Uint8Array(await existingDownload.data.arrayBuffer());
       if (await sha256Hex(existingBytes) !== normalizeText(existingEvidence.sha256) || existingBytes.length !== Number(existingEvidence.byte_length)) {
-        return jsonResponse(409, { success: false, error: "Existing final artifact bytes do not match F2 evidence.", errorCode: "FINAL_ARTIFACT_INTEGRITY_MISMATCH" });
+        return finalisationFailureResponse(409, { success: false, error: "Existing final artifact bytes do not match F2 evidence.", errorCode: "FINAL_ARTIFACT_INTEGRITY_MISMATCH" });
       }
-      const existingBucketCandidates = parseBucketCandidates(
-        normalizeText(version.final_signed_file_bucket),
-        Deno.env.get("SIGNED_DOCUMENTS_BUCKET"),
-        Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"),
-        Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
-        Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
-        Deno.env.get("DOCUMENTS_BUCKET"),
-        Deno.env.get("SUPABASE_STORAGE_BUCKET"),
-        "documents",
-      );
-      let existingUrl: string | null = null;
-      let existingBucket = normalizeText(version.final_signed_file_bucket);
-      for (const bucket of [...new Set(existingBucketCandidates.filter(Boolean))]) {
-        const signedUrlResult = await supabase.storage.from(bucket).createSignedUrl(existingFinalPath, 60 * 60);
-        if (!signedUrlResult.error && signedUrlResult.data?.signedUrl) {
-          existingUrl = signedUrlResult.data.signedUrl;
-          existingBucket = bucket;
-          break;
+      let existingPhase3Evidence: Phase3SignatureEvidence | null = null;
+      {
+        const existingEventResult = await supabase
+          .from("document_packet_events")
+          .select("event_payload_json, created_at")
+          .eq("packet_id", packetId)
+          .eq("version_id", requestedVersionId)
+          .eq("event_type", "final_signed_document_generated")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingEventResult.error) throw existingEventResult.error;
+        const expectedArtifactSha256 = normalizeText(existingEvidence.sha256);
+        const expectedArtifactByteLength = Number(existingEvidence.byte_length);
+        const existingEventPhase3Evidence = await readPhase3SignatureEvidence(
+          existingEventResult.data?.event_payload_json,
+          expectedArtifactSha256,
+          expectedArtifactByteLength,
+        );
+        const existingPersistedPhase3Evidence = await readPhase3SignatureEvidence(
+          {
+            signatureEvidenceContract: existingEvidence.signature_evidence_contract,
+            signatureEvidenceMode: existingEvidence.signature_evidence_mode,
+            embeddedSignatureCount: existingEvidence.embedded_signature_count,
+            signatureAssetEvidenceSha256: existingEvidence.signature_asset_evidence_sha256,
+            signatureAssetFingerprints: existingEvidence.signature_asset_fingerprints_json,
+            finalArtifactSha256: expectedArtifactSha256,
+            finalArtifactByteLength: expectedArtifactByteLength,
+          },
+          expectedArtifactSha256,
+          expectedArtifactByteLength,
+        );
+        if (
+          !existingEventPhase3Evidence ||
+          !existingPersistedPhase3Evidence ||
+          !phase3SignatureEvidenceMatches(existingEventPhase3Evidence, existingPersistedPhase3Evidence)
+        ) {
+          return finalisationFailureResponse(409, {
+            success: false,
+            error: "The existing final document does not contain the required visual signature evidence and cannot be delivered or downloaded.",
+            errorCode: "FINAL_SIGNATURE_EVIDENCE_REQUIRED",
+            retryable: false,
+            requiredAction: "REISSUE_CANONICAL_SIGNED_PDF",
+          });
+        }
+        existingPhase3Evidence = existingEventPhase3Evidence;
+        observedEvidenceMode = existingPhase3Evidence.signatureEvidenceMode;
+        observedEmbeddedSignatureCount = existingPhase3Evidence.embeddedSignatureCount;
+        observedOutputBytes = existingBytes.length;
+      }
+      let existingFinalDocumentId = normalizeText(version.final_signed_document_id);
+      if (!existingFinalDocumentId) {
+        const repairDocumentId = await createInternalFinalSignedDocument({
+          supabase,
+          transactionId: normalizeText(packet.transaction_id),
+          fileName: normalizeText(existingEvidence.file_name) || buildSignedFileName(normalizeText(packet.packet_type), safeNumber(version.version_number, 1)),
+          bucket: normalizeText(existingEvidence.bucket),
+          path: existingFinalPath,
+          finalisedBy: null,
+          createdAt: normalizeText(version.finalised_at) || new Date().toISOString(),
+        });
+        if (repairDocumentId) {
+          const linkedDocumentId = await linkFinalSignedDocumentToVersion({
+            supabase,
+            packetId,
+            packetVersionId: normalizeText(version.id),
+            documentId: repairDocumentId,
+          });
+          if (linkedDocumentId !== repairDocumentId) {
+            await supabase.from("documents").delete().eq("id", repairDocumentId);
+          }
+          existingFinalDocumentId = linkedDocumentId;
         }
       }
+      if (!existingFinalDocumentId || !(await publishFinalSignedDocument({
+        supabase,
+        documentId: existingFinalDocumentId,
+        path: existingFinalPath,
+      }))) {
+        logFinalisation("error", "final_signed_document_publication_pending", {
+          requestId: finalisationRequestId,
+          packetId,
+          packetVersionId: normalizeText(version.id),
+          packetType: observedPacketType,
+          durationMs: Date.now() - finalisationStartedAt,
+          errorCode: "FINAL_SIGNED_DOCUMENT_PUBLICATION_PENDING",
+          evidenceMode: observedEvidenceMode || null,
+          embeddedSignatureCount: observedEmbeddedSignatureCount,
+          outputBytes: existingBytes.length,
+        });
+        return finalisationFailureResponse(503, {
+          success: false,
+          error: "The final signed PDF is safely recorded, but its client document publication is pending. Retry finalisation to complete publication.",
+          errorCode: "FINAL_SIGNED_DOCUMENT_PUBLICATION_PENDING",
+          retryable: true,
+        });
+      }
+      const finalisedVersion = {
+        ...version,
+        final_signed_document_id: existingFinalDocumentId,
+      };
       const listingConversion = await ensureListingFromSignedMandate({
         supabase,
         packet,
-        version,
+        version: finalisedVersion,
         finalArtifactPath: existingFinalPath,
       }).catch((error) => {
-        console.error("[final-signed] listing conversion failed for existing artifact", {
+        logFinalisation("error", "final_signed_listing_conversion_failed", {
+          requestId: finalisationRequestId,
           packetId,
-          error: String(error),
+          packetVersionId: normalizeText(version.id),
+          packetType: observedPacketType,
+          durationMs: Date.now() - finalisationStartedAt,
+          errorCode: normalizeText(error?.code) || "LISTING_CONVERSION_FAILED",
+          evidenceMode: observedEvidenceMode || null,
+          embeddedSignatureCount: observedEmbeddedSignatureCount,
+          outputBytes: existingBytes.length,
         });
         return {
           success: false,
-          error: String(error?.message || error),
-          errorCode: normalizeText(error?.code) || null,
+          error: "Listing conversion could not be completed.",
+          errorCode: normalizeText(error?.code) || "LISTING_CONVERSION_FAILED",
         };
       });
       const finalDelivery = await dispatchFinalDelivery({ url: SUPABASE_URL, serviceKey: SUPABASE_SERVICE_ROLE_KEY, packetId, packetVersionId: requestedVersionId });
+      logFinalisation("info", "final_signed_finalisation_reused", {
+        requestId: finalisationRequestId,
+        packetId,
+        packetVersionId: normalizeText(version.id),
+        packetType: observedPacketType,
+        durationMs: Date.now() - finalisationStartedAt,
+        evidenceMode: observedEvidenceMode || null,
+        embeddedSignatureCount: observedEmbeddedSignatureCount,
+        outputBytes: existingBytes.length,
+      });
       return jsonResponse(200, {
         success: true,
         packetId,
         packetVersionId: version.id,
-        finalArtifact: {
-          bucket: existingBucket || null,
-          path: existingFinalPath,
-          url: existingUrl || normalizeText(version.final_signed_file_url) || null,
+        finalArtifact: buildFinalArtifactAccessDescriptor({
+          packetId,
+          packetVersionId: version.id,
+          documentId: existingFinalDocumentId,
           fileName: normalizeText(version.final_signed_file_name) || buildSignedFileName(normalizeText(packet.packet_type), safeNumber(version.version_number, 1)),
-          documentId: normalizeText(version.final_signed_document_id) || null,
-          finalisedAt: normalizeText(version.finalised_at) || null,
-          finalisedBy: null,
           sha256: normalizeText(existingEvidence.sha256),
           byteLength: Number(existingEvidence.byte_length),
-        },
-        version,
+          finalisedAt: normalizeText(version.finalised_at) || null,
+        }),
+        version: buildFinalisationVersionDescriptor({
+          packetId,
+          version: finalisedVersion,
+          documentId: existingFinalDocumentId,
+          fileName: normalizeText(version.final_signed_file_name) || buildSignedFileName(normalizeText(packet.packet_type), safeNumber(version.version_number, 1)),
+          sha256: normalizeText(existingEvidence.sha256),
+          byteLength: Number(existingEvidence.byte_length),
+          finalisedAt: normalizeText(version.finalised_at) || null,
+        }),
         listingConversion,
-        finalDelivery,
-        sourceFormat: renderedFilePath ? (isPdfPath(renderedFilePath) ? "pdf" : "docx") : "existing_final",
+        finalDelivery: buildFinalDeliverySummary(finalDelivery),
+        sourceFormat,
         note: "Final signed document already exists for this packet version.",
       });
     }
@@ -2257,7 +3003,7 @@ Deno.serve(async (req: Request) => {
     const signers = ((signersResult.data || []) as Record<string, unknown>[])
       .filter((signer) => mandateRoleIsRequired(packet, signer.signer_role, spouseRequiredForVersion));
     if (!signers.length) {
-      return jsonResponse(400, {
+      return finalisationFailureResponse(400, {
         success: false,
         error: "No signers configured for this packet version.",
         errorCode: "MISSING_SIGNERS",
@@ -2266,7 +3012,7 @@ Deno.serve(async (req: Request) => {
 
     const incompleteSigners = signers.filter((signer) => lower(signer.status) !== "signed");
     if (incompleteSigners.length) {
-      return jsonResponse(400, {
+      return finalisationFailureResponse(400, {
         success: false,
         error: "Required signers are incomplete.",
         errorCode: "SIGNERS_INCOMPLETE",
@@ -2280,7 +3026,7 @@ Deno.serve(async (req: Request) => {
     const requiredFields = fields.filter((field) => Boolean(field.required));
     const incompleteFields = requiredFields.filter((field) => lower(field.status) !== "completed");
     if (incompleteFields.length) {
-      return jsonResponse(400, {
+      return finalisationFailureResponse(400, {
         success: false,
         error: "Required signing fields are incomplete.",
         errorCode: "FIELDS_INCOMPLETE",
@@ -2289,14 +3035,36 @@ Deno.serve(async (req: Request) => {
     }
 
     const signatureFields = requiredFields.filter(fieldIsSignatureLike);
+    if (!signatureFields.length) {
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "At least one required signature or initial field is required before finalisation.",
+        errorCode: "SIGNATURE_EVIDENCE_FIELDS_REQUIRED",
+      });
+    }
+    const allRequiredSignatureFields = rawFields.filter((field) => Boolean(field.required) && fieldIsSignatureLike(field));
+    const embeddedFieldIds = new Set(signatureFields.map((field) => normalizeText(field.id)).filter(Boolean));
+    const allRequiredFieldIds = new Set(allRequiredSignatureFields.map((field) => normalizeText(field.id)).filter(Boolean));
+    const signatureEvidenceScopeMatches =
+      embeddedFieldIds.size === signatureFields.length &&
+      allRequiredFieldIds.size === allRequiredSignatureFields.length &&
+      embeddedFieldIds.size === allRequiredFieldIds.size &&
+      [...allRequiredFieldIds].every((fieldId) => embeddedFieldIds.has(fieldId));
+    if (!signatureEvidenceScopeMatches) {
+      observedEmbeddedSignatureCount = embeddedFieldIds.size;
+      return finalisationFailureResponse(409, {
+        success: false,
+        error: "Every database-required signature and initial field must be included in the final visual evidence set.",
+        errorCode: "SIGNATURE_EVIDENCE_FIELD_SCOPE_MISMATCH",
+        details: {
+          requiredSignatureFieldCount: allRequiredFieldIds.size,
+          eligibleSignatureFieldCount: embeddedFieldIds.size,
+        },
+      });
+    }
     const missingAssets = signatureFields.filter((field) => !normalizeText(field.signature_asset_path));
     if (missingAssets.length) {
-      return jsonResponse(400, {
-        success: false,
-        error: "Required signing assets are missing.",
-        errorCode: "MISSING_SIGNATURE_ASSETS",
-        details: { missingAssetFieldCount: missingAssets.length },
-      });
+      throw new SignatureAssetEmbedError("SIGNATURE_ASSET_PATH_MISSING");
     }
     const misScopedAssets = signatureFields.filter((field) => {
       const fieldRole = lower(field.signer_role);
@@ -2305,7 +3073,7 @@ Deno.serve(async (req: Request) => {
       return !matchingSigner || !normalizeText(field.signature_asset_path).startsWith(`document-signatures/${packetId}/${normalizeText(matchingSigner.id)}/`);
     });
     if (misScopedAssets.length) {
-      return jsonResponse(403, {
+      return finalisationFailureResponse(403, {
         success: false,
         error: "A required signing asset is outside its signer-owned storage namespace.",
         errorCode: "SIGNATURE_ASSET_SCOPE_INVALID",
@@ -2313,89 +3081,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const sourceBucketCandidates = parseBucketCandidates(
-      Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
-      Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
-      Deno.env.get("DOCUMENTS_BUCKET"),
-      Deno.env.get("SUPABASE_STORAGE_BUCKET"),
-      "documents",
-    );
-
     const signatureBucketCandidates = parseBucketCandidates(
       Deno.env.get("SIGNATURES_BUCKET"),
       Deno.env.get("SUPABASE_SIGNATURES_BUCKET"),
-      ...sourceBucketCandidates,
+      renderedFileBucket,
+      Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
+      Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
+      Deno.env.get("DOCUMENTS_BUCKET"),
       "document-signatures",
       "documents",
     );
-
-    let sourcePdfBytes: Uint8Array;
-    const sourceIsPdf = isPdfPath(renderedFilePath);
-    let sourceFormat = sourceIsPdf ? "pdf" : "docx";
-    let fallbackSourceUsed = false;
-    let structuredFallbackSourceUsed = false;
-
-    if (renderedFilePath) {
-      const sourceDownload = await downloadFirstAvailable({
-        supabase,
-        path: renderedFilePath,
-        buckets: sourceBucketCandidates,
-      });
-      sourcePdfBytes = sourceDownload.bytes;
-    } else {
-      fallbackSourceUsed = true;
-      structuredFallbackSourceUsed = true;
-      sourceFormat = "structured_fallback_pdf";
-      sourcePdfBytes = await buildFallbackMandatePdfBytes({
-        packet,
-        version,
-        fields,
-        branding: fallbackBranding,
-      });
-    }
-
-    if (!fallbackSourceUsed && !sourceIsPdf) {
-      const useImmediateStructuredFallback = lower(packet.packet_type) === "otp";
-      const conversion = useImmediateStructuredFallback
-        ? {
-          success: false as const,
-          errorCode: "OTP_STRUCTURED_FINALISATION",
-          error: "OTP finalisation uses the structured packet snapshot to stay within the edge worker budget.",
-        }
-        : await convertDocxToPdfBytes({
-          docxBytes: sourcePdfBytes,
-          sourcePath: renderedFilePath,
-        });
-      if (!conversion.success) {
-        fallbackSourceUsed = true;
-        structuredFallbackSourceUsed = true;
-        sourceFormat = "structured_fallback_pdf";
-        sourcePdfBytes = lower(packet.packet_type) === "otp"
-          ? await buildOtpStructuredFinalPdfBytes({ packet, version })
-          : await buildFallbackMandatePdfBytes({
-            packet,
-            version,
-            fields,
-            branding: fallbackBranding,
-          });
-        await appendPacketEvent({
-          supabase,
-          packetId,
-          organisationId: normalizeText(packet.organisation_id),
-          versionId: normalizeText(version.id),
-          eventType: "final_signed_source_fallback_used",
-          payload: {
-            sourceFormat: "docx",
-            fallbackFormat: sourceFormat,
-            conversionErrorCode: conversion.errorCode,
-            conversionError: conversion.error,
-            generatedAt: new Date().toISOString(),
-          },
-        });
-      }
-      if (conversion.success) sourcePdfBytes = conversion.bytes;
-    }
-
     const pdf = await buildOverlayPdf({
       sourcePdfBytes,
     });
@@ -2405,14 +3100,13 @@ Deno.serve(async (req: Request) => {
       if (role) accumulator[role] = normalizeText(signer.signed_at);
       return accumulator;
     }, {} as Record<string, string>);
+    const signatureAssetFingerprints: SignatureAssetFingerprint[] = [];
 
-    for (const [signatureIndex, field] of signatureFields.entries()) {
+    for (const field of signatureFields) {
       const pages = pdf.getPages();
-      const pageNumber = structuredFallbackSourceUsed
-        ? pages.length
-        : Math.max(1, safeNumber(field.page_number, 1));
+      const pageNumber = Math.max(1, safeNumber(field.page_number, 1));
       if (pageNumber > pages.length) {
-        return jsonResponse(422, {
+        return finalisationFailureResponse(422, {
           success: false,
           error: `Signing field ${normalizeText(field.id)} targets a page outside the final PDF.`,
           errorCode: "SIGNATURE_FIELD_PAGE_INVALID",
@@ -2428,63 +3122,94 @@ Deno.serve(async (req: Request) => {
         buckets: signatureBucketCandidates,
       });
       if (!assetDownload?.bytes?.length) {
-        return jsonResponse(400, {
-          success: false,
-          error: `Missing signature asset for field ${normalizeText(field.id)}.`,
-          errorCode: "MISSING_SIGNATURE_ASSET_FILE",
-        });
+        throw new SignatureAssetEmbedError("SIGNATURE_ASSET_FILE_UNREADABLE");
       }
 
-      let embedded;
-      if (assetPath.toLowerCase().endsWith(".jpg") || assetPath.toLowerCase().endsWith(".jpeg")) {
-        embedded = await pdf.embedJpg(assetDownload.bytes);
-      } else {
-        embedded = await pdf.embedPng(assetDownload.bytes);
-      }
+      try {
+        const inspectedImage = inspectSignatureImage(assetDownload.bytes);
+        const assetSha256 = await sha256Hex(assetDownload.bytes);
+        const fieldId = normalizeText(field.id);
+        const signerRole = lower(field.signer_role);
+        const fieldType = lower(field.field_type);
+        if (!fieldId || !signerRole || !["signature", "initial"].includes(fieldType)) {
+          throw new SignatureAssetEmbedError("SIGNATURE_EVIDENCE_FIELD_INVALID");
+        }
 
-      const fallbackSlot = structuredFallbackSourceUsed
-        ? resolveStructuredFallbackSignatureSlot({
-          field,
-          index: signatureIndex,
-          pageWidth: page.getWidth(),
-          pageHeight: page.getHeight(),
-        })
-        : null;
-      const width = Math.max(8, fallbackSlot?.width || safeNumber(field.width, 120));
-      const height = Math.max(8, fallbackSlot?.height || safeNumber(field.height, 36));
-      const x = Math.max(0, fallbackSlot?.x || safeNumber(field.x_position, 0));
-      const yFromTop = Math.max(0, safeNumber(field.y_position, 0));
-      const y = fallbackSlot
-        ? fallbackSlot.y
-        : Math.max(0, page.getHeight() - yFromTop - height);
+        const embedded = inspectedImage.imageFormat === "jpeg"
+          ? await pdf.embedJpg(assetDownload.bytes)
+          : await pdf.embedPng(assetDownload.bytes);
+        const width = Math.max(8, safeNumber(field.width, 120));
+        const height = Math.max(8, safeNumber(field.height, 36));
+        const x = Math.max(0, safeNumber(field.x_position, 0));
+        const yFromTop = Math.max(0, safeNumber(field.y_position, 0));
+        const y = Math.max(0, page.getHeight() - yFromTop - height);
 
-      page.drawImage(embedded, {
-        x,
-        y,
-        width,
-        height,
-      });
-
-      if (lower(field.field_type) === "signature") {
-        const signedAt = normalizeText(signerSignedAtByRole[lower(field.signer_role)]);
-        const signedDate = signedAt ? new Date(signedAt) : null;
-        const signedDateText =
-          signedDate && !Number.isNaN(signedDate.getTime())
-            ? `Signed: ${signedDate.toISOString().slice(0, 10)}`
-            : "";
-        if (signedDateText) {
-          page.drawText(signedDateText, {
+        // White-back transparent PNGs on the PDF canvas. This preserves the
+        // exact certified source PDF and makes the final visible mark stable
+        // even when an image asset contains an alpha channel.
+        if (inspectedImage.hasTransparency) {
+          page.drawRectangle({
             x,
-            y: Math.max(0, fallbackSlot ? fallbackSlot.lineY - 64 : y - 12),
-            size: 8,
-            font: dateFont,
-            color: rgb(0.18, 0.24, 0.32),
+            y,
+            width,
+            height,
+            color: rgb(1, 1, 1),
           });
         }
+        page.drawImage(embedded, { x, y, width, height });
+
+        const isSignatureField = fieldType === "signature";
+        if (isSignatureField) {
+          const signedAt = normalizeText(signerSignedAtByRole[signerRole]);
+          const signedDate = signedAt ? new Date(signedAt) : null;
+          const signedDateText =
+            signedDate && !Number.isNaN(signedDate.getTime())
+              ? `Signed: ${signedDate.toISOString().slice(0, 10)}`
+              : "";
+          if (signedDateText) {
+            page.drawText(signedDateText, {
+              x,
+              y: Math.max(0, y - 12),
+              size: 8,
+              font: dateFont,
+              color: rgb(0.18, 0.24, 0.32),
+            });
+          }
+        }
+        // The full digest is visibly rendered beside the embedded mark, while
+        // the canonical structured copy is retained in the F2 event payload.
+        drawVisibleSignatureFingerprint({
+          page,
+          font: dateFont,
+          x,
+          y,
+          height,
+          sha256: assetSha256,
+          reserveForSignedDate: isSignatureField,
+        });
+        signatureAssetFingerprints.push({
+          fieldId,
+          signerRole,
+          fieldType,
+          sha256: assetSha256,
+          byteLength: assetDownload.bytes.length,
+          imageFormat: inspectedImage.imageFormat,
+        });
+      } catch (error) {
+        if (error instanceof SignatureAssetEmbedError) throw error;
+        throw new SignatureAssetEmbedError("SIGNATURE_ASSET_EMBED_OPERATION_FAILED");
       }
     }
 
+    const canonicalSignatureFingerprints = canonicalSignatureAssetFingerprints(signatureAssetFingerprints);
+    if (!canonicalSignatureFingerprints || canonicalSignatureFingerprints.length !== signatureFields.length) {
+      throw new SignatureAssetEmbedError("SIGNATURE_EVIDENCE_FINGERPRINT_INCOMPLETE");
+    }
+    const signatureAssetEvidenceDigest = await signatureAssetEvidenceSha256(canonicalSignatureFingerprints);
+    observedEvidenceMode = PHASE3_SIGNATURE_EVIDENCE_MODE;
+    observedEmbeddedSignatureCount = canonicalSignatureFingerprints.length;
     const finalPdfBytes = await pdf.save();
+    observedOutputBytes = finalPdfBytes.length;
     const finalisedAt = new Date().toISOString();
     const finalArtifactSha256 = await sha256Hex(finalPdfBytes);
     const signerEvidenceSha256 = await sha256Hex(JSON.stringify(signers.map((signer) => ({ id: normalizeText(signer.id), role: lower(signer.signer_role), email: lower(signer.signer_email), status: lower(signer.status), signedAt: normalizeText(signer.signed_at) })).sort((a, b) => a.id.localeCompare(b.id))));
@@ -2494,13 +3219,13 @@ Deno.serve(async (req: Request) => {
       explicitOutputBucket,
       Deno.env.get("SIGNED_DOCUMENTS_BUCKET"),
       Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"),
-      ...sourceBucketCandidates,
+      renderedFileBucket,
       "documents",
     );
 
-    const packetDocumentId = normalizeText(version.rendered_document_id);
+    const packetDocumentId = renderedDocumentId;
     const signedFileName = buildSignedFileName(normalizeText(packet.packet_type), safeNumber(version.version_number, 1));
-    const signedPath = `signed-documents/${packetId}/${packetDocumentId || normalizeText(version.id)}/${Date.now()}-${signedFileName}`;
+    const signedPath = `signed-documents/${packetId}/${packetDocumentId || normalizeText(version.id)}/${crypto.randomUUID()}-${signedFileName}`;
 
     let uploadedBucket = "";
     let uploadError: unknown = null;
@@ -2518,39 +3243,58 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!uploadedBucket) {
-      return jsonResponse(500, {
+      return finalisationFailureResponse(500, {
         success: false,
         error: "Unable to store final signed document.",
         errorCode: "FINAL_SIGNED_UPLOAD_FAILED",
-        details: String(uploadError),
+      });
+    }
+    provisionalFinalBucket = uploadedBucket;
+    provisionalFinalPath = signedPath;
+    provisionalFinalSha256 = finalArtifactSha256;
+    provisionalFinalByteLength = finalPdfBytes.length;
+
+    // This row is intentionally private until the F2 RPC has atomically
+    // recorded the exact artifact, evidence, packet completion, and event.
+    const finalSignedDocumentId = await createInternalFinalSignedDocument({
+      supabase,
+      transactionId: normalizeText(packet.transaction_id),
+      fileName: signedFileName,
+      bucket: uploadedBucket,
+      path: signedPath,
+      finalisedBy,
+      createdAt: finalisedAt,
+    });
+    provisionalFinalDocumentId = finalSignedDocumentId;
+    if (!finalSignedDocumentId) {
+      const cleanup = await cleanupUncommittedFinalisation({
+        supabase,
+        bucket: provisionalFinalBucket,
+        path: provisionalFinalPath,
+        documentId: provisionalFinalDocumentId,
+      });
+      if (!cleanup.documentCleaned || !cleanup.storageCleaned) {
+        logFinalisation("error", "final_signed_uncommitted_cleanup_failed", {
+          requestId: finalisationRequestId,
+          packetId,
+          packetVersionId: normalizeText(version.id),
+          packetType: observedPacketType,
+          durationMs: Date.now() - finalisationStartedAt,
+          errorCode: "FINAL_SIGNED_DOCUMENT_RECORD_FAILED",
+          evidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+          embeddedSignatureCount: canonicalSignatureFingerprints.length,
+          outputBytes: finalPdfBytes.length,
+        });
+      }
+      return finalisationFailureResponse(500, {
+        success: false,
+        error: "The final signed document could not be recorded safely.",
+        errorCode: "FINAL_SIGNED_DOCUMENT_RECORD_FAILED",
       });
     }
 
-    const signedUrlResult = await supabase.storage.from(uploadedBucket).createSignedUrl(signedPath, 60 * 60);
-    const finalSignedUrl = signedUrlResult.data?.signedUrl || null;
-
-    const documentInsert = await supabase
-      .from("documents")
-      .insert({
-        transaction_id: normalizeText(packet.transaction_id) || null,
-        name: signedFileName,
-        file_path: signedPath,
-        category: "signed_documents",
-        document_type: "final_signed_packet",
-        visibility_scope: "shared",
-        is_client_visible: true,
-        uploaded_by_role: "system",
-        uploaded_by_user_id: finalisedBy,
-        stage_key: "final_signed",
-        created_at: finalisedAt,
-        updated_at: finalisedAt,
-      })
-      .select("id, name, file_path, category, document_type, created_at")
-      .maybeSingle();
-
-    const finalSignedDocumentId = documentInsert.error ? null : normalizeText(documentInsert.data?.id);
-
-    const updateVersion = await supabase.rpc("bridge_record_final_artifact_f2", {
+    f2FinalArtifactAttempted = true;
+    const updateVersionResult = await supabase.rpc("bridge_record_final_artifact_f2", {
       p_organisation_id: normalizeText(packet.organisation_id),
       p_packet_id: packetId,
       p_packet_version_id: normalizeText(version.id),
@@ -2572,65 +3316,226 @@ Deno.serve(async (req: Request) => {
         finalArtifactByteLength: finalPdfBytes.length,
         signerEvidenceSha256,
         fieldEvidenceSha256,
+        signatureEvidenceContract: PHASE3_SIGNATURE_EVIDENCE_CONTRACT,
+        signatureEvidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+        embeddedSignatureCount: canonicalSignatureFingerprints.length,
+        signatureAssetEvidenceSha256: signatureAssetEvidenceDigest,
+        signatureAssetFingerprints: canonicalSignatureFingerprints,
         generatedAt: finalisedAt,
       },
       p_finalised_by: finalisedBy,
-      p_final_signed_document_id: finalSignedDocumentId || null,
+      p_final_signed_document_id: finalSignedDocumentId,
     });
-    if (updateVersion.error) throw updateVersion.error;
+    let updateVersionData = updateVersionResult.data as Record<string, unknown> | null;
+    if (updateVersionResult.error) {
+      const committed = await readCommittedFinalArtifact({
+        supabase,
+        packetId,
+        packetVersionId: normalizeText(version.id),
+        bucket: uploadedBucket,
+        path: signedPath,
+        sha256: finalArtifactSha256,
+        byteLength: finalPdfBytes.length,
+      });
+      if (!committed.committed) {
+        // The RPC can time out while PostgreSQL is still committing. Absence
+        // from an immediate read is not proof that F2 failed, so retain the
+        // internal row and storage object for a safe retry/reconciliation.
+        logFinalisation("error", "final_signed_uncommitted_cleanup_deferred", {
+          requestId: finalisationRequestId,
+          packetId,
+          packetVersionId: normalizeText(version.id),
+          packetType: observedPacketType,
+          durationMs: Date.now() - finalisationStartedAt,
+          errorCode: "FINAL_SIGNED_F2_RECORDING_UNCONFIRMED",
+          evidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+          embeddedSignatureCount: canonicalSignatureFingerprints.length,
+          outputBytes: finalPdfBytes.length,
+        });
+        return finalisationFailureResponse(503, {
+          success: false,
+          error: "The final signed document is awaiting a safe finalisation check. Retry finalisation shortly.",
+          errorCode: "FINAL_SIGNED_F2_RECORDING_UNCONFIRMED",
+          retryable: true,
+        });
+      }
+      updateVersionData = committed.version;
+    }
+    f2FinalArtifactRecorded = true;
+    const recordedFinalDocumentId = normalizeText(updateVersionData?.final_signed_document_id) || finalSignedDocumentId;
+    if (!(await publishFinalSignedDocument({
+      supabase,
+      documentId: recordedFinalDocumentId,
+      path: signedPath,
+    }))) {
+      logFinalisation("error", "final_signed_document_publication_pending", {
+        requestId: finalisationRequestId,
+        packetId,
+        packetVersionId: normalizeText(version.id),
+        packetType: observedPacketType,
+        durationMs: Date.now() - finalisationStartedAt,
+        errorCode: "FINAL_SIGNED_DOCUMENT_PUBLICATION_PENDING",
+        evidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+        embeddedSignatureCount: canonicalSignatureFingerprints.length,
+        outputBytes: finalPdfBytes.length,
+      });
+      return finalisationFailureResponse(503, {
+        success: false,
+        error: "The final signed PDF is safely recorded, but its client document publication is pending. Retry finalisation to complete publication.",
+        errorCode: "FINAL_SIGNED_DOCUMENT_PUBLICATION_PENDING",
+        retryable: true,
+      });
+    }
 
     const listingConversion = await ensureListingFromSignedMandate({
       supabase,
       packet,
       version: {
         ...version,
-        ...updateVersion.data,
+        ...(updateVersionData || {}),
       },
       finalArtifactPath: signedPath,
     }).catch((error) => {
-      console.error("[final-signed] listing conversion failed", {
+      logFinalisation("error", "final_signed_listing_conversion_failed", {
+        requestId: finalisationRequestId,
         packetId,
-        error: String(error),
+        packetVersionId: normalizeText(version.id),
+        packetType: observedPacketType,
+        durationMs: Date.now() - finalisationStartedAt,
+        errorCode: normalizeText(error?.code) || "LISTING_CONVERSION_FAILED",
+        evidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+        embeddedSignatureCount: canonicalSignatureFingerprints.length,
+        outputBytes: finalPdfBytes.length,
       });
       return {
         success: false,
-        error: String(error?.message || error),
-        errorCode: normalizeText(error?.code) || null,
+        error: "Listing conversion could not be completed.",
+        errorCode: normalizeText(error?.code) || "LISTING_CONVERSION_FAILED",
       };
     });
     const finalDelivery = await dispatchFinalDelivery({ url: SUPABASE_URL, serviceKey: SUPABASE_SERVICE_ROLE_KEY, packetId, packetVersionId: normalizeText(version.id) });
+    logFinalisation("info", "final_signed_finalisation_completed", {
+      requestId: finalisationRequestId,
+      packetId,
+      packetVersionId: normalizeText(version.id),
+      packetType: observedPacketType,
+      durationMs: Date.now() - finalisationStartedAt,
+      evidenceMode: PHASE3_SIGNATURE_EVIDENCE_MODE,
+      embeddedSignatureCount: canonicalSignatureFingerprints.length,
+      outputBytes: finalPdfBytes.length,
+    });
 
     return jsonResponse(200, {
       success: true,
       packetId,
       packetVersionId: version.id,
-      finalArtifact: {
-        bucket: uploadedBucket,
-        path: signedPath,
-        url: finalSignedUrl,
+      finalArtifact: buildFinalArtifactAccessDescriptor({
+        packetId,
+        packetVersionId: version.id,
+        documentId: recordedFinalDocumentId,
         fileName: signedFileName,
-        documentId: finalSignedDocumentId,
-        finalisedAt,
-        finalisedBy,
         sha256: finalArtifactSha256,
         byteLength: finalPdfBytes.length,
-      },
-      version: updateVersion.data,
+        finalisedAt,
+      }),
+      version: buildFinalisationVersionDescriptor({
+        packetId,
+        version: { ...version, ...(updateVersionData || {}) },
+        documentId: recordedFinalDocumentId,
+        fileName: signedFileName,
+        sha256: finalArtifactSha256,
+        byteLength: finalPdfBytes.length,
+        finalisedAt,
+      }),
       listingConversion,
-      finalDelivery,
+      finalDelivery: buildFinalDeliverySummary(finalDelivery),
       sourceFormat,
-      note: fallbackSourceUsed
-        ? "A structured legal PDF was generated from stored packet data before overlaying signatures because a PDF source was unavailable."
-        : sourceIsPdf
-        ? null
-        : "Source packet was DOCX and converted through the configured DOCX→PDF converter before overlaying signatures.",
+      note: null,
     });
   } catch (error) {
-    console.error("generate-final-signed-document failed", error);
-    return jsonResponse(500, {
+    if (
+      !f2FinalArtifactRecorded &&
+      finalisationSupabase &&
+      provisionalFinalBucket &&
+      provisionalFinalPath &&
+      provisionalFinalSha256 &&
+      provisionalFinalByteLength > 0
+    ) {
+      if (f2FinalArtifactAttempted) {
+        // Once the RPC has been invoked, a timeout/retry race must never
+        // delete the only potentially committed canonical artifact.
+        logFinalisation("error", "final_signed_uncommitted_cleanup_deferred", {
+          requestId: finalisationRequestId,
+          packetId: observedPacketId || null,
+          packetVersionId: observedPacketVersionId || null,
+          packetType: observedPacketType || null,
+          durationMs: Date.now() - finalisationStartedAt,
+          errorCode: "FINAL_SIGNED_UNCOMMITTED_STATE_UNKNOWN",
+          evidenceMode: observedEvidenceMode || null,
+          embeddedSignatureCount: observedEmbeddedSignatureCount,
+          outputBytes: observedOutputBytes,
+        });
+      } else {
+        try {
+          const cleanup = await cleanupUncommittedFinalisation({
+            supabase: finalisationSupabase,
+            bucket: provisionalFinalBucket,
+            path: provisionalFinalPath,
+            documentId: provisionalFinalDocumentId,
+          });
+          if (!cleanup.documentCleaned || !cleanup.storageCleaned) {
+            logFinalisation("error", "final_signed_uncommitted_cleanup_failed", {
+              requestId: finalisationRequestId,
+              packetId: observedPacketId || null,
+              packetVersionId: observedPacketVersionId || null,
+              packetType: observedPacketType || null,
+              durationMs: Date.now() - finalisationStartedAt,
+              errorCode: "FINAL_SIGNED_UNCOMMITTED_CLEANUP_FAILED",
+              evidenceMode: observedEvidenceMode || null,
+              embeddedSignatureCount: observedEmbeddedSignatureCount,
+              outputBytes: observedOutputBytes,
+            });
+          }
+        } catch {
+          logFinalisation("error", "final_signed_uncommitted_cleanup_deferred", {
+            requestId: finalisationRequestId,
+            packetId: observedPacketId || null,
+            packetVersionId: observedPacketVersionId || null,
+            packetType: observedPacketType || null,
+            durationMs: Date.now() - finalisationStartedAt,
+            errorCode: "FINAL_SIGNED_UNCOMMITTED_STATE_UNKNOWN",
+            evidenceMode: observedEvidenceMode || null,
+            embeddedSignatureCount: observedEmbeddedSignatureCount,
+            outputBytes: observedOutputBytes,
+          });
+        }
+      }
+    }
+    const isSignatureAssetFailure = error instanceof SignatureAssetEmbedError;
+    const errorCode = isSignatureAssetFailure
+      ? error.errorCode
+      : "FINAL_SIGNED_GENERATION_FAILED";
+    const logDetails = {
+      requestId: finalisationRequestId,
+      packetId: observedPacketId || null,
+      packetVersionId: observedPacketVersionId || null,
+      packetType: observedPacketType || null,
+      durationMs: Date.now() - finalisationStartedAt,
+      errorCode,
+      evidenceMode: observedEvidenceMode || null,
+      embeddedSignatureCount: observedEmbeddedSignatureCount,
+      outputBytes: observedOutputBytes,
+    };
+    if (isSignatureAssetFailure) {
+      logFinalisation("error", "final_signed_signature_asset_embedding_failed", logDetails);
+    }
+    logFinalisation("error", "final_signed_finalisation_failed", logDetails);
+    return jsonResponse(isSignatureAssetFailure ? 422 : 500, {
       success: false,
-      error: String(error),
-      errorCode: "FINAL_SIGNED_GENERATION_FAILED",
+      error: isSignatureAssetFailure
+        ? "Every required signature asset must be readable, valid, and embeddable before finalisation."
+        : "The final signed document could not be generated safely.",
+      errorCode,
     });
   }
 });

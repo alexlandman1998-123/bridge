@@ -26,3 +26,19 @@ test('keeps checking when signing is complete but transaction publication is pen
   assert.equal(result.settled, false)
   assert.equal(result.shouldPoll, true)
 })
+
+test('treats an identity-only final descriptor as ready without a path or URL', () => {
+  const result = getSigningCompletionAccess({
+    ...completed,
+    finalArtifact: {
+      ready: true,
+      packetId: 'packet-1',
+      packetVersionId: 'version-1',
+      documentId: 'final-1',
+      resolver: 'resolve-final-signed-document-access',
+    },
+  })
+
+  assert.equal(result.finalCopyReady, true)
+  assert.equal(result.settled, true)
+})

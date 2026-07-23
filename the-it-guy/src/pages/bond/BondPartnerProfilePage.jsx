@@ -26,6 +26,11 @@ import {
   getPartnerAttributionSummary,
   trackAttributionEvent,
 } from '../../services/partnerAttributionService'
+import {
+  BOND_REFERRAL_TERM_STATUSES,
+  listBondReferralTerms,
+  proposeBondReferralTerms,
+} from '../../services/bondReferralTermsService'
 
 const PROFILE_TABS = [
   { key: 'overview', label: 'Overview', enabled: true },
@@ -33,6 +38,7 @@ const PROFILE_TABS = [
   { key: 'listings', label: 'Listings', enabled: true },
   { key: 'applications', label: 'Applications', enabled: true },
   { key: 'performance', label: 'Performance', enabled: true },
+  { key: 'terms', label: 'Referral Terms', enabled: true },
   { key: 'campaigns', label: 'Campaigns', enabled: true },
   { key: 'attribution', label: 'Attribution', enabled: true },
   { key: 'permissions', label: 'Permissions', enabled: false },
@@ -78,6 +84,95 @@ function statusLabel(value = '') {
   if (normalized === 'preferred') return 'Preferred'
   if (!normalized) return 'Not recorded'
   return normalized.charAt(0).toUpperCase() + normalized.slice(1).replace(/_/g, ' ')
+}
+
+function referralTermStatusClass(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === BOND_REFERRAL_TERM_STATUSES.accepted) return 'bg-[#eefaf2] text-[#17613d]'
+  if (normalized === BOND_REFERRAL_TERM_STATUSES.proposed) return 'bg-[#fff7e8] text-[#8a5b16]'
+  if (normalized === BOND_REFERRAL_TERM_STATUSES.rejected) return 'bg-[#fff0f0] text-[#9e2f2f]'
+  return 'bg-[#eef2f6] text-[#52677f]'
+}
+
+function referralBasisLabel(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'gross_bond_amount') return 'Gross bond amount'
+  if (normalized === 'originator_commission') return 'Originator commission'
+  if (normalized === 'fixed_amount') return 'Fixed amount'
+  return 'Manual base'
+}
+
+function ReferralTermsSection({ terms = [], loading = false, error = '', draft = {}, onDraftChange, onPropose, saving = false, canPropose = false }) {
+  if (loading) return <PageCard><p className="text-sm text-[#60758d]">Loading commercial terms…</p></PageCard>
+  return (
+    <div className="space-y-6">
+      <PageCard>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8fa7]">Commercial relationship</p>
+        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.01em] text-[#10243a]">Agency referral terms</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">Referral terms are proposed by the originator and become active only when the agency principal accepts them. Applications keep a snapshot of the accepted terms for reconciliation.</p>
+      </PageCard>
+
+      {error ? <div className="rounded-[16px] border border-[#f1d0d0] bg-[#fff5f5] p-4 text-sm font-semibold text-[#9e2f2f]">{error}</div> : null}
+
+      {canPropose ? (
+        <PageCard>
+          <form className="grid gap-4 md:grid-cols-[1.1fr_1fr_1fr_auto] md:items-end" onSubmit={onPropose}>
+            <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+              Basis
+              <select value={draft.calculationBasis} onChange={(event) => onDraftChange('calculationBasis', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]">
+                <option value="originator_commission">Originator commission</option>
+                <option value="gross_bond_amount">Gross bond amount</option>
+                <option value="fixed_amount">Fixed amount</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+              Rate type
+              <select value={draft.rateType} onChange={(event) => onDraftChange('rateType', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]">
+                <option value="percentage">Percentage</option>
+                <option value="fixed">Fixed amount</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+              {draft.rateType === 'fixed' ? 'Amount (ZAR)' : 'Kickback (%)'}
+              <input type="number" min="0" step="0.01" required value={draft.rate} onChange={(event) => onDraftChange('rate', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]" />
+            </label>
+            <button type="submit" disabled={saving} className="h-11 rounded-[10px] bg-[#10243a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+              {saving ? 'Proposing…' : 'Propose terms'}
+            </button>
+          </form>
+        </PageCard>
+      ) : null}
+
+      <PageCard>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-[#10243a]">Terms history</h3>
+            <p className="mt-1 text-sm text-[#60758d]">The latest accepted version is the only version used to create application snapshots.</p>
+          </div>
+          <span className="rounded-full bg-[#eef4f8] px-3 py-1 text-xs font-semibold text-[#476176]">{terms.length} version{terms.length === 1 ? '' : 's'}</span>
+        </div>
+        {terms.length ? (
+          <div className="mt-5 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-[#dbe5f0] text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa7]">
+                <tr><th className="px-3 py-3">Version</th><th className="px-3 py-3">Terms</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Accepted</th></tr>
+              </thead>
+              <tbody>
+                {terms.map((term) => (
+                  <tr key={term.id || term.version} className="border-b border-[#edf1f5] last:border-0">
+                    <td className="px-3 py-4 font-semibold text-[#10243a]">v{term.version}</td>
+                    <td className="px-3 py-4 text-[#52677f]">{term.rateType === 'fixed' ? formatMoneyValue(term.fixedAmount) : `${term.percentage}%`} of {referralBasisLabel(term.calculationBasis)}</td>
+                    <td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${referralTermStatusClass(term.status)}`}>{statusLabel(term.status)}</span></td>
+                    <td className="px-3 py-4 text-[#52677f]">{term.agencyAcceptedAt ? formatDate(term.agencyAcceptedAt) : 'Awaiting agency principal'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="mt-5 rounded-[12px] bg-[#f7fafc] p-4 text-sm text-[#60758d]">No terms have been proposed for this connected agency yet.</p>}
+      </PageCard>
+    </div>
+  )
 }
 
 function initials(value = '') {
@@ -1529,11 +1624,22 @@ export default function BondPartnerProfilePage() {
   const [attributionError, setAttributionError] = useState('')
   const [notAccepted, setNotAccepted] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
+  const [referralTerms, setReferralTerms] = useState([])
+  const [referralTermsLoading, setReferralTermsLoading] = useState(false)
+  const [referralTermsError, setReferralTermsError] = useState('')
+  const [referralTermsSaving, setReferralTermsSaving] = useState(false)
+  const [referralTermsDraft, setReferralTermsDraft] = useState({ calculationBasis: 'originator_commission', rateType: 'percentage', rate: '25' })
 
   const currentOrganisationId = useMemo(
     () => getCurrentOrganisationId({ organisation, workspace, currentMembership }),
     [currentMembership, organisation, workspace],
   )
+
+  const referralTermsContext = useMemo(() => ({
+    organisationId: currentOrganisationId,
+    userId: currentMembership?.user_id || currentMembership?.userId || '',
+    currentMembership,
+  }), [currentMembership, currentOrganisationId])
 
   useEffect(() => {
     let cancelled = false
@@ -1703,6 +1809,39 @@ export default function BondPartnerProfilePage() {
     }
   }, [currentMembership, currentOrganisationId, relationshipId, workspace])
 
+  const referralTermsScope = useMemo(() => {
+    const relationship = profile?.relationship || {}
+    const originatorOrganisationId = normalizeText(relationship.organisation_id || relationship.organisationId || currentOrganisationId)
+    const agencyOrganisationId = normalizeText(relationship.partner_organisation_id || relationship.partnerOrganisationId || profile?.partnerOrganisation?.id || profile?.partnerOrganisationId)
+    return {
+      originatorOrganisationId,
+      agencyOrganisationId,
+      partnerRelationshipId: normalizeText(relationship.id || relationshipId),
+    }
+  }, [currentOrganisationId, profile, relationshipId])
+
+  useEffect(() => {
+    if (activeTab !== 'terms' || !referralTermsScope.originatorOrganisationId || !referralTermsScope.agencyOrganisationId) return undefined
+    let cancelled = false
+    async function loadTerms() {
+      try {
+        setReferralTermsLoading(true)
+        setReferralTermsError('')
+        const rows = await listBondReferralTerms(referralTermsScope)
+        if (!cancelled) setReferralTerms(rows)
+      } catch (loadError) {
+        if (!cancelled) {
+          setReferralTerms([])
+          setReferralTermsError(loadError?.message || 'Referral terms could not be loaded.')
+        }
+      } finally {
+        if (!cancelled) setReferralTermsLoading(false)
+      }
+    }
+    void loadTerms()
+    return () => { cancelled = true }
+  }, [activeTab, referralTermsScope])
+
   function backToPartners() {
     navigate('/bond/partners')
   }
@@ -1751,6 +1890,31 @@ export default function BondPartnerProfilePage() {
       setCampaignMessage(createError?.message || 'Unable to create finance campaign.')
     } finally {
       setCampaignCreatingListingId('')
+    }
+  }
+
+  function handleReferralTermsDraftChange(field, value) {
+    setReferralTermsDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleProposeReferralTerms(event) {
+    event.preventDefault()
+    try {
+      setReferralTermsSaving(true)
+      setReferralTermsError('')
+      const isFixed = referralTermsDraft.rateType === 'fixed'
+      const created = await proposeBondReferralTerms({
+        ...referralTermsScope,
+        calculationBasis: referralTermsDraft.calculationBasis,
+        rateType: referralTermsDraft.rateType,
+        percentage: isFixed ? 0 : Number(referralTermsDraft.rate || 0),
+        fixedAmount: isFixed ? Number(referralTermsDraft.rate || 0) : 0,
+      }, referralTermsContext)
+      setReferralTerms((current) => [created, ...current.filter((term) => term.id !== created.id)])
+    } catch (saveError) {
+      setReferralTermsError(saveError?.message || 'Referral terms could not be proposed.')
+    } finally {
+      setReferralTermsSaving(false)
     }
   }
 
@@ -1909,7 +2073,7 @@ export default function BondPartnerProfilePage() {
           </div>
         </PageCard>
 
-        <nav className="grid gap-2 rounded-[16px] bg-white p-2 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:grid-cols-3 xl:grid-cols-8" aria-label="Partner profile sections">
+        <nav className="grid gap-2 rounded-[16px] bg-white p-2 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:grid-cols-3 xl:grid-cols-9" aria-label="Partner profile sections">
           {PROFILE_TABS.map((tab) => (
             <button
               key={tab.key}
@@ -2030,6 +2194,19 @@ export default function BondPartnerProfilePage() {
 
         {activeTab === 'performance' ? (
           <PerformanceSection performance={performance} loading={performanceLoading} error={performanceError} />
+        ) : null}
+
+        {activeTab === 'terms' ? (
+          <ReferralTermsSection
+            terms={referralTerms}
+            loading={referralTermsLoading}
+            error={referralTermsError}
+            draft={referralTermsDraft}
+            onDraftChange={handleReferralTermsDraftChange}
+            onPropose={handleProposeReferralTerms}
+            saving={referralTermsSaving}
+            canPropose={Boolean(referralTermsScope.originatorOrganisationId && referralTermsScope.agencyOrganisationId)}
+          />
         ) : null}
 
         {activeTab === 'campaigns' ? (

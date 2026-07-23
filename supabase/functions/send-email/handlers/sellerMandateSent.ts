@@ -28,7 +28,12 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   }
 
   const sellerName = normalizeText(payload.sellerName) || "there";
-  const recipientRole = normalizeText(payload.recipientRole).toLowerCase() === "agent" ? "agent" : "seller";
+  const requestedRecipientRole = normalizeText(payload.recipientRole).toLowerCase();
+  const recipientRole = requestedRecipientRole === "agent"
+    ? "agent"
+    : ["purchaser", "purchaser_1", "purchaser_2", "buyer", "buyer_spouse"].includes(requestedRecipientRole)
+      ? "purchaser"
+      : "seller";
   const recipientName = normalizeText(payload.recipientName) || (recipientRole === "agent" ? normalizeText(payload.agentName) || "there" : sellerName);
   const propertyTitle = normalizeText(payload.propertyTitle) || "your property";
   const mandateType = normalizeText(payload.mandateType) || "mandate";
@@ -182,6 +187,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     subject,
     html,
     text,
+    idempotencyKey: normalizeText(payload.idempotencyKey),
     timeoutMs: MANDATE_SIGNING_EMAIL_PROVIDER_TIMEOUT_MS,
   });
 
@@ -208,7 +214,9 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
 
   return jsonResponse(200, {
     ok: true,
+    emailConfirmed: true,
     type: "seller_mandate_sent",
     emailId: emailResult.data?.id || null,
+    providerStatus: emailResult.status || null,
   });
 }

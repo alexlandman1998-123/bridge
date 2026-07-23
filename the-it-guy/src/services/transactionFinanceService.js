@@ -955,6 +955,7 @@ export function buildTransactionFinanceWorkspace({
       stageLabel: BOND_HYBRID_FINANCE_STAGE_LABELS[bondStage] || title(bondStage),
       buyerDocuments: buyerDocumentRows,
       applications: bondApplications,
+      bankOutcomes: Array.isArray(workflowData?.bankOutcomes) ? workflowData.bankOutcomes : [],
       offers: bondOffers,
       offerDocuments: bondQuoteDocuments,
       latestDecision,

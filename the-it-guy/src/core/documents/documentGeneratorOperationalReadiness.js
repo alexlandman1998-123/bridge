@@ -6,6 +6,8 @@ export const documentGeneratorOperationalMetrics = [
   'staleSigningPackets',
   'missingFinalArtifacts',
   'missingFinalArtifactEvidence',
+  'invalidFinalDocuments',
+  'finalArtifactStorageMismatches',
   'incompleteFinalDeliveries',
   'missingPortalPublications',
   'missingTransactionPublications',
@@ -24,15 +26,17 @@ const solutions = {
   G3_OPERATIONAL_EVIDENCE_PENDING: 'Set operational evidence to ready only after owners, monitoring and runbooks are real.',
   G3_WATCHDOG_UNAVAILABLE: 'Deploy and schedule legal-document-watchdog, then produce a stored health snapshot.',
   G3_WATCHDOG_STALE_OR_UNHEALTHY: 'Run the watchdog and resolve its active failures until a fresh healthy snapshot exists.',
+  G3_WATCHDOG_CONTRACT_INVALID: 'Deploy the current F2–F4 watchdog contract and collect a fresh immutable health snapshot.',
   G3_WATCHDOG_COVERAGE_INVALID: 'Deploy the G3 watchdog with transaction-publication, cross-surface receipt and stuck-retry coverage.',
   G3_WATCHDOG_ACTIVE_BLOCKERS: 'Resolve every blocker in the latest watchdog snapshot and rerun the operational gate.',
+  G3_RECONCILIATION_NOT_CLEAN: 'Review every incomplete completed packet reported by the read-only Phase 5 reconciliation gate.',
 }
 
 function blocker(code, detail) {
   return { code, ...(detail ? { detail } : {}), solution: solutions[code] }
 }
 
-export function assessDocumentGeneratorOperationalReadiness({ g1 = {}, g2 = {}, watchdog = {}, config = {}, now = Date.now() } = {}) {
+export function assessDocumentGeneratorOperationalReadiness({ g1 = {}, g2 = {}, reconciliation = {}, watchdog = {}, config = {}, now = Date.now() } = {}) {
   const blockers = []
   if (g1.status !== 'READY_FOR_G2' || g1.ready !== true) blockers.push(blocker('G3_G1_NOT_READY'))
   if (g2.status !== 'READY_FOR_G3' || g2.ready !== true) blockers.push(blocker('G3_G2_NOT_READY'))
@@ -42,6 +46,7 @@ export function assessDocumentGeneratorOperationalReadiness({ g1 = {}, g2 = {}, 
   if (!text(config.incidentChannelReference)) blockers.push(blocker('G3_INCIDENT_CHANNEL_MISSING'))
   if (!text(config.monitoringReference)) blockers.push(blocker('G3_MONITORING_REFERENCE_MISSING'))
   if (!text(config.supportRunbookReference) || !text(config.rollbackRunbookReference)) blockers.push(blocker('G3_RUNBOOK_REFERENCE_MISSING'))
+  if (reconciliation.status !== 'CLEAN' || reconciliation.mutatedData !== false) blockers.push(blocker('G3_RECONCILIATION_NOT_CLEAN'))
 
   const summary = watchdog.summary && typeof watchdog.summary === 'object' ? watchdog.summary : null
   const metrics = summary?.metrics && typeof summary.metrics === 'object' ? summary.metrics : {}
@@ -50,6 +55,7 @@ export function assessDocumentGeneratorOperationalReadiness({ g1 = {}, g2 = {}, 
   if (!watchdog.id || !summary) blockers.push(blocker('G3_WATCHDOG_UNAVAILABLE'))
   else {
     if (watchdog.status !== 'healthy' || summary.kind !== 'legal_document_watchdog_v1' || !Number.isFinite(createdAt) || now < createdAt || now - createdAt > maximumAgeMs) blockers.push(blocker('G3_WATCHDOG_STALE_OR_UNHEALTHY'))
+    if (summary.contract !== 'phase5-f2-f3-f4-v2') blockers.push(blocker('G3_WATCHDOG_CONTRACT_INVALID'))
     const missingMetrics = documentGeneratorOperationalMetrics.filter((key) => !Object.hasOwn(metrics, key) || number(metrics[key]) !== 0)
     if (missingMetrics.length) blockers.push(blocker('G3_WATCHDOG_COVERAGE_INVALID', missingMetrics.join(', ')))
     if (Array.isArray(summary.blockers) && summary.blockers.length) blockers.push(blocker('G3_WATCHDOG_ACTIVE_BLOCKERS', summary.blockers.map((item) => item.code).filter(Boolean).join(', ')))

@@ -1,7 +1,9 @@
 import {
   ATTORNEY_INCOMING_INSTRUCTION_STATUSES,
+  getAttorneyInstructionLane,
+  getAttorneyInstructionRole,
+  isAttorneyInstructionAssignment,
   isAttorneyInstructionClosedStatus,
-  isTransferAttorneyAssignment,
   normalizeAttorneyIncomingInstructionStatus,
 } from '../core/transactions/attorneyIncomingMatterContract'
 import {
@@ -98,14 +100,14 @@ async function selectAssignments(client, { assignmentId = '', transactionId = ''
   return []
 }
 
-function pickTransferAssignment(assignments = []) {
-  const transferAssignments = assignments.filter((assignment) => isTransferAttorneyAssignment(assignment))
+function pickAttorneyInstructionAssignment(assignments = []) {
+  const attorneyAssignments = assignments.filter((assignment) => isAttorneyInstructionAssignment(assignment))
   return (
-    transferAssignments.find((assignment) =>
+    attorneyAssignments.find((assignment) =>
       normalizeAttorneyIncomingInstructionStatus(assignment.instruction_status || assignment.instructionStatus) ===
         ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
     ) ||
-    transferAssignments[0] ||
+    attorneyAssignments[0] ||
     null
   )
 }
@@ -205,8 +207,16 @@ async function selectRowsWithMissingTableFallback(client, table, filters = []) {
   return result.data || []
 }
 
-async function syncTransferInstructionDecisionLifecycle(client, {
+function getAttorneyInstructionLabel(attorneyRole = '') {
+  const lane = getAttorneyInstructionLane({ attorney_role: attorneyRole })
+  if (lane === 'bond') return 'Bond attorney'
+  if (lane === 'cancellation') return 'Cancellation attorney'
+  return 'Transfer attorney'
+}
+
+async function syncAttorneyInstructionDecisionLifecycle(client, {
   transactionId = '',
+  attorneyRole = 'transfer_attorney',
   decision = '',
   actorUserId = '',
   decidedAt = null,
@@ -216,6 +226,8 @@ async function syncTransferInstructionDecisionLifecycle(client, {
 } = {}) {
   const normalizedTransactionId = normalizeText(transactionId)
   if (!normalizedTransactionId) return { roleplayersUpdated: 0, allocationsUpdated: 0 }
+  const normalizedAttorneyRole = getAttorneyInstructionRole({ attorney_role: attorneyRole })
+  if (!normalizedAttorneyRole) return { roleplayersUpdated: 0, allocationsUpdated: 0 }
 
   const normalizedDecision = normalizeText(decision).toLowerCase()
   const accepted = normalizedDecision === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
@@ -223,7 +235,7 @@ async function syncTransferInstructionDecisionLifecycle(client, {
   const decisionNote = normalizeNullableText(reason) || normalizeNullableText(note)
   const roleplayers = await selectRowsWithMissingTableFallback(client, 'transaction_role_players', [
     ['transaction_id', normalizedTransactionId],
-    ['role_type', 'transfer_attorney'],
+    ['role_type', normalizedAttorneyRole],
   ])
 
   let roleplayersUpdated = 0
@@ -255,12 +267,12 @@ async function syncTransferInstructionDecisionLifecycle(client, {
   const listingId = normalizeText(transactionRows[0]?.listing_id || transactionRows[0]?.listingId)
   let allocations = await selectRowsWithMissingTableFallback(client, 'private_listing_role_players', [
     ['transaction_id', normalizedTransactionId],
-    ['role_type', 'transfer_attorney'],
+    ['role_type', normalizedAttorneyRole],
   ])
   if (!allocations.length && listingId) {
     allocations = await selectRowsWithMissingTableFallback(client, 'private_listing_role_players', [
       ['private_listing_id', listingId],
-      ['role_type', 'transfer_attorney'],
+      ['role_type', normalizedAttorneyRole],
     ])
   }
 
@@ -296,9 +308,17 @@ async function syncTransferInstructionDecisionLifecycle(client, {
   return { roleplayersUpdated, allocationsUpdated }
 }
 
+// Compatibility alias for callers deployed before the three-lane intake path.
+const syncTransferInstructionDecisionLifecycle = (client, options = {}) =>
+  syncAttorneyInstructionDecisionLifecycle(client, {
+    ...options,
+    attorneyRole: options.attorneyRole || 'transfer_attorney',
+  })
+
 export function buildAttorneyIncomingInstructionDecisionEventPayload({
   transactionId = '',
   assignmentId = '',
+  attorneyRole = 'transfer_attorney',
   actorUserId = '',
   decision = '',
   decidedAt = null,
@@ -313,6 +333,7 @@ export function buildAttorneyIncomingInstructionDecisionEventPayload({
     : ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
   const occurredAt = decidedAt || new Date().toISOString()
   const decisionNote = normalizeNullableText(reason) || normalizeNullableText(note)
+  const normalizedAttorneyRole = getAttorneyInstructionRole({ attorney_role: attorneyRole }) || 'transfer_attorney'
   const eventType = isDecline
     ? ATTORNEY_INCOMING_INSTRUCTION_EVENT_TYPES.declined
     : ATTORNEY_INCOMING_INSTRUCTION_EVENT_TYPES.accepted
@@ -323,6 +344,8 @@ export function buildAttorneyIncomingInstructionDecisionEventPayload({
     event_data: {
       source: normalizeText(source) || 'attorney_incoming_queue',
       assignmentId: normalizeText(assignmentId) || null,
+      attorneyRole: normalizedAttorneyRole,
+      laneKey: getAttorneyInstructionLane({ attorney_role: normalizedAttorneyRole }) || 'transfer',
       actorUserId: normalizeText(actorUserId) || null,
       decision: instructionStatus,
       instructionStatus,
@@ -361,14 +384,29 @@ export function buildAcceptAttorneyIncomingInstructionPayload({
   }
 }
 
-export function buildAcceptedIncomingTransferTransactionPayload({
+export function buildAcceptedIncomingAttorneyTransactionPayload({
   acceptedAt = null,
   note = '',
+  attorneyRole = 'transfer_attorney',
 } = {}) {
   const occurredAt = acceptedAt || new Date().toISOString()
-  const nextAction =
-    normalizeNullableText(note) ||
-    'Transfer instruction accepted. Begin attorney preparation.'
+  const normalizedAttorneyRole = getAttorneyInstructionRole({ attorney_role: attorneyRole }) || 'transfer_attorney'
+  const label = getAttorneyInstructionLabel(normalizedAttorneyRole)
+  const nextAction = normalizeNullableText(note) || (
+    normalizedAttorneyRole === 'transfer_attorney'
+      ? 'Transfer instruction accepted. Begin attorney preparation.'
+      : `${label} instruction accepted. Begin legal preparation.`
+  )
+
+  if (normalizedAttorneyRole !== 'transfer_attorney') {
+    return {
+      next_action: nextAction,
+      comment: nextAction,
+      is_active: true,
+      last_meaningful_activity_at: occurredAt,
+      updated_at: occurredAt,
+    }
+  }
 
   return {
     current_main_stage: 'ATTY',
@@ -379,6 +417,13 @@ export function buildAcceptedIncomingTransferTransactionPayload({
     last_meaningful_activity_at: occurredAt,
     updated_at: occurredAt,
   }
+}
+
+export function buildAcceptedIncomingTransferTransactionPayload(options = {}) {
+  return buildAcceptedIncomingAttorneyTransactionPayload({
+    ...options,
+    attorneyRole: 'transfer_attorney',
+  })
 }
 
 export function buildDeclineAttorneyIncomingInstructionPayload({
@@ -402,14 +447,19 @@ export function buildDeclineAttorneyIncomingInstructionPayload({
   }
 }
 
-export function buildDeclinedIncomingTransferTransactionPayload({
+export function buildDeclinedIncomingAttorneyTransactionPayload({
   declinedAt = null,
   reason = '',
+  attorneyRole = 'transfer_attorney',
 } = {}) {
   const occurredAt = declinedAt || new Date().toISOString()
-  const nextAction =
-    normalizeNullableText(reason) ||
-    'Transfer instruction declined by attorney firm. Review attorney reassignment.'
+  const normalizedAttorneyRole = getAttorneyInstructionRole({ attorney_role: attorneyRole }) || 'transfer_attorney'
+  const label = getAttorneyInstructionLabel(normalizedAttorneyRole)
+  const nextAction = normalizeNullableText(reason) || (
+    normalizedAttorneyRole === 'transfer_attorney'
+      ? 'Transfer instruction declined by attorney firm. Review attorney reassignment.'
+      : `${label} instruction declined. Review attorney reassignment.`
+  )
 
   return {
     next_action: nextAction,
@@ -419,12 +469,19 @@ export function buildDeclinedIncomingTransferTransactionPayload({
   }
 }
 
+export function buildDeclinedIncomingTransferTransactionPayload(options = {}) {
+  return buildDeclinedIncomingAttorneyTransactionPayload({
+    ...options,
+    attorneyRole: 'transfer_attorney',
+  })
+}
+
 export function assertAttorneyIncomingInstructionCanBeAccepted(assignment = {}) {
   if (!assignment?.id) {
     throw new Error('Incoming matter assignment was not found.')
   }
-  if (!isTransferAttorneyAssignment(assignment)) {
-    throw new Error('Only transfer incoming matters can be accepted from this queue.')
+  if (!isAttorneyInstructionAssignment(assignment)) {
+    throw new Error('This assignment is not an attorney instruction.')
   }
 
   const instructionStatus = normalizeAttorneyIncomingInstructionStatus(assignment.instruction_status || assignment.instructionStatus)
@@ -436,8 +493,18 @@ export function assertAttorneyIncomingInstructionCanBeAccepted(assignment = {}) 
   if (isAttorneyInstructionClosedStatus(instructionStatus) || isAttorneyInstructionClosedStatus(assignmentStatus)) {
     throw new Error('This incoming matter has already been closed.')
   }
-  if (instructionStatus !== ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance) {
-    throw new Error('This incoming transfer is not ready for acceptance yet.')
+  const lane = getAttorneyInstructionLane(assignment)
+  const isImmediatelyActionableLane = lane === 'bond' || lane === 'cancellation'
+  const isImmediatelyActionableStatus = [
+    ATTORNEY_INCOMING_INSTRUCTION_STATUSES.newInstruction,
+    ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingClientOnboarding,
+    ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp,
+  ].includes(instructionStatus)
+  if (
+    instructionStatus !== ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance &&
+    !(isImmediatelyActionableLane && isImmediatelyActionableStatus)
+  ) {
+    throw new Error('This incoming attorney instruction is not ready for acceptance yet.')
   }
 
   return { accepted: false, alreadyAccepted: false }
@@ -447,8 +514,8 @@ export function assertAttorneyIncomingInstructionCanBeDeclined(assignment = {}) 
   if (!assignment?.id) {
     throw new Error('Incoming matter assignment was not found.')
   }
-  if (!isTransferAttorneyAssignment(assignment)) {
-    throw new Error('Only transfer incoming matters can be declined from this queue.')
+  if (!isAttorneyInstructionAssignment(assignment)) {
+    throw new Error('This assignment is not an attorney instruction.')
   }
 
   const instructionStatus = normalizeAttorneyIncomingInstructionStatus(assignment.instruction_status || assignment.instructionStatus)
@@ -471,6 +538,35 @@ export function assertAttorneyIncomingInstructionCanBeDeclined(assignment = {}) 
   return { declined: false, alreadyDeclined: false }
 }
 
+function isMissingAttorneyAllocationRpc(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return code === '42883' || code === 'PGRST202' || message.includes('bridge_manage_attorney_firm_allocation')
+}
+
+async function manageAttorneyFirmAllocation(client, {
+  assignment,
+  action,
+  attorneyUserId = null,
+  reason = null,
+} = {}) {
+  const input = {
+    p_assignment_id: assignment.id,
+    p_action: action,
+    p_attorney_user_id: attorneyUserId,
+    p_reason: reason,
+  }
+  let result = await client.rpc('bridge_manage_attorney_firm_allocation', input)
+
+  // Keep transfer usable during a rolling database deployment. Bond and
+  // cancellation intentionally require the generic three-lane RPC.
+  if (result.error && isMissingAttorneyAllocationRpc(result.error) && getAttorneyInstructionLane(assignment) === 'transfer') {
+    result = await client.rpc('bridge_manage_transfer_firm_allocation', input)
+  }
+  if (result.error) throw result.error
+  return Array.isArray(result.data) ? result.data[0] : result.data
+}
+
 export async function acceptAttorneyIncomingInstruction(client, {
   assignmentId = '',
   transactionId = '',
@@ -491,23 +587,21 @@ export async function acceptAttorneyIncomingInstruction(client, {
     assignmentId: normalizedAssignmentId,
     transactionId: normalizedAssignmentId ? '' : normalizedTransactionId,
   })
-  const assignment = pickTransferAssignment(assignments) || assignments[0] || null
-  const readiness = assertAttorneyIncomingInstructionCanBeAccepted(assignment)
+  const assignment = pickAttorneyInstructionAssignment(assignments) || assignments[0] || null
+  if (!assignment) throw new Error('Incoming matter assignment was not found.')
   const resolvedTransactionId = normalizeText(assignment.transaction_id || assignment.transactionId || normalizedTransactionId)
+  const attorneyRole = getAttorneyInstructionRole(assignment)
 
   if (
     normalizeText(assignment.allocation_state) === 'awaiting_firm_acceptance' &&
     normalizeText(assignment.firm_acceptance_status) === 'awaiting_firm_acceptance'
   ) {
-    const firmDecision = await client.rpc('bridge_manage_transfer_firm_allocation', {
-      p_assignment_id: assignment.id,
-      p_action: 'accept',
-      p_attorney_user_id: null,
-      p_reason: null,
+    const firmDecision = await manageAttorneyFirmAllocation(client, {
+      assignment,
+      action: 'accept',
     })
-    if (firmDecision.error) throw firmDecision.error
     return {
-      assignment: Array.isArray(firmDecision.data) ? firmDecision.data[0] : firmDecision.data,
+      assignment: firmDecision,
       transactionId: resolvedTransactionId,
       status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
       alreadyAccepted: false,
@@ -515,6 +609,8 @@ export async function acceptAttorneyIncomingInstruction(client, {
       actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
     }
   }
+
+  const readiness = assertAttorneyIncomingInstructionCanBeAccepted(assignment)
 
   if (readiness.alreadyAccepted) {
     return {
@@ -548,12 +644,13 @@ export async function acceptAttorneyIncomingInstruction(client, {
       client,
       'transactions',
       resolvedTransactionId,
-      buildAcceptedIncomingTransferTransactionPayload({ acceptedAt: occurredAt, note }),
+      buildAcceptedIncomingAttorneyTransactionPayload({ acceptedAt: occurredAt, note, attorneyRole }),
       TRANSACTION_RESULT_SELECT,
     )
   }
-  const lifecycleSync = await syncTransferInstructionDecisionLifecycle(client, {
+  const lifecycleSync = await syncAttorneyInstructionDecisionLifecycle(client, {
     transactionId: resolvedTransactionId,
+    attorneyRole,
     decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
     actorUserId: resolvedActorUserId,
     decidedAt: occurredAt,
@@ -564,6 +661,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
     ? await recordAttorneyIncomingInstructionDecisionEvent(client, {
         transactionId: resolvedTransactionId,
         assignmentId: assignment.id,
+        attorneyRole,
         actorUserId: resolvedActorUserId,
         decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
         decidedAt: occurredAt,
@@ -607,23 +705,22 @@ export async function declineAttorneyIncomingInstruction(client, {
     assignmentId: normalizedAssignmentId,
     transactionId: normalizedAssignmentId ? '' : normalizedTransactionId,
   })
-  const assignment = pickTransferAssignment(assignments) || assignments[0] || null
-  const readiness = assertAttorneyIncomingInstructionCanBeDeclined(assignment)
+  const assignment = pickAttorneyInstructionAssignment(assignments) || assignments[0] || null
+  if (!assignment) throw new Error('Incoming matter assignment was not found.')
   const resolvedTransactionId = normalizeText(assignment.transaction_id || assignment.transactionId || normalizedTransactionId)
+  const attorneyRole = getAttorneyInstructionRole(assignment)
 
   if (
     ['awaiting_firm_acceptance', 'awaiting_staff_assignment', 'staff_assigned'].includes(normalizeText(assignment.allocation_state)) &&
     normalizeText(assignment.firm_acceptance_status) !== 'not_required'
   ) {
-    const firmDecision = await client.rpc('bridge_manage_transfer_firm_allocation', {
-      p_assignment_id: assignment.id,
-      p_action: 'decline',
-      p_attorney_user_id: null,
-      p_reason: normalizeText(reason),
+    const firmDecision = await manageAttorneyFirmAllocation(client, {
+      assignment,
+      action: 'decline',
+      reason: normalizeText(reason),
     })
-    if (firmDecision.error) throw firmDecision.error
     return {
-      assignment: Array.isArray(firmDecision.data) ? firmDecision.data[0] : firmDecision.data,
+      assignment: firmDecision,
       transactionId: resolvedTransactionId,
       status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
       alreadyDeclined: false,
@@ -631,6 +728,8 @@ export async function declineAttorneyIncomingInstruction(client, {
       actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
     }
   }
+
+  const readiness = assertAttorneyIncomingInstructionCanBeDeclined(assignment)
 
   if (readiness.alreadyDeclined) {
     return {
@@ -664,12 +763,13 @@ export async function declineAttorneyIncomingInstruction(client, {
       client,
       'transactions',
       resolvedTransactionId,
-      buildDeclinedIncomingTransferTransactionPayload({ declinedAt: occurredAt, reason }),
+      buildDeclinedIncomingAttorneyTransactionPayload({ declinedAt: occurredAt, reason, attorneyRole }),
       TRANSACTION_RESULT_SELECT,
     )
   }
-  const lifecycleSync = await syncTransferInstructionDecisionLifecycle(client, {
+  const lifecycleSync = await syncAttorneyInstructionDecisionLifecycle(client, {
     transactionId: resolvedTransactionId,
+    attorneyRole,
     decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
     actorUserId: resolvedActorUserId,
     decidedAt: occurredAt,
@@ -680,6 +780,7 @@ export async function declineAttorneyIncomingInstruction(client, {
     ? await recordAttorneyIncomingInstructionDecisionEvent(client, {
         transactionId: resolvedTransactionId,
         assignmentId: assignment.id,
+        attorneyRole,
         actorUserId: resolvedActorUserId,
         decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
         decidedAt: occurredAt,
@@ -707,12 +808,15 @@ export const __attorneyIncomingMatterInstructionActionsTestUtils = Object.freeze
   ATTORNEY_INCOMING_INSTRUCTION_EVENT_TYPES,
   assertAttorneyIncomingInstructionCanBeDeclined,
   assertAttorneyIncomingInstructionCanBeAccepted,
+  buildAcceptedIncomingAttorneyTransactionPayload,
   buildAcceptedIncomingTransferTransactionPayload,
   buildAcceptAttorneyIncomingInstructionPayload,
   buildAttorneyIncomingInstructionDecisionEventPayload,
+  buildDeclinedIncomingAttorneyTransactionPayload,
   buildDeclinedIncomingTransferTransactionPayload,
   buildDeclineAttorneyIncomingInstructionPayload,
   errorMentionsColumn,
   isEventTypeConstraintError,
+  syncAttorneyInstructionDecisionLifecycle,
   syncTransferInstructionDecisionLifecycle,
 })

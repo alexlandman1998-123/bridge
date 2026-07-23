@@ -15,9 +15,9 @@ assert.match(migration, /transaction_pdf_persisted/)
 assert.match(migration, /document_signing_dispatches/)
 assert.match(migration, /document_signer_sessions/)
 assert.match(migration, /bridge_enforce_final_artifact_evidence_f2/)
-for (const finalizer of [mandate, otp]) {
-  assert.match(finalizer, /bridge_record_final_artifact_f2/)
-  assert.match(finalizer, /finalArtifactSha256/)
-}
+assert.match(mandate, /bridge_record_final_artifact_f2/)
+assert.match(mandate, /finalArtifactSha256/)
+assert.match(otp, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
+assert.doesNotMatch(otp, /bridge_record_final_artifact_f2|finalArtifactSha256/)
 
 console.log('Document generator Phase F2 controlled final-signed contract passed.')

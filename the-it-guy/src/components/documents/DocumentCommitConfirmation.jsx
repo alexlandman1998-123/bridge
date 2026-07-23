@@ -66,6 +66,19 @@ export function DocumentCommitConfirmation({ model = null, open = false, busy = 
     >
       <div ref={contentRef} data-testid="document-commit-confirmation">
         <p className="text-sm leading-6 text-[#526b83]">{model.summary}</p>
+        {model.action === 'send_signature' && model.recipients?.length ? (
+          <div className="mt-4 rounded-[14px] border border-[#dbe8f6] bg-[#f8fbff] p-3" data-testid="document-send-recipients">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#617995]">Confirm recipient email{model.recipients.length === 1 ? '' : 's'}</p>
+            <ul className="mt-2 space-y-2">
+              {model.recipients.map((recipient) => (
+                <li key={`${recipient.label}:${recipient.email}`} className="rounded-[10px] border border-[#e1eaf4] bg-white px-3 py-2 text-sm text-[#35546c]">
+                  <span className="font-semibold text-[#20344b]">{recipient.label}{recipient.name ? ` · ${recipient.name}` : ''}</span>
+                  <span className="mt-0.5 block break-all text-xs text-[#617995]">{recipient.email}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <ul className="mt-4 space-y-2">
           {model.points.map((point) => <li key={point} className="flex items-start gap-2 text-sm text-[#35546c]"><Check className="mt-0.5 h-4 w-4 shrink-0 text-[#237047]" aria-hidden="true" /><span>{point}</span></li>)}
         </ul>

@@ -117,3 +117,68 @@ export async function completeSignerSigning({ token } = {}) {
     token,
   })
 }
+
+/**
+ * Completed signer pages never receive a stored URL from the signing session.
+ * They ask the final-artifact resolver for a fresh, short-lived URL bound to
+ * the same completed signing token and exact packet version.
+ */
+export async function resolveSignerFinalSignedArtifactAccess({
+  token,
+  packetId,
+  packetVersionId,
+  documentId = '',
+  download = false,
+} = {}) {
+  const signingToken = normalizeText(token)
+  const normalizedPacketId = normalizeText(packetId)
+  const normalizedPacketVersionId = normalizeText(packetVersionId)
+  const normalizedDocumentId = normalizeText(documentId)
+  if (!signingToken || ((!normalizedPacketId || !normalizedPacketVersionId) && !normalizedDocumentId)) {
+    throw new Error('The completed document reference is incomplete.')
+  }
+
+  const { data, error } = await invokeEdgeFunction('resolve-final-signed-document-access', {
+    body: {
+      context: 'signer',
+      packetId: normalizedPacketId || null,
+      packetVersionId: normalizedPacketVersionId || null,
+      documentId: normalizedDocumentId || null,
+      signingToken,
+      action: download ? 'download' : 'status',
+    },
+  })
+  if (error) {
+    const requestError = new Error(normalizeText(error.message) || 'Unable to prepare the completed document.')
+    requestError.code = normalizeText(error.code) || 'FINAL_ACCESS_REQUEST_FAILED'
+    throw requestError
+  }
+  if (!data || data.success === false) {
+    const responseError = new Error(normalizeText(data?.error || data?.message) || 'Unable to prepare the completed document.')
+    responseError.code = normalizeText(data?.errorCode || data?.error_code) || 'FINAL_ACCESS_UNAVAILABLE'
+    throw responseError
+  }
+
+  const artifact = data?.finalArtifact && typeof data.finalArtifact === 'object' ? data.finalArtifact : null
+  const available = data.available === true && normalizeText(data.state).toLowerCase() === 'published'
+  const downloadUrl = normalizeText(artifact?.downloadUrl)
+  if (download && (!available || !downloadUrl)) {
+    const downloadError = new Error(normalizeText(data?.message) || 'The completed document is not ready for secure download yet.')
+    downloadError.code = 'FINAL_ACCESS_NOT_READY'
+    throw downloadError
+  }
+  return {
+    available,
+    state: normalizeText(data.state) || 'unavailable',
+    message: normalizeText(data.message) || (available ? 'The completed document is ready.' : 'The completed document is not ready yet.'),
+    finalArtifact: artifact
+      ? {
+          documentId: normalizeText(artifact.documentId) || null,
+          fileName: normalizeText(artifact.fileName) || 'signed-document.pdf',
+          sha256: normalizeText(artifact.sha256) || null,
+          byteLength: Number(artifact.byteLength) || null,
+          ...(downloadUrl ? { downloadUrl } : {}),
+        }
+      : null,
+  }
+}

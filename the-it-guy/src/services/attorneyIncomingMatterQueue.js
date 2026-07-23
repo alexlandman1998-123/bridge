@@ -8,8 +8,9 @@ import {
   buildAttorneyIncomingMatterContract,
   getAttorneyDocumentRequestsInReview,
   getOpenAttorneyDocumentRequests,
+  getAttorneyInstructionLane,
+  isAttorneyInstructionAssignment,
   isAttorneyInstructionClosedStatus,
-  isTransferAttorneyAssignment,
 } from '../core/transactions/attorneyIncomingMatterContract'
 import {
   getAuthenticatedUser,
@@ -284,7 +285,13 @@ function getOtpStatus({ transaction = {}, status = '' } = {}) {
   return { key: 'not_ready', label: 'Not ready' }
 }
 
-function getNextAction({ transaction = {}, contract = {}, documents = {} } = {}) {
+function getLaneLabel(laneKey = '') {
+  if (laneKey === 'bond') return 'bond attorney'
+  if (laneKey === 'cancellation') return 'cancellation attorney'
+  return 'transfer attorney'
+}
+
+function getNextAction({ transaction = {}, contract = {}, documents = {}, laneKey = 'transfer' } = {}) {
   const explicit = normalizeText(transaction.next_action)
   if (explicit) return explicit
 
@@ -299,7 +306,7 @@ function getNextAction({ transaction = {}, contract = {}, documents = {} } = {})
   }
 
   if (contract.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance) {
-    return 'Accept the transfer instruction.'
+    return `Accept the ${getLaneLabel(laneKey)} instruction.`
   }
 
   if (contract.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingClientOnboarding) {
@@ -331,11 +338,31 @@ function inferAttorneyRole(row = {}) {
   const explicitRole = row.attorney_role || row.attorneyRole || ''
   if (explicitRole) return explicitRole
 
+  const laneKey = normalizeKey(row.lane_key || row.laneKey)
+  if (laneKey === 'transfer') return 'transfer_attorney'
+  if (laneKey === 'bond') return 'bond_attorney'
+  if (laneKey === 'cancellation') return 'cancellation_attorney'
+
   const assignmentType = normalizeKey(row.assignment_type || row.assignmentType || row.matter_type || row.matterType)
   if (assignmentType === 'transfer' || assignmentType === 'transfer_and_bond') return 'transfer_attorney'
   if (assignmentType === 'bond' || assignmentType === 'bond_registration') return 'bond_attorney'
   if (assignmentType === 'cancellation' || assignmentType === 'bond_cancellation') return 'cancellation_attorney'
   return ''
+}
+
+function getMatterTypeLabel(assignment = {}) {
+  const assignmentType = normalizeKey(assignment.assignment_type || assignment.assignmentType || assignment.matter_type || assignment.matterType)
+  if (assignmentType === 'transfer_and_bond') return 'Transfer + Bond'
+  const lane = getAttorneyInstructionLane(assignment)
+  if (lane === 'bond') return 'Bond Registration'
+  if (lane === 'cancellation') return 'Bond Cancellation'
+  return 'Transfer'
+}
+
+function documentRequestMatchesAssignmentLane(request = {}, assignment = {}) {
+  const requestRole = inferAttorneyRole(request)
+  if (!requestRole) return true
+  return requestRole === inferAttorneyRole(assignment)
 }
 
 function normalizeAssignment(row = {}) {
@@ -462,17 +489,21 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
 
 function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById }) {
   const normalizedAssignment = normalizeAssignment(assignment)
+  const laneKey = getAttorneyInstructionLane(normalizedAssignment) || 'transfer'
+  const laneDocumentRequests = (documentRequests || []).filter((request) =>
+    documentRequestMatchesAssignmentLane(request, normalizedAssignment),
+  )
   const contract = buildAttorneyIncomingMatterContract({
     assignment: normalizedAssignment,
     transaction,
     onboarding,
-    documentRequests,
+    documentRequests: laneDocumentRequests,
   })
   const primaryAttorneyId = normalizedAssignment.primary_attorney_id || normalizedAssignment.attorney_user_id || null
   const primaryProfile = profilesById[primaryAttorneyId] || null
   const secretaryProfile = profilesById[normalizedAssignment.secretary_id] || null
   const adminProfile = profilesById[normalizedAssignment.admin_handler_id] || null
-  const documentSummary = buildDocumentSummary(documentRequests)
+  const documentSummary = buildDocumentSummary(laneDocumentRequests)
   const incomingSince = getIncomingSince({ transaction, assignment: normalizedAssignment, onboarding, status: contract.status })
   const assignedAttorneyName = getPersonName(primaryProfile, normalizedAssignment.attorney_firm_name || 'Unassigned')
   const waitingOnLabels = contract.waitingOn.map((item) => WAITING_ON_LABELS[item] || item)
@@ -482,7 +513,9 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     transactionId: transaction.id,
     matterId: transaction.id,
     reference: getMatterReference(transaction, transaction.id),
-    matterType: normalizedAssignment.assignment_type === 'transfer_and_bond' ? 'Transfer + Bond' : 'Transfer',
+    matterType: getMatterTypeLabel(normalizedAssignment),
+    laneKey,
+    attorneyRole: normalizedAssignment.attorney_role,
     status: contract.status,
     statusLabel: contract.label,
     waitingOn: contract.waitingOn,
@@ -503,10 +536,10 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     otpStatus: getOtpStatus({ transaction, status: contract.status }),
     documents: documentSummary,
     nextAction: normalizedAssignment.allocationState === 'awaiting_staff_assignment'
-      ? 'Firm accepted. Assign an internal primary transfer attorney.'
+      ? `Firm accepted. Assign an internal primary ${getLaneLabel(laneKey)}.`
       : normalizedAssignment.allocationState === 'staff_assigned'
-        ? 'Primary attorney assigned. Activate the transfer matter.'
-        : getNextAction({ transaction, contract, documents: documentSummary }),
+        ? `Primary attorney assigned. Activate the ${getLaneLabel(laneKey)} matter.`
+        : getNextAction({ transaction, contract, documents: documentSummary, laneKey }),
     firmAcceptanceStatus: normalizedAssignment.firmAcceptanceStatus,
     staffAssignmentStatus: normalizedAssignment.staffAssignmentStatus,
     allocationState: normalizedAssignment.allocationState,
@@ -535,7 +568,7 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
       assignment: normalizedAssignment,
       transaction,
       onboarding,
-      documentRequests,
+      documentRequests: laneDocumentRequests,
       buyer,
       unit,
       development,
@@ -593,6 +626,7 @@ function buildSummary(rows = [], allRows = []) {
   return {
     totalIncoming: rows.length,
     allTransferInstructions: allRows.length,
+    allAttorneyInstructions: allRows.length,
     awaitingBuyer: rows.filter((row) => row.status === 'awaiting_buyer').length,
     awaitingSignedOtp: rows.filter((row) => row.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp).length,
     awaitingDocuments: rows.filter((row) => row.status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments).length,
@@ -625,7 +659,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
 
   const instructionRows = (assignments || [])
     .map(normalizeAssignment)
-    .filter((assignment) => isTransferAttorneyAssignment(assignment))
+    .filter((assignment) => isAttorneyInstructionAssignment(assignment))
     .map((assignment) => {
       const transaction = transactionsById[assignment.transaction_id]
       if (!transaction || transaction.is_active === false) return null
@@ -829,8 +863,8 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     userId: currentUserId,
     canViewAll,
   })
-  const transferAssignments = assignments.map(normalizeAssignment).filter(isTransferAttorneyAssignment)
-  const transactionIds = unique(transferAssignments.map((assignment) => assignment.transaction_id))
+  const attorneyAssignments = assignments.map(normalizeAssignment).filter(isAttorneyInstructionAssignment)
+  const transactionIds = unique(attorneyAssignments.map((assignment) => assignment.transaction_id))
   const transactions = await fetchRowsByIds(client, 'transactions', TRANSACTION_COLUMNS, transactionIds)
   const [onboardingRows, documentRequests] = await Promise.all([
     fetchOnboardingRows(client, transactionIds),
@@ -844,7 +878,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     ...transactions.map((transaction) => transaction.development_id),
     ...units.map((unit) => unit.development_id),
   ])
-  const profileIds = unique(transferAssignments.flatMap((assignment) => [
+  const profileIds = unique(attorneyAssignments.flatMap((assignment) => [
     assignment.primary_attorney_id,
     assignment.attorney_user_id,
     assignment.secretary_id,
@@ -861,7 +895,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   return buildAttorneyIncomingMatterQueueFromSources({
     firm,
     currentUser: mapCurrentUser(authUser, membership, permissions),
-    assignments: transferAssignments,
+    assignments: attorneyAssignments,
     transactions,
     onboardingRows,
     documentRequests,

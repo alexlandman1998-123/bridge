@@ -15,7 +15,7 @@ async function read(table, select) {
 }
 
 const [transactionRows, participants, documents, lanes] = await Promise.all([
-  fetch(`${baseUrl}/rest/v1/transactions?id=eq.${encodeURIComponent(transactionId)}&select=${encodeURIComponent('id,creation_idempotency_key,routing_profile_json')}`, { headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` } }).then(async (response) => {
+  fetch(`${baseUrl}/rest/v1/transactions?id=eq.${encodeURIComponent(transactionId)}&select=${encodeURIComponent('id,accepted_offer_id,creation_idempotency_key,routing_profile_json')}`, { headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` } }).then(async (response) => {
     if (!response.ok) throw new Error(`transactions read failed (${response.status}): ${await response.text()}`)
     return response.json()
   }),
@@ -27,6 +27,7 @@ const [transactionRows, participants, documents, lanes] = await Promise.all([
 const transaction = transactionRows[0] || null
 const missing = []
 if (!transaction?.creation_idempotency_key) missing.push('transaction_idempotency')
+if (!transaction?.accepted_offer_id) missing.push('accepted_offer')
 if (!transaction?.routing_profile_json) missing.push('routing_profile')
 if (!participants.length) missing.push('participants')
 if (!documents.length) missing.push('document_requirements')
@@ -40,6 +41,9 @@ const batchRecord = {
   participantBootstrapComplete: participants.length >= 2,
   documentBootstrapComplete: documents.length > 0,
   workflowBootstrapComplete: ['main', 'finance', 'transfer'].every((laneType) => laneTypes.has(laneType)),
+  conversionConfirmed: Boolean(transaction?.accepted_offer_id && transaction?.creation_idempotency_key),
+  healthAudited: false,
+  notificationDeliveryReviewed: false,
 }
 
 console.log(JSON.stringify({

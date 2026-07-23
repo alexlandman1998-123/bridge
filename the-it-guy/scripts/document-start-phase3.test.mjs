@@ -43,22 +43,37 @@ for (const reference of [
   'draft={effectiveMandateDraft}',
   'sourceMode={documentStartSourceMode}',
   'documentStart={documentStartEntryPoint}',
-  'onFieldChange={updateMandateDraftField}',
+  'onAttorneySelectionDeferredChange={setTransferAttorneySelectionDeferred}',
+  'onConfirm={handleConfirmMandateEssentials}',
+  'onEditSellerDetails={handleEditMandateSellerDetails}',
 ]) {
   assertIncludes(page, reference, `LegalDocumentWorkspacePage should keep Phase 3 wiring ${reference}.`)
 }
 
+const mandateIntakeStart = page.indexOf('<MandateDraftIntakePanel')
+const mandateIntakeEnd = page.indexOf('/>', mandateIntakeStart)
+const mandateIntake = page.slice(mandateIntakeStart, mandateIntakeEnd)
+assert.ok(mandateIntakeStart >= 0 && mandateIntakeEnd > mandateIntakeStart, 'LegalDocumentWorkspacePage should render the mandate intake panel.')
+assert.doesNotMatch(
+  mandateIntake,
+  /onFieldChange=/,
+  'The mandate intake is a canonical source snapshot and must not restore an in-place draft field editor.',
+)
+
 for (const reference of [
-  'Mandate details',
-  'Review the essentials',
-  'Seller',
-  'Property',
+  'Mandate check',
+  'Confirm the seller facts',
   'Manual capture',
-  'Core mandate fields',
+  'Legal situation',
+  'Legal details ready',
   'Ready for draft generation.',
-  'Seller contact and authority',
-  'Property extras',
-  'Terms and special conditions',
+  'Seller, property and mandate choices are managed from the Seller workspace.',
+  'Edit in Seller',
+  'Looks good',
+  "Seller's transferring attorney",
+  'Approved attorney partners',
+  'Seller will nominate the transferring attorney later',
+  'Update missing items in Seller before generating if they are required for this mandate.',
 ]) {
   assertIncludes(panel, reference, `MandateDraftIntakePanel should keep ${reference}.`)
 }

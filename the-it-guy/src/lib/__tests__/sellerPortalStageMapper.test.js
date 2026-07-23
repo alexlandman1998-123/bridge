@@ -76,4 +76,25 @@ const activeMarketListing = getSellerPortalStageMeta({
 
 assert.equal(activeMarketListing.currentStageKey, 'listed')
 
+assert.equal(
+  getSellerPortalStageMeta({ current_main_stage: 'FIN', context: { listingStatus: 'listed' } }).currentStageKey,
+  'offer_accepted',
+  'finance-stage transactions should remain beyond the listing workflow',
+)
+assert.equal(
+  getSellerPortalStageMeta({ current_main_stage: 'ATTY', context: { listingStatus: 'listed' } }).currentStageKey,
+  'transfer',
+  'attorney-stage transactions should take the seller tracker into transfer',
+)
+assert.equal(
+  getSellerPortalStageMeta({ current_main_stage: 'XFER', context: { listingStatus: 'listed' } }).currentStageKey,
+  'transfer',
+  'transfer-stage transactions should override a stale listing stage',
+)
+assert.equal(
+  getSellerPortalStageMeta({ current_main_stage: 'REG', context: { listingStatus: 'listed' } }).currentStageKey,
+  'registered',
+  'registration-stage transactions should override a stale listing stage',
+)
+
 console.log('sellerPortalStageMapper tests passed')

@@ -18,6 +18,7 @@ const blocked = buildMvpTransactionHealthPanel({
   transaction: { testDataProtection: { isTestData: true, marker: 'TEST — DO NOT ACTION', externalDeliveryAllowed: false } },
   participantRoster: { summary: { assigned: 3, required: 4 } },
   documentRoster: { summary: { complete: 2, required: 4, outstanding: 2 } },
+  notificationOutbox: [{ id: 'event-health-1', status: 'failed', channel: 'email' }],
 })
 
 assert.equal(blocked.status.key, 'blocked')
@@ -27,6 +28,8 @@ assert.equal(blocked.summary.participantsAssigned, 3)
 assert.equal(blocked.summary.documentsComplete, 2)
 assert.equal(blocked.attention[0].ownerRole, 'buyer')
 assert.equal(blocked.testData.isTestData, true)
+assert.equal(blocked.notifications.failed, 1)
+assert.equal(blocked.notifications.reviewRequired, true)
 
 const ready = buildMvpTransactionHealthPanel({
   truth: {
@@ -38,5 +41,10 @@ const ready = buildMvpTransactionHealthPanel({
 })
 assert.equal(ready.status.key, 'ready')
 assert.equal(ready.summary.attentionCount, 0)
+
+const creationMismatch = buildMvpTransactionHealthPanel({
+  transaction: { accepted_offer_id: 'offer-health-1', creation_idempotency_key: '' },
+})
+assert.equal(creationMismatch.creation.confirmed, false)
 
 console.log('mvp-transaction-health-panel: passed')

@@ -29,28 +29,27 @@ for (const token of [
   'const contentGateBlockers = (contentGate?.blockers || [])',
   'critical: dedupeValidationIssues([',
   '...contentGateBlockers',
-  'isValidForGeneration: (contentGateBlockers.length || launchReadinessBlockers.length) ? false',
-  'const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'mandate_template_content_gate\')',
-  'const hasLegalScenarioBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'legal_scenario\')',
-  'const hasLegalScenarioRequirementBlockingIssues = (validation.critical || []).some((issue) => issue?.source === \'legal_scenario_requirement\')',
-  'const allowGenerationBypass = (',
+  'contentGateBlockers.length || launchReadinessBlockers.length ? false : validation?.isValidForGeneration,',
+  'const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some(',
+  "(issue) => issue?.source === 'mandate_template_content_gate'",
+  'if (!validation.isValidForGeneration) {',
 ]) {
   assert.ok(packetServiceSource.includes(token), `Runtime generation guard should include ${token}.`)
 }
 
-assert.match(
+assert.doesNotMatch(
   packetServiceSource,
-  /const allowGenerationBypass = \([\s\S]*?isMandatePacket[\s\S]*?!hasConditionalPackBlockingIssues[\s\S]*?!hasLegalScenarioBlockingIssues[\s\S]*?!hasLegalScenarioRequirementBlockingIssues[\s\S]*?!hasMandateTemplateContentGateBlockingIssues[\s\S]*?!hasMandateTemplateLaunchReadinessBlockingIssues[\s\S]*?\) \|\| forceGenerate/,
-  'Mandate generation bypass must preserve every conditional, legal-scenario, content-gate, and launch-readiness guard.',
+  /allowGenerationBypass|forceGenerate/,
+  'Critical mandate validation must never be bypassed during generation.',
 )
 
 const contentGateIndex = packetServiceSource.indexOf('const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)')
 const criticalIndex = packetServiceSource.indexOf('critical: dedupeValidationIssues([', contentGateIndex)
-const bypassIndex = packetServiceSource.indexOf('hasMandateTemplateContentGateBlockingIssues')
+const validationBlockIndex = packetServiceSource.indexOf('if (!validation.isValidForGeneration) {')
 const errorIndex = packetServiceSource.indexOf('MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED')
 assert.ok(contentGateIndex > -1 && criticalIndex > contentGateIndex, 'Runtime content gate blockers should be added to validation critical issues.')
-assert.ok(bypassIndex > criticalIndex, 'Generation bypass should evaluate content-gate critical issues after validation is decorated.')
-assert.ok(errorIndex > bypassIndex, 'Content-gate failures should throw a specific generation error.')
+assert.ok(validationBlockIndex > criticalIndex, 'Generation must stop after evaluating decorated critical validation issues.')
+assert.ok(errorIndex > validationBlockIndex, 'Content-gate failures should throw a specific generation error.')
 
 const fallbackRouteIndex = packetServiceSource.indexOf("resolutionSource === 'mandate_scenario_fallback'")
 const defaultRouteIndex = packetServiceSource.indexOf("return 'default'", fallbackRouteIndex)

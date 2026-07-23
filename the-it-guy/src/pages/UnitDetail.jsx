@@ -36,15 +36,11 @@ import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
-import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
-import { formatLegalDocumentGenerationRecovery } from '../core/documents/legalDocumentGenerationRecovery'
-import { isAmbiguousLegalDocumentGenerationFailure } from '../core/documents/legalDocumentGenerationReconciliation'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
-import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
@@ -60,7 +56,6 @@ import {
   resolveBuyerAppointedBondOriginatorRequest,
   updateTransactionDocumentRequestStatus,
   buildWorkflowStepComment,
-  finalizeSignedOtpWorkflow,
   getTransactionRollup,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
@@ -144,7 +139,7 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
-import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
+import { listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
 
@@ -456,23 +451,6 @@ function resolveUnitDevelopmentSellerSnapshot(unit = {}) {
       unit?.development?.profile?.seller_details ||
       {},
   )
-}
-
-function getDevelopmentSellerReadiness(snapshot = {}) {
-  const seller = normalizeDevelopmentSellerSnapshot(snapshot)
-  const signatory = seller.signatory || {}
-  const missing = []
-  if (!seller.legalName) missing.push('seller legal name')
-  if (!seller.registrationNumber) missing.push('registration number')
-  if (!signatory.fullName) missing.push('authorised signatory')
-  if (!(signatory.signingCapacity || signatory.role)) missing.push('signatory capacity')
-  return {
-    ready: missing.length === 0,
-    missing,
-    message: missing.length
-      ? `Complete seller details before generating or sending OTP documents: ${missing.join(', ')}.`
-      : '',
-  }
 }
 
 function normalizeDisplayName(value) {
@@ -2882,14 +2860,7 @@ function UnitDetail() {
   const [documentRequestResendingId, setDocumentRequestResendingId] = useState('')
   const [documentRequestStatusUpdatingId, setDocumentRequestStatusUpdatingId] = useState('')
   const [showAdditionalRequestForm, setShowAdditionalRequestForm] = useState(false)
-  const [otpModalOpen, setOtpModalOpen] = useState(false)
   const [otpStartOpen, setOtpStartOpen] = useState(false)
-  const [otpSpecialConditions, setOtpSpecialConditions] = useState('')
-  const [otpModalMessage, setOtpModalMessage] = useState('')
-  const [otpPacketId, setOtpPacketId] = useState('')
-  const [otpPacketTemplates, setOtpPacketTemplates] = useState([])
-  const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
-  const [legalWorkspaceMode] = useState('view')
   const [otpPacketStatusLoading, setOtpPacketStatusLoading] = useState(false)
   const [otpPacketStatus, setOtpPacketStatus] = useState(() => ({
     packetType: 'otp',
@@ -2952,7 +2923,6 @@ function UnitDetail() {
   const discussionPanelRef = useRef(null)
   const workspaceMenuRef = useRef(null)
   const workflowPanelRef = useRef(null)
-  const signedOtpUploadInputRef = useRef(null)
   const uploadDocumentFileInputRef = useRef(null)
   const loadRequestRef = useRef(0)
 
@@ -4603,41 +4573,13 @@ function UnitDetail() {
     }
   }
 
-  async function _openOtpGenerateModal() {
-    if (!transaction?.id) {
-      setError('Transaction data is not available for OTP generation.')
-      return
-    }
-    setOtpModalMessage('')
-    try {
-      const templates = await listPacketTemplates({
-        packetType: 'otp',
-        moduleType: 'agency',
-        includeInactive: false,
-        organisationId: transaction?.organisation_id || null,
-      })
-      setOtpPacketTemplates(templates || [])
-    } catch (templateError) {
-      console.error('[Packet Templates][OTP]', templateError)
-      setOtpPacketTemplates([])
-    }
-    setOtpModalOpen(true)
-  }
-
-  function openOtpDocumentUrl(url = '') {
-    const targetUrl = String(url || '').trim()
-    if (!targetUrl) return
-    const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
-    if (!opened) window.location.href = targetUrl
-  }
-
   function buildOtpLegalWorkspacePath(mode = 'view', options = {}) {
     const resolvedTransactionId = String(transaction?.id || '').trim()
     if (!resolvedTransactionId) return ''
     const params = new URLSearchParams()
     params.set('mode', resolveWorkspaceModeFromAction(mode))
     params.set('returnTo', `${location.pathname}${location.search}`)
-    const resolvedPacketId = String(otpPacketStatus?.packet?.id || otpPacketId || '').trim()
+    const resolvedPacketId = String(otpPacketStatus?.packet?.id || '').trim()
     if (resolvedPacketId) params.set('packetId', resolvedPacketId)
     const sourceMode = normalizeText(options?.sourceMode)
     const documentStart = normalizeText(options?.documentStart)
@@ -4782,172 +4724,6 @@ function UnitDetail() {
     navigate(path)
   }
 
-  function handleWorkspaceViewOtp() {
-    if (!otpGeneratedDocument?.url) {
-      setError('OTP preview is not available yet. Generate a draft first.')
-      return
-    }
-    openOtpDocumentUrl(otpGeneratedDocument.url)
-  }
-
-  function handleWorkspaceViewSignedOtp() {
-    if (!otpSignedDocument?.url) {
-      setError('Signed OTP is not available yet. Upload or finalize the signed copy first.')
-      return
-    }
-    openOtpDocumentUrl(otpSignedDocument.url)
-  }
-
-  function closeOtpGenerateModal() {
-    if (salesActionLoading === 'generate_otp') {
-      return
-    }
-    setOtpModalOpen(false)
-    setOtpModalMessage('')
-  }
-
-  function handleSaveOtpDraftModal() {
-    setOtpModalMessage('Draft saved locally. Backend save hook will be wired next.')
-  }
-
-  async function handleGenerateOtpDraft({ specialConditions = '', onProgress } = {}) {
-    if (!transaction?.id) {
-      setError('Transaction data is not available for OTP generation.')
-      return false
-    }
-    const sellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
-    if (!sellerReadiness.ready) {
-      setError(sellerReadiness.message)
-      return false
-    }
-
-    try {
-      setSalesActionLoading('generate_otp')
-      setError('')
-      onProgress?.('Preparing template…')
-      const templates = await listPacketTemplates({
-        packetType: 'otp',
-        moduleType: 'agency',
-        includeInactive: false,
-        organisationId: transaction?.organisation_id || null,
-      })
-      const template = Array.isArray(templates) ? templates[0] : null
-      if (!template?.id) {
-        throw new Error('No active template is configured for this document type.')
-      }
-
-      const existingStatus = await resolveDocumentPacketStatus({
-        packetType: 'otp',
-        packetId: normalizeText(otpPacketStatus?.packet?.id || otpPacketId),
-        transactionId: normalizeText(transaction?.id),
-        organisationId: transaction?.organisation_id || null,
-      })
-      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingStatus?.state).toLowerCase())) {
-        throw new Error('This OTP is already sent or signed. Open the current document instead of generating a new draft.')
-      }
-
-      let packet = existingStatus?.packet || null
-      if (!packet?.id) {
-        const existingPackets = await listDocumentPackets({
-          organisationId: transaction?.organisation_id || null,
-          packetType: 'otp',
-          transactionId: transaction.id,
-          limit: 5,
-        })
-        packet = Array.isArray(existingPackets) ? (existingPackets[0] || null) : null
-      }
-
-      if (!packet?.id) {
-        packet = await createDocumentPacket({
-          organisationId: transaction?.organisation_id || null,
-          packetType: 'otp',
-          title: `OTP - ${unit?.unit_number ? `Unit ${unit.unit_number}` : 'Transaction'}`,
-          transactionId: transaction.id,
-          dealId: transaction.id,
-          status: 'ready_for_generation',
-          templateId: normalizeText(template?.id),
-          templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key || 'otp_default'),
-          templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || 'Offer to Purchase'),
-          assignedAgentId: isUuidLike(transaction?.assigned_user_id) ? transaction.assigned_user_id : null,
-          sourceContextJson: {
-            transactionId: normalizeText(transaction?.id),
-            unitId: normalizeText(unit?.id),
-            developmentId: normalizeText(unit?.development_id || unit?.development?.id),
-            sellerDetails: developmentSellerSnapshot,
-            sellerLegalName: developmentSellerSnapshot.legalName || null,
-            sellerSignatoryName: developmentSellerSignatory.fullName || null,
-            workflow: 'sales',
-          },
-        })
-      }
-
-      setOtpPacketId(normalizeText(packet?.id))
-      onProgress?.('Merging transaction details…')
-      await generatePacketVersion({
-        packetId: packet.id,
-        packetType: 'otp',
-        template,
-        allowWarnings: true,
-        forceGenerate: true,
-        context: {
-          transaction,
-          transactionId: transaction.id,
-          unit,
-          buyer,
-          sellerDetails: developmentSellerSnapshot,
-          onboardingFormData: onboardingFormData?.formData || {},
-          generatedByRole: effectiveEditorRole || workspaceRole || 'agent',
-          generatedByUserId: normalizeText(transaction?.assigned_user_id || transaction?.owner_user_id || ''),
-          generatedByUserEmail: normalizeText(transaction?.assigned_agent_email || ''),
-          specialConditions: normalizeText(specialConditions),
-          purchasePriceLabel: currency.format(purchasePriceValue || 0),
-          onboardingStatus: clientInfoForm.onboarding_status || onboardingStatus,
-        },
-      })
-
-      onProgress?.('Preparing preview…')
-      await postSystemDiscussionUpdates([
-        `Sales workflow updated: OTP packet draft generated by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.${String(specialConditions || '').trim() ? ` Special conditions captured: ${String(specialConditions || '').trim()}` : ''}`,
-      ])
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadDetail()
-      return true
-    } catch (generationError) {
-      if (!isAmbiguousLegalDocumentGenerationFailure(generationError)) {
-        setError(formatLegalDocumentGenerationRecovery(generationError, { packetType: 'otp' }))
-      }
-      throw generationError
-    } finally {
-      setSalesActionLoading('')
-    }
-  }
-
-  async function handleWorkspaceGenerateOtp({ onProgress } = {}) {
-    const generated = await handleGenerateOtpDraft({
-      specialConditions: otpSpecialConditions,
-      onProgress,
-    })
-    if (!generated) {
-      throw new Error('Unable to generate OTP draft right now.')
-    }
-    return generated
-  }
-
-  async function _handleGenerateOtpFromModal() {
-    const generated = await handleGenerateOtpDraft({ specialConditions: otpSpecialConditions })
-    if (generated) {
-      closeOtpGenerateModal()
-    }
-  }
-
-  async function _handleGenerateOtpAndSendFromModal() {
-    const generated = await handleGenerateOtpDraft({ specialConditions: otpSpecialConditions })
-    if (!generated) {
-      return
-    }
-    setOtpModalMessage('OTP draft generated. Send automation will be wired once backend send flow is enabled.')
-  }
-
   async function handleApproveOtpDraft() {
     const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
     if (!generatedOtp?.id) {
@@ -4973,78 +4749,6 @@ function UnitDetail() {
     } finally {
       setSalesActionLoading('')
     }
-  }
-
-  async function handleReleaseOtpToClient() {
-    const sellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
-    if (!sellerReadiness.ready) {
-      setError(sellerReadiness.message)
-      return
-    }
-    const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
-    if (!generatedOtp?.id) {
-      setError('Generate and approve OTP before sharing it with the client.')
-      return
-    }
-
-    try {
-      setSalesActionLoading('share_otp')
-      setError('')
-      await updateOtpDocumentWorkflowState({
-        documentId: generatedOtp.id,
-        workflowState: OTP_DOCUMENT_TYPES.sentToClient,
-        isClientVisible: true,
-      })
-      await postSystemDiscussionUpdates([
-        `Sales workflow updated: OTP released to client by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
-      ])
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadDetail()
-    } catch (releaseError) {
-      setError(releaseError?.message || 'Unable to release OTP to client.')
-    } finally {
-      setSalesActionLoading('')
-    }
-  }
-
-  async function handleSignedOtpSelected(event) {
-    const [file] = Array.from(event?.target?.files || [])
-    event.target.value = ''
-
-    if (!file || !transaction?.id) {
-      return
-    }
-
-    try {
-      setSalesActionLoading('upload_signed_otp')
-      setError('')
-      await uploadDocument({
-        transactionId: transaction.id,
-        file,
-        category: 'Signed OTP',
-        documentType: OTP_DOCUMENT_TYPES.signedReuploaded,
-        stageKey: 'otp_prep_signing',
-        isClientVisible: false,
-      })
-      await finalizeSignedOtpWorkflow({
-        transactionId: transaction.id,
-        financeType: transaction?.finance_type || stageForm.finance_type || 'cash',
-        actorRole: effectiveEditorRole,
-      })
-      await postSystemDiscussionUpdates([
-        `Sales workflow updated: Signed OTP uploaded by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
-      ])
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadDetail()
-    } catch (uploadError) {
-      setError(uploadError?.message || 'Unable to upload signed OTP.')
-    } finally {
-      setSalesActionLoading('')
-    }
-  }
-
-  function triggerSignedOtpUpload() {
-    signedOtpUploadInputRef.current?.click()
   }
 
   function openDocumentsWorkspace() {
@@ -5793,9 +5497,6 @@ function UnitDetail() {
     workspaceRole,
   })
   const developmentSellerSnapshot = resolveUnitDevelopmentSellerSnapshot(unit)
-  const developmentSellerSignatory = developmentSellerSnapshot.signatory || {}
-  const developmentSellerReadiness = getDevelopmentSellerReadiness(developmentSellerSnapshot)
-  const developmentSellerConfigured = developmentSellerReadiness.ready
   const workspaceLabels = transactionWorkspaceProfile.labels
 
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
@@ -6666,8 +6367,6 @@ function UnitDetail() {
     buyer?.name ||
     'Not captured'
   const purchaserEmailForOtp = clientInfoForm.buyer_email || buyer?.email || 'Not captured'
-  const purchaserPhoneForOtp = clientInfoForm.buyer_phone || buyer?.phone || 'Not captured'
-  const purchaserTypeForOtp = getPurchaserTypeLabel(stageForm.purchaser_type || transaction?.purchaser_type || 'individual')
   const propertyAddressForOtp =
     [
       unit?.address_line1,
@@ -6678,16 +6377,6 @@ function UnitDetail() {
       .map((value) => String(value || '').trim())
       .filter(Boolean)
       .join(', ') || 'Not captured'
-  const conveyancerNameForOtp =
-    stageForm.attorney ||
-    transaction?.attorney ||
-    attorneyParticipant?.participantName ||
-    'Not assigned'
-  const conveyancerEmailForOtp =
-    stageForm.assigned_attorney_email ||
-    transaction?.assigned_attorney_email ||
-    attorneyParticipant?.participantEmail ||
-    'Not captured'
   const reservationProofStatusLabel =
     reservationStatusRaw === 'verified' || reservationRequirementStatus === 'accepted'
       ? 'Payment Received'
@@ -6697,7 +6386,6 @@ function UnitDetail() {
           ? 'Uploaded'
           : 'Awaiting Proof of Payment'
   const otpGeneratedDocument = salesWorkflowSnapshot?.latestGeneratedOtpDocument || null
-  const otpSignedDocument = salesWorkflowSnapshot?.latestSignedOtpDocument || null
   const otpStatusLabel =
     salesWorkflowSnapshot?.signedOtpReceived
       ? 'Signed / Final'
@@ -7738,7 +7426,9 @@ function UnitDetail() {
 
   const salesWorkflowHelperText = salesWorkflowSnapshot.readyForFinance
     ? 'Sales prerequisites complete. Finance actions are now unlocked.'
-    : salesWorkflowSnapshot.blockers[0] || 'Complete the current stage action to continue.'
+    : salesWorkflowSnapshot.nextAction === 'upload_signed_otp'
+      ? 'Signed OTP upload and finalization are paused until canonical server-attested completion is available. No final transaction state can be recorded from this page.'
+      : salesWorkflowSnapshot.blockers[0] || 'Complete the current stage action to continue.'
 
   const salesWorkflowActions = (() => {
     if (!canEditSalesWorkflow) {
@@ -7821,17 +7511,6 @@ function UnitDetail() {
           addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
         }
         break
-      case 'upload_signed_otp':
-        addAction(
-          'upload_signed_otp',
-          salesActionLoading === 'upload_signed_otp' ? 'Uploading…' : 'Upload Signed OTP',
-          triggerSignedOtpUpload,
-          { variant: 'primary' },
-        )
-        if (generatedOtpUrl) {
-          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
-        }
-        break
       case 'complete_supporting_documents':
         addAction('open_documents', 'Open Documents', openDocumentsWorkspace, { variant: 'primary' })
         addAction(
@@ -7884,14 +7563,6 @@ function UnitDetail() {
         roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
         actions={salesWorkflowActions}
         helperText={salesWorkflowHelperText}
-      />
-      <input
-        ref={signedOtpUploadInputRef}
-        type="file"
-        className="hidden"
-        onChange={(event) => {
-          void handleSignedOtpSelected(event)
-        }}
       />
     </div>
   )
@@ -10964,209 +10635,6 @@ function UnitDetail() {
       busy={salesActionLoading === 'generate_otp' || sendingOnboardingEmail || otpPacketStatusLoading}
       onContinue={(selection) => void handleStartTransactionOtpDocument(selection)}
     />
-    <LegalDocumentWorkspace
-      open={legalWorkspaceOpen}
-      onClose={() => setLegalWorkspaceOpen(false)}
-      transactionId={String(transaction?.id || '').trim()}
-      transactionReference={
-        [
-          String(unit?.unit_number ? `Unit ${unit.unit_number}` : '').trim(),
-          String(unit?.development?.name || '').trim(),
-        ].filter(Boolean).join(' · ') || 'Transaction document context'
-      }
-      packetType="otp"
-      packetId={String(otpPacketStatus?.packet?.id || otpPacketId || '').trim()}
-      mode={legalWorkspaceMode}
-      initialStatus={otpPacketStatus}
-      organisationId={transaction?.organisation_id || null}
-      onGenerate={handleWorkspaceGenerateOtp}
-      onEdit={handleSaveOtpDraftModal}
-      onSend={handleReleaseOtpToClient}
-      onView={handleWorkspaceViewOtp}
-      onViewSigned={handleWorkspaceViewSignedOtp}
-      onRefreshContext={loadDetail}
-    />
-    <Modal
-      open={otpModalOpen}
-      onClose={closeOtpGenerateModal}
-      title="Generate Offer to Purchase (OTP)"
-      subtitle="Run packet validation, generate preview versions, and prepare the OTP packet for sending."
-      footer={(
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={closeOtpGenerateModal} disabled={salesActionLoading === 'generate_otp'}>
-            Cancel
-          </Button>
-        </div>
-      )}
-      className="max-w-[1320px]"
-    >
-      <div className="space-y-4">
-        {otpModalMessage ? (
-          <div className="rounded-[12px] border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-2 text-xs font-medium text-[#35546c]">
-            {otpModalMessage}
-          </div>
-        ) : null}
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <h4 className="text-sm font-semibold text-[#142132]">Purchaser Details</h4>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Name</dt>
-                <dd className="text-right font-medium text-[#142132]">{purchaserNameForOtp}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Email</dt>
-                <dd className="text-right font-medium text-[#142132]">{purchaserEmailForOtp}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Phone</dt>
-                <dd className="text-right font-medium text-[#142132]">{purchaserPhoneForOtp}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Purchaser Type</dt>
-                <dd className="text-right font-medium text-[#142132]">{purchaserTypeForOtp}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <h4 className="text-sm font-semibold text-[#142132]">Property Details</h4>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Development</dt>
-                <dd className="text-right font-medium text-[#142132]">{unit?.development?.name || 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Unit</dt>
-                <dd className="text-right font-medium text-[#142132]">{unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Property Type</dt>
-                <dd className="text-right font-medium text-[#142132]">{unit?.property_type || 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Address</dt>
-                <dd className="max-w-[68%] text-right font-medium text-[#142132]">{propertyAddressForOtp}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <h4 className="text-sm font-semibold text-[#142132]">Seller Details</h4>
-              <span
-                className={[
-                  'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
-                  developmentSellerConfigured
-                    ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
-                    : 'border-[#f2c9c3] bg-[#fff5f4] text-[#b42318]',
-                ].join(' ')}
-              >
-                {developmentSellerConfigured ? 'Configured' : 'Needs setup'}
-              </span>
-            </div>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Legal Seller</dt>
-                <dd className="text-right font-medium text-[#142132]">{developmentSellerSnapshot.legalName || 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Registration</dt>
-                <dd className="text-right font-medium text-[#142132]">{developmentSellerSnapshot.registrationNumber || 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Signatory</dt>
-                <dd className="text-right font-medium text-[#142132]">{developmentSellerSignatory.fullName || 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Capacity</dt>
-                <dd className="text-right font-medium text-[#142132]">{developmentSellerSignatory.signingCapacity || developmentSellerSignatory.role || 'Not captured'}</dd>
-              </div>
-            </dl>
-            {!developmentSellerConfigured ? (
-              <p className="mt-3 rounded-[10px] border border-[#f2c9c3] bg-[#fff5f4] px-3 py-2 text-xs leading-5 text-[#8e1f15]">
-                Missing: {developmentSellerReadiness.missing.join(', ')}.
-              </p>
-            ) : null}
-          </section>
-
-          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <h4 className="text-sm font-semibold text-[#142132]">Purchase Details</h4>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Purchase Price</dt>
-                <dd className="text-right font-medium text-[#142132]">{currency.format(purchasePriceValue || 0)}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Deposit Amount</dt>
-                <dd className="text-right font-medium text-[#142132]">{transaction?.deposit_amount ? currency.format(transaction.deposit_amount) : 'Not captured'}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Finance Type</dt>
-                <dd className="text-right font-medium text-[#142132]">{normalizeFinanceType(transaction?.finance_type || 'cash') === 'combination' ? 'Hybrid' : toTitleLabel(normalizeFinanceType(transaction?.finance_type || 'cash'))}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Current Stage</dt>
-                <dd className="text-right font-medium text-[#142132]">{MAIN_STAGE_LABELS[transaction?.current_main_stage] || transaction?.stage || 'Available'}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-            <h4 className="text-sm font-semibold text-[#142132]">Conveyancer Details</h4>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Firm / Name</dt>
-                <dd className="text-right font-medium text-[#142132]">{conveyancerNameForOtp}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[#6b7d93]">Email</dt>
-                <dd className="text-right font-medium text-[#142132]">{conveyancerEmailForOtp}</dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-
-        <section className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-          <label className="block text-sm font-semibold text-[#142132]" htmlFor="otp-special-conditions">
-            Special Conditions
-          </label>
-          <textarea
-            id="otp-special-conditions"
-            value={otpSpecialConditions}
-            onChange={(event) => setOtpSpecialConditions(event.target.value)}
-            rows={4}
-            className="mt-2 w-full rounded-[12px] border border-[#d9e4ef] bg-white px-3 py-2 text-sm text-[#142132] outline-none transition focus:border-[#84a8cc] focus:ring-2 focus:ring-[#84a8cc]/20"
-            placeholder="Add any special clauses or terms to include in the OTP draft."
-          />
-        </section>
-
-        <DocumentPacketWorkflowPanel
-          packetType="otp"
-          heading="Offer to Purchase Packet"
-          packetId={otpPacketId}
-          onPacketIdChange={setOtpPacketId}
-          templates={otpPacketTemplates}
-          context={{
-            organisationId: transaction?.organisation_id || null,
-            transaction,
-            unit,
-            buyer,
-            sellerDetails: developmentSellerSnapshot,
-            onboardingFormData: onboardingFormData?.formData || {},
-            specialConditions: otpSpecialConditions,
-            generatedByRole: effectiveEditorRole,
-            generatedByUserId: transaction?.assigned_user_id || transaction?.owner_user_id || null,
-          }}
-          onPacketGenerated={async () => {
-            setOtpModalMessage('Packet version generated. OTP workflow has been updated.')
-            window.dispatchEvent(new Event('itg:transaction-updated'))
-            await loadDetail()
-          }}
-        />
-      </div>
-    </Modal>
     <Modal
       open={proxyUpdateModalOpen}
       onClose={() => {

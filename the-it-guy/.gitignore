@@ -25,3 +25,4 @@ playwright/.auth/
 *.sln
 *.sw?
 .vercel
+private-evidence/

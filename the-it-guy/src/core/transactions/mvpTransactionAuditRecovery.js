@@ -1,4 +1,4 @@
-export const MVP_TRANSACTION_AUDIT_RECOVERY_VERSION = 'arch9_mvp_transaction_audit_recovery_v1'
+export const MVP_TRANSACTION_AUDIT_RECOVERY_VERSION = 'arch9_mvp_transaction_audit_recovery_v2'
 
 function text(value) {
   return String(value || '').trim()
@@ -71,6 +71,18 @@ export function buildMvpTransactionAuditRecovery({
 
   const testData = health.testData || transaction.testDataProtection || {}
   const protectedTestData = testData.isTestData === true || testData.is_test_data === true
+  const creation = health.creation || {}
+  const hasCreationEvidence = Boolean(creation.acceptedOfferId || creation.idempotencyKey || creation.receiptStatus)
+  if (hasCreationEvidence && creation.confirmed !== true) {
+    issues.push(issue({
+      key: 'creation:unconfirmed',
+      severity: 'critical',
+      title: 'Accepted-offer conversion is not fully confirmed',
+      detail: 'The accepted offer and creation idempotency key must both match this transaction before any retry or manual intervention.',
+      recoveryActionKey: 'refresh_transaction_health',
+    }))
+    addAction({ key: 'refresh_transaction_health', label: 'Refresh transaction health', mode: 'read_only', safeToRun: true })
+  }
   if (protectedTestData) {
     issues.push(issue({ key: 'test_data_protected', severity: 'info', title: 'Controlled test transaction', detail: 'External delivery remains suppressed for this transaction.', recoveryActionKey: 'refresh_transaction_health' }))
   }
@@ -98,6 +110,30 @@ export function buildMvpTransactionAuditRecovery({
         safeToRun: false,
       })
     }
+  }
+
+  const preparedNotifications = rows(notificationOutbox).filter((event) => event?.status === 'prepared')
+  if (preparedNotifications.length > 0) {
+    issues.push(issue({
+      key: 'notification:prepared_review',
+      severity: 'warning',
+      title: 'Notification delivery needs operator review',
+      detail: `${preparedNotifications.length} notification${preparedNotifications.length === 1 ? ' is' : 's are'} prepared but not sent. Confirm the recipient and content before an operator sends anything.`,
+      recoveryActionKey: 'review_notification_delivery',
+    }))
+    addAction({ key: 'review_notification_delivery', label: 'Review prepared notifications', mode: 'guided', safeToRun: true })
+  }
+
+  const agentHandoffs = rows(notificationOutbox).filter((event) => event?.handoffRequired === true || event?.metadata?.handoffRequired === true)
+  if (agentHandoffs.length > 0 && preparedNotifications.length === 0) {
+    issues.push(issue({
+      key: 'notification:agent_handoff',
+      severity: 'info',
+      title: 'Agent-assisted notification handoff is pending',
+      detail: `${agentHandoffs.length} recipient${agentHandoffs.length === 1 ? ' requires' : 's require'} an explicit agent handoff; no external message has been sent automatically.`,
+      recoveryActionKey: 'review_notification_delivery',
+    }))
+    addAction({ key: 'review_notification_delivery', label: 'Review notification handoff', mode: 'guided', safeToRun: true })
   }
 
   const normalizedIssues = uniqueByKey(issues)

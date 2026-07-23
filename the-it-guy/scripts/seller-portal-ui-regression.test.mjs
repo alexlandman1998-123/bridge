@@ -56,6 +56,8 @@ assert.match(source, /title="Document Tracker"/, 'document tracker should replac
 assert.match(source, /progress: true/, 'seller progress should be enabled as its own portal route')
 assert.match(source, /<TransactionStageWorkspace/, 'seller progress should render the dedicated transaction-stage workspace')
 assert.doesNotMatch(source, /key: 'progress'.*hash: '#seller-sale-progress'/, 'seller progress navigation should not redirect into the overview dashboard')
+assert.match(source, /portal\?\.transaction\?\.current_main_stage/, 'seller tracker should pass the real transaction main stage before listing fallbacks')
+assert.match(source, /hasLinkedSellerTransaction[\s\S]*\? fallbackSellerStageMeta/, 'a linked transaction should override the listing-only shared journey stage')
 assert.match(stageWorkspaceSource, /SELLER_TRANSACTION_STAGE_DEFINITIONS/, 'seller progress should use a central reusable stage registry')
 assert.match(stageWorkspaceSource, /otp:[\s\S]*title: 'Offer to Purchase'/, 'seller progress should represent the pre-acceptance OTP milestone instead of falling through to Offer Accepted')
 assert.match(stageWorkspaceSource, /instruction_sent:[\s\S]*attorney_opening_file:[\s\S]*fica_verification:[\s\S]*transfer_documents:/, 'stage registry should cover the detailed transfer workflow')
@@ -78,6 +80,10 @@ try {
   assert.equal(resolveSellerTransactionStageKey('listing_live', 'otp'), 'otp', 'canonical OTP progress must not fall through to Offer Accepted')
   assert.equal(resolveSellerTransactionStageKey('offer_accepted', 'finance'), 'bond_approval', 'finance progress should continue into the detailed post-acceptance workflow')
   assert.equal(resolveSellerTransactionStageKey('fica_verification', 'transfer'), 'fica_verification', 'a detailed transaction stage should take precedence over the coarse sale phase')
+  assert.equal(resolveSellerTransactionStageKey('FIN'), 'bond_approval', 'FIN must resolve to the finance tracker stage')
+  assert.equal(resolveSellerTransactionStageKey('ATTY'), 'attorney_opening_file', 'ATTY must resolve to the attorney tracker stage')
+  assert.equal(resolveSellerTransactionStageKey('XFER'), 'instruction_sent', 'XFER must resolve to the transfer tracker stage')
+  assert.equal(resolveSellerTransactionStageKey('REG'), 'registration', 'REG must resolve to the registration tracker stage')
 } finally {
   await server.close()
 }

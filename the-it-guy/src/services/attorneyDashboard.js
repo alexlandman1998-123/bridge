@@ -211,7 +211,7 @@ async function fetchBuyerMap(client, buyerIds = []) {
   }, {})
 }
 
-async function fetchOrganisationNameMap(client, organisationIds = []) {
+async function fetchOrganisationMap(client, organisationIds = []) {
   const ids = [...new Set((organisationIds || []).filter(Boolean))]
   if (!ids.length) {
     return {}
@@ -219,7 +219,7 @@ async function fetchOrganisationNameMap(client, organisationIds = []) {
 
   const query = await client
     .from('organisations')
-    .select('id, name, display_name')
+    .select('id, name, display_name, logo_url')
     .in('id', ids)
 
   if (query.error) {
@@ -230,7 +230,10 @@ async function fetchOrganisationNameMap(client, organisationIds = []) {
   }
 
   return (query.data || []).reduce((accumulator, row) => {
-    accumulator[row.id] = String(row.display_name || row.name || '').trim()
+    accumulator[row.id] = {
+      name: String(row.display_name || row.name || '').trim(),
+      logoUrl: String(row.logo_url || '').trim(),
+    }
     return accumulator
   }, {})
 }
@@ -570,7 +573,7 @@ function riskToneFromMatter(matter = {}) {
   return 'normal'
 }
 
-function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {} } = {}) {
+function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
   const lanes = {
     transfer: [],
     bond: [],
@@ -595,6 +598,8 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
       'Property address pending'
     const buyerName = buyer.name || buyer.email || 'Client pending'
     const sellerName = transaction.seller_name || transaction.seller || 'Seller pending'
+    const referralOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
+    const referralOrganisation = organisationsById[referralOrganisationId] || {}
     const card = {
       id: summary.transactionId,
       reference,
@@ -615,6 +620,9 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
       currentStage,
       progress: Math.min(100, Math.max(12, Math.round(((daysSince(transaction.created_at) + 1) / 90) * 100))),
       assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
+      referralPartnerName: referralOrganisation.name || '',
+      referralPartnerLogoUrl: referralOrganisation.logoUrl || '',
+      referralLabel: transaction.referral_source_organisation_id ? 'Nominated partner' : 'Referred by',
       daysInStage: daysSince(transaction.updated_at || transaction.created_at),
       instructedAt: getInstructionDate(transaction),
       expectedRegistrationDate: getExpectedRegistrationDate(transaction),
@@ -663,7 +671,8 @@ function getMatterSourceName({ transaction = {}, index = 0, isDalawyerDemo = fal
 
   const partnerOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
   if (partnerOrganisationId && organisationNamesById[partnerOrganisationId]) {
-    return organisationNamesById[partnerOrganisationId]
+    const organisation = organisationNamesById[partnerOrganisationId]
+    return typeof organisation === 'string' ? organisation : organisation.name || ''
   }
 
   if (isDalawyerDemo) {
@@ -1070,7 +1079,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     .flatMap((transaction) => [transaction.originating_partner_organisation_id, transaction.referral_source_organisation_id])
     .filter(Boolean)
 
-  const [memberProfilesById, buyersById, organisationNamesById] = await Promise.all([
+  const [memberProfilesById, buyersById, organisationsById] = await Promise.all([
     readDashboardDependency('member profiles', fetchMemberProfilesMap(client, members), {}),
     readDashboardDependency('buyer summaries', fetchBuyerMap(
       client,
@@ -1078,7 +1087,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
         .map((transaction) => transaction.buyer_id)
         .filter(Boolean),
     ), {}),
-    readDashboardDependency('partner organisation names', fetchOrganisationNameMap(client, partnerOrganisationIds), {}),
+    readDashboardDependency('partner organisations', fetchOrganisationMap(client, partnerOrganisationIds), {}),
   ])
 
   const firmNameToken = toLower(resolvedFirm.name)
@@ -1270,10 +1279,20 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
       userId: member.userId,
       fullName: profile?.fullName || 'Team Member',
       role: member.role,
+      professionalRole: member.professionalRole || member.role,
       departmentName: departmentsById[member.departmentId]?.name || 'Unassigned',
       assignedMatters: assigned.length,
       delayedMatters,
       status: resolveMemberStatusFromWorkload({ assignedMatters: assigned.length, delayedMatters }),
+      activeMatters: assigned.slice(0, 6).map((matter) => ({
+        id: matter.transactionId,
+        reference: getMatterReference(matter.transaction, matter.transactionId),
+        propertyAddress:
+          matter.transaction?.property_description ||
+          [matter.transaction?.property_address_line_1, matter.transaction?.suburb, matter.transaction?.city].filter(Boolean).join(', ') ||
+          'Property pending',
+        href: `/transactions/${encodeURIComponent(matter.transactionId)}`,
+      })),
     }
   })
 
@@ -1386,18 +1405,19 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     matterRoleSummaries: scopedMatterRoleSummaries,
     buyersById,
     memberProfilesById,
+    organisationsById,
   })
   const businessIntelligence = buildBusinessIntelligence({
     uniqueMatters,
     matterRoleSummaries: scopedMatterRoleSummaries,
     isDalawyerDemo: isShowcaseDemo,
-    organisationNamesById,
+    organisationNamesById: organisationsById,
   })
   const attentionMetrics = buildAttentionMetrics({ uniqueMatters, kpis })
   const partnerAnalytics = getPartnerAnalytics({
     uniqueMatters,
     isDalawyerDemo: isShowcaseDemo,
-    organisationNamesById,
+    organisationNamesById: organisationsById,
   })
   const rawConveyancingPerformance = getConveyancingPerformance({
     uniqueMatters,
@@ -1417,6 +1437,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
       secondary_colour: resolvedFirm.secondaryColour || '',
     },
     currentUserRole,
+    currentUserProfessionalRole: currentMembership?.professionalRole || currentUserRole,
     canViewFirmDashboard,
     departments,
     members,

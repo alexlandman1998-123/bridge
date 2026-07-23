@@ -54,6 +54,13 @@ function arrayRows(value) {
   return Array.isArray(value) ? value : value ? [value] : []
 }
 
+function normalizePracticeQualifications(value) {
+  const candidates = Array.isArray(value) ? value : String(value || '').split(',')
+  return [...new Set(candidates
+    .map((item) => normalizeText(item, 40).toLowerCase().replace(/_attorney$/, ''))
+    .filter((item) => ['transfer', 'bond', 'cancellation'].includes(item)))]
+}
+
 function normalizeContact(row = {}) {
   return {
     id: normalizeText(row.contact_id),
@@ -313,6 +320,10 @@ export async function listAttorneyLeadAssignees({ organisationId, leadId, client
     name: normalizeText(row.display_name, 240) || 'Attorney team member',
     email: normalizeText(row.email, 254),
     role: normalizeText(row.member_role, 80),
+    professionalRole: normalizeText(row.professional_role || row.attorney_professional_role, 80),
+    practiceQualifications: normalizePracticeQualifications(
+      row.practice_qualifications || row.attorney_practice_qualifications,
+    ),
     branchId: normalizeText(row.branch_id),
   }))
 }

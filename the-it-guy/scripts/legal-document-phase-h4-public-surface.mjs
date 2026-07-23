@@ -80,7 +80,7 @@ if (!blockers.length) {
   const fakeToken = randomBytes(32).toString('hex')
   const [mandate, otp, dispatcher, watchdog, resolve, action] = await Promise.all([
     mandateTarget ? invoke('generate-final-signed-document', { packetId: mandateTarget.packetId, packetVersionId: invalidVersionId }, true) : null,
-    otpTarget ? invoke('generate-final-signed-otp', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }, true) : null,
+    otpTarget ? invoke('generate-final-signed-document', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }, true) : null,
     targets[0] ? invoke('dispatch-final-signed-document', { packetId: targets[0].packetId, packetVersionId: invalidVersionId }, true) : null,
     invoke('legal-document-watchdog', {}, true),
     invoke('resolve-signer-token', { action: 'resolve', token: fakeToken }),

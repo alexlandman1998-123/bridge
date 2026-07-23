@@ -12,7 +12,7 @@ Do not expose Arch9 to pilot agencies or attorneys because local tests are green
    - `bond_company`
    - `hybrid_trust`
    - `development_company`
-5. Each run has a passing persisted-spine/post-deploy check and a batch record with an idempotency key and participant, document, and workflow bootstrap confirmations.
+5. Each run has a passing persisted-spine/post-deploy check and a batch record with an idempotency key, accepted-offer conversion confirmation, participant/document/workflow bootstrap confirmations, health audit, and notification-delivery review.
 6. A named operator collected the evidence within the last 24 hours.
 
 Start with [the template](mvp-exposure-evidence.template.json), replacing every placeholder or `false` value only with evidence from the real staging run. Do not store client PII, document content, credentials, or secrets in the evidence file.
@@ -21,6 +21,12 @@ Run the fail-closed gate from the app root:
 
 ```bash
 node scripts/mvp-exposure-readiness.mjs --evidence=path/to/staging-exposure-evidence.json
+```
+
+Then run the final Phase 8 gate:
+
+```bash
+node scripts/mvp-pilot-go-no-go.mjs --evidence=path/to/staging-exposure-evidence.json
 ```
 
 Only `ready_for_controlled_exposure` permits one controlled pilot batch. Any other decision is `do_not_expose`; resolve every listed blocker and rerun with fresh evidence.

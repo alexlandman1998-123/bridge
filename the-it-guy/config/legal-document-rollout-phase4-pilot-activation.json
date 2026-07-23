@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_4",
+  "contract": "legal-document-production-pilot-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "productionOrigin": null,
+    "productionUrl": null
+  },
+  "source": {
+    "phase0ManifestDigest": null,
+    "phase1ReceiptManifestDigest": null,
+    "phase2ReceiptManifestDigest": null,
+    "phase2ReceiptCommitSha": null,
+    "phase3ReceiptManifestDigest": null,
+    "phase3ReceiptCommitSha": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "phase3DeploymentArtifactTreeSha256": null,
+    "phase3OverallEvidenceDigest": null,
+    "activationPlanDigest": null
+  },
+  "cohort": {
+    "organisationIds": [],
+    "cohortDigest": null,
+    "maxOrganisations": 1,
+    "requiredPacketTypes": []
+  },
+  "safety": {
+    "creationPaused": true,
+    "scaleEnabled": false,
+    "maxGenerationFailures24h": 0,
+    "maxStaleSigningPackets": 0,
+    "rollbackToDarkLaunchRequired": true,
+    "customerDeliveryPolicy": "activated_cohort_and_release_marker_only",
+    "runtimeGuardContract": "legal-document-pilot-release-v1"
+  },
+  "approval": {
+    "approvedBy": null,
+    "approvedAt": null,
+    "reference": null,
+    "legalApprovalEvidenceDigest": null,
+    "releaseApprovalEvidenceDigest": null
+  },
+  "execution": {
+    "preActivation": {
+      "status": "not_run",
+      "productionProjectRef": null,
+      "pilotEnabled": false,
+      "organisationIdsSentinel": "__none__",
+      "scaleEnabled": false,
+      "evidenceDigest": null,
+      "checkedAt": null,
+      "checkedBy": null
+    },
+    "candidateReadiness": {
+      "status": "not_run",
+      "organisationId": null,
+      "activeAgentCount": null,
+      "requiredPacketTypes": [],
+      "preferredAttorneyVerified": null,
+      "templateRouteSetDigest": null,
+      "legalTemplateBindingDigest": null,
+      "evidenceDigest": null,
+      "assessedAt": null,
+      "assessedBy": null
+    },
+    "activation": {
+      "status": "not_run",
+      "productionProjectRef": null,
+      "organisationIds": [],
+      "cohortDigest": null,
+      "pilotEnabled": false,
+      "activationPlanDigest": null,
+      "runtimeGuardContract": null,
+      "activatedAt": null,
+      "activatedBy": null,
+      "activationReference": null,
+      "configurationEvidenceDigest": null,
+      "verificationEvidenceDigest": null,
+      "routeCoverageEvidenceDigest": null,
+      "evidenceDigest": null
+    },
+    "monitoring": {
+      "status": "not_run",
+      "watchdogContract": null,
+      "scopeMode": null,
+      "cohortDigest": null,
+      "snapshotStatus": null,
+      "blockerCount": null,
+      "schedulerEvidenceDigest": null,
+      "probeEvidenceDigest": null,
+      "evidenceDigest": null,
+      "checkedAt": null,
+      "checkedBy": null
+    },
+    "rollbackReadiness": {
+      "status": "not_run",
+      "productionProjectRef": null,
+      "rollbackOwner": null,
+      "rollbackPlanEvidenceDigest": null,
+      "darkLaunchRestoreEvidenceDigest": null,
+      "dryRunEvidenceDigest": null,
+      "evidenceDigest": null,
+      "checkedAt": null,
+      "checkedBy": null
+    },
+    "overallEvidenceDigest": null
+  },
+  "evidence": {
+    "preparedBy": null,
+    "preparedAt": null,
+    "activationRecordedBy": null,
+    "reviewedBy": null,
+    "activationRecordedAt": null,
+    "changeReference": null
+  },
+  "manifestDigest": null
+}

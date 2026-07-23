@@ -87,7 +87,7 @@ if (!blockers.length) {
     const otpTarget = targets.find((target) => target.packetType === 'otp')
     const [mandate, otp, dispatcher] = await Promise.all([
       mandateTarget ? invoke('generate-final-signed-document', { packetId: mandateTarget.packetId, packetVersionId: invalidVersionId }) : null,
-      otpTarget ? invoke('generate-final-signed-otp', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
+      otpTarget ? invoke('generate-final-signed-document', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
       targets[0] ? invoke('dispatch-final-signed-document', { packetId: targets[0].packetId, packetVersionId: invalidVersionId }) : null,
     ])
     functionProbes.mandateFinalizerRejected = Boolean(mandate && ['h2-v1', 'h3-v1', 'h4-v1'].includes(mandate.response.headers.get('x-legal-finalizer-contract')) && mandate.response.status === 403 && mandate.body.errorCode === 'FINALISATION_FORBIDDEN')

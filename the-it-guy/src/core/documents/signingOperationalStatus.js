@@ -1,14 +1,11 @@
+import { isPilotDocumentFallbackVersion } from './pilotDocumentFallback.js'
+
 function text(value) {
   return String(value || '').trim()
 }
 
 function key(value) {
   return text(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-}
-
-function isPilotFallbackVersion(version = {}) {
-  const summary = version.validation_summary_json || version.validationSummaryJson
-  return summary?.previewOnly === true || summary?.generationStatus === 'preview_only' || summary?.pilotFallback?.active === true
 }
 
 function roleFamily(value) {
@@ -47,8 +44,8 @@ export function resolveSigningOperationalStatus({
   const rows = Array.isArray(versions) ? versions : []
   const latestVersion = rows[0] || {}
   const counts = signerCounts(signingSummary)
-  const hasGeneratedPdf = rows.some((version) => key(version?.render_status) === 'generated' && !isPilotFallbackVersion(version))
-  const latestIsPilotFallback = isPilotFallbackVersion(latestVersion)
+  const hasGeneratedPdf = rows.some((version) => key(version?.render_status) === 'generated' && !isPilotDocumentFallbackVersion(version))
+  const latestIsPilotFallback = isPilotDocumentFallbackVersion(latestVersion)
   const hasFinalArtifact = rows.some((version) => text(version?.final_signed_file_path || version?.final_signed_file_url))
   const allSigned = counts.total > 0 && counts.signed === counts.total
   const completionReady = finalCompletion?.ready === true
@@ -119,7 +116,7 @@ export function resolveSigningOperationalStatus({
     title = 'Pilot review draft — not for signature'
     summary = `A ${label} preview is available for internal review only; Arch9 did not verify a saved signing document.`
     nextAction = 'Correct the issue and generate a verified document before preparing signatures.'
-  } else if (hasGeneratedPdf || key(latestVersion?.render_status) === 'generated') {
+  } else if (hasGeneratedPdf) {
     state = 'pdf_ready'
     title = 'PDF generated'
     summary = `The ${label} PDF is available but has not entered signing.`

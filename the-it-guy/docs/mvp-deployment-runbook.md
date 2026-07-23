@@ -18,6 +18,6 @@ Use this sequence for staging first, then production. It is designed for the MVP
    node scripts/mvp-postdeploy-transaction-check.mjs --transaction-id=<uuid>
    ```
 
-6. Run `node scripts/mvp-pilot-session-check.mjs` before accepting the next pilot batch. Keep batches to ten transactions and use the batch audit before progressing further.
+6. Run `node scripts/mvp-pilot-session-check.mjs` and `node scripts/mvp-pilot-go-no-go.mjs --evidence=path/to/staging-exposure-evidence.json` before accepting the next pilot batch. Keep batches to two transactions and use the batch audit before progressing further.
 
 If any step fails, pause the rollout. Preserve the transaction id and failure evidence, run release certification, reconcile the issue, and repeat the affected check before resuming.

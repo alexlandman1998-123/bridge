@@ -25,6 +25,13 @@ const OTP_GENERATED_TYPES = new Set([
 ])
 
 const OTP_SIGNED_TYPES = new Set([OTP_DOCUMENT_TYPES.signedReuploaded, OTP_DOCUMENT_TYPES.signedFinal])
+// These are supporting/manual artifacts only. They must never satisfy the
+// signed-OTP gate or unlock Finance.
+const NON_CANONICAL_SIGNED_OTP_TYPES = new Set([
+  'manual_otp_evidence',
+  'otp_signature',
+  OTP_DOCUMENT_TYPES.signedReuploaded,
+])
 const ONBOARDING_COMPLETE_STATUSES = new Set(['submitted', 'reviewed', 'approved'])
 const MANUAL_SIGNING_PREFERENCES = new Set(['agent_assisted', 'hard_copy', 'manual'])
 
@@ -70,15 +77,15 @@ function isOtpRelatedDocument(document = {}) {
 
 function isSignedOtpDocument(document = {}) {
   const normalizedType = normalizeOtpDocumentType(document?.document_type)
-  if (OTP_SIGNED_TYPES.has(normalizedType)) return true
-  const haystack = normalizeText(
-    `${document?.name || ''} ${document?.category || ''} ${document?.document_type || ''}`,
-  )
-  return isOtpRelatedDocument(document) && (haystack.includes('signed') || haystack.includes('executed') || haystack.includes('final'))
+  if (NON_CANONICAL_SIGNED_OTP_TYPES.has(normalizedType)) return false
+  // A canonical server-finalized document is the only Phase 0 completion
+  // proof. Do not infer finality from a user-controlled filename/category.
+  return normalizedType === OTP_DOCUMENT_TYPES.signedFinal
 }
 
 function isGeneratedOtpDocument(document = {}) {
   const normalizedType = normalizeOtpDocumentType(document?.document_type)
+  if (NON_CANONICAL_SIGNED_OTP_TYPES.has(normalizedType)) return false
   if (OTP_GENERATED_TYPES.has(normalizedType)) return true
   if (OTP_SIGNED_TYPES.has(normalizedType)) return false
   return isOtpRelatedDocument(document) && !isSignedOtpDocument(document)

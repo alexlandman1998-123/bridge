@@ -1,4 +1,5 @@
-import { CheckCircle2, CircleAlert, Pencil } from 'lucide-react'
+import { Building2, Check, CheckCircle2, ChevronDown, CircleAlert, Landmark, Pencil, Star } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { resolveLegalDocumentScenarioProfile } from '../../core/documents/legalDocumentScenarioProfile'
 import { resolveLegalDocumentScenarioRequirements } from '../../core/documents/legalDocumentScenarioRequirements'
 import Button from '../ui/Button'
@@ -9,6 +10,22 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function getAttorneyInitials(attorney = {}) {
+  const source = normalizeText(attorney.companyName || attorney.contactPerson)
+  const words = source.split(/\s+/).filter(Boolean)
+  if (!words.length) return 'TA'
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase()
+}
+
+function AttorneyAvatar({ attorney = {}, size = 'md' }) {
+  const sizeClass = size === 'sm' ? 'h-9 w-9 text-[0.68rem]' : 'h-11 w-11 text-xs'
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center rounded-full border border-[#cfe0f2] bg-gradient-to-br from-[#edf5ff] to-[#e5f0fb] font-bold tracking-[0.04em] text-[#285b88] ${sizeClass}`}>
+      {getAttorneyInitials(attorney)}
+    </span>
+  )
 }
 
 function getSourceModeLabel(sourceMode = '') {
@@ -145,6 +162,8 @@ export default function MandateDraftIntakePanel({
   onConfirm = null,
   onEditSellerDetails = null,
 }) {
+  const [attorneyMenuOpen, setAttorneyMenuOpen] = useState(false)
+  const attorneyMenuRef = useRef(null)
   const readinessChecks = buildReadinessChecks(draft)
   const missingChecks = readinessChecks.filter((item) => !item.complete)
   const completedCheckCount = readinessChecks.length - missingChecks.length
@@ -169,6 +188,26 @@ export default function MandateDraftIntakePanel({
     ? null
     : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || null
   const attorneyReady = Boolean(selectedAttorneyId || attorneySelectionDeferred)
+
+  useEffect(() => {
+    if (!attorneyMenuOpen) return undefined
+    function closeOnOutsideClick(event) {
+      if (!attorneyMenuRef.current?.contains(event.target)) setAttorneyMenuOpen(false)
+    }
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') setAttorneyMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [attorneyMenuOpen])
+
+  useEffect(() => {
+    if (preferredAttorneysLoading || attorneySelectionDeferred) setAttorneyMenuOpen(false)
+  }, [attorneySelectionDeferred, preferredAttorneysLoading])
 
   return (
     <section className="mb-5 rounded-[24px] border border-[#dbe7f4] bg-white p-4 shadow-[0_14px_34px_rgba(16,32,51,0.05)] sm:p-5">
@@ -250,25 +289,85 @@ export default function MandateDraftIntakePanel({
 
       <div className="mt-4 rounded-[18px] border border-[#dbe7f4] bg-[#fbfdff] p-4">
         <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr] lg:items-end">
-          <label className="block">
+          <div className="block">
             <span className="text-sm font-semibold text-[#243b53]">Seller's transferring attorney</span>
             <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">
               Select the attorney allocated under this mandate. The formal transfer instruction remains inactive until a buyer and accepted OTP exist.
             </span>
-            <select
-              className="mt-2 h-11 w-full rounded-[12px] border border-[#d7e1ec] bg-white px-3 text-sm text-[#142132] outline-none focus:border-[#2f6fed] focus:ring-2 focus:ring-[#2f6fed]/15 disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
-              value={attorneySelectionDeferred ? '' : selectedAttorneyId}
-              disabled={preferredAttorneysLoading || attorneySelectionDeferred}
-              onChange={(event) => onAttorneyChange?.(event.target.value)}
-            >
-              <option value="">{preferredAttorneysLoading ? 'Loading preferred attorneys…' : 'Select transfer attorney'}</option>
-              {preferredAttorneys.map((attorney) => (
-                <option key={attorney.id} value={attorney.id}>
-                  {attorney.companyName}{attorney.contactPerson ? ` · ${attorney.contactPerson}` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div ref={attorneyMenuRef} className="relative mt-2">
+              <button
+                type="button"
+                className="flex min-h-[58px] w-full items-center gap-3 rounded-[14px] border border-[#d7e1ec] bg-white px-3 py-2 text-left outline-none transition hover:border-[#b8cee5] focus:border-[#2f6fed] focus:ring-2 focus:ring-[#2f6fed]/15 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:opacity-70"
+                disabled={preferredAttorneysLoading || attorneySelectionDeferred}
+                aria-haspopup="listbox"
+                aria-expanded={attorneyMenuOpen}
+                onClick={() => setAttorneyMenuOpen((open) => !open)}
+              >
+                {selectedAttorney ? <AttorneyAvatar attorney={selectedAttorney} /> : (
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-dashed border-[#c9d8e8] bg-[#f7faff] text-[#6c849b]">
+                    <Landmark size={18} />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-[#142132]">
+                      {preferredAttorneysLoading ? 'Loading preferred attorneys…' : selectedAttorney?.companyName || 'Select transfer attorney'}
+                    </span>
+                    {selectedAttorney?.isPreferredDefault ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#fff7df] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.06em] text-[#946200]">
+                        <Star size={10} fill="currentColor" /> Preferred
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-[#6b7d93]">
+                    {selectedAttorney
+                      ? selectedAttorney.contactPerson || selectedAttorney.email || 'Transfer attorney'
+                      : 'View the agency’s approved attorney partners'}
+                  </span>
+                </span>
+                <ChevronDown size={18} className={`shrink-0 text-[#6b7d93] transition-transform ${attorneyMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {attorneyMenuOpen ? (
+                <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-[16px] border border-[#d7e1ec] bg-white p-1.5 shadow-[0_18px_45px_rgba(29,55,82,0.18)]" role="listbox" aria-label="Preferred transfer attorneys">
+                  <div className="border-b border-[#edf2f7] px-3 py-2">
+                    <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#7b8ca2]">Approved attorney partners</p>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {preferredAttorneys.map((attorney) => {
+                      const selected = String(attorney.id) === String(selectedAttorneyId)
+                      return (
+                        <button
+                          key={attorney.id}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition ${selected ? 'bg-[#eef6ff]' : 'hover:bg-[#f7faff]'}`}
+                          onClick={() => {
+                            onAttorneyChange?.(attorney.id)
+                            setAttorneyMenuOpen(false)
+                          }}
+                        >
+                          <AttorneyAvatar attorney={attorney} size="sm" />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate text-sm font-semibold text-[#172334]">{attorney.companyName}</span>
+                              {attorney.isPreferredDefault ? <Star size={13} className="shrink-0 text-[#d29610]" fill="currentColor" /> : null}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-[#6b7d93]">
+                              <Building2 size={12} className="shrink-0" />
+                              <span className="truncate">{attorney.contactPerson || attorney.email || attorney.province || 'Transfer attorney'}</span>
+                            </span>
+                          </span>
+                          {selected ? <Check size={17} className="shrink-0 text-[#2877c8]" /> : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div className="rounded-[14px] border border-[#e6edf7] bg-white px-4 py-3 text-sm text-[#607387]">
             {selectedAttorney ? (
               <>

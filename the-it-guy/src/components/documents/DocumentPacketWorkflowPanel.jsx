@@ -711,8 +711,16 @@ export default function DocumentPacketWorkflowPanel({
       })
       setPacketState(result.packet)
       setPreviewState(result.validation)
-      setStatusLabel(result.pilotFallback ? 'Pilot review draft ready' : 'Document generated')
-      setStatusMessage(result.pilotFallback?.message || (regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.'))
+      const previewOnly = Boolean(result.pilotFallback) || isPilotDocumentFallbackVersion(result.version)
+      setStatusLabel(previewOnly ? 'Preview only — not generated' : 'Document generated')
+      setStatusMessage(
+        result.pilotFallback?.message ||
+        (previewOnly
+          ? 'The preview is missing a verified stored PDF and cannot be sent or signed. Generate again after resolving the document issue.'
+          : regenerate
+            ? 'Packet regenerated successfully.'
+            : 'Packet generated successfully.'),
+      )
       setGenerationRecovery(null)
       generationFailureCountsRef.current.clear()
       await refreshSigningSummary(result.packet?.id)
@@ -904,6 +912,11 @@ export default function DocumentPacketWorkflowPanel({
   }
 
   async function handleGenerateSigningLinks(targetSignerRole = '') {
+    if (normalizeText(packetType).toLowerCase() === 'otp') {
+      setStatusLabel('Use Legal Workspace')
+      setErrorMessage('OTP invitations require signer-specific server dispatches and confirmed delivery. Open the packet in Legal Document Workspace to send or resend them.')
+      return
+    }
     const resolvedPacketId = normalizeText(packetState?.id || packetId)
     if (!resolvedPacketId) {
       setStatusLabel('Packet required')
@@ -1025,8 +1038,8 @@ export default function DocumentPacketWorkflowPanel({
         <ValidationSummary validation={previewState} showAuditDetails={canManagePacketAdminActions} />
         {pilotFallbackVersion ? (
           <div className="rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs text-[#7d520d]">
-            <p className="font-semibold">Pilot review draft — not for signature</p>
-            <p className="mt-1">Correct the document issue and generate a verified version before preparing signers or sending links.</p>
+            <p className="font-semibold">Preview only — not for signature</p>
+            <p className="mt-1">A verified stored PDF is required before preparing signers or sending links. Correct the document issue and generate again.</p>
           </div>
         ) : null}
         <SigningFieldsSummary
@@ -1108,8 +1121,15 @@ export default function DocumentPacketWorkflowPanel({
               <Button variant="ghost" onClick={() => void handleResetSigningFields()} disabled={Boolean(loadingAction)}>
                 {loadingAction === 'reset_signing' ? 'Resetting…' : 'Reset Signing Fields'}
               </Button>
-              <Button variant="secondary" onClick={() => void handleGenerateSigningLinks()} disabled={Boolean(loadingAction)}>
-                {loadingAction === 'generate_links' ? 'Generating Links…' : 'Generate Signing Links'}
+              <Button
+                variant="secondary"
+                onClick={() => void handleGenerateSigningLinks()}
+                disabled={Boolean(loadingAction) || normalizeText(packetType).toLowerCase() === 'otp'}
+                title={normalizeText(packetType).toLowerCase() === 'otp' ? 'Use Legal Document Workspace for signer-specific OTP delivery.' : undefined}
+              >
+                {normalizeText(packetType).toLowerCase() === 'otp'
+                  ? 'Use Legal Workspace for OTP'
+                  : loadingAction === 'generate_links' ? 'Generating Links…' : 'Generate Signing Links'}
               </Button>
               <Button
                 variant="secondary"

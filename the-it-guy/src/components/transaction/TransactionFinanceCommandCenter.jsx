@@ -569,6 +569,55 @@ function ApplicationsSection({
   )
 }
 
+function BankOutcomeHistory({ rows = [] }) {
+  if (!rows.length) {
+    return <EmptyState message="No final bank outcomes recorded yet. Updating an application to approved, declined, expired, or additional documents will add an auditable outcome here." />
+  }
+  return (
+    <div className="space-y-2">
+      {rows.slice(0, 8).map((row) => (
+        <article key={row.id} className="flex flex-wrap items-start justify-between gap-3 rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
+          <div>
+            <strong className="block text-sm font-semibold text-[#142132]">{row.bankName || 'Bank outcome'}</strong>
+            <p className="mt-1 text-xs leading-4 text-[#70839a]">
+              {formatDate(row.outcomeAt)}{row.recordedByName ? ` • ${row.recordedByName}` : ''}
+              {row.approvedAmount ? ` • ${formatCurrency(row.approvedAmount)}` : ''}
+            </p>
+            {row.declineReason || row.conditions || row.notes ? <p className="mt-2 text-xs leading-4 text-[#63758a]">{row.declineReason || row.conditions || row.notes}</p> : null}
+          </div>
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(row.outcome)}`}>
+            {title(row.outcome)}
+          </span>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function RegistrationHandoffCard({ transaction = {} }) {
+  const registrationDate = transaction.registration_date || transaction.registrationDate || transaction.registered_at || transaction.registeredAt || null
+  const signal = String(transaction.registration_status || transaction.registrationStatus || transaction.stage || transaction.status || transaction.lifecycle_state || '').toLowerCase()
+  const registered = Boolean(transaction.registered_at || transaction.registeredAt || signal.includes('registered'))
+  const lodged = !registered && (signal.includes('lodged') || signal.includes('registration'))
+  const status = registered ? 'registered' : lodged ? 'lodged' : 'awaiting_registration'
+  return (
+    <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">Registration handoff</span>
+          <strong className="mt-1 block text-sm font-semibold text-[#142132]">{registered ? 'Transaction registered' : lodged ? 'Lodged for registration' : 'Awaiting registration'}</strong>
+          <p className="mt-1 text-xs leading-4 text-[#70839a]">
+            {registered ? `Registered ${formatDate(registrationDate)}` : lodged ? 'Attorney registration process is in progress.' : 'Keep the grant and attorney instruction records current while the transfer progresses.'}
+          </p>
+        </div>
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getStatusTone(status)}`}>
+          {registered ? 'Registered' : lodged ? 'Lodged' : 'Pending'}
+        </span>
+      </div>
+    </article>
+  )
+}
+
 function OffersSection({
   rows = [],
   acceptedOfferId = '',
@@ -1329,7 +1378,7 @@ function FinanceCommandCenter({
           {hasBondWorkflow ? (
             <SectionCard
               title="Bank Applications"
-              copy="Submitted applications, references, originator, and status."
+              copy="Submitted applications, references, originator, and status. Final decisions are retained below as bank outcomes."
             >
               <ApplicationsSection
                 rows={workspace.bond.applications}
@@ -1338,6 +1387,15 @@ function FinanceCommandCenter({
                 onSubmit={onSubmitBankApplication}
                 onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
               />
+            </SectionCard>
+          ) : null}
+
+          {hasBondWorkflow ? (
+            <SectionCard
+              title="Bank Outcome History"
+              copy="Approved, declined, expired, and additional-document outcomes are retained for the application record."
+            >
+              <BankOutcomeHistory rows={workspace.bond.bankOutcomes} />
             </SectionCard>
           ) : null}
 
@@ -1459,6 +1517,7 @@ function FinanceCommandCenter({
                   onSubmit={(payload) => onMarkInstructionSent?.(payload)}
                   onOpenDocument={onOpenDocument}
                 />
+                <RegistrationHandoffCard transaction={transaction} />
               </div>
             </SectionCard>
           ) : null}

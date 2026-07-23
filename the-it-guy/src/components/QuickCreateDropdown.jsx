@@ -299,6 +299,22 @@ const BOND_ORIGINATOR_QUICK_CREATE_GROUPS = [
   },
 ]
 
+const ATTORNEY_QUICK_CREATE_GROUPS = [
+  {
+    label: 'Matters',
+    items: [
+      {
+        type: 'attorney-matter',
+        label: 'Matter',
+        helper: 'Start a new conveyancing matter',
+        icon: FileCheck2,
+        action: 'route',
+        to: '/new-transaction',
+      },
+    ],
+  },
+]
+
 const PERSON_TYPES = ['Buyer', 'Seller', 'Tenant', 'Landlord', 'Investor']
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
@@ -853,6 +869,7 @@ function QuickCreateDropdown({ className = '' }) {
   const quickCreateGroups = useMemo(
     () => {
       if (role === 'bond_originator') return BOND_ORIGINATOR_QUICK_CREATE_GROUPS
+      if (role === 'attorney') return ATTORNEY_QUICK_CREATE_GROUPS
       return location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
     },
     [location.pathname, role],

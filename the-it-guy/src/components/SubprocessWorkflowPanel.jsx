@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
-import { buildWorkflowStepComment, finalizeSignedOtpWorkflow, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
+import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import ConfirmDialog from './ui/ConfirmDialog'
 
@@ -267,6 +267,21 @@ function SubprocessWorkflowPanel({
     }
   }, [expandedStepId])
 
+  const selectedStepContext = useMemo(() => {
+    if (!expandedStepId) {
+      return null
+    }
+
+    for (const process of availableProcesses) {
+      const step = (process.steps || []).find((item) => item.id === expandedStepId)
+      if (step) {
+        return { process, step }
+      }
+    }
+
+    return null
+  }, [availableProcesses, expandedStepId])
+
   if (!availableProcesses.length) {
     return (
       <div className={embedded ? '' : 'rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5'}>
@@ -316,12 +331,10 @@ function SubprocessWorkflowPanel({
       await uploadDocument({
         transactionId: process.transaction_id,
         file: selectedFile,
-        category: 'Signed OTP',
+        category: 'Signed OTP evidence',
+        documentType: 'manual_otp_evidence',
         stageKey: step.step_key || null,
         isClientVisible: false,
-      })
-      await finalizeSignedOtpWorkflow({
-        transactionId: process.transaction_id,
       })
 
       setStepUploadFiles((previous) => {
@@ -345,7 +358,8 @@ function SubprocessWorkflowPanel({
             ...currentDraft,
             checklist: {
               ...(currentDraft.checklist || {}),
-              signed_otp_received: true,
+              // Supporting evidence is not canonical signed-OTP completion.
+              manual_otp_evidence_uploaded: true,
             },
             status: currentDraft.status === 'not_started' ? 'in_progress' : currentDraft.status,
           },
@@ -381,7 +395,6 @@ function SubprocessWorkflowPanel({
   }
 
   async function handleMarkAllComplete(process, canEditProcess) {
-    const processId = process.id || process.process_type
     const incompleteCount = (process.steps || []).filter((step) => normalizeStatus(step.status) !== 'completed').length
 
     if (!process.id || !canEditProcess || disabled || saving || !incompleteCount) {
@@ -416,21 +429,6 @@ function SubprocessWorkflowPanel({
       setMarkAllCompletePrompt(null)
     }
   }
-
-  const selectedStepContext = useMemo(() => {
-    if (!expandedStepId) {
-      return null
-    }
-
-    for (const process of availableProcesses) {
-      const step = (process.steps || []).find((item) => item.id === expandedStepId)
-      if (step) {
-        return { process, step }
-      }
-    }
-
-    return null
-  }, [availableProcesses, expandedStepId])
 
   return (
     <div className={embedded ? 'space-y-4' : 'rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5'}>
@@ -511,12 +509,6 @@ function SubprocessWorkflowPanel({
                       const statusMeta = STATUS_META[stepStatus] || STATUS_META.not_started
                       const toneStyles = TONE_STYLES[statusMeta.tone] || TONE_STYLES.pending
                       const StepIcon = statusMeta.icon
-                      const draft = drafts[step.id] || {
-                        status: stepStatus,
-                        comment: parseWorkflowStepComment(step.comment).note || '',
-                        checklist: parseWorkflowStepComment(step.comment).checklist || {},
-                        completedAt: toDateInputValue(step.completed_at),
-                      }
                       const collapsedComment = (parseWorkflowStepComment(step.comment).note || '').trim()
 
                       return (
@@ -718,7 +710,7 @@ function SubprocessWorkflowPanel({
                             <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">Bond Originator</span>
                             <strong className="mt-2 block text-sm font-semibold text-[#142132]">Signed OTP</strong>
                             <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                              {latestSignedOtp ? latestSignedOtp.name || 'Signed OTP uploaded' : 'Upload the signed OTP here, then confirm the step and proceed with the bond file.'}
+                              {latestSignedOtp ? latestSignedOtp.name || 'Signed OTP evidence uploaded' : 'Upload a signed-copy evidence file for internal review. This does not finalize the OTP or advance the transaction.'}
                             </p>
 
                             {latestSignedOtp?.url ? (
@@ -760,7 +752,7 @@ function SubprocessWorkflowPanel({
                                   uploadingStepId === step.id
                                 }
                               >
-                                {uploadingStepId === step.id ? 'Uploading…' : 'Upload signed OTP'}
+                                {uploadingStepId === step.id ? 'Uploading…' : 'Upload OTP evidence'}
                               </button>
                             </div>
                           </article>

@@ -16,19 +16,19 @@ assert.ok(assessLegalDocumentAuthorityContinuity({ ...fixture, authorisedTargetC
 assert.ok(assessLegalDocumentAuthorityContinuity({ ...fixture, revokedActiveMembershipCount: 1 }).reasons.includes('H3_REVOKED_ACTOR_STILL_ACTIVE'))
 assert.ok(assessLegalDocumentAuthorityContinuity({ ...fixture, revokedFunctionProbes: { mandateRejected: false, otpRejected: true } }).reasons.includes('H3_REVOKED_FINALISER_ACCESS_EXPOSED'))
 
-for (const file of ['../supabase/functions/generate-final-signed-document/index.ts', '../supabase/functions/generate-final-signed-otp/index.ts']) {
-  const source = fs.readFileSync(file, 'utf8')
-  assert.match(source, /FINALISER_CONTRACT = "h[34]-v1"/)
-  assert.match(source, /\["active", "accepted"\]/)
-  assert.match(source, /assigned_agent_id/)
-  assert.match(source, /created_by/)
+const mandateFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
+const otpFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-otp/index.ts', 'utf8')
+for (const marker of [/FINALISER_CONTRACT = "h[34]-v1"/, /\["active", "accepted"\]/, /assigned_agent_id/, /created_by/]) {
+  assert.match(mandateFinaliser, marker)
 }
+assert.match(otpFinaliser, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
 const verifier = fs.readFileSync('scripts/legal-document-phase-h3-authority-continuity.mjs', 'utf8')
 assert.match(verifier, /H3_AUTHORISED_EMAIL/)
 assert.match(verifier, /H3_REVOKED_EMAIL/)
 assert.match(verifier, /NO_GENERATED_VERSION/)
 assert.match(verifier, /FINALISATION_FORBIDDEN/)
 assert.match(verifier, /00000000-0000-4000-8000-000000000000/)
+assert.doesNotMatch(verifier, /generate-final-signed-otp/)
 assert.match(verifier, /mutatedData: false/)
 assert.doesNotMatch(verifier, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/)
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))

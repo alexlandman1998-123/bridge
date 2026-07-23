@@ -1,6 +1,6 @@
-import { generateMandateDocumentFromTemplate, generateOtpDocumentFromTemplate } from '../../lib/api'
+import { generateMandateDocumentFromTemplate } from '../../lib/api'
 import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
-import { buildPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
+import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
 import { assertGeneratedDraftVersion, buildDraftLegalProvenance } from './draftGenerationAssurance'
 import { assertGeneratedDraftArtifact, buildDraftArtifactProvenance } from './draftArtifactAssurance'
 import {
@@ -91,6 +91,14 @@ import {
   resolveLegalDocumentScenarioRequirements,
 } from './legalDocumentScenarioRequirements'
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile'
+import {
+  isPublishedTemplateStatus,
+  isSignableDocumentPacketType,
+  resolveDocumentConversionHealthPolicy,
+  resolvePdfRenderablePacketType,
+  resolveSignableTemplatePolicy,
+} from './documentGenerationContainment'
+import { assertLegalTemplateApproved } from './legalTemplateApproval'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -99,6 +107,60 @@ function normalizeText(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function throwContainmentPolicyFailure(policy = {}) {
+  throw createPacketError(
+    policy.code || 'DOCUMENT_GENERATION_BLOCKED',
+    policy.message || 'Document generation is blocked until the document setup is corrected.',
+    policy.details || {},
+  )
+}
+
+function requirePdfRenderablePacketType(packetType = '') {
+  const policy = resolvePdfRenderablePacketType(packetType)
+  if (!policy.ok) throwContainmentPolicyFailure(policy)
+  return policy.packetType
+}
+
+function requireLegalTemplateGenerationApproval(template = null, packetType = '') {
+  try {
+    return assertLegalTemplateApproved(template || {}, { expectedPacketType: packetType })
+  } catch (error) {
+    throw createPacketError(
+      error?.code || 'LEGAL_TEMPLATE_APPROVAL_REQUIRED',
+      error?.message || 'Generation is locked until the selected legal template has a current approval.',
+      error?.details || {},
+    )
+  }
+}
+
+function isGenerationAction(value = '') {
+  return normalizeText(value).toLowerCase() === 'generate'
+}
+
+async function requireDocumentConversionHealth() {
+  let health = null
+  try {
+    health = await checkDocumentConversionHealthRecord()
+  } catch (error) {
+    const policy = resolveDocumentConversionHealthPolicy({
+      healthy: false,
+      status: 'unreachable',
+      message: 'PDF conversion health could not be verified. Generation is blocked until the converter is reachable.',
+    })
+    throwContainmentPolicyFailure({
+      ...policy,
+      details: {
+        ...policy.details,
+        originalCode: normalizeText(error?.code) || null,
+      },
+    })
+  }
+
+  const policy = resolveDocumentConversionHealthPolicy(health)
+  if (!policy.ok) throwContainmentPolicyFailure(policy)
+  return health
 }
 
 const TEMPLATE_PREVIEW_VALIDATION_ACTION = 'template_preview'
@@ -611,16 +673,23 @@ async function createDocumentPacketVersionSafely(input = {}) {
   try {
     return await createDocumentPacketVersion(input)
   } catch (error) {
+    const originalCode = normalizeText(error?.code || error?.details?.code || error?.details)
+    const originalMessage = normalizeText(error?.message || error)
     console.error('[PACKETS] packet version creation failed', {
       packetId: normalizeText(input?.packetId) || null,
       renderStatus: normalizeText(input?.renderStatus) || null,
-      code: error?.code || null,
-      message: error?.message || null,
+      code: originalCode || null,
+      message: originalMessage || null,
     })
     throw createPacketError(
       'PACKET_VERSION_CREATE_FAILED',
       toFriendlyGenerationMessage('PACKET_VERSION_CREATE_FAILED'),
-      { cause: error },
+      {
+        cause: error,
+        originalCode: originalCode || null,
+        originalMessage: originalMessage || null,
+        causedByTimeout: isRetryablePacketError(error),
+      },
     )
   }
 }
@@ -731,8 +800,15 @@ function resolveTemplateOrganisationId(context = {}) {
 }
 
 function templateIsPublishedForRouting(template = {}) {
-  const status = normalizeText(template?.status).toLowerCase()
-  if (status) return status === 'published'
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const status = normalizeText(
+    template?.status || template?.template_status || metadata?.lifecycle_status || metadata?.template_status,
+  ).toLowerCase()
+  if (status) return isPublishedTemplateStatus(status) && template?.is_active !== false
   return template?.is_active !== false
 }
 
@@ -999,21 +1075,168 @@ async function resolveOtpScenarioTemplateForPacket({
   }
 }
 
-async function resolveTemplateForPacket({ packetType, context = {}, template = null } = {}) {
-  if (template?.id) {
-    return {
-      template,
-      source: 'explicit',
-      candidateCount: 1,
-    }
+function hasTemplatePayload(template = null) {
+  return Boolean(template && typeof template === 'object' && Object.keys(template).length)
+}
+
+function requireSignableGenerationTemplate(packetType = '', context = {}) {
+  return isGenerationAction(context?.validationAction) && isSignableDocumentPacketType(packetType)
+}
+
+function requireSignableTemplatePolicy(options = {}) {
+  const policy = resolveSignableTemplatePolicy(options)
+  if (!policy.ok) throwContainmentPolicyFailure(policy)
+  return policy
+}
+
+function requireExplicitTemplateRouteMatch({ packetType = '', template = null, context = {} } = {}) {
+  const normalizedPacketType = requirePdfRenderablePacketType(packetType)
+  if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)) return
+
+  const placeholders = normalizeMergeFieldPayload(resolvePacketTypeContext(normalizedPacketType, context), {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  }).payload
+  let compatible = false
+  let matchedSpecificRoute = false
+
+  if (normalizedPacketType === 'mandate') {
+    const profile = resolveMandateTemplateRoutingProfile({
+      placeholders,
+      seller: context?.mandateData?.seller || null,
+      property: context?.mandateData?.property || null,
+      mandate: context?.mandateData?.mandate || null,
+      sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
+      context,
+    })
+    const candidate = scoreMandateTemplateCandidate(template, {
+      scenarioProfile: profile,
+      placeholders,
+      context,
+    })
+    compatible = candidate.compatible
+    matchedSpecificRoute = (candidate.reasons || []).some((reason) =>
+      [
+        'exact_variant_metadata',
+        'clause_profile_metadata',
+        'seller_profile_metadata',
+        'property_profile_metadata',
+        'template_name_variant_match',
+      ].includes(reason),
+    )
+  } else if (normalizedPacketType === 'otp') {
+    const profile = resolveLegalDocumentScenarioProfile({
+      packetType: normalizedPacketType,
+      placeholders,
+      seller: context?.seller || context?.sellerDetails || context?.seller_details || null,
+      buyer: context?.buyer || context?.purchaser || null,
+      property:
+        context?.property ||
+        context?.unit ||
+        context?.listing ||
+        context?.privateListing ||
+        context?.private_listing ||
+        null,
+      transaction: context?.transaction || null,
+      sourceContext: context?.sourceContext || null,
+      context,
+    })
+    const candidate = scoreLegalDocumentTemplateCandidate(template, {
+      scenarioProfile: profile,
+      placeholders,
+      context,
+    })
+    compatible = candidate.compatible
+    matchedSpecificRoute = Boolean(candidate.metadata?.hasRoutingMetadata)
   }
 
-  const normalizedPacketType = normalizeText(packetType).toLowerCase()
-  if (!normalizedPacketType) {
+  if (compatible && matchedSpecificRoute) return
+  throw createPacketError(
+    'TEMPLATE_ROUTE_NOT_PUBLISHED',
+    'The selected template is not published for this document’s legal route. Publish a route-specific template before generating.',
+    {
+      packetType: normalizedPacketType,
+      templateId: normalizeText(template?.id) || null,
+      compatible,
+      matchedSpecificRoute,
+    },
+  )
+}
+
+async function resolveAuthoritativeExplicitTemplate({
+  packetType,
+  context = {},
+  template = null,
+  requireSignableTemplate = false,
+} = {}) {
+  if (!template?.id) return null
+  if (!requireSignableTemplate) return template
+
+  let authoritativeTemplate = null
+  try {
+    authoritativeTemplate = await getPacketTemplate(template.id, { includeSections: true })
+  } catch (error) {
+    if (isMissingPacketTemplateSchemaError(error)) {
+      throw createPacketError(
+        'TEMPLATE_RESOLUTION_UNAVAILABLE',
+        'The published template could not be verified. Generation is blocked until template storage is available.',
+        {
+          packetType,
+          templateId: normalizeText(template.id) || null,
+          originalCode: normalizeText(error?.code) || null,
+        },
+      )
+    }
+    throw error
+  }
+
+  if (!authoritativeTemplate?.id) {
+    throw createPacketError(
+      'TEMPLATE_NOT_FOUND',
+      'The selected legal template is no longer available. Select a published template before generating.',
+      {
+        packetType,
+        templateId: normalizeText(template.id) || null,
+      },
+    )
+  }
+
+  requireSignableTemplatePolicy({
+    packetType,
+    template: authoritativeTemplate,
+    explicitSelection: true,
+  })
+  requireExplicitTemplateRouteMatch({
+    packetType,
+    template: authoritativeTemplate,
+    context,
+  })
+  return authoritativeTemplate
+}
+
+async function resolveTemplateForPacket({ packetType, context = {}, template = null } = {}) {
+  const normalizedPacketType = requirePdfRenderablePacketType(packetType)
+  const requirePublishedTemplate = requireSignableGenerationTemplate(normalizedPacketType, context)
+
+  if (hasTemplatePayload(template) && !template?.id && requirePublishedTemplate) {
+    throw createPacketError(
+      'TEMPLATE_ID_REQUIRED',
+      'An unsaved template cannot be used to generate a signable document. Publish the template first.',
+      { packetType: normalizedPacketType },
+    )
+  }
+
+  if (template?.id) {
+    const authoritativeTemplate = await resolveAuthoritativeExplicitTemplate({
+      packetType: normalizedPacketType,
+      context,
+      template,
+      requireSignableTemplate: requirePublishedTemplate,
+    })
     return {
-      template: null,
-      source: 'none',
-      candidateCount: 0,
+      template: authoritativeTemplate || template,
+      source: requirePublishedTemplate ? 'explicit_published' : 'explicit',
+      candidateCount: 1,
     }
   }
 
@@ -1026,7 +1249,16 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
         organisationId: resolveTemplateOrganisationId(context),
         includeSections: true,
       })
-      if (mandateTemplateResolution?.template) return mandateTemplateResolution
+      if (mandateTemplateResolution?.template) {
+        if (requirePublishedTemplate) {
+          requireSignableTemplatePolicy({
+            packetType: normalizedPacketType,
+            template: mandateTemplateResolution.template,
+            resolutionSource: mandateTemplateResolution.source,
+          })
+        }
+        return mandateTemplateResolution
+      }
     }
     if (normalizedPacketType === 'otp') {
       const otpTemplateResolution = await resolveOtpScenarioTemplateForPacket({
@@ -1036,7 +1268,30 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
         organisationId: resolveTemplateOrganisationId(context),
         includeSections: true,
       })
-      if (otpTemplateResolution?.template) return otpTemplateResolution
+      if (otpTemplateResolution?.template) {
+        if (requirePublishedTemplate) {
+          requireSignableTemplatePolicy({
+            packetType: normalizedPacketType,
+            template: otpTemplateResolution.template,
+            resolutionSource: otpTemplateResolution.source,
+          })
+        }
+        return otpTemplateResolution
+      }
+    }
+
+    if (requirePublishedTemplate) {
+      if (normalizedPacketType === 'mandate' || normalizedPacketType === 'otp') {
+        throw createPacketError(
+          'TEMPLATE_ROUTE_NOT_PUBLISHED',
+          'No published template matches this document’s legal route. Publish the route-specific template before generating it.',
+          { packetType: normalizedPacketType },
+        )
+      }
+      requireSignableTemplatePolicy({
+        packetType: normalizedPacketType,
+        template: null,
+      })
     }
 
     return await resolveActivePacketTemplate({
@@ -1047,7 +1302,17 @@ async function resolveTemplateForPacket({ packetType, context = {}, template = n
     })
   } catch (error) {
     if (isMissingPacketTemplateSchemaError(error)) {
-      console.warn('[PACKETS] active template resolution unavailable; continuing with runtime fallback.', {
+      if (requirePublishedTemplate) {
+        throw createPacketError(
+          'TEMPLATE_RESOLUTION_UNAVAILABLE',
+          'The published template could not be verified. Generation is blocked until template storage is available.',
+          {
+            packetType: normalizedPacketType,
+            originalCode: normalizeText(error?.code) || null,
+          },
+        )
+      }
+      console.warn('[PACKETS] template resolution unavailable while preparing a non-signable preview.', {
         code: error?.code || null,
         message: error?.message || null,
       })
@@ -1070,7 +1335,9 @@ function shouldUseNativeGeneration(template = null, packetType = '') {
     return FEATURE_FLAGS.enableNativeMandateRenderer && templateUsesNativeRenderer(template, normalizedPacketType)
   }
   if (normalizedPacketType === 'otp') {
-    return FEATURE_FLAGS.enableNativeOtpRenderer && templateUsesNativeRenderer(template, normalizedPacketType)
+    // OTPs are never eligible for a browser-owned DOCX path. The canonical
+    // renderer seals the PDF on the server before this function returns.
+    return templateUsesNativeRenderer(template, normalizedPacketType)
   }
   return false
 }
@@ -1129,7 +1396,12 @@ function assertGenerationOutput(artifact = {}, packetType = 'packet') {
 }
 
 function inferGenerationFailureCode(error) {
-  const explicitCode = normalizeText(error?.code || error?.details?.errorCode)
+  const explicitCode = normalizeText(
+    error?.code ||
+      error?.details?.errorCode ||
+      error?.details?.error_code ||
+      error?.details?.code,
+  )
   if (explicitCode) return explicitCode
 
   const message = normalizeText(error?.message || String(error)).toLowerCase()
@@ -1159,6 +1431,81 @@ function inferGenerationFailureCode(error) {
     return 'DOCX_RENDER_FAILED'
   }
   return 'DOCX_GENERATION_FAILED'
+}
+
+const OTP_CANONICAL_SEAL_RECOVERY_CODES = new Set([
+  'OTP_CANONICAL_PDF_SEAL_FAILED',
+  'OTP_CANONICAL_PDF_RECONCILIATION_REQUIRED',
+  'OTP_CANONICAL_PDF_RESULT_AMBIGUOUS',
+])
+
+const OTP_CANONICAL_SEAL_AMBIGUITY_CODES = new Set([
+  'OTP_CANONICAL_PDF_RECONCILIATION_REQUIRED',
+  'OTP_CANONICAL_PDF_RESULT_AMBIGUOUS',
+  'EDGE_INVOCATION_FAILED',
+  'FUNCTIONS_FETCH_ERROR',
+  'FUNCTIONS_HTTP_ERROR',
+  'NETWORK_ERROR',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+])
+
+function resolveOtpCanonicalSealRecovery({ packetType = '', failureCode = '', error = null } = {}) {
+  if (normalizeText(packetType).toLowerCase() !== 'otp') return null
+
+  const details = error?.details && typeof error.details === 'object' ? error.details : {}
+  const codes = [
+    failureCode,
+    error?.code,
+    details?.errorCode,
+    details?.error_code,
+    details?.code,
+  ]
+    .map((value) => normalizeText(value).toUpperCase())
+    .filter(Boolean)
+  const message = normalizeText(error?.message || error).toLowerCase()
+  const explicitRecovery = codes.some((code) => OTP_CANONICAL_SEAL_RECOVERY_CODES.has(code))
+  const responseAmbiguous =
+    codes.includes('GENERATION_TIMEOUT') ||
+    codes.some((code) => OTP_CANONICAL_SEAL_AMBIGUITY_CODES.has(code)) ||
+    isRetryablePacketError(error)
+  const looksLikeCanonicalSealFailure =
+    message.includes('canonical') &&
+    (message.includes('seal') || message.includes('certified') || message.includes('reconcil'))
+
+  if (!explicitRecovery && !responseAmbiguous && !looksLikeCanonicalSealFailure) return null
+
+  return {
+    resultAmbiguous: responseAmbiguous,
+    recoveryAction: responseAmbiguous
+      ? 'reconcile_canonical_otp_pdf'
+      : 'retry_canonical_otp_pdf',
+    originalFailureCode: normalizeText(failureCode || codes[0]) || 'OTP_CANONICAL_PDF_SEAL_FAILED',
+  }
+}
+
+function buildOtpCanonicalSealRecoverySignal({
+  packet = null,
+  generationPayload = null,
+  recovery = null,
+} = {}) {
+  const freeze =
+    generationPayload?.editableRenderFreeze && typeof generationPayload.editableRenderFreeze === 'object'
+      ? generationPayload.editableRenderFreeze
+      : {}
+  return {
+    contract: 'otp-canonical-seal-recovery-v1',
+    action: recovery?.recoveryAction || 'reconcile_canonical_otp_pdf',
+    packetId: normalizeText(packet?.id) || null,
+    generationAttemptId: normalizeText(generationPayload?.generationAttemptId) || null,
+    freezeId: normalizeText(freeze?.freezeId) || null,
+    sourceVersionId: normalizeText(freeze?.sourceVersionId) || null,
+    contentFingerprint: normalizeText(freeze?.contentFingerprint) || null,
+    originalFailureCode: normalizeText(recovery?.originalFailureCode) || null,
+    resultAmbiguous: recovery?.resultAmbiguous === true,
+    preserveCurrentVersion: true,
+  }
 }
 
 function isRetryablePacketError(error = null) {
@@ -1192,6 +1539,7 @@ async function withPacketRetries(task, { attempts = 2, retryDelayMs = 450 } = {}
 }
 
 const PACKET_GENERATION_TIMEOUT_MS = 10000
+const PACKET_GENERATION_LEASE_TTL_SECONDS = 120
 const FINAL_SIGNED_GENERATION_TIMEOUT_MS = 45000
 
 function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {
@@ -1206,26 +1554,38 @@ function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_
   })
 }
 
-function hasTemplateSource(templateConfig = {}) {
-  return Boolean(
-    normalizeText(templateConfig?.templatePath) ||
-    (normalizeText(templateConfig?.templateBucket) && normalizeText(templateConfig?.templateFilename)),
-  )
-}
-
 function templateHasUsableSource(template = null) {
   const packetType = normalizeText(template?.packet_type || template?.packetType)
   return templateIsUsableForGeneration(template, packetType)
 }
 
-function shouldAllowMandateTemplateFallback(template = null, packetType = '') {
-  if (normalizeText(packetType).toLowerCase() !== 'mandate') return false
-  if (shouldUseNativeGeneration(template, packetType)) return false
-  return !template || !hasTemplateSource(resolveTemplateConfig(template))
-}
-
 function toFriendlyGenerationMessage(code = '', fallback = '') {
   switch (code) {
+    case 'UNSUPPORTED_DOCUMENT_TYPE':
+    case 'DOCUMENT_TYPE_NOT_RENDERABLE':
+      return 'This document type does not yet have a production PDF generator and cannot be sent for signature.'
+    case 'DOCUMENT_CONVERSION_UNAVAILABLE':
+      return 'PDF conversion is unavailable. Generation is paused until the document converter is healthy.'
+    case 'TEMPLATE_SELECTION_REQUIRED':
+    case 'TEMPLATE_ROUTE_NOT_PUBLISHED':
+    case 'TEMPLATE_NOT_PUBLISHED':
+    case 'TEMPLATE_ID_REQUIRED':
+    case 'TEMPLATE_RESOLUTION_UNAVAILABLE':
+    case 'TEMPLATE_NOT_FOUND':
+    case 'TEMPLATE_PACKET_TYPE_MISMATCH':
+      return 'A matching published legal template is required before this document can be generated.'
+    case 'LEGAL_TEMPLATE_APPROVAL_REQUIRED':
+    case 'LEGAL_TEMPLATE_RUNTIME_APPROVAL_REQUIRED':
+      return 'The selected legal template does not have a current independent approval. No document was generated.'
+    case 'LEGAL_DOCUMENT_PILOT_DISABLED':
+    case 'LEGAL_DOCUMENT_PILOT_ORGANISATION_NOT_ALLOWED':
+    case 'LEGAL_DOCUMENT_PILOT_ORGANISATION_NOT_ALLOWLISTED':
+    case 'LEGAL_DOCUMENT_PILOT_CONFIGURATION_INVALID':
+      return 'This organisation is not currently enabled for the controlled legal-document pilot. No document was generated.'
+    case 'PACKET_GENERATION_FORBIDDEN':
+      return 'Your organisation role is not allowed to generate this legal document.'
+    case 'PACKET_TRANSACTION_BINDING_REQUIRED':
+      return 'This legal packet is linked to a different transaction. Refresh the packet before generating it.'
     case 'VALIDATION_BLOCKED':
       return 'The mandate is missing required information. Complete the highlighted fields before generating it.'
     case 'GENERATION_PREFLIGHT_BLOCKED':
@@ -1237,6 +1597,7 @@ function toFriendlyGenerationMessage(code = '', fallback = '') {
     case 'MISSING_TEMPLATE_FILE':
       return 'The legal template could not be rendered. Check the active template configuration and try again.'
     case 'NATIVE_TEMPLATE_NOT_RENDERABLE':
+    case 'NATIVE_RENDERER_NOT_ENABLED':
       return 'The active legal template is not renderable yet. Complete the required sections and template fields before generating it.'
     case 'HTML_RENDER_FAILED':
       return 'The legal template could not be assembled into a final document. Please try again.'
@@ -1564,16 +1925,40 @@ function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {},
 
   const fields = []
 
-  for (const role of config.initialsRoles) {
-    if (!signerByRole[role]) continue
-    const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
-    initialsPages.forEach((pageNumber) => {
+  // A canonical OTP must never silently inherit fixed page-six coordinates.
+  // Its E1 fields must either come from the frozen structured template or be
+  // deliberately placed and applied through the visual E1→E3 workflow.
+  // Mandates retain their existing default-field compatibility path.
+  if (normalizedPacketType !== 'otp') {
+    for (const role of config.initialsRoles) {
+      if (!signerByRole[role]) continue
+      const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
+      initialsPages.forEach((pageNumber) => {
+        fields.push({
+          signerRole: role,
+          signerName: signerByRole[role].signerName,
+          signerEmail: signerByRole[role].signerEmail,
+          fieldType: 'initial',
+          pageNumber,
+          xPosition: position.initialX,
+          yPosition: initialY,
+          width: initialWidth,
+          height: initialHeight,
+          required: true,
+          status: 'pending',
+        })
+      })
+    }
+
+    for (const role of config.conditionalInitialRoles) {
+      if (!signerByRole[role]) continue
+      const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
       fields.push({
         signerRole: role,
         signerName: signerByRole[role].signerName,
         signerEmail: signerByRole[role].signerEmail,
         fieldType: 'initial',
-        pageNumber,
+        pageNumber: Math.max(1, signaturePage - 1),
         xPosition: position.initialX,
         yPosition: initialY,
         width: initialWidth,
@@ -1581,43 +1966,25 @@ function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {},
         required: true,
         status: 'pending',
       })
-    })
-  }
+    }
 
-  for (const role of config.conditionalInitialRoles) {
-    if (!signerByRole[role]) continue
-    const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
-    fields.push({
-      signerRole: role,
-      signerName: signerByRole[role].signerName,
-      signerEmail: signerByRole[role].signerEmail,
-      fieldType: 'initial',
-      pageNumber: Math.max(1, signaturePage - 1),
-      xPosition: position.initialX,
-      yPosition: initialY,
-      width: initialWidth,
-      height: initialHeight,
-      required: true,
-      status: 'pending',
-    })
-  }
-
-  for (const role of [...configuredSignatureRoles, ...optionalOtpRoles]) {
-    if (!signerByRole[role]) continue
-    const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
-    fields.push({
-      signerRole: role,
-      signerName: signerByRole[role].signerName,
-      signerEmail: signerByRole[role].signerEmail,
-      fieldType: 'signature',
-      pageNumber: signaturePage,
-      xPosition: position.signatureX,
-      yPosition: signatureY,
-      width: signatureWidth,
-      height: signatureHeight,
-      required: true,
-      status: 'pending',
-    })
+    for (const role of [...configuredSignatureRoles, ...optionalOtpRoles]) {
+      if (!signerByRole[role]) continue
+      const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
+      fields.push({
+        signerRole: role,
+        signerName: signerByRole[role].signerName,
+        signerEmail: signerByRole[role].signerEmail,
+        fieldType: 'signature',
+        pageNumber: signaturePage,
+        xPosition: position.signatureX,
+        yPosition: signatureY,
+        width: signatureWidth,
+        height: signatureHeight,
+        required: true,
+        status: 'pending',
+      })
+    }
   }
 
   const signers = signerSeeds.map((seed, index) => ({
@@ -1833,7 +2200,7 @@ async function resolveSeededSectionManifest({ packetType, template = null, place
 }
 
 function resolvePacketTypeContext(packetType, context = {}) {
-  const normalized = normalizeText(packetType).toLowerCase()
+  const normalized = requirePdfRenderablePacketType(packetType)
   if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalized)) {
     return resolveCommercialDocumentContext({
       packetType: normalized,
@@ -1859,31 +2226,39 @@ function resolvePacketTypeContext(packetType, context = {}) {
     })
   }
 
-  return resolveOtpPacketPlaceholders({
-    transaction: context?.transaction || null,
-    unit: context?.unit || null,
-    buyer: context?.buyer || null,
-    onboardingFormData: context?.onboardingFormData || null,
-    sellerDetails: context?.sellerDetails || context?.seller_details || null,
-    agency: context?.agency || context?.organisation || null,
-    organisation: context?.organisation || null,
-    agent: context?.agent || {
-      fullName: context?.generatedByName,
-      email: context?.agentEmail || context?.generatedByUserEmail,
-      phone: context?.agentPhone,
-      ffcNumber: context?.agentFfcNumber,
-    },
-    listing: context?.listing || null,
-    privateListing: context?.privateListing || context?.private_listing || null,
-    propertyDisclosureAnnexure:
-      context?.propertyDisclosureAnnexure ||
-      context?.property_disclosure_annexure ||
-      context?.sourceContext?.propertyDisclosureAnnexure ||
-      context?.sourceContext?.property_disclosure_annexure ||
-      null,
-    sourceContext: context?.sourceContext || null,
-    specialConditions: context?.specialConditions || '',
-  })
+  if (normalized === 'otp') {
+    return resolveOtpPacketPlaceholders({
+      transaction: context?.transaction || null,
+      unit: context?.unit || null,
+      buyer: context?.buyer || null,
+      onboardingFormData: context?.onboardingFormData || null,
+      sellerDetails: context?.sellerDetails || context?.seller_details || null,
+      agency: context?.agency || context?.organisation || null,
+      organisation: context?.organisation || null,
+      agent: context?.agent || {
+        fullName: context?.generatedByName,
+        email: context?.agentEmail || context?.generatedByUserEmail,
+        phone: context?.agentPhone,
+        ffcNumber: context?.agentFfcNumber,
+      },
+      listing: context?.listing || null,
+      privateListing: context?.privateListing || context?.private_listing || null,
+      propertyDisclosureAnnexure:
+        context?.propertyDisclosureAnnexure ||
+        context?.property_disclosure_annexure ||
+        context?.sourceContext?.propertyDisclosureAnnexure ||
+        context?.sourceContext?.property_disclosure_annexure ||
+        null,
+      sourceContext: context?.sourceContext || null,
+      specialConditions: context?.specialConditions || '',
+    })
+  }
+
+  throw createPacketError(
+    'DOCUMENT_TYPE_NOT_RENDERABLE',
+    'This document type does not yet have a production PDF renderer.',
+    { packetType: normalized },
+  )
 }
 
 function buildValidationSummary(validation = {}) {
@@ -2210,7 +2585,7 @@ export async function resolveActiveTemplate({
   context = {},
   includeSections = true,
 } = {}) {
-  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const normalizedPacketType = requirePdfRenderablePacketType(packetType)
   if (normalizedPacketType === 'mandate') {
     const mandateTemplateResolution = await resolveMandateScenarioTemplateForPacket({
       packetType: normalizedPacketType,
@@ -2269,7 +2644,7 @@ export async function resolvePacketBranding(options = {}) {
 }
 
 export async function validatePacket({ packetType, context = {}, template = null, validationAction = null } = {}) {
-  const normalizedPacketType = normalizeText(packetType).toLowerCase() || 'otp'
+  const normalizedPacketType = requirePdfRenderablePacketType(packetType)
   const packetBranding = await resolvePacketBranding({
     organisationId: context?.organisationId || context?.transaction?.organisation_id || null,
   }).catch(() => null)
@@ -2529,17 +2904,21 @@ export async function renderPacketPreview({
   template = null,
   validationAction = 'preview',
 } = {}) {
+  const resolutionContext = {
+    ...context,
+    validationAction: context?.validationAction || validationAction || 'preview',
+  }
   const templateResolution = await resolveTemplateForPacket({
     packetType,
-    context,
+    context: resolutionContext,
     template,
   })
   const resolvedTemplate = templateResolution.template || null
   const baseValidation = await validatePacket({
     packetType,
-    context,
+    context: resolutionContext,
     template: resolvedTemplate,
-    validationAction,
+    validationAction: resolutionContext.validationAction,
   })
   const validation = withMandateTemplateRoutingWarnings(baseValidation, templateResolution)
   if (
@@ -2622,18 +3001,22 @@ export async function savePacketDraft({
   template = null,
   validationAction = 'preview',
 } = {}) {
+  const resolutionContext = {
+    ...context,
+    validationAction: context?.validationAction || validationAction || 'preview',
+  }
   const templateResolution = await resolveTemplateForPacket({
     packetType,
-    context,
+    context: resolutionContext,
     template,
   })
   const resolvedTemplate = templateResolution.template || null
   const renderedPreview = await renderPacketPreview({
     packetType,
-    context,
+    context: resolutionContext,
     title: buildPacketTitle(packetType, context),
     template: resolvedTemplate,
-    validationAction,
+    validationAction: resolutionContext.validationAction,
   })
   const rendered = withMandateTemplateRoutingWarnings(renderedPreview, templateResolution)
 
@@ -2724,9 +3107,27 @@ export async function generatePacketVersion({
   context = {},
   template = null,
   allowWarnings = true,
-  forceGenerate = false,
 } = {}) {
+  const normalizedPacketType = requirePdfRenderablePacketType(packetType)
   context = applyFrozenEditableRenderInput(context)
+  // Phase 4 gives the user an immediate, read-only explanation before a
+  // generation lease, renderer request, storage upload, or packet-version
+  // write can begin. The Edge Function repeats this check against its own
+  // authoritative template row; this client guard is never the authority.
+  let preflightTemplate = template
+  if (['otp', 'mandate'].includes(normalizedPacketType)) {
+    const preflightTemplateResolution = await resolveTemplateForPacket({
+      packetType: normalizedPacketType,
+      context: {
+        ...context,
+        validationAction: context?.validationAction || 'generate',
+      },
+      template,
+    })
+    preflightTemplate = preflightTemplateResolution?.template || template || null
+    requireLegalTemplateGenerationApproval(preflightTemplate, normalizedPacketType)
+  }
+  await requireDocumentConversionHealth()
   const generationAttemptId = createGenerationAttemptId()
   let generationLeasePacketId = normalizeNullableUuid(packetId)
   let generationLeaseClaimed = false
@@ -2735,7 +3136,7 @@ export async function generatePacketVersion({
     const claimed = await claimDocumentPacketGenerationLease({
       packetId: targetPacketId,
       generationAttemptId,
-      ttlSeconds: 300,
+      ttlSeconds: PACKET_GENERATION_LEASE_TTL_SECONDS,
     })
     if (!claimed) {
       const leaseStatus = await getDocumentPacketGenerationLeaseStatus({
@@ -2763,43 +3164,25 @@ export async function generatePacketVersion({
   try {
     const prepared = await savePacketDraft({
       packetId,
-      packetType,
+      packetType: normalizedPacketType,
       context: {
         ...context,
         validationAction: 'generate',
       },
-      template,
+      template: preflightTemplate,
       validationAction: 'generate',
     })
 
     const { packet, validation } = prepared
     if (!generationLeaseClaimed) await claimGenerationLease(packet.id)
     const effectiveTemplate = prepared.template || template || null
-    const isMandatePacket = validation.packetType === 'mandate'
-    const hasConditionalPackBlockingIssues = (validation.critical || []).some(
-      (issue) => issue?.source === 'conditional_pack',
-    )
-    const hasLegalScenarioBlockingIssues = (validation.critical || []).some(
-      (issue) => issue?.source === 'legal_scenario',
-    )
-    const hasLegalScenarioRequirementBlockingIssues = (validation.critical || []).some(
-      (issue) => issue?.source === 'legal_scenario_requirement',
-    )
     const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_content_gate',
     )
     const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_launch_readiness',
     )
-    const allowGenerationBypass =
-      (isMandatePacket &&
-        !hasConditionalPackBlockingIssues &&
-        !hasLegalScenarioBlockingIssues &&
-        !hasLegalScenarioRequirementBlockingIssues &&
-        !hasMandateTemplateContentGateBlockingIssues &&
-        !hasMandateTemplateLaunchReadinessBlockingIssues) ||
-      forceGenerate
-    if (!validation.isValidForGeneration && !allowGenerationBypass) {
+    if (!validation.isValidForGeneration) {
       const error = createPacketError(
         hasMandateTemplateLaunchReadinessBlockingIssues
           ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
@@ -2885,46 +3268,31 @@ export async function generatePacketVersion({
       renderedFileUrl: null,
     }
     let renderStatus = 'generated'
-    let previewOnlyGeneration = false
-    let previewOnlyReason = ''
-    let previewOnlyFailureCode = ''
     const useEditableNativeRenderer = Array.isArray(context?.editableSections) && context.editableSections.length > 0
+    const useNativeRenderer =
+      validation.packetType === 'otp' ||
+      useEditableNativeRenderer || shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
+    let canonicalOtpGeneration = null
 
     try {
-      if (validation.packetType === 'otp' && !useEditableNativeRenderer) {
-        const templateConfig = resolveTemplateConfig(effectiveTemplate)
-        const otpResult = await withPacketRetries(() =>
-          generateOtpDocumentFromTemplate({
-            transactionId: context?.transaction?.id || context?.transactionId,
-            templateId: effectiveTemplate?.id || '',
-            specialConditions: context?.specialConditions || '',
-            templatePath: templateConfig.templatePath,
-            templateBucket: templateConfig.templateBucket,
-            templateFilename: templateConfig.templateFilename,
-            outputBucket: templateConfig.outputBucket,
-            placeholders: pdfPlaceholders,
-            sourceContext: sourceContextSnapshot,
-            generatedByRole: context?.generatedByRole || '',
-            generatedByUserId: context?.generatedByUserId || '',
-            clientVisible: false,
-          }),
-        )
-        artifact = extractGeneratedArtifact(otpResult)
-        assertGenerationOutput(artifact, 'otp')
-      } else if (
+      if (
         validation.packetType === 'mandate' ||
         validation.packetType === 'otp' ||
         COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
       ) {
         const templateConfig = resolveTemplateConfig(effectiveTemplate)
-        const renderMode = useEditableNativeRenderer
+        if (validation.packetType === 'otp' && !templateUsesNativeRenderer(effectiveTemplate, validation.packetType)) {
+          throw createPacketError(
+            'OTP_CANONICAL_TEMPLATE_REQUIRED',
+            'OTP generation requires a published structured template approved for the native PDF renderer.',
+          )
+        }
+        const renderMode = validation.packetType === 'otp' || useEditableNativeRenderer
           ? 'native_structured'
           : resolveTemplateRenderMode(effectiveTemplate, validation.packetType)
-        const useNativeRenderer = shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
         if (
           !useEditableNativeRenderer &&
-          !templateIsUsableForGeneration(effectiveTemplate, validation.packetType) &&
-          !shouldAllowMandateTemplateFallback(effectiveTemplate, validation.packetType)
+          !templateIsUsableForGeneration(effectiveTemplate, validation.packetType)
         ) {
           throw createPacketError(
             useNativeRenderer ? 'NATIVE_TEMPLATE_NOT_RENDERABLE' : 'MISSING_TEMPLATE_FILE',
@@ -2963,8 +3331,8 @@ export async function generatePacketVersion({
           },
           packetType: validation.packetType,
           templateConfig,
-          useNativeRenderer: useNativeRenderer || useEditableNativeRenderer,
-          allowTemplateFallback: shouldAllowMandateTemplateFallback(effectiveTemplate, validation.packetType),
+          useNativeRenderer,
+          allowTemplateFallback: false,
         })
         if (!rendererPreflight.ok) {
           await addPacketEvent({
@@ -3015,6 +3383,22 @@ export async function generatePacketVersion({
         )
         artifact = extractGeneratedArtifact(mandateResult)
         assertGenerationOutput(artifact, validation.packetType)
+        if (validation.packetType === 'otp') {
+          canonicalOtpGeneration = mandateResult?.canonicalOtp || null
+          const canonicalVersion = canonicalOtpGeneration?.version || null
+          if (
+            canonicalOtpGeneration?.sealed !== true ||
+            !canonicalVersion?.id ||
+            canonicalVersion?.render_input_verified !== true ||
+            canonicalVersion?.native_pdf_verified !== true ||
+            canonicalVersion?.transaction_pdf_persisted !== true
+          ) {
+            throw createPacketError(
+              'OTP_CANONICAL_PDF_SEAL_FAILED',
+              'The OTP PDF was rendered but could not be certified and persisted by the server.',
+            )
+          }
+        }
       }
     } catch (rawError) {
       const failureCode = inferGenerationFailureCode(rawError)
@@ -3022,6 +3406,62 @@ export async function generatePacketVersion({
         failureCode,
         normalizeText(rawError?.message || String(rawError)),
       )
+      const otpCanonicalSealRecovery = resolveOtpCanonicalSealRecovery({
+        packetType: validation.packetType,
+        failureCode,
+        error: rawError,
+      })
+
+      // The OTP renderer is the only authority that may create and seal a
+      // generated version.  A failed or uncertain seal must never flow into
+      // the generic browser failure handler below: that handler inserts a
+      // new failed packet version, which advances the current-version pointer
+      // and can strand the server's canonical candidate.  Leave the pointer
+      // untouched and return a durable recovery signal instead.
+      if (otpCanonicalSealRecovery) {
+        if (otpCanonicalSealRecovery.resultAmbiguous) {
+          deferGenerationLeaseRelease = true
+        }
+        const canonicalSealRecovery = buildOtpCanonicalSealRecoverySignal({
+          packet,
+          generationPayload,
+          recovery: otpCanonicalSealRecovery,
+        })
+        await addPacketEvent({
+          packetId: packet.id,
+          organisationId: packet.organisation_id,
+          eventType: 'otp_canonical_seal_recovery_required',
+          eventPayload: {
+            packetType: 'otp',
+            generationAttemptId,
+            generatedAt,
+            failureCode,
+            failureMessage,
+            recovery: canonicalSealRecovery,
+            message: otpCanonicalSealRecovery.resultAmbiguous
+              ? 'The canonical OTP PDF may have completed. No replacement packet version was created while the server result is reconciled.'
+              : 'Canonical OTP PDF sealing failed safely. No replacement packet version was created; the frozen source remains available for recovery.',
+          },
+        }).catch(() => null)
+
+        const recoveryMessage = otpCanonicalSealRecovery.resultAmbiguous
+          ? 'The OTP PDF result is being verified before another version can be created.'
+          : 'The OTP PDF could not be certified. Its canonical source remains intact for a safe retry.'
+        const error = createPacketError(failureCode, recoveryMessage, {
+          generationStatus: otpCanonicalSealRecovery.resultAmbiguous ? 'reconciling' : 'recovery_required',
+          retryAfterSeconds: otpCanonicalSealRecovery.resultAmbiguous
+            ? PACKET_GENERATION_LEASE_TTL_SECONDS
+            : 0,
+          safeToRetry: !otpCanonicalSealRecovery.resultAmbiguous,
+          resultAmbiguous: otpCanonicalSealRecovery.resultAmbiguous,
+          preserveCurrentVersion: true,
+          canonicalOtpSealRecovery: canonicalSealRecovery,
+          originalMessage: failureMessage,
+        })
+        error.validation = validation
+        error.packetId = packet.id
+        throw error
+      }
 
       if (failureCode === 'GENERATION_TIMEOUT') {
         deferGenerationLeaseRelease = true
@@ -3039,7 +3479,7 @@ export async function generatePacketVersion({
         }).catch(() => null)
         const error = createPacketError(failureCode, failureMessage, {
           generationStatus: 'active',
-          retryAfterSeconds: 300,
+          retryAfterSeconds: PACKET_GENERATION_LEASE_TTL_SECONDS,
           safeToRetry: false,
           resultAmbiguous: true,
         })
@@ -3068,53 +3508,56 @@ export async function generatePacketVersion({
         throw error
       }
 
-      if (validation.packetType === 'mandate' || (validation.packetType === 'otp' && useEditableNativeRenderer)) {
-        console.warn('[PACKETS] mandate render failed; continuing with a generated preview-only draft.', {
-          packetId: packet.id,
-          failureCode,
-          failureMessage,
-        })
-        previewOnlyGeneration = true
-        previewOnlyReason = failureMessage
-        previewOnlyFailureCode = failureCode
-      } else {
-        await releaseDocumentPacketGenerationLease({
-          packetId: packet.id,
-          generationAttemptId,
-        }).catch(() => false)
-        const failedVersion = await recordGenerationFailure({
-          packet,
-          template: effectiveTemplate,
-          validation,
-          artifact,
-          failureCode,
-          failureMessage,
-          pdfPlaceholders,
-          generationPayload,
-          templateVersion,
-          templateResolution: prepared.templateResolution || null,
-          generatedAt,
-          sourceContextSnapshot,
-          context,
-        })
+      await releaseDocumentPacketGenerationLease({
+        packetId: packet.id,
+        generationAttemptId,
+      }).catch(() => false)
+      const failedVersion = await recordGenerationFailure({
+        packet,
+        template: effectiveTemplate,
+        validation,
+        artifact,
+        failureCode,
+        failureMessage,
+        pdfPlaceholders,
+        generationPayload,
+        templateVersion,
+        templateResolution: prepared.templateResolution || null,
+        generatedAt,
+        sourceContextSnapshot,
+        context,
+      })
 
-        const error = createPacketError(failureCode, failureMessage, {
-          failedVersionId: failedVersion.id,
-          failedVersionNumber: failedVersion.version_number,
-        })
-        error.validation = validation
-        error.packetId = packet.id
-        throw error
-      }
+      const error = createPacketError(failureCode, failureMessage, {
+        failedVersionId: failedVersion.id,
+        failedVersionNumber: failedVersion.version_number,
+      })
+      error.validation = validation
+      error.packetId = packet.id
+      throw error
     }
 
-    const pilotFallback = previewOnlyGeneration
-      ? buildPilotDocumentFallback({
-          packetType: validation.packetType,
-          reason: previewOnlyReason,
-          failureCode: previewOnlyFailureCode,
-        })
-      : null
+    if (validation.packetType === 'otp') {
+      const canonicalVersion = canonicalOtpGeneration?.version || null
+      const canonicalPacket = canonicalOtpGeneration?.packet || null
+      if (!canonicalPacket?.id || !canonicalVersion?.id) {
+        throw createPacketError(
+          'OTP_CANONICAL_PDF_SEAL_FAILED',
+          'The OTP PDF was not returned as a sealed canonical packet version.',
+        )
+      }
+      // D1 → D2 → D3 → C4 are performed by the service-owned renderer. Do
+      // not create a second browser-owned version or replay certification.
+      return {
+        packet: canonicalPacket,
+        version: canonicalVersion,
+        validation,
+        previewHtml: prepared.previewHtml,
+        template: effectiveTemplate,
+        templateResolution: prepared.templateResolution || null,
+        canonicalOtp: canonicalOtpGeneration,
+      }
+    }
 
     const renderProvenance = buildRenderProvenance({
       packetType: validation.packetType,
@@ -3127,116 +3570,148 @@ export async function generatePacketVersion({
     })
     const artifactProvenance = buildDraftArtifactProvenance(artifact)
 
-    if (!previewOnlyGeneration) {
-      assertGeneratedDraftArtifact({
-        artifact,
-        packetType: validation.packetType,
-      })
-      assertGeneratedDraftVersion({
-        packet,
-        template: effectiveTemplate,
-        version: {
-          render_status: renderStatus,
-          rendered_document_id: artifact.renderedDocumentId,
-          rendered_file_path: artifact.renderedFilePath,
-          rendered_file_url: artifact.renderedFileUrl,
-          placeholders_missing_json: validation.missingPlaceholders,
-          generated_at: generatedAt,
-          validation_summary_json: {
-            generationStatus: 'generated',
-            previewOnly: false,
-            render_provenance: renderProvenance,
-          },
+    assertGeneratedDraftArtifact({
+      artifact,
+      packetType: validation.packetType,
+    })
+    assertGeneratedDraftVersion({
+      packet,
+      template: effectiveTemplate,
+      version: {
+        render_status: renderStatus,
+        rendered_document_id: artifact.renderedDocumentId,
+        rendered_file_path: artifact.renderedFilePath,
+        rendered_file_url: artifact.renderedFileUrl,
+        placeholders_missing_json: validation.missingPlaceholders,
+        generated_at: generatedAt,
+        validation_summary_json: {
+          generationStatus: 'generated',
+          previewOnly: false,
+          render_provenance: renderProvenance,
         },
+      },
+    })
+
+    let version = null
+    try {
+      version = await createDocumentPacketVersionSafely({
+        packetId: packet.id,
+        renderStatus,
+        renderedDocumentId: artifact.renderedDocumentId,
+        renderedFilePath: artifact.renderedFilePath,
+        renderedFileName: artifact.renderedFileName,
+        renderedFileUrl: artifact.renderedFileUrl,
+        placeholdersResolvedJson: pdfPlaceholders,
+        placeholdersMissingJson: validation.missingPlaceholders,
+        sectionManifestJson: validation.sectionManifest,
+        validationSummaryJson: {
+          ...buildValidationSummary(validation),
+          generationStatus: 'generated',
+          previewOnly: false,
+          generationPayload,
+          templateVersion,
+          templateResolution: prepared.templateResolution || null,
+          generatedAt,
+          generationAttemptId,
+          render_provenance: renderProvenance,
+          artifact_provenance: artifactProvenance,
+          native_render_attestation: artifact.renderAttestation,
+          generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+          missingFieldsSnapshot:
+            context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+          warningsSnapshot: buildWarningsSnapshot(context, validation),
+          sourceContext: sourceContextSnapshot,
+          readOnlyAnnexures,
+          annexures: readOnlyAnnexures,
+        },
+        generatedBy: context?.generatedByUserId || null,
+        generatedAt,
       })
+    } catch (versionError) {
+      await addPacketEvent({
+        packetId: packet.id,
+        organisationId: packet.organisation_id,
+        eventType: 'generation_version_persist_failed',
+        eventPayload: {
+          packetType: validation.packetType,
+          generationAttemptId,
+          generatedAt,
+          failureCode: versionError?.code || 'PACKET_VERSION_CREATE_FAILED',
+          causedByTimeout: Boolean(versionError?.details?.causedByTimeout),
+          message: 'Document rendering completed, but the generated packet version could not be saved.',
+        },
+      }).catch(() => null)
+      const error = createPacketError(
+        'PACKET_VERSION_CREATE_FAILED',
+        toFriendlyGenerationMessage('PACKET_VERSION_CREATE_FAILED'),
+        {
+          safeToRetry: true,
+          generationPhase: 'version_persist',
+          causedByTimeout: Boolean(versionError?.details?.causedByTimeout),
+          originalCode: versionError?.details?.originalCode || versionError?.code || null,
+        },
+      )
+      error.validation = validation
+      error.packetId = packet.id
+      throw error
     }
 
-    const version = await createDocumentPacketVersionSafely({
-      packetId: packet.id,
-      renderStatus,
-      renderedDocumentId: artifact.renderedDocumentId,
-      renderedFilePath: artifact.renderedFilePath,
-      renderedFileName: artifact.renderedFileName,
-      renderedFileUrl: artifact.renderedFileUrl,
-      placeholdersResolvedJson: pdfPlaceholders,
-      placeholdersMissingJson: validation.missingPlaceholders,
-      sectionManifestJson: validation.sectionManifest,
-      validationSummaryJson: {
-        ...buildValidationSummary(validation),
-        generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
-        previewOnly: previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
-        pilotFallback,
-        generationPayload,
-        templateVersion,
-        templateResolution: prepared.templateResolution || null,
-        generatedAt,
-        generationAttemptId,
-        render_provenance: renderProvenance,
-        artifact_provenance: artifactProvenance,
-        native_render_attestation: artifact.renderAttestation,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot:
-          context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: buildWarningsSnapshot(context, validation),
-        sourceContext: sourceContextSnapshot,
-        readOnlyAnnexures,
-        annexures: readOnlyAnnexures,
-      },
-      generatedBy: context?.generatedByUserId || null,
+    const generatedSourceContext = {
+      ...(packet?.source_context_json || {}),
+      lastGeneratedVersion: version.version_number,
+      generationPayload,
+      templateVersion,
       generatedAt,
-    })
-
-    const updatedPacket = await updatePacketFresh(packet.id, {
+      renderProvenance,
+      artifactProvenance,
+      generationAttemptId,
+      templateResolutionSource: generationPayload.templateResolutionSource || null,
+      mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+      mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
+      mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+      mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+      mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+      legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+      legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
+      mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+      mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      missingFieldsSnapshot:
+        context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+      warningsSnapshot: buildWarningsSnapshot(context, validation),
+      sourceContext: sourceContextSnapshot,
+      readOnlyAnnexures,
+      annexures: readOnlyAnnexures,
+    }
+    const updatedPacket = {
+      ...(packet || {}),
       status: 'generated',
-      sourceContextJson: {
-        ...(packet?.source_context_json || {}),
-        lastGeneratedVersion: version.version_number,
-        previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
-        pilotFallback,
-        generationPayload,
-        templateVersion,
-        generatedAt,
-        renderProvenance,
-        artifactProvenance,
-        generationAttemptId,
-        templateResolutionSource: generationPayload.templateResolutionSource || null,
-        mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
-        mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
-        mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
-        mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
-        mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
-        legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
-        legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
-        mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
-        mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot:
-          context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: buildWarningsSnapshot(context, validation),
-        sourceContext: sourceContextSnapshot,
-        readOnlyAnnexures,
-        annexures: readOnlyAnnexures,
-      },
+      current_version_number: version.version_number,
+      source_context_json: generatedSourceContext,
+      branding_snapshot_json: validation.branding || {},
+      updated_at: new Date().toISOString(),
+    }
+    void updatePacketFresh(packet.id, {
+      status: 'generated',
+      sourceContextJson: generatedSourceContext,
       brandingSnapshotJson: validation.branding || {},
+    }).catch((packetUpdateError) => {
+      console.warn('[PACKETS] generated packet metadata update skipped after version creation.', {
+        packetId: packet.id,
+        generationAttemptId,
+        code: packetUpdateError?.code || null,
+      })
     })
 
-    await addPacketEvent({
+    void addPacketEvent({
       packetId: packet.id,
       organisationId: packet.organisation_id,
       versionId: version.id,
-      eventType: previewOnlyGeneration
-        ? 'draft_preview_generated'
-        : version.version_number > 1
-          ? 'packet_regenerated'
-          : 'version_generated',
+      eventType: version.version_number > 1 ? 'packet_regenerated' : 'version_generated',
       eventPayload: {
-        activity_type: previewOnlyGeneration
-          ? 'mandate_draft_preview_generated'
-          : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
-            ? 'commercial_document_generated'
-            : 'mandate_generated',
+        activity_type: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'commercial_document_generated'
+          : 'mandate_generated',
         leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
         transactionId: context?.transaction?.id || context?.transactionId || null,
         versionNumber: version.version_number,
@@ -3244,9 +3719,7 @@ export async function generatePacketVersion({
         renderStatus: version.render_status,
         renderedDocumentId: version.rendered_document_id,
         renderedFilePath: version.rendered_file_path,
-        previewOnly: previewOnlyGeneration,
-        previewOnlyReason: previewOnlyReason || null,
-        pilotFallback,
+        previewOnly: false,
         templateResolutionSource: generationPayload.templateResolutionSource || null,
         mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
         mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
@@ -3256,20 +3729,24 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
-        message: previewOnlyGeneration
-          ? 'Mandate draft preview was generated.'
-          : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
-            ? 'Commercial document was generated successfully.'
-            : 'Mandate was generated successfully.',
+        message: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'Commercial document was generated successfully.'
+          : 'Mandate was generated successfully.',
       },
+    }).catch((eventError) => {
+      console.warn('[PACKETS] generated version audit event skipped.', {
+        packetId: packet.id,
+        versionId: version.id,
+        generationAttemptId,
+        code: eventError?.code || null,
+      })
     })
 
     if (
       (validation.packetType === 'mandate' || COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)) &&
-      !previewOnlyGeneration &&
       version.rendered_file_path
     ) {
-      await addPacketEvent({
+      void addPacketEvent({
         packetId: packet.id,
         organisationId: packet.organisation_id,
         versionId: version.id,
@@ -3284,6 +3761,13 @@ export async function generatePacketVersion({
             ? 'Commercial document PDF was created.'
             : 'Mandate PDF was created.',
         },
+      }).catch((eventError) => {
+        console.warn('[PACKETS] generated PDF audit event skipped.', {
+          packetId: packet.id,
+          versionId: version.id,
+          generationAttemptId,
+          code: eventError?.code || null,
+        })
       })
     }
 
@@ -3292,7 +3776,6 @@ export async function generatePacketVersion({
       version,
       validation,
       previewHtml: prepared.previewHtml,
-      pilotFallback,
       template: effectiveTemplate,
       templateResolution: prepared.templateResolution || null,
     }
@@ -3322,7 +3805,6 @@ export async function regeneratePacket({ packetId, packetType, context = {}, tem
     context,
     template,
     allowWarnings: true,
-    forceGenerate: false,
   })
 }
 
@@ -3439,13 +3921,26 @@ export async function prepareSigningFields({
     organisationId,
   })
 
+  const resolvedPacketType = normalizeText(packetType) || normalizeText(packet?.packet_type)
+  const plannedFields = resolveVersionPlannedSigningFields(targetVersion)
+  if (
+    normalizeText(resolvedPacketType).toLowerCase() === 'otp' &&
+    !plannedFields.length &&
+    currentSummary.fieldCount === 0 &&
+    currentSummary.signerCount === 0
+  ) {
+    throw createPacketError(
+      'OTP_APPLIED_SIGNING_LAYOUT_REQUIRED',
+      'OTP signing requires signature blocks from the approved template or a saved and applied visual signing layout. Fixed default coordinates are not permitted.',
+    )
+  }
+
   const seed = buildDefaultSigningSeeds({
-    packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
+    packetType: resolvedPacketType,
     placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
     context,
     versionNumber: targetVersion.version_number,
   })
-  const plannedFields = resolveVersionPlannedSigningFields(targetVersion)
   if (plannedFields.length) {
     const existingSignerByRole = new Map(
       seed.signers.map((signer) => [normalizeText(signer?.signerRole).toLowerCase(), signer]),
@@ -3764,6 +4259,8 @@ export async function generateFinalSignedPacketDocument({
   if (isPilotDocumentFallbackVersion(targetVersion)) {
     throw createPacketError('PILOT_FALLBACK_REVIEW_REQUIRED', 'This pilot review draft cannot be finalised. Generate a verified document first.')
   }
+
+  await requireDocumentConversionHealth()
 
   const signingSummary = await getPacketSigningSummaryRecord({
     packetId: resolvedPacketId,

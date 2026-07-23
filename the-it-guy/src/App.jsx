@@ -2367,7 +2367,7 @@ function AppRoutes() {
               <Route
                 path="/pipeline/leads/:leadId/legal/:packetType"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
+                  <RoleRoute allowedRoles={['developer', 'agent']}>
                     <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
                       <LegalDocumentWorkspacePage />
                     </AppErrorBoundary>
@@ -2460,7 +2460,15 @@ function AppRoutes() {
                 path="/agent/listings/:listingId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <AgentListingDetail />
+                    <AppErrorBoundary
+                      scope="agent-listing-detail"
+                      title="Listing workspace failed to load"
+                      fallbackPath="/listings"
+                      fallbackLabel="Back to Listings"
+                      resetKey={`${location.pathname}${location.search}`}
+                    >
+                      <AgentListingDetail />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />
@@ -2938,7 +2946,7 @@ function AppRoutes() {
           <Route path="/seller/:token/progress" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/appointments" element={<SellerLegacyRedirect />} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><SignerPortal sessionSource="legacy-otp" /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/otp-signing" element={<TokenRouteGate><LegacyOtpSigningRedirect /></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
           <Route path="/offers/session/:token" element={<AppErrorBoundary scope="post-viewing-offer-route" title="Offer portal failed to load"><PostViewingOfferPortal /></AppErrorBoundary>} />
           <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
@@ -3047,6 +3055,12 @@ function LegacyInviteRedirect() {
   const { token = '' } = useParams()
   const safeToken = String(token || '').trim()
   return <Navigate to={safeToken ? `/invite/${encodeURIComponent(safeToken)}` : '/auth'} replace />
+}
+
+function LegacyOtpSigningRedirect() {
+  const { token = '' } = useParams()
+  const safeToken = String(token || '').trim()
+  return <Navigate to={safeToken ? `/client/${encodeURIComponent(safeToken)}/documents` : '/auth'} replace />
 }
 
 function LegacyAgentWorkspaceRedirect() {

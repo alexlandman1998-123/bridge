@@ -40,16 +40,17 @@ assert.match(renderer, /generationFence:/)
 const packetService = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
 const timeout = packetService.indexOf("if (failureCode === 'GENERATION_TIMEOUT')")
 const fenceFailure = packetService.indexOf("if (failureCode === 'GENERATION_LEASE_FENCE_REJECTED')", timeout)
-const previewOnlyBranch = packetService.indexOf("if (validation.packetType === 'mandate'", fenceFailure)
+const failedRenderPersistence = packetService.indexOf('const failedVersion = await recordGenerationFailure', fenceFailure)
 const timeoutBranch = packetService.slice(timeout, fenceFailure)
 assert.match(timeoutBranch, /deferGenerationLeaseRelease = true/)
 assert.match(timeoutBranch, /generation_result_ambiguous/)
 assert.doesNotMatch(timeoutBranch, /recordGenerationFailure|releaseDocumentPacketGenerationLease/)
 assert.ok(
-  fenceFailure > timeout && previewOnlyBranch > fenceFailure,
-  'renderer fence rejection must stop generation before preview-only fallback',
+  fenceFailure > timeout && failedRenderPersistence > fenceFailure,
+  'renderer fence rejection must stop generation before render-failure persistence',
 )
-assert.match(packetService.slice(fenceFailure, previewOnlyBranch), /safeToRetry: false/)
+assert.match(packetService.slice(fenceFailure, failedRenderPersistence), /safeToRetry: false/)
+assert.doesNotMatch(packetService, /previewOnlyGeneration/)
 assert.match(packetService, /This generation attempt is no longer active\. Refresh the packet before trying again\./)
 assert.match(packetService, /!deferGenerationLeaseRelease/)
 

@@ -81,7 +81,7 @@ entrypoint = "./functions/send-email/index.ts"
 
 [functions.send-mandate-signing-email]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/send-mandate-signing-email/deno.json"
 entrypoint = "./functions/send-mandate-signing-email/index.ts"
 
@@ -167,3 +167,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/retry-final-document-completion/deno.json"
 entrypoint = "./functions/retry-final-document-completion/index.ts"
+
+[functions.resolve-final-signed-document-access]
+enabled = true
+verify_jwt = false
+import_map = "./functions/resolve-final-signed-document-access/deno.json"
+entrypoint = "./functions/resolve-final-signed-document-access/index.ts"

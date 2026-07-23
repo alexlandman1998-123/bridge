@@ -19,14 +19,15 @@ const otp = fs.readFileSync('../supabase/functions/generate-final-signed-otp/ind
 const action = fs.readFileSync('../supabase/functions/signer-signing-action/index.ts', 'utf8')
 const migration = fs.readFileSync('../supabase/migrations/202607170023_legal_final_signed_assurance_f2.sql', 'utf8')
 assert.match(mandate, /FINAL_VERSION_ID_REQUIRED/)
-assert.match(otp, /FINAL_VERSION_ID_REQUIRED/)
 assert.doesNotMatch(mandate, /field_type\) !== "initial"/)
-for (const source of [mandate, otp]) {
+for (const source of [mandate]) {
   assert.match(source, /legal_final_artifact_evidence/)
   assert.match(source, /finalArtifactSha256/)
   assert.match(source, /FINAL_VERSION_BINDING_INVALID/)
   assert.match(source, /SIGNATURE_ASSET_SCOPE_INVALID/)
 }
+assert.match(otp, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
+assert.doesNotMatch(otp, /bridge_record_final_artifact_f2|finalArtifactSha256|buildPdf/)
 assert.match(migration, /trg_final_artifact_evidence_f2/)
 assert.match(migration, /trg_prevent_final_artifact_evidence_mutation_f2/)
 assert.match(migration, /trg_completed_packet_artifact_f2/)

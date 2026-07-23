@@ -224,7 +224,10 @@ export const SELLER_TRANSACTION_STAGE_DEFINITIONS = {
 }
 
 export function resolveSellerTransactionStageKey(...values) {
-  const haystack = values.flat().filter(Boolean).join(' ').toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  const normalizedValues = values.flat().filter(Boolean).map((value) =>
+    String(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+  )
+  const haystack = normalizedValues.join(' ')
   if (/completed|complete|closed/.test(haystack)) return 'completed'
   if (/registered|registration/.test(haystack)) return 'registration'
   if (/lodg|deeds_office|prep/.test(haystack)) return 'lodgement'
@@ -233,8 +236,12 @@ export function resolveSellerTransactionStageKey(...values) {
   if (/transfer_document|sign_transfer|rates_clearance|transfer_duty/.test(haystack)) return 'transfer_documents'
   if (/fica|compliance|verification/.test(haystack)) return 'fica_verification'
   if (/opening_file|file_open|attorney_open/.test(haystack)) return 'attorney_opening_file'
+  if (normalizedValues.includes('reg')) return 'registration'
+  if (normalizedValues.includes('atty') || normalizedValues.includes('att')) return 'attorney_opening_file'
+  if (normalizedValues.includes('xfer')) return 'instruction_sent'
+  if (normalizedValues.includes('fin')) return 'bond_approval'
   if (/instruction|instructed|attorney_assigned|transfer/.test(haystack)) return 'instruction_sent'
-  if (/(^|_)otp($|_)|offer_to_purchase|listing_live|listed|offers/.test(haystack)) return 'otp'
+  if (normalizedValues.includes('dep') || normalizedValues.includes('otp') || /offer_to_purchase|listing_live|listed|offers/.test(haystack)) return 'otp'
   return 'offer_accepted'
 }
 

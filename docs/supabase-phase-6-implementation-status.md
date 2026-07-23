@@ -16,12 +16,14 @@ The runner is deliberately unable to target the production project.
 - Phase 5 writes `docs/supabase-phase-5-application-manifest.json` for machine-readable execution planning.
 - `scripts/supabase-phase6-staging-execution.mjs` targets only an explicitly configured non-production database through `--db-url`.
 - The production project reference `isdowlnollckzvltkasn` is hard-blocked.
-- Staging mutations require a database URL containing the declared staging project reference.
+- Staging mutations require a PostgreSQL URL whose host is exactly `db.<declared-staging-project-ref>.supabase.co` on the direct database port, database path is `/postgres`, and exactly one `sslmode` is explicitly `require`, `verify-ca`, or `verify-full`; project references in a password, query string, or path, duplicate TLS values, and all URI connection overrides are rejected.
+- Mutating calls use the pinned `supabase@2.109.1` CLI rather than `@latest`.
 - Staging mutations require explicit recovery confirmation and `--confirm APPLY_TO_STAGING_ONLY`.
 - Only one exact migration version can be mutated per invocation.
 - SQL application and migration-ledger recording are separate operations.
 - `corrective_migration_required` and `manual_data_review` rows cannot be replayed or ledger-recorded by the runner.
 - Ledger recording requires a reviewed JSON evidence file with passing catalog, behavior, and rollback/no-residue checks.
+- The legal-document Phase 1 versions (`202607220002`–`202607220012` plus `202607230004`) additionally require the committed pending Phase 1 receipt and its exact digest. The runner verifies the Phase 0/B1 identities, clean receipt-only source continuity, direct staging target, migration hash, and ledger predecessor before it invokes the Supabase CLI.
 
 ## Current Operational Evidence
 
@@ -97,3 +99,5 @@ node scripts/supabase-phase6-staging-execution.mjs \
 5. Stop after SQL application until its evidence file passes review.
 
 Production application remains out of scope until staging completes and production recovery controls are available.
+
+For legal-document Phase 1, this generic runner remains held until the actual production project reference is recorded in Phase 0 and reconciled with both this guard and the application manifest. Do not treat the historical `isdowlnollckzvltkasn` label as a staging target.

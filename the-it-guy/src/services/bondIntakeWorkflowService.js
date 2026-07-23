@@ -14,6 +14,7 @@ import {
   BOND_NOTIFICATION_EVENTS,
   notifyBondIntakeEvent,
 } from './bondIntakeNotificationService'
+import { snapshotBondReferralTermsForApplication } from './bondReferralTermsService'
 import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
 
 export const BOND_INTAKE_DECLINE_REASONS = Object.freeze([
@@ -63,6 +64,10 @@ function normalizeRoleKey(value) {
 
 function normalizeEmail(value) {
   return normalizeLower(value)
+}
+
+function isUuidLike(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
 function isMissingColumnError(error, column = '') {
@@ -823,6 +828,43 @@ async function persistBondApplicationAssignment(client, {
   return updates
 }
 
+function getReferralAgencyOrganisationId(row = {}) {
+  const transaction = row?.transaction || row || {}
+  return normalizeText(
+    transaction.originating_partner_organisation_id || transaction.originatingPartnerOrganisationId ||
+      transaction.referral_source_organisation_id || transaction.referralSourceOrganisationId ||
+      transaction.partner_organisation_id || transaction.partnerOrganisationId,
+  )
+}
+
+async function snapshotAcceptedReferralTerms(client, { applications = [], row = {}, actor = {}, scope = {} } = {}) {
+  const originatorOrganisationId = normalizeText(scope.organisationId)
+  const agencyOrganisationId = getReferralAgencyOrganisationId(row)
+  if (!isUuidLike(originatorOrganisationId) || !isUuidLike(agencyOrganisationId)) return []
+  const snapshots = []
+  for (const application of applications) {
+    const applicationId = normalizeText(application?.id)
+    if (!isUuidLike(applicationId)) continue
+    try {
+      const snapshot = await snapshotBondReferralTermsForApplication({
+        applicationId,
+        originatorOrganisationId,
+        agencyOrganisationId,
+        partnerRelationshipId: normalizeText(row?.transaction?.partner_relationship_id || row?.transaction?.partnerRelationshipId),
+      }, {
+        organisationId: originatorOrganisationId,
+        userId: actor.id,
+        workspaceRole: actor.roleKey,
+      }, { client })
+      if (snapshot) snapshots.push(snapshot)
+    } catch (error) {
+      if (isMissingTableError(error, 'bond_partner_referral_terms') || isMissingTableError(error, 'bond_application_referral_term_snapshots')) continue
+      throw error
+    }
+  }
+  return snapshots
+}
+
 async function persistDecline(client, { transactionId, reason }) {
   const now = new Date().toISOString()
   return updateByIdWithMissingColumnFallback(
@@ -875,12 +917,18 @@ export async function acceptBondIntakeApplication({ row = {}, transactionId = ''
     action: 'accept',
     assignmentDecision,
   })
-  await persistBondApplicationAssignment(db, {
+  const assignedApplications = await persistBondApplicationAssignment(db, {
     transactionId: id,
     actor,
     assignee: resolvedAssignee,
     action: 'accept',
     assignmentDecision,
+  })
+  await snapshotAcceptedReferralTerms(db, {
+    applications: assignedApplications,
+    row,
+    actor,
+    scope: assignmentDecision.scope || resolveAssignmentScope({ actor, assignee: resolvedAssignee }),
   })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED,
@@ -918,12 +966,18 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
     action: 'assign',
     assignmentDecision,
   })
-  await persistBondApplicationAssignment(db, {
+  const assignedApplications = await persistBondApplicationAssignment(db, {
     transactionId: id,
     actor,
     assignee: resolvedAssignee,
     action: 'assign',
     assignmentDecision,
+  })
+  await snapshotAcceptedReferralTerms(db, {
+    applications: assignedApplications,
+    row,
+    actor,
+    scope: assignmentDecision.scope || resolveAssignmentScope({ actor, assignee: resolvedAssignee }),
   })
   const notification = await notifyBondIntakeEvent({
     eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ASSIGNED,

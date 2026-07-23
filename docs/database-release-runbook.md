@@ -26,6 +26,8 @@ The report must show zero duplicate local timestamps. A migration that appears l
 10. Rerun `npm run supabase:phase5` and confirm the migration is matched.
 11. Deploy frontend code that depends on the new schema only after database verification.
 
+For token-scoped Storage policy changes, deploy the client header support before enforcing the policy, then smoke-test a real seller session and an anonymous buyer portal token for upload, signed download, and rejected cross-scope access.
+
 ## Historical reconciliation
 
 Process one product module at a time:

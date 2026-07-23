@@ -1,7 +1,6 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -24,19 +23,15 @@ import {
   readAgentSellerLeads,
   SELLER_LEAD_STAGE,
   SELLER_ONBOARDING_STATUS,
-  updateAgentSellerLead,
-  updateListingDraft,
 } from '../lib/agentListingStorage'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
-import { listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
 import {
   createViewingRequest,
   formatViewingStatusLabel,
   getViewingRequestsForLead,
 } from '../lib/viewingWorkflow'
-import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const STORAGE_KEY = 'itg:pipeline-leads:v1'
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
@@ -48,15 +43,6 @@ const STATUS_COLUMNS = [
   { id: 'prospecting', label: 'Prospecting', statuses: ['Active', 'Follow Up'] },
   { id: 'negotiation', label: 'Negotiation', statuses: ['Negotiating'] },
   { id: 'closed', label: 'Closed Outcomes', statuses: ['Closed', 'Lost', 'Not Active'] },
-]
-const MANDATE_TYPE_OPTIONS = [
-  { value: 'open', label: 'Open mandate' },
-  { value: 'sole', label: 'Sole mandate' },
-  { value: 'exclusive', label: 'Exclusive mandate' },
-]
-const VAT_HANDLING_OPTIONS = [
-  { value: 'exclusive', label: 'VAT Exclusive' },
-  { value: 'inclusive', label: 'VAT Inclusive' },
 ]
 const SELLER_PIPELINE_STAGE = {
   ALL: 'all',
@@ -143,16 +129,6 @@ function formatDateTime(value) {
   return parsed.toLocaleString('en-ZA')
 }
 
-function formatCurrency(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
-  return new Intl.NumberFormat('en-ZA', {
-    style: 'currency',
-    currency: 'ZAR',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
 function normalizeOptionalNumber(value) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
@@ -189,25 +165,6 @@ function normalizeWhatsappPhone(value) {
   if (digits.startsWith('27')) return digits
   if (digits.startsWith('0')) return `27${digits.slice(1)}`
   return digits
-}
-
-function addDaysToIsoDate(days = 0) {
-  const today = new Date()
-  if (Number.isFinite(days) && days) {
-    today.setDate(today.getDate() + days)
-  }
-  return today.toISOString().slice(0, 10)
-}
-
-function formatMandateOwnershipType(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return 'Ownership not provided'
-  if (normalized === 'married_cop') return 'Married (COP)'
-  if (normalized === 'married_anc') return 'Married (ANC)'
-  if (normalized === 'multiple_owners') return 'Multiple owners'
-  return normalized
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function buildSellerClientPortalLink(token) {
@@ -321,6 +278,7 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
 
 function LegacyPipeline() {
   const { role, workspace, profile } = useWorkspace()
+  const navigate = useNavigate()
   const isDeveloperPipeline = role === 'developer'
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
@@ -387,23 +345,8 @@ function LegacyPipeline() {
     alternativeTimeB: '',
     notes: '',
   })
-  const [showMandateModal, setShowMandateModal] = useState(false)
+  const [showMandateHandoff, setShowMandateHandoff] = useState(false)
   const [selectedMandateLead, setSelectedMandateLead] = useState(null)
-  const [mandateError, setMandateError] = useState('')
-  const [sendingMandate, setSendingMandate] = useState(false)
-  const [mandateDraft, setMandateDraft] = useState({
-    mandateType: 'sole',
-    commissionStructure: 'percentage',
-    commissionPercent: '7.5',
-    commissionAmount: '',
-    vatHandling: 'exclusive',
-    mandateStartDate: addDaysToIsoDate(0),
-    mandateEndDate: addDaysToIsoDate(90),
-    askingPrice: '',
-    specialConditions: '',
-  })
-  const [mandatePacketId, setMandatePacketId] = useState('')
-  const [mandatePacketTemplates, setMandatePacketTemplates] = useState([])
 
   const loadOptions = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -708,235 +651,84 @@ function LegacyPipeline() {
     setShowViewingRequestForm(false)
   }
 
-  async function openMandateComposer(lead) {
-    const draftId = String(lead?.listingDraftId || '').trim()
-    if (!draftId) {
-      setWorkflowMessage('Seller onboarding is complete, but no listing draft was found yet. Refresh and try again.')
-      return
-    }
-
-    const targetDraft = readAgentListingDrafts().find((row) => String(row?.id || row?.listingDraftId || '') === draftId)
-    if (!targetDraft) {
-      setWorkflowMessage('Unable to locate the listing draft for mandate generation.')
-      return
-    }
-
-    updateListingDraft(draftId, (row) => ({
-      ...row,
-      stage: LISTING_STATUS.MANDATE_READY,
-      mandateStatus: 'ready_to_generate',
-    }))
-    updateAgentSellerLead(lead?.sellerLeadId || lead?.id || '', (row) => ({
-      ...row,
-      listingStatus: LISTING_STATUS.MANDATE_READY,
-      mandateStatus: 'ready_to_generate',
-    }))
-    setListingDrafts(readAgentListingDrafts())
-    setSellerLeads(readAgentSellerLeads())
-
-    const onboardingData = lead?.sellerOnboarding?.formData || {}
-    const commission = targetDraft?.commission || {}
-    const existingMandate = targetDraft?.mandate || {}
-    setSelectedMandateLead(lead)
-    setMandateError('')
-    setMandatePacketId('')
-    try {
-      const resolvedOrganisationId = workspace.id && workspace.id !== 'all' ? workspace.id : null
-      const activeTemplate = await resolveActiveTemplate({
-        packetType: 'mandate',
-        moduleType: 'residential',
-        organisationId: resolvedOrganisationId,
-        context: { organisationId: resolvedOrganisationId },
-      }).catch((templateError) => {
-        console.warn('[Packet Templates][Mandate] active residential template resolution failed; loading legacy list.', templateError)
-        return null
-      })
-      const legacyTemplates = await listPacketTemplates({
-        packetType: 'mandate',
-        moduleType: 'agency',
-        includeInactive: false,
-      })
-      const templatesById = new Map()
-      ;[activeTemplate?.template, ...(legacyTemplates || [])].filter(Boolean).forEach((template) => {
-        const key = String(template?.id || template?.template_key || template?.templateKey || '')
-        if (key && !templatesById.has(key)) templatesById.set(key, template)
-      })
-      setMandatePacketTemplates(Array.from(templatesById.values()))
-    } catch (templateError) {
-      console.error('[Packet Templates][Mandate]', templateError)
-      setMandatePacketTemplates([])
-    }
-    setMandateDraft({
-      mandateType: String(existingMandate?.type || targetDraft?.mandateType || lead?.mandateType || 'sole').trim().toLowerCase() || 'sole',
-      commissionStructure: String(commission?.commission_type || 'percentage').trim().toLowerCase() || 'percentage',
-      commissionPercent: String(commission?.commission_percentage ?? existingMandate?.commissionPercent ?? '7.5'),
-      commissionAmount: String(commission?.commission_amount ?? existingMandate?.commissionAmount ?? ''),
-      vatHandling: String(commission?.vat_handling || existingMandate?.vatHandling || 'exclusive').trim().toLowerCase() || 'exclusive',
-      mandateStartDate: String(existingMandate?.startDate || targetDraft?.mandateStartDate || addDaysToIsoDate(0)).slice(0, 10),
-      mandateEndDate: String(existingMandate?.endDate || targetDraft?.mandateEndDate || addDaysToIsoDate(90)).slice(0, 10),
-      askingPrice: String(onboardingData?.askingPrice || targetDraft?.askingPrice || lead?.estimatedPrice || ''),
-      specialConditions: String(existingMandate?.specialConditions || '').trim(),
-    })
-    setShowMandateModal(true)
+  function openMandateHandoff(lead) {
+    setSelectedMandateLead(lead || null)
+    setShowMandateHandoff(true)
   }
 
-  function closeMandateComposer() {
-    if (sendingMandate) return
-    setShowMandateModal(false)
+  function closeMandateHandoff() {
+    setShowMandateHandoff(false)
     setSelectedMandateLead(null)
-    setMandateError('')
-    setMandatePacketId('')
   }
 
-  async function handleSendMandateToSeller() {
-    if (!selectedMandateLead) return
-    const draftId = String(selectedMandateLead?.listingDraftId || '').trim()
-    if (!draftId) {
-      setMandateError('Unable to find listing draft for this seller lead.')
+  function resolveCanonicalMandatePacketId(lead = null) {
+    const draftId = String(lead?.listingDraftId || '').trim()
+    const draft = draftId
+      ? readAgentListingDrafts().find((row) => String(row?.id || row?.listingDraftId || '') === draftId)
+      : null
+    const candidates = [
+      lead?.mandatePacketId,
+      lead?.mandate_packet_id,
+      lead?.mandate?.packetId,
+      lead?.mandate?.packet_id,
+      draft?.mandatePacketId,
+      draft?.mandate_packet_id,
+      draft?.mandate?.packetId,
+      draft?.mandate?.packet_id,
+    ]
+    return candidates.find((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())) || ''
+  }
+
+  function resolveCanonicalMandateLeadId(lead = null) {
+    const draftId = String(lead?.listingDraftId || '').trim()
+    const draft = draftId
+      ? readAgentListingDrafts().find((row) => String(row?.id || row?.listingDraftId || '') === draftId)
+      : null
+    const localLeadIds = new Set([
+      lead?.id,
+      lead?.sellerLeadId,
+      lead?.seller_lead_id,
+      draft?.sellerLeadId,
+      draft?.seller_lead_id,
+    ].map((value) => String(value || '').trim()).filter(Boolean))
+    const candidates = [
+      lead?.canonicalLeadId,
+      lead?.canonical_lead_id,
+      lead?.originatingCrmLeadId,
+      lead?.originating_crm_lead_id,
+      lead?.crmLeadId,
+      lead?.crm_lead_id,
+      draft?.canonicalLeadId,
+      draft?.canonical_lead_id,
+      draft?.originatingCrmLeadId,
+      draft?.originating_crm_lead_id,
+      draft?.crmLeadId,
+      draft?.crm_lead_id,
+    ]
+    return candidates.find((value) => {
+      const candidate = String(value || '').trim()
+      return !localLeadIds.has(candidate) && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    }) || ''
+  }
+
+  function resolveCanonicalMandateWorkspacePath(lead = null) {
+    const packetId = resolveCanonicalMandatePacketId(lead)
+    if (packetId) return `/legal-documents/${encodeURIComponent(packetId)}?mode=view`
+
+    const canonicalLeadId = resolveCanonicalMandateLeadId(lead)
+    if (!canonicalLeadId) return ''
+    return `/pipeline/leads/${encodeURIComponent(canonicalLeadId)}/legal/mandate?mode=generate&sourceMode=saved&documentStart=seller_lead_mandate`
+  }
+
+  function handleOpenCanonicalMandateWorkspace() {
+    const workspacePath = resolveCanonicalMandateWorkspacePath(selectedMandateLead)
+    if (!workspacePath) {
+      setWorkflowMessage('This legacy local seller record has no canonical Agency Pipeline lead or document packet. Document generation and delivery remain unavailable until it is migrated into Agency Pipeline.')
       return
     }
 
-    setSendingMandate(true)
-    setMandateError('')
-
-    try {
-      const sentAt = new Date().toISOString()
-      const sellerName = [selectedMandateLead?.sellerName, selectedMandateLead?.sellerSurname].filter(Boolean).join(' ').trim() || 'Seller'
-      const propertyTitle = String(
-        selectedMandateLead?.propertyAddress ||
-          selectedMandateLead?.listingTitle ||
-          selectedMandateLead?.sellerOnboarding?.formData?.propertyAddress ||
-          'your property',
-      ).trim()
-      const portalLink = buildSellerClientPortalLink(selectedMandateLead?.sellerOnboarding?.token)
-      const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((option) => option.value === mandateDraft.mandateType)?.label || 'Sole mandate'
-
-      const nextCommission = {
-        commission_type: mandateDraft.commissionStructure,
-        commission_percentage:
-          mandateDraft.commissionStructure === 'percentage'
-            ? Number(mandateDraft.commissionPercent || 0)
-            : null,
-        commission_amount:
-          mandateDraft.commissionStructure === 'fixed'
-            ? Number(mandateDraft.commissionAmount || 0)
-            : null,
-        vat_handling: mandateDraft.vatHandling,
-      }
-
-      const updatedDraft = updateListingDraft(draftId, (row) => ({
-        ...row,
-        stage: LISTING_STATUS.MANDATE_SENT,
-        mandateStatus: 'sent',
-        listingPrice: Number(mandateDraft.askingPrice || 0) || Number(row?.listingPrice || 0) || Number(row?.askingPrice || 0) || 0,
-        askingPrice: Number(mandateDraft.askingPrice || 0) || Number(row?.askingPrice || 0) || 0,
-        commission: {
-          ...(row?.commission || {}),
-          ...nextCommission,
-        },
-        mandateType: mandateDraft.mandateType,
-        mandateStartDate: mandateDraft.mandateStartDate || row?.mandateStartDate || null,
-        mandateEndDate: mandateDraft.mandateEndDate || row?.mandateEndDate || null,
-        mandate: {
-          ...(row?.mandate || {}),
-          templateId: 'seller-mandate-v1',
-          generatedAt: sentAt,
-          sentAt,
-          status: 'sent',
-          sellerEditable: false,
-          sellerCanRequestChanges: true,
-          type: mandateDraft.mandateType,
-          commissionStructure: mandateDraft.commissionStructure,
-          commissionPercent:
-            mandateDraft.commissionStructure === 'percentage'
-              ? Number(mandateDraft.commissionPercent || 0)
-              : null,
-          commissionAmount:
-            mandateDraft.commissionStructure === 'fixed'
-              ? Number(mandateDraft.commissionAmount || 0)
-              : null,
-          vatHandling: mandateDraft.vatHandling,
-          startDate: mandateDraft.mandateStartDate || null,
-          endDate: mandateDraft.mandateEndDate || null,
-          askingPrice: Number(mandateDraft.askingPrice || 0) || 0,
-          specialConditions: mandateDraft.specialConditions || '',
-          previewVersion: 1,
-        },
-      }))
-
-      if (!updatedDraft) {
-        setMandateError('Unable to generate the mandate right now. Please try again.')
-        return
-      }
-
-      updateAgentSellerLead(selectedMandateLead?.sellerLeadId || selectedMandateLead?.id || '', (row) => ({
-        ...row,
-        listingStatus: LISTING_STATUS.MANDATE_SENT,
-        mandateStatus: 'sent',
-        mandate: {
-          ...(row?.mandate || {}),
-          type: mandateDraft.mandateType,
-          sentAt,
-          status: 'sent',
-          startDate: mandateDraft.mandateStartDate || null,
-          endDate: mandateDraft.mandateEndDate || null,
-          specialConditions: mandateDraft.specialConditions || '',
-        },
-      }))
-
-      const sellerEmail = String(selectedMandateLead?.sellerEmail || '').trim()
-      if (sellerEmail) {
-        try {
-          const { error: emailError } = await invokeEdgeFunction('send-email', {
-            body: {
-              type: 'seller_mandate_sent',
-              to: sellerEmail,
-              sellerName,
-              propertyTitle,
-              mandateType: mandateTypeLabel,
-              mandateStartDate: mandateDraft.mandateStartDate || '',
-              mandateEndDate: mandateDraft.mandateEndDate || '',
-              askingPrice: formatCurrency(Number(mandateDraft.askingPrice || 0) || 0),
-              portalLink,
-            },
-          })
-          if (emailError) {
-            console.error('[Seller Mandate] email notification failed', {
-              sellerEmail,
-              error: emailError,
-            })
-          }
-        } catch (emailInvokeError) {
-          console.error('[Seller Mandate] email notification failed', emailInvokeError)
-        }
-      }
-
-      const sellerPhone = formatSouthAfricanWhatsAppNumber(selectedMandateLead?.sellerPhone)
-      if (sellerPhone) {
-        const whatsappResult = await sendWhatsAppNotification({
-          to: sellerPhone,
-          role: 'seller_mandate',
-          message: `Hi ${sellerName},\n\nYour ${mandateTypeLabel.toLowerCase()} for ${propertyTitle} is ready for review.\n\nYou can review the mandate in your client portal selling workspace here:\n${portalLink || 'Portal link unavailable'}\n\nIf you disagree with the terms, please request changes in the portal (commission terms are review-only).\n\n- Arch9`,
-        })
-        if (!whatsappResult?.ok) {
-          console.error('[Seller Mandate] WhatsApp notification failed', {
-            sellerPhone,
-            result: whatsappResult,
-          })
-        }
-      }
-
-      setListingDrafts(readAgentListingDrafts())
-      setSellerLeads(readAgentSellerLeads())
-      setWorkflowMessage(`Mandate sent to seller for ${updatedDraft.listingTitle || propertyTitle}. Listing status moved to mandate_sent.`)
-      setShowMandateModal(false)
-      setSelectedMandateLead(null)
-      setMandateError('')
-    } catch (sendError) {
-      setMandateError(sendError?.message || 'Unable to send mandate right now.')
-    } finally {
-      setSendingMandate(false)
-    }
+    closeMandateHandoff()
+    navigate(workspacePath)
   }
 
   function submitViewingFromLead() {
@@ -1869,8 +1661,8 @@ function LegacyPipeline() {
                         </button>
                       ) : null}
                       {row.lead && row.canGenerateMandate ? (
-                        <Button size="sm" onClick={() => void openMandateComposer(row.lead)}>
-                          {row.stage === SELLER_PIPELINE_STAGE.MANDATE_READY ? 'Send Mandate' : 'Generate Mandate'}
+                        <Button size="sm" onClick={() => openMandateHandoff(row.lead)}>
+                          Open Canonical Documents
                         </Button>
                       ) : null}
                       <button
@@ -2319,225 +2111,53 @@ function LegacyPipeline() {
         </>
       ) : null}
 
-      {showMandateModal && selectedMandateLead ? (
+      {showMandateHandoff && selectedMandateLead ? (
         <>
           <button
             type="button"
             className="fixed inset-0 z-40 bg-[#0f172a]/35"
-            aria-label="Close mandate modal"
-            onClick={closeMandateComposer}
+            aria-label="Close canonical document handoff"
+            onClick={closeMandateHandoff}
           />
           <section className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <article className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce6f2] bg-white shadow-[0_30px_70px_rgba(15,23,42,0.26)]">
-              <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e2ebf5] px-6 py-5">
-                <div>
-                  <h3 className="text-[1.18rem] font-semibold tracking-[-0.025em] text-[#142132]">Generate Mandate</h3>
-                  <p className="mt-1 text-sm text-[#607387]">Review mandate terms, generate template output, and send to seller for review.</p>
-                </div>
-                <Button variant="ghost" onClick={closeMandateComposer} disabled={sendingMandate}>
-                  Close
-                </Button>
+            <article className="w-full max-w-xl rounded-[24px] border border-[#dce6f2] bg-white shadow-[0_30px_70px_rgba(15,23,42,0.26)]">
+              <header className="border-b border-[#e2ebf5] px-6 py-5">
+                <h3 className="text-[1.18rem] font-semibold tracking-[-0.025em] text-[#142132]">Continue in Canonical Documents</h3>
+                <p className="mt-1 text-sm leading-6 text-[#607387]">
+                  This legacy seller record cannot generate, email, or mark a mandate as sent. The canonical workspace will require a published template and provider-confirmed signing delivery.
+                </p>
               </header>
-
-              <div className="grid gap-5 px-6 py-5 lg:grid-cols-2">
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Details</h4>
-                  <div className="mt-3 space-y-3 text-sm text-[#22374d]">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller name(s)</p>
-                      <p className="mt-1">{[selectedMandateLead?.sellerName, selectedMandateLead?.sellerSurname].filter(Boolean).join(' ') || 'Seller'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Ownership type</p>
-                      <p className="mt-1">
-                        {formatMandateOwnershipType(selectedMandateLead?.sellerOnboarding?.formData?.ownershipType)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">ID / registration details</p>
-                      <p className="mt-1 break-all">
-                        {selectedMandateLead?.sellerOnboarding?.formData?.idNumber ||
-                          selectedMandateLead?.sellerOnboarding?.formData?.companyRegistrationNumber ||
-                          selectedMandateLead?.sellerOnboarding?.formData?.trustRegistrationNumber ||
-                          'Not captured'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Contact details</p>
-                      <p className="mt-1 break-all">{selectedMandateLead?.sellerEmail || 'No email'}</p>
-                      <p className="mt-1">{selectedMandateLead?.sellerPhone || 'No phone'}</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property Details</h4>
-                  <div className="mt-3 space-y-3 text-sm text-[#22374d]">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Address</p>
-                      <p className="mt-1">
-                        {selectedMandateLead?.sellerOnboarding?.formData?.propertyAddress || selectedMandateLead?.propertyAddress || 'Not captured'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property type</p>
-                      <p className="mt-1">{selectedMandateLead?.sellerOnboarding?.formData?.propertyType || selectedMandateLead?.propertyType || 'Not captured'}</p>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-[12px] border border-[#dfe8f2] bg-white px-3 py-2">
-                        <p className="text-[0.65rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Beds</p>
-                        <p className="mt-1 font-semibold text-[#142132]">{selectedMandateLead?.sellerOnboarding?.formData?.bedrooms || '—'}</p>
-                      </div>
-                      <div className="rounded-[12px] border border-[#dfe8f2] bg-white px-3 py-2">
-                        <p className="text-[0.65rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Baths</p>
-                        <p className="mt-1 font-semibold text-[#142132]">{selectedMandateLead?.sellerOnboarding?.formData?.bathrooms || '—'}</p>
-                      </div>
-                      <div className="rounded-[12px] border border-[#dfe8f2] bg-white px-3 py-2">
-                        <p className="text-[0.65rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Floor size</p>
-                        <p className="mt-1 font-semibold text-[#142132]">{selectedMandateLead?.sellerOnboarding?.formData?.floorSize || '—'}</p>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4 lg:col-span-2">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commercial Terms</h4>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate type</span>
-                      <Field
-                        as="select"
-                        value={mandateDraft.mandateType}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, mandateType: event.target.value }))}
-                      >
-                        {MANDATE_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission structure</span>
-                      <Field
-                        as="select"
-                        value={mandateDraft.commissionStructure}
-                        onChange={(event) =>
-                          setMandateDraft((previous) => ({
-                            ...previous,
-                            commissionStructure: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="percentage">Percentage</option>
-                        <option value="fixed">Fixed amount</option>
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission %</span>
-                      <Field
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={mandateDraft.commissionPercent}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, commissionPercent: event.target.value }))}
-                        disabled={mandateDraft.commissionStructure !== 'percentage'}
-                      />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission amount</span>
-                      <Field
-                        type="number"
-                        min="0"
-                        step="100"
-                        value={mandateDraft.commissionAmount}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, commissionAmount: event.target.value }))}
-                        disabled={mandateDraft.commissionStructure !== 'fixed'}
-                      />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">VAT handling</span>
-                      <Field
-                        as="select"
-                        value={mandateDraft.vatHandling}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, vatHandling: event.target.value }))}
-                      >
-                        {VAT_HANDLING_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Asking price</span>
-                      <Field
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={mandateDraft.askingPrice}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, askingPrice: event.target.value }))}
-                      />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate start date</span>
-                      <Field
-                        type="date"
-                        value={mandateDraft.mandateStartDate}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, mandateStartDate: event.target.value }))}
-                      />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate expiry date</span>
-                      <Field
-                        type="date"
-                        value={mandateDraft.mandateEndDate}
-                        onChange={(event) => setMandateDraft((previous) => ({ ...previous, mandateEndDate: event.target.value }))}
-                      />
-                    </label>
-                  </div>
-                  <label className="mt-3 grid gap-1.5">
-                    <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Special conditions</span>
-                    <Field
-                      as="textarea"
-                      rows={3}
-                      value={mandateDraft.specialConditions}
-                      onChange={(event) => setMandateDraft((previous) => ({ ...previous, specialConditions: event.target.value }))}
-                      placeholder="Capture additional terms for this mandate."
-                    />
-                  </label>
-                  <div className="mt-3 rounded-[14px] border border-[#dbe6f2] bg-white px-3 py-2 text-sm text-[#51657b]">
-                    Seller can review mandate terms and request changes/counter comments in portal, but cannot directly edit commission values.
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4 lg:col-span-2">
-                  <DocumentPacketWorkflowPanel
-                    packetType="mandate"
-                    heading="Seller Mandate Packet"
-                    packetId={mandatePacketId}
-                    onPacketIdChange={setMandatePacketId}
-                    templates={mandatePacketTemplates}
-                    context={{
-                      organisationId: workspace.id && workspace.id !== 'all' ? workspace.id : null,
-                      lead: selectedMandateLead,
-                      mandateDraft,
-                    }}
-                    onPacketGenerated={() => {
-                      setWorkflowMessage('Mandate packet version generated and ready for seller send flow.')
-                    }}
-                  />
-                </section>
-              </div>
-
-              {mandateError ? (
-                <div className="mx-6 mb-5 rounded-[14px] border border-[#f5c2c0] bg-[#fff5f5] px-3.5 py-3 text-sm text-[#b42318]">
-                  {mandateError}
+              <div className="space-y-3 px-6 py-5 text-sm text-[#22374d]">
+                <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller</p>
+                  <p className="mt-1 font-semibold text-[#142132]">
+                    {[selectedMandateLead?.sellerName, selectedMandateLead?.sellerSurname].filter(Boolean).join(' ') || 'Seller'}
+                  </p>
+                  <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property</p>
+                  <p className="mt-1 text-[#51657b]">
+                    {selectedMandateLead?.sellerOnboarding?.formData?.propertyAddress || selectedMandateLead?.propertyAddress || 'Property details need to be confirmed'}
+                  </p>
                 </div>
-              ) : null}
-
-              <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[#e2ebf5] px-6 py-4">
-                <Button variant="ghost" onClick={closeMandateComposer} disabled={sendingMandate}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSendMandateToSeller} disabled={sendingMandate}>
-                  {sendingMandate ? 'Sending...' : 'Send to Seller'}
+                {resolveCanonicalMandatePacketId(selectedMandateLead) ? (
+                  <p>Open the existing canonical packet to review its actual signing status.</p>
+                ) : resolveCanonicalMandateLeadId(selectedMandateLead) ? (
+                  <p>This record is linked to a canonical Agency Pipeline lead. Open its workspace to generate and send the mandate through the audited packet flow.</p>
+                ) : (
+                  <div className="rounded-[14px] border border-[#f3d7a4] bg-[#fffaf0] px-4 py-3 text-[#7d5516]">
+                    <p className="font-semibold">Canonical document workspace unavailable</p>
+                    <p className="mt-1 leading-6">
+                      This local-only seller record has no canonical Agency Pipeline lead or packet. It cannot generate, send, or record a mandate here. Migrate or recreate the seller lead in Agency Pipeline from an Agent workspace before continuing.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <footer className="flex flex-wrap justify-end gap-3 border-t border-[#e2ebf5] px-6 py-4">
+                <Button variant="ghost" onClick={closeMandateHandoff}>Cancel</Button>
+                <Button
+                  onClick={handleOpenCanonicalMandateWorkspace}
+                  disabled={!resolveCanonicalMandateWorkspacePath(selectedMandateLead)}
+                >
+                  Open Canonical Documents
                 </Button>
               </footer>
             </article>

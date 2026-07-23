@@ -76,6 +76,8 @@ const cli = await readFile(new URL('./audit-seller-document-transaction-continui
 assert.match(cli, /--confirm-repair/)
 assert.match(cli, /--listing-id=<uuid>/)
 assert.match(cli, /--strict/)
+assert.match(cli, /SUPABASE_STAGING_URL/)
+assert.match(cli, /Refusing seller-document staging audit/)
 
 const runbook = await readFile(new URL('../docs/seller-document-transaction-continuity-p0-6.md', import.meta.url), 'utf8')
 assert.match(runbook, /does not satisfy attorney readiness/)

@@ -189,20 +189,15 @@ const BOND_NAV_SECTIONS = [
   {
     key: 'workspace',
     label: 'Workspace',
-    itemKeys: ['dashboard', 'bond_applications', 'bond_developments'],
+    itemKeys: ['dashboard', 'bond_applications', 'partners', 'clients', 'bond_developments', 'tasks'],
   },
   {
     key: 'organisation',
     label: 'Organisation',
     itemKeys: [
-      'bond_organisation',
-      'consultant_performance',
-      'partners',
-      'bank_relationships',
       'revenue_commissions',
-      'bond_reports',
-      'clients',
-      'tasks',
+      'bond_organisation',
+      'bank_relationships',
     ],
   },
 ]

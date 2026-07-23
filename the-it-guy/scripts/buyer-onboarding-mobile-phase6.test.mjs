@@ -463,6 +463,14 @@ function getScenarioForRequest(url) {
   return scenarios[0]
 }
 
+function getScenarioForHeaders(headers = {}) {
+  const onboardingToken = String(headers['x-bridge-onboarding-token'] || '').trim()
+  if (scenarioByToken.has(onboardingToken)) return scenarioByToken.get(onboardingToken)
+
+  const portalToken = String(headers['x-bridge-client-portal-token'] || '').trim()
+  return scenarios.find((scenario) => scenario.clientPortalLink.token === portalToken) || scenarios[0]
+}
+
 function resolveRestPayload(table, url) {
   const scenario = getScenarioForRequest(url)
 
@@ -521,10 +529,39 @@ async function installSupabaseMocks(page) {
   })
 
   await page.route('**/rest/v1/rpc/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const rpcName = url.pathname.split('/').filter(Boolean).pop()
+    const scenario = getScenarioForHeaders(request.headers())
+    const portal = {
+      available: true,
+      id: scenario.clientPortalLink.id,
+      transactionId: scenario.transactionId,
+      token: scenario.clientPortalLink.token,
+      isActive: true,
+      createdAt: scenario.clientPortalLink.created_at,
+      updatedAt: scenario.clientPortalLink.updated_at,
+      path: `/client/${scenario.clientPortalLink.token}`,
+    }
+    const snapshotOnboarding = { ...scenario.onboarding }
+    delete snapshotOnboarding.token
+    const snapshot = {
+      transactionId: scenario.transactionId,
+      onboarding: snapshotOnboarding,
+      portal,
+    }
+
+    const body =
+      rpcName === 'bridge_buyer_onboarding_portal_access'
+        ? portal
+        : rpcName === 'bridge_save_buyer_onboarding_snapshot'
+          ? snapshot
+          : []
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([]),
+      body: JSON.stringify(body),
     })
   })
 

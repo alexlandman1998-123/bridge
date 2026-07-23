@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_6",
+  "contract": "legal-document-successor-release-proposal-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "productionOrigin": null,
+    "productionUrl": null
+  },
+  "source": {
+    "phase5ReceiptCommitSha": null,
+    "phase5ReceiptManifestDigest": null,
+    "phase5ObservationPlanDigest": null,
+    "phase4ReceiptCommitSha": null,
+    "phase4ReceiptManifestDigest": null,
+    "activationPlanDigest": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "proposalPlanDigest": null
+  },
+  "cohort": {
+    "organisationIds": [],
+    "cohortDigest": null,
+    "maxOrganisations": 1,
+    "requiredPacketTypes": []
+  },
+  "inventory": {
+    "classification": "potential_successor_non_authority_inventory",
+    "candidateCount": null,
+    "candidateInventoryDigest": null,
+    "authority": "none"
+  },
+  "safety": {
+    "noActivationAuthorization": true,
+    "noScaleAuthorization": true,
+    "noSecondOrganisationAuthorization": true,
+    "noRuntimeChangeAuthorization": true,
+    "noDeploymentAuthorization": true,
+    "noCustomerEmailAuthorization": true,
+    "noRollbackAuthorization": true
+  },
+  "proposal": {
+    "kind": "successor_release_proposal_only",
+    "authority": "non_authoritative",
+    "requestedAction": "separately_authorised_future_review_only"
+  },
+  "releaseEpochReadiness": {
+    "serverOwnedReleaseEpochContract": "legal-document-successor-release-epoch-v1",
+    "releaseEpochMigrationId": "phase6_server_owned_release_epoch_integrity",
+    "releaseEpochMigrationEvidenceDigest": null,
+    "legacyA3Q2V2MutatorRetirementEvidenceDigest": null,
+    "v1AllowlistPreservationEvidenceDigest": null,
+    "v1AllowlistWideningAllowed": false
+  },
+  "evidence": {
+    "preparedByReference": null,
+    "preparedAt": null,
+    "changeReference": null,
+    "legalApprovalEvidenceDigest": null,
+    "legalApprovalApprovedAt": null,
+    "legalApprovalActorReference": null,
+    "releaseApprovalEvidenceDigest": null,
+    "releaseApprovalApprovedAt": null,
+    "releaseApprovalActorReference": null,
+    "proposalRecordedAt": null,
+    "proposalRecordedByReference": null,
+    "reviewedByReference": null,
+    "evidencePacketDigest": null
+  },
+  "manifestDigest": null
+}

@@ -80,13 +80,27 @@ function isAssignmentActive(assignment = {}) {
   return String(assignment.assignment_status || assignment.status || '').trim().toLowerCase() === 'active'
 }
 
-function assignmentCoversLane(assignmentType, laneRole) {
+function assignmentValueCoversLane(assignmentType, laneRole) {
   const normalizedType = String(assignmentType || '').trim().toLowerCase()
   const normalizedLane = normalizeAttorneyLaneRole(laneRole)
   if (normalizedLane === 'transfer') return normalizedType === 'transfer' || normalizedType === 'transfer_and_bond' || normalizedType === 'transfer_attorney'
   if (normalizedLane === 'bond') return normalizedType === 'bond' || normalizedType === 'transfer_and_bond' || normalizedType === 'bond_attorney'
   if (normalizedLane === 'cancellation') return normalizedType === 'cancellation' || normalizedType === 'cancellation_attorney'
   return false
+}
+
+function assignmentCoversLane(assignment = {}, laneRole) {
+  // A combined transfer-and-bond assignment is commonly persisted with
+  // attorney_role=transfer_attorney. Evaluate the role and assignment type
+  // independently so its bond entitlement is not discarded.
+  return [
+    assignment.attorney_role,
+    assignment.attorneyRole,
+    assignment.assignment_type,
+    assignment.assignmentType,
+    assignment.matter_type,
+    assignment.matterType,
+  ].some((value) => assignmentValueCoversLane(value, laneRole))
 }
 
 function normalizeMembershipRow(row) {
@@ -263,7 +277,7 @@ function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
           status: assignment.assignment_status || assignment.status,
         }) &&
         assignment.is_primary !== false &&
-        assignmentCoversLane(assignment.attorney_role || assignment.assignment_type || assignment.assignmentType, laneRole),
+        assignmentCoversLane(assignment, laneRole),
     ) || null
   )
 }

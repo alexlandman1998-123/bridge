@@ -67,7 +67,7 @@ export function getRuntimeEnvValidation() {
   const hasAnonKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_ANON_KEY))
   const hasLegacyKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_KEY))
 
-  if (!isProductionEnvironment() && !hasAnonKey && !hasLegacyKey) {
+  if (!hasAnonKey && !hasLegacyKey) {
     missing.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
   }
 

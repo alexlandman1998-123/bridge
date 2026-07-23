@@ -107,9 +107,9 @@ if (!blockers.length) {
     const otpTarget = targets.find((target) => target.packetType === 'otp')
     const [authorisedMandate, authorisedOtp, revokedMandate, revokedOtp] = await Promise.all([
       mandateTarget ? invoke(authorisedAuth, 'generate-final-signed-document', { packetId: mandateTarget.packetId, packetVersionId: invalidVersionId }) : null,
-      otpTarget ? invoke(authorisedAuth, 'generate-final-signed-otp', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
+      otpTarget ? invoke(authorisedAuth, 'generate-final-signed-document', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
       mandateTarget ? invoke(revokedAuth, 'generate-final-signed-document', { packetId: mandateTarget.packetId, packetVersionId: invalidVersionId }) : null,
-      otpTarget ? invoke(revokedAuth, 'generate-final-signed-otp', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
+      otpTarget ? invoke(revokedAuth, 'generate-final-signed-document', { packetId: otpTarget.packetId, packetVersionId: invalidVersionId }) : null,
     ])
     const accepted = (result) => Boolean(result && ['h3-v1', 'h4-v1'].includes(result.response.headers.get('x-legal-finalizer-contract')) && result.response.status === 400 && result.body.errorCode === 'NO_GENERATED_VERSION')
     const rejected = (result) => Boolean(result && ['h3-v1', 'h4-v1'].includes(result.response.headers.get('x-legal-finalizer-contract')) && result.response.status === 403 && result.body.errorCode === 'FINALISATION_FORBIDDEN')

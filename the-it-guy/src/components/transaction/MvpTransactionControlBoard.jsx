@@ -58,6 +58,13 @@ export default function MvpTransactionControlBoard({ controlBoard = null, compac
         </div>
       ) : null}
 
+      {health?.creation?.acceptedOfferId || health?.notifications?.total ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs">
+          {health?.creation?.acceptedOfferId ? <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-slate-700">Conversion: <strong className="text-slate-900">{health.creation.confirmed ? 'confirmed' : 'needs verification'}</strong></div> : null}
+          {health?.notifications?.total ? <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-slate-700">Notifications: <strong className="text-slate-900">{health.notifications.failed ? `${health.notifications.failed} failed` : health.notifications.reviewRequired ? 'review required' : 'clear'}</strong></div> : null}
+        </div>
+      ) : null}
+
       {audit?.actions?.length ? (
         <p className="mt-3 text-xs text-slate-600">
           <span className="font-semibold text-slate-800">Recovery:</span> {audit.actions[0].label}

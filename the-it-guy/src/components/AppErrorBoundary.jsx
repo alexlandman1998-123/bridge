@@ -195,8 +195,8 @@ class AppErrorBoundary extends Component {
             >
               {staleChunkError ? 'Refresh App' : 'Retry'}
             </button>
-            <Link to="/dashboard" className="auth-secondary-cta">
-              Go to Dashboard
+            <Link to={this.props.fallbackPath || '/dashboard'} className="auth-secondary-cta">
+              {this.props.fallbackLabel || 'Go to Dashboard'}
             </Link>
           </div>
         </div>

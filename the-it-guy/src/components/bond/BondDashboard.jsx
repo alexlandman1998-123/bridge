@@ -198,15 +198,15 @@ export default function BondDashboard({
           ) : null}
           {shouldRenderHqDashboard ? (
             <BondHqCommandCentre snapshot={snapshot} />
-          ) : snapshot.totalApplications === 0 ? (
-            <BondEmptyState
-              title="All operational queues are clear."
-              description="Your bond desk is running smoothly."
-              compact
-            />
           ) : (
             <>
               <KpiStrip items={heroKpis} />
+
+              <ActiveApplicationsSection
+                items={visibleActiveApplications}
+                activeFilter={activeFilter}
+                onFilterChange={setActiveFilter}
+              />
 
               <AppointmentDashboardSection
                 module="bond"
@@ -220,12 +220,6 @@ export default function BondDashboard({
                 onOpenAppointment={() => navigate('/bond/calendar')}
                 onScheduleAppointment={() => navigate('/bond/calendar')}
                 refreshKey={safeWorkspaceId}
-              />
-
-              <ActiveApplicationsSection
-                items={visibleActiveApplications}
-                activeFilter={activeFilter}
-                onFilterChange={setActiveFilter}
               />
 
               {organisationSnapshot ? <OrganisationSnapshotCard snapshot={organisationSnapshot} /> : null}
@@ -456,7 +450,7 @@ function KpiStrip({ items = [] }) {
     : []
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {rows.map((item) => (
         <ExecutiveKpiCard key={item.key} item={item} />
       ))}
@@ -663,13 +657,13 @@ function ExecutiveKpiCard({ item = {} }) {
   const Icon = visual.icon
 
   return (
-    <article className="flex h-full min-h-[142px] flex-col justify-between rounded-2xl border border-[#dbe5f0] bg-white p-[18px] shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-      <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${visual.tone}`}>
-        <Icon size={18} aria-hidden="true" />
+    <article className="flex h-full min-h-[124px] flex-col justify-between rounded-2xl border border-[#dbe5f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${visual.tone}`}>
+        <Icon size={16} aria-hidden="true" />
       </div>
       <div>
         <p className="truncate text-[13px] font-medium leading-5 text-[#52657a]">{label}</p>
-        <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tracking-normal text-[#101828] tabular-nums">{item.value}</p>
+        <p className="mt-1 text-[1.4rem] font-semibold leading-none tracking-normal text-[#101828] tabular-nums">{item.value}</p>
       </div>
       <p className="min-h-4 text-[0.72rem] font-medium leading-4 text-[#8a9aac]">{helper}</p>
     </article>
@@ -697,11 +691,11 @@ function getKpiHelperText(item = {}, trend = '', comparison = '') {
 function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterChange = () => {} }) {
   return (
     <BondSectionCard
-      eyebrow="Active Work"
-      title="Active Applications"
-      description="Live operational movement across active bond applications."
+      eyebrow="New Applications"
+      title="New applications needing attention"
+      description="A quick, horizontal view of incoming and recently assigned bond applications."
       action={
-        <Link to="/bond/pipeline" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+        <Link to="/bond/applications?view=incoming" className="text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
           View all applications
         </Link>
       }
@@ -738,9 +732,9 @@ function ActiveApplicationsSection({ items = [], activeFilter = 'all', onFilterC
         <div className="mt-5">
           <BondEmptyState
             compact
-            title="No active bond applications"
-            description="Accepted and assigned bond applications will appear here once they move into processing."
-            action={<Link to="/bond/pipeline?view=new" className="text-sm font-semibold text-[#204b84]">View New Applications</Link>}
+            title="No new bond applications"
+            description="New and assigned bond applications will appear here as buyer onboarding reaches the bond team."
+            action={<Link to="/bond/applications?view=incoming" className="text-sm font-semibold text-[#204b84]">Open Applications</Link>}
           />
         </div>
       )}

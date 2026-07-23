@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Plus, Printer, ShieldCheck, UploadCloud, UsersRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Plus, Printer, ShieldCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -33,19 +33,16 @@ import {
   fetchSigningFieldLayout,
   saveSigningFieldPlacement,
   applySigningFieldLayout,
-  completeAppliedEnvelopeDispatch,
   getFinalDocumentCompletionStatus,
   retryFinalDocumentCompletion,
+  resolveWorkspaceFinalSignedDocumentAccess,
   restoreEditableDocumentDraftRevision,
   saveEditableDocumentDraftRevision,
   transitionDocumentPacketLifecycle,
   updateDocumentPacket,
   updateDocumentPacketVersion,
-  updateDocumentPacketVersionFinalArtifact,
-  uploadFinalSignedPacketArtifact,
 } from '../../lib/documentPacketsApi'
 import { createSigningFieldBlock } from '../../core/documents/signingFieldLayout'
-import { uploadDocument } from '../../lib/api'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 import {
@@ -71,7 +68,6 @@ import {
 } from '../../core/documents/packetStatusResolver'
 import {
   formatMandateValidationMessage,
-  MAX_SIGNED_MANDATE_UPLOAD_BYTES,
   validateMandateGenerationData,
 } from '../../core/documents/mandateValidation'
 import {
@@ -93,6 +89,7 @@ import { buildDocumentAccessibility } from '../../core/documents/documentAccessi
 import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../../core/documents/documentOutcomeFeedback'
 import { recordDocumentExperienceEvent } from '../../services/documentExperienceTelemetryService'
+import { recordPerformanceMetric } from '../../services/observability/performanceMetrics'
 import {
   DOCUMENT_LIFECYCLE_STATES,
   assertDocumentLifecycleTransition,
@@ -104,6 +101,17 @@ import {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getPerformanceNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+function roundedDurationMs(startedAt = 0) {
+  const duration = getPerformanceNow() - Number(startedAt || 0)
+  return Math.max(0, Math.round(duration))
 }
 
 function isRuntimePacketId(value = '') {
@@ -164,6 +172,10 @@ function normalizeKey(value) {
 }
 
 const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+const SIGNING_DELIVERY_TIMEOUT_MS = 12000
+const WORKSPACE_STATUS_FRESH_MS = 2500
+const WORKSPACE_STATUS_REVALIDATION_DELAYS_MS = [1000, 4000]
+const SIGNING_STATUS_REVALIDATION_DELAYS_MS = [800, 3000, 8000]
 
 function withWorkspaceTimeout(task, message, timeoutMs = WORKSPACE_REFRESH_TIMEOUT_MS) {
   let timeoutId = null
@@ -342,16 +354,33 @@ function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}
   return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
 }
 
-function isPdfFile(file = null) {
-  if (!file) return false
-  return normalizeText(file?.type).toLowerCase() === 'application/pdf' || normalizeText(file?.name).toLowerCase().endsWith('.pdf')
-}
-
 function createWorkspaceError(code, message, details = {}) {
   const error = new Error(message)
   error.code = code
   error.details = details
   return error
+}
+
+function hasConfirmedSigningDelivery(result = null) {
+  if (result?.emailConfirmed === true) return true
+  if (normalizeText(result?.emailDeliveryId)) return true
+  return Array.isArray(result?.emailDeliveryIds) && result.emailDeliveryIds.some((value) => normalizeText(value))
+}
+
+function hasConfirmedOtpSigningDelivery(result = null, {
+  packetId = '',
+  packetVersionId = '',
+  dispatchId = '',
+} = {}) {
+  if (!hasConfirmedSigningDelivery(result)) return false
+  const delivery = result?.delivery && typeof result.delivery === 'object' ? result.delivery : {}
+  return (
+    normalizeText(delivery?.contract) === 'phase2-otp-signing-delivery-v1' &&
+    delivery?.recorded === true &&
+    normalizeText(delivery?.packetId || delivery?.packet_id) === normalizeText(packetId) &&
+    normalizeText(delivery?.packetVersionId || delivery?.packet_version_id) === normalizeText(packetVersionId) &&
+    normalizeText(delivery?.dispatchId || delivery?.dispatch_id) === normalizeText(dispatchId)
+  )
 }
 
 function extractMandateValidationPayload(error = null) {
@@ -1476,7 +1505,7 @@ function getMandateNextAction(status = 'draft', signingMethod = 'not_selected') 
   if (normalized === 'generated' && method === 'not_selected') return 'Choose digital signing or physical signature.'
   if (normalized === 'generated' && method === 'digital') return 'Send the mandate to the required signers for digital signing.'
   if (normalized === 'generated' && method === 'physical') return 'Download the mandate for physical signature.'
-  if (normalized === 'generated_for_physical_signature') return 'Upload the signed PDF once the required signers have signed the printed document.'
+  if (normalized === 'generated_for_physical_signature') return 'Physical completion is paused until server-attested signing evidence is available.'
   if (normalized === 'sent_for_signature') return 'Monitor signing progress or resend the signing link if needed.'
   if (normalized === 'sent_to_agent') return 'Wait for the agency representative to sign first.'
   if (normalized === 'agent_signed') return 'Agent has signed. Seller invitation is being prepared.'
@@ -2385,82 +2414,14 @@ function SignerPreparationPanel({
   )
 }
 
-function SignaturePreparationCard({
-  packetType = 'mandate',
-  roster = [],
-  validation = { blockers: [], warnings: [] },
-  busy = false,
-  canManageSigners = true,
-  onOpen = null,
-}) {
-  const rows = Array.isArray(roster) ? roster : []
-  const requiredRows = rows.filter((row) => row.required)
-  const readyRows = requiredRows.filter((row) => normalizeText(row.signerName) && isValidEmail(row.signerEmail))
-  const blockerCount = Array.isArray(validation?.blockers) ? validation.blockers.length : 0
-  const warningCount = Array.isArray(validation?.warnings) ? validation.warnings.length : 0
-  const readyLabel = requiredRows.length
-    ? `${readyRows.length}/${requiredRows.length} ready`
-    : 'No required signers'
-
-  return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">Prepare for Signature</h4>
-          <p className="mt-1 text-xs leading-5 text-[#6f839b]">Signer details open in a popup so this page stays tidy.</p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-[#5a738d]">
-            {resolveDocumentLabel(packetType)}
-          </span>
-          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-            blockerCount ? 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]' : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-          }`}>
-            {readyLabel}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2">
-        {rows.map((row) => {
-          const rowReady = normalizeText(row.signerName) && isValidEmail(row.signerEmail)
-          return (
-            <div key={row.role} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#edf3fa] bg-[#fbfdff] px-3 py-2">
-              <span className="min-w-0 truncate text-xs font-semibold text-[#20344b]">{row.label}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${rowReady ? 'bg-[#effaf4] text-[#2e7b4f]' : 'bg-[#fff8ec] text-[#8a5b12]'}`}>
-                {rowReady ? 'Ready' : 'Needs details'}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-
-      {blockerCount || warningCount ? (
-        <p className="mt-3 text-xs text-[#8a6a1d]">
-          {blockerCount ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention.` : `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review.`}
-        </p>
-      ) : (
-        <p className="mt-3 text-xs text-[#2e7b4f]">Signer identities are ready to send.</p>
-      )}
-
-      <Button type="button" size="sm" className="mt-3 w-full" onClick={() => onOpen?.()} disabled={busy || !canManageSigners}>
-        {busy ? 'Working…' : 'Open Signature Prep'}
-      </Button>
-    </section>
-  )
-}
-
 function SigningMethodPanel({
   method = 'not_selected',
-  packetType = 'mandate',
   canChange = false,
   lockedReason = '',
   onSelect = null,
-  onOpenSignaturePrep = null,
   canResend = false,
   onResend = null,
   resendSummary = '',
-  signaturePrepSummary = null,
   busy = false,
   className = '',
 }) {
@@ -2470,7 +2431,7 @@ function SigningMethodPanel({
       title: 'Digital Signing',
       description: 'Send the mandate to the required seller-side signers to review and sign online.',
       Icon: Link2,
-      next: 'Next step: prepare signers and send secure signing links.',
+      next: 'Next step: confirm the recipient email and send a secure signing link.',
     },
     {
       key: 'physical',
@@ -2540,84 +2501,40 @@ function SigningMethodPanel({
           })}
         </div>
 
-        <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
-              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                Open signer details in a popup so this panel stays compact.
-              </p>
-            </div>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-              signaturePrepSummary?.tone === 'amber'
-                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
-                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-            }`}>
-              {signaturePrepSummary?.statusLabel || 'Ready to open'}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {resolveDocumentLabel(packetType)}
-            </span>
-            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-              {signaturePrepSummary?.readyLabel || 'Signer details ready'}
-            </span>
-          </div>
-          {lockedReason ? (
-            <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-              {lockedReason}
-            </p>
-          ) : !canChange ? (
-            <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-          ) : null}
-          {canResend ? (
-            <div className="mt-3 rounded-[16px] border border-[#dbe8f6] bg-white px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#102033]">Resend signing links</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-                    {resendSummary || 'Refresh and resend links to outstanding signers without changing the mandate.'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
-                    {busy ? 'Working…' : 'Resend Links'}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-                    Choose Recipient
-                  </Button>
-                </div>
+        {lockedReason ? (
+          <p className="rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+            {lockedReason}
+          </p>
+        ) : !canChange ? (
+          <p className="text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+        ) : null}
+
+        {canResend ? (
+          <div className="rounded-[20px] border border-[#dbe8f6] bg-[#f8fbff] px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#102033]">Signing links</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                  {resendSummary || 'Refresh links to outstanding signers without changing the mandate.'}
+                </p>
               </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => onResend?.()} disabled={busy}>
+                {busy ? 'Working…' : 'Resend Links'}
+              </Button>
             </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-              Open Signature Prep
-            </Button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   )
 }
 
 function PhysicalMandatePanel({
-  file = null,
-  notes = '',
-  confirmed = false,
-  allPartiesSigned = false,
   uploaded = false,
   uploadedAt = '',
   signedUrl = '',
   busy = false,
-  canFinalize = false,
   onDownload = null,
-  onFileChange = null,
-  onNotesChange = null,
-  onConfirmedChange = null,
-  onAllPartiesSignedChange = null,
-  onUpload = null,
 }) {
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
@@ -2625,7 +2542,7 @@ function PhysicalMandatePanel({
         <div>
           <h4 className="text-sm font-semibold text-[#1a2f45]">Physical / Printed Mandate</h4>
           <p className="mt-1 text-xs leading-5 text-[#6f839b]">
-            Download the mandate, print it, sign it with the seller, then upload the signed copy once completed.
+            Download a copy for review or printing. Server-attested physical completion is not enabled yet, so this workspace cannot upload or finalize a signed paper mandate.
           </p>
         </div>
         <Printer size={18} className="text-[#5d7892]" />
@@ -2646,55 +2563,9 @@ function PhysicalMandatePanel({
           <Button type="button" size="sm" variant="secondary" onClick={() => void onDownload?.()} disabled={busy}>
             Download PDF
           </Button>
-          <label className="block rounded-[12px] border border-dashed border-[#ccdbea] bg-[#f8fbff] px-3 py-3 text-xs text-[#60758d]">
-            <span className="flex items-center gap-2 font-semibold text-[#20344b]">
-              <UploadCloud size={15} />
-              Upload Signed Mandate
-            </span>
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              className="mt-2 block w-full text-xs text-[#60758d] file:mr-3 file:rounded-full file:border-0 file:bg-[#eaf2fa] file:px-3 file:py-1 file:text-xs file:font-semibold file:text-[#294f74]"
-              onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
-              disabled={busy || !canFinalize}
-            />
-            {file ? <span className="mt-2 block text-[#2f5f89]">{file.name}</span> : null}
-          </label>
-          <textarea
-            value={notes}
-            onChange={(event) => onNotesChange?.(event.target.value)}
-            disabled={busy || !canFinalize}
-            placeholder="Optional notes about the in-person signing."
-            className="min-h-[76px] w-full rounded-[12px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4] disabled:bg-[#f3f6fa]"
-          />
-          <label className="flex items-start gap-2 rounded-[10px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs text-[#4f657c]">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={allPartiesSigned}
-              onChange={(event) => onAllPartiesSignedChange?.(event.target.checked)}
-              disabled={busy || !canFinalize}
-            />
-            <span>All required parties have signed.</span>
-          </label>
-          <label className="flex items-start gap-2 rounded-[10px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs font-semibold text-[#3d536b]">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={confirmed}
-              onChange={(event) => onConfirmedChange?.(event.target.checked)}
-              disabled={busy || !canFinalize}
-            />
-            <span>I confirm this uploaded document is the signed mandate.</span>
-          </label>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void onUpload?.()}
-            disabled={busy || !canFinalize || !file || !confirmed}
-          >
-            {busy ? 'Uploading…' : 'Finalize Manual Signed Mandate'}
-          </Button>
+          <p className="rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs leading-5 text-[#7d520d]">
+            Physical completion is paused until the server can capture the signed PDF, required-party attestation, and immutable evidence in one controlled action. No completion was recorded.
+          </p>
         </div>
       )}
     </section>
@@ -2921,10 +2792,11 @@ export default function LegalDocumentWorkspace({
   onSend = null,
   onEdit = null,
   onView = null,
-  onViewSigned = null,
   onSignedFinalized = null,
   onRefreshContext = null,
   autoGenerateEnabled = true,
+  signingDeliveryEnabled = true,
+  signingDeliveryDisabledReason = '',
 }) {
   const isPageMode = displayMode === 'page'
   const { role: workspaceRole, profile: workspaceProfile } = useWorkspace()
@@ -2946,6 +2818,8 @@ export default function LegalDocumentWorkspace({
   const [finalizeBusy, setFinalizeBusy] = useState(false)
   const [finalCompletionState, setFinalCompletionState] = useState(null)
   const [finalCompletionBusy, setFinalCompletionBusy] = useState(false)
+  const [finalSignedAccess, setFinalSignedAccess] = useState(null)
+  const [finalSignedAccessBusy, setFinalSignedAccessBusy] = useState(false)
   const [editableSections, setEditableSections] = useState([])
   const [editableDirty, setEditableDirty] = useState(false)
   const [draftSaveState, setDraftSaveState] = useState('saved')
@@ -2955,11 +2829,6 @@ export default function LegalDocumentWorkspace({
   const [customSectionLabel, setCustomSectionLabel] = useState('')
   const [draftReviewState, setDraftReviewState] = useState('draft')
   const [centerTab, setCenterTab] = useState('preview')
-  const [manualSignedFile, setManualSignedFile] = useState(null)
-  const [manualSignedNotes, setManualSignedNotes] = useState('')
-  const [manualSignedConfirmed, setManualSignedConfirmed] = useState(false)
-  const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
-  const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const [mergeDetailsOpen, setMergeDetailsOpen] = useState(false)
   const [signerPrepOpen, setSignerPrepOpen] = useState(false)
   const [activityTab, setActivityTab] = useState('all')
@@ -2981,9 +2850,10 @@ export default function LegalDocumentWorkspace({
   const generationFailureCountsRef = useRef(new Map())
   const recordedGenerationHandoffsRef = useRef(new Set())
   const signerBusyRef = useRef(false)
-  const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
+  const lastWorkspaceRefreshAtRef = useRef(0)
+  const scheduledWorkspaceRefreshTimersRef = useRef(new Set())
   const skippedInitialPageRefreshRef = useRef(false)
   const centerTabInitializedRef = useRef(false)
   const centerTabPreferenceRef = useRef(null)
@@ -3002,6 +2872,22 @@ export default function LegalDocumentWorkspace({
       ...metadata,
     })
   }, [organisationId, packetType, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id, workspaceRole])
+
+  const recordWorkspacePerformance = useCallback((metricName, startedAt, metadata = {}) => {
+    void recordPerformanceMetric({
+      metricName,
+      durationMs: roundedDurationMs(startedAt),
+      userId: workspaceProfile?.user_id || workspaceProfile?.userId || workspaceProfile?.id || '',
+      workspaceId: organisationId || workspaceProfile?.organisation_id || workspaceProfile?.organisationId || '',
+      route: '/legal-document-workspace',
+      metadata: {
+        packetType,
+        state: normalizeText(statusStateRef.current?.state || statusState?.state) || null,
+        packetId: normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId) || null,
+        ...metadata,
+      },
+    })
+  }, [organisationId, packetId, packetType, statusState?.packet?.id, statusState?.state, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id])
 
   const applyPreparedSigningState = useCallback((prepared, fallbackStatus = statusStateRef.current || statusState) => {
     if (!prepared) return fallbackStatus
@@ -3038,10 +2924,6 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     signerBusyRef.current = signerBusy
   }, [signerBusy])
-
-  useEffect(() => {
-    manualUploadBusyRef.current = manualUploadBusy
-  }, [manualUploadBusy])
 
   useEffect(() => {
     const nextSectionKey = normalizeText(editableSections?.[0]?.key)
@@ -3117,6 +2999,10 @@ export default function LegalDocumentWorkspace({
   )
   const isMandatePacket = normalizeKey(packetType) === 'mandate'
   const isOtpPacket = normalizeKey(packetType) === 'otp'
+  const signingDeliveryDisabled = signingDeliveryEnabled === false
+  const signingDeliveryUnavailableMessage = normalizeText(signingDeliveryDisabledReason) ||
+    'Signing delivery is temporarily unavailable. No signing links or sent status will be created until server-backed delivery is enabled.'
+  const isFocusedMandatePage = isPageMode && isMandatePacket
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
@@ -3264,9 +3150,9 @@ export default function LegalDocumentWorkspace({
     setCertifiedPdfAccessUrl(hydratedGeneratedPreviewUrl)
   }, [hydratedGeneratedPreviewUrl, latestVersion?.id])
   const generatedPreviewUrl = certifiedPdfAccessUrl || hydratedGeneratedPreviewUrl
-  const signedPreviewUrl = normalizeText(
-    latestVersion?.final_signed_file_access_url || latestVersion?.final_signed_file_url || '',
-  )
+  // Final signed URLs are never hydrated from packet version data. The only
+  // route to a final copy is the server-owned F2/publication resolver below.
+  const signedPreviewUrl = ''
   const signedPreviewPath = normalizeText(latestVersion?.final_signed_file_path || '')
 
   useEffect(() => {
@@ -3274,9 +3160,21 @@ export default function LegalDocumentWorkspace({
     const resolvedVersionId = normalizeText(latestVersion?.id)
     if (!isUuidLike(resolvedPacketId) || !isUuidLike(resolvedVersionId) || !signedPreviewPath) {
       setFinalCompletionState(null)
+      setFinalSignedAccess(null)
       return undefined
     }
     let active = true
+    resolveWorkspaceFinalSignedDocumentAccess({ packetId: resolvedPacketId, versionId: resolvedVersionId })
+      .then((result) => { if (active) setFinalSignedAccess(result) })
+      .catch((error) => {
+        console.warn('[LegalDocumentWorkspace] final signed access unavailable.', error)
+        if (active) setFinalSignedAccess({
+          available: false,
+          state: 'unavailable',
+          message: 'The final signed document could not be verified right now.',
+          finalArtifact: null,
+        })
+      })
     getFinalDocumentCompletionStatus({ packetId: resolvedPacketId, versionId: resolvedVersionId })
       .then((result) => { if (active) setFinalCompletionState(result) })
       .catch((error) => {
@@ -3306,7 +3204,8 @@ export default function LegalDocumentWorkspace({
   const signerSummary = statusState?.signingSummary || null
   const canFinalizeSignedRecord = useMemo(() => canFinalizeSigningSummary(signerSummary), [signerSummary])
   const isFullySignedLifecycle = normalizedLifecycleState === 'completed'
-  const hasFinalArtifact = Boolean(signedPreviewPath || signedPreviewUrl)
+  const hasFinalArtifact = Boolean(signedPreviewPath)
+  const finalSignedAvailable = finalSignedAccess?.available === true
   const signingOperationalStatus = useMemo(() => resolveSigningOperationalStatus({
     packetType,
     packet: statusState?.packet || {},
@@ -3332,9 +3231,9 @@ export default function LegalDocumentWorkspace({
     canEdit: legalPermissions.canEditDraft,
     canSend: legalPermissions.canSend,
     canFinalize: legalPermissions.canFinalize,
-    finalCopyAvailable: Boolean(signedPreviewUrl),
+    finalCopyAvailable: finalSignedAvailable,
     certificateAvailable: statusState?.completionCertificate?.ready === true,
-  }), [legalPermissions.canEditDraft, legalPermissions.canFinalize, legalPermissions.canSend, signedPreviewUrl, signingOperationalStatus.state, statusState?.completionCertificate?.ready, workspaceRole])
+  }), [finalSignedAvailable, legalPermissions.canEditDraft, legalPermissions.canFinalize, legalPermissions.canSend, signingOperationalStatus.state, statusState?.completionCertificate?.ready, workspaceRole])
   const responsibility = useMemo(() => buildDocumentResponsibility({
     surface: 'workspace',
     role: workspaceRole,
@@ -3387,7 +3286,9 @@ export default function LegalDocumentWorkspace({
     } else if (actionId === 'open_activity') {
       document.getElementById('legal-document-signing-activity')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     } else if (actionId === 'open_final') {
-      if (signedPreviewUrl) window.open(signedPreviewUrl, '_blank', 'noopener,noreferrer')
+      void handleOpenFinalSignedDocument().catch((error) => {
+        setLoadError(toFriendlyWorkspaceError(error, 'The final signed document could not be opened.'))
+      })
     } else if (actionId === 'open_certificate') {
       document.getElementById('legal-document-completion-certificate')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     } else if (actionId === 'retry_completion') {
@@ -3459,6 +3360,7 @@ export default function LegalDocumentWorkspace({
   const canResendSignatureLinks =
     isMandatePacket &&
     signingMethod === 'digital' &&
+    !signingDeliveryDisabled &&
     legalPermissions.canResend &&
     !hasFinalArtifact &&
     !manualSignedUploaded &&
@@ -3491,26 +3393,35 @@ export default function LegalDocumentWorkspace({
       percent,
     }
   }, [signerRoster])
-  const signaturePrepSummary = useMemo(() => {
-    const blockerCount = Array.isArray(signerValidation.blockers) ? signerValidation.blockers.length : 0
-    const warningCount = Array.isArray(signerValidation.warnings) ? signerValidation.warnings.length : 0
-    return {
-      readyLabel: signerProgressMeta.totalRequired
-        ? `${signerProgressMeta.signedRequired}/${signerProgressMeta.totalRequired} ready`
-        : 'No required signers',
-      statusLabel: blockerCount
-        ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention`
-        : warningCount
-          ? `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review`
-          : 'Signer identities ready',
-      tone: blockerCount || warningCount ? 'amber' : 'green',
-    }
-  }, [
-    signerProgressMeta.signedRequired,
-    signerProgressMeta.totalRequired,
-    signerValidation.blockers,
-    signerValidation.warnings,
-  ])
+
+  const sendSignatureRecipients = useMemo(() => {
+    const rows = effectiveSignerRoster.map((row) => {
+      const draft = signerDraftByRole[row.role] || null
+      return draft
+        ? {
+          ...row,
+          signerName: normalizeText(draft.signerName || row.signerName),
+          signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
+        }
+        : row
+    })
+    const agentRow = rows.find((row) => normalizeKey(row.role) === 'agent') || null
+    const agentHasSigned = Boolean(agentRow?.signedAt) || normalizeKey(agentRow?.statusRaw || agentRow?.status) === 'signed'
+    const requiredRows = rows.filter((row) => row.required)
+    const outstandingRows = requiredRows.filter((row) => !['signed', 'declined'].includes(normalizeKey(row.statusRaw || row.status)))
+    const recipients = isMandatePacket && agentRow && !agentHasSigned
+      ? [agentRow]
+      : (outstandingRows.length ? outstandingRows : requiredRows)
+
+    return recipients.map((row) => ({
+      label: row.label,
+      name: row.signerName,
+      email: row.signerEmail,
+    }))
+  }, [effectiveSignerRoster, isMandatePacket, signerDraftByRole])
+  const sendRecipientEmailMissing = sendSignatureRecipients.some((recipient) => (
+    !isValidEmail(recipient.email) || recipient.email.endsWith('@bridge.local')
+  ))
 
   const editablePreviewHtml = useMemo(() => {
     if (!editableSections.length) return ''
@@ -3693,7 +3604,7 @@ export default function LegalDocumentWorkspace({
     throw error
   }, [isMandatePacket, latestVersion?.id, mandateDataSnapshot, packetId, transactionId])
 
-  const refreshWorkspaceData = useCallback(async () => {
+  const refreshWorkspaceData = useCallback(async ({ force = false, allowStale = false } = {}) => {
     if (refreshWorkspacePromiseRef.current) {
       return refreshWorkspacePromiseRef.current
     }
@@ -3701,11 +3612,22 @@ export default function LegalDocumentWorkspace({
     let refreshPromise = null
     refreshPromise = (async () => {
       const currentStatus = statusStateRef.current || null
+      if (!force && allowStale && hasLoadedWorkspaceSnapshot(currentStatus)) {
+        const ageMs = Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)
+        if (ageMs >= 0 && ageMs < WORKSPACE_STATUS_FRESH_MS) {
+          return {
+            resolved: currentStatus,
+            detail: null,
+            skipped: true,
+          }
+        }
+      }
       const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
       const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
       if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
         setStatusState(currentStatus)
         setPacketDetail(null)
+        lastWorkspaceRefreshAtRef.current = Date.now()
         return {
           resolved: currentStatus,
           detail: null,
@@ -3725,6 +3647,7 @@ export default function LegalDocumentWorkspace({
         return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
       })
       setStatusState(resolved)
+      lastWorkspaceRefreshAtRef.current = Date.now()
 
       const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
       if (isUuidLike(resolvedPacketId)) {
@@ -3762,6 +3685,32 @@ export default function LegalDocumentWorkspace({
     refreshWorkspacePromiseRef.current = refreshPromise
     return refreshPromise
   }, [organisationId, packetId, packetType, transactionId])
+
+  const scheduleWorkspaceStatusRevalidation = useCallback((reason = 'workspace status', delaysMs = WORKSPACE_STATUS_REVALIDATION_DELAYS_MS) => {
+    const delays = Array.isArray(delaysMs) && delaysMs.length ? delaysMs : WORKSPACE_STATUS_REVALIDATION_DELAYS_MS
+    for (const delayMs of delays) {
+      const normalizedDelay = Math.max(0, Number(delayMs || 0))
+      const timerId = setTimeout(() => {
+        scheduledWorkspaceRefreshTimersRef.current.delete(timerId)
+        void refreshWorkspaceData({ force: true }).then((refreshed) => {
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+          }
+        }).catch((refreshError) => {
+          console.warn(`[LegalDocumentWorkspace] background ${reason} revalidation failed.`, refreshError)
+        })
+      }, normalizedDelay)
+      scheduledWorkspaceRefreshTimersRef.current.add(timerId)
+    }
+  }, [refreshWorkspaceData])
+
+  useEffect(() => () => {
+    for (const timerId of scheduledWorkspaceRefreshTimersRef.current) {
+      clearTimeout(timerId)
+    }
+    scheduledWorkspaceRefreshTimersRef.current.clear()
+  }, [])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {
     if (!isMandatePacket) return
@@ -4048,6 +3997,7 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     if (!open) return
     if (loading || actionBusy || signerBusy || finalizeBusy) return
+    if (isMandatePacket && signingMethod === 'physical') return
     if (!['sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)) return
     if (!canFinalizeSignedRecord) return
     if (hasFinalArtifact) return
@@ -4072,17 +4022,9 @@ export default function LegalDocumentWorkspace({
           organisationId: statusState?.packet?.organisation_id || organisationId || null,
         })
         const nowIso = new Date().toISOString()
-        await transitionDocumentPacketLifecycle({
-          packetId: resolvedPacketId,
-          nextState: 'completed',
-          versionId: resolvedVersionId,
-          sourceContextPatch: {
-            finalizedAt: nowIso,
-            finalSignedVersionId: resolvedVersionId,
-            finalArtifactPath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
-          },
-          eventPayload: { source: 'auto_finalize' },
-        })
+        // The finaliser owns the completed transition and persists the exact
+        // final artifact. The browser must only consume that state, never
+        // replay a completion update after the server response.
         await onSignedFinalized?.({
           source: 'auto_finalize',
           packetId: resolvedPacketId,
@@ -4131,6 +4073,7 @@ export default function LegalDocumentWorkspace({
     latestVersion?.final_signed_file_access_url,
     latestVersion?.final_signed_file_bucket,
     loading,
+    isMandatePacket,
     normalizedLifecycleState,
     onSignedFinalized,
     onRefreshContext,
@@ -4540,19 +4483,6 @@ export default function LegalDocumentWorkspace({
       targetSignerRole,
     })
 
-    if (isResend) {
-      await appendDocumentPacketEvent({
-        packetId: resolvedPacketId,
-        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-        versionId,
-        eventType: 'signer_links_resent',
-        eventPayload: {
-          signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
-          targetSignerRole: normalizeKey(targetSignerRole) || null,
-        },
-      })
-    }
-
     return {
       linkResult,
       workingStatus,
@@ -4565,7 +4495,7 @@ export default function LegalDocumentWorkspace({
     if (!latestVersion?.id) blockers.push('No packet version is available for finalization.')
     if (isMandatePacket && signingMethod !== 'digital') {
       blockers.push(signingMethod === 'physical'
-        ? 'Physical mandates must be finalized through the manual signed upload workflow.'
+        ? 'Physical mandates require server-attested completion, which is not available yet.'
         : 'Select Digital Mandate before finalizing the digital signing record.')
     }
     if (!['sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)) {
@@ -4607,17 +4537,9 @@ export default function LegalDocumentWorkspace({
       })
 
       const nowIso = new Date().toISOString()
-      await transitionDocumentPacketLifecycle({
-        packetId: resolvedPacketId,
-        nextState: 'completed',
-        versionId,
-        sourceContextPatch: {
-          finalizedAt: nowIso,
-          finalSignedVersionId: versionId,
-          finalArtifactPath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
-        },
-        eventPayload: { source: 'manual_finalize' },
-      })
+      // The finaliser owns the completed transition and persists the exact
+      // final artifact. The browser must only consume that state, never
+      // replay a completion update after the server response.
       await onSignedFinalized?.({
         source: 'manual_finalize',
         packetId: resolvedPacketId,
@@ -4782,6 +4704,17 @@ export default function LegalDocumentWorkspace({
     const packet = (statusStateRef.current || statusState)?.packet || null
     if (!isUuidLike(packet?.id)) return packet
 
+    // An OTP is generated and sealed against one authoritative template
+    // revision. Unlike mandates, it must never acquire a template through a
+    // late browser fallback immediately before signing: that would make the
+    // packet's recorded source ambiguous. Reissue the canonical OTP instead.
+    if (isOtpPacket && !isUuidLike(packet?.template_id)) {
+      throw createWorkspaceError(
+        'OTP_CANONICAL_TEMPLATE_REFERENCE_REQUIRED',
+        'This OTP is missing its canonical template reference. Reissue the canonical OTP PDF before preparing signature delivery.',
+      )
+    }
+
     if (packet?.template_id) {
       try {
         const currentTemplate = await fetchDocumentPacketTemplate(packet.template_id, { includeSections: false })
@@ -4928,7 +4861,7 @@ export default function LegalDocumentWorkspace({
     let currentStatus = statusStateRef.current || statusState
     if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
       try {
-        const refreshed = await refreshWorkspaceData()
+        const refreshed = await refreshWorkspaceData({ allowStale: true })
         currentStatus = refreshed?.resolved || statusStateRef.current || currentStatus
       } catch {
         currentStatus = statusStateRef.current || currentStatus
@@ -5045,9 +4978,22 @@ export default function LegalDocumentWorkspace({
   }
 
   async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
+    const sendStartedAt = getPerformanceNow()
+    if (isOtpPacket && reminder) {
+      throw createWorkspaceError(
+        'OTP_REMINDER_DISPATCH_REQUIRED',
+        'OTP reminders are unavailable until the server can authorize a fresh signer-specific delivery dispatch. Use Resend signing link instead.',
+      )
+    }
+    if (signingDeliveryDisabled) {
+      throw createWorkspaceError('SIGNING_DELIVERY_DISABLED', signingDeliveryUnavailableMessage)
+    }
+    if (typeof onSend !== 'function') {
+      throw createWorkspaceError('SIGNING_DELIVERY_UNAVAILABLE', 'Signing email delivery is not configured for this workspace.')
+    }
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
-        ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
+        ? 'Physical mandate completion requires server attestation and is currently unavailable.'
         : 'Select Digital Mandate before sending secure signing links.')
     }
     let persistedStatus = statusStateRef.current || statusState
@@ -5122,7 +5068,6 @@ export default function LegalDocumentWorkspace({
       const remindersByRole = previousReminders && typeof previousReminders === 'object' ? previousReminders : {}
       const previousReminder = remindersByRole[normalizedReminderRole]
       setActionProgressMessage(`Sending reminder to ${normalizedReminderRole.replace(/_/g, ' ')}…`)
-      if (typeof onSend !== 'function') throw new Error('Signing email delivery is not configured for this workspace.')
       const sendResult = await onSend({
         reminder: true,
         resend: false,
@@ -5131,6 +5076,12 @@ export default function LegalDocumentWorkspace({
         targetSignerRole: normalizedReminderRole,
         signingStatus: normalizeText(currentStatus?.signingStatus) || 'sent_for_signature',
       })
+      if (!hasConfirmedSigningDelivery(sendResult)) {
+        throw createWorkspaceError(
+          'SIGNING_EMAIL_UNCONFIRMED',
+          'The reminder was prepared, but email delivery was not confirmed. No reminder status was recorded.',
+        )
+      }
       await updateWorkspacePacket(currentPacketId, {
         sourceContextJson: {
           ...(currentStatus?.packet?.source_context_json || {}),
@@ -5155,14 +5106,200 @@ export default function LegalDocumentWorkspace({
           reminderNumber: Number(previousReminder?.count || 0) + 1,
           sentAt: reminderSentAt,
           emailDeliveryId: normalizeText(sendResult?.emailDeliveryId) || null,
+          emailConfirmed: true,
           recipientEmailPresent: true,
         },
       })
       return
     }
+
+    // OTP delivery is a signer-specific server transaction.  Stage every
+    // target dispatch before sending any email so the first provider success
+    // cannot move the packet to `sent` and block setup for the remaining
+    // required signers.  Each E4 dispatch must stay bound to exactly one
+    // signer; the sender then records that same signer/dispatch pair.
+    if (isOtpPacket && !resend) {
+      const otpRequiredSignerRoles = Array.from(new Set(
+        currentRoster
+          .filter((row) => {
+            const signerStatus = normalizeKey(row?.statusRaw || row?.status)
+            return row?.required === true && !['signed', 'declined'].includes(signerStatus)
+          })
+          .map((row) => normalizeKey(row?.role))
+          .filter(Boolean),
+      ))
+      if (!otpRequiredSignerRoles.length) {
+        throw createWorkspaceError(
+          'OTP_SIGNERS_UNAVAILABLE',
+          'No active required OTP signers are available for a server-bound signing dispatch.',
+        )
+      }
+
+      const otpRoleLabels = currentRoster.reduce((labels, row) => {
+        const role = normalizeKey(row?.role)
+        if (role) labels[role] = normalizeText(row?.label) || role.replace(/_/g, ' ')
+        return labels
+      }, {})
+      const stagedOtpDispatches = []
+      const dispatchIds = new Set()
+      let activeOtpSignerRole = ''
+
+      try {
+        for (const signerRole of otpRequiredSignerRoles) {
+          activeOtpSignerRole = signerRole
+          const signerLabel = otpRoleLabels[signerRole] || signerRole.replace(/_/g, ' ')
+          setActionProgressMessage(`Preparing ${signerLabel.toLowerCase()} signing link…`)
+          const signerReadinessStartedAt = getPerformanceNow()
+          const { linkResult } = await ensureSignerReadinessBeforeSend({
+            isResend: false,
+            targetSignerRole: signerRole,
+          })
+          recordWorkspacePerformance('legal_document.signing.signer_readiness', signerReadinessStartedAt, {
+            resend: false,
+            reminder: false,
+            targetSignerRole: signerRole,
+            signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
+          })
+
+          const dispatchId = normalizeText(linkResult?.dispatchId)
+          const dispatchTargetRole = normalizeKey(linkResult?.targetSignerRole)
+          const linkSigners = Array.isArray(linkResult?.signers) ? linkResult.signers : []
+          const linkSigner = linkSigners.find((signer) =>
+            normalizeKey(signer?.signer_role) === signerRole && normalizeText(signer?.signing_link),
+          ) || null
+          const resolvedPacketId = normalizeText(linkResult?.packetId || persistedStatus?.packet?.id || packetId)
+          const resolvedVersionId = normalizeText(linkResult?.packetVersionId || latestVersion?.id)
+
+          if (!dispatchId || dispatchTargetRole !== signerRole) {
+            throw createWorkspaceError(
+              'OTP_SIGNING_DISPATCH_NOT_TARGETED',
+              `The server did not authorize a signer-specific OTP dispatch for ${signerLabel}. No email was sent.`,
+            )
+          }
+          if (dispatchIds.has(dispatchId)) {
+            throw createWorkspaceError(
+              'OTP_SIGNING_DISPATCH_NOT_UNIQUE',
+              `The server reused a signing dispatch for ${signerLabel}. Each required OTP signer needs a separate authorized dispatch. No email was sent.`,
+            )
+          }
+          if (!resolvedPacketId || !resolvedVersionId || !linkSigner) {
+            throw createWorkspaceError(
+              'OTP_SIGNING_LINK_FAILED',
+              `A signer-specific OTP link could not be created for ${signerLabel}. No email was sent.`,
+            )
+          }
+          if (stagedOtpDispatches.length) {
+            const firstDispatch = stagedOtpDispatches[0]
+            if (firstDispatch.packetId !== resolvedPacketId || firstDispatch.packetVersionId !== resolvedVersionId) {
+              throw createWorkspaceError(
+                'OTP_SIGNING_DISPATCH_VERSION_MISMATCH',
+                'The OTP signing dispatches do not reference one immutable packet version. No email was sent.',
+              )
+            }
+          }
+
+          dispatchIds.add(dispatchId)
+          stagedOtpDispatches.push({
+            dispatchId,
+            packetId: resolvedPacketId,
+            packetVersionId: resolvedVersionId,
+            signerRole,
+            signerLabel,
+            signer: linkSigner,
+            signingStatus: normalizeText(linkResult?.signingStatus) || 'sent_for_signature',
+            alreadyDelivered: linkResult?.dispatchAlreadyDelivered === true,
+          })
+        }
+
+        let deliveredSignerCount = 0
+        for (const stagedDispatch of stagedOtpDispatches) {
+          activeOtpSignerRole = stagedDispatch.signerRole
+          setActionProgressMessage(`Sending signing link to ${stagedDispatch.signerLabel.toLowerCase()}…`)
+          const emailDeliveryStartedAt = getPerformanceNow()
+          let sendResult = null
+          if (stagedDispatch.alreadyDelivered) {
+            sendResult = { emailConfirmed: true, deduplicated: true }
+          } else {
+            sendResult = await withWorkspaceTimeout(
+              Promise.resolve(onSend({
+                resend: false,
+                signerLinks: [stagedDispatch.signer],
+                packetId: stagedDispatch.packetId,
+                targetSignerRole: stagedDispatch.signerRole,
+                signingStatus: stagedDispatch.signingStatus,
+                // The sender completes the exact E4 dispatch server-side.
+                // Never send an OTP email without this signer-bound ID.
+                dispatchId: stagedDispatch.dispatchId,
+              })),
+              'The signing link is ready, but email delivery was not confirmed within 12 seconds. Refresh the signer status before resending.',
+              SIGNING_DELIVERY_TIMEOUT_MS,
+            )
+          }
+          const deliveryConfirmed = stagedDispatch.alreadyDelivered || hasConfirmedOtpSigningDelivery(sendResult, {
+            packetId: stagedDispatch.packetId,
+            packetVersionId: stagedDispatch.packetVersionId,
+            dispatchId: stagedDispatch.dispatchId,
+          })
+          if (!deliveryConfirmed) {
+            throw createWorkspaceError(
+              'SIGNING_EMAIL_UNCONFIRMED',
+              `The OTP signing link for ${stagedDispatch.signerLabel} was prepared, but server-recorded delivery was not confirmed.`,
+            )
+          }
+          deliveredSignerCount += 1
+          recordWorkspacePerformance('legal_document.signing.email_delivery', emailDeliveryStartedAt, {
+            resend: false,
+            targetSignerRole: stagedDispatch.signerRole,
+            recipientCount: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails.length : (sendResult?.recipientEmail ? 1 : 0),
+            emailConfirmed: true,
+            deduplicated: stagedDispatch.alreadyDelivered,
+          })
+        }
+
+        // Delivery and lifecycle promotion are wholly server-owned for OTP.
+        // Refresh the authoritative packet/signing state rather than changing
+        // lifecycle state or signer status in this browser.
+        setActionProgressMessage('Delivery confirmed. Refreshing signing status…')
+        try {
+          await refreshWorkspaceData({ force: true })
+        } catch (refreshError) {
+          console.warn('[LegalDocumentWorkspace] OTP signing delivery succeeded but the authoritative status refresh is delayed.', refreshError)
+        }
+        scheduleWorkspaceStatusRevalidation('OTP signing status', SIGNING_STATUS_REVALIDATION_DELAYS_MS)
+        recordWorkspacePerformance('legal_document.signing.total', sendStartedAt, {
+          resend: false,
+          reminder: false,
+          signerCount: stagedOtpDispatches.length,
+          deliveredSignerCount,
+          emailConfirmed: deliveredSignerCount === stagedOtpDispatches.length,
+          otpSignerSpecificDispatches: true,
+        })
+        return
+      } catch (error) {
+        try {
+          await refreshWorkspaceData({ force: true })
+        } catch (refreshError) {
+          console.warn('[LegalDocumentWorkspace] OTP signing delivery failed and the authoritative status refresh is delayed.', refreshError)
+        }
+        scheduleWorkspaceStatusRevalidation('OTP signing delivery recovery', SIGNING_STATUS_REVALIDATION_DELAYS_MS)
+        const signerLabel = otpRoleLabels[activeOtpSignerRole] || activeOtpSignerRole.replace(/_/g, ' ') || 'the active signer'
+        throw createWorkspaceError(
+          normalizeText(error?.code) || 'OTP_SIGNING_DELIVERY_FAILED',
+          `OTP signing delivery for ${signerLabel} did not complete. ${normalizeText(error?.message) || 'Refresh the signer status before retrying.'}`,
+          { cause: error },
+        )
+      }
+    }
+
     const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
     const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'
     const normalizedTargetSignerRole = normalizeKey(targetSignerRole) || (isMandatePacket && !resend && !agentHasSigned ? 'agent' : '')
+    if (isOtpPacket && resend && !normalizedTargetSignerRole) {
+      throw createWorkspaceError(
+        'OTP_RESEND_TARGET_REQUIRED',
+        'Choose a specific OTP signer before resending. Every OTP resend requires a fresh signer-specific server dispatch.',
+      )
+    }
     const currentRoleLabels = currentRoster.reduce((accumulator, row) => {
       accumulator[normalizeKey(row.role)] = row.label
       return accumulator
@@ -5174,9 +5311,25 @@ export default function LegalDocumentWorkspace({
         }).toLowerCase()
       : 'signer'
     setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
+    const signerReadinessStartedAt = getPerformanceNow()
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
+    recordWorkspacePerformance('legal_document.signing.signer_readiness', signerReadinessStartedAt, {
+      resend: resend === true,
+      reminder: reminder === true,
+      targetSignerRole: normalizedTargetSignerRole || null,
+      signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
+    })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
+    }
+    if (isOtpPacket && (
+      !normalizeText(linkResult?.dispatchId) ||
+      normalizeKey(linkResult?.targetSignerRole) !== normalizedTargetSignerRole
+    )) {
+      throw createWorkspaceError(
+        'OTP_SIGNING_DISPATCH_NOT_TARGETED',
+        'The server did not authorize a signer-specific OTP dispatch. No email was sent.',
+      )
     }
     if (!resend) {
       const packetAfterLinkPreparation = await fetchDocumentPacket(
@@ -5209,36 +5362,11 @@ export default function LegalDocumentWorkspace({
     const nowIso = new Date().toISOString()
     const signerEmails = linkSigners.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
 
-    if (!resend && lifecycleBeforeSend !== 'sent') {
-      await transitionLifecycleState('sent')
-    }
-
-    await updateWorkspacePacket(currentPacketId, {
-      sourceContextJson: {
-        ...(currentPacket?.source_context_json || {}),
-        signing_method: 'digital',
-        signingMethod: 'digital',
-        signing_status: workflowSigningStatus,
-        signingStatus: workflowSigningStatus,
-        mandateStatus: workflowSigningStatus,
-        lifecycle_state: 'sent',
-        sentAt: currentPacket?.sent_at || nowIso,
-        sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
-        signerEmails,
-        signerCount: signerEmails.length,
-        signingLinkPreparedAt: nowIso,
-        signingLinkLastSentAt: nowIso,
-        signingLinkResentAt: resend ? nowIso : null,
-        lastSigningRecipientRole: linkRecipientRole || null,
-      },
-      allowSigningMetadataUpdate: true,
-    })
-
     await appendDocumentPacketEvent({
       packetId: currentPacketId,
       organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
-      eventType: resend ? 'mandate_signing_link_resent' : 'digital_signing_prepared',
+      eventType: 'digital_signing_prepared',
       eventPayload: {
         transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
@@ -5246,6 +5374,7 @@ export default function LegalDocumentWorkspace({
         signingStatus: workflowSigningStatus,
         targetSignerRole: linkRecipientRole || null,
         preparedAt: nowIso,
+        resend: resend === true,
       },
     })
 
@@ -5253,70 +5382,128 @@ export default function LegalDocumentWorkspace({
     let sendResult = null
     if (linkResult?.dispatchAlreadyDelivered && !resend) {
       sendResult = { emailConfirmed: true, deduplicated: true }
+      recordWorkspacePerformance('legal_document.signing.email_delivery', sendStartedAt, {
+        resend: false,
+        deduplicated: true,
+        targetSignerRole: linkRecipientRole || null,
+        recipientCount: 0,
+      })
     } else {
+      const emailDeliveryStartedAt = getPerformanceNow()
       try {
         if (typeof onSend !== 'function') throw new Error('Signing email delivery is not configured for this workspace.')
-        sendResult = await onSend({
-          resend,
-          signerLinks: linkSigners,
-          packetId: currentPacketId,
-          targetSignerRole: linkRecipientRole,
-          signingStatus: workflowSigningStatus,
-        })
-        await completeAppliedEnvelopeDispatch({
-          dispatchId: linkResult?.dispatchId,
-          success: true,
-          deliveryEvidence: {
-            emailDeliveryId: normalizeText(sendResult?.emailDeliveryId) || null,
-            emailDeliveryIds: Array.isArray(sendResult?.emailDeliveryIds) ? sendResult.emailDeliveryIds : [],
-            recipientEmail: normalizeText(sendResult?.recipientEmail) || null,
-            recipientEmails: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails : [],
-            recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
-            emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
-          },
+        sendResult = await withWorkspaceTimeout(
+          Promise.resolve(onSend({
+            resend,
+            signerLinks: linkSigners,
+            packetId: currentPacketId,
+            targetSignerRole: linkRecipientRole,
+            signingStatus: workflowSigningStatus,
+            // The sender owns the E4 delivery completion and the server-side
+            // sent transition. A browser must never finalize that dispatch.
+            dispatchId: normalizeText(linkResult?.dispatchId),
+          })),
+          'The signing link is ready, but email delivery was not confirmed within 12 seconds. Refresh the signer status before resending.',
+          SIGNING_DELIVERY_TIMEOUT_MS,
+        )
+        const deliveryConfirmed = isOtpPacket
+          ? hasConfirmedOtpSigningDelivery(sendResult, {
+              packetId: currentPacketId,
+              packetVersionId: versionId,
+              dispatchId: normalizeText(linkResult?.dispatchId),
+            })
+          : hasConfirmedSigningDelivery(sendResult)
+        if (!deliveryConfirmed) {
+          throw createWorkspaceError(
+            'SIGNING_EMAIL_UNCONFIRMED',
+            isOtpPacket
+              ? 'The OTP signing link was prepared, but server-recorded delivery was not confirmed. No sent status was recorded.'
+              : 'The signing link was prepared, but email delivery was not confirmed. No sent status was recorded.',
+          )
+        }
+        recordWorkspacePerformance('legal_document.signing.email_delivery', emailDeliveryStartedAt, {
+          resend: resend === true,
+          targetSignerRole: linkRecipientRole || null,
+          recipientCount: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails.length : (sendResult?.recipientEmail ? 1 : 0),
+          emailConfirmed: hasConfirmedSigningDelivery(sendResult),
         })
       } catch (sendError) {
-        if (linkResult?.dispatchId) {
-          await completeAppliedEnvelopeDispatch({
-            dispatchId: linkResult.dispatchId,
-            success: false,
-            deliveryEvidence: { error: normalizeText(sendError?.message || String(sendError)) },
-          }).catch(() => null)
-        }
+        recordWorkspacePerformance('legal_document.signing.email_delivery', emailDeliveryStartedAt, {
+          resend: resend === true,
+          targetSignerRole: linkRecipientRole || null,
+          failed: true,
+          errorCode: normalizeText(sendError?.code) || null,
+        })
         throw createWorkspaceError(
-          'SIGNING_EMAIL_FAILED',
-          'The document was prepared, but the signing email could not be sent. You can resend it from this page.',
+          sendError?.code === 'SIGNING_EMAIL_UNCONFIRMED' ? 'SIGNING_EMAIL_UNCONFIRMED' : 'SIGNING_EMAIL_FAILED',
+          sendError?.code === 'SIGNING_EMAIL_UNCONFIRMED'
+            ? 'The signing link was prepared, but email delivery was not confirmed. No sent status was recorded.'
+            : 'The document was prepared, but the signing email could not be sent. You can resend it from this page.',
           { cause: sendError },
         )
       }
     }
 
-    const refreshed = await resolveDocumentPacketStatus({
-      packetType,
+    const confirmedDelivery = isOtpPacket
+      ? hasConfirmedOtpSigningDelivery(sendResult, {
+          packetId: currentPacketId,
+          packetVersionId: versionId,
+          dispatchId: normalizeText(linkResult?.dispatchId),
+        })
+      : hasConfirmedSigningDelivery(sendResult)
+    if (!confirmedDelivery) {
+      throw createWorkspaceError(
+        'SIGNING_EMAIL_UNCONFIRMED',
+        isOtpPacket
+          ? 'The OTP signing link was prepared, but server-recorded delivery was not confirmed. No sent status was recorded.'
+          : 'The signing link was prepared, but email delivery was not confirmed. No sent status was recorded.',
+      )
+    }
+
+    // `send-mandate-signing-email` atomically completes E4 and promotes the
+    // signer/packet after provider acceptance. Refresh that authoritative
+    // server state instead of fabricating a local sent state.
+    const serverDelivery = sendResult?.delivery && typeof sendResult.delivery === 'object'
+      ? sendResult.delivery
+      : {}
+    const serverPacketStatus = normalizeText(serverDelivery.packetStatus || serverDelivery.packet_status)
+    const serverSignerStatus = normalizeText(serverDelivery.signerStatus || serverDelivery.signer_status)
+    setActionProgressMessage('Delivery confirmed. Refreshing signing status…')
+    try {
+      await refreshWorkspaceData({ force: true })
+    } catch (refreshError) {
+      console.warn('[LegalDocumentWorkspace] signing delivery succeeded but the authoritative status refresh is delayed.', refreshError)
+    }
+
+    scheduleWorkspaceStatusRevalidation('signing status', SIGNING_STATUS_REVALIDATION_DELAYS_MS)
+    void appendDocumentPacketEvent({
       packetId: currentPacketId,
-      transactionId,
-      organisationId,
-    })
-    statusStateRef.current = refreshed
-    setStatusState(refreshed)
-    await appendDocumentPacketEvent({
-      packetId: currentPacketId,
-      organisationId: refreshed?.packet?.organisation_id || currentPacket?.organisation_id || organisationId || null,
+      organisationId: currentPacket?.organisation_id || organisationId || null,
       versionId,
       eventType: resend ? 'mandate_signing_email_resent' : 'mandate_sent_for_digital_signing',
       eventPayload: {
-        transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
+        transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
-        signingStatus: workflowSigningStatus,
-        sentAt: nowIso,
+        signingStatus: serverPacketStatus || workflowSigningStatus,
+        signerStatus: serverSignerStatus || null,
+        sentAt: normalizeText(serverDelivery.sentAt || serverDelivery.sent_at) || nowIso,
         emailDeliveryId: normalizeText(sendResult?.emailDeliveryId) || null,
-        emailConfirmed: Boolean(sendResult?.emailConfirmed || sendResult?.emailDeliveryId || sendResult?.recipientEmail),
+        emailConfirmed: hasConfirmedSigningDelivery(sendResult),
         emailDeliveryIds: Array.isArray(sendResult?.emailDeliveryIds) ? sendResult.emailDeliveryIds : [],
         recipientCount: Array.isArray(sendResult?.recipientEmails) ? sendResult.recipientEmails.length : (sendResult?.recipientEmail ? 1 : 0),
         recipientRole: normalizeText(sendResult?.recipientRole || linkRecipientRole) || null,
         recipientEmailPresent: Boolean(normalizeText(sendResult?.recipientEmail)),
       },
+    }).catch((auditError) => {
+      console.warn('[LegalDocumentWorkspace] signing email audit write skipped.', auditError)
+    })
+    recordWorkspacePerformance('legal_document.signing.total', sendStartedAt, {
+      resend: resend === true,
+      reminder: reminder === true,
+      targetSignerRole: linkRecipientRole || normalizedTargetSignerRole || null,
+      signerCount: signerEmails.length,
+      emailConfirmed: hasConfirmedSigningDelivery(sendResult),
     })
   }
 
@@ -5355,7 +5542,7 @@ export default function LegalDocumentWorkspace({
           await onEdit?.()
         }
       } else if (action.actionKey === 'view_signed') {
-        await onViewSigned?.()
+        await handleOpenFinalSignedDocument()
       } else {
         await onView?.()
       }
@@ -5398,6 +5585,7 @@ export default function LegalDocumentWorkspace({
       if (generationResult?.status) {
         statusStateRef.current = generationResult.status
         setStatusState(generationResult.status)
+        lastWorkspaceRefreshAtRef.current = Date.now()
       }
       setActionProgressMessage('Refreshing draft status...')
       const refreshed = await refreshWorkspaceData()
@@ -5502,6 +5690,10 @@ export default function LegalDocumentWorkspace({
   ])
 
   async function runReviewAction(actionKey, options = {}) {
+    if (['send_signature', 'resend_signature', 'remind_signer'].includes(actionKey) && signingDeliveryDisabled) {
+      setLoadError(signingDeliveryUnavailableMessage)
+      return false
+    }
     if (actionKey === 'send_signature' && options.confirmedSend !== true) {
       recordWorkspaceExperience('commit_opened', { state: signingOperationalStatus.state, actionId: 'send_signature' })
       setSendConfirmationOpen(true)
@@ -5537,19 +5729,26 @@ export default function LegalDocumentWorkspace({
       } else if (actionKey === 'view_signing_history') {
         setActionFeedback('Signing history is shown in the lifecycle/audit timeline.')
       } else if (actionKey === 'download_signed') {
-        if (!signedPreviewUrl) throw new Error('Signed document is not available yet.')
-        window.open(signedPreviewUrl, '_blank', 'noopener,noreferrer')
+        await handleOpenFinalSignedDocument()
       } else if (actionKey === 'download_preview') {
         await handlePhysicalDownload()
       } else if (actionKey === 'view_draft') {
         await onView?.()
       }
 
-      await onRefreshContext?.()
-      await refreshWorkspaceData()
+      if (['send_signature', 'resend_signature', 'remind_signer'].includes(actionKey)) {
+        void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+          console.warn('[LegalDocumentWorkspace] background context refresh failed after signing action.', refreshError)
+        })
+      } else {
+        await onRefreshContext?.()
+        await refreshWorkspaceData()
+      }
+      return true
     } catch (error) {
       await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
+      return false
     } finally {
       actionBusyRef.current = false
       setActionBusy(false)
@@ -5671,9 +5870,47 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  async function handleOpenFinalSignedDocument() {
+    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    const resolvedVersionId = normalizeText(latestVersion?.id)
+    if (!isUuidLike(resolvedPacketId) || !isUuidLike(resolvedVersionId)) {
+      throw new Error('The final signed document reference is incomplete.')
+    }
+
+    // Open synchronously so a browser does not block the final navigation
+    // while the secure resolver mints its short-lived URL.
+    const targetWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    setFinalSignedAccessBusy(true)
+    try {
+      const access = await resolveWorkspaceFinalSignedDocumentAccess({
+        packetId: resolvedPacketId,
+        versionId: resolvedVersionId,
+        download: true,
+      })
+      setFinalSignedAccess(access)
+      const downloadUrl = normalizeText(access?.finalArtifact?.downloadUrl)
+      if (access?.available !== true || !downloadUrl) {
+        throw new Error(access?.message || 'The final signed document is still being securely published.')
+      }
+      if (targetWindow) {
+        targetWindow.location.href = downloadUrl
+      } else if (typeof window !== 'undefined') {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      }
+      return access
+    } catch (error) {
+      if (targetWindow && !targetWindow.closed) targetWindow.close()
+      throw error
+    } finally {
+      setFinalSignedAccessBusy(false)
+    }
+  }
+
   function handleWorkspacePdfDownload() {
-    if (signedPreviewUrl) {
-      window.open(signedPreviewUrl, '_blank', 'noopener,noreferrer')
+    if (finalSignedAvailable) {
+      void handleOpenFinalSignedDocument().catch((error) => {
+        setLoadError(toFriendlyWorkspaceError(error, 'The final signed document could not be opened.'))
+      })
       return
     }
     void refreshCertifiedPdfAccess('download', { open: true }).catch(() => null)
@@ -5696,71 +5933,10 @@ export default function LegalDocumentWorkspace({
         versionId: latestVersion?.id,
       })
       let link = signedPreviewUrl || generatedPreviewUrl
-      let downloadVersionId = normalizeText(latestVersion?.id)
       if (!signedPreviewUrl && latestVersion?.transaction_pdf_persisted === true) {
         const certifiedAccess = await refreshCertifiedPdfAccess('download')
         link = certifiedAccess.signedUrl
       }
-      const recordPhysicalDownloadEvent = async () => {
-        if (!isMandatePacket || signingMethod !== 'physical' || !statusState?.packet?.id) return
-        const downloadedAt = new Date().toISOString()
-        try {
-          const physicalPacket = await fetchDocumentPacket(statusState.packet.id, { includeVersions: false, includeEvents: false })
-          let physicalLifecycleState = resolveDocumentLifecycleStateFromPacket(physicalPacket)
-          if (physicalLifecycleState === 'draft') {
-            await transitionDocumentPacketLifecycle({
-              packetId: statusState.packet.id,
-              nextState: 'pdf_generated',
-              versionId: downloadVersionId || null,
-              eventPayload: { signingMethod: 'physical', source: 'physical_download' },
-            })
-            physicalLifecycleState = 'pdf_generated'
-          }
-          if (physicalLifecycleState === 'pdf_generated') {
-            await transitionDocumentPacketLifecycle({
-              packetId: statusState.packet.id,
-              nextState: 'ready_to_send',
-              versionId: downloadVersionId || null,
-              eventPayload: { signingMethod: 'physical', source: 'physical_download' },
-            })
-            physicalLifecycleState = 'ready_to_send'
-          }
-          await transitionDocumentPacketLifecycle({
-            packetId: statusState.packet.id,
-            nextState: 'sent',
-            versionId: downloadVersionId || null,
-            sourceContextPatch: {
-              signing_method: 'physical',
-              signingMethod: 'physical',
-              signing_status: 'generated_for_physical_signature',
-              signingStatus: 'generated_for_physical_signature',
-              physical_signature_status: 'generated_for_physical_signature',
-              mandateStatus: 'generated_for_physical_signature',
-              lifecycle_state: 'sent',
-              downloadedAt,
-              downloaded_at: downloadedAt,
-              downloadedVersionId: downloadVersionId || null,
-            },
-            eventPayload: { signingMethod: 'physical', source: 'physical_download' },
-          })
-          await appendDocumentPacketEvent({
-            packetId: statusState.packet.id,
-            organisationId: statusState?.packet?.organisation_id || organisationId || null,
-            versionId: downloadVersionId || null,
-            eventType: 'physical_mandate_downloaded',
-            eventPayload: {
-              transactionId: statusState?.packet?.transaction_id || transactionId || null,
-              selectedMethod: signingMethod,
-              source: 'generated_pdf',
-              signingStatus: 'generated_for_physical_signature',
-              downloadedAt,
-            },
-          })
-        } catch (eventError) {
-          console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
-        }
-      }
-
       if (!link) {
         if (typeof onGenerate !== 'function') {
           throw new Error('Generate the mandate draft before downloading the physical signing copy.')
@@ -5771,8 +5947,6 @@ export default function LegalDocumentWorkspace({
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
         link = resolveVersionDownloadUrl(generationResult?.version)
-        downloadVersionId = normalizeText(generationResult?.version?.id) || downloadVersionId
-
         if (!link) {
           await onRefreshContext?.()
           const refreshed = await refreshWorkspaceData()
@@ -5780,7 +5954,6 @@ export default function LegalDocumentWorkspace({
             ? refreshed.resolved.versions[0]
             : null
           link = resolveVersionDownloadUrl(refreshedVersion)
-          downloadVersionId = normalizeText(refreshedVersion?.id) || downloadVersionId
         }
       }
 
@@ -5788,11 +5961,8 @@ export default function LegalDocumentWorkspace({
         throw new Error('Arch9 generated the mandate, but the download link is not ready yet. Refresh and try again.')
       }
 
-      if (isMandatePacket && signingMethod === 'physical' && statusState?.packet?.id) {
-        await recordPhysicalDownloadEvent()
-      }
       window.open(link, '_blank', 'noopener,noreferrer')
-      setActionFeedback('Physical signing PDF opened.')
+      setActionFeedback('Physical signing PDF opened. No signing or completion status was recorded.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare the mandate PDF right now.'))
     } finally {
@@ -5802,204 +5972,6 @@ export default function LegalDocumentWorkspace({
         actionBusyRef.current = false
         setActionBusy(false)
       }
-    }
-  }
-
-  async function handleManualSignedUpload() {
-    if (manualUploadBusyRef.current) return
-    if (!isMandatePacket) return
-    if (signingMethod !== 'physical') {
-      setLoadError('Select Physical / Printed Mandate before uploading a manually signed copy.')
-      return
-    }
-    if (!manualSignedFile) {
-      setLoadError('Choose the signed mandate file before finalizing.')
-      return
-    }
-    if (!isPdfFile(manualSignedFile)) {
-      setLoadError('The signed mandate could not be uploaded. Please upload a PDF file and try again.')
-      return
-    }
-    if (Number(manualSignedFile.size || 0) > MAX_SIGNED_MANDATE_UPLOAD_BYTES) {
-      setLoadError('The signed mandate PDF must be 20 MB or smaller.')
-      return
-    }
-    if (!manualSignedConfirmed) {
-      setLoadError('Confirm that the uploaded document is the signed mandate before finalizing.')
-      return
-    }
-    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
-    const versionId = normalizeText(latestVersion?.id)
-    if (!resolvedPacketId || !versionId) {
-      setLoadError('A mandate packet and version are required before uploading the signed copy.')
-      return
-    }
-    try {
-      assertMandateActionValidation('upload_signed', {
-        packetId: resolvedPacketId,
-        versionId,
-        relatedRecordId: normalizeText(statusState?.packet?.lead_id || statusState?.packet?.transaction_id || transactionId),
-        file: manualSignedFile,
-        hasPermission: legalPermissions.canFinalize,
-      })
-    } catch (validationError) {
-      setLoadError(toFriendlyWorkspaceError(validationError, 'Signed mandate upload cannot continue yet.'))
-      return
-    }
-
-    manualUploadBusyRef.current = true
-    setManualUploadBusy(true)
-    setActionProgressMessage('Uploading manually signed mandate…')
-    setLoadError('')
-    setActionFeedback('')
-    try {
-      const resolvedTransactionId = normalizeText(statusState?.packet?.transaction_id || transactionId)
-      let documentRecord = null
-      let uploadedArtifact = null
-      const originalName = normalizeText(manualSignedFile.name)
-      const extension = originalName.includes('.') ? originalName.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') : 'pdf'
-      const manualUploadFileName = `Signed Mandate - Manual Upload.${extension || 'pdf'}`
-      const uploadFile = typeof File === 'function'
-        ? new File([manualSignedFile], manualUploadFileName, {
-            type: manualSignedFile.type || 'application/pdf',
-            lastModified: manualSignedFile.lastModified || Date.now(),
-          })
-        : manualSignedFile
-
-      if (resolvedTransactionId) {
-        documentRecord = await uploadDocument({
-          transactionId: resolvedTransactionId,
-          file: uploadFile,
-          category: 'Signed Mandate',
-          documentType: 'signed_mandate_manual_upload',
-          visibilityScope: 'internal',
-          stageKey: 'legal',
-          requiredDocumentKey: 'signed_mandate',
-        })
-      } else {
-        uploadedArtifact = await uploadFinalSignedPacketArtifact({
-          packetId: resolvedPacketId,
-          packetVersionId: versionId,
-          file: uploadFile,
-        })
-      }
-
-      const finalFilePath = normalizeText(documentRecord?.file_path || uploadedArtifact?.path)
-      const finalFileName = normalizeText(documentRecord?.name || uploadedArtifact?.fileName || manualSignedFile.name)
-      const finalFileUrl = normalizeText(documentRecord?.url || uploadedArtifact?.signedUrl)
-      const finalFileBucket = normalizeText(uploadedArtifact?.bucket)
-      const documentId = normalizeText(documentRecord?.id)
-      const nowIso = new Date().toISOString()
-
-      let packetForCompletion = await fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: false })
-      let physicalLifecycleState = resolveDocumentLifecycleStateFromPacket(packetForCompletion)
-      if (physicalLifecycleState === 'pdf_generated') {
-        packetForCompletion = (await transitionDocumentPacketLifecycle({
-          packetId: resolvedPacketId,
-          nextState: 'ready_to_send',
-          versionId,
-          eventPayload: { signingMethod: 'physical', source: 'manual_upload' },
-        })).packet
-        physicalLifecycleState = 'ready_to_send'
-      }
-      if (physicalLifecycleState === 'ready_to_send') {
-        packetForCompletion = (await transitionDocumentPacketLifecycle({
-          packetId: resolvedPacketId,
-          nextState: 'sent',
-          versionId,
-          sourceContextPatch: { signing_method: 'physical', signingMethod: 'physical' },
-          eventPayload: { signingMethod: 'physical', source: 'manual_upload' },
-        })).packet
-      }
-
-      await updateDocumentPacketVersionFinalArtifact({
-        packetId: resolvedPacketId,
-        packetVersionId: versionId,
-        finalSignedFilePath: finalFilePath,
-        finalSignedFileName: finalFileName,
-        finalSignedFileUrl: finalFileUrl,
-        finalSignedFileBucket: finalFileBucket,
-        finalSignedDocumentId: documentId,
-        finalisedAt: nowIso,
-      })
-
-      packetForCompletion = (await transitionDocumentPacketLifecycle({
-        packetId: resolvedPacketId,
-        nextState: 'completed',
-        versionId,
-        sourceContextPatch: {
-          signing_method: 'physical',
-          signingMethod: 'physical',
-          signing_status: 'uploaded_signed',
-          signingStatus: 'uploaded_signed',
-          mandateStatus: 'uploaded_signed',
-          lifecycle_state: 'completed',
-          finalizedAt: nowIso,
-          finalSignedVersionId: versionId,
-          finalArtifactPath: finalFilePath,
-          finalSignedSource: 'manual_upload',
-          manualSignedDocumentId: documentId || null,
-          manualSignedFilePath: finalFilePath,
-          manualSignedFileName: finalFileName,
-          manualSignedUploadedAt: nowIso,
-          uploadedAt: nowIso,
-          uploaded_at: nowIso,
-          manualSignedConfirmed: true,
-          manualSignedAllPartiesSigned: Boolean(manualSignedAllPartiesSigned),
-          manualSignedNotes: normalizeText(manualSignedNotes) || null,
-        },
-        eventPayload: {
-          signingMethod: 'physical',
-          signingStatus: 'uploaded_signed',
-          source: 'manual_upload',
-        },
-      })).packet
-
-      await appendDocumentPacketEvent({
-        packetId: resolvedPacketId,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
-        versionId,
-        eventType: 'signed_physical_mandate_uploaded',
-        eventPayload: {
-          transactionId: resolvedTransactionId || null,
-          documentId: documentId || null,
-          finalFilePath,
-          selectedMethod: 'physical',
-          signingStatus: 'uploaded_signed',
-          allRequiredPartiesSigned: Boolean(manualSignedAllPartiesSigned),
-        },
-      })
-
-      await onSignedFinalized?.({
-        source: 'manual_upload',
-        packetId: resolvedPacketId,
-        packetVersionId: versionId,
-        packet: packetForCompletion || statusState?.packet || null,
-        version: latestVersion || null,
-        finalFilePath,
-        finalFileName,
-        finalFileUrl,
-        finalFileBucket,
-        finalSignedDocumentId: documentId || null,
-        signingMethod: 'physical',
-        signingStatus: 'uploaded_signed',
-        finalizedAt: nowIso,
-        manualSignedAllPartiesSigned: Boolean(manualSignedAllPartiesSigned),
-      })
-
-      setManualSignedFile(null)
-      setManualSignedNotes('')
-      setManualSignedConfirmed(false)
-      setManualSignedAllPartiesSigned(false)
-      await onRefreshContext?.()
-      await refreshWorkspaceData()
-      setActionFeedback('Signed mandate uploaded successfully.')
-    } catch (error) {
-      setLoadError(toFriendlyWorkspaceError(error, 'Unable to upload and finalize the signed mandate right now.'))
-    } finally {
-      manualUploadBusyRef.current = false
-      setManualUploadBusy(false)
-      setActionProgressMessage('')
     }
   }
 
@@ -6015,6 +5987,9 @@ export default function LegalDocumentWorkspace({
         : isMandatePacket && launchSigningReadyState && signingMethod === 'digital'
           ? 'Send for Signature'
           : primaryLabel
+  const workspacePrimaryRequiresDelivery =
+    normalizedLifecycleState === 'ready_to_send' ||
+    (isMandatePacket && launchSigningReadyState && signingMethod === 'digital')
   const hasGeneratedMandateVersion = Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id)
   const pilotFallbackVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
   const showGeneratePdfButton =
@@ -6023,7 +5998,11 @@ export default function LegalDocumentWorkspace({
     (isMandatePacket || isOtpPacket) &&
     (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
   const handleSendForSignatureIntent = () => {
-    if (isMandatePacket && signingMethod === 'digital' && signerValidation.blockers.length) {
+    if (signingDeliveryDisabled) {
+      setLoadError(signingDeliveryUnavailableMessage)
+      return
+    }
+    if (isMandatePacket && signingMethod === 'digital' && (signerValidation.blockers.length || sendRecipientEmailMissing)) {
       setSignerPrepOpen(true)
       setLoadError('')
       setActionFeedback('Review signer details before sending the mandate.')
@@ -6049,12 +6028,34 @@ export default function LegalDocumentWorkspace({
         renderSourceVersion = await saveEditableDraftVersion({ reviewState: draftReviewState, source: 'generation' })
       }
       if (renderSourceVersion?.id && Array.isArray(renderSourceVersion?.editable_content_json?.sections) && renderSourceVersion.editable_content_json.sections.length) {
-        setActionProgressMessage('Freezing the saved document revision…')
-        renderFreeze = await freezeEditableDocumentRevisionForRender({
-          packetId: normalizeText(statusState?.packet?.id || packetId),
-          versionId: renderSourceVersion.id,
-          expectedEditSequence: renderSourceVersion.edit_sequence || 0,
-        })
+        const existingFrozenOtpRevision =
+          isOtpPacket &&
+          normalizeKey(renderSourceVersion?.render_freeze_status) === 'frozen' &&
+          normalizeText(renderSourceVersion?.render_freeze_id) &&
+          normalizeText(renderSourceVersion?.render_content_fingerprint)
+        if (existingFrozenOtpRevision) {
+          // The canonical server transaction can safely roll back a failed
+          // seal while retaining this immutable source. Do not ask the browser
+          // to mutate that frozen revision again; retry its exact evidence.
+          setActionProgressMessage('Retrying the frozen canonical OTP revision…')
+          renderFreeze = {
+            contract: 'c4-v1',
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            freezeId: normalizeText(renderSourceVersion.render_freeze_id),
+            sourceVersionId: normalizeText(renderSourceVersion.id),
+            sourceVersionNumber: Number(renderSourceVersion.version_number || 0) || null,
+            editSequence: Number(renderSourceVersion.edit_sequence || 0),
+            contentFingerprint: normalizeText(renderSourceVersion.render_content_fingerprint),
+            frozenAt: normalizeText(renderSourceVersion.render_frozen_at) || null,
+          }
+        } else {
+          setActionProgressMessage('Freezing the saved document revision…')
+          renderFreeze = await freezeEditableDocumentRevisionForRender({
+            packetId: normalizeText(statusState?.packet?.id || packetId),
+            versionId: renderSourceVersion.id,
+            expectedEditSequence: renderSourceVersion.edit_sequence || 0,
+          })
+        }
       }
       const generationResult = await onGenerate({
         editableSections,
@@ -6067,7 +6068,7 @@ export default function LegalDocumentWorkspace({
       }
       const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
       const generatedVersion = getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])
-      if (renderFreeze?.freezeId && generatedVersion?.id) {
+      if (!isOtpPacket && renderFreeze?.freezeId && generatedVersion?.id) {
         await verifyFrozenEditableRenderOutput({
           packetId: normalizeText(statusState?.packet?.id || packetId),
           freezeId: renderFreeze.freezeId,
@@ -6093,14 +6094,7 @@ export default function LegalDocumentWorkspace({
         void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
           console.warn('[LegalDocumentWorkspace] background context refresh failed after generation.', refreshError)
         })
-        void refreshWorkspaceData().then((refreshed) => {
-          if (refreshed?.resolved) {
-            statusStateRef.current = refreshed.resolved
-            setStatusState(refreshed.resolved)
-          }
-        }).catch((refreshError) => {
-          console.warn('[LegalDocumentWorkspace] background draft status refresh failed after generation.', refreshError)
-        })
+        scheduleWorkspaceStatusRevalidation('draft status')
       } else {
         setActionProgressMessage('Refreshing draft status…')
         const refreshed = await refreshWorkspaceData()
@@ -6108,7 +6102,7 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = refreshed.resolved
           setStatusState(refreshed.resolved)
           const refreshedGeneratedVersion = getGeneratedPacketVersionForSigning(refreshed.resolved.versions || [])
-          if (renderFreeze?.freezeId && refreshedGeneratedVersion?.id) {
+          if (!isOtpPacket && renderFreeze?.freezeId && refreshedGeneratedVersion?.id) {
             await verifyFrozenEditableRenderOutput({
               packetId: normalizeText(statusState?.packet?.id || packetId),
               freezeId: renderFreeze.freezeId,
@@ -6136,7 +6130,7 @@ export default function LegalDocumentWorkspace({
       setActionFeedback(generatedPilotFallback?.message || generationResult?.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generated successfully.`)
       generationFailureCountsRef.current.clear()
     } catch (error) {
-      if (renderFreeze?.freezeId) {
+      if (!isOtpPacket && renderFreeze?.freezeId) {
         await completeEditableDocumentRenderFreeze({
           packetId: normalizeText(statusState?.packet?.id || packetId),
           freezeId: renderFreeze.freezeId,
@@ -6325,13 +6319,14 @@ export default function LegalDocumentWorkspace({
   const sendConfirmation = buildDocumentCommitConfirmation({
     action: 'send_signature',
     packetType,
-    signerCount: signerValidation.isReady ? effectiveSignerRoster.filter((row) => row.required).length : 0,
+    signerCount: signerValidation.isReady && !sendRecipientEmailMissing ? sendSignatureRecipients.length : 0,
+    recipients: sendSignatureRecipients,
   })
 
   async function handleConfirmedSend() {
     recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
-    await runReviewAction('send_signature', { confirmedSend: true })
-    setSendConfirmationOpen(false)
+    const sent = await runReviewAction('send_signature', { confirmedSend: true })
+    if (sent) setSendConfirmationOpen(false)
   }
 
   function handleMobileAction(actionId) {
@@ -6449,8 +6444,14 @@ export default function LegalDocumentWorkspace({
             ) : null}
             {pilotFallbackVersion ? (
               <article className="mb-5 rounded-[18px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
-                <p className="font-semibold">Pilot review draft — not for signature</p>
-                <p className="mt-1">This preview is internal review material only. Correct the issue and generate a verified document before preparing signatures, downloading a signing copy, or sending anything to a client.</p>
+                <p className="font-semibold">Preview only — not for signature</p>
+                <p className="mt-1">This preview has no verified stored PDF. Correct the issue and generate a verified document before preparing signatures, downloading a signing copy, or sending anything to a client.</p>
+              </article>
+            ) : null}
+            {signingDeliveryDisabled ? (
+              <article className="mb-5 rounded-[18px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
+                <p className="font-semibold">Signing delivery unavailable</p>
+                <p className="mt-1">{signingDeliveryUnavailableMessage}</p>
               </article>
             ) : null}
             {loadError ? (
@@ -6495,29 +6496,33 @@ export default function LegalDocumentWorkspace({
               </article>
             ) : null}
 
-            <div className="mb-5">
-              <DocumentJourneyProgress model={documentJourney} />
-            </div>
-            <div className="mb-5">
-              <SigningOperationalStatusCard status={signingOperationalStatus} />
-            </div>
-            <div className="mb-5">
-              <DocumentRoleGuidanceCard guidance={roleGuidance} />
-            </div>
-            <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
-              <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
-            </div>
-            <div className="mb-5">
-              <DocumentResponsibilityCard model={responsibility} />
-            </div>
-            <div className="mb-5">
-              <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
-            </div>
+            {!isFocusedMandatePage ? (
+              <>
+                <div className="mb-5">
+                  <DocumentJourneyProgress model={documentJourney} />
+                </div>
+                <div className="mb-5">
+                  <SigningOperationalStatusCard status={signingOperationalStatus} />
+                </div>
+                <div className="mb-5">
+                  <DocumentRoleGuidanceCard guidance={roleGuidance} />
+                </div>
+                <div id="document-workspace-actions" tabIndex={-1} className="mb-5 scroll-mt-24 focus:outline-none">
+                  <DocumentRoleActionBar model={roleActions} busy={actionBusy || signerBusy || finalCompletionBusy} onAction={handleRoleAction} />
+                </div>
+                <div className="mb-5">
+                  <DocumentResponsibilityCard model={responsibility} />
+                </div>
+                <div className="mb-5">
+                  <DocumentHelpRecoveryCard model={helpRecovery} busy={loading || actionBusy} onAction={handleHelpRecoveryAction} />
+                </div>
+              </>
+            ) : null}
             {statusState?.signingSummary?.signers?.length ? (
               <div id="legal-document-signer-progress" className="mb-5 scroll-mt-24">
                 <SigningProgressTimeline
                   signers={statusState.signingSummary.signers}
-                  canManage={legalPermissions.canSend || legalPermissions.canResend}
+                  canManage={!signingDeliveryDisabled && (legalPermissions.canSend || legalPermissions.canResend)}
                   busy={actionBusy || signerBusy}
                   onSignerAction={(action, signer) => {
                     if (action === 'resend') void runReviewAction('resend_signature', { targetSignerRole: signer.role })
@@ -6547,28 +6552,17 @@ export default function LegalDocumentWorkspace({
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {signedPreviewUrl ? (
-                    <a
-                      href={signedPreviewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c]"
+                  {finalSignedAvailable ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenFinalSignedDocument().catch((error) => setLoadError(toFriendlyWorkspaceError(error, 'The final signed document could not be opened.')))}
+                      disabled={finalSignedAccessBusy}
+                      className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c] disabled:cursor-wait disabled:opacity-60"
                     >
-                      View Final Signed PDF
-                    </a>
+                      {finalSignedAccessBusy ? 'Preparing secure download…' : `Download Signed ${isOtpPacket ? 'OTP' : 'Mandate'}`}
+                    </button>
                   ) : null}
-                  {signedPreviewUrl ? (
-                    <a
-                      href={signedPreviewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      download={normalizeText(latestVersion?.final_signed_file_name || `signed-${isOtpPacket ? 'otp' : 'mandate'}.pdf`)}
-                      className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c]"
-                    >
-                      {`Download Signed ${isOtpPacket ? 'OTP' : 'Mandate'}`}
-                    </a>
-                  ) : null}
-                  {!signedPreviewUrl && canFinalizeSignedRecord && legalPermissions.canFinalize ? (
+                  {!signedPreviewPath && canFinalizeSignedRecord && legalPermissions.canFinalize ? (
                     <Button type="button" size="sm" variant="secondary" onClick={() => runReviewAction('finalize_signed')} disabled={actionBusy || finalizeBusy}>
                       {finalizeBusy ? 'Generating…' : 'Generate Signed PDF'}
                     </Button>
@@ -6586,6 +6580,9 @@ export default function LegalDocumentWorkspace({
                       </Button>
                     ) : null}
                   </div>
+                ) : null}
+                {!finalSignedAvailable && finalSignedAccess?.message ? (
+                  <p className="mt-3 text-xs font-medium text-[#6b7c93]">{finalSignedAccess.message}</p>
                 ) : null}
                 {statusState?.completionCertificate?.ready ? (
                   <div id="legal-document-completion-certificate" className="mt-4 scroll-mt-24">
@@ -6681,8 +6678,14 @@ export default function LegalDocumentWorkspace({
                         Open Draft
                       </Button>
                     ) : null}
-                    {signedPreviewUrl && typeof onViewSigned === 'function' ? (
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void onViewSigned?.()}>
+                    {finalSignedAvailable ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={finalSignedAccessBusy}
+                        onClick={() => void handleOpenFinalSignedDocument().catch((error) => setLoadError(toFriendlyWorkspaceError(error, 'The final signed document could not be opened.')))}
+                      >
                         Signed Copy
                       </Button>
                     ) : null}
@@ -6801,11 +6804,9 @@ export default function LegalDocumentWorkspace({
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
-                    onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     canResend={canResendSignatureLinks}
                     onResend={() => runReviewAction('resend_signature')}
                     resendSummary={resendSignatureSummary}
-                    signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className={reviewRailPanelClassName}
                   />
@@ -6813,21 +6814,11 @@ export default function LegalDocumentWorkspace({
 
                 {isMandatePacket && signingMethod === 'physical' ? (
                   <PhysicalMandatePanel
-                    file={manualSignedFile}
-                    notes={manualSignedNotes}
-                    confirmed={manualSignedConfirmed}
-                    allPartiesSigned={manualSignedAllPartiesSigned}
                     uploaded={manualSignedUploaded || isFullySignedLifecycle}
                     uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
                     signedUrl={signedPreviewUrl}
-                    busy={manualUploadBusy || actionBusy || loading}
-                    canFinalize={legalPermissions.canFinalize && ['ready_to_send', 'sent', 'partially_signed'].includes(normalizedLifecycleState)}
+                    busy={actionBusy || loading}
                     onDownload={handlePhysicalDownload}
-                    onFileChange={setManualSignedFile}
-                    onNotesChange={setManualSignedNotes}
-                    onConfirmedChange={setManualSignedConfirmed}
-                    onAllPartiesSignedChange={setManualSignedAllPartiesSigned}
-                    onUpload={handleManualSignedUpload}
                   />
                 ) : null}
 
@@ -6903,7 +6894,12 @@ export default function LegalDocumentWorkspace({
                 </div>
 
                 <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 xl:justify-end">
-                  <Button type="button" size="md" onClick={handleWorkspacePrimaryAction} disabled={loading || actionBusy}>
+                  <Button
+                    type="button"
+                    size="md"
+                    onClick={handleWorkspacePrimaryAction}
+                    disabled={loading || actionBusy || (signingDeliveryDisabled && workspacePrimaryRequiresDelivery)}
+                  >
                     {actionBusy ? 'Working…' : workspacePrimaryLabel}
                   </Button>
                   <div className="relative">

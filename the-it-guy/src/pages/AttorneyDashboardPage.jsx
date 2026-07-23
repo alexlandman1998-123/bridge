@@ -9,7 +9,6 @@ import {
   FileCheck2,
   Flag,
   HeartPulse,
-  Landmark,
   PieChart,
   ShieldAlert,
   ShieldCheck,
@@ -119,19 +118,6 @@ function StatePanel({ children, tone = 'neutral' }) {
   )
 }
 
-function SectionHeading({ title, actionHref, actionLabel }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="text-base font-semibold tracking-[-0.01em] text-slate-950">{title}</h2>
-      {actionHref ? (
-        <Link to={actionHref} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">
-          {actionLabel || 'View all'} <ArrowRight size={13} />
-        </Link>
-      ) : null}
-    </div>
-  )
-}
-
 function DashboardIntro({ profile = {}, stats = {} }) {
   const firstName = getFirstName(profile)
   const attentionToday = Number(stats.delayedMatters || 0) + Number(stats.awaitingSignatures || 0)
@@ -140,10 +126,7 @@ function DashboardIntro({ profile = {}, stats = {} }) {
   return (
     <header className="grid gap-3">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-3xl">Good morning, {firstName}</h1>
-          <span className="pb-1 text-sm font-medium text-slate-500">You have {formatNumber(stats.activeMatters)} active matters</span>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-3xl">Good morning, {firstName}</h1>
         <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
           <span className="inline-flex items-center gap-2">
             <Bell size={15} className="text-slate-500" />
@@ -330,12 +313,37 @@ function getMatterPreview(matter = {}) {
   }
 }
 
+function getInitials(value = '') {
+  return String(value || 'Partner')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'P'
+}
+
+function formatProfessionalRole(role = '') {
+  const labels = {
+    firm_admin: 'Firm Administrator',
+    director_partner: 'Director / Partner',
+    attorney_conveyancer: 'Attorney / Conveyancer',
+    candidate_attorney: 'Candidate Attorney',
+    conveyancing_secretary: 'Conveyancing Secretary',
+  }
+  return labels[role] || String(role || 'Team Member').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 function ActiveMatterStrip({ lanes = {} }) {
   const rows = getActiveMatterRows(lanes)
 
   return (
     <section className="grid gap-3">
-      <SectionHeading title="Active Matters" actionHref="/attorney/matters" actionLabel="View all matters" />
+      <div className="flex justify-end">
+        <Link to="/attorney/matters" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">
+          View all matters <ArrowRight size={13} />
+        </Link>
+      </div>
       {rows.length ? (
         <div className="-mx-1 overflow-x-auto overflow-y-hidden px-1 pb-2">
           <div className="flex min-w-full gap-4">
@@ -352,13 +360,13 @@ function ActiveMatterStrip({ lanes = {} }) {
                   state={{ matterPreview: getMatterPreview(matter) }}
                   className={`${surfaceClass} group flex min-h-[278px] w-[342px] shrink-0 flex-col overflow-hidden transition duration-200 hover:-translate-y-px hover:border-[#b8d8cc] hover:shadow-[0_14px_30px_rgba(15,23,42,0.075)]`}
                 >
-                  <header className="border-b border-slate-100 bg-[#f8fbfd] px-5 py-4">
+                  <header className="border-b border-[#0d273a] bg-gradient-to-r from-[#102f46] to-[#1c5261] px-5 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <span className="min-w-0">
-                        <strong className="block truncate text-[0.95rem] font-semibold tracking-[-0.01em] text-slate-950">{matter.reference}</strong>
-                        <span className="mt-1 block truncate text-xs font-semibold text-slate-500">{roleLabel}</span>
+                        <strong className="block truncate text-[0.95rem] font-semibold tracking-[-0.01em] text-white">{matter.reference}</strong>
+                        <span className="mt-1 block truncate text-xs font-semibold text-[#c6ded7]">{roleLabel}</span>
                       </span>
-                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getMatterRiskClasses(matter.riskTone)}`}>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm ${getMatterRiskClasses(matter.riskTone)}`}>
                         {statusLabel}
                       </span>
                     </div>
@@ -380,6 +388,19 @@ function ActiveMatterStrip({ lanes = {} }) {
                         <strong className="mt-1 block truncate text-sm font-semibold text-slate-900">{matter.assignedStaff || 'Unassigned'}</strong>
                       </span>
                     </section>
+
+                    {matter.referralPartnerName ? (
+                      <section className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" aria-label={`${matter.referralLabel} ${matter.referralPartnerName}`}>
+                        {matter.referralPartnerLogoUrl ? (
+                          <img src={matter.referralPartnerLogoUrl} alt="" className="size-6 shrink-0 rounded-md border border-slate-200 bg-white object-contain" />
+                        ) : (
+                          <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[#dbece7] text-[10px] font-bold text-[#155844]">{getInitials(matter.referralPartnerName)}</span>
+                        )}
+                        <span className="min-w-0 truncate text-xs font-medium text-slate-500">
+                          {matter.referralLabel} <strong className="font-semibold text-slate-700">{matter.referralPartnerName}</strong>
+                        </span>
+                      </section>
+                    ) : null}
 
                     <section className="mt-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                       <div className="flex items-center justify-between gap-3">
@@ -412,98 +433,82 @@ function ActiveMatterStrip({ lanes = {} }) {
   )
 }
 
-function MatterTableCard({ title, count, rows = [], href, emptyLabel, icon }) {
+function AttorneyTeamOverview({ members = [], selectedMember, onSelectMember }) {
+  const visibleMembers = members.filter((member) =>
+    ['attorney_conveyancer', 'candidate_attorney', 'conveyancing_secretary', 'transfer_attorney', 'bond_attorney'].includes(member.professionalRole || member.role),
+  )
+
+  if (!visibleMembers.length) return null
+
   return (
-    <article className={`${surfaceClass} flex min-h-[304px] flex-col p-4`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e5f1ed] text-[#1c6b55]">
-            {icon ? createElement(icon, { size: 15 }) : null}
-          </span>
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-slate-950">{title}</h3>
-            <p className="text-xs font-medium text-[#1c6b55]">{formatNumber(count)} active</p>
-          </div>
-        </div>
-        <Link to={href} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">
-          View <ArrowRight size={13} />
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold tracking-[-0.01em] text-slate-950">Your firm’s team</h2>
+        <Link to="/users" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">
+          Manage team <ArrowRight size={13} />
         </Link>
       </div>
-
-      <div className="mt-4 min-w-0 flex-1 overflow-x-auto">
-        {rows.length ? (
-          <table className="w-full min-w-[520px] table-fixed text-left">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                <th className="w-[25%] py-2 pr-3">Matter Reference</th>
-                <th className="w-[31%] py-2 pr-3">Property</th>
-                <th className="w-[27%] py-2 pr-3">Buyer / Seller</th>
-                <th className="w-[17%] py-2">Instructed</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.slice(0, 5).map((matter) => (
-                <tr key={matter.id} className="text-xs text-slate-700">
-                  <td className="py-2.5 pr-3">
-                    <Link to={matter.href || href} state={{ matterPreview: getMatterPreview(matter) }} className="block truncate font-semibold text-slate-900 hover:text-[#1c6b55]">
-                      {matter.reference}
-                    </Link>
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <span className="block truncate">{matter.propertyAddress || 'Property pending'}</span>
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <span className="block truncate">{matter.buyerSellerName || matter.buyerName || 'Client pending'}</span>
-                  </td>
-                  <td className="py-2.5">
-                    <span className="block truncate font-medium text-slate-600">{formatShortDate(matter.instructedAt)}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="flex min-h-[190px] items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5">
-            <p className="text-sm font-medium text-slate-500">{emptyLabel}</p>
-          </div>
-        )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {visibleMembers.map((member) => {
+          const isSelected = selectedMember?.userId === member.userId
+          return (
+            <button
+              key={member.memberId || member.userId}
+              type="button"
+              onClick={() => onSelectMember(member)}
+              className={`min-w-0 rounded-xl border bg-white p-4 text-left shadow-[0_8px_22px_rgba(15,23,42,0.035)] transition hover:-translate-y-px hover:border-[#9bc9ba] hover:shadow-[0_12px_26px_rgba(15,23,42,0.075)] focus:outline-none focus:ring-4 focus:ring-emerald-100 ${isSelected ? 'border-[#3c8a71] ring-2 ring-emerald-100' : 'border-slate-200/80'}`}
+              aria-pressed={isSelected}
+            >
+              <span className="flex items-start gap-3">
+                <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-[#14394f] text-xs font-bold text-white">{getInitials(member.fullName)}</span>
+                <span className="min-w-0">
+                  <strong className="block truncate text-sm font-semibold text-slate-950">{member.fullName}</strong>
+                  <span className="mt-1 block truncate text-xs font-medium text-slate-500">{formatProfessionalRole(member.professionalRole || member.role)}</span>
+                </span>
+              </span>
+              <span className="mt-4 flex items-end justify-between gap-3">
+                <span><span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Active matters</span><strong className="mt-1 block text-xl font-semibold leading-none text-slate-950">{formatNumber(member.assignedMatters)}</strong></span>
+                <span className="text-xs font-semibold text-[#1c6b55]">View profile</span>
+              </span>
+            </button>
+          )
+        })}
       </div>
-
-      <Link to={href} className="mt-4 inline-flex items-center justify-center gap-2 border-t border-slate-100 pt-3 text-xs font-semibold text-[#1c6b55] hover:text-[#14513f]">
-        View all {title.toLowerCase()} <ArrowRight size={13} />
-      </Link>
-    </article>
+    </section>
   )
 }
 
-function ActiveMattersByType({ lanes = {} }) {
+function AttorneyTeamProfile({ member, onClose }) {
+  if (!member) return null
+
   return (
-    <section className="grid gap-3">
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-3">
-        <MatterTableCard
-          title="Transfer Matters"
-          count={(lanes.transfer || []).length}
-          rows={lanes.transfer || []}
-          href="/attorney/matters/transfer"
-          emptyLabel="No active transfer matters yet."
-          icon={FileCheck2}
-        />
-        <MatterTableCard
-          title="Bond Matters"
-          count={(lanes.bond || []).length}
-          rows={lanes.bond || []}
-          href="/attorney/matters/bond"
-          emptyLabel="No active bond matters yet."
-          icon={Landmark}
-        />
-        <MatterTableCard
-          title="Cancellation Matters"
-          count={(lanes.cancellation || []).length}
-          rows={lanes.cancellation || []}
-          href="/attorney/matters/cancellation"
-          emptyLabel="No active cancellation matters yet."
-          icon={ShieldAlert}
-        />
+    <section className={`${surfaceClass} grid gap-4 p-5`} aria-live="polite">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-[#14394f] text-sm font-bold text-white">{getInitials(member.fullName)}</span>
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-slate-950">{member.fullName}</h2>
+            <p className="mt-1 truncate text-sm text-slate-500">{formatProfessionalRole(member.professionalRole || member.role)} · {member.departmentName}</p>
+          </div>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800">Close</button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg bg-slate-50 px-4 py-3"><span className="block text-xs font-medium text-slate-500">Active matters</span><strong className="mt-1 block text-2xl font-semibold text-slate-950">{formatNumber(member.assignedMatters)}</strong></div>
+        <div className="rounded-lg bg-slate-50 px-4 py-3"><span className="block text-xs font-medium text-slate-500">Matters needing attention</span><strong className="mt-1 block text-2xl font-semibold text-slate-950">{formatNumber(member.delayedMatters)}</strong></div>
+      </div>
+      <div>
+        <h3 className="text-sm font-semibold text-slate-800">Current active matters</h3>
+        {member.activeMatters?.length ? (
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {member.activeMatters.map((matter) => (
+              <Link key={matter.id} to={matter.href} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition hover:border-[#9bc9ba] hover:bg-emerald-50/30">
+                <strong className="block truncate text-xs font-semibold text-slate-900">{matter.reference}</strong>
+                <span className="mt-1 block truncate text-xs text-slate-500">{matter.propertyAddress}</span>
+              </Link>
+            ))}
+          </div>
+        ) : <p className="mt-2 text-sm text-slate-500">No active matters are assigned at the moment.</p>}
       </div>
     </section>
   )
@@ -831,6 +836,7 @@ function AttorneyDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
+  const [selectedTeamMember, setSelectedTeamMember] = useState(null)
 
   const roleView = useMemo(() => {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
@@ -905,6 +911,9 @@ function AttorneyDashboardPage() {
   const lanes = dashboard.matterLanes || EMPTY_DASHBOARD.matterLanes
   const stats = dashboard.matterStats || EMPTY_DASHBOARD.matterStats
   const performance = dashboard.conveyancingPerformance || EMPTY_DASHBOARD.conveyancingPerformance
+  const canViewTeamOverview = ['firm_admin', 'director_partner'].includes(
+    dashboard.currentUserProfessionalRole || dashboard.currentUserRole,
+  )
 
   return (
     <section className={shellClass}>
@@ -913,8 +922,17 @@ function AttorneyDashboardPage() {
       <DashboardIntro profile={profile} stats={stats} />
       <KpiCards stats={stats} performance={performance} />
       <ActiveMatterStrip lanes={lanes} />
+      {canViewTeamOverview ? (
+        <>
+          <AttorneyTeamOverview
+            members={dashboard.staffWorkload || []}
+            selectedMember={selectedTeamMember}
+            onSelectMember={setSelectedTeamMember}
+          />
+          <AttorneyTeamProfile member={selectedTeamMember} onClose={() => setSelectedTeamMember(null)} />
+        </>
+      ) : null}
       <NeedsAttentionSection metrics={dashboard.attentionMetrics || []} />
-      <ActiveMattersByType lanes={lanes} />
       <AttorneyAnalyticsSection
         partnerAnalytics={dashboard.partnerAnalytics || EMPTY_DASHBOARD.partnerAnalytics}
         matterHealth={dashboard.matterHealth || EMPTY_DASHBOARD.matterHealth}

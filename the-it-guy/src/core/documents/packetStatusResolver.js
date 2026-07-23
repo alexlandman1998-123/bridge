@@ -3,6 +3,7 @@ import {
   getFinalDocumentCompletionStatus,
   getDocumentGeneratorLaunchChain,
   getDocumentPacketSigningSummary,
+  getDocumentWorkspaceStatusFast,
   listDocumentPacketVersions,
   listDocumentPackets,
 } from '../../lib/documentPacketsApi'
@@ -110,6 +111,22 @@ function isMissingSchemaOrTableError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
   return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
+}
+
+function isWorkspaceStatusFastPathUnavailable(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  const details = normalizeText(error?.details).toLowerCase()
+  return (
+    status === 404 ||
+    code === '42883' ||
+    code === 'PGRST202' ||
+    message.includes('bridge_get_document_workspace_status_p2') ||
+    details.includes('bridge_get_document_workspace_status_p2') ||
+    message.includes('could not find the function') ||
+    message.includes('schema cache')
+  )
 }
 
 function isPermissionDeniedError(error) {
@@ -413,6 +430,7 @@ export async function resolveDocumentPacketStatus({
     let finalCompletion = null
     let launchChain = null
     let packetLookupFailed = false
+    let fastPathResolved = false
 
     if (!['mandate', 'otp'].includes(normalizedPacketType)) {
       return {
@@ -426,100 +444,143 @@ export async function resolveDocumentPacketStatus({
       }
     }
 
-    try {
-      if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
+    if (
+      (normalizedPacketId && isUuidLike(normalizedPacketId)) ||
+      normalizedTransactionId ||
+      normalizedLeadId ||
+      scopedOrganisationId
+    ) {
+      try {
+        const workspaceStatus = await getDocumentWorkspaceStatusFast({
+          packetId: normalizedPacketId,
+          packetType: normalizedPacketType,
+          transactionId: normalizedTransactionId,
+          leadId: normalizedLeadId,
+          organisationId: scopedOrganisationId,
+          includeActivity: true,
+          activityLimit: 25,
+        })
+        fastPathResolved = true
+        packet = workspaceStatus.packet || null
         if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
           warnings.push('The packet in the link belongs to another lead, so it was ignored.')
           packet = null
-        }
-      }
-    } catch (error) {
-      packetLookupFailed = true
-      if (isPermissionDeniedError(error)) {
-        warnings.push('Packet lookup was denied by RLS for this user context.')
-      } else if (isMissingSchemaOrTableError(error)) {
-        warnings.push('Packet tables are unavailable in this project.')
-      } else {
-        warnings.push(normalizeText(error?.message || 'Packet lookup failed.'))
-      }
-    }
-
-    if (!packet && (!normalizedPacketId || !packetLookupFailed)) {
-      try {
-        const scoped = await listDocumentPackets({
-          organisationId: scopedOrganisationId,
-          packetType: normalizedPacketType,
-          transactionId: normalizedTransactionId || null,
-          leadId: normalizedLeadId || null,
-          limit: 20,
-        })
-        packet = selectLatestPacket(scoped, normalizedPacketId)
-      } catch (error) {
-        if (isPermissionDeniedError(error)) {
-          warnings.push('Packet listing was denied by RLS for this user context.')
-        } else if (isMissingSchemaOrTableError(error)) {
-          warnings.push('Packet listing table is unavailable in this project.')
+          versions = []
+          signingSummary = null
         } else {
-          warnings.push(normalizeText(error?.message || 'Packet list query failed.'))
+          versions = Array.isArray(workspaceStatus.versions) ? workspaceStatus.versions : []
+          signingSummary = workspaceStatus.signingSummary || null
+          if (packet && Array.isArray(workspaceStatus.events)) {
+            packet = { ...packet, events: workspaceStatus.events }
+          }
+          if (Array.isArray(workspaceStatus.warnings)) {
+            warnings.push(...workspaceStatus.warnings.map((warning) => normalizeText(warning)).filter(Boolean))
+          }
+        }
+      } catch (error) {
+        if (!isWorkspaceStatusFastPathUnavailable(error)) {
+          warnings.push(normalizeText(error?.message || 'Fast document workspace status lookup failed.'))
         }
       }
     }
 
-    if (packet?.id) {
-      if (!Array.isArray(packet.events)) {
-        try {
-          const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
-          packet = packetWithEvents || packet
-        } catch (error) {
-          if (isPermissionDeniedError(error)) warnings.push('Signing activity is restricted by RLS for this role.')
-          else if (isMissingSchemaOrTableError(error)) warnings.push('Signing activity is unavailable in this project.')
-          else warnings.push(normalizeText(error?.message || 'Unable to load signing activity.'))
-        }
-      }
+    if (!fastPathResolved) {
       try {
-        versions = await listDocumentPacketVersions(packet.id)
+        if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
+          packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
+          if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
+            warnings.push('The packet in the link belongs to another lead, so it was ignored.')
+            packet = null
+          }
+        }
       } catch (error) {
+        packetLookupFailed = true
         if (isPermissionDeniedError(error)) {
-          warnings.push('Packet versions are not accessible for this role.')
+          warnings.push('Packet lookup was denied by RLS for this user context.')
         } else if (isMissingSchemaOrTableError(error)) {
-          warnings.push('Packet version table is unavailable in this project.')
+          warnings.push('Packet tables are unavailable in this project.')
         } else {
-          warnings.push(normalizeText(error?.message || 'Unable to load packet versions.'))
+          warnings.push(normalizeText(error?.message || 'Packet lookup failed.'))
         }
       }
 
-      if (shouldLoadSigningSummary(packet, versions)) {
+      if (!packet && (!normalizedPacketId || !packetLookupFailed)) {
         try {
-          signingSummary = await getDocumentPacketSigningSummary({
-            packetId: packet.id,
-            packetVersionId: selectSigningSummaryVersionId(packet, versions),
+          const scoped = await listDocumentPackets({
             organisationId: scopedOrganisationId,
+            packetType: normalizedPacketType,
+            transactionId: normalizedTransactionId || null,
+            leadId: normalizedLeadId || null,
+            limit: 20,
           })
+          packet = selectLatestPacket(scoped, normalizedPacketId)
         } catch (error) {
           if (isPermissionDeniedError(error)) {
-            warnings.push('Signer summary is restricted by RLS for this role.')
+            warnings.push('Packet listing was denied by RLS for this user context.')
           } else if (isMissingSchemaOrTableError(error)) {
-            warnings.push('Signing tables are unavailable in this project.')
+            warnings.push('Packet listing table is unavailable in this project.')
           } else {
-            warnings.push(normalizeText(error?.message || 'Unable to resolve signer summary.'))
+            warnings.push(normalizeText(error?.message || 'Packet list query failed.'))
           }
         }
       }
 
-      const remindersByRole = packet?.source_context_json?.signingRemindersByRole
-      if (signingSummary?.signers?.length && remindersByRole && typeof remindersByRole === 'object') {
-        signingSummary = {
-          ...signingSummary,
-          signers: signingSummary.signers.map((signer) => {
-            const reminder = remindersByRole[normalizeKey(signer?.signer_role)]
-            return reminder && typeof reminder === 'object'
-              ? { ...signer, reminder_sent_at: normalizeText(reminder.sentAt), reminder_count: Number(reminder.count || 0) }
-              : signer
-          }),
+      if (packet?.id) {
+        if (!Array.isArray(packet.events)) {
+          try {
+            const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
+            packet = packetWithEvents || packet
+          } catch (error) {
+            if (isPermissionDeniedError(error)) warnings.push('Signing activity is restricted by RLS for this role.')
+            else if (isMissingSchemaOrTableError(error)) warnings.push('Signing activity is unavailable in this project.')
+            else warnings.push(normalizeText(error?.message || 'Unable to load signing activity.'))
+          }
+        }
+        try {
+          versions = await listDocumentPacketVersions(packet.id)
+        } catch (error) {
+          if (isPermissionDeniedError(error)) {
+            warnings.push('Packet versions are not accessible for this role.')
+          } else if (isMissingSchemaOrTableError(error)) {
+            warnings.push('Packet version table is unavailable in this project.')
+          } else {
+            warnings.push(normalizeText(error?.message || 'Unable to load packet versions.'))
+          }
+        }
+
+        if (shouldLoadSigningSummary(packet, versions)) {
+          try {
+            signingSummary = await getDocumentPacketSigningSummary({
+              packetId: packet.id,
+              packetVersionId: selectSigningSummaryVersionId(packet, versions),
+              organisationId: scopedOrganisationId,
+            })
+          } catch (error) {
+            if (isPermissionDeniedError(error)) {
+              warnings.push('Signer summary is restricted by RLS for this role.')
+            } else if (isMissingSchemaOrTableError(error)) {
+              warnings.push('Signing tables are unavailable in this project.')
+            } else {
+              warnings.push(normalizeText(error?.message || 'Unable to resolve signer summary.'))
+            }
+          }
+        }
+
+        const finalVersion = versions.find((version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url))
+        if (finalVersion?.id && isUuidLike(packet.id) && isUuidLike(finalVersion.id)) {
+          try {
+            finalCompletion = await getFinalDocumentCompletionStatus({ packetId: packet.id, versionId: finalVersion.id })
+            launchChain = await getDocumentGeneratorLaunchChain({ packetId: packet.id, versionId: finalVersion.id })
+          } catch (error) {
+            if (isPermissionDeniedError(error)) warnings.push('Final publication status is restricted for this role.')
+            else if (isMissingSchemaOrTableError(error)) warnings.push('Final publication status is unavailable in this project.')
+            else warnings.push(normalizeText(error?.message || 'Unable to resolve final publication status.'))
+          }
         }
       }
+    }
 
+    if (fastPathResolved && packet?.id) {
       const finalVersion = versions.find((version) => normalizeText(version?.final_signed_file_path || version?.final_signed_file_url))
       if (finalVersion?.id && isUuidLike(packet.id) && isUuidLike(finalVersion.id)) {
         try {
@@ -530,6 +591,19 @@ export async function resolveDocumentPacketStatus({
           else if (isMissingSchemaOrTableError(error)) warnings.push('Final publication status is unavailable in this project.')
           else warnings.push(normalizeText(error?.message || 'Unable to resolve final publication status.'))
         }
+      }
+    }
+
+    const remindersByRole = packet?.source_context_json?.signingRemindersByRole
+    if (signingSummary?.signers?.length && remindersByRole && typeof remindersByRole === 'object') {
+      signingSummary = {
+        ...signingSummary,
+        signers: signingSummary.signers.map((signer) => {
+          const reminder = remindersByRole[normalizeKey(signer?.signer_role)]
+          return reminder && typeof reminder === 'object'
+            ? { ...signer, reminder_sent_at: normalizeText(reminder.sentAt), reminder_count: Number(reminder.count || 0) }
+            : signer
+        }),
       }
     }
 

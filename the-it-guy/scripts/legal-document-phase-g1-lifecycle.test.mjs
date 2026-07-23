@@ -22,7 +22,7 @@ function target(type, seed) {
     events: [
       event('version_generated', times[0], { generationAttemptId: attempt }), event('draft_approved', times[1]), event('document_locked', times[2]),
       event('signer_links_generated', times[3]), event('signer_link_viewed', times[4]), event('all_signers_completed', times[5]),
-      event(type === 'otp' ? 'final_signed_otp_generated' : 'final_signed_document_generated', times[6], { finalArtifactSha256: finalSha }),
+      event('final_signed_document_generated', times[6], { finalArtifactSha256: finalSha }),
       event('final_signed_delivery_completed', times[8], { artifactSha256: finalSha }),
     ],
   }

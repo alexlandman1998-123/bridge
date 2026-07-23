@@ -42,7 +42,7 @@ const productionTarget = run(
   ['--apply-sql', '--version', '202607170026', '--confirm', 'APPLY_TO_STAGING_ONLY'],
   {
     SUPABASE_STAGING_PROJECT_REF: 'isdowlnollckzvltkasn',
-    SUPABASE_STAGING_DB_URL: 'postgresql://postgres.isdowlnollckzvltkasn@example.invalid/postgres',
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.isdowlnollckzvltkasn.supabase.co:5432/postgres?sslmode=require',
     SUPABASE_STAGING_RECOVERY_CONFIRMED: 'I_HAVE_A_RECOVERABLE_STAGING_BACKUP',
   },
 )
@@ -51,9 +51,84 @@ assert.match(productionTarget.stderr, /Refusing to target the production/)
 
 const fakeStagingEnv = {
   SUPABASE_STAGING_PROJECT_REF: 'stagingtestref',
-  SUPABASE_STAGING_DB_URL: 'postgresql://postgres.stagingtestref@example.invalid/postgres',
+  SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.stagingtestref.supabase.co:5432/postgres?sslmode=require',
   SUPABASE_STAGING_RECOVERY_CONFIRMED: 'I_HAVE_A_RECOVERABLE_STAGING_BACKUP',
 }
+
+const phase1ReceiptRequired = run(
+  ['--apply-sql', '--version', '202607220002', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  fakeStagingEnv,
+)
+assert.equal(phase1ReceiptRequired.status, 1)
+assert.match(phase1ReceiptRequired.stderr, /Phase 1 legal migrations require both --phase1-receipt and --phase1-receipt-digest/i)
+
+const partialPhase1ReceiptBinding = run(
+  ['--apply-sql', '--version', '202607180027', '--phase1-receipt', 'the-it-guy/config/legal-document-rollout-phase1-staging.json', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  fakeStagingEnv,
+)
+assert.equal(partialPhase1ReceiptBinding.status, 1)
+assert.match(partialPhase1ReceiptBinding.stderr, /require both --phase1-receipt and --phase1-receipt-digest/i)
+
+const malformedProjectRef = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_PROJECT_REF: 'staging.test',
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.staging.test.supabase.co:5432/postgres?sslmode=require',
+  },
+)
+assert.equal(malformedProjectRef.status, 1)
+assert.match(malformedProjectRef.stderr, /lowercase Supabase project reference/i)
+
+const spoofedProductionHost = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_DB_URL: 'postgresql://stagingtestref@db.isdowlnollckzvltkasn.supabase.co:5432/postgres?application_name=stagingtestref&sslmode=require',
+  },
+)
+assert.equal(spoofedProductionHost.status, 1)
+assert.match(spoofedProductionHost.stderr, /host must be exactly db\.stagingtestref\.supabase\.co/i)
+
+const poolerTarget = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres.stagingtestref@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require',
+  },
+)
+assert.equal(poolerTarget.status, 1)
+assert.match(poolerTarget.stderr, /host must be exactly db\.stagingtestref\.supabase\.co/i)
+
+const insecureTransport = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.stagingtestref.supabase.co:5432/postgres?sslmode=disable',
+  },
+)
+assert.equal(insecureTransport.status, 1)
+assert.match(insecureTransport.stderr, /sslmode=require/i)
+
+const queryOverride = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.stagingtestref.supabase.co:5432/postgres?sslmode=require&host=db.isdowlnollckzvltkasn.supabase.co',
+  },
+)
+assert.equal(queryOverride.status, 1)
+assert.match(queryOverride.stderr, /only one sslmode query parameter/i)
+
+const duplicateSslMode = run(
+  ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],
+  {
+    ...fakeStagingEnv,
+    SUPABASE_STAGING_DB_URL: 'postgresql://postgres@db.stagingtestref.supabase.co:5432/postgres?sslmode=require&sslmode=disable',
+  },
+)
+assert.equal(duplicateSslMode.status, 1)
+assert.match(duplicateSslMode.stderr, /only one sslmode query parameter/i)
 
 const correctiveReplay = run(
   ['--apply-sql', '--version', '202607180027', '--confirm', 'APPLY_TO_STAGING_ONLY'],

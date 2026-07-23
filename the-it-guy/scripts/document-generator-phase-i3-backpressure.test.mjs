@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const migration = fs.readFileSync('../supabase/migrations/202607180032_document_generator_backpressure_i3.sql', 'utf8')
+const migration = [
+  '../supabase/migrations/202607170030_legal_generation_backpressure_i3.sql',
+  '../supabase/migrations/202607180052_document_generator_backpressure_i3.sql',
+].map((file) => fs.readFileSync(file, 'utf8')).join('\n')
 for (const token of ['legal_document_generation_leases_expiry_i3_idx', 'bridge_claim_generation_lease_i3', 'for update', "('sent','partially_signed','completed','voided','archived')", 'I3_PACKET_GENERATION_LOCKED', 'on conflict (packet_id)', 'expires_at<=v_now', 'bridge_probe_document_generator_backpressure_i3', 'pg_try_advisory_xact_lock', 'document_packet_versions_complete_generation_lease_i3', "'i3-generator-v1'", "'mutatedData',false"]) assert.match(migration, new RegExp(token.replace(/[()]/g, '\\$&'), 'i'))
 assert.match(migration, /revoke all[\s\S]+public,anon,authenticated/i)
 

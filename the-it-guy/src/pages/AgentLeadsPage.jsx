@@ -34,6 +34,7 @@ import {
   Send,
   Shield,
   SlidersHorizontal,
+  Star,
   Tag,
   Target,
   Trash2,
@@ -85,7 +86,7 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
-import { listOrganisationUsers } from '../lib/settingsApi'
+import { listOrganisationPreferredPartners, listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   buildAgentLeadRows,
@@ -173,6 +174,7 @@ import {
   buildDefaultLeadCommunicationPreferences,
   normalizeLeadCommunicationPreferences,
 } from '../services/communicationDeliveryService'
+import { prepareBuyerOnboardingNotification } from '../services/buyerOnboardingNotificationService'
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
@@ -13078,7 +13080,15 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
           activityNote: [
             `Seller accepted offer ${latestOfferId} manually.`,
             transactionId ? `Transaction: ${transactionId}.` : '',
-            onboarding.sent ? 'Buyer onboarding email sent.' : onboarding.attempted ? 'Buyer onboarding email needs attention.' : '',
+            onboarding.sent
+              ? 'Buyer onboarding email sent.'
+              : onboarding.suppressed
+                ? 'Buyer onboarding external delivery was suppressed and recorded in the outbox.'
+                : onboarding.handoffRequired
+                  ? 'Buyer onboarding handoff was prepared for the agent.'
+                  : onboarding.attempted
+                    ? 'Buyer onboarding email needs attention.'
+                    : '',
             result?.legalHandoff?.prepared
               ? `Legal lanes ready: ${(result.legalHandoff.requiredLaneKeys || []).join(', ')}.`
               : 'Legal handoff needs attention.',
@@ -13610,19 +13620,25 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
     const scopedTransactionId = normalizeText(transactionId)
     if (!scopedTransactionId) return { attempted: false, sent: false, reason: 'missing_transaction' }
     try {
-      const onboardingEmail = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'client_onboarding',
-          transactionId: scopedTransactionId,
-          source: 'buyer_lead_offer_conversion',
-        },
+      return await prepareBuyerOnboardingNotification({
+        organisationId,
+        transactionId: scopedTransactionId,
+        leadId: lead?.leadId,
+        assignedUserId: actor?.id,
+        recipientName: contact.name || lead?.name,
+        email: contact.email || lead?.email,
+        phone: contact.phone || lead?.phone,
+        clientIntakePreference:
+          acceptedOffer?.conditions?.clientIntakePreference ||
+          acceptedOffer?.conditions?.deliveryMode ||
+          acceptedOffer?.conditionsJson?.clientIntakePreference ||
+          acceptedOffer?.conditionsJson?.deliveryMode ||
+          lead?.clientIntakePreference,
+        source: 'buyer_lead_offer_conversion',
+        metadata: { acceptedOfferId, testMode: acceptedOffer?.testMode === true },
       })
-      if (onboardingEmail?.error || onboardingEmail?.data?.error) {
-        throw onboardingEmail.error || new Error(onboardingEmail.data.error)
-      }
-      return { attempted: true, sent: true }
-    } catch (sendError) {
-      return { attempted: true, sent: false, error: sendError }
+    } catch (error) {
+      return { attempted: true, sent: false, suppressed: false, handoffRequired: false, error }
     }
   }
 
@@ -13700,6 +13716,10 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
         transactionId
           ? onboarding.sent
             ? `${reused ? 'Existing transaction reused' : 'Transaction created'} and buyer onboarding was sent.`
+            : onboarding.suppressed
+              ? `${reused ? 'Existing transaction reused' : 'Transaction created'}. Controlled test onboarding was suppressed and recorded in the notification outbox.`
+              : onboarding.handoffRequired
+                ? `${reused ? 'Existing transaction reused' : 'Transaction created'}. Buyer onboarding handoff was prepared for the agent.`
             : onboarding.attempted
               ? `${reused ? 'Existing transaction reused' : 'Transaction created'}, but buyer onboarding email could not be sent.`
               : `${reused ? 'Existing transaction reused' : 'Transaction created'}.`
@@ -15385,6 +15405,96 @@ function SellerActionsPanel({
         }) : <EmptyState title="No seller actions" copy="Seller actions will appear when the journey service can derive the next step." />}
       </div>
     </section>
+  )
+}
+
+function getPreferredAttorneyInitials(attorney = {}) {
+  const words = normalizeText(attorney.companyName || attorney.contactPerson).split(/\s+/).filter(Boolean)
+  return words.length ? words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() : 'TA'
+}
+
+function PreferredAttorneySelectionModal({
+  open = false,
+  attorneys = [],
+  loading = false,
+  error = '',
+  selectedId = '',
+  sending = false,
+  onSelect,
+  onClose,
+  onConfirm,
+}) {
+  const selectedAttorney = attorneys.find((attorney) => String(attorney.id) === String(selectedId)) || null
+  return (
+    <Modal
+      open={open}
+      onClose={sending ? undefined : onClose}
+      title="Choose the seller’s transferring attorney"
+      subtitle="Select the attorney before creating the onboarding link. The seller will see and accept this exact nomination during onboarding."
+      className="max-w-2xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <button type="button" onClick={onClose} disabled={sending} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancel</button>
+          <button
+            type="button"
+            onClick={() => onConfirm?.(selectedAttorney)}
+            disabled={loading || sending || !selectedAttorney}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <Send size={15} />
+            {sending ? 'Sending onboarding...' : 'Confirm attorney & send'}
+          </button>
+        </div>
+      )}
+    >
+      {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+      {loading ? (
+        <div className="grid gap-3">
+          {[0, 1].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-slate-100" />)}
+        </div>
+      ) : attorneys.length ? (
+        <div className="grid max-h-[430px] gap-3 overflow-y-auto pr-1" role="radiogroup" aria-label="Preferred transferring attorneys">
+          {attorneys.map((attorney) => {
+            const selected = String(attorney.id) === String(selectedId)
+            return (
+              <button
+                key={attorney.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => onSelect?.(attorney.id)}
+                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-400 bg-blue-50 shadow-[0_8px_24px_rgba(37,99,235,0.08)]' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'}`}
+              >
+                <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-blue-100 bg-gradient-to-br from-blue-50 to-slate-100 text-xs font-bold tracking-wide text-blue-800">
+                  {getPreferredAttorneyInitials(attorney)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-950">{attorney.companyName}</span>
+                    {attorney.isPreferredDefault ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-800">
+                        <Star size={10} fill="currentColor" /> Agency preferred
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
+                    <Building2 size={12} className="shrink-0" />
+                    <span className="truncate">{attorney.contactPerson || attorney.email || attorney.province || 'Transfer attorney'}</span>
+                  </span>
+                </span>
+                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>
+                  <CheckCircle2 size={14} />
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          No active transfer attorneys are configured. Add one under Organisation → Partners before sending seller onboarding.
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -20834,6 +20944,11 @@ function AgentLeadWorkspace() {
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
+  const [sellerAttorneyPickerOpen, setSellerAttorneyPickerOpen] = useState(false)
+  const [sellerPreferredAttorneys, setSellerPreferredAttorneys] = useState([])
+  const [sellerPreferredAttorneysLoading, setSellerPreferredAttorneysLoading] = useState(false)
+  const [sellerPreferredAttorneysError, setSellerPreferredAttorneysError] = useState('')
+  const [selectedSellerAttorneyId, setSelectedSellerAttorneyId] = useState('')
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
@@ -21037,7 +21152,47 @@ function AgentLeadWorkspace() {
     }
   }, [activeTab, availableTabs, isSellerLeadWorkspace, row])
 
-  const sendSellerOnboardingForLead = useCallback(async () => {
+  const requestSellerOnboardingSend = useCallback(async () => {
+    if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding) return
+    if (!organisationId) {
+      setSellerActionError('Select an agency workspace before sending seller onboarding.')
+      return
+    }
+    const sellerEmail = normalizeText(row.email || row.contact?.email)
+    if (!sellerEmail || !sellerEmail.includes('@')) {
+      setSellerActionError('Seller email is required to send onboarding.')
+      return
+    }
+
+    setSellerActionError('')
+    setSellerPreferredAttorneysError('')
+    setSellerAttorneyPickerOpen(true)
+    setSellerPreferredAttorneysLoading(true)
+    try {
+      const partners = await listOrganisationPreferredPartners()
+      const attorneys = (partners || []).filter((partner) => partner?.isActive && partner?.partnerType === 'transfer_attorney')
+      setSellerPreferredAttorneys(attorneys)
+      const existingAttorneyId = normalizeText(
+        linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId,
+      )
+      const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId)
+        || attorneys.find((attorney) => attorney.isPreferredDefault)
+        || attorneys[0]
+        || null
+      setSelectedSellerAttorneyId(initialAttorney?.id || '')
+      if (!attorneys.length) {
+        setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation → Partners before sending onboarding.')
+      }
+    } catch (loadError) {
+      setSellerPreferredAttorneys([])
+      setSelectedSellerAttorneyId('')
+      setSellerPreferredAttorneysError(loadError?.message || 'Preferred transfer attorneys could not be loaded.')
+    } finally {
+      setSellerPreferredAttorneysLoading(false)
+    }
+  }, [isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerOnboarding])
+
+  const sendSellerOnboardingForLead = useCallback(async (preferredAttorney = null) => {
     if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding || sellerOnboardingInFlightRef.current) return
     if (!organisationId) {
       setSellerActionError('Select an agency workspace before sending seller onboarding.')
@@ -21046,6 +21201,12 @@ function AgentLeadWorkspace() {
     const sellerEmail = normalizeText(row.email || row.contact?.email)
     if (!sellerEmail || !sellerEmail.includes('@')) {
       setSellerActionError('Seller email is required to send onboarding.')
+      return
+    }
+    const preferredAttorneyId = normalizeText(preferredAttorney?.id || preferredAttorney?.preferredPartnerId)
+    if (!preferredAttorneyId) {
+      setSellerPreferredAttorneysError('Choose the seller’s transferring attorney before sending onboarding.')
+      setSellerAttorneyPickerOpen(true)
       return
     }
 
@@ -21103,6 +21264,7 @@ function AgentLeadWorkspace() {
         includePortalBranding: false,
         deferStatusTransition: true,
         performedBy: normalizeText(actor.userId || actor.id),
+        transferAttorneyPreferredPartnerId: preferredAttorneyId,
       })
       console.info('[Seller onboarding] link ready', {
         ...debugContext,
@@ -21188,6 +21350,7 @@ function AgentLeadWorkspace() {
       setSellerActionMessage(statusSyncWarning
         ? 'Seller onboarding email sent. Status sync is catching up.'
         : 'Seller onboarding email sent.')
+      setSellerAttorneyPickerOpen(false)
       if (statusSyncWarning) {
         setSellerActionError(`Email sent, but status sync could not be confirmed: ${statusSyncWarning}`)
       }
@@ -21196,7 +21359,7 @@ function AgentLeadWorkspace() {
           await createAgencyCrmLeadActivity(organisationId, row.leadId, {
             agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
             activityType: 'Seller Onboarding Sent',
-            activityNote: `Seller onboarding was sent to ${row.name || 'Seller'}.`,
+            activityNote: `Seller onboarding was sent to ${row.name || 'Seller'} with ${preferredAttorney.companyName || 'the selected firm'} nominated as transferring attorney.`,
             outcome: 'Onboarding link sent',
             activityDate: new Date().toISOString(),
           }, { actor })
@@ -21218,6 +21381,10 @@ function AgentLeadWorkspace() {
       setSendingSellerOnboarding(false)
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
+
+  const confirmSellerOnboardingSend = useCallback((preferredAttorney) => {
+    void sendSellerOnboardingForLead(preferredAttorney)
+  }, [sendSellerOnboardingForLead])
 
   const completeSellerOnboardingAsAgent = useCallback(async (formData = {}, meta = {}) => {
     if (!row || !isSellerLeadWorkspace) return
@@ -21596,7 +21763,7 @@ function AgentLeadWorkspace() {
     setSellerActionMessage('')
 
     if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
-      void sendSellerOnboardingForLead()
+      void requestSellerOnboardingSend()
       return
     }
 
@@ -21609,7 +21776,7 @@ function AgentLeadWorkspace() {
       legalScenario: selection?.legalScenario,
     })
     if (path) navigate(path)
-  }, [linkedSellerListing, navigate, row, sendSellerOnboardingForLead])
+  }, [linkedSellerListing, navigate, requestSellerOnboardingSend, row])
 
   const openSellerListing = useCallback(() => {
     const listingId = getSellerListingId(row, linkedSellerListing)
@@ -21855,7 +22022,7 @@ function AgentLeadWorkspace() {
               onSaved={loadWorkspace}
               onSaveCommission={saveSellerCommissionForLead}
               onSavePropertyDetails={saveSellerPropertyForLead}
-              onSendSellerOnboarding={sendSellerOnboardingForLead}
+              onSendSellerOnboarding={requestSellerOnboardingSend}
               onAgentCompleteSellerOnboarding={completeSellerOnboardingAsAgent}
               onResendSellerPortalLink={resendSellerPortalLink}
               onOpenSellerPortalLink={openSellerPortalLink}
@@ -21993,20 +22160,36 @@ function AgentLeadWorkspace() {
         </>
       ) : null}
       {row && isSellerLeadWorkspace ? (
-        <StartDocumentModal
-          open={mandateStartOpen}
-          onClose={() => setMandateStartOpen(false)}
-          entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}
-          packetType={DOCUMENT_START_PACKET_TYPES.mandate}
-          documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
-          hasExistingContext={Boolean(row)}
-          hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
-          hasParentDocument
-          contextSummary={sellerMandateStartSummary}
-          initialLegalScenario={sellerMandateLegalScenario}
-          busy={sendingSellerOnboarding}
-          onContinue={handleStartMandateDocument}
-        />
+        <>
+          <StartDocumentModal
+            open={mandateStartOpen}
+            onClose={() => setMandateStartOpen(false)}
+            entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}
+            packetType={DOCUMENT_START_PACKET_TYPES.mandate}
+            documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
+            hasExistingContext={Boolean(row)}
+            hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}
+            hasParentDocument
+            contextSummary={sellerMandateStartSummary}
+            initialLegalScenario={sellerMandateLegalScenario}
+            busy={sendingSellerOnboarding}
+            onContinue={handleStartMandateDocument}
+          />
+          <PreferredAttorneySelectionModal
+            open={sellerAttorneyPickerOpen}
+            attorneys={sellerPreferredAttorneys}
+            loading={sellerPreferredAttorneysLoading}
+            error={sellerPreferredAttorneysError}
+            selectedId={selectedSellerAttorneyId}
+            sending={sendingSellerOnboarding}
+            onSelect={(attorneyId) => {
+              setSelectedSellerAttorneyId(attorneyId)
+              setSellerPreferredAttorneysError('')
+            }}
+            onClose={() => setSellerAttorneyPickerOpen(false)}
+            onConfirm={confirmSellerOnboardingSend}
+          />
+        </>
       ) : null}
       {row && !isSellerLeadWorkspace ? (
         <>

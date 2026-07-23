@@ -23,7 +23,8 @@ import {
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
-import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { createScopedSupabaseClient, DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { appendDocumentPacketEvent } from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
@@ -102,6 +103,25 @@ function requireClient() {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
   }
   return supabase
+}
+
+function requireSellerPortalStorageClient(token, accessToken = '') {
+  const normalizedToken = normalizeText(token)
+  const normalizedAccessToken = normalizeText(accessToken)
+  if (!normalizedToken) {
+    throw new Error('Seller client portal token is required.')
+  }
+
+  const client = createScopedSupabaseClient({
+    'x-bridge-seller-portal-token': normalizedToken,
+    ...(normalizedAccessToken ? { 'x-bridge-seller-portal-access-token': normalizedAccessToken } : {}),
+  })
+
+  if (!client) {
+    throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
+  }
+
+  return client
 }
 
 function normalizeText(value) {
@@ -1333,6 +1353,15 @@ function normalizeDocumentRows(rows = []) {
       storage_path: normalizeText(row?.storage_path || ''),
       file_url: normalizeText(row?.file_url || ''),
       fileUrl: normalizeText(row?.file_url || ''),
+      // Server-side Phase 4 payloads can represent the canonical final
+      // mandate as an identity-only descriptor. Keep that identity through
+      // the legacy listing mapper; it must never be converted back into a
+      // storage-path document.
+      canonicalFinalArtifact: row?.canonicalFinalArtifact === true,
+      packet_id: normalizeText(row?.packet_id || row?.packetId || ''),
+      packet_version_id: normalizeText(row?.packet_version_id || row?.packetVersionId || ''),
+      finalDocumentId: normalizeText(row?.finalDocumentId || row?.final_document_id || ''),
+      final_document_id: normalizeText(row?.final_document_id || row?.finalDocumentId || ''),
       uploaded_by: normalizeText(row?.uploaded_by || ''),
       status: normalizeText(row?.status || 'uploaded'),
       visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
@@ -1431,6 +1460,8 @@ function extractQuickAddMandateDates(value = '') {
 }
 
 function isMandateDocumentRow(row = {}) {
+  const documentType = normalizeKey(row?.document_type || row?.documentType)
+  if (documentType === 'manual_mandate_evidence') return false
   const searchable = [
     row?.document_type,
     row?.category,
@@ -1706,19 +1737,30 @@ async function resolvePrivateListingDocumentDownload(client, listingId, filePath
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
-  const allowedPrefixes = getPrivateListingDocumentDownloadAllowedPrefixes(normalizedListingId)
-  const isListingStoragePath = allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))
   const listing = await getPrivateListingById(normalizedListingId, {
-    includeRequirementsAndDocuments: !isListingStoragePath,
+    // Check the canonical final path before applying the broad listing-prefix
+    // allowance: a final artifact may itself live under a listing prefix.
+    includeRequirementsAndDocuments: true,
   })
   if (!listing?.id) {
     return { linked: false, bucket: '' }
   }
+
+  const mandateArtifactMatch = getPrivateListingMandateArtifactMatch(listing, normalizedFilePath)
+  if (mandateArtifactMatch) {
+    return {
+      linked: true,
+      bucket: normalizeText(mandateArtifactMatch.bucket),
+      canonicalFinalArtifact: true,
+    }
+  }
+
+  const allowedPrefixes = getPrivateListingDocumentDownloadAllowedPrefixes(normalizedListingId)
+  const isListingStoragePath = allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))
   if (isListingStoragePath) {
     return { linked: true, bucket: '' }
   }
 
-  const mandateArtifactMatch = getPrivateListingMandateArtifactMatch(listing, normalizedFilePath)
   const documents = Array.isArray(listing.documents) ? listing.documents : []
   const documentMatch = documents.find((document) => privateListingDocumentPathMatches(document, normalizedFilePath))
   if (documentMatch) {
@@ -1728,19 +1770,22 @@ async function resolvePrivateListingDocumentDownload(client, listingId, filePath
     }
   }
 
-  if (mandateArtifactMatch) {
-    return {
-      linked: true,
-      bucket: normalizeText(mandateArtifactMatch.bucket),
-    }
-  }
-
   return { linked: false, bucket: '' }
 }
 
 function mandatePacketHasFinalSignedArtifact(mandatePacket = null) {
   const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
-  return Boolean(artifact.filePath || artifact.fileUrl)
+  const version = mandatePacket?.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  return Boolean(
+    mandatePacket?.finalSignedRecorded === true ||
+      mandatePacket?.final_signed_recorded === true ||
+      mandatePacket?.finalDocumentId ||
+      mandatePacket?.finalSignedDocumentId ||
+      mandatePacket?.final_signed_document_id ||
+      version?.final_signed_document_id ||
+      artifact.filePath ||
+      artifact.fileUrl,
+  )
 }
 
 function getPrivateListingDocumentFileReference(document = {}) {
@@ -1752,32 +1797,6 @@ function getPrivateListingDocumentFileReference(document = {}) {
       document?.storage_path ||
       document?.file_path ||
       document?.filePath,
-  )
-}
-
-function documentLooksLikeSignedMandateForListing(document = {}) {
-  const searchable = [
-    document?.document_type,
-    document?.documentType,
-    document?.category,
-    document?.document_category,
-    document?.documentName,
-    document?.document_name,
-    document?.fileName,
-    document?.file_name,
-    document?.name,
-    document?.requirement_key,
-    document?.requirementKey,
-  ].map((value) => normalizeCompatibilityKey(value)).join(' ')
-
-  return Boolean(
-    getPrivateListingDocumentFileReference(document) &&
-      (
-        searchable.includes('signed_mandate') ||
-        searchable.includes('mandate_signature') ||
-        searchable.includes('final_signed_packet') ||
-        (searchable.includes('mandate') && searchable.includes('signed'))
-      ),
   )
 }
 
@@ -1794,13 +1813,12 @@ function buildSignedMandateDocumentFromPacketForListing(row = {}, mandatePacket 
     category: 'Mandate',
     document_name: artifact.fileName || 'Signed Mandate.pdf',
     file_name: artifact.fileName || 'Signed Mandate.pdf',
-    storage_path: artifact.filePath || '',
-    file_path: artifact.filePath || '',
-    file_url: artifact.fileUrl || '',
-    fileUrl: artifact.fileUrl || '',
-    url: artifact.fileUrl || '',
-    signedUrl: artifact.fileUrl || '',
-    status: 'signed',
+    // This is a packet/version descriptor, never a downloadable file record.
+    // The Phase 4 resolver alone may mint a final-artifact URL.
+    canonicalFinalArtifact: true,
+    packet_id: packetId,
+    packet_version_id: artifact.versionId || null,
+    status: 'finalisation_pending',
     visibility: 'seller_visible',
     requirement_key: 'signed_mandate',
     canonical_requirement_instance_id: normalizeText(mandatePacket.canonical_requirement_instance_id || mandatePacket.version?.canonical_requirement_instance_id),
@@ -1811,22 +1829,81 @@ function buildSignedMandateDocumentFromPacketForListing(row = {}, mandatePacket 
       source: 'signed_mandate_packet',
       packetId,
       packetVersionId: artifact.versionId || null,
-      finalSignedFileBucket: artifact.fileBucket || null,
       synthetic: true,
     },
   }
 }
 
-function mergeSignedMandatePacketDocument(row = {}, documents = [], mandatePacket = null) {
-  const rows = Array.isArray(documents) ? documents : []
-  const syntheticDocument = buildSignedMandateDocumentFromPacketForListing(row, mandatePacket)
-  if (!syntheticDocument) return rows
-  const existingSignedMandate = rows.find((document) => documentLooksLikeSignedMandateForListing(document))
-  return existingSignedMandate ? rows : [syntheticDocument, ...rows]
+function isCanonicalFinalSignedMandateDocument(document = {}, mandatePacket = null) {
+  if (document?.canonicalFinalArtifact === true) return true
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const fileReference = getPrivateListingDocumentFileReference(document)
+  return Boolean(
+    (artifact.filePath && privateListingDocumentPathMatches(document, artifact.filePath)) ||
+      (artifact.fileUrl && fileReference && artifact.fileUrl === fileReference),
+  )
 }
 
-function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null, mandatePacketsByListingId = null) {
+function mergeSignedMandatePacketDocument(row = {}, documents = [], mandatePacket = null) {
+  const rows = Array.isArray(documents) ? documents : []
+  // Legacy projections can contain a raw duplicate of the same canonical
+  // final artifact. Exclude it and replace it with the safe descriptor.
+  const nonCanonicalRows = rows.filter(
+    (document) => !isCanonicalFinalSignedMandateDocument(document, mandatePacket),
+  )
+  const syntheticDocument = buildSignedMandateDocumentFromPacketForListing(row, mandatePacket)
+  if (!syntheticDocument) return nonCanonicalRows
+  return [syntheticDocument, ...nonCanonicalRows]
+}
+
+function getPrivateListingCommissionTerms(formData = {}) {
+  const onboardingFormData = formData && typeof formData === 'object' ? formData : {}
+  return {
+    commission_type: pickFirstText(onboardingFormData.commissionType, onboardingFormData.commissionStructure),
+    commission_structure: pickFirstText(onboardingFormData.commissionStructure, onboardingFormData.commissionType),
+    commission_percentage: pickFirstText(
+      onboardingFormData.commissionPercentage,
+      onboardingFormData.commissionPercent,
+      onboardingFormData.commission_percentage,
+      onboardingFormData.commission_percent,
+      onboardingFormData.mandateCommissionPercentage,
+      onboardingFormData.mandateCommissionPercent,
+    ),
+    commission_amount: pickFirstText(
+      onboardingFormData.commissionAmount,
+      onboardingFormData.commission_amount,
+      onboardingFormData.mandateCommissionAmount,
+    ),
+    vat_handling: pickFirstText(onboardingFormData.vatHandling),
+    payment_responsibility: pickFirstText(onboardingFormData.paymentResponsibility),
+    mandate_terms: pickFirstText(onboardingFormData.mandateTerms, onboardingFormData.mandateCommissionTerms),
+    commission_notes: pickFirstText(onboardingFormData.commissionNotes),
+    commission_split: pickFirstText(
+      onboardingFormData.agencyCommissionStructureName,
+      onboardingFormData.agency_commission_structure_name,
+      onboardingFormData.commissionStructureName,
+    ),
+    commission_split_id: pickFirstText(
+      onboardingFormData.agencyCommissionStructureId,
+      onboardingFormData.agency_commission_structure_id,
+      onboardingFormData.commissionStructureId,
+    ),
+    updated_at: pickFirstText(onboardingFormData.commissionUpdatedAt),
+    updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
+    source: pickFirstText(onboardingFormData.commissionSource),
+  }
+}
+
+function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null, mandatePacketsByListingId = null, assignedAgentsById = null) {
   if (!row) return null
+  const assignedAgentProfile = assignedAgentsById ? assignedAgentsById.get(String(row.assigned_agent_id || '')) || null : null
+  const assignedAgentName = pickFirstText(
+    row.assigned_agent_name,
+    row.assigned_agent,
+    assignedAgentProfile?.full_name,
+    [assignedAgentProfile?.first_name, assignedAgentProfile?.last_name].filter(Boolean).join(' '),
+  )
+  const assignedAgentEmail = pickFirstText(row.assigned_agent_email, assignedAgentProfile?.email).toLowerCase()
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
   const requirementRows = requirementsByListingId ? requirementsByListingId.get(String(row.id || '')) || [] : []
   const baseDocumentRows = documentsByListingId ? documentsByListingId.get(String(row.id || '')) || [] : []
@@ -1910,40 +1987,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     primaryMandateDocument?.fileUrl,
     primaryMandateDocument?.file_url,
   )
-  const commissionTerms = {
-    commission_type: pickFirstText(onboardingFormData.commissionType, onboardingFormData.commissionStructure),
-    commission_structure: pickFirstText(onboardingFormData.commissionStructure, onboardingFormData.commissionType),
-    commission_percentage: pickFirstText(
-      onboardingFormData.commissionPercentage,
-      onboardingFormData.commissionPercent,
-      onboardingFormData.commission_percentage,
-      onboardingFormData.commission_percent,
-      onboardingFormData.mandateCommissionPercentage,
-      onboardingFormData.mandateCommissionPercent,
-    ),
-    commission_amount: pickFirstText(
-      onboardingFormData.commissionAmount,
-      onboardingFormData.commission_amount,
-      onboardingFormData.mandateCommissionAmount,
-    ),
-    vat_handling: pickFirstText(onboardingFormData.vatHandling),
-    payment_responsibility: pickFirstText(onboardingFormData.paymentResponsibility),
-    mandate_terms: pickFirstText(onboardingFormData.mandateTerms, onboardingFormData.mandateCommissionTerms),
-    commission_notes: pickFirstText(onboardingFormData.commissionNotes),
-    commission_split: pickFirstText(
-      onboardingFormData.agencyCommissionStructureName,
-      onboardingFormData.agency_commission_structure_name,
-      onboardingFormData.commissionStructureName,
-    ),
-    commission_split_id: pickFirstText(
-      onboardingFormData.agencyCommissionStructureId,
-      onboardingFormData.agency_commission_structure_id,
-      onboardingFormData.commissionStructureId,
-    ),
-    updated_at: pickFirstText(onboardingFormData.commissionUpdatedAt),
-    updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
-    source: pickFirstText(onboardingFormData.commissionSource),
-  }
+  const commissionTerms = getPrivateListingCommissionTerms(onboardingFormData)
   const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
     ? canonicalSellerFacts.property
     : {}
@@ -1966,7 +2010,10 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
-    assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
+    assignedAgentName,
+    assignedAgent: assignedAgentName,
+    agentId: row.assigned_agent_id || null,
+    assignedAgentEmail,
     sellerLeadId: row.seller_lead_id || null,
     originatingCrmLeadId: row.originating_crm_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
@@ -2229,7 +2276,11 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   }
 }
 
-function mapPrivateListingSummaryRow(row = {}) {
+function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId = null) {
+  const onboardingCommissionRow = onboardingCommissionByListingId
+    ? onboardingCommissionByListingId.get(String(row?.id || '')) || null
+    : null
+  const commissionTerms = getPrivateListingCommissionTerms(onboardingCommissionRow?.form_data)
   const canonicalSellerFacts =
     row?.seller_canonical_facts_json && typeof row.seller_canonical_facts_json === 'object'
       ? row.seller_canonical_facts_json
@@ -2320,6 +2371,7 @@ function mapPrivateListingSummaryRow(row = {}) {
     listingPreviewDescription: row.listing_preview_description || '',
     internalListingNotes: row.internal_listing_notes || '',
     activeDeal: null,
+    commission: commissionTerms,
     seller: {
       name: '',
       email: '',
@@ -2453,6 +2505,118 @@ function attachBrandingToListing(listing = null, branding = null) {
   }
 }
 
+const FINAL_SIGNED_ARTIFACT_TRANSPORT_FIELDS = [
+  'finalSignedFilePath',
+  'final_signed_file_path',
+  'finalSignedFileBucket',
+  'final_signed_file_bucket',
+  'finalSignedFileUrl',
+  'final_signed_file_url',
+  'finalSignedFileAccessUrl',
+  'final_signed_file_access_url',
+  'finalSignedDownloadUrl',
+  'final_signed_download_url',
+  'mandateSignedDocumentPath',
+  'mandate_signed_document_path',
+  'mandateSignedDocumentUrl',
+  'mandate_signed_document_url',
+  'mandateSignedDocumentBucket',
+  'mandate_signed_document_bucket',
+]
+
+function stripFinalSignedArtifactTransportFields(source = {}) {
+  if (!source || typeof source !== 'object') return {}
+  const safe = { ...source }
+  for (const fieldName of FINAL_SIGNED_ARTIFACT_TRANSPORT_FIELDS) {
+    delete safe[fieldName]
+  }
+  // A legacy finalArtifact payload can contain the same raw storage fields.
+  delete safe.finalArtifact
+  delete safe.final_artifact
+  return safe
+}
+
+function sanitizeSellerPortalMandatePacket(mandatePacket = null) {
+  if (!mandatePacket || typeof mandatePacket !== 'object') return null
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const version = mandatePacket.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  const packet = mandatePacket.packet && typeof mandatePacket.packet === 'object' ? mandatePacket.packet : {}
+  const finalSignedRecorded = Boolean(
+    mandatePacket.finalSignedRecorded === true ||
+      mandatePacket.final_signed_recorded === true ||
+      mandatePacket.finalDocumentId ||
+      mandatePacket.finalSignedDocumentId ||
+      mandatePacket.final_signed_document_id ||
+      version.final_signed_document_id ||
+      artifact.filePath ||
+      artifact.fileUrl,
+  )
+  return {
+    ...stripFinalSignedArtifactTransportFields(mandatePacket),
+    packet: stripFinalSignedArtifactTransportFields(packet),
+    version: stripFinalSignedArtifactTransportFields(version),
+    finalSignedRecorded,
+  }
+}
+
+function sanitizeSellerPortalListingFinalArtifacts(listing = null, mandatePacket = null) {
+  if (!listing || typeof listing !== 'object') return listing
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
+  const mandate = listing.mandate && typeof listing.mandate === 'object' ? listing.mandate : {}
+  const safeMandate = stripFinalSignedArtifactTransportFields(mandate)
+  if (artifact.filePath || artifact.fileUrl) {
+    // The mapped mandate is a portal-facing summary. Its final copy always
+    // travels by packet/version through resolve-final-signed-document-access.
+    delete safeMandate.signedUrl
+    delete safeMandate.documentUrl
+  }
+  return {
+    ...listing,
+    mandate: safeMandate,
+    mandatePacket: safeMandatePacket,
+    mandate_packet: safeMandatePacket,
+    ...(artifact.filePath || artifact.fileUrl
+      ? {
+          signedMandateUrl: '',
+          mandateSignedUrl: '',
+          mandateUrl: '',
+        }
+      : {}),
+  }
+}
+
+function mapSellerPortalTransactionTracking(transaction = null) {
+  if (!transaction || typeof transaction !== 'object') return null
+
+  // This is deliberately an allow-list. The seller-token RPC is a secure
+  // boundary and must never turn a raw transaction row into portal data.
+  const id = normalizeUuid(transaction?.id)
+  if (!id) return null
+
+  return {
+    id,
+    listing_id: normalizeUuid(transaction?.listing_id || transaction?.listingId) || null,
+    stage: normalizeText(transaction?.stage),
+    current_main_stage: normalizeText(transaction?.current_main_stage || transaction?.currentMainStage),
+    lifecycle_state: normalizeText(transaction?.lifecycle_state || transaction?.lifecycleState),
+    finance_type: normalizeText(transaction?.finance_type || transaction?.financeType),
+    attorney: normalizeText(transaction?.attorney),
+    assigned_attorney_email: normalizeText(transaction?.assigned_attorney_email || transaction?.assignedAttorneyEmail).toLowerCase(),
+    bond_originator: normalizeText(transaction?.bond_originator || transaction?.bondOriginator),
+    assigned_bond_originator_email: normalizeText(
+      transaction?.assigned_bond_originator_email || transaction?.assignedBondOriginatorEmail,
+    ).toLowerCase(),
+    assigned_agent: normalizeText(transaction?.assigned_agent || transaction?.assignedAgent),
+    assigned_agent_email: normalizeText(transaction?.assigned_agent_email || transaction?.assignedAgentEmail).toLowerCase(),
+    created_at: transaction?.created_at || transaction?.createdAt || null,
+    updated_at: transaction?.updated_at || transaction?.updatedAt || null,
+    completed_at: transaction?.completed_at || transaction?.completedAt || null,
+    registered_at: transaction?.registered_at || transaction?.registeredAt || null,
+    registration_date: transaction?.registration_date || transaction?.registrationDate || null,
+  }
+}
+
 function mapSellerClientPortalPayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
@@ -2484,16 +2648,19 @@ function mapSellerClientPortalPayload(payload) {
     listingForMap.mandatePacket = mandatePacket
     listingForMap.mandate_packet = mandatePacket
   }
+  const mappedListing = mapPrivateListingRow(
+    listingForMap,
+    onboardingMap,
+    new Map([[String(listingForMap.id), requirements]]),
+    new Map([[String(listingForMap.id), documents]]),
+  )
+  const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
   return {
     onboarding: onboardingRow,
     appointments,
-    mandatePacket,
-    listing: mapPrivateListingRow(
-      listingForMap,
-      onboardingMap,
-      new Map([[String(listingForMap.id), requirements]]),
-      new Map([[String(listingForMap.id), documents]]),
-    ),
+    mandatePacket: safeMandatePacket,
+    transaction: mapSellerPortalTransactionTracking(payload?.transaction),
+    listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, mandatePacket),
   }
 }
 
@@ -2577,7 +2744,8 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
     client_email: getSellerClientPortalEmail(listing, onboarding, formData) || null,
     client_contact_id: null,
     context_type: 'selling',
-    transaction_id: null,
+    // Once the database has linked a sale, do not clear that transaction on
+    // later onboarding or mandate refreshes.
     seller_lead_id: sellerLeadId,
     listing_id: listingId,
     mandate_packet_id: normalizeUuid(listing?.mandatePacketId || listing?.mandate_packet_id) || null,
@@ -3266,6 +3434,29 @@ async function fetchOnboardingRowsForListings(client, listingIds = []) {
   return map
 }
 
+async function fetchOnboardingCommissionRowsForListings(client, listingIds = []) {
+  const ids = normalizeUuidList(listingIds)
+  if (!ids.length) return new Map()
+  const query = await client
+    .from('private_listing_seller_onboarding')
+    .select('private_listing_id, form_data')
+    .in('private_listing_id', ids)
+    .order('created_at', { ascending: false })
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return new Map()
+    throw query.error
+  }
+
+  const map = new Map()
+  for (const row of query.data || []) {
+    const listingId = String(row.private_listing_id || '')
+    if (!listingId || map.has(listingId)) continue
+    map.set(listingId, row)
+  }
+  return map
+}
+
 async function fetchRequirementRowsForListings(client, listingIds = []) {
   if (hasMissingTableCache('private_listing_document_requirements')) return new Map()
   const reqState = getSelectFallbackState('private_listing_document_requirements')
@@ -3381,6 +3572,20 @@ async function fetchPublicationRowsForListings(client, listingIds = []) {
     map.set(listingId, row)
   }
   return map
+}
+
+async function fetchAssignedAgentProfilesForListings(client, listingRows = []) {
+  const agentIds = normalizeUuidList((Array.isArray(listingRows) ? listingRows : []).map((row) => row?.assigned_agent_id))
+  if (!agentIds.length) return new Map()
+  const query = await client
+    .from('profiles')
+    .select('id, email, first_name, last_name, full_name')
+    .in('id', agentIds)
+  if (query.error) {
+    if (isMissingTableError(query.error, 'profiles') || isMissingColumnError(query.error)) return new Map()
+    throw query.error
+  }
+  return new Map((query.data || []).map((profile) => [String(profile.id || ''), profile]))
 }
 
 function buildPrivateListingPayload(payload = {}, userId = null) {
@@ -4098,7 +4303,7 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     throw query.error
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
@@ -4106,8 +4311,9 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     fetchPublicationRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
     fetchMediaRowsForListings(client, [query.data.id]),
+    fetchAssignedAgentProfilesForListings(client, [query.data]),
   ])
-  const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)
+  const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
   return attachDistributionMediaToListing(listing, mediaMap.get(String(query.data.id)) || [])
 }
 
@@ -4178,14 +4384,15 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
     const version = latestVersionByPacketId.get(packetId) || null
     const finalSignedFilePath = normalizeText(version?.final_signed_file_path)
     const finalSignedFileBucket = normalizeText(version?.final_signed_file_bucket)
-    const finalSignedDownloadUrl = finalSignedFilePath
-      ? await createPrivateListingDocumentSignedUrl(client, finalSignedFilePath, 120, finalSignedFileBucket)
-      : ''
+    const packetStatus = normalizeText(packet?.status).toLowerCase()
+    const packetCompleted = ['completed', 'fully_signed', 'finalised', 'finalized'].includes(packetStatus)
     packetSummaryByPacketId.set(packetId, {
       id: packetId,
-      state: finalSignedFilePath
+      // A file path alone is never proof of execution. The canonical packet
+      // must already be completed before exposing a fully-signed state.
+      state: packetCompleted && finalSignedFilePath
         ? 'fully_signed'
-        : normalizeText(packet?.status).toLowerCase() || 'generated',
+        : packetStatus || 'generated',
       status: normalizeText(packet?.status),
       packet,
       version,
@@ -4193,7 +4400,9 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
       finalSignedFilePath,
       finalSignedFileName: normalizeText(version?.final_signed_file_name || 'Signed Mandate.pdf'),
       finalSignedFileBucket,
-      finalSignedDownloadUrl,
+      // Raw final paths are retained here only as status inputs. Browser
+      // delivery must go through the Phase 4 packet/version resolver.
+      finalSignedDownloadUrl: '',
       generatedPreviewFilePath: normalizeText(version?.rendered_file_path),
       generatedPreviewFileName: normalizeText(version?.rendered_file_name || packet?.title || 'Mandate'),
       signedAt: normalizeText(version?.finalised_at || packet?.updated_at),
@@ -4226,15 +4435,16 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, listingIds),
     fetchPublicationRowsForListings(client, listingIds),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, rows) : Promise.resolve(new Map()),
+    fetchAssignedAgentProfilesForListings(client, rows),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListings(
@@ -4287,30 +4497,32 @@ export async function getAgentPrivateListings(
       }
       const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
       const retryListingIds = retryRows.map((row) => row.id)
-      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap] = await Promise.all([
+      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap, retryAssignedAgentsMap] = await Promise.all([
         fetchOnboardingRowsForListings(client, retryListingIds),
         fetchRequirementRowsForListings(client, retryListingIds),
         fetchDocumentRowsForListings(client, retryListingIds),
         fetchExternalLinkRowsForListings(client, retryListingIds),
         fetchPublicationRowsForListings(client, retryListingIds),
         fetchMandatePacketRowsForListings(client, retryRows),
+        fetchAssignedAgentProfilesForListings(client, retryRows),
       ])
-      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap)).filter(Boolean)
+      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap, retryAssignedAgentsMap)).filter(Boolean)
     }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
     fetchExternalLinkRowsForListings(client, listingIds),
     fetchPublicationRowsForListings(client, listingIds),
     fetchMandatePacketRowsForListings(client, rows),
+    fetchAssignedAgentProfilesForListings(client, rows),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListingSummaries(
@@ -4319,41 +4531,124 @@ export async function getAgentPrivateListingSummaries(
     organisationId = null,
     includeAllOrganisationListings = false,
     assignedAgentEmail = '',
+    assignedAgentIds = [],
+    includeCommissionTerms = false,
   } = {},
 ) {
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
   const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
-  if (!includeAllOrganisationListings && !normalizedAgentId && !normalizedAgentEmail) return []
+  const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
 
-  const queryBuilder = applyVisiblePrivateListingFilters(
-    client
-      .from('private_listings')
-      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, mandate_packet_id, asking_price, estimated_value, title, address_line_1, address_line_2, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
-  )
+  const createSummaryQuery = ({ includeAssignedAgentEmail = true, includeIsActive = true } = {}) => {
+    const selectColumns = [
+      'id',
+      'listing_reference',
+      'listing_status',
+      'listing_visibility',
+      'seller_onboarding_status',
+      'mandate_status',
+      'mandate_packet_id',
+      'asking_price',
+      'estimated_value',
+      'title',
+      'address_line_1',
+      'address_line_2',
+      'formatted_address',
+      'street_address',
+      'suburb',
+      'city',
+      'province',
+      'country',
+      'postal_code',
+      'latitude',
+      'longitude',
+      'google_place_id',
+      'seller_type',
+      'finance_context',
+      'mandate_type',
+      'property_category',
+      'property_type',
+      'property_structure_type',
+      'listing_category',
+      'listing_source',
+      'stock_source',
+      'seller_canonical_facts_json',
+      'seller_canonical_fact_readiness_json',
+      'seller_lead_id',
+      'seller_profile_id',
+      'property_profile_id',
+      'organisation_id',
+      'branch_id',
+      'assigned_agent_id',
+      ...(includeAssignedAgentEmail ? ['assigned_agent_email'] : []),
+      ...(includeIsActive ? ['is_active'] : []),
+      'created_at',
+      'updated_at',
+    ].join(', ')
+    const queryBuilder = applyVisiblePrivateListingFilters(
+      client
+        .from('private_listings')
+        .select(selectColumns),
+    )
 
-  if (normalizedOrgId) {
-    queryBuilder.eq('organisation_id', normalizedOrgId)
-  }
-  if (!includeAllOrganisationListings) {
-    if (normalizedAgentId && normalizedAgentEmail) {
-      const escapedEmail = String(normalizedAgentEmail).replace(/"/g, '\\"')
-      queryBuilder.or(`assigned_agent_id.eq.${normalizedAgentId},assigned_agent_email.eq."${escapedEmail}"`)
-    } else if (normalizedAgentId) {
-      queryBuilder.eq('assigned_agent_id', normalizedAgentId)
-    } else {
-      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+    if (normalizedOrgId) {
+      queryBuilder.eq('organisation_id', normalizedOrgId)
     }
+    if (!includeAllOrganisationListings) {
+      const assignmentFilters = []
+      if (normalizedAgentIds.length > 1) {
+        assignmentFilters.push(`assigned_agent_id.in.(${normalizedAgentIds.join(',')})`)
+      } else if (normalizedAgentIds.length === 1) {
+        assignmentFilters.push(`assigned_agent_id.eq.${normalizedAgentIds[0]}`)
+      }
+      if (includeAssignedAgentEmail && normalizedAgentEmail) {
+        const escapedEmail = String(normalizedAgentEmail).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        assignmentFilters.push(`assigned_agent_email.eq."${escapedEmail}"`)
+      }
+
+      if (assignmentFilters.length > 1) {
+        queryBuilder.or(assignmentFilters.join(','))
+      } else if (normalizedAgentIds.length > 1) {
+        queryBuilder.in('assigned_agent_id', normalizedAgentIds)
+      } else if (normalizedAgentIds.length === 1) {
+        queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
+      } else if (includeAssignedAgentEmail && normalizedAgentEmail) {
+        queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
+      }
+    }
+
+    return queryBuilder.order('updated_at', { ascending: false })
   }
 
-  const query = await queryBuilder.order('updated_at', { ascending: false })
-  if (query.error) {
+  let includeAssignedAgentEmail = true
+  let includeIsActive = true
+  let query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+  while (query.error) {
+    const errorText = `${query.error?.message || ''} ${query.error?.details || ''} ${query.error?.hint || ''}`.toLowerCase()
+
+    if (includeAssignedAgentEmail && errorText.includes('assigned_agent_email')) {
+      if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
+      includeAssignedAgentEmail = false
+      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+      continue
+    }
+    if (includeIsActive && errorText.includes('is_active')) {
+      includeIsActive = false
+      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+      continue
+    }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
+
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
-  return rows.map((row) => mapPrivateListingSummaryRow(row)).filter(Boolean)
+  const onboardingCommissionByListingId = includeCommissionTerms
+    ? await fetchOnboardingCommissionRowsForListings(client, rows.map((row) => row.id))
+    : null
+  return rows.map((row) => mapPrivateListingSummaryRow(row, onboardingCommissionByListingId)).filter(Boolean)
 }
 
 export async function createPrivateListingActivity(payload = {}) {
@@ -5039,6 +5334,7 @@ export async function sendSellerOnboarding(
     includePortalBranding = true,
     deferStatusTransition = false,
     performedBy = '',
+    transferAttorneyPreferredPartnerId = '',
   } = {},
 ) {
   const client = requireClient()
@@ -5049,6 +5345,48 @@ export async function sendSellerOnboarding(
   }
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
+
+  const requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  let preferredAttorneyBuilder = client
+    .from('organisation_preferred_partners')
+    .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
+    .eq('organisation_id', listing.organisationId)
+    .eq('partner_type', 'transfer_attorney')
+    .eq('is_active', true)
+    .order('is_preferred_default', { ascending: false })
+    .order('company_name', { ascending: true })
+    .limit(1)
+  if (requestedPreferredAttorneyId) preferredAttorneyBuilder = preferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
+  let preferredAttorneyQuery = await preferredAttorneyBuilder.maybeSingle()
+
+  if (preferredAttorneyQuery.error && isMissingColumnError(preferredAttorneyQuery.error, 'partner_organisation_id')) {
+    let legacyPreferredAttorneyBuilder = client
+      .from('organisation_preferred_partners')
+      .select('id, company_name, contact_person, email_address, phone_number, is_preferred_default')
+      .eq('organisation_id', listing.organisationId)
+      .eq('partner_type', 'transfer_attorney')
+      .eq('is_active', true)
+      .order('is_preferred_default', { ascending: false })
+      .order('company_name', { ascending: true })
+      .limit(1)
+    if (requestedPreferredAttorneyId) legacyPreferredAttorneyBuilder = legacyPreferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
+    preferredAttorneyQuery = await legacyPreferredAttorneyBuilder.maybeSingle()
+  }
+  if (preferredAttorneyQuery.error) throw preferredAttorneyQuery.error
+  if (!preferredAttorneyQuery.data?.id || !normalizeText(preferredAttorneyQuery.data?.company_name)) {
+    throw new Error(requestedPreferredAttorneyId
+      ? 'The selected transfer attorney is no longer active for this agency.'
+      : 'Configure an active preferred transfer attorney before sending seller onboarding.')
+  }
+  const preferredTransferAttorney = {
+    preferredPartnerId: preferredAttorneyQuery.data.id,
+    partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
+    companyName: normalizeText(preferredAttorneyQuery.data.company_name),
+    contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
+    email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
+    phone: normalizeText(preferredAttorneyQuery.data.phone_number),
+    selectionSource: 'agency_recommended',
+  }
 
   const existingQuery = await client
     .from('private_listing_seller_onboarding')
@@ -5082,6 +5420,12 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
+  const existingAcceptedAttorneyId = normalizeText(
+    existingFormData.preferredTransferAttorneyAcceptance?.preferredPartnerId,
+  )
+  const preserveAttorneyAcceptance =
+    existingFormData.preferredTransferAttorneyAccepted === true &&
+    existingAcceptedAttorneyId === preferredTransferAttorney.preferredPartnerId
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -5100,6 +5444,11 @@ export async function sendSellerOnboarding(
       email: resolvedSellerEmail,
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
+      preferredTransferAttorney,
+      preferredTransferAttorneyAccepted: preserveAttorneyAcceptance,
+      preferredTransferAttorneyAcceptance: preserveAttorneyAcceptance
+        ? existingFormData.preferredTransferAttorneyAcceptance
+        : null,
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',
@@ -5269,6 +5618,14 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     }
   }
 
+  // A seller workspace is an authenticated portal surface. Never use the
+  // legacy table-by-token fallback here: it cannot prove the current seller
+  // session and could otherwise reintroduce raw final-artifact fields when an
+  // RPC deployment is incomplete or unavailable.
+  if (options?.requirePortalAccess === true) {
+    throw new Error('The secure seller portal is temporarily unavailable. Please try again shortly.')
+  }
+
   const query = await client
     .from('private_listing_seller_onboarding')
     .select('*')
@@ -5279,9 +5636,15 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw query.error
   }
   if (!query.data) return null
-  const listing = await getPrivateListingById(query.data.private_listing_id, {
+  const rawListing = await getPrivateListingById(query.data.private_listing_id, {
     includeRequirementsAndDocuments,
   })
+  const rawMandatePacket = rawListing?.mandatePacket && typeof rawListing.mandatePacket === 'object'
+    ? rawListing.mandatePacket
+    : rawListing?.mandate_packet && typeof rawListing.mandate_packet === 'object'
+      ? rawListing.mandate_packet
+      : null
+  const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
   const branding = await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
   return {
     onboarding: query.data,
@@ -5343,10 +5706,19 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
+  const preferredAttorneyId = normalizeText(formData.preferredTransferAttorney?.preferredPartnerId)
+  const acceptedAttorneyId = normalizeText(formData.preferredTransferAttorneyAcceptance?.preferredPartnerId)
+  if (!preferredAttorneyId) {
+    throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
+  }
+  if (formData.preferredTransferAttorneyAccepted !== true || acceptedAttorneyId !== preferredAttorneyId) {
+    throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+  }
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
     p_token: normalizedToken,
-    p_form_data: payload.formData && typeof payload.formData === 'object' ? payload.formData : {},
+    p_form_data: formData,
     p_seller_type: normalizeNullableText(payload.sellerType),
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
@@ -6012,13 +6384,16 @@ export async function uploadSellerClientPortalDocument({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!file) throw new Error('A file is required.')
 
+  const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: true,
     requirePortalAccess: true,
-    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+    sellerPortalAccessToken: resolvedAccessToken,
   })
   const listing = context?.listing || null
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
@@ -6062,7 +6437,7 @@ export async function uploadSellerClientPortalDocument({
   const timestamp = Date.now()
   const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
 
-  await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+  await uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
     upsert: false,
     contentType: file.type || undefined,
   })
@@ -6076,7 +6451,7 @@ export async function uploadSellerClientPortalDocument({
     p_document_type: normalizedDocumentType,
     p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
     p_category: category || 'Seller Document',
-    p_access_token: accessToken || getStoredSellerPortalAccessToken(normalizedToken) || null,
+    p_access_token: resolvedAccessToken || null,
   })
 
   if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
@@ -6161,7 +6536,7 @@ export async function uploadSellerClientPortalDocument({
     visibility: documentRow?.visibility || 'seller_visible',
     created_at: documentRow?.created_at || documentRow?.uploaded_at || new Date().toISOString(),
     uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
-    url: await createPrivateListingDocumentSignedUrl(client, documentRow?.storage_path || filePath),
+    url: await createPrivateListingDocumentSignedUrl(storageClient, documentRow?.storage_path || filePath),
     privateListingId: listing.id,
     requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
@@ -6257,6 +6632,29 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 }
 
+/**
+ * The seller portal never receives a final signed storage path. This resolver
+ * authorizes the seller session and returns a fresh URL only after the Phase 3
+ * F2 record and published Documents row bind to the exact same artifact.
+ */
+export async function resolveSellerClientPortalFinalSignedDocumentAccess({
+  token,
+  accessToken = '',
+  packetId,
+  packetVersionId,
+  documentId = '',
+  download = false,
+} = {}) {
+  return resolveSellerPortalFinalSignedArtifactAccess({
+    portalToken: token,
+    sellerAccessToken: accessToken || getStoredSellerPortalAccessToken(token),
+    packetId,
+    packetVersionId,
+    documentId,
+    download,
+  })
+}
+
 export async function createSellerClientPortalDocumentSignedUrl({
   token,
   accessToken = '',
@@ -6269,19 +6667,26 @@ export async function createSellerClientPortalDocumentSignedUrl({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
+  const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: false,
     requirePortalAccess: true,
-    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+    sellerPortalAccessToken: resolvedAccessToken,
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
   const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
   if (!downloadContext.linked) {
     throw new Error('This document is not available in this client portal.')
   }
+  if (downloadContext.canonicalFinalArtifact) {
+    throw new Error('The final signed mandate must be opened through its secure completion record.')
+  }
+
+  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
   const signedUrl = await createPrivateListingDocumentSignedUrl(
-    client,
+    storageClient,
     normalizedFilePath,
     expiresInSeconds,
     downloadContext.bucket,
@@ -6305,6 +6710,9 @@ export async function createPrivateListingDocumentDownloadUrl({
   if (!downloadContext.linked) {
     throw new Error('This document is not linked to the selected listing.')
   }
+  if (downloadContext.canonicalFinalArtifact) {
+    throw new Error('The final signed mandate must be opened through its secure completion record.')
+  }
 
   const signedUrl = await createPrivateListingDocumentSignedUrl(
     client,
@@ -6322,6 +6730,9 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   const validation = await validatePrivateListingTransition(listingId, targetStatus, options)
   const metadata = options?.metadata && typeof options.metadata === 'object' ? options.metadata : {}
   const transitionBlockers = [...validation.blockers]
+  const nonOverridableBlockers = Array.isArray(validation.nonOverridableBlockers)
+    ? validation.nonOverridableBlockers.filter(Boolean)
+    : []
   const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
   if (validation.targetStatus === 'mandate_sent') {
@@ -6345,8 +6756,8 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   if (!validation.transitionAllowed) {
     throw new Error('This listing cannot move to that stage yet.')
   }
-  if ((!validation.allowed || transitionBlockers.length) && !options?.allowOverride) {
-    throw new Error(transitionBlockers[0] || 'This listing cannot move to that stage yet.')
+  if ((!validation.allowed || transitionBlockers.length) && (!options?.allowOverride || nonOverridableBlockers.length)) {
+    throw new Error(nonOverridableBlockers[0] || transitionBlockers[0] || 'This listing cannot move to that stage yet.')
   }
 
   const sideEffects = getPrivateListingTransitionSideEffects(validation.targetStatus)

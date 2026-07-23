@@ -80,6 +80,7 @@ import {
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
+import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
 import {
   completeViewingRequest,
   formatViewingStatusLabel,
@@ -304,7 +305,7 @@ function mergeListingRecord(existing = {}, incoming = {}) {
 function upsertListingRecord(rows = [], incoming = null) {
   if (!incoming?.id) return rows
   let found = false
-  const nextRows = rows.map((row) => {
+  const nextRows = sanitizePrivateListingRows(rows).map((row) => {
     if (String(row?.id || '') !== String(incoming.id)) return row
     found = true
     return mergeListingRecord(row, incoming)
@@ -1845,7 +1846,13 @@ function AgentListingDetail() {
   const location = useLocation()
   const { listingId: encodedListingId } = useParams()
   const { profile } = useWorkspace()
-  const listingId = decodeURIComponent(String(encodedListingId || ''))
+  const listingId = useMemo(() => {
+    try {
+      return decodeURIComponent(String(encodedListingId || '')).trim()
+    } catch {
+      return ''
+    }
+  }, [encodedListingId])
 
   const [activeTab, setActiveTab] = useState('seller')
   const [privateListings, setPrivateListings] = useState([])
@@ -1961,7 +1968,14 @@ function AgentListingDetail() {
   const loadListingData = useCallback(async () => {
     setLoading(true)
     setDetailError('')
-    const runtimeListings = readAgentPrivateListings()
+    if (!listingId) {
+      setPrivateListings([])
+      setDetailError('This listing link is invalid. Return to Listings and open the record again.')
+      setLoading(false)
+      return
+    }
+
+    const runtimeListings = sanitizePrivateListingRows(readAgentPrivateListings())
     if (!isSupabaseConfigured) {
       setPipelineLeads(readPipelineLeads())
     }
@@ -1970,7 +1984,10 @@ function AgentListingDetail() {
     if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
       try {
         const dbListing = await getPrivateListing(listingId)
-        if (dbListing?.id) {
+        const returnedListingId = getPrivateListingRecordId(dbListing)
+        if (dbListing && returnedListingId !== listingId) {
+          setDetailError('This listing returned an invalid record. Refresh Listings and open it again; no changes were made.')
+        } else if (returnedListingId) {
           nextListings = upsertListingRecord(runtimeListings, dbListing)
         }
       } catch (error) {
@@ -1979,7 +1996,7 @@ function AgentListingDetail() {
       }
     }
 
-    setPrivateListings(nextListings)
+    setPrivateListings(sanitizePrivateListingRows(nextListings))
     setLoading(false)
   }, [listingId])
 
@@ -2002,7 +2019,7 @@ function AgentListingDetail() {
   }, [loadListingData])
 
   const listingRecord = useMemo(() => {
-    return privateListings.find((item) => String(item.id) === listingId) || null
+    return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
 
   const listingOrganisationId = useMemo(
@@ -2366,8 +2383,8 @@ function AgentListingDetail() {
   function patchListing(updater) {
     if (!listingRecord) return null
     let updatedListing = null
-    const nextRows = privateListings.map((item) => {
-      if (String(item.id) !== String(listingRecord.id)) return item
+    const nextRows = sanitizePrivateListingRows(privateListings).map((item) => {
+      if (String(item?.id || '') !== String(listingRecord.id)) return item
       updatedListing = updater({ ...item })
       return updatedListing
     })
@@ -3635,17 +3652,17 @@ function AgentListingDetail() {
       const signedAt = new Date().toISOString()
       const uploadedDocument = isSupabaseConfigured && isUuidLike(listingRecord.id)
         ? await uploadPrivateListingDocument(listingRecord.id, file, {
-            documentType: 'signed_mandate',
-            documentCategory: 'Mandate',
-            documentName: file.name || 'Signed Mandate',
+            documentType: 'manual_mandate_evidence',
+            documentCategory: 'Mandate evidence',
+            documentName: file.name || 'Manual mandate evidence',
             visibility: 'internal',
             status: 'uploaded',
           })
         : {
             id: generateId('signed-mandate'),
-            document_name: file.name || 'Signed Mandate',
-            document_type: 'signed_mandate',
-            category: 'Mandate',
+            document_name: file.name || 'Manual mandate evidence',
+            document_type: 'manual_mandate_evidence',
+            category: 'Mandate evidence',
             status: 'uploaded',
             uploaded_at: signedAt,
             url: await readAsDataUrl(file),
@@ -3654,52 +3671,26 @@ function AgentListingDetail() {
       const documentRow = {
         ...uploadedDocument,
         id: uploadedDocument?.id || generateId('signed-mandate'),
-        documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Signed Mandate',
-        documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || 'signed_mandate',
-        category: uploadedDocument?.category || 'Mandate',
+        documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Manual mandate evidence',
+        documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || 'manual_mandate_evidence',
+        category: uploadedDocument?.category || 'Mandate evidence',
         status: uploadedDocument?.status || 'uploaded',
         uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || signedAt,
         url: documentUrl,
       }
-      const localListing = patchListing((row) => ({
+      patchListing((row) => ({
         ...row,
-        mandateStatus: 'signed_uploaded',
-        mandateSignedDate: signedAt.slice(0, 10),
-        signedMandateUrl: documentUrl || row?.signedMandateUrl || '',
-        mandate: {
-          ...(row?.mandate || {}),
-          status: 'signed_uploaded',
-          signedAt,
-          signedUrl: documentUrl || row?.mandate?.signedUrl || '',
-          updatedAt: signedAt,
-        },
         documents: [
           documentRow,
           ...(Array.isArray(row?.documents)
-            ? row.documents.filter((document) => normalizeKey(document?.document_type || document?.documentType || document?.documentName || document?.document_name || document?.name) !== 'signed_mandate')
+            ? row.documents.filter((document) => normalizeKey(document?.document_type || document?.documentType || document?.documentName || document?.document_name || document?.name) !== 'manual_mandate_evidence')
             : []),
         ],
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: {
-            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
-            mandateSignedDate: signedAt.slice(0, 10),
-            signedMandateUrl: documentUrl,
-          },
-        },
+        manualMandateEvidenceUploadedAt: signedAt,
+        manualMandateEvidenceUrl: documentUrl || row?.manualMandateEvidenceUrl || '',
         updatedAt: signedAt,
       }))
-      setMarketingDraft((previous) => ({ ...previous, mandateSignedDate: signedAt.slice(0, 10) }))
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        const savedListing = await updatePrivateListing(listingRecord.id, {
-          mandateStatus: 'signed_uploaded',
-          listingStatus: normalizeKey(listingRecord?.listingStatus || listingRecord?.status) === 'active' ? 'active' : 'mandate_signed',
-        })
-        if (savedListing?.id) {
-          setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localListing, savedListing)))
-        }
-      }
-      setDetailMessage('Signed mandate uploaded and linked to this listing.')
+      setDetailMessage('Manual mandate evidence was uploaded for internal review. It does not mark the mandate signed or activate the listing; complete the canonical legal document workflow to finalize it.')
     } catch (error) {
       setDetailError(error?.message || 'Unable to upload the signed mandate.')
     } finally {
@@ -4396,7 +4387,7 @@ function AgentListingDetail() {
         document?.name,
       ].map((value) => normalizeKey(value)).join(' ')
       const hasUrl = Boolean(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.signed_url)
-      return searchable.includes('mandate') && hasUrl
+      return searchable.includes('mandate') && !searchable.includes('manual_mandate_evidence') && hasUrl
     }) || null
     const status = String(
       listingRecord?.mandateStatus ||
@@ -4987,14 +4978,14 @@ function AgentListingDetail() {
       },
       {
         key: 'upload_signed_mandate',
-        title: 'Upload signed mandate',
+        title: 'Upload manual mandate evidence',
         copy: mandateWorkspace.isSigned
           ? 'A signed mandate is already linked to this listing.'
-          : 'Attach the signed PDF or image when the seller has signed outside the portal.',
+          : 'Attach a paper-signed copy for internal review only. This does not mark the mandate signed or activate the listing.',
         complete: mandateWorkspace.isSigned,
-        statusLabel: 'Required for active',
+        statusLabel: 'Supporting evidence',
         icon: Upload,
-        buttonLabel: mandateWorkspace.isSigned ? 'Replace File' : 'Upload Signed File',
+        buttonLabel: mandateWorkspace.isSigned ? 'Replace Evidence' : 'Upload Evidence',
         upload: true,
         priorityLabel: mandateStatus === 'signed_external_pending_upload' ? 'Priority: urgent' : 'Priority: high',
         dueLabel: mandateStatus === 'signed_external_pending_upload' ? 'Signed manually' : 'Before active',

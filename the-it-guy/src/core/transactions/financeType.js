@@ -240,6 +240,29 @@ function hasBuyerAppointedOriginatorDetails(input = {}) {
   ].some((value) => String(value || '').trim())
 }
 
+export function hasBondOriginatorContactConsent(input = {}) {
+  const formData = resolveFormData(input)
+  const finance = getFinanceFormData(input)
+  const selectionSource = normalizeKey(
+    input.bond_assistance_selection ||
+      input.bondAssistanceSelection ||
+      formData.bond_assistance_selection ||
+      formData.bondAssistanceSelection ||
+      finance.bond_assistance_selection ||
+      finance.bondAssistanceSelection ||
+      '',
+  )
+  const consent =
+    input.bond_assistance_contact_consent ||
+    input.bondAssistanceContactConsent ||
+    formData.bond_assistance_contact_consent ||
+    formData.bondAssistanceContactConsent ||
+    finance.bond_assistance_contact_consent ||
+    finance.bondAssistanceContactConsent ||
+    ''
+  return ['agency_partner', 'buyer_nominated', 'third_party'].includes(selectionSource) && isAffirmativeFinanceAssistanceValue(consent)
+}
+
 export function resolveFinanceAssistancePreference(input = {}) {
   const candidates = financeAssistanceCandidates(input)
   if (candidates.some(isAffirmativeFinanceAssistanceValue) || hasBuyerAppointedOriginatorDetails(input)) {

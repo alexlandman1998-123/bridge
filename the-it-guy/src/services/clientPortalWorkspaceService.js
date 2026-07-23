@@ -23,7 +23,11 @@ import {
   resolvePortalStageKey,
 } from '../content/clientPortalEducation'
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
-import { getPrivateListingActivity, getSellerOnboardingByToken } from './privateListingService'
+import {
+  getPrivateListingActivity,
+  getSellerOnboardingByToken,
+  resolveSellerClientPortalFinalSignedDocumentAccess,
+} from './privateListingService'
 import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
@@ -176,28 +180,65 @@ function mapSellerMandatePacket(packetPayload = null) {
   const packet = packetPayload.packet && typeof packetPayload.packet === 'object' ? packetPayload.packet : {}
   const version = packetPayload.version && typeof packetPayload.version === 'object' ? packetPayload.version : {}
   const state = normalizeValue(packetPayload.state || packet.status || packetPayload.mandateStatus)
+  const hasRecordedFinalArtifact = Boolean(
+    packetPayload.finalSignedRecorded === true ||
+    packetPayload.final_signed_recorded === true ||
+    packetPayload.finalDocumentId ||
+    packetPayload.final_signed_document_id ||
+    version.final_signed_document_id ||
+    packetPayload.finalSignedFilePath ||
+    packetPayload.final_signed_file_path ||
+    version.final_signed_file_path ||
+    packetPayload.finalSignedDownloadUrl ||
+    version.final_signed_file_url,
+  )
+  const safeVersion = {
+    ...version,
+    final_signed_file_path: '',
+    final_signed_file_bucket: '',
+    final_signed_file_url: '',
+    final_signed_file_access_url: '',
+  }
   return {
     ...packetPayload,
     id: packetPayload.id || packet.id || '',
     state: state || 'not_generated',
     packet,
-    version,
-    packetVersionId: packetPayload.packetVersionId || packetPayload.packet_version_id || version.id || '',
-    finalSignedFilePath: packetPayload.finalSignedFilePath || packetPayload.final_signed_file_path || version.final_signed_file_path || '',
-    finalSignedFileName: packetPayload.finalSignedFileName || packetPayload.final_signed_file_name || version.final_signed_file_name || 'Signed Mandate',
-    finalSignedFileBucket: packetPayload.finalSignedFileBucket || packetPayload.final_signed_file_bucket || version.final_signed_file_bucket || '',
-    finalSignedDownloadUrl:
-      packetPayload.finalSignedDownloadUrl ||
-      packetPayload.finalSignedFileAccessUrl ||
-      packetPayload.final_signed_file_access_url ||
-      packetPayload.final_signed_file_url ||
-      version.final_signed_file_access_url ||
-      version.final_signed_file_url ||
-      '',
-    generatedPreviewFilePath: packetPayload.generatedPreviewFilePath || packetPayload.rendered_file_path || version.rendered_file_path || '',
-    generatedPreviewFileName: packetPayload.generatedPreviewFileName || packetPayload.rendered_file_name || version.rendered_file_name || 'Mandate',
-    signedAt: packetPayload.signedAt || packetPayload.signed_at || version.finalised_at || packet.completed_at || '',
+    version: safeVersion,
+    packetVersionId: packetPayload.packetVersionId || packetPayload.packet_version_id || safeVersion.id || '',
+    finalSignedFilePath: '',
+    finalSignedFileName: packetPayload.finalSignedFileName || packetPayload.final_signed_file_name || safeVersion.final_signed_file_name || 'Signed Mandate',
+    finalSignedFileBucket: '',
+    finalSignedDownloadUrl: '',
+    finalSignedAccess: null,
+    finalSignedRecorded: hasRecordedFinalArtifact,
+    generatedPreviewFilePath: packetPayload.generatedPreviewFilePath || packetPayload.rendered_file_path || safeVersion.rendered_file_path || '',
+    generatedPreviewFileName: packetPayload.generatedPreviewFileName || packetPayload.rendered_file_name || safeVersion.rendered_file_name || 'Mandate',
+    signedAt: packetPayload.signedAt || packetPayload.signed_at || safeVersion.finalised_at || packet.completed_at || '',
     updatedAt: packetPayload.updatedAt || packetPayload.updated_at || packet.updated_at || '',
+  }
+}
+
+function attachSellerMandateFinalAccess(mandatePacket = null, finalSignedAccess = null) {
+  if (!mandatePacket || typeof mandatePacket !== 'object') return mandatePacket
+  const available = finalSignedAccess?.available === true
+  const state = normalizeValue(mandatePacket.state)
+  return {
+    ...mandatePacket,
+    state: available
+      ? (['fully_signed', 'signed', 'completed', 'complete', 'finalised', 'finalized'].includes(state) ? 'fully_signed' : state)
+      : mandatePacket.finalSignedRecorded && ['fully_signed', 'signed', 'completed', 'complete', 'finalised', 'finalized'].includes(state)
+        ? 'finalisation_pending'
+        : state,
+    finalSignedAccess: finalSignedAccess || {
+      available: false,
+      state: mandatePacket.finalSignedRecorded ? 'unavailable' : 'not_ready',
+      message: mandatePacket.finalSignedRecorded
+        ? 'The signed mandate is being verified for portal access.'
+        : 'The signed mandate is not ready yet.',
+      finalArtifact: null,
+    },
+    finalSignedFileName: finalSignedAccess?.finalArtifact?.fileName || mandatePacket.finalSignedFileName || 'Signed Mandate',
   }
 }
 
@@ -409,6 +450,62 @@ function resolveSellerPortalWorkflowStage(listing = {}, onboarding = {}, status 
   return 'mandate_signed'
 }
 
+const SELLER_TRANSACTION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function normalizeSellerTransactionTrackingPayload(transaction = null) {
+  if (!transaction || typeof transaction !== 'object') return null
+  const id = String(transaction?.id || '').trim()
+  if (!SELLER_TRANSACTION_UUID_PATTERN.test(id)) return null
+
+  return {
+    id,
+    listing_id: String(transaction?.listing_id || transaction?.listingId || '').trim() || null,
+    stage: String(transaction?.stage || '').trim(),
+    current_main_stage: String(transaction?.current_main_stage || transaction?.currentMainStage || '').trim(),
+    lifecycle_state: String(transaction?.lifecycle_state || transaction?.lifecycleState || '').trim(),
+    finance_type: String(transaction?.finance_type || transaction?.financeType || '').trim(),
+    attorney: String(transaction?.attorney || '').trim(),
+    assigned_attorney_email: String(transaction?.assigned_attorney_email || transaction?.assignedAttorneyEmail || '').trim(),
+    bond_originator: String(transaction?.bond_originator || transaction?.bondOriginator || '').trim(),
+    assigned_bond_originator_email: String(
+      transaction?.assigned_bond_originator_email || transaction?.assignedBondOriginatorEmail || '',
+    ).trim(),
+    assigned_agent: String(transaction?.assigned_agent || transaction?.assignedAgent || '').trim(),
+    assigned_agent_email: String(transaction?.assigned_agent_email || transaction?.assignedAgentEmail || '').trim(),
+    created_at: transaction?.created_at || transaction?.createdAt || null,
+    updated_at: transaction?.updated_at || transaction?.updatedAt || null,
+    completed_at: transaction?.completed_at || transaction?.completedAt || null,
+    registered_at: transaction?.registered_at || transaction?.registeredAt || null,
+    registration_date: transaction?.registration_date || transaction?.registrationDate || null,
+  }
+}
+
+// Keep the seller tracker transaction-first. Listing state remains the
+// fallback for the pre-sale journey, but a listing ID must never impersonate
+// a transaction ID for portal reads or live refresh.
+export function buildSellerTransactionTrackingProjection({ listing = {}, transaction = null, sellerPortalStage = '' } = {}) {
+  const trackedTransaction = normalizeSellerTransactionTrackingPayload(transaction)
+  const listingStage = String(sellerPortalStage || '').trim() || 'mandate_signed'
+  const stage = trackedTransaction?.stage || listingStage
+  const mainStage = trackedTransaction?.current_main_stage || (trackedTransaction ? '' : listingStage)
+  const listingUpdatedAt = listing?.updatedAt || listing?.updated_at || listing?.createdAt || listing?.created_at || null
+
+  return {
+    transaction: {
+      ...(trackedTransaction || {}),
+      id: trackedTransaction?.id || null,
+      stage,
+      current_main_stage: mainStage,
+      updated_at: trackedTransaction?.updated_at || listingUpdatedAt || null,
+      created_at: trackedTransaction?.created_at || listing?.createdAt || listing?.created_at || null,
+    },
+    transactionId: trackedTransaction?.id || null,
+    stage,
+    mainStage,
+    lastUpdated: trackedTransaction?.updated_at || listingUpdatedAt || new Date().toISOString(),
+  }
+}
+
 async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const context = await getSellerOnboardingByToken(token, {
     includeRequirementsAndDocuments: true,
@@ -433,8 +530,21 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const status = listing?.sellerOnboardingStatus || sellerOnboarding?.status || onboarding?.status || 'pending'
   const listingId = listing?.id || onboarding?.private_listing_id || null
   const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
-  const mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
+  let mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
   const mandatePacketId = mandatePacket?.id || listing?.mandatePacketId || listing?.mandate_packet_id || null
+  const mandatePacketVersionId = mandatePacket?.packetVersionId || mandatePacket?.version?.id || null
+  if (mandatePacketId && mandatePacketVersionId) {
+    const finalSignedAccess = await resolveSellerClientPortalFinalSignedDocumentAccess({
+      token,
+      accessToken: options?.sellerPortalAccessToken,
+      packetId: mandatePacketId,
+      packetVersionId: mandatePacketVersionId,
+      download: false,
+    })
+    mandatePacket = attachSellerMandateFinalAccess(mandatePacket, finalSignedAccess)
+  } else {
+    mandatePacket = attachSellerMandateFinalAccess(mandatePacket)
+  }
   const requiredDocuments = getSellerRequiredDocuments(listing, formData)
     .map((item) => mapSellerRequiredDocument(item))
   const documents = (Array.isArray(listing?.documents) ? listing.documents : [])
@@ -505,6 +615,11 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     offers: rawOffers,
   })
   const sellerPortalStage = sellerJourney?.stage?.key || resolveSellerPortalWorkflowStage(listing, onboarding, status)
+  const sellerTransactionTracking = buildSellerTransactionTrackingProjection({
+    listing,
+    transaction: context?.transaction,
+    sellerPortalStage,
+  })
   const sellerVisibleExternalLinks = normalizeSellerVisibleExternalLinks([
     ...(Array.isArray(listing?.externalLinks) ? listing.externalLinks : []),
     ...(Array.isArray(listing?.listingExternalLinks) ? listing.listingExternalLinks : []),
@@ -520,12 +635,30 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     logoDarkUrl: listing?.agencyLogoDarkUrl || listing?.agency_logo_dark_url || listing?.organisationLogoDarkUrl || listing?.organisation_logo_dark_url || listing?.branding?.logoDarkUrl || listing?.branding?.logoDark || '',
     logoLightUrl: listing?.agencyLogoLightUrl || listing?.agency_logo_light_url || listing?.organisationLogoLightUrl || listing?.organisation_logo_light_url || listing?.branding?.logoLightUrl || listing?.branding?.logoLight || '',
   }
+  const activeSellingContext = {
+    id: `seller-${listingId || token}`,
+    contextType: 'selling',
+    status: 'active',
+    listingId,
+    listing_id: listingId,
+    transactionId: sellerTransactionTracking.transactionId,
+    transaction_id: sellerTransactionTracking.transactionId,
+    sellerOnboardingStatus: status,
+    seller_onboarding_status: status,
+    listingStatus: listing?.listingStatus || listing?.listing_status || listing?.status || '',
+    listing_status: listing?.listingStatus || listing?.listing_status || listing?.status || '',
+    mandatePacket,
+    externalListingLinks: sellerVisibleExternalLinks,
+    listingExternalLinks: sellerVisibleExternalLinks,
+    agencyName: sellerPortalBranding.agencyName,
+    organisationName: sellerPortalBranding.organisationName,
+  }
 
   return {
     link: {
       id: onboarding?.id || listingId || token,
       token,
-      transaction_id: null,
+      transaction_id: sellerTransactionTracking.transactionId,
       buyer_id: null,
       is_active: true,
     },
@@ -552,14 +685,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
         developer_company: sellerPortalBranding.organisationName || sellerPortalBranding.agencyName || '',
       },
     },
-    transaction: {
-      id: listing?.transactionId || listing?.transaction_id || null,
-      stage: sellerPortalStage,
-      current_main_stage: sellerPortalStage,
-      next_action: listing?.lifecycleNextAction || '',
-      updated_at: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
-      created_at: listing?.createdAt || onboarding?.created_at || null,
-    },
+    transaction: sellerTransactionTracking.transaction,
     buyer: {
       id: null,
       name: sellerName,
@@ -571,9 +697,10 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     sellerJourney,
     sellerPortalJourney,
     sellerMandateContinuity,
-    stage: sellerPortalStage,
-    mainStage: sellerPortalStage,
-    lastUpdated: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
+    activeSellingContext,
+    stage: sellerTransactionTracking.stage,
+    mainStage: sellerTransactionTracking.mainStage,
+    lastUpdated: sellerTransactionTracking.lastUpdated,
     documents,
     additionalDocumentRequests: [],
     discussion: [],
@@ -1320,43 +1447,9 @@ function dedupeDocumentCenterItems(items = []) {
   })
 }
 
-function getMandatePacketFinalSignedFilePath(mandatePacket = null) {
-  return String(
-    mandatePacket?.finalSignedFilePath ||
-      mandatePacket?.final_signed_file_path ||
-      mandatePacket?.version?.final_signed_file_path ||
-      mandatePacket?.version?.finalSignedFilePath ||
-      '',
-  ).trim()
-}
-
-function getMandatePacketFinalSignedUrl(mandatePacket = null) {
-  return String(
-    mandatePacket?.finalSignedDownloadUrl ||
-      mandatePacket?.finalSignedFileAccessUrl ||
-      mandatePacket?.final_signed_file_url ||
-      mandatePacket?.version?.final_signed_file_access_url ||
-      mandatePacket?.version?.final_signed_file_url ||
-      '',
-  ).trim()
-}
-
 function isMandatePacketFinalSigned(mandatePacket = null) {
   if (!mandatePacket || typeof mandatePacket !== 'object') return false
-  const state = normalizeValue(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status)
-  const hasFinalArtifact = Boolean(
-    getMandatePacketFinalSignedFilePath(mandatePacket) ||
-      getMandatePacketFinalSignedUrl(mandatePacket),
-  )
-  return hasFinalArtifact && [
-    'fully_signed',
-    'signed',
-    'completed',
-    'complete',
-    'finalised',
-    'finalized',
-    'archived',
-  ].includes(state)
+  return mandatePacket?.finalSignedAccess?.available === true
 }
 
 function getPortalSellerEmail(portalData = {}) {
@@ -1435,27 +1528,25 @@ async function hydrateSellerMandatePacketForPortalData(token, portalData = {}, w
 function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return null
   const mandatePacket = portalData?.activeSellingContext?.mandatePacket || portalData?.mandate?.packet || null
-  const finalSignedFilePath = getMandatePacketFinalSignedFilePath(mandatePacket)
-  const finalSignedUrl = getMandatePacketFinalSignedUrl(mandatePacket)
   if (!isMandatePacketFinalSigned(mandatePacket)) return null
 
   const packetId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
-  const versionId = String(mandatePacket?.version?.id || '').trim()
+  const versionId = String(mandatePacket?.packetVersionId || mandatePacket?.version?.id || '').trim()
   const fileName = String(
-    mandatePacket?.finalSignedFileName ||
+    mandatePacket?.finalSignedAccess?.finalArtifact?.fileName ||
+      mandatePacket?.finalSignedFileName ||
       mandatePacket?.version?.final_signed_file_name ||
       'Signed Mandate',
   ).trim()
   return {
-    id: `mandate-final-signed-${versionId || packetId || finalSignedFilePath || finalSignedUrl}`,
+    id: `mandate-final-signed-${versionId || packetId}`,
     name: fileName,
     document_name: fileName,
     category: 'mandate_signature',
     document_type: 'mandate_signature',
-    file_path: finalSignedFilePath,
-    file_bucket: String(mandatePacket?.finalSignedFileBucket || mandatePacket?.version?.final_signed_file_bucket || '').trim(),
-    url: finalSignedUrl,
-    openDirectUrl: Boolean(finalSignedUrl),
+    canonicalFinalArtifact: true,
+    packet_id: packetId,
+    packet_version_id: versionId,
     status: 'completed',
     visibility: 'seller_visible',
     created_at:

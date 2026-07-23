@@ -10,6 +10,11 @@ export function clearWorkspaceScopedRuntimeCaches() {
   clearOrganisationRuntimeCache()
 
   if (typeof window === 'undefined' || !window.localStorage) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bridge:workspace-scoped-cache-cleared', {
+        detail: { clearedLocalStorageKeys: 0 },
+      }))
+    }
     return { clearedLocalStorageKeys: 0 }
   }
 

@@ -13,9 +13,11 @@ function runJson(script, timeout = 360_000) {
 const config = JSON.parse(fs.readFileSync('config/legal-document-g3-operations.json', 'utf8'))
 const g1Run = runJson('scripts/document-generator-phase-g1-verify.mjs')
 const g2Run = runJson('scripts/document-generator-phase-g2-browser-usability.mjs')
+const reconciliationRun = runJson('scripts/legal-document-phase5-reconcile.mjs')
 const preflightBlockers = []
 if (!g1Run.report) preflightBlockers.push({ code: 'G3_G1_CHECK_UNAVAILABLE', detail: g1Run.error, solution: 'Restore the read-only G1 verifier and its staging service credentials.' })
 if (!g2Run.report) preflightBlockers.push({ code: 'G3_G2_CHECK_UNAVAILABLE', detail: g2Run.error, solution: 'Restore the G2 browser actor and staging application access.' })
+if (!reconciliationRun.report) preflightBlockers.push({ code: 'G3_RECONCILIATION_CHECK_UNAVAILABLE', detail: reconciliationRun.error, solution: 'Restore the read-only Phase 5 reconciliation verifier and service credentials.' })
 
 let watchdog = {}
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -36,7 +38,7 @@ for (const reference of [config.supportRunbookReference, config.rollbackRunbookR
   if (file && !fs.existsSync(file)) preflightBlockers.push({ code: 'G3_RUNBOOK_REFERENCE_INVALID', detail: file, solution: 'Correct the configured runbook path to an existing operational procedure.' })
 }
 
-const assessment = assessDocumentGeneratorOperationalReadiness({ g1: g1Run.report || {}, g2: g2Run.report || {}, watchdog, config })
+const assessment = assessDocumentGeneratorOperationalReadiness({ g1: g1Run.report || {}, g2: g2Run.report || {}, reconciliation: reconciliationRun.report || {}, watchdog, config })
 const blockers = [...new Map([...preflightBlockers, ...assessment.blockers].map((item) => [item.code, item])).values()]
 console.log(JSON.stringify({
   phase: 'G3',
@@ -47,6 +49,7 @@ console.log(JSON.stringify({
   evidence: {
     g1Status: g1Run.report?.status || 'UNAVAILABLE',
     g2Status: g2Run.report?.status || 'UNAVAILABLE',
+    reconciliationStatus: reconciliationRun.report?.status || 'UNAVAILABLE',
     watchdog: watchdog.id ? { id: watchdog.id, status: watchdog.status, createdAt: watchdog.created_at, ageMinutes: assessment.watchdogAgeMinutes, metrics: watchdog.summary?.metrics || {}, blockers: watchdog.summary?.blockers || [] } : null,
     operations: { status: config.status, operationsOwner: config.operationsOwner, supportOwner: config.supportOwner, incidentChannelReference: config.incidentChannelReference, monitoringReference: config.monitoringReference, supportRunbookReference: config.supportRunbookReference, rollbackRunbookReference: config.rollbackRunbookReference },
   },

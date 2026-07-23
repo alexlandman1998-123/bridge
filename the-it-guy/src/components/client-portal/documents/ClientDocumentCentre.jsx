@@ -282,7 +282,7 @@ function isSignedDocumentCentreItem(item = {}) {
   return source.includes('signed') || source.includes('signature') || source.includes('otp') || source.includes('mandate')
 }
 
-function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') {
+export function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') {
   const typedItems = uniqueById(
     toArray(documentCenter?.items)
       .filter((item) => isClientVisible(item))

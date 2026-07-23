@@ -4,9 +4,9 @@ import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 
-const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
 const FIXTURE_KEY = 'otp_phase2_launch_acceptance_v1'
 const WRITE_FLAG = 'OTP_PHASE2_STAGING_WRITE'
+const LEGACY_HARNESS_FLAG = 'OTP_PHASE2_LEGACY_HARNESS_APPROVED'
 const DEFAULT_TRANSACTION_ID = 'cc6d15bb-1a5b-44f3-8809-1e066b5cb85b'
 const OUTPUT_DIR = resolve(process.cwd(), 'tmp/pdfs/otp-phase2')
 const SIGNATURE_DATA_URL =
@@ -38,6 +38,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     finalizePacketId: argv.find((value) => value.startsWith('--finalize-existing='))?.slice('--finalize-existing='.length) || '',
     scenario,
     cleanupPartials: argv.includes('--cleanup-partials'),
+    legacyHarnessAcknowledged: argv.includes('--acknowledge-legacy-harness'),
   }
 }
 
@@ -51,10 +52,20 @@ function safeFileName(value) {
 
 function assertStagingConfig(env, args) {
   const url = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
-  assert.ok(url.includes(STAGING_PROJECT_REF), 'Refusing to run outside the canonical staging project.')
+  const stagingProjectRef = normalize(env.OTP_PHASE2_LEGACY_STAGING_PROJECT_REF)
+  assert.ok(args.legacyHarnessAcknowledged && env[LEGACY_HARNESS_FLAG] === 'true', `This historical OTP-only harness requires --acknowledge-legacy-harness and ${LEGACY_HARNESS_FLAG}=true. It is not the Phase 2 rollout authority.`)
+  assert.ok(/^[a-z0-9]{8,64}$/.test(stagingProjectRef), 'OTP_PHASE2_LEGACY_STAGING_PROJECT_REF must be an explicit Supabase project reference.')
+  let parsedUrl = null
+  try {
+    parsedUrl = new URL(url)
+  } catch {
+    // The assertion below keeps the externally visible failure concise.
+  }
+  assert.ok(parsedUrl && parsedUrl.origin === `https://${stagingProjectRef}.supabase.co` && ['/',''].includes(parsedUrl.pathname) && !parsedUrl.search && !parsedUrl.hash, 'Refusing legacy harness unless the Supabase URL is the exact declared staging origin.')
   assert.ok(env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_KEY, 'Staging anon key is required.')
   assert.ok(env.CANONICAL_BROWSER_EMAIL || env.STAGING_INTERNAL_EMAIL, 'Staging actor email is required.')
   assert.ok(env.CANONICAL_BROWSER_PASSWORD || env.STAGING_INTERNAL_PASSWORD, 'Staging actor password is required.')
+  assert.ok(!args.finalizePacketId, '--finalize-existing is retired from the legacy harness; use the exact-version generic finaliser through the controlled canonical lifecycle.')
   if (args.write) {
     assert.ok(args.confirmed && process.env[WRITE_FLAG] === 'true', `Write mode requires --confirm-staging and ${WRITE_FLAG}=true.`)
   }

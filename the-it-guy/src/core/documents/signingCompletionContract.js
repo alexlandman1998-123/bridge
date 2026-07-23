@@ -23,6 +23,7 @@ export function buildSigningCompletion(input = {}) {
   const completedAt = text(source.completedAt || source.completed_at || signer.signedAt || signer.signed_at) || null
   const finalPath = text(finalArtifact.path || finalArtifact.filePath || finalArtifact.file_path || version.finalSignedFilePath)
   const finalUrl = text(finalArtifact.url || finalArtifact.downloadUrl || finalArtifact.download_url || version.finalSignedFileUrl)
+  const finalArtifactReady = finalArtifact.ready === true || Boolean(finalPath || finalUrl)
 
   return {
     contract: SIGNING_COMPLETION_CONTRACT,
@@ -53,7 +54,10 @@ export function buildSigningCompletion(input = {}) {
       signedAt: text(signer.signedAt || signer.signed_at || completedAt) || null,
     },
     finalArtifact: {
-      ready: Boolean(finalPath || finalUrl),
+      ready: finalArtifactReady,
+      resolver: text(finalArtifact.resolver) || null,
+      packetId: text(finalArtifact.packetId || finalArtifact.packet_id || document.packetId || document.packet_id || document.id) || null,
+      packetVersionId: text(finalArtifact.packetVersionId || finalArtifact.packet_version_id || version.id || version.versionId || version.version_id) || null,
       documentId: text(finalArtifact.documentId || finalArtifact.document_id || version.finalSignedDocumentId) || null,
       fileName: text(finalArtifact.fileName || finalArtifact.file_name || version.finalSignedFileName) || null,
       bucket: text(finalArtifact.bucket || finalArtifact.fileBucket || finalArtifact.file_bucket) || null,
@@ -69,11 +73,11 @@ export function buildSigningCompletion(input = {}) {
       verifiedAt: text(access.verifiedAt || access.verified_at) || null,
     },
     delivery: {
-      status: key(delivery.status || source.deliveryStatus || source.delivery_status) || (finalPath || finalUrl ? 'available' : 'preparing'),
+      status: key(delivery.status || source.deliveryStatus || source.delivery_status) || (finalArtifactReady ? 'available' : 'preparing'),
       emailStatus: key(delivery.emailStatus || delivery.email_status) || 'not_confirmed',
       attemptedAt: text(delivery.attemptedAt || delivery.attempted_at) || null,
     },
-    deliveryStatus: key(delivery.status || source.deliveryStatus || source.delivery_status) || (finalPath || finalUrl ? 'available' : 'preparing'),
+    deliveryStatus: key(delivery.status || source.deliveryStatus || source.delivery_status) || (finalArtifactReady ? 'available' : 'preparing'),
   }
 }
 

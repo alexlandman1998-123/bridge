@@ -595,11 +595,16 @@ function canDeclineIncomingMatter(row = {}) {
   return !['accepted', 'declined', 'removed', 'completed'].includes(normalize(row.statusKey || row.status))
 }
 
+function getIncomingMatterActionLabel(row = {}) {
+  return row.matterType || 'Attorney Instruction'
+}
+
 function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = false, declining = false }) {
   const href = row.actionHref || '#'
   const preview = getMatterPreview(row)
   const readyForAcceptance = canAcceptIncomingMatter(row)
   const canDecline = canDeclineIncomingMatter(row)
+  const matterLabel = getIncomingMatterActionLabel(row)
 
   return (
     <details className="relative" onClick={(event) => event.stopPropagation()}>
@@ -609,7 +614,7 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
       <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-xl">
         {row.actionHref ? (
           <Link className="block rounded-lg px-3 py-2 hover:bg-slate-50" to={href} state={{ matterPreview: preview }}>
-            {row.isPreInstruction ? 'Open Signed Mandate' : 'Open Transfer'}
+            {row.isPreInstruction ? 'Open Signed Mandate' : `Open ${matterLabel}`}
           </Link>
         ) : null}
         {readyForAcceptance ? (
@@ -619,7 +624,7 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
             onClick={() => onAcceptMatter?.(row)}
             className="block w-full rounded-lg px-3 py-2 text-left text-[#00614f] hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
           >
-            {accepting ? 'Accepting Transfer' : 'Accept Transfer'}
+            {accepting ? `Accepting ${matterLabel}` : `Accept ${matterLabel}`}
           </button>
         ) : null}
         {canDecline ? (
@@ -629,7 +634,7 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
             onClick={() => onDeclineMatter?.(row)}
             className="block w-full rounded-lg px-3 py-2 text-left text-red-600 hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
           >
-            {declining ? 'Declining Transfer' : 'Decline Transfer'}
+            {declining ? `Declining ${matterLabel}` : `Decline ${matterLabel}`}
           </button>
         ) : null}
         {row.isPreInstruction ? (
@@ -709,7 +714,7 @@ function IncomingMattersTable({
               <th className="w-10 border-b border-slate-200 px-4 py-3">
                 <input type="checkbox" checked={allSelected} onChange={(event) => onToggleAll(event.target.checked)} aria-label="Select all incoming matters" />
               </th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Transfer</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Instruction</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Parties / Property</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Waiting On</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Documents</th>
@@ -727,6 +732,7 @@ function IncomingMattersTable({
               const readyForAcceptance = canAcceptIncomingMatter(row)
               const accepting = acceptingMatterId === row.assignmentId
               const declining = decliningMatterId === row.assignmentId
+              const matterLabel = getIncomingMatterActionLabel(row)
               return (
                 <tr
                   key={row.assignmentId || row.matterId}
@@ -787,12 +793,12 @@ function IncomingMattersTable({
                           }}
                           className="text-xs font-semibold text-[#00614f] disabled:cursor-wait disabled:opacity-60"
                         >
-                          {accepting ? 'Accepting' : 'Accept Transfer'}
+                          {accepting ? 'Accepting' : `Accept ${matterLabel}`}
                         </button>
                       ) : null}
                       {row.actionHref ? (
                         <Link to={href} state={{ matterPreview: preview }} onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-[#00614f]">
-                          {row.isPreInstruction ? 'Open Mandate' : 'Open Transfer'}
+                          {row.isPreInstruction ? 'Open Mandate' : `Open ${matterLabel}`}
                         </Link>
                       ) : null}
                     </div>
@@ -810,7 +816,7 @@ function IncomingMattersTable({
                           className="inline-flex h-9 min-w-[118px] items-center justify-center gap-1.5 rounded-lg bg-[#00463d] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00614f] disabled:cursor-wait disabled:opacity-70"
                         >
                           <CheckCircle2 size={14} />
-                          {accepting ? 'Accepting' : 'Accept Transfer'}
+                          {accepting ? 'Accepting' : `Accept ${matterLabel}`}
                         </button>
                       ) : row.actionHref ? (
                         <Link
@@ -819,7 +825,7 @@ function IncomingMattersTable({
                           onClick={(event) => event.stopPropagation()}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#00463d] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00614f]"
                         >
-                          {row.isPreInstruction ? 'Open Mandate' : 'Open Transfer'}
+                          {row.isPreInstruction ? 'Open Mandate' : `Open ${matterLabel}`}
                           <ArrowRight size={14} />
                         </Link>
                       ) : null}

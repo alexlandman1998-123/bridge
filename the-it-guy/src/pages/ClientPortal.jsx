@@ -8,6 +8,7 @@ import {
   Clock3,
   AlertTriangle,
   Download,
+  Camera,
   ExternalLink,
   FileSignature,
   FileText,
@@ -22,9 +23,11 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  UploadCloud,
   User,
   Users,
   Wrench,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -33,7 +36,7 @@ import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from 
 import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
-import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
+import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
 import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
@@ -51,6 +54,7 @@ import {
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
+  resolveClientPortalFinalSignedDocumentAccess,
   fetchClientPortalMatterFinancialAccounts,
   respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
@@ -69,6 +73,7 @@ import {
   clearSellerPortalAccessToken,
   completeSellerPortalPasswordRecovery,
   createSellerClientPortalDocumentSignedUrl,
+  resolveSellerClientPortalFinalSignedDocumentAccess,
   getStoredSellerPortalAccessToken,
   isSellerPortalAuthRequiredError,
   isSellerPortalSessionExpiredError,
@@ -3479,6 +3484,2565 @@ function SellerMyDetailsReadonlyPage({ sections = [] }) {
   )
 }
 
+function getBuyerMobileDocumentCategory(item = {}) {
+  const haystack = `${item?.group || ''} ${item?.sellerCategoryKey || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
+  if (/additional/.test(haystack)) return { key: 'additional', label: 'Additional' }
+  if (/bond|bank|finance|income|employer|employment|affordability|proof.of.funds|source.of.funds|deposit|cash|salary|statement|liabilit/.test(haystack)) return { key: 'finance', label: 'Finance' }
+  if (/offer|otp|reservation|sale agreement|agreement of sale|purchase agreement|signed/.test(haystack)) return { key: 'sales', label: 'Sales' }
+  if (/property|unit|developer|specification|plans|levy|rates|hoa|body corporate/.test(haystack)) return { key: 'property', label: 'Property' }
+  return { key: 'fica', label: 'FICA' }
+}
+
+function getBuyerMobileDocumentBucket(document = {}) {
+  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
+  if (document?.actionRequired || ['required', 'requested', 'rejected', 'missing', 'outstanding'].includes(status)) return 'action'
+  if (document?.reviewRequired || ['uploaded', 'under_review', 'received', 'reviewed', 'pending_review'].includes(status)) return 'review'
+  if (document?.satisfied || ['approved', 'completed', 'verified', 'signed'].includes(status)) return 'approved'
+  if (document?.linkedDocument || document?.hasUploadedDocument || document?.uploaded) return 'review'
+  return document?.uploadSpec ? 'action' : 'review'
+}
+
+function resolveBuyerMobileDocumentUploadTarget(document = {}) {
+  const uploadSpec = document?.uploadSpec && typeof document.uploadSpec === 'object' ? document.uploadSpec : null
+  if (!uploadSpec) {
+    return {
+      uploadSpec: null,
+      uploadingKey: '',
+      requirementKey: '',
+      category: '',
+      documentType: '',
+    }
+  }
+
+  if (uploadSpec.type === 'additional_request') {
+    const requestId = pickFirstText(uploadSpec.requestId, uploadSpec.request_id, document.sourceId)
+    return {
+      uploadSpec,
+      uploadingKey: requestId ? `additional_request_${requestId}` : '',
+      requirementKey: requestId ? `additional_request_${requestId}` : '',
+      category: 'Additional Requests',
+      documentType: document.title || 'Additional document request',
+    }
+  }
+
+  const requirementInstanceId = pickFirstText(
+    uploadSpec.requirementInstanceId,
+    uploadSpec.canonicalRequirementInstanceId,
+    uploadSpec.canonical_requirement_instance_id,
+  )
+  const requirementKey = pickFirstText(
+    uploadSpec.requirementKey,
+    uploadSpec.documentDefinitionKey,
+    uploadSpec.document_definition_key,
+    document.uploadKey,
+    document.sourceId,
+  )
+  const normalizedRequirementKey = normalizeDocumentKey(requirementKey)
+  const category = getBuyerMobileDocumentCategory(document)
+
+  return {
+    uploadSpec,
+    uploadingKey: requirementInstanceId || normalizedRequirementKey,
+    requirementKey: normalizedRequirementKey,
+    category: uploadSpec.category || category.label || 'Buyer Document',
+    documentType: uploadSpec.documentType || uploadSpec.document_type || document.title || normalizedRequirementKey,
+  }
+}
+
+function buildBuyerMobileDocumentItems(documentCenter = {}) {
+  const sections = buildDocumentCentreSections(documentCenter, 'buying')
+  const itemsById = new Map()
+  const addItems = (items = []) => {
+    items.forEach((item) => {
+      const category = getBuyerMobileDocumentCategory(item)
+      const id = String(item?.id || item?.sourceId || item?.title || `${category.key}-${itemsById.size}`).trim()
+      if (!id || itemsById.has(id)) return
+      itemsById.set(id, {
+        ...item,
+        buyerCategoryKey: category.key,
+        buyerCategoryLabel: category.label,
+      })
+    })
+  }
+
+  addItems(sections.allRequired)
+  addItems(sections.additionalRequests)
+  addItems(sections.rejectedNeedsAttention)
+  addItems(sections.uploadedUnderReview)
+  addItems(sections.approvedCompleted)
+  addItems(sections.signedDocuments)
+  return [...itemsById.values()]
+}
+
+function formatBuyerMobileAppointmentDate(value, fallback = 'Date TBC') {
+  if (!value) return fallback
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short' })
+}
+
+function formatBuyerMobileAppointmentTime(value, fallback = 'Time TBC') {
+  if (!value) return fallback
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+}
+
+function getBuyerMobileAppointmentStatusMeta(status) {
+  const normalized = normalizePortalStatus(status)
+  if (['confirmed', 'accepted'].includes(normalized)) {
+    return { label: 'Confirmed', tone: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]' }
+  }
+  if (['pending', 'proposed', 'awaiting_confirmation'].includes(normalized)) {
+    return { label: 'Needs response', tone: 'border-[#f0d8ae] bg-[#fff7eb] text-[#9a5b0f]' }
+  }
+  if (['reschedule_requested'].includes(normalized)) {
+    return { label: 'Reschedule requested', tone: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]' }
+  }
+  if (['cancelled', 'canceled', 'declined'].includes(normalized)) {
+    return { label: toTitleLabel(status || 'Cancelled'), tone: 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]' }
+  }
+  if (['completed', 'complete'].includes(normalized)) {
+    return { label: 'Completed', tone: 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]' }
+  }
+  return { label: toTitleLabel(status || 'Scheduled'), tone: 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]' }
+}
+
+function buildBuyerMobileAppointmentItems(appointments = []) {
+  return (Array.isArray(appointments) ? appointments : [])
+    .filter((appointment) => String(appointment?.visibility || appointment?.visibility_scope || '').trim().toLowerCase() !== 'internal_only')
+    .map((appointment, index) => {
+      const dateTime = appointment?.dateTime || appointment?.date_time || appointment?.startTime || appointment?.start_time || ''
+      const normalizedStatus = normalizePortalStatus(appointment?.status)
+      const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
+      const teamParticipant = participants.find((participant) => {
+        const role = String(participant?.participantRole || participant?.role || '').trim().toLowerCase()
+        return role.includes('agent') || role.includes('attorney') || role.includes('bond') || role.includes('developer')
+      }) || null
+      return {
+        ...appointment,
+        id: appointment?.appointmentId || appointment?.id || `buyer_mobile_appointment_${index}`,
+        dateTime,
+        title: appointment?.title || appointment?.appointmentTypeLabel || appointment?.appointment_type_label || appointment?.appointmentType || 'Appointment',
+        dateLabel: formatBuyerMobileAppointmentDate(dateTime),
+        timeLabel: formatBuyerMobileAppointmentTime(dateTime),
+        location: appointment?.location || appointment?.meetingLocation || appointment?.meeting_location || 'Location to be confirmed',
+        description: appointment?.description || appointment?.instructions || 'Your team will confirm the purpose and any documents needed.',
+        teamLabel: teamParticipant?.displayName || teamParticipant?.name || appointment?.assignedToName || appointment?.assigned_to_name || 'Transaction team',
+        normalizedStatus,
+        canRespond: ['pending', 'proposed', 'awaiting_confirmation'].includes(normalizedStatus),
+      }
+    })
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.dateTime || '')
+      const rightTime = Date.parse(right.dateTime || '')
+      const safeLeft = Number.isNaN(leftTime) ? Number.MAX_SAFE_INTEGER : leftTime
+      const safeRight = Number.isNaN(rightTime) ? Number.MAX_SAFE_INTEGER : rightTime
+      return safeLeft - safeRight
+    })
+}
+
+function BuyerMobilePortal({
+  token,
+  workspaceNavigationScope,
+  activeSection,
+  developmentName,
+  unitLabel,
+  buyerName,
+  buyerInitial,
+  purchasePriceLabel,
+  heroStatusBadge,
+  journeyProgressPercent,
+  journeyCurrentStageLabel,
+  journeyNextStageLabel,
+  journeyHeroSubtext,
+  clientJourneySteps = [],
+  nextStepState = {},
+  primaryOverviewAction = {},
+  primaryOverviewActionClasses,
+  missingRequired,
+  financeTypeLabel,
+  financeSectionKey = 'account',
+  matterAccountsSummary = {},
+  matterAccounts = [],
+  matterAccountsLoading = false,
+  matterAccountsError = '',
+  matterAccountsUnavailable = false,
+  uploadingMatterProofAccountId = '',
+  matterProofUploadFeedback = null,
+  onUploadMatterProof = null,
+  uploadingMatterRequestId = '',
+  matterRequestUploadFeedback = null,
+  onUploadMatterRequestDocument = null,
+  upcomingAppointmentCount,
+  appointments = [],
+  appointmentActionPending = '',
+  appointmentFeedback = '',
+  onConfirmAppointment = null,
+  onDeclineAppointment = null,
+  onRequestAppointmentReschedule = null,
+  blockingActionCount = 0,
+  prioritizedNextActions = [],
+  hiddenNextActionCount = 0,
+  latestJourneyFeedItems = [],
+  whatHappensNextItems = [],
+  reservationAction = null,
+  buyerDocumentItems = [],
+  uploadingDocumentKey = '',
+  openingDocumentPath = '',
+  onUploadBuyerDocument = null,
+  onOpenBuyerDocument = null,
+  teamMembers = [],
+  enabledSections = {},
+  buyerPortalStatusItems = [],
+  buyerPortalAccessDescription = '',
+  buyerMoreSummary = {},
+}) {
+  const [expandedStepId, setExpandedStepId] = useState(() => {
+    const currentStep = clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked')
+    return currentStep?.id || clientJourneySteps[0]?.id || ''
+  })
+  const buyerPhotoInputRef = useRef(null)
+  const buyerFileInputRef = useRef(null)
+  const buyerFinancePhotoInputRef = useRef(null)
+  const buyerFinanceFileInputRef = useRef(null)
+  const [buyerDocumentFilter, setBuyerDocumentFilter] = useState('action')
+  const [selectedBuyerDocument, setSelectedBuyerDocument] = useState(null)
+  const [selectedBuyerUploadFile, setSelectedBuyerUploadFile] = useState(null)
+  const [selectedBuyerUploadPreviewUrl, setSelectedBuyerUploadPreviewUrl] = useState('')
+  const [buyerUploadFeedback, setBuyerUploadFeedback] = useState({ tone: '', message: '' })
+  const [selectedBuyerFinanceAction, setSelectedBuyerFinanceAction] = useState(null)
+  const [selectedBuyerFinanceFile, setSelectedBuyerFinanceFile] = useState(null)
+  const [selectedBuyerFinancePreviewUrl, setSelectedBuyerFinancePreviewUrl] = useState('')
+  const [buyerFinanceDraft, setBuyerFinanceDraft] = useState({
+    amount: '',
+    date: new Date().toISOString().slice(0, 10),
+    reference: '',
+    notes: '',
+  })
+  const [buyerFinanceFeedback, setBuyerFinanceFeedback] = useState({ tone: '', message: '' })
+  const [selectedBuyerAppointment, setSelectedBuyerAppointment] = useState(null)
+  const [buyerAppointmentRescheduleDraft, setBuyerAppointmentRescheduleDraft] = useState({
+    preferredDateTime: '',
+    notes: '',
+  })
+  const requestedMobileSection = activeSection === 'bond_application' || activeSection === 'account' ? 'finance' : activeSection
+  const buyerMoreSectionKeys = ['team', 'details', 'handover', 'snags', 'settings', 'alterations', 'review']
+  const mobileSection = buyerMoreSectionKeys.includes(requestedMobileSection)
+    ? 'more'
+    : ['overview', 'progress', 'documents', 'finance', 'appointments'].includes(requestedMobileSection)
+      ? requestedMobileSection
+      : 'overview'
+  const activeStep = clientJourneySteps.find((step) => step.id === expandedStepId) ||
+    clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked') ||
+    clientJourneySteps[0]
+  const safeProgress = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
+  const ringStyle = {
+    background: `conic-gradient(#14263d ${safeProgress * 3.6}deg, #e4e9ef 0deg)`,
+  }
+  const statusClassName = heroStatusBadge?.className || 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
+  const bottomNavItems = [
+    { key: 'overview', section: 'overview', label: 'Home', icon: Home },
+    { key: 'progress', section: 'progress', label: 'Progress', icon: CheckCircle2 },
+    { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
+    { key: 'finance', section: financeSectionKey, label: 'Finance', icon: HandCoins },
+    { key: 'more', section: 'team', label: 'More', icon: Settings },
+  ]
+  const visibleTeamMembers = teamMembers.slice(0, 4)
+  const buyerAppointmentItems = buildBuyerMobileAppointmentItems(appointments)
+  const nowForBuyerAppointments = Date.now()
+  const upcomingBuyerAppointments = buyerAppointmentItems.filter((appointment) => {
+    if (['completed', 'complete', 'cancelled', 'canceled', 'declined'].includes(appointment.normalizedStatus)) return false
+    const time = Date.parse(appointment.dateTime || '')
+    return Number.isNaN(time) || time >= nowForBuyerAppointments - (1000 * 60 * 60 * 2)
+  })
+  const pastBuyerAppointments = buyerAppointmentItems.filter((appointment) =>
+    ['completed', 'complete', 'cancelled', 'canceled', 'declined', 'reschedule_requested'].includes(appointment.normalizedStatus),
+  )
+  const nextBuyerAppointment = upcomingBuyerAppointments[0] || null
+  const mobileMoreCards = [
+    {
+      key: 'details',
+      label: 'My details',
+      value: buyerMoreSummary.onboardingComplete ? 'Complete' : 'Review',
+      description: buyerMoreSummary.onboardingFieldCount
+        ? `${buyerMoreSummary.onboardingFieldCount} profile field${buyerMoreSummary.onboardingFieldCount === 1 ? '' : 's'} on file.`
+        : 'Review the buyer details held on this transaction.',
+      to: 'details',
+      icon: User,
+      enabled: enabledSections.details !== false,
+    },
+    {
+      key: 'handover',
+      label: 'Handover',
+      value: buyerMoreSummary.handoverStatus || 'Preparing',
+      description: buyerMoreSummary.handoverSummary || 'Track final readiness before key collection.',
+      to: 'handover',
+      icon: KeyRound,
+      enabled: enabledSections.handover !== false,
+    },
+    {
+      key: 'snags',
+      label: 'Snags',
+      value: Number(buyerMoreSummary.snagOpenCount || 0) ? `${buyerMoreSummary.snagOpenCount} open` : 'Clear',
+      description: enabledSections.snags ? 'Log and monitor practical completion items.' : 'Snag reporting is not active for this transaction.',
+      to: 'snags',
+      icon: Wrench,
+      enabled: Boolean(enabledSections.snags),
+    },
+    {
+      key: 'alterations',
+      label: 'Alterations',
+      value: enabledSections.alterations ? 'Available' : 'Not active',
+      description: 'Submit and track buyer alteration requests.',
+      to: 'alterations',
+      icon: LayoutDashboard,
+      enabled: Boolean(enabledSections.alterations),
+    },
+    {
+      key: 'review',
+      label: 'Review',
+      value: enabledSections.review ? 'Available' : 'Not active',
+      description: 'Share service feedback when reviews are enabled.',
+      to: 'review',
+      icon: FileSignature,
+      enabled: Boolean(enabledSections.review),
+    },
+    {
+      key: 'settings',
+      label: 'Settings',
+      value: 'Portal',
+      description: 'See portal access and enabled support features.',
+      to: 'settings',
+      icon: ShieldCheck,
+      enabled: enabledSections.settings !== false,
+    },
+  ].filter((item) => item.enabled)
+  const financeDocumentCount = Number(matterAccountsSummary?.documentCount || 0)
+  const buyerMatterAccounts = Array.isArray(matterAccounts) ? matterAccounts : []
+  const buyerFinanceHasAccounts = buyerMatterAccounts.length > 0
+  const buyerFinanceBalanceDue = Number(matterAccountsSummary?.balanceDue || 0)
+  const buyerFinanceOpenRequests = Number(matterAccountsSummary?.openRequests || 0)
+  const buyerFinanceOverdueRequests = Number(matterAccountsSummary?.overdueRequests || 0)
+  const buyerFinanceEventCount = Number(matterAccountsSummary?.eventCount || 0)
+  const buyerFinanceRequestItems = buyerMatterAccounts.flatMap((account) =>
+    (Array.isArray(account?.requests) ? account.requests : []).map((request) => ({ account, request })),
+  )
+  const buyerFinanceOpenRequestItems = buyerFinanceRequestItems.filter(({ request }) =>
+    !['complete', 'completed', 'cancelled', 'canceled'].includes(normalizePortalStatus(request?.requestStatus)),
+  )
+  const buyerFinanceDocumentItems = buyerMatterAccounts.flatMap((account) =>
+    (Array.isArray(account?.documents) ? account.documents : []).map((document) => ({ account, document })),
+  )
+  const buyerFinanceActivityItems = buyerMatterAccounts.flatMap((account) => {
+    const entries = (Array.isArray(account?.entries) ? account.entries : []).map((entry) => ({
+      id: entry.id || `${account.id}-entry-${entry.description}`,
+      title: entry.description || toTitleLabel(entry.entryType || 'Account entry'),
+      meta: `${toTitleLabel(entry.entryType || 'Entry')} - ${formatShortPortalDate(entry.occurredOn, 'Date pending')}`,
+      amount: Number(entry.amount || 0),
+      createdAt: entry.occurredOn,
+      tone: Number(entry.amount || 0) < 0 ? 'credit' : 'debit',
+    }))
+    const events = (Array.isArray(account?.events) ? account.events : []).map((event) => ({
+      id: event.id || `${account.id}-event-${event.eventType}`,
+      title: event?.payload?.title || event?.payload?.description || toTitleLabel(event.eventType || 'Account update'),
+      meta: `${toTitleLabel(event.eventType || 'Update')} - ${formatShortPortalDate(event.createdAt, 'Recently')}`,
+      amount: Number(event?.payload?.amount || 0),
+      createdAt: event.createdAt,
+      tone: 'event',
+    }))
+    return [...entries, ...events]
+  }).sort((left, right) => Date.parse(right.createdAt || '') - Date.parse(left.createdAt || '')).slice(0, 4)
+  const selectedBuyerFinanceAccount = selectedBuyerFinanceAction?.account || null
+  const selectedBuyerFinanceRequest = selectedBuyerFinanceAction?.request || null
+  const selectedBuyerFinanceMode = selectedBuyerFinanceAction?.mode || ''
+  const selectedBuyerFinanceBusy = Boolean(
+    buyerFinanceFeedback.tone === 'loading' ||
+      (selectedBuyerFinanceMode === 'proof' && selectedBuyerFinanceAccount?.id && uploadingMatterProofAccountId === selectedBuyerFinanceAccount.id) ||
+      (selectedBuyerFinanceMode === 'request' && selectedBuyerFinanceRequest?.id && uploadingMatterRequestId === selectedBuyerFinanceRequest.id),
+  )
+  const selectedBuyerFinanceTitle = selectedBuyerFinanceMode === 'request'
+    ? selectedBuyerFinanceRequest?.title || 'Requested finance document'
+    : 'Upload proof of payment'
+  const selectedBuyerFinanceSubtitle = selectedBuyerFinanceMode === 'request'
+    ? `${toTitleLabel(selectedBuyerFinanceRequest?.requestType || 'Document')} requested by your legal team.`
+    : selectedBuyerFinanceAccount?.partyLabel || 'Send payment evidence to your legal team.'
+  const visibleActionItems = prioritizedNextActions.slice(0, 3)
+  const visibleRecentUpdates = latestJourneyFeedItems.slice(0, 3)
+  const nextMilestoneItems = whatHappensNextItems.slice(0, 3)
+  const buyerDocumentCounts = buyerDocumentItems.reduce((counts, item) => {
+    const bucket = getBuyerMobileDocumentBucket(item)
+    counts.all += 1
+    counts[bucket] += 1
+    return counts
+  }, { action: 0, review: 0, approved: 0, all: 0 })
+  const buyerDocumentFilters = [
+    { key: 'action', label: 'Pending', count: buyerDocumentCounts.action },
+    { key: 'review', label: 'Review', count: buyerDocumentCounts.review },
+    { key: 'approved', label: 'Approved', count: buyerDocumentCounts.approved },
+    { key: 'all', label: 'All', count: buyerDocumentCounts.all },
+  ]
+  const activeBuyerDocumentFilter = buyerDocumentFilters.some((filter) => filter.key === buyerDocumentFilter)
+    ? buyerDocumentFilter
+    : 'action'
+  const visibleBuyerDocuments = buyerDocumentItems
+    .filter((item) => activeBuyerDocumentFilter === 'all' || getBuyerMobileDocumentBucket(item) === activeBuyerDocumentFilter)
+    .slice(0, 8)
+  const selectedBuyerUploadTarget = selectedBuyerDocument
+    ? resolveBuyerMobileDocumentUploadTarget(selectedBuyerDocument)
+    : null
+  const selectedBuyerLinkedDocument = selectedBuyerDocument?.linkedDocument || selectedBuyerDocument?.document || null
+  const selectedBuyerUploadKey = selectedBuyerUploadTarget?.uploadingKey || ''
+  const selectedBuyerIsUploading = Boolean(
+    selectedBuyerUploadKey &&
+      uploadingDocumentKey &&
+      (uploadingDocumentKey === selectedBuyerUploadKey || uploadingDocumentKey === selectedBuyerUploadTarget?.requirementKey),
+  )
+  const selectedBuyerUploadBusy = selectedBuyerIsUploading || buyerUploadFeedback.tone === 'loading'
+  const selectedBuyerOpenKey = String(selectedBuyerLinkedDocument?.file_path || selectedBuyerLinkedDocument?.storage_path || selectedBuyerLinkedDocument?.id || '').trim()
+  const selectedBuyerIsOpening = Boolean(selectedBuyerOpenKey && openingDocumentPath === selectedBuyerOpenKey)
+  const overviewActionItems = visibleActionItems.length
+    ? visibleActionItems
+    : [{
+        id: 'primary-next-step',
+        title: nextStepState.title || 'Review your next step',
+        description: nextStepState.description || 'Your team will keep this action updated as the transaction progresses.',
+        actionRoute: primaryOverviewAction.to || 'overview',
+        actionLabel: primaryOverviewAction.label || 'Open',
+        priority: nextStepState.requiresAction ? 'high' : 'normal',
+        blocking: Boolean(nextStepState.requiresAction),
+      }]
+  const quickActionItems = [
+    {
+      key: 'documents',
+      label: 'Documents',
+      value: missingRequired ? `${missingRequired} required` : 'Ready',
+      detail: missingRequired ? 'Uploads still needed' : 'No required uploads',
+      to: 'documents',
+      icon: FileText,
+      tone: missingRequired ? 'action' : 'complete',
+    },
+    {
+      key: 'finance',
+      label: 'Finance',
+      value: financeTypeLabel,
+      detail: financeDocumentCount ? `${financeDocumentCount} account document${financeDocumentCount === 1 ? '' : 's'}` : 'Finance workspace',
+      to: financeSectionKey,
+      icon: HandCoins,
+      tone: 'info',
+    },
+    reservationAction
+      ? {
+          key: 'reservation',
+          label: 'Reservation',
+          value: reservationAction.statusLabel,
+          detail: reservationAction.needsAction ? reservationAction.amountLabel : reservationAction.fileLabel,
+          to: 'documents',
+          icon: ShieldCheck,
+          tone: reservationAction.needsAction ? 'action' : 'complete',
+        }
+      : {
+          key: 'appointments',
+          label: 'Appointments',
+          value: upcomingAppointmentCount ? `${upcomingAppointmentCount} upcoming` : 'No upcoming',
+          detail: upcomingAppointmentCount ? 'Review schedule' : 'Your team will update this',
+          to: 'appointments',
+          icon: CalendarClock,
+          tone: upcomingAppointmentCount ? 'info' : 'neutral',
+        },
+  ].filter(Boolean)
+  const quickActionToneClasses = {
+    action: 'border-[#f0d8ae] bg-[#fff8ed] text-[#9a5b0f]',
+    complete: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
+    info: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
+    neutral: 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]',
+  }
+  const getActionPriorityClasses = (action = {}) => {
+    const normalizedPriority = normalizePortalStatus(action?.priority)
+    if (action?.blocking || normalizedPriority === 'urgent') return 'border-[#f1d4c8] bg-[#fff5f1] text-[#b5472d]'
+    if (normalizedPriority === 'high') return 'border-[#f0d8ae] bg-[#fff8ed] text-[#9a5b0f]'
+    if (normalizedPriority === 'informational') return 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
+    return 'border-[#dde7f1] bg-[#f8fbff] text-[#5f7086]'
+  }
+
+  useEffect(() => {
+    if (!selectedBuyerUploadFile?.file || !String(selectedBuyerUploadFile.file.type || '').startsWith('image/')) {
+      setSelectedBuyerUploadPreviewUrl('')
+      return undefined
+    }
+
+    const previewUrl = URL.createObjectURL(selectedBuyerUploadFile.file)
+    setSelectedBuyerUploadPreviewUrl(previewUrl)
+    return () => {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [selectedBuyerUploadFile])
+
+  useEffect(() => {
+    if (activeBuyerDocumentFilter === 'all' || buyerDocumentCounts[activeBuyerDocumentFilter] > 0 || buyerDocumentCounts.all === 0) {
+      return
+    }
+    if (buyerDocumentCounts.action > 0) {
+      setBuyerDocumentFilter('action')
+      return
+    }
+    if (buyerDocumentCounts.review > 0) {
+      setBuyerDocumentFilter('review')
+      return
+    }
+    if (buyerDocumentCounts.approved > 0) {
+      setBuyerDocumentFilter('approved')
+    }
+  }, [
+    activeBuyerDocumentFilter,
+    buyerDocumentCounts.action,
+    buyerDocumentCounts.approved,
+    buyerDocumentCounts.all,
+    buyerDocumentCounts.review,
+  ])
+
+  useEffect(() => {
+    if (!selectedBuyerFinanceFile?.file || !String(selectedBuyerFinanceFile.file.type || '').startsWith('image/')) {
+      setSelectedBuyerFinancePreviewUrl('')
+      return undefined
+    }
+
+    const previewUrl = URL.createObjectURL(selectedBuyerFinanceFile.file)
+    setSelectedBuyerFinancePreviewUrl(previewUrl)
+    return () => {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [selectedBuyerFinanceFile])
+
+  function openBuyerDocumentSheet(document) {
+    setSelectedBuyerDocument(document)
+    setSelectedBuyerUploadFile(null)
+    setBuyerUploadFeedback({ tone: '', message: '' })
+  }
+
+  function closeBuyerDocumentSheet() {
+    if (selectedBuyerUploadBusy) return
+    setSelectedBuyerDocument(null)
+    setSelectedBuyerUploadFile(null)
+    setBuyerUploadFeedback({ tone: '', message: '' })
+  }
+
+  async function handleBuyerSelectedDocumentFile(file, sourceLabel = 'file') {
+    if (!file || !selectedBuyerDocument || typeof onUploadBuyerDocument !== 'function') {
+      return
+    }
+
+    const maxUploadBytes = 25 * 1024 * 1024
+    setSelectedBuyerUploadFile({
+      file,
+      name: file.name || (sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'),
+      sizeLabel: formatSellerMobileUploadSize(file.size),
+      type: file.type || '',
+      sourceLabel,
+    })
+    if (file.size > maxUploadBytes) {
+      setBuyerUploadFeedback({
+        tone: 'error',
+        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+      })
+      return
+    }
+
+    const target = resolveBuyerMobileDocumentUploadTarget(selectedBuyerDocument)
+    if (!target.uploadSpec) {
+      setBuyerUploadFeedback({
+        tone: 'error',
+        message: 'This document can be viewed, but it is not configured for upload.',
+      })
+      return
+    }
+
+    setBuyerUploadFeedback({
+      tone: 'loading',
+      message: sourceLabel === 'photo' ? 'Uploading photo...' : 'Uploading file...',
+    })
+    const result = await onUploadBuyerDocument(target.uploadSpec, file)
+    if (result?.ok === false) {
+      setBuyerUploadFeedback({
+        tone: 'error',
+        message: result.error || 'Upload failed. Please try again.',
+      })
+      return
+    }
+    setBuyerUploadFeedback({
+      tone: 'success',
+      message: sourceLabel === 'photo' ? 'Photo uploaded for review.' : 'File uploaded for review.',
+    })
+    if (result?.document) {
+      setSelectedBuyerDocument((previous) => previous
+        ? {
+            ...previous,
+            linkedDocument: result.document,
+            status: 'uploaded',
+            hasUploadedDocument: true,
+            description: 'Your file has been received and is waiting for review.',
+          }
+        : previous)
+    }
+  }
+
+  function openBuyerFinanceSheet(action) {
+    const request = action?.request || null
+    setSelectedBuyerFinanceAction(action)
+    setSelectedBuyerFinanceFile(null)
+    setBuyerFinanceFeedback({ tone: '', message: '' })
+    setBuyerFinanceDraft({
+      amount: request?.amountDue ? String(request.amountDue) : '',
+      date: new Date().toISOString().slice(0, 10),
+      reference: request?.externalReference || '',
+      notes: '',
+    })
+  }
+
+  function closeBuyerFinanceSheet() {
+    if (selectedBuyerFinanceBusy) return
+    setSelectedBuyerFinanceAction(null)
+    setSelectedBuyerFinanceFile(null)
+    setBuyerFinanceFeedback({ tone: '', message: '' })
+  }
+
+  function handleBuyerFinanceSelectedFile(file, sourceLabel = 'file') {
+    if (!file) return
+
+    const maxUploadBytes = 25 * 1024 * 1024
+    setSelectedBuyerFinanceFile({
+      file,
+      name: file.name || (sourceLabel === 'photo' ? 'Payment photo' : 'Selected file'),
+      sizeLabel: formatSellerMobileUploadSize(file.size),
+      type: file.type || '',
+      sourceLabel,
+    })
+    if (file.size > maxUploadBytes) {
+      setBuyerFinanceFeedback({
+        tone: 'error',
+        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+      })
+      return
+    }
+    setBuyerFinanceFeedback({ tone: '', message: '' })
+  }
+
+  async function submitBuyerFinanceAction() {
+    if (!selectedBuyerFinanceAction || !selectedBuyerFinanceAccount) {
+      setBuyerFinanceFeedback({ tone: 'error', message: 'Choose the account this upload belongs to.' })
+      return
+    }
+    if (!selectedBuyerFinanceFile?.file) {
+      setBuyerFinanceFeedback({ tone: 'error', message: 'Take a photo or choose a saved file first.' })
+      return
+    }
+
+    const payload = {
+      account: selectedBuyerFinanceAccount,
+      file: selectedBuyerFinanceFile.file,
+      amount: buyerFinanceDraft.amount,
+      reference: buyerFinanceDraft.reference,
+      notes: buyerFinanceDraft.notes,
+    }
+
+    setBuyerFinanceFeedback({
+      tone: 'loading',
+      message: selectedBuyerFinanceFile.sourceLabel === 'photo' ? 'Uploading photo...' : 'Uploading file...',
+    })
+
+    const result = selectedBuyerFinanceMode === 'request'
+      ? await onUploadMatterRequestDocument?.({
+          ...payload,
+          request: selectedBuyerFinanceRequest,
+          documentDate: buyerFinanceDraft.date,
+        })
+      : await onUploadMatterProof?.({
+          ...payload,
+          paidOn: buyerFinanceDraft.date,
+          requestId: selectedBuyerFinanceRequest?.id || '',
+        })
+
+    if (result?.ok === false || !result) {
+      setBuyerFinanceFeedback({
+        tone: 'error',
+        message:
+          selectedBuyerFinanceMode === 'request'
+            ? matterRequestUploadFeedback?.message || 'Unable to upload this requested document right now.'
+            : matterProofUploadFeedback?.message || 'Unable to upload this proof of payment right now.',
+      })
+      return
+    }
+
+    setBuyerFinanceFeedback({
+      tone: 'success',
+      message: selectedBuyerFinanceMode === 'request'
+        ? 'Document uploaded for legal team review.'
+        : 'Proof of payment uploaded for legal team review.',
+    })
+  }
+
+  function openBuyerAppointmentReschedule(appointment) {
+    const initialDate = appointment?.dateTime ? new Date(appointment.dateTime) : null
+    const localDate = initialDate && !Number.isNaN(initialDate.getTime())
+      ? new Date(initialDate.getTime() - initialDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      : ''
+    setSelectedBuyerAppointment(appointment)
+    setBuyerAppointmentRescheduleDraft({
+      preferredDateTime: localDate,
+      notes: '',
+    })
+  }
+
+  function closeBuyerAppointmentReschedule() {
+    if (selectedBuyerAppointment && appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule`) return
+    setSelectedBuyerAppointment(null)
+    setBuyerAppointmentRescheduleDraft({
+      preferredDateTime: '',
+      notes: '',
+    })
+  }
+
+  function submitBuyerAppointmentReschedule(event) {
+    event.preventDefault()
+    if (!selectedBuyerAppointment || !buyerAppointmentRescheduleDraft.preferredDateTime) return
+    onRequestAppointmentReschedule?.(selectedBuyerAppointment, {
+      preferredDateTime: buyerAppointmentRescheduleDraft.preferredDateTime,
+      notes: buyerAppointmentRescheduleDraft.notes,
+    })
+    closeBuyerAppointmentReschedule()
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f5f6f7] font-sans text-[#101823]">
+      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-28 pt-5">
+        <header className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#88929f]">Buyer Portal</p>
+            <h1 className="mt-1 truncate text-[1.08rem] font-semibold tracking-[-0.02em] text-[#101823]">Arch9</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <MessageCircle size={18} />
+            </Link>
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-sm font-semibold text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              {buyerInitial}
+            </span>
+          </div>
+        </header>
+
+        <section className="relative mt-6 overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
+          <div className="absolute inset-x-0 top-0 h-28 bg-[linear-gradient(135deg,rgba(20,38,61,0.08),rgba(126,147,168,0.06),rgba(255,255,255,0))]" aria-hidden="true" />
+          <div className="relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#687380]">{buyerName}</p>
+                <h2 className="mt-3 max-w-[18rem] text-[2rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#0f172a]">
+                  {developmentName}
+                </h2>
+                <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#35546c]">{unitLabel}</p>
+              </div>
+              <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] ${statusClassName}`}>
+                {heroStatusBadge?.label || 'On Track'}
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center gap-5">
+              <div className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={ringStyle}>
+                <span className="absolute inset-[7px] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]" />
+                <span className="relative text-[1.35rem] font-semibold tracking-[-0.04em] text-[#101823]">{safeProgress}%</span>
+              </div>
+              <div className="min-w-0 border-l border-[#e2e6ec] pl-5">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8491]">Current stage</p>
+                <p className="mt-2 flex items-center gap-2 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#10213a]">
+                  <span className="h-2 w-2 rounded-full bg-[#1d8b5f]" />
+                  <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
+                </p>
+                <p className="mt-1 text-sm font-medium text-[#6b7280]">Next: {journeyNextStageLabel}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#101823]">Purchase journey</h3>
+            <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{purchasePriceLabel}</span>
+          </div>
+          <ol>
+            {clientJourneySteps.map((step, index) => {
+              const isExpanded = activeStep?.id === step.id
+              const isComplete = step.status === 'complete'
+              const isCurrent = step.status === 'current' || step.status === 'blocked'
+              const isLast = index === clientJourneySteps.length - 1
+              return (
+                <li key={step.id} className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-2">
+                  {!isLast ? <span aria-hidden="true" className={`absolute left-[22px] top-11 h-[calc(100%-22px)] w-px ${isComplete ? 'bg-[#b8d8c9]' : 'bg-[#dfe4ea]'}`} /> : null}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedStepId(step.id)}
+                    className={`relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                      isComplete ? 'border-[#8ac6a8] bg-white text-[#257454]' : isCurrent ? 'border-[#14263d] bg-[#14263d] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
+                    }`}
+                    aria-label={`View ${step.label}`}
+                  >
+                    {isComplete ? <CheckCircle2 size={18} /> : index + 1}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedStepId(step.id)}
+                    className={`mb-3 min-h-[44px] min-w-0 rounded-[18px] px-3 py-2.5 text-left transition ${isExpanded ? 'bg-[#f7f9fb] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]' : 'bg-transparent'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={`text-base font-semibold tracking-[-0.02em] ${isCurrent ? 'text-[#10213a]' : isComplete ? 'text-[#1f2937]' : 'text-[#7b8491]'}`}>{step.label}</span>
+                      {isCurrent ? <span className="rounded-full bg-[#e8edf3] px-2.5 py-1 text-xs font-semibold text-[#24364d]">Current</span> : null}
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-1.5">
+                        <p className="text-sm leading-5 text-[#4b5563]">{step.whatHappensNow || step.shortDescription || 'Your team is progressing this step.'}</p>
+                        {step.clientRole ? <p className="mt-1.5 text-xs leading-5 text-[#7b8491]">{step.clientRole}</p> : null}
+                      </div>
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+
+        {mobileSection === 'overview' ? (
+          <>
+            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Needs attention</p>
+                <span className="rounded-full border border-[#e6eaf0] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#667085]">
+                  {blockingActionCount} blocking
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {overviewActionItems.map((action) => {
+                  const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
+                  const actionRoute = String(action?.actionRoute || '').trim() || primaryOverviewAction.to || 'overview'
+                  const actionLabel = String(action?.actionLabel || primaryOverviewAction.label || 'Open').trim()
+                  return (
+                    <article key={action?.id || `${action?.type}-${action?.title}`} className="rounded-[20px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.1em] ${getActionPriorityClasses(action)}`}>
+                          {action?.blocking ? 'Blocking' : toTitleLabel(action?.priority || 'Normal')}
+                        </span>
+                        {dueDateLabel ? <span className="text-[0.7rem] font-semibold text-[#7b8491]">Due {dueDateLabel}</span> : null}
+                      </div>
+                      <h3 className="mt-2 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#101823]">{action?.title || 'Action required'}</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#5f6b7a]">{action?.description || 'Please review this item.'}</p>
+                      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)} className="mt-3 flex min-h-[46px] items-center justify-between rounded-[16px] bg-[#10213a] px-4 text-sm font-semibold text-white">
+                        <span>{actionLabel}</span>
+                        <ChevronRight size={18} />
+                      </Link>
+                    </article>
+                  )
+                })}
+              </div>
+              {hiddenNextActionCount > 0 ? (
+                <p className="mt-3 text-xs font-medium text-[#667085]">
+                  {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} available in the full workflow.
+                </p>
+              ) : null}
+            </section>
+            <section className="mt-4 grid gap-3">
+              <div className="grid grid-cols-3 gap-2">
+                {quickActionItems.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)} className={`min-w-0 rounded-[20px] border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.045)] ${quickActionToneClasses[item.tone] || quickActionToneClasses.neutral}`}>
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-current shadow-[inset_0_0_0_1px_rgba(255,255,255,0.78)]">
+                        <Icon size={17} />
+                      </span>
+                      <p className="mt-3 text-[0.66rem] font-semibold uppercase tracking-[0.1em] opacity-80">{item.label}</p>
+                      <strong className="mt-1 block truncate text-sm font-semibold tracking-[-0.02em]">{item.value}</strong>
+                      <span className="mt-1 block truncate text-[0.68rem] font-medium opacity-75">{item.detail}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+              <article className="rounded-[24px] border border-white/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Next milestone</p>
+                    <h3 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.04em] text-[#101823]">{journeyNextStageLabel}</h3>
+                  </div>
+                  <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} aria-label="View progress" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
+                    <ChevronRight size={18} />
+                  </Link>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#5f6b7a]">{journeyHeroSubtext}</p>
+                {nextMilestoneItems.length ? (
+                  <div className="mt-4 grid gap-2">
+                    {nextMilestoneItems.map((item) => (
+                      <p key={item} className="flex items-start gap-2 text-xs leading-5 text-[#667085]">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8fa1b5]" />
+                        <span>{item}</span>
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+              <article className="rounded-[24px] border border-white/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Recent updates</h3>
+                  <span className="text-xs font-semibold text-[#98a2b3]">{visibleRecentUpdates.length || 'No'} items</span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {visibleRecentUpdates.length ? visibleRecentUpdates.map((item) => (
+                    <div key={item.id || item.message} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 text-sm">
+                      <span className="text-xs font-semibold text-[#98a2b3]">{item.timestampLabel || 'Recent'}</span>
+                      <div className="min-w-0">
+                        <p className="font-semibold leading-5 text-[#27364a]">{item.title || 'Update from your team'}</p>
+                        <p className="mt-0.5 leading-5 text-[#667085]">{item.message || 'Your transaction team posted an update.'}</p>
+                      </div>
+                    </div>
+                  )) : <p className="text-sm leading-6 text-[#667085]">Updates from your transaction team will appear here.</p>}
+                </div>
+              </article>
+            </section>
+          </>
+        ) : null}
+
+        {mobileSection === 'progress' ? (
+          <SellerMobileListCard
+            eyebrow="Progress"
+            title={activeStep?.label || journeyCurrentStageLabel}
+            emptyText="Your purchase journey will appear here."
+            items={clientJourneySteps.map((step) => ({
+              id: step.id,
+              title: step.label,
+              description: step.shortDescription || step.whatHappensNow || 'Your team is progressing this milestone.',
+              to: 'progress',
+            }))}
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+          />
+        ) : null}
+
+        {mobileSection === 'documents' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Documents</p>
+            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">
+              {buyerDocumentCounts.action ? `${buyerDocumentCounts.action} pending` : 'Documents up to date'}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-[#667085]">
+              {buyerDocumentCounts.action
+                ? `${buyerDocumentCounts.action} buyer document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
+                : 'Review uploaded and approved documents from your transaction team.'}
+            </p>
+            <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
+              <div className="grid grid-cols-4 gap-1">
+                {buyerDocumentFilters.map((filter) => {
+                  const isActive = filter.key === activeBuyerDocumentFilter
+                  return (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => setBuyerDocumentFilter(filter.key)}
+                      className={`inline-flex min-h-[44px] min-w-0 items-center justify-center gap-1 rounded-[14px] px-1.5 text-[0.68rem] font-semibold transition ${
+                        isActive
+                          ? 'bg-white text-[#10213a] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                          : 'text-[#7b8491]'
+                      }`}
+                    >
+                      <span className="truncate">{filter.label}</span>
+                      <span className={`inline-flex min-w-[20px] shrink-0 justify-center rounded-full px-1 py-0.5 text-[0.64rem] ${isActive ? 'bg-[#eef2f6] text-[#344054]' : 'bg-white/75 text-[#667085]'}`}>
+                        {filter.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3">
+              {visibleBuyerDocuments.length ? visibleBuyerDocuments.map((item) => {
+                const target = resolveBuyerMobileDocumentUploadTarget(item)
+                const bucket = getBuyerMobileDocumentBucket(item)
+                const isUploading = Boolean(
+                  target.uploadingKey &&
+                    uploadingDocumentKey &&
+                    (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
+                )
+                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : UploadCloud
+                const statusClasses = bucket === 'approved'
+                  ? 'bg-[#eefbf3] text-[#1f7a46]'
+                  : bucket === 'review'
+                    ? 'bg-[#fff7e8] text-[#a76012]'
+                    : 'bg-[#fff1f1] text-[#b42318]'
+                const statusLabel = bucket === 'approved'
+                  ? 'Approved'
+                  : bucket === 'review'
+                    ? 'Awaiting review'
+                    : item.status === 'rejected'
+                      ? 'Rejected'
+                      : 'Upload required'
+                return (
+                  <button
+                    key={item.id || item.sourceId || item.title}
+                    type="button"
+                    onClick={() => openBuyerDocumentSheet(item)}
+                    className="flex min-h-[76px] items-center justify-between gap-4 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3 text-left transition active:scale-[0.99]"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="block text-sm font-semibold text-[#101823]">{item.title || 'Requested document'}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${statusClasses}`}>
+                          {isUploading ? 'Uploading' : statusLabel}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-[#667085]">
+                        {isUploading
+                          ? 'Uploading to your secure document record...'
+                          : item.rejectionReason || item.description || item.metaLine || `${item.buyerCategoryLabel || 'Buyer'} document`}
+                      </span>
+                    </span>
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
+                      <Icon size={17} />
+                    </span>
+                  </button>
+                )
+              }) : (
+                <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
+                  {activeBuyerDocumentFilter === 'action'
+                    ? 'No buyer documents need action right now.'
+                    : activeBuyerDocumentFilter === 'review'
+                      ? 'No documents are awaiting review right now.'
+                      : activeBuyerDocumentFilter === 'approved'
+                        ? 'Approved buyer documents will appear here.'
+                        : 'Buyer document requests and uploads will appear here.'}
+                </p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {mobileSection === 'finance' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Finance</p>
+                <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.045em] text-[#101823]">
+                  {matterAccountsLoading ? 'Loading account' : buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : financeTypeLabel}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-[#667085]">
+                  {buyerFinanceHasAccounts
+                    ? `${buyerFinanceOpenRequests} open request${buyerFinanceOpenRequests === 1 ? '' : 's'} from your legal team.`
+                    : matterAccountsUnavailable
+                      ? 'Matter account details are being prepared by your legal team.'
+                      : 'Finance and payment details will appear here once published.'}
+                </p>
+              </div>
+              <Link
+                to={getPortalWorkspacePath(token, workspaceNavigationScope, financeSectionKey)}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]"
+                aria-label="Open finance workspace"
+              >
+                <ChevronRight size={18} />
+              </Link>
+            </div>
+
+            {matterAccountsError ? (
+              <p className="mt-4 rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{matterAccountsError}</p>
+            ) : null}
+
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                ['Balance', buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : 'Pending'],
+                ['Requests', buyerFinanceOpenRequests],
+                ['Updates', buyerFinanceEventCount],
+              ].map(([label, value]) => (
+                <article key={label} className="min-w-0 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-3 py-3">
+                  <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{label}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-[#101823]">{value}</strong>
+                </article>
+              ))}
+            </div>
+
+            {matterAccountsLoading ? (
+              <div className="mt-5 grid gap-3">
+                {[0, 1, 2].map((item) => <div key={item} className="h-20 animate-pulse rounded-[18px] bg-[#eef2f6]" />)}
+              </div>
+            ) : null}
+
+            {!matterAccountsLoading && !buyerFinanceHasAccounts ? (
+              <p className="mt-5 rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
+                No buyer account has been published yet. When your legal team adds payment instructions, statements, or proof requests, they will appear here.
+              </p>
+            ) : null}
+
+            {!matterAccountsLoading && buyerFinanceHasAccounts ? (
+              <div className="mt-5 grid gap-4">
+                {buyerMatterAccounts.map((account) => {
+                  const openRequests = (Array.isArray(account?.requests) ? account.requests : []).filter((request) =>
+                    !['complete', 'completed', 'cancelled', 'canceled'].includes(normalizePortalStatus(request?.requestStatus)),
+                  )
+                  const paymentInstructions = account?.paymentInstructions || {}
+                  const visibleDocuments = (Array.isArray(account?.documents) ? account.documents : []).slice(0, 3)
+                  const canUploadProof = typeof onUploadMatterProof === 'function'
+                  return (
+                    <article key={account.id} className="rounded-[24px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{toTitleLabel(account.partyRole || 'Buyer')}</p>
+                          <h4 className="mt-1 text-base font-semibold tracking-[-0.03em] text-[#101823]">{account.partyLabel || toTitleLabel(account.partyRole || 'Buyer account')}</h4>
+                          {account.partyEmail ? <p className="mt-1 truncate text-xs text-[#667085]">{account.partyEmail}</p> : null}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#8a94a3]">Due</span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#101823]">{ZAR_CURRENCY.format(Number(account?.balance?.balanceDue || 0))}</strong>
+                        </div>
+                      </div>
+
+                      {paymentInstructions.published ? (
+                        <div className="mt-4 rounded-[18px] border border-[#e1e7ef] bg-white p-3">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <p className="text-xs font-semibold text-[#101823]">Payment instructions</p>
+                            <span className="rounded-full bg-[#eef5fb] px-2 py-0.5 text-[0.64rem] font-semibold text-[#35546c]">Published</span>
+                          </div>
+                          <div className="grid gap-2 text-xs">
+                            {[
+                              ['Bank', paymentInstructions.bankName],
+                              ['Account holder', paymentInstructions.accountHolder],
+                              ['Account number', paymentInstructions.accountNumber],
+                              ['Branch code', paymentInstructions.branchCode],
+                              ['Reference', paymentInstructions.paymentReference],
+                            ].filter(([, value]) => value).map(([label, value]) => (
+                              <div key={label} className="grid grid-cols-[92px_minmax(0,1fr)] gap-2">
+                                <span className="font-semibold text-[#8a94a3]">{label}</span>
+                                <strong className="break-words font-semibold text-[#24364d]">{value}</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 grid gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openBuyerFinanceSheet({ mode: 'proof', account })}
+                          disabled={!canUploadProof || uploadingMatterProofAccountId === account.id}
+                          className="flex min-h-[52px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <span className="inline-flex items-center gap-3">
+                            {uploadingMatterProofAccountId === account.id ? <Clock3 size={18} /> : <Camera size={18} />}
+                            {uploadingMatterProofAccountId === account.id ? 'Uploading...' : 'Take photo or upload proof'}
+                          </span>
+                          <ChevronRight size={18} />
+                        </button>
+                        {matterProofUploadFeedback?.accountId === account.id && matterProofUploadFeedback?.message ? (
+                          <p className={`rounded-[16px] border px-3 py-2 text-xs font-medium ${
+                            matterProofUploadFeedback.tone === 'success'
+                              ? 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]'
+                              : 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
+                          }`}>
+                            {matterProofUploadFeedback.message}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {openRequests.length ? (
+                        <div className="mt-4">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <p className="text-xs font-semibold text-[#101823]">Requested from you</p>
+                            <span className={`rounded-full px-2 py-0.5 text-[0.64rem] font-semibold ${buyerFinanceOverdueRequests ? 'bg-[#fff1f1] text-[#b42318]' : 'bg-[#eef2f6] text-[#52657b]'}`}>
+                              {openRequests.length}
+                            </span>
+                          </div>
+                          <div className="grid gap-2">
+                            {openRequests.slice(0, 4).map((request) => {
+                              const requestStatus = normalizePortalStatus(request?.requestStatus)
+                              const canUploadRequest = typeof onUploadMatterRequestDocument === 'function' && ['requested', 'rejected'].includes(requestStatus)
+                              return (
+                                <button
+                                  key={request.id}
+                                  type="button"
+                                  onClick={() => canUploadRequest ? openBuyerFinanceSheet({ mode: 'request', account, request }) : null}
+                                  disabled={!canUploadRequest || uploadingMatterRequestId === request.id}
+                                  className="flex min-h-[64px] items-center justify-between gap-3 rounded-[18px] border border-[#e1e7ef] bg-white px-3 py-3 text-left transition disabled:cursor-default disabled:opacity-80"
+                                >
+                                  <span className="min-w-0">
+                                    <span className="flex flex-wrap items-center gap-2">
+                                      <span className="text-sm font-semibold text-[#101823]">{request.title || 'Finance document'}</span>
+                                      <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${
+                                        requestStatus === 'rejected'
+                                          ? 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+                                          : 'border-[#f0d8ae] bg-[#fff7eb] text-[#9a5b0f]'
+                                      }`}>
+                                        {uploadingMatterRequestId === request.id ? 'Uploading' : toTitleLabel(request.requestStatus || 'Requested')}
+                                      </span>
+                                    </span>
+                                    <span className="mt-1 block text-xs leading-5 text-[#667085]">
+                                      {toTitleLabel(request.requestType || 'Document')} {request.dueOn ? `- Due ${formatShortPortalDate(request.dueOn, 'TBC')}` : ''}
+                                    </span>
+                                  </span>
+                                  <UploadCloud size={17} className="shrink-0 text-[#24364d]" />
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {visibleDocuments.length ? (
+                        <div className="mt-4">
+                          <p className="mb-2 text-xs font-semibold text-[#101823]">Published documents</p>
+                          <div className="grid gap-2">
+                            {visibleDocuments.map((document) => (
+                              <a
+                                key={document.id || document.title}
+                                href={document.url || undefined}
+                                target={document.url ? '_blank' : undefined}
+                                rel={document.url ? 'noreferrer' : undefined}
+                                className="flex min-h-[54px] items-center justify-between gap-3 rounded-[18px] border border-[#e1e7ef] bg-white px-3 py-2 text-left"
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-semibold text-[#101823]">{document.title || 'Published document'}</span>
+                                  <span className="mt-0.5 block truncate text-xs text-[#667085]">{document.externalReference || toTitleLabel(document.documentType || 'Document')}</span>
+                                </span>
+                                <Download size={16} className="shrink-0 text-[#24364d]" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+
+                {buyerFinanceActivityItems.length ? (
+                  <article className="rounded-[24px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Account activity</h4>
+                      <span className="text-xs font-semibold text-[#98a2b3]">{buyerFinanceActivityItems.length} latest</span>
+                    </div>
+                    <div className="mt-3 grid gap-3">
+                      {buyerFinanceActivityItems.map((item) => (
+                        <div key={item.id} className="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
+                          <span className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-full ${
+                            item.tone === 'credit' ? 'bg-[#eefbf3] text-[#1f7a46]' : 'bg-[#eef5fb] text-[#35546c]'
+                          }`}>
+                            {item.tone === 'credit' ? <CheckCircle2 size={16} /> : <FileText size={16} />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-[#101823]">{item.title}</span>
+                            <span className="mt-0.5 block text-xs leading-5 text-[#667085]">
+                              {item.meta}{item.amount ? ` - ${ZAR_CURRENCY.format(Math.abs(item.amount))}` : ''}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {mobileSection === 'appointments' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Appointments</p>
+                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                  {nextBuyerAppointment ? nextBuyerAppointment.dateLabel : 'No appointment scheduled'}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-[#667085]">
+                  {nextBuyerAppointment
+                    ? `${nextBuyerAppointment.title} at ${nextBuyerAppointment.timeLabel}.`
+                    : 'Your team will schedule meetings when your next milestone requires one.'}
+                </p>
+              </div>
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
+                <CalendarClock size={18} />
+              </span>
+            </div>
+
+            {appointmentFeedback ? (
+              <p className="mt-4 rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 py-3 text-sm font-medium text-[#1f7a46]">{appointmentFeedback}</p>
+            ) : null}
+
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                ['Upcoming', upcomingBuyerAppointments.length],
+                ['History', pastBuyerAppointments.length],
+                ['Team', visibleTeamMembers.length],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-3 py-3">
+                  <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{label}</span>
+                  <strong className="mt-1 block text-sm font-semibold text-[#101823]">{value}</strong>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {upcomingBuyerAppointments.length ? upcomingBuyerAppointments.map((appointment) => {
+                const statusMeta = getBuyerMobileAppointmentStatusMeta(appointment.status)
+                const confirmPending = appointmentActionPending === `${appointment.id}:confirm`
+                const declinePending = appointmentActionPending === `${appointment.id}:decline`
+                const reschedulePending = appointmentActionPending === `${appointment.id}:reschedule`
+                return (
+                  <article key={appointment.id} className="rounded-[22px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-[18px] bg-white text-center shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                        <span className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#8a94a3]">{appointment.dateLabel.split(' ')[0]}</span>
+                        <strong className="mt-0.5 text-lg font-semibold text-[#101823]">{appointment.dateLabel.split(' ')[1] || '--'}</strong>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">{appointment.title}</h4>
+                          <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${statusMeta.tone}`}>
+                            {statusMeta.label}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-5 text-[#667085]">{appointment.timeLabel} - {appointment.location}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#8a94a3]">With {appointment.teamLabel}</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#5f6b7a]">{appointment.description}</p>
+                    {appointment.canRespond ? (
+                      <div className="mt-4 grid gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onConfirmAppointment?.(appointment)}
+                          disabled={Boolean(confirmPending || declinePending || reschedulePending)}
+                          className="flex min-h-[50px] items-center justify-center rounded-[17px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {confirmPending ? 'Confirming...' : 'Confirm appointment'}
+                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openBuyerAppointmentReschedule(appointment)}
+                            disabled={Boolean(confirmPending || declinePending || reschedulePending)}
+                            className="flex min-h-[48px] items-center justify-center rounded-[17px] border border-[#dfe5ec] bg-white px-3 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {reschedulePending ? 'Sending...' : 'Reschedule'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeclineAppointment?.(appointment)}
+                            disabled={Boolean(confirmPending || declinePending || reschedulePending)}
+                            className="flex min-h-[48px] items-center justify-center rounded-[17px] border border-[#f1cbc7] bg-[#fff5f4] px-3 text-sm font-semibold text-[#b42318] transition disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {declinePending ? 'Declining...' : 'Decline'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              }) : (
+                <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
+                  No upcoming appointments are scheduled yet.
+                </p>
+              )}
+            </div>
+
+            {pastBuyerAppointments.length ? (
+              <div className="mt-5">
+                <h4 className="text-sm font-semibold tracking-[-0.02em] text-[#101823]">Recent appointment history</h4>
+                <div className="mt-3 grid gap-2">
+                  {pastBuyerAppointments.slice(0, 3).map((appointment) => {
+                    const statusMeta = getBuyerMobileAppointmentStatusMeta(appointment.status)
+                    return (
+                      <article key={appointment.id} className="flex min-h-[60px] items-center justify-between gap-3 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-[#101823]">{appointment.title}</span>
+                          <span className="mt-0.5 block truncate text-xs text-[#667085]">{appointment.dateLabel} - {appointment.timeLabel}</span>
+                        </span>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${statusMeta.tone}`}>{statusMeta.label}</span>
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {mobileSection === 'more' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">More</p>
+                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your buyer workspace</h3>
+                <p className="mt-1 text-sm leading-6 text-[#667085]">
+                  Contacts, appointments, handover readiness, settings, and optional buyer tools are grouped here.
+                </p>
+              </div>
+              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'appointments')} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]" aria-label="Open appointments">
+                <CalendarClock size={18} />
+              </Link>
+            </div>
+
+            {nextBuyerAppointment ? (
+              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'appointments')} className="mt-5 flex min-h-[72px] items-center justify-between gap-4 rounded-[20px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 py-3">
+                <span className="min-w-0">
+                  <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Next appointment</span>
+                  <span className="mt-1 block truncate text-sm font-semibold text-[#101823]">{nextBuyerAppointment.title}</span>
+                  <span className="mt-0.5 block truncate text-xs text-[#667085]">{nextBuyerAppointment.dateLabel} - {nextBuyerAppointment.timeLabel}</span>
+                </span>
+                <ChevronRight size={18} className="shrink-0 text-[#24364d]" />
+              </Link>
+            ) : null}
+
+            {buyerPortalAccessDescription ? (
+              <article className="mt-5 rounded-[20px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eefbf3] text-[#1f7a46]">
+                    <ShieldCheck size={17} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-[#101823]">Secure portal access</span>
+                    <span className="mt-1 block text-xs leading-5 text-[#667085]">{buyerPortalAccessDescription}</span>
+                  </span>
+                </div>
+              </article>
+            ) : null}
+
+            {buyerPortalStatusItems.length ? (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {buyerPortalStatusItems.slice(0, 4).map((item) => (
+                  <article key={`buyer-mobile-status-${item.key}`} className="rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-3 py-3">
+                    <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{item.label}</span>
+                    <strong className="mt-1 block truncate text-sm font-semibold text-[#101823]">{item.value}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-[#667085]">{item.detail}</span>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-3">
+              {mobileMoreCards.map((item) => {
+                const Icon = item.icon
+                return (
+                  <Link
+                    key={item.key}
+                    to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)}
+                    className="flex min-h-[72px] items-center justify-between gap-4 rounded-[20px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3"
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#24364d] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                        <Icon size={18} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-[#101823]">{item.label}</span>
+                          <span className="rounded-full bg-[#eef2f6] px-2 py-0.5 text-[0.64rem] font-semibold text-[#52657b]">{item.value}</span>
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-[#667085]">{item.description}</span>
+                      </span>
+                    </span>
+                    <ChevronRight size={18} className="shrink-0 text-[#24364d]" />
+                  </Link>
+                )
+              })}
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <h4 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Your purchase team</h4>
+              <span className="rounded-full bg-[#eef2f6] px-2.5 py-1 text-xs font-semibold text-[#52657b]">{visibleTeamMembers.length}</span>
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {visibleTeamMembers.map((member) => (
+                <article key={`${member.title}-${member.name}`} className="rounded-[20px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#24364d] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                      {String(member.name || member.title || 'T').trim().charAt(0).toUpperCase()}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{member.title}</span>
+                      <strong className="mt-1 block truncate text-sm font-semibold text-[#101823]">{member.name}</strong>
+                      <span className="mt-1 block text-xs leading-5 text-[#667085]">{member.detail}</span>
+                      {member.extraDetail ? <span className="mt-1 block text-xs leading-5 text-[#8a94a3]">{member.extraDetail}</span> : null}
+                    </span>
+                  </div>
+                  {(member.email || member.phone) ? (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      {member.email ? (
+                        <a href={`mailto:${member.email}`} className="flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-[#dfe5ec] bg-white px-3 text-sm font-semibold text-[#10213a]">
+                          <MessageCircle size={16} />
+                          Email
+                        </a>
+                      ) : null}
+                      {member.phone ? (
+                        <a href={`tel:${member.phone}`} className="flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-[#dfe5ec] bg-white px-3 text-sm font-semibold text-[#10213a]">
+                          <PhoneCall size={16} />
+                          Call
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </div>
+
+      <input
+        ref={buyerPhotoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          void handleBuyerSelectedDocumentFile(file, 'photo')
+        }}
+      />
+      <input
+        ref={buyerFileInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          void handleBuyerSelectedDocumentFile(file, 'file')
+        }}
+      />
+      <input
+        ref={buyerFinancePhotoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          handleBuyerFinanceSelectedFile(file, 'photo')
+        }}
+      />
+      <input
+        ref={buyerFinanceFileInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          handleBuyerFinanceSelectedFile(file, 'file')
+        }}
+      />
+
+      {selectedBuyerFinanceAction ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="buyer-mobile-finance-upload-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#101823]/28 backdrop-blur-[2px]"
+            onClick={closeBuyerFinanceSheet}
+            aria-label="Close finance upload"
+          />
+          <section className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-[30px] border border-white/80 bg-white px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+            <div className="mx-auto max-w-[430px]">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#d7dde5]" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8a94a3]">
+                    {selectedBuyerFinanceMode === 'request' ? 'Finance request' : 'Proof of payment'}
+                  </p>
+                  <h3 id="buyer-mobile-finance-upload-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                    {selectedBuyerFinanceTitle}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-[#667085]">{selectedBuyerFinanceSubtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBuyerFinanceSheet}
+                  disabled={selectedBuyerFinanceBusy}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-[#fbfcfd] text-[#344054] disabled:opacity-60"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <label className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Amount
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={buyerFinanceDraft.amount}
+                    onChange={(event) => setBuyerFinanceDraft((previous) => ({ ...previous, amount: event.target.value }))}
+                    placeholder={selectedBuyerFinanceRequest?.amountDue ? String(selectedBuyerFinanceRequest.amountDue) : ''}
+                    className="mt-1.5 min-h-[44px] w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 text-sm normal-case tracking-normal text-[#162334] outline-none placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                  />
+                </label>
+                <label className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Date
+                  <input
+                    type="date"
+                    value={buyerFinanceDraft.date}
+                    onChange={(event) => setBuyerFinanceDraft((previous) => ({ ...previous, date: event.target.value }))}
+                    className="mt-1.5 min-h-[44px] w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 text-sm normal-case tracking-normal text-[#162334] outline-none focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                  />
+                </label>
+                <label className="col-span-2 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Reference
+                  <input
+                    value={buyerFinanceDraft.reference}
+                    onChange={(event) => setBuyerFinanceDraft((previous) => ({ ...previous, reference: event.target.value }))}
+                    placeholder="EFT / invoice / bank reference"
+                    className="mt-1.5 min-h-[44px] w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 text-sm normal-case tracking-normal text-[#162334] outline-none placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                  />
+                </label>
+                <label className="col-span-2 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Note
+                  <textarea
+                    rows={2}
+                    value={buyerFinanceDraft.notes}
+                    onChange={(event) => setBuyerFinanceDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                    placeholder="Optional note for your legal team"
+                    className="mt-1.5 w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#162334] outline-none placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                  />
+                </label>
+              </div>
+
+              {selectedBuyerFinanceFile ? (
+                <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                  <div className="flex items-center gap-3">
+                    {selectedBuyerFinancePreviewUrl ? (
+                      <img src={selectedBuyerFinancePreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
+                    ) : (
+                      <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                        <FileText size={20} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#101823]">{selectedBuyerFinanceFile.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#667085]">
+                        {selectedBuyerFinanceFile.sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'}
+                        {selectedBuyerFinanceFile.sizeLabel ? ` - ${selectedBuyerFinanceFile.sizeLabel}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => buyerFinancePhotoInputRef.current?.click()}
+                  disabled={selectedBuyerFinanceBusy}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    <Camera size={18} />
+                    Take photo
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => buyerFinanceFileInputRef.current?.click()}
+                  disabled={selectedBuyerFinanceBusy}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    <UploadCloud size={18} />
+                    Upload file
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitBuyerFinanceAction()}
+                  disabled={selectedBuyerFinanceBusy || !selectedBuyerFinanceFile?.file}
+                  className="flex min-h-[56px] items-center justify-center rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 text-sm font-semibold text-[#1f7a46] transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {selectedBuyerFinanceBusy ? 'Uploading...' : 'Submit for review'}
+                </button>
+                {buyerFinanceFeedback.tone === 'success' ? (
+                  <button
+                    type="button"
+                    onClick={closeBuyerFinanceSheet}
+                    className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition"
+                  >
+                    Done
+                  </button>
+                ) : null}
+              </div>
+
+              {buyerFinanceFeedback.message ? (
+                <p
+                  className={`mt-4 rounded-[18px] border px-4 py-3 text-sm font-medium ${
+                    buyerFinanceFeedback.tone === 'error'
+                      ? 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
+                      : buyerFinanceFeedback.tone === 'success'
+                        ? 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]'
+                        : 'border-[#dbe5ef] bg-[#f8fbff] text-[#52657b]'
+                  }`}
+                  role="status"
+                >
+                  {buyerFinanceFeedback.message}
+                </p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {selectedBuyerAppointment ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="buyer-mobile-reschedule-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#101823]/28 backdrop-blur-[2px]"
+            onClick={closeBuyerAppointmentReschedule}
+            aria-label="Close reschedule request"
+          />
+          <section className="absolute inset-x-0 bottom-0 rounded-t-[30px] border border-white/80 bg-white px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+            <form className="mx-auto max-w-[430px]" onSubmit={submitBuyerAppointmentReschedule}>
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#d7dde5]" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8a94a3]">Reschedule</p>
+                  <h3 id="buyer-mobile-reschedule-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                    {selectedBuyerAppointment.title}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-[#667085]">
+                    Current time: {selectedBuyerAppointment.dateLabel} at {selectedBuyerAppointment.timeLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBuyerAppointmentReschedule}
+                  disabled={appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule`}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-[#fbfcfd] text-[#344054] disabled:opacity-60"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <label className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Preferred date and time
+                  <input
+                    type="datetime-local"
+                    value={buyerAppointmentRescheduleDraft.preferredDateTime}
+                    onChange={(event) => setBuyerAppointmentRescheduleDraft((previous) => ({ ...previous, preferredDateTime: event.target.value }))}
+                    className="mt-1.5 min-h-[48px] w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 text-sm normal-case tracking-normal text-[#162334] outline-none focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                    required
+                  />
+                </label>
+                <label className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+                  Note
+                  <textarea
+                    rows={3}
+                    value={buyerAppointmentRescheduleDraft.notes}
+                    onChange={(event) => setBuyerAppointmentRescheduleDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                    placeholder="Optional context for your team"
+                    className="mt-1.5 w-full rounded-[14px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#162334] outline-none placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule`}
+                  className="flex min-h-[56px] items-center justify-center rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {appointmentActionPending === `${selectedBuyerAppointment.id}:reschedule` ? 'Sending...' : 'Send request'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {selectedBuyerDocument ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="buyer-mobile-upload-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#101823]/28 backdrop-blur-[2px]"
+            onClick={closeBuyerDocumentSheet}
+            aria-label="Close document actions"
+          />
+          <section className="absolute inset-x-0 bottom-0 rounded-t-[30px] border border-white/80 bg-white px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+            <div className="mx-auto max-w-[430px]">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#d7dde5]" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8a94a3]">
+                    {selectedBuyerDocument.buyerCategoryLabel || 'Buyer document'}
+                  </p>
+                  <h3 id="buyer-mobile-upload-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                    {selectedBuyerDocument.title || 'Requested document'}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-[#667085]">
+                    {selectedBuyerDocument.rejectionReason || selectedBuyerDocument.description || 'Take a photo or upload a saved file for review.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBuyerDocumentSheet}
+                  disabled={selectedBuyerUploadBusy}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-[#fbfcfd] text-[#344054] disabled:opacity-60"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {selectedBuyerUploadFile ? (
+                <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                  <div className="flex items-center gap-3">
+                    {selectedBuyerUploadPreviewUrl ? (
+                      <img src={selectedBuyerUploadPreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
+                    ) : (
+                      <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                        <FileText size={20} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#101823]">{selectedBuyerUploadFile.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#667085]">
+                        {selectedBuyerUploadFile.sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'}
+                        {selectedBuyerUploadFile.sizeLabel ? ` - ${selectedBuyerUploadFile.sizeLabel}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => buyerPhotoInputRef.current?.click()}
+                  disabled={selectedBuyerUploadBusy || !selectedBuyerUploadTarget?.uploadSpec}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    {selectedBuyerUploadBusy ? <Clock3 size={18} /> : <Camera size={18} />}
+                    {selectedBuyerUploadBusy ? 'Uploading...' : selectedBuyerLinkedDocument ? 'Replace with photo' : 'Take photo'}
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => buyerFileInputRef.current?.click()}
+                  disabled={selectedBuyerUploadBusy || !selectedBuyerUploadTarget?.uploadSpec}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    {selectedBuyerUploadBusy ? <Clock3 size={18} /> : <UploadCloud size={18} />}
+                    {selectedBuyerUploadBusy ? 'Uploading...' : selectedBuyerLinkedDocument ? 'Upload replacement' : 'Upload file'}
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                {selectedBuyerLinkedDocument && typeof onOpenBuyerDocument === 'function' ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenBuyerDocument({
+                      ...selectedBuyerLinkedDocument,
+                      file_path: selectedBuyerLinkedDocument.file_path || selectedBuyerLinkedDocument.storage_path,
+                    })}
+                    disabled={selectedBuyerIsOpening}
+                    className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="inline-flex items-center gap-3">
+                      <Download size={18} />
+                      {selectedBuyerIsOpening ? 'Opening...' : 'View or download'}
+                    </span>
+                    <ChevronRight size={18} />
+                  </button>
+                ) : null}
+                {buyerUploadFeedback.tone === 'success' ? (
+                  <button
+                    type="button"
+                    onClick={closeBuyerDocumentSheet}
+                    className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 text-sm font-semibold text-[#1f7a46] transition"
+                  >
+                    Done
+                  </button>
+                ) : null}
+              </div>
+
+              {buyerUploadFeedback.message ? (
+                <p
+                  className={`mt-4 rounded-[18px] border px-4 py-3 text-sm font-medium ${
+                    buyerUploadFeedback.tone === 'error'
+                      ? 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
+                      : buyerUploadFeedback.tone === 'success'
+                        ? 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]'
+                        : 'border-[#dbe5ef] bg-[#f8fbff] text-[#52657b]'
+                  }`}
+                  role="status"
+                >
+                  {buyerUploadFeedback.message}
+                </p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white/92 px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden" aria-label="Buyer portal mobile navigation">
+        <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
+          {bottomNavItems.map((item) => {
+            const Icon = item.icon
+            const isActive = item.key === mobileSection || (item.key === 'more' && mobileSection === 'appointments')
+            return (
+              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#f0f3f7] text-[#10213a]' : 'text-[#7b8491] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
+                <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
+    </main>
+  )
+}
+
+function resolveSellerMobileDocumentUploadTarget(document = {}) {
+  const uploadSpec = document?.uploadSpec && typeof document.uploadSpec === 'object' ? document.uploadSpec : {}
+  const requirementKey = pickFirstText(
+    uploadSpec.requirementKey,
+    uploadSpec.documentDefinitionKey,
+    uploadSpec.document_definition_key,
+    document.key,
+    document.requirementKey,
+    document.requirement_key,
+    document.documentDefinitionKey,
+    document.document_definition_key,
+    document.documentType,
+    document.document_type,
+  )
+  const requirementInstanceId = pickFirstText(
+    uploadSpec.requirementInstanceId,
+    uploadSpec.canonicalRequirementInstanceId,
+    uploadSpec.canonical_requirement_instance_id,
+    document.canonicalRequirementInstanceId,
+    document.canonical_requirement_instance_id,
+    document.requirementInstanceId,
+    document.requirement_instance_id,
+  )
+  const normalizedRequirementKey = normalizeDocumentKey(requirementKey)
+  const category = pickFirstText(
+    uploadSpec.category,
+    document.sellerCategoryLabel,
+    document.stageLabel,
+    document.category,
+    'Seller Document',
+  )
+  const documentType = pickFirstText(
+    uploadSpec.documentType,
+    uploadSpec.document_type,
+    document.documentType,
+    document.document_type,
+    normalizedRequirementKey,
+    requirementKey,
+  )
+
+  return {
+    requirementKey: normalizedRequirementKey,
+    requirementInstanceId,
+    uploadingKey: requirementInstanceId || normalizedRequirementKey,
+    category,
+    documentType,
+  }
+}
+
+function formatSellerMobileUploadSize(bytes = 0) {
+  const size = Number(bytes) || 0
+  if (size <= 0) return ''
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+  return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
+function SellerMobilePortal({
+  token,
+  workspaceNavigationScope,
+  activeSection,
+  sellerAgencyName,
+  sellerAgencyLogoUrl,
+  sellerPropertyTitle,
+  sellerPropertyImageUrl,
+  sellerStatusLabel,
+  sellerProgressPercent,
+  sellerStepLabel,
+  sellerJourneyStages,
+  sellerNextStep,
+  sellerAgentName,
+  sellerAgentEmail,
+  sellerAgentPhone,
+  sellerDocumentsNeedingAttention,
+  sellerDocumentTracker,
+  sellerOfferItems,
+  activeSellerOfferCount,
+  sellerActivityItems,
+  uploadingDocumentKey = '',
+  openingDocumentPath = '',
+  onUploadSellerDocument = null,
+  onOpenSellerDocument = null,
+}) {
+  const [expandedStageKey, setExpandedStageKey] = useState(() => {
+    const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current')
+    return currentStage?.key || sellerJourneyStages[0]?.key || ''
+  })
+  const photoInputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const [selectedDocumentAction, setSelectedDocumentAction] = useState(null)
+  const [selectedUploadFile, setSelectedUploadFile] = useState(null)
+  const [selectedUploadPreviewUrl, setSelectedUploadPreviewUrl] = useState('')
+  const [mobileUploadFeedback, setMobileUploadFeedback] = useState({ tone: '', message: '' })
+  const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
+  const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
+    ? requestedMobileSection
+    : 'overview'
+  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
+    sellerJourneyStages.find((stage) => stage.state === 'current') ||
+    sellerJourneyStages[0]
+  const safeProgress = Math.max(0, Math.min(100, Number(sellerProgressPercent) || 0))
+  const primaryDocumentAction = sellerDocumentsNeedingAttention[0] || null
+  const visibleDocuments = sellerDocumentsNeedingAttention.slice(0, 4)
+  const visibleOffers = sellerOfferItems.slice(0, 3)
+  const visibleActivity = sellerActivityItems.slice(0, 3)
+  const ringStyle = {
+    background: `conic-gradient(#18365a ${safeProgress * 3.6}deg, #e5e9ee 0deg)`,
+  }
+  const bottomNavItems = [
+    { key: 'overview', section: 'overview', label: 'Home', icon: Home },
+    { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
+    { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
+    { key: 'offers', section: 'offers', label: 'Offers', icon: Tag },
+    { key: 'team', section: 'team', label: 'Team', icon: Users },
+  ]
+  const nextActionHref = sellerNextStep?.href ||
+    getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents')
+  const selectedUploadTarget = selectedDocumentAction
+    ? resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
+    : null
+  const selectedUploadKey = selectedUploadTarget?.uploadingKey || ''
+  const selectedIsUploading = Boolean(
+    selectedUploadKey &&
+      uploadingDocumentKey &&
+      (uploadingDocumentKey === selectedUploadKey || uploadingDocumentKey === selectedUploadTarget?.requirementKey),
+  )
+  const selectedUploadBusy = selectedIsUploading || mobileUploadFeedback.tone === 'loading'
+  const selectedLinkedDocument = selectedDocumentAction?.linkedDocument || selectedDocumentAction?.document || null
+  const selectedOpenKey = String(selectedLinkedDocument?.file_path || selectedLinkedDocument?.storage_path || selectedLinkedDocument?.id || '').trim()
+  const selectedIsOpening = Boolean(selectedOpenKey && openingDocumentPath === selectedOpenKey)
+
+  useEffect(() => {
+    if (!selectedUploadFile?.file || !String(selectedUploadFile.file.type || '').startsWith('image/')) {
+      setSelectedUploadPreviewUrl('')
+      return undefined
+    }
+
+    const previewUrl = URL.createObjectURL(selectedUploadFile.file)
+    setSelectedUploadPreviewUrl(previewUrl)
+    return () => {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [selectedUploadFile])
+
+  function openDocumentActionSheet(document) {
+    setSelectedDocumentAction(document)
+    setSelectedUploadFile(null)
+    setMobileUploadFeedback({ tone: '', message: '' })
+  }
+
+  function closeDocumentActionSheet() {
+    if (selectedUploadBusy) return
+    setSelectedDocumentAction(null)
+    setSelectedUploadFile(null)
+    setMobileUploadFeedback({ tone: '', message: '' })
+  }
+
+  async function handleSelectedDocumentFile(file, sourceLabel = 'file') {
+    if (!file || !selectedDocumentAction || typeof onUploadSellerDocument !== 'function') {
+      return
+    }
+
+    const maxUploadBytes = 25 * 1024 * 1024
+    setSelectedUploadFile({
+      file,
+      name: file.name || (sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'),
+      sizeLabel: formatSellerMobileUploadSize(file.size),
+      type: file.type || '',
+      sourceLabel,
+    })
+    if (file.size > maxUploadBytes) {
+      setMobileUploadFeedback({
+        tone: 'error',
+        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+      })
+      return
+    }
+
+    const target = resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
+    if (!target.requirementKey) {
+      setMobileUploadFeedback({
+        tone: 'error',
+        message: 'This document request is missing its upload key. Please contact your agent.',
+      })
+      return
+    }
+
+    setMobileUploadFeedback({
+      tone: 'loading',
+      message: sourceLabel === 'photo' ? 'Uploading photo...' : 'Uploading file...',
+    })
+    const result = await onUploadSellerDocument(target.requirementKey, file, {
+      requirementInstanceId: target.requirementInstanceId || null,
+      uploadingKey: target.uploadingKey,
+      category: target.category || 'Seller Document',
+      documentType: target.documentType || target.requirementKey,
+    })
+    if (result?.ok === false) {
+      setMobileUploadFeedback({
+        tone: 'error',
+        message: result.error || 'Upload failed. Please try again.',
+      })
+      return
+    }
+    setMobileUploadFeedback({
+      tone: 'success',
+      message: sourceLabel === 'photo' ? 'Photo uploaded for review.' : 'File uploaded for review.',
+    })
+    if (result?.document) {
+      setSelectedDocumentAction((previous) => previous
+        ? {
+            ...previous,
+            linkedDocument: result.document,
+            statusLabel: 'Received - awaiting review',
+            message: 'Your file has been received and is waiting for review.',
+          }
+        : previous)
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f5f6f7] font-sans text-[#101823]">
+      <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-28 pt-5">
+        <header className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            {sellerAgencyLogoUrl ? (
+              <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-12 max-w-[180px] object-contain object-left" />
+            ) : (
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#88929f]">Seller Portal</p>
+                <h1 className="mt-1 truncate text-[1.05rem] font-semibold tracking-[-0.02em] text-[#101823]">{sellerAgencyName || 'Arch9'}</h1>
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {sellerAgentEmail ? (
+              <a href={`mailto:${sellerAgentEmail}`} aria-label="Message agent" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+                <MessageCircle size={18} />
+              </a>
+            ) : null}
+            {sellerAgentPhone ? (
+              <a href={`tel:${sellerAgentPhone}`} aria-label="Call agent" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+                <PhoneCall size={17} />
+              </a>
+            ) : null}
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <User size={18} />
+            </span>
+          </div>
+        </header>
+
+        <section className="relative mt-6 overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
+          {sellerPropertyImageUrl ? (
+            <div
+              aria-hidden="true"
+              className="absolute inset-y-0 right-0 w-[56%] bg-cover bg-center opacity-[0.16] grayscale"
+              style={{ backgroundImage: `linear-gradient(90deg,#ffffff 0%,rgba(255,255,255,0.45) 45%,rgba(255,255,255,0.05) 100%), url("${sellerPropertyImageUrl}")` }}
+            />
+          ) : null}
+          <div className="relative">
+            <p className="text-sm font-medium text-[#687380]">Seller Portal</p>
+            <h2 className="mt-3 max-w-[18rem] text-[2rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#0f172a]">{sellerPropertyTitle || 'Property sale'}</h2>
+            <div className="mt-6 flex items-center gap-5">
+              <div className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={ringStyle}>
+                <span className="absolute inset-[7px] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]" />
+                <span className="relative text-[1.35rem] font-semibold tracking-[-0.04em] text-[#101823]">{safeProgress}%</span>
+              </div>
+              <div className="min-w-0 border-l border-[#e2e6ec] pl-5">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8491]">Current status</p>
+                <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold tracking-[-0.025em] text-[#10213a]">
+                  <span className="h-2 w-2 rounded-full bg-[#1d8b5f]" />
+                  <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
+                </p>
+                <p className="mt-1 text-sm font-medium text-[#6b7280]">{sellerStepLabel}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#101823]">Your sale journey</h3>
+            <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{sellerStepLabel}</span>
+          </div>
+          <ol>
+            {sellerJourneyStages.map((stage, index) => {
+              const isExpanded = activeStage?.key === stage.key
+              const isCompleted = stage.state === 'completed'
+              const isCurrent = stage.state === 'current'
+              const isLast = index === sellerJourneyStages.length - 1
+              return (
+                <li key={stage.key} className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-2">
+                  {!isLast ? <span aria-hidden="true" className={`absolute left-[22px] top-11 h-[calc(100%-22px)] w-px ${isCompleted ? 'bg-[#b8d8c9]' : 'bg-[#dfe4ea]'}`} /> : null}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedStageKey(stage.key)}
+                    className={`relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                      isCompleted ? 'border-[#8ac6a8] bg-white text-[#257454]' : isCurrent ? 'border-[#18365a] bg-[#18365a] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
+                    }`}
+                    aria-label={`View ${stage.label}`}
+                  >
+                    {isCompleted ? <CheckCircle2 size={18} /> : stage.number}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedStageKey(stage.key)}
+                    className={`mb-3 min-h-[44px] min-w-0 rounded-[18px] px-3 py-2.5 text-left transition ${isExpanded ? 'bg-[#f7f9fb] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]' : 'bg-transparent'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={`text-base font-semibold tracking-[-0.02em] ${isCurrent ? 'text-[#10213a]' : isCompleted ? 'text-[#1f2937]' : 'text-[#7b8491]'}`}>{stage.label}</span>
+                      {isCurrent ? <span className="rounded-full bg-[#e8edf3] px-2.5 py-1 text-xs font-semibold text-[#24364d]">Current</span> : null}
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-1.5">
+                        <p className="text-sm leading-5 text-[#4b5563]">{stage.description}</p>
+                        <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
+                          <span>{stage.owner}</span>
+                          <span aria-hidden="true">.</span>
+                          <span>{stage.dateLabel}</span>
+                        </p>
+                      </div>
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+
+        {mobileSection === 'overview' ? (
+          <>
+            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Next required item</p>
+              <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.045em] text-[#101823]">
+                {primaryDocumentAction?.label || primaryDocumentAction?.title || sellerNextStep?.title || 'Review next step'}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[#5f6b7a]">
+                {primaryDocumentAction?.description || sellerNextStep?.description || 'Your property team will keep the next action updated here.'}
+              </p>
+              <Link to={nextActionHref} className="mt-4 flex min-h-[48px] items-center justify-between rounded-[16px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]">
+                <span>{sellerNextStep?.label || 'Open next step'}</span>
+                <ChevronRight size={18} />
+              </Link>
+            </section>
+            <section className="mt-4 grid gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
+                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{activeSellerOfferCount}</strong>
+                  <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                </Link>
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
+                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
+                  <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
+                </Link>
+              </div>
+              <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Recent activity</h3>
+                <div className="mt-3 space-y-3">
+                  {visibleActivity.length ? visibleActivity.map((item) => (
+                    <div key={item.id || item.message} className="grid grid-cols-[68px_minmax(0,1fr)] gap-3 text-sm">
+                      <span className="text-xs font-semibold text-[#98a2b3]">{item.timestampLabel || item.createdAt || 'Recent'}</span>
+                      <p className="leading-5 text-[#344054]">{item.message || item.title || 'Your property team posted an update.'}</p>
+                    </div>
+                  )) : <p className="text-sm leading-6 text-[#667085]">Updates from your property team will appear here.</p>}
+                </div>
+              </article>
+            </section>
+          </>
+        ) : null}
+
+        {mobileSection === 'tasks' ? (
+          <SellerMobileListCard
+            eyebrow="Tasks"
+            title={activeStage?.label || 'Current actions'}
+            emptyText="No immediate seller tasks are open."
+            items={[
+              sellerNextStep ? { id: 'next', title: sellerNextStep.title, description: sellerNextStep.description, to: sellerNextStep.to || 'documents' } : null,
+              ...visibleDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
+            ].filter(Boolean)}
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+          />
+        ) : null}
+
+        {mobileSection === 'documents' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Documents</p>
+            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.percent || 0}% approved</h3>
+            <p className="mt-1 text-sm leading-6 text-[#667085]">
+              {visibleDocuments.length
+                ? `${visibleDocuments.length} item${visibleDocuments.length === 1 ? '' : 's'} need attention.`
+                : 'Your seller document list is up to date.'}
+            </p>
+            <div className="mt-4 grid gap-3">
+              {visibleDocuments.length ? visibleDocuments.map((item) => {
+                const target = resolveSellerMobileDocumentUploadTarget(item)
+                const isUploading = Boolean(
+                  target.uploadingKey &&
+                    uploadingDocumentKey &&
+                    (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
+                )
+                return (
+                  <button
+                    key={item.id || item.key || item.title}
+                    type="button"
+                    onClick={() => openDocumentActionSheet(item)}
+                    className="flex min-h-[76px] items-center justify-between gap-4 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3 text-left transition active:scale-[0.99]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-[#101823]">{item.title || item.label || 'Requested document'}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#667085]">
+                        {isUploading ? 'Uploading...' : item.statusLabel || item.message || item.description || 'Action required'}
+                      </span>
+                    </span>
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
+                      <UploadCloud size={17} />
+                    </span>
+                  </button>
+                )
+              }) : (
+                <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
+                  New requests from your property team will appear here.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {mobileSection === 'offers' ? (
+          <SellerMobileListCard
+            eyebrow="Offers"
+            title={`${activeSellerOfferCount} active offer${activeSellerOfferCount === 1 ? '' : 's'}`}
+            emptyText="Offers will appear here when your agent receives them."
+            items={visibleOffers.map((offer) => ({ id: offer.id, title: offer.amountLabel || offer.offerAmountLabel || 'Offer received', description: `${offer.buyerName || 'Buyer'} - ${offer.statusLabel || 'Awaiting review'}`, to: 'offers' }))}
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+          />
+        ) : null}
+
+        {mobileSection === 'team' ? (
+          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Team</p>
+            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerAgentName || sellerAgencyName || 'Your property team'}</h3>
+            <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for seller updates, documents, viewings, and offers.</p>
+            <div className="mt-4 grid gap-3">
+              {sellerAgentEmail ? <a href={`mailto:${sellerAgentEmail}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Message agent</span><MessageCircle size={18} /></a> : null}
+              {sellerAgentPhone ? <a href={`tel:${sellerAgentPhone}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Call agent</span><PhoneCall size={18} /></a> : null}
+            </div>
+          </section>
+        ) : null}
+      </div>
+
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          void handleSelectedDocumentFile(file, 'photo')
+        }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] || null
+          event.currentTarget.value = ''
+          void handleSelectedDocumentFile(file, 'file')
+        }}
+      />
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white/92 px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden" aria-label="Seller portal mobile navigation">
+        <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
+          {bottomNavItems.map((item) => {
+            const Icon = item.icon
+            const isActive = item.key === mobileSection || (item.key === 'overview' && mobileSection === 'overview')
+            return (
+              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#f0f3f7] text-[#10213a]' : 'text-[#7b8491] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
+                <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
+
+      {selectedDocumentAction ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="seller-mobile-upload-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#101823]/28 backdrop-blur-[2px]"
+            onClick={closeDocumentActionSheet}
+            aria-label="Close document actions"
+          />
+          <section className="absolute inset-x-0 bottom-0 rounded-t-[30px] border border-white/80 bg-white px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+            <div className="mx-auto max-w-[430px]">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#d7dde5]" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8a94a3]">Document upload</p>
+                  <h3 id="seller-mobile-upload-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                    {selectedDocumentAction.title || selectedDocumentAction.label || 'Requested document'}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-[#667085]">
+                    {selectedDocumentAction.message || selectedDocumentAction.description || 'Take a photo or upload a saved file for review.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDocumentActionSheet}
+                  disabled={selectedUploadBusy}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-[#fbfcfd] text-[#344054] disabled:opacity-60"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {selectedUploadFile ? (
+                <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                  <div className="flex items-center gap-3">
+                    {selectedUploadPreviewUrl ? (
+                      <img src={selectedUploadPreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
+                    ) : (
+                      <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
+                        <FileText size={20} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#101823]">{selectedUploadFile.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#667085]">
+                        {selectedUploadFile.sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'}
+                        {selectedUploadFile.sizeLabel ? ` - ${selectedUploadFile.sizeLabel}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={selectedUploadBusy || !selectedUploadTarget?.requirementKey}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    {selectedUploadBusy ? <Clock3 size={18} /> : <Camera size={18} />}
+                    {selectedUploadBusy ? 'Uploading...' : 'Take photo'}
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={selectedUploadBusy || !selectedUploadTarget?.requirementKey}
+                  className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex items-center gap-3">
+                    {selectedUploadBusy ? <Clock3 size={18} /> : <UploadCloud size={18} />}
+                    {selectedUploadBusy ? 'Uploading...' : 'Upload file'}
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+                {selectedLinkedDocument && typeof onOpenSellerDocument === 'function' ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSellerDocument({
+                      ...selectedLinkedDocument,
+                      file_path: selectedLinkedDocument.file_path || selectedLinkedDocument.storage_path,
+                    })}
+                    disabled={selectedIsOpening}
+                    className="flex min-h-[56px] items-center justify-between rounded-[18px] border border-[#dfe5ec] bg-white px-4 text-sm font-semibold text-[#10213a] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="inline-flex items-center gap-3">
+                      <Download size={18} />
+                      {selectedIsOpening ? 'Opening...' : 'View or download'}
+                    </span>
+                    <ChevronRight size={18} />
+                  </button>
+                ) : null}
+                {mobileUploadFeedback.tone === 'success' ? (
+                  <button
+                    type="button"
+                    onClick={closeDocumentActionSheet}
+                    className="flex min-h-[52px] items-center justify-center rounded-[18px] border border-[#cfe8d8] bg-[#eefbf3] px-4 text-sm font-semibold text-[#1f7a46] transition"
+                  >
+                    Done
+                  </button>
+                ) : null}
+              </div>
+
+              {mobileUploadFeedback.message ? (
+                <p
+                  className={`mt-4 rounded-[18px] border px-4 py-3 text-sm font-medium ${
+                    mobileUploadFeedback.tone === 'error'
+                      ? 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
+                      : mobileUploadFeedback.tone === 'success'
+                        ? 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]'
+                        : 'border-[#dbe5ef] bg-[#f8fbff] text-[#52657b]'
+                  }`}
+                  role="status"
+                >
+                  {mobileUploadFeedback.message}
+                </p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </main>
+  )
+}
+
+function SellerMobileListCard({ eyebrow, title, subtitle = '', emptyText, items, token, workspaceNavigationScope }) {
+  return (
+    <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+      <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">{eyebrow}</p>
+      <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{title}</h3>
+      {subtitle ? <p className="mt-1 text-sm leading-6 text-[#667085]">{subtitle}</p> : null}
+      <div className="mt-4 grid gap-3">
+        {items.length ? items.slice(0, 5).map((item) => (
+          <Link key={item.id || item.title} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to || 'overview')} className="flex min-h-[64px] items-center justify-between gap-4 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[#101823]">{item.title}</span>
+              {item.description ? <span className="mt-1 block text-xs leading-5 text-[#667085]">{item.description}</span> : null}
+            </span>
+            <ChevronRight size={18} className="shrink-0 text-[#98a2b3]" />
+          </Link>
+        )) : <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">{emptyText}</p>}
+      </div>
+    </section>
+  )
+}
+
 function SellerNextStepCard({ sellerNextStep, token, workspaceNavigationScope, sellerAgentEmail }) {
   const primaryAction = sellerNextStep?.tone === 'action'
     ? {
@@ -4303,7 +6867,7 @@ function ClientPortal() {
     if (location.pathname.endsWith('/handover')) return 'handover'
     if (location.pathname.endsWith('/homeowner')) return 'handover'
     if (location.pathname.endsWith('/snags') || location.pathname.endsWith('/issues')) return 'snags'
-    if (location.pathname.endsWith('/settings')) return 'overview'
+    if (location.pathname.endsWith('/settings')) return 'settings'
     if (location.pathname.endsWith('/team')) return 'team'
     if (location.pathname.endsWith('/alterations')) return 'alterations'
     if (location.pathname.endsWith('/review')) return 'review'
@@ -4603,7 +7167,7 @@ function ClientPortal() {
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
     onRefresh: () => loadPortal({ background: true }),
     includeNotifications: false,
-    pollingIntervalMs: 30_000,
+    pollingIntervalMs: requestedWorkspace === 'seller' || isSellerPortalToken ? 15_000 : 30_000,
   })
 
   useEffect(() => {
@@ -5110,7 +7674,7 @@ function ClientPortal() {
 
   async function handleUploadRequiredDocument(documentKey, file, options = {}) {
     if (!file) {
-      return
+      return { ok: false, error: 'Choose a file to upload.' }
     }
 
     const normalizedDocumentKey = normalizeDocumentKey(documentKey)
@@ -5153,6 +7717,7 @@ function ClientPortal() {
         })
       }
       void loadPortal({ background: true })
+      return { ok: true, document: uploaded }
     } catch (uploadError) {
       if (effectiveWorkspace === 'seller' && isSellerPortalSessionExpiredError(uploadError)) {
         clearSellerPortalAccessToken(token)
@@ -5163,7 +7728,7 @@ function ClientPortal() {
           sessionExpired: true,
         })
         setError('')
-        return
+        return { ok: false, error: 'Your secure seller session expired. Please sign in again.' }
       }
       setError(uploadError.message)
       if (isReservationProofUpload) {
@@ -5172,6 +7737,7 @@ function ClientPortal() {
           message: 'Upload failed. Please try again.',
         })
       }
+      return { ok: false, error: uploadError.message || 'Upload failed. Please try again.' }
     } finally {
       setUploadingDocumentKey('')
     }
@@ -5191,7 +7757,12 @@ function ClientPortal() {
     }
 
     if (uploadSpec.type === 'canonical_requirement') {
-      const requirementInstanceId = String(uploadSpec.requirementInstanceId || '').trim()
+      const requirementInstanceId = String(
+        uploadSpec.requirementInstanceId ||
+          uploadSpec.canonicalRequirementInstanceId ||
+          uploadSpec.canonical_requirement_instance_id ||
+          '',
+      ).trim()
       const requirementKey = String(uploadSpec.requirementKey || uploadSpec.documentDefinitionKey || '').trim()
       if (!requirementInstanceId || !requirementKey) return
       void handleUploadRequiredDocument(requirementKey, file, {
@@ -5206,6 +7777,49 @@ function ClientPortal() {
     const requirementKey = String(uploadSpec.requirementKey || '').trim()
     if (!requirementKey) return
     void handleUploadRequiredDocument(requirementKey, file)
+  }
+
+  async function handleBuyerMobileDocumentUpload(uploadSpec, file) {
+    if (!file || !uploadSpec || typeof uploadSpec !== 'object') {
+      return { ok: false, error: 'Choose a document to upload.' }
+    }
+
+    if (uploadSpec.type === 'additional_request') {
+      const requestId = String(uploadSpec.requestId || '').trim()
+      if (!requestId) return { ok: false, error: 'This additional request is missing its upload reference.' }
+      return handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
+        documentRequestId: requestId,
+        category: 'Additional Requests',
+      })
+    }
+
+    if (uploadSpec.type === 'canonical_requirement') {
+      const requirementInstanceId = String(
+        uploadSpec.requirementInstanceId ||
+          uploadSpec.canonicalRequirementInstanceId ||
+          uploadSpec.canonical_requirement_instance_id ||
+          '',
+      ).trim()
+      const requirementKey = String(
+        uploadSpec.requirementKey ||
+          uploadSpec.documentDefinitionKey ||
+          uploadSpec.document_definition_key ||
+          '',
+      ).trim()
+      if (!requirementInstanceId || !requirementKey) {
+        return { ok: false, error: 'This document request is missing its upload key.' }
+      }
+      return handleUploadRequiredDocument(requirementKey, file, {
+        requirementInstanceId,
+        uploadingKey: requirementInstanceId,
+        category: uploadSpec.category || 'Canonical Document Requirement',
+        documentType: uploadSpec.documentType || requirementKey,
+      })
+    }
+
+    const requirementKey = String(uploadSpec.requirementKey || '').trim()
+    if (!requirementKey) return { ok: false, error: 'This document request is missing its upload key.' }
+    return handleUploadRequiredDocument(requirementKey, file)
   }
 
   function handleActivityAction(item) {
@@ -5292,7 +7906,63 @@ function ClientPortal() {
     }
   }
 
+  async function handleOpenFinalSignedPortalDocument({ packetId, packetVersionId, documentId = '', openingKey = '' } = {}) {
+    const normalizedPacketId = String(packetId || '').trim()
+    const normalizedPacketVersionId = String(packetVersionId || '').trim()
+    const normalizedDocumentId = String(documentId || '').trim()
+    if ((!normalizedPacketId || !normalizedPacketVersionId) && !normalizedDocumentId) {
+      setError('The final signed document reference is incomplete.')
+      return
+    }
+
+    const resolvedOpeningKey = String(openingKey || `final-signed-${normalizedPacketVersionId || normalizedDocumentId}`).trim()
+    const targetWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    try {
+      setError('')
+      setOpeningDocumentPath(resolvedOpeningKey)
+      const access = effectiveWorkspace === 'seller'
+        ? await resolveSellerClientPortalFinalSignedDocumentAccess({
+            token,
+            accessToken: sellerPortalAccessToken,
+            packetId: normalizedPacketId,
+            packetVersionId: normalizedPacketVersionId,
+            documentId: normalizedDocumentId,
+            download: true,
+          })
+        : await resolveClientPortalFinalSignedDocumentAccess({
+            token,
+            packetId: normalizedPacketId,
+            packetVersionId: normalizedPacketVersionId,
+            documentId: normalizedDocumentId,
+            download: true,
+          })
+      const signedUrl = String(access?.finalArtifact?.downloadUrl || '').trim()
+      if (access?.available !== true || !signedUrl) {
+        throw new Error(access?.message || 'The final signed document is still being securely published.')
+      }
+      if (targetWindow) {
+        targetWindow.location.href = signedUrl
+      } else if (typeof window !== 'undefined') {
+        window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (openError) {
+      if (targetWindow && !targetWindow.closed) targetWindow.close()
+      setError(openError.message || 'Unable to open this final signed document right now.')
+    } finally {
+      setOpeningDocumentPath('')
+    }
+  }
+
   async function handleOpenPortalDocument(document) {
+    if (document?.canonicalFinalArtifact) {
+      await handleOpenFinalSignedPortalDocument({
+        packetId: document?.packet_id || document?.packetId,
+        packetVersionId: document?.packet_version_id || document?.packetVersionId,
+        documentId: document?.finalDocumentId || document?.final_document_id || document?.document_id || document?.id,
+        openingKey: document?.id || '',
+      })
+      return
+    }
     if (!document?.file_path && !document?.url) {
       return
     }
@@ -5730,7 +8400,13 @@ function ClientPortal() {
     sellerOfferCount: activeSellerOfferCount,
     hasOffers: activeSellerOfferCount > 0,
   })
-  const sellerStageMeta = sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
+  // The shared seller journey intentionally describes listing progress. Once a
+  // transaction exists, the sale tracker must take its stage from the real
+  // transaction instead of allowing that listing-only snapshot to win.
+  const hasLinkedSellerTransaction = Boolean(portal?.transaction?.id)
+  const sellerStageMeta = hasLinkedSellerTransaction
+    ? fallbackSellerStageMeta
+    : sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
   const sellerCurrentStage = sellerStageMeta.currentStage.label
   const missingRequired = Math.max(
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
@@ -6172,8 +8848,10 @@ function ClientPortal() {
   const otpApprovedFromStage = normalizePortalStatus(portal?.transaction?.stage || '').includes('otp_signed')
   const otpPacketState = String(portal?.otpPacket?.state || '').trim().toLowerCase()
   const otpPacketSignPath = String(portal?.otpPacket?.signPath || '').trim()
-  const otpPacketFinalSignedFilePath = String(portal?.otpPacket?.finalSignedFilePath || '').trim()
-  const otpPacketFinalSignedFileName = String(portal?.otpPacket?.finalSignedFileName || 'Signed OTP').trim()
+  const otpPacketFinalSignedAvailable = portal?.otpPacket?.finalSignedAccess?.available === true
+  const otpPacketFinalSignedMessage = String(portal?.otpPacket?.finalSignedAccess?.message || '').trim()
+  const otpPacketId = String(portal?.otpPacket?.packet?.id || portal?.otpPacket?.id || '').trim()
+  const otpPacketVersionId = String(portal?.otpPacket?.version?.id || '').trim()
   const otpPacketGeneratedPreviewFilePath = String(portal?.otpPacket?.generatedPreviewFilePath || '').trim()
   const otpPacketGeneratedPreviewFileName = String(portal?.otpPacket?.generatedPreviewFileName || 'Offer to Purchase (OTP)').trim()
   const otpPacketUsingStructuredFlow = Boolean(portal?.otpPacket?.packet?.id) || [
@@ -6183,6 +8861,7 @@ function ClientPortal() {
     'ready_for_client_signature',
     'awaiting_other_signatures',
     'fully_signed',
+    'finalisation_pending',
   ].includes(otpPacketState)
   const otpStatusLabel = otpPacketUsingStructuredFlow
     ? (
@@ -6194,6 +8873,8 @@ function ClientPortal() {
             ? 'Ready to sign'
             : otpPacketState === 'generated_not_ready' || otpPacketState === 'preparing'
               ? 'Preparing'
+              : otpPacketState === 'finalisation_pending'
+                ? 'Finalising'
               : 'Not available'
     )
     : (
@@ -6210,15 +8891,16 @@ function ClientPortal() {
   const mandatePacket = activeSellingContext?.mandatePacket || null
   const mandatePacketState = String(mandatePacket?.state || '').trim().toLowerCase()
   const mandatePacketSignPath = String(mandatePacket?.signPath || '').trim()
-  const mandatePacketFinalSignedFilePath = String(mandatePacket?.finalSignedFilePath || '').trim()
-  const mandatePacketFinalSignedFileName = String(mandatePacket?.finalSignedFileName || 'Signed Mandate').trim()
-  const mandatePacketFinalSignedDownloadUrl = String(mandatePacket?.finalSignedDownloadUrl || '').trim()
+  const mandatePacketFinalSignedAvailable = mandatePacket?.finalSignedAccess?.available === true
+  const mandatePacketFinalSignedMessage = String(mandatePacket?.finalSignedAccess?.message || '').trim()
+  const mandatePacketId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
+  const mandatePacketVersionId = String(mandatePacket?.packetVersionId || mandatePacket?.version?.id || '').trim()
   const mandatePacketGeneratedPreviewFilePath = String(mandatePacket?.generatedPreviewFilePath || '').trim()
   const mandatePacketGeneratedPreviewFileName = String(mandatePacket?.generatedPreviewFileName || 'Mandate').trim()
   const mandatePacketUsingStructuredFlow = effectiveWorkspace === 'seller'
     && (
       Boolean(mandatePacket?.packet?.id) ||
-      ['not_generated', 'preparing', 'generated_not_ready', 'ready_for_client_signature', 'awaiting_other_signatures', 'fully_signed'].includes(mandatePacketState)
+      ['not_generated', 'preparing', 'generated_not_ready', 'ready_for_client_signature', 'awaiting_other_signatures', 'fully_signed', 'finalisation_pending'].includes(mandatePacketState)
     )
   const mandateStatusLabel = mandatePacketUsingStructuredFlow
     ? (
@@ -6230,6 +8912,8 @@ function ClientPortal() {
             ? 'Ready to sign'
             : mandatePacketState === 'generated_not_ready' || mandatePacketState === 'preparing'
               ? 'Preparing'
+              : mandatePacketState === 'finalisation_pending'
+                ? 'Finalising'
               : 'Not available'
     )
     : 'Not available'
@@ -6806,6 +9490,8 @@ function ClientPortal() {
       title: 'Sales Team',
       name: portal?.transaction?.assigned_agent || portal?.unit?.development?.developer_company || 'Arch9 Sales',
       detail: portal?.transaction?.assigned_agent_email || 'Handles deal updates and coordination.',
+      email: pickFirstText(portal?.transaction?.assigned_agent_email, portal?.agent?.email),
+      phone: pickFirstText(portal?.transaction?.assigned_agent_phone, portal?.transaction?.agent_phone, portal?.agent?.phone),
     },
     ...(hasAttorneyRolePlayers
       ? []
@@ -6814,6 +9500,8 @@ function ClientPortal() {
             title: 'Attorney / Conveyancer',
             name: portal?.transaction?.attorney || 'Attorney / Conveyancer',
             detail: portal?.transaction?.assigned_attorney_email || 'Manages transfer preparation and lodgement.',
+            email: pickFirstText(portal?.transaction?.assigned_attorney_email),
+            phone: pickFirstText(portal?.transaction?.assigned_attorney_phone, portal?.transaction?.attorney_phone),
           },
         ]),
     {
@@ -6821,6 +9509,8 @@ function ClientPortal() {
       name: portal?.transaction?.bond_originator || 'Bond Originator',
       detail: portal?.transaction?.assigned_bond_originator_email || 'Supports finance approvals and lender feedback.',
       extraDetail: buyerBondOriginatorRequestMessage,
+      email: pickFirstText(portal?.transaction?.assigned_bond_originator_email),
+      phone: pickFirstText(portal?.transaction?.assigned_bond_originator_phone, portal?.transaction?.bond_originator_phone),
     },
     {
       title: 'Arch9 Support',
@@ -6875,6 +9565,20 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
+  const buyerFinanceTypeLabel = journeyFinanceType === 'hybrid'
+    ? 'Hybrid'
+    : toTitleLabel(journeyFinanceType || financeTypeForPortal || 'cash')
+  const buyerMobileFinanceSectionKey = isOriginatorManagedPortalFinance ? 'bond_application' : 'account'
+  const buyerMobileReservationAction = reservationRequiredForClient
+    ? {
+        statusLabel: reservationProofStatusLabel,
+        amountLabel: reservationAmountLabel,
+        needsAction: showReservationDepositUploadCard,
+        fileLabel: reservationProofFileName || (reservationProofUploaded ? 'Proof received' : reservationAmountLabel),
+        uploadedAt: reservationProofUploadedAt,
+      }
+    : null
+  const buyerMobileDocumentItems = buildBuyerMobileDocumentItems(workspaceData?.documentCenter || {})
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -7005,8 +9709,9 @@ function ClientPortal() {
   const hasMandateSigned = Boolean(
     ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
       ['signed', 'fully_signed', 'completed', 'uploaded_signed'].includes(normalizeSellerPortalKey(mandatePacketState)) ||
-      activeSellingContext?.mandatePacket?.finalSignedFilePath ||
-      portal?.mandate?.packet?.finalSignedFilePath,
+      mandatePacketFinalSignedAvailable ||
+      activeSellingContext?.mandatePacket?.finalSignedAccess?.available === true ||
+      portal?.mandate?.packet?.finalSignedAccess?.available === true,
   )
   const hasListingCreated = Boolean(
     ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
@@ -7207,6 +9912,8 @@ function ClientPortal() {
     portal?.transaction?.stage,
     portal?.transaction?.detailed_stage,
     portal?.transaction?.current_stage,
+    portal?.transaction?.current_main_stage,
+    portal?.transaction?.currentMainStage,
     sellerStageMeta?.currentStageKey,
     sellerStageMeta?.currentStage?.key,
     sellerSaleProgressModel?.currentKey,
@@ -7260,6 +9967,78 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
+  const sellerMobileStageKey = normalizeSellerPortalKey(sellerStageMeta?.currentStageKey || sellerStageMeta?.currentStage?.key)
+  const sellerMobileStageIndexByKey = {
+    mandate_signed: 1,
+    listed: 2,
+    offers: 3,
+    offer_accepted: 4,
+    transfer: 5,
+    registered: 6,
+  }
+  const sellerMobileCurrentIndex = Math.max(
+    !hasSellerOnboardingSubmitted ? 0 : 1,
+    sellerMobileStageIndexByKey[sellerMobileStageKey] ?? 0,
+  )
+  const sellerMobileJourneyStages = [
+    {
+      key: 'onboarding',
+      label: 'Seller onboarding',
+      description: hasSellerOnboardingSubmitted
+        ? 'Your seller details have been received and linked to this sale.'
+        : 'Complete your seller details so your agent can prepare the mandate.',
+      owner: sellerFirstName,
+    },
+    {
+      key: 'mandate',
+      label: 'Mandate',
+      description: hasMandateSigned
+        ? 'Your mandate is signed and stored in the document record.'
+        : 'Review and sign the mandate so the listing can move forward.',
+      owner: sellerAgentName || sellerAgencyName,
+    },
+    {
+      key: 'listing',
+      label: 'Listing live',
+      description: hasListingCreated
+        ? 'Your property listing is active and buyer interest is being tracked.'
+        : 'Your agent will activate the listing once the mandate and listing pack are ready.',
+      owner: sellerAgentName || sellerAgencyName,
+    },
+    {
+      key: 'offers',
+      label: 'Offers received',
+      description: activeSellerOfferCount
+        ? 'Buyer interest is active. Review offers and keep documents up to date.'
+        : 'Offers will appear here as buyers submit them through your agent.',
+      owner: sellerAgentName || sellerAgencyName,
+    },
+    {
+      key: 'contract',
+      label: 'Contract',
+      description: 'Accepted offer documents and sale instructions are prepared for the next legal step.',
+      owner: 'Transaction team',
+    },
+    {
+      key: 'transfer',
+      label: 'Transfer',
+      description: 'The attorneys progress transfer milestones, guarantees, and clearance requirements.',
+      owner: 'Transfer attorney',
+    },
+    {
+      key: 'registration',
+      label: 'Registration',
+      description: 'Registration closes out the property sale and final records remain available here.',
+      owner: 'Deeds office',
+    },
+  ].map((stage, index) => ({
+    ...stage,
+    number: index + 1,
+    state: index < sellerMobileCurrentIndex ? 'completed' : index === sellerMobileCurrentIndex ? 'current' : 'upcoming',
+    dateLabel: index < sellerMobileCurrentIndex ? 'Completed' : index === sellerMobileCurrentIndex ? 'Today' : 'Upcoming',
+  }))
+  const sellerMobileProgressPercent = Math.round((sellerMobileCurrentIndex / Math.max(sellerMobileJourneyStages.length - 1, 1)) * 100)
+  const sellerMobileStepLabel = `Step ${sellerMobileCurrentIndex + 1} of ${sellerMobileJourneyStages.length}`
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
   const hasCoApplicantProfile =
@@ -7697,7 +10476,112 @@ function ClientPortal() {
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
-      <div className="flex min-h-screen">
+      {effectiveWorkspace === 'seller' ? (
+        <div className="lg:hidden">
+          <SellerMobilePortal
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+            activeSection={activeSection}
+            sellerAgencyName={sellerAgencyName}
+            sellerAgencyLogoUrl={sellerAgencyLogoUrl}
+            sellerPropertyTitle={sellerPropertyTitle}
+            sellerPropertyImageUrl={sellerPropertyImageUrl}
+            sellerStatusLabel={sellerDashboardStatusLabel}
+            sellerProgressPercent={sellerMobileProgressPercent}
+            sellerStepLabel={sellerMobileStepLabel}
+            sellerJourneyStages={sellerMobileJourneyStages}
+            sellerNextStep={sellerNextStep}
+            sellerAgentName={sellerAgentName}
+            sellerAgentEmail={sellerAgentEmail}
+            sellerAgentPhone={sellerAgentPhone}
+            sellerDocumentsNeedingAttention={sellerDocumentsNeedingAttention}
+            sellerDocumentTracker={sellerDocumentTracker}
+            sellerOfferItems={sellerOfferItems}
+            activeSellerOfferCount={activeSellerOfferCount}
+            sellerActivityItems={sellerActivityItems}
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUploadSellerDocument={handleUploadRequiredDocument}
+            onOpenSellerDocument={handleOpenPortalDocument}
+          />
+        </div>
+      ) : (
+        <div className="lg:hidden">
+          <BuyerMobilePortal
+            token={token}
+            workspaceNavigationScope={workspaceNavigationScope}
+            activeSection={activeSection}
+            developmentName={developmentName}
+            unitLabel={unitLabel}
+            buyerName={buyerName}
+            buyerInitial={buyerInitial}
+            purchasePriceLabel={purchasePriceLabel}
+            heroStatusBadge={heroStatusBadge}
+            journeyProgressPercent={journeyProgressPercent}
+            journeyCurrentStageLabel={journeyCurrentStageLabel}
+            journeyNextStageLabel={journeyNextStageLabel}
+            journeyHeroSubtext={journeyHeroSubtext}
+            clientJourneySteps={clientJourneySteps}
+            nextStepState={nextStepState}
+            primaryOverviewAction={primaryOverviewAction}
+            primaryOverviewActionClasses={primaryOverviewActionClasses}
+            missingRequired={missingRequired}
+            financeTypeLabel={buyerFinanceTypeLabel}
+            financeSectionKey={buyerMobileFinanceSectionKey}
+            matterAccountsSummary={matterAccountsState.summary || {}}
+            matterAccounts={matterAccountsState.accounts || []}
+            matterAccountsLoading={matterAccountsState.loading}
+            matterAccountsError={matterAccountsState.error}
+            matterAccountsUnavailable={matterAccountsState.unavailable}
+            uploadingMatterProofAccountId={uploadingMatterProofAccountId}
+            matterProofUploadFeedback={matterProofUploadFeedback}
+            onUploadMatterProof={handleUploadMatterAccountProof}
+            uploadingMatterRequestId={uploadingMatterRequestId}
+            matterRequestUploadFeedback={matterRequestUploadFeedback}
+            onUploadMatterRequestDocument={handleUploadMatterRequestDocument}
+            upcomingAppointmentCount={upcomingAppointmentCount}
+            appointments={clientVisibleAppointments}
+            appointmentActionPending={appointmentActionPending}
+            appointmentFeedback={appointmentFeedback}
+            onConfirmAppointment={(appointment) => {
+              void handleRespondToAppointment(appointment, 'confirm')
+            }}
+            onDeclineAppointment={(appointment) => {
+              void handleRespondToAppointment(appointment, 'decline')
+            }}
+            onRequestAppointmentReschedule={(appointment, payload) => {
+              void handleRespondToAppointment(appointment, 'reschedule', payload || {})
+            }}
+            blockingActionCount={blockingActionCount}
+            prioritizedNextActions={prioritizedNextActions}
+            hiddenNextActionCount={hiddenNextActionCount}
+            latestJourneyFeedItems={latestJourneyFeedItems}
+            whatHappensNextItems={whatHappensNextItems}
+            reservationAction={buyerMobileReservationAction}
+            buyerDocumentItems={buyerMobileDocumentItems}
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUploadBuyerDocument={handleBuyerMobileDocumentUpload}
+            onOpenBuyerDocument={handleOpenPortalDocument}
+            teamMembers={teamMembers}
+            enabledSections={sectionEnabled}
+            buyerPortalStatusItems={buyerPortalStatusItems}
+            buyerPortalAccessDescription={buyerPortalAccessDescription}
+            buyerMoreSummary={{
+              onboardingComplete,
+              onboardingFieldCount: onboardingFieldEntries.length,
+              handoverStatus: handoverReadinessStatus,
+              handoverSummary: handoverReadinessSummary,
+              handoverProgressPercent: handoverChecklistProgressPercent,
+              handoverCompletedCount: handoverChecklistCompletedCount,
+              handoverTotalCount: handoverChecklistTotalCount,
+              snagOpenCount,
+              snagResolvedCount,
+            }}
+          />
+        </div>
+      )}
+      <div className="hidden min-h-screen lg:flex">
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             {effectiveWorkspace === 'seller' ? (
@@ -9946,6 +12830,8 @@ function ClientPortal() {
                                     ? 'You have signed the mandate. We are waiting for the remaining parties to complete signing.'
                                     : mandatePacketState === 'fully_signed'
                                       ? 'Your mandate is fully signed. Download the final signed document below.'
+                                      : mandatePacketState === 'finalisation_pending'
+                                        ? (mandatePacketFinalSignedMessage || 'Your signatures are complete. The final document is being securely published.')
                                       : 'Your mandate has been generated and is being prepared for signing.'
                             )
                             : 'Your agent is preparing your mandate. It will appear here when ready.'}
@@ -9988,24 +12874,19 @@ function ClientPortal() {
                                 : 'View Mandate'}
                             </button>
                           ) : null}
-                          {mandatePacketState === 'fully_signed' && mandatePacketFinalSignedFilePath ? (
+                          {mandatePacketState === 'fully_signed' && mandatePacketFinalSignedAvailable && mandatePacketId && mandatePacketVersionId ? (
                             <button
                               type="button"
-                              onClick={() =>
-                                void handleOpenPortalDocument({
-                                  id: `mandate-final-signed-${mandatePacket?.version?.id || ''}`,
-                                  file_path: mandatePacketFinalSignedFilePath,
-                                  file_bucket: String(mandatePacket?.finalSignedFileBucket || '').trim(),
-                                  url: mandatePacketFinalSignedDownloadUrl,
-                                  openDirectUrl: Boolean(mandatePacketFinalSignedDownloadUrl),
-                                  name: mandatePacketFinalSignedFileName,
-                                })
-                              }
-                              disabled={openingDocumentPath === String(mandatePacketFinalSignedFilePath || '')}
+                              onClick={() => void handleOpenFinalSignedPortalDocument({
+                                packetId: mandatePacketId,
+                                packetVersionId: mandatePacketVersionId,
+                                openingKey: `mandate-final-signed-${mandatePacketVersionId}`,
+                              })}
+                              disabled={openingDocumentPath === `mandate-final-signed-${mandatePacketVersionId}`}
                               className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                             >
                               <Download size={14} />
-                              {openingDocumentPath === String(mandatePacketFinalSignedFilePath || '')
+                              {openingDocumentPath === `mandate-final-signed-${mandatePacketVersionId}`
                                 ? 'Opening...'
                                 : 'Download Signed Mandate'}
                             </button>
@@ -10049,6 +12930,8 @@ function ClientPortal() {
                                     ? 'You have signed the OTP. We are waiting for the remaining parties to complete signing.'
                                     : otpPacketState === 'fully_signed'
                                       ? 'Your Offer to Purchase is fully signed. Download the final signed document below.'
+                                      : otpPacketState === 'finalisation_pending'
+                                        ? (otpPacketFinalSignedMessage || 'Your signatures are complete. The final document is being securely published.')
                                       : 'Your Offer to Purchase has been generated and is being prepared for signing.'
                             )
                             : 'Review the latest OTP document for this transaction.'}
@@ -10091,22 +12974,19 @@ function ClientPortal() {
                                 : 'View OTP'}
                             </button>
                           ) : null}
-                          {otpPacketState === 'fully_signed' && otpPacketFinalSignedFilePath ? (
+                          {otpPacketState === 'fully_signed' && otpPacketFinalSignedAvailable && otpPacketId && otpPacketVersionId ? (
                             <button
                               type="button"
-                              onClick={() =>
-                                void handleOpenPortalDocument({
-                                  id: `otp-final-signed-${portal?.otpPacket?.version?.id || ''}`,
-                                  file_path: otpPacketFinalSignedFilePath,
-                                  file_bucket: String(portal?.otpPacket?.finalSignedFileBucket || '').trim(),
-                                  name: otpPacketFinalSignedFileName,
-                                })
-                              }
-                              disabled={openingDocumentPath === String(otpPacketFinalSignedFilePath || '')}
+                              onClick={() => void handleOpenFinalSignedPortalDocument({
+                                packetId: otpPacketId,
+                                packetVersionId: otpPacketVersionId,
+                                openingKey: `otp-final-signed-${otpPacketVersionId}`,
+                              })}
+                              disabled={openingDocumentPath === `otp-final-signed-${otpPacketVersionId}`}
                               className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                             >
                               <Download size={14} />
-                              {openingDocumentPath === String(otpPacketFinalSignedFilePath || '')
+                              {openingDocumentPath === `otp-final-signed-${otpPacketVersionId}`
                                 ? 'Opening...'
                                 : 'Download Signed OTP'}
                             </button>

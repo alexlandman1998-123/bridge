@@ -12,6 +12,14 @@ const clientPortalWorkspaceService = readFileSync(
   resolve(appRoot, 'src/services/clientPortalWorkspaceService.js'),
   'utf8',
 )
+const finalDeliveryDispatcher = readFileSync(
+  resolve(appRoot, '../supabase/functions/dispatch-final-signed-document/index.ts'),
+  'utf8',
+)
+const genericEmailRouter = readFileSync(
+  resolve(appRoot, '../supabase/functions/send-email/index.ts'),
+  'utf8',
+)
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
 function test(name, fn) {
@@ -24,12 +32,15 @@ function test(name, fn) {
   }
 }
 
-test('signed mandate finalization sends the seller notification email', () => {
-  assert.match(legalWorkspacePage, /getSignedMandateNotificationContext/)
-  assert.match(legalWorkspacePage, /type:\s*'seller_mandate_signed'/)
-  assert.match(legalWorkspacePage, /signedDocumentName:\s*sellerNotification\.signedDocumentName/)
-  assert.match(legalWorkspacePage, /downloadLink:\s*sellerNotification\.downloadLink/)
-  assert.match(legalWorkspacePage, /seller signed mandate notification skipped/)
+test('signed mandate notification egress is owned by the packet-bound final dispatcher', () => {
+  assert.doesNotMatch(legalWorkspacePage, /getSignedMandateNotificationContext|seller_mandate_signed/)
+  assert.match(finalDeliveryDispatcher, /handleSellerMandateSignedEmail/)
+  assert.match(finalDeliveryDispatcher, /FINAL_DELIVERY_F2_INVALID/)
+  assert.match(finalDeliveryDispatcher, /F3_TRANSACTION_PUBLICATION_FAILED/)
+  assert.match(finalDeliveryDispatcher, /F4_SURFACE_COMPLETION_FAILED/)
+  assert.doesNotMatch(finalDeliveryDispatcher, /functions\/v1\/send-email/)
+  assert.match(genericEmailRouter, /FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED/)
+  assert.doesNotMatch(genericEmailRouter, /handleSellerMandateSignedEmail/)
 })
 
 test('signed mandate listing activity is seller-visible and document-routed', () => {

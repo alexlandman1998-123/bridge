@@ -211,19 +211,46 @@ function dedupeStepRowsForLane(rows = [], laneKey, stages = getLaneStages(laneKe
 }
 
 function mapAssignmentForLane(assignments = [], laneKey) {
-  const meta = LANE_META[laneKey]
+  const coversLane = (assignment) => {
+    const values = [
+      assignment?.attorneyRole,
+      assignment?.attorney_role,
+      assignment?.assignmentType,
+      assignment?.assignment_type,
+    ].map((value) => String(value || '').trim().toLowerCase())
+    if (laneKey === 'transfer') {
+      return values.some((value) => ['transfer', 'transfer_attorney', 'transfer_and_bond'].includes(value))
+    }
+    if (laneKey === 'bond') {
+      return values.some((value) => ['bond', 'bond_attorney', 'transfer_and_bond'].includes(value))
+    }
+    return values.some((value) => ['cancellation', 'cancellation_attorney'].includes(value))
+  }
   return (
     (assignments || []).find(
       (assignment) =>
-        assignment.attorneyRole === meta.attorneyRole &&
+        coversLane(assignment) &&
         assignment.assignmentStatus !== 'removed' &&
         assignment.isPrimary !== false,
     ) ||
     (assignments || []).find(
-      (assignment) => assignment.attorneyRole === meta.attorneyRole && assignment.assignmentStatus !== 'removed',
+      (assignment) => coversLane(assignment) && assignment.assignmentStatus !== 'removed',
     ) ||
     null
   )
+}
+
+function getLaneKeyForAssignment(assignment = {}) {
+  const values = [
+    assignment?.attorneyRole,
+    assignment?.attorney_role,
+    assignment?.assignmentType,
+    assignment?.assignment_type,
+  ].map((value) => String(value || '').trim().toLowerCase())
+  if (values.some((value) => ['bond', 'bond_attorney'].includes(value))) return 'bond'
+  if (values.some((value) => ['cancellation', 'cancellation_attorney'].includes(value))) return 'cancellation'
+  if (values.some((value) => ['transfer', 'transfer_attorney', 'transfer_and_bond'].includes(value))) return 'transfer'
+  return ''
 }
 
 function summarizeSteps(steps = [], stages = []) {
@@ -753,29 +780,6 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   const normalizedTransactionId = String(transactionId || '').trim()
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
 
-  const baselineContext = await getAttorneyLegalPermissionContext({
-    userId: actor?.id || null,
-    transactionId: normalizedTransactionId,
-    attorneyRole: 'transfer_attorney',
-  }).catch(async (error) => {
-    await recordAttorneySecurityEvent(client, {
-      transactionId: normalizedTransactionId,
-      actorId: actor?.id || null,
-      action: 'legal_workspace_context_failed',
-      metadata: { message: sanitizeError(error, 'Unable to resolve permissions.') },
-    })
-    return null
-  })
-
-  if (!baselineContext?.canViewLegalWorkspace) {
-    await recordAttorneySecurityEvent(client, {
-      transactionId: normalizedTransactionId,
-      actorId: actor?.id || null,
-      action: 'legal_workspace_view_denied',
-    })
-    throw new Error('You do not have permission to view this legal workspace.')
-  }
-
   const transaction = await fetchTransaction(client, normalizedTransactionId)
   const assignments = await getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => [])
   const workflow = resolveAttorneyWorkflowForTransaction(transaction, assignments)
@@ -783,10 +787,48 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   const requiredLaneKeys = Object.entries(workflow.lanes)
     .filter(([, lane]) => lane.required)
     .map(([laneKey]) => laneKey)
+  const assignmentLaneKeys = assignments.map(getLaneKeyForAssignment).filter(Boolean)
+  const permissionLaneKeys = [...new Set([...requiredLaneKeys, ...assignmentLaneKeys])]
+  const laneContexts = {}
+
+  for (const laneKey of permissionLaneKeys) {
+    const meta = LANE_META[laneKey]
+    if (!meta) continue
+    laneContexts[laneKey] = await getAttorneyLegalPermissionContext({
+      userId: actor?.id || null,
+      transactionId: normalizedTransactionId,
+      attorneyRole: meta.attorneyRole,
+    }).catch(async (error) => {
+      await recordAttorneySecurityEvent(client, {
+        transactionId: normalizedTransactionId,
+        actorId: actor?.id || null,
+        action: 'legal_workspace_context_failed',
+        metadata: {
+          laneKey,
+          message: sanitizeError(error, 'Unable to resolve permissions.'),
+        },
+      })
+      return null
+    })
+  }
+
+  const authorizedContexts = Object.values(laneContexts).filter((context) => context?.canViewLegalWorkspace)
+  const baselineContext = authorizedContexts[0] || null
+  if (!baselineContext) {
+    await recordAttorneySecurityEvent(client, {
+      transactionId: normalizedTransactionId,
+      actorId: actor?.id || null,
+      action: 'legal_workspace_view_denied',
+      metadata: { attemptedLanes: permissionLaneKeys },
+    })
+    throw new Error('You do not have permission to view this legal workspace.')
+  }
 
   let laneRows = await fetchLaneRows(client, normalizedTransactionId)
   const existingLaneKeys = new Set(laneRows.map((row) => normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)))
-  const missingRequiredLaneKeys = requiredLaneKeys.filter((laneKey) => !existingLaneKeys.has(laneKey))
+  const missingRequiredLaneKeys = permissionLaneKeys.filter(
+    (laneKey) => !existingLaneKeys.has(laneKey) && laneContexts[laneKey]?.canUpdateLane,
+  )
 
   if (initialize && missingRequiredLaneKeys.length) {
     for (const laneKey of missingRequiredLaneKeys) {
@@ -826,15 +868,6 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     }
   }
 
-  const laneContexts = {}
-  for (const laneKey of requiredLaneKeys) {
-    const meta = LANE_META[laneKey]
-    laneContexts[laneKey] = await getAttorneyLegalPermissionContext({
-      userId: actor?.id || null,
-      transactionId: normalizedTransactionId,
-      attorneyRole: meta.attorneyRole,
-    }).catch(() => baselineContext)
-  }
   const legalTimeline = buildTimelineFromSources({
     updates,
     history,
@@ -842,13 +875,30 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     permissionByLane: laneContexts,
   })
   const coordinationSummaryNow = new Date().toISOString()
+  const visibleLaneKeys = new Set(permissionLaneKeys)
+  const deniedLaneContext = {
+    canViewLane: false,
+    canViewLegalWorkspace: false,
+    canViewInternalNotes: false,
+    canViewProfessionalUpdates: false,
+    canUpdateLane: false,
+    canAddInternalNote: false,
+    canAddSharedUpdate: false,
+    canPublishClientVisibleUpdate: false,
+    canRequestDocuments: false,
+    canUploadDocuments: false,
+    canReviewDocuments: false,
+    canManageSigning: false,
+    canAssignAttorney: false,
+    viewReason: 'no_lane_access',
+  }
 
   const baseLanes = laneRows
     .map((row) => {
       const laneKey = normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)
       const assignment = mapAssignmentForLane(assignments, laneKey)
       const lane = mapLaneRow({ ...row, process_type: laneKey }, stepsBySubprocessId[row.id] || [], assignment)
-      const permissionContext = laneContexts[laneKey] || baselineContext
+      const permissionContext = laneContexts[laneKey] || deniedLaneContext
       const visibleUpdates = updates.filter((update) => {
         if (!(update.lane_key === laneKey || update.attorney_role === lane.attorneyRole)) return false
         return canSeeAttorneyUpdateVisibility(permissionContext, update.visibility)
@@ -927,7 +977,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
         signingRequirements: laneSigningRequirements,
       }
     })
-    .filter((lane) => requiredLaneKeys.includes(lane.laneKey))
+    .filter((lane) => visibleLaneKeys.has(lane.laneKey))
 
   const lanes = baseLanes.map((lane) => ({
     ...lane,

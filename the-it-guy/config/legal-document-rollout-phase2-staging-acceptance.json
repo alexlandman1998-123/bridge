@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_2",
+  "contract": "legal-document-staging-acceptance-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "stagingProjectRef": null,
+    "stagingOrigin": null,
+    "previewUrl": null,
+    "previewReleaseId": null
+  },
+  "source": {
+    "phase0ManifestDigest": null,
+    "phase1ReceiptManifestDigest": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "phase1PreviewAttestationEvidenceDigest": null,
+    "phase1PreviewArtifactTreeSha256": null
+  },
+  "safety": {
+    "pilotEnabled": false,
+    "scaleEnabled": false,
+    "creationPaused": true,
+    "externalRecipientPolicy": "controlled_test_mailbox_only",
+    "fixtureNamespace": null,
+    "fixtureWriteLimit": null,
+    "testMailboxDigest": null,
+    "physicalSigningRequired": true
+  },
+  "acceptance": {
+    "requiredScenarios": [],
+    "physicalSigningCapability": "server_attested_physical_completion"
+  },
+  "execution": {
+    "scenarios": [],
+    "browserEvidence": {
+      "status": "not_run",
+      "previewUrl": null,
+      "previewReleaseId": null,
+      "scenarioIds": [],
+      "checkedAt": null,
+      "evidenceDigest": null
+    },
+    "cleanupEvidence": {
+      "status": "not_run",
+      "archivedPacketIds": [],
+      "completedAt": null,
+      "evidenceDigest": null
+    },
+    "overallEvidenceDigest": null
+  },
+  "evidence": {
+    "preparedBy": null,
+    "preparedAt": null,
+    "acceptanceRecordedBy": null,
+    "reviewedBy": null,
+    "acceptanceRecordedAt": null,
+    "changeReference": null,
+    "fixtureWrites": 0
+  },
+  "manifestDigest": null
+}

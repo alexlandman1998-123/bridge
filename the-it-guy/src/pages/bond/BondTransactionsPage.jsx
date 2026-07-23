@@ -38,25 +38,6 @@ function resolveWorkspaceId(workspaceContext = {}) {
   )
 }
 
-function normalizeStatusFilter(value) {
-  const normalized = normalizeText(value).toLowerCase().replace(/_/g, '-')
-  if (['all', 'active', 'needs-action', 'at-risk', 'completed'].includes(normalized)) {
-    return normalized
-  }
-  return ''
-}
-
-function statusFilterFromLegacyStatus(status = 'all') {
-  const normalized = normalizeText(status).toLowerCase()
-  if (['at_risk', 'at-risk'].includes(normalized)) return 'at-risk'
-  if (normalized === 'registered') return 'completed'
-  if (normalized === 'declined') return 'completed'
-  if (normalized === 'cancelled') return 'completed'
-  if (normalized === 'all') return 'all'
-  if (normalized === 'active') return 'active'
-  return 'active'
-}
-
 function normalizeSortMode(value) {
   const normalized = normalizeText(value).toLowerCase().replace(/_/g, '-')
   if (normalized === 'last_activity' || normalized === 'last-activity') return 'last_activity'
@@ -97,25 +78,6 @@ function matchesSearch(row = {}, query = '') {
     .map((value) => normalizeText(value).toLowerCase())
     .join(' ')
   return haystack.includes(normalizedQuery)
-}
-
-function matchesStatusFilter(row = {}, filter = 'all') {
-  const status = normalizeText(row?.status).toLowerCase()
-  const nextAction = normalizeText(row?.nextAction).toLowerCase()
-
-  if (filter === 'active') {
-    return !['registered', 'at_risk', 'cancelled'].includes(status)
-  }
-  if (filter === 'needs-action') {
-    return !['registered', 'cancelled'].includes(status) && nextAction && nextAction !== 'no next action set'
-  }
-  if (filter === 'at-risk') {
-    return status === 'at_risk'
-  }
-  if (filter === 'completed') {
-    return status === 'registered'
-  }
-  return true
 }
 
 function matchesStageFilter(row = {}, filter = 'all') {
@@ -348,6 +310,7 @@ function resolveHqApplicationStatus(row = {}) {
   const bankStatus = normalizeKey(row.bankSubmissionStatus)
   const nextAction = normalizeKey(row.nextAction)
 
+  if (['declined', 'cancelled'].includes(status) || financeKey === 'declined') return 'declined'
   if (registrationStatus === 'registered' || transferKey === 'registered' || status === 'registered') return 'registered'
   if (['bond_instruction_sent', 'instruction_sent', 'grant_signed'].includes(financeKey) || ['instruction_sent', 'grant_signed'].includes(status)) return 'instruction_sent'
   if (['bond_approved', 'approved'].includes(status) || financeKey === 'bond_approved' || financeLabel.includes('approved')) return 'approved'
@@ -358,6 +321,25 @@ function resolveHqApplicationStatus(row = {}) {
   if (queueStatus === 'application_in_progress' || queueStatus === 'application_submitted' || nextAction.includes('documents')) return 'docs'
   if (getBondValue(row) > 0 || queueStatus === 'ready_to_start') return 'intake'
   return 'intake'
+}
+
+export function matchesApplicationWorkspaceTab(row = {}, tabKey = 'incoming') {
+  const tab = normalizeText(tabKey).toLowerCase() || 'incoming'
+  const stage = resolveBondProgressStage(row)
+  if (tab === 'registered') return stage === 'registered'
+  if (tab === 'declined') return stage === 'declined'
+  if (tab === 'processing') {
+    return !['documents_received', 'documents_reviewed', 'ready_for_review', 'registered', 'declined'].includes(stage)
+  }
+  return ['documents_received', 'documents_reviewed', 'ready_for_review'].includes(stage)
+}
+
+export function matchesHqApplicationWorkspaceTab(row = {}, tabKey = 'incoming') {
+  const tab = normalizeText(tabKey).toLowerCase() || 'incoming'
+  if (tab === 'registered') return row.statusKey === 'registered'
+  if (tab === 'declined') return row.statusKey === 'declined'
+  if (tab === 'processing') return ['submitted_to_banks', 'bank_feedback', 'approved', 'instruction_sent'].includes(row.statusKey)
+  return ['intake', 'docs'].includes(row.statusKey)
 }
 
 function getFriendlyNextAction(row = {}, statusKey = resolveHqApplicationStatus(row)) {
@@ -559,6 +541,35 @@ function HqFilterSelect({ label, value, onChange, options = [] }) {
         ))}
       </select>
     </label>
+  )
+}
+
+function ApplicationWorkspaceTabs({ value, counts = {}, onChange }) {
+  return (
+    <nav aria-label="Application status" className="overflow-x-auto">
+      <div className="inline-flex min-w-max items-center gap-1 rounded-[14px] border border-[#dce6f2] bg-[#f6f9fc] p-1.5">
+        {bondViews.transactions.tabs.map((tab) => {
+          const active = tab.key === value
+          const count = counts[tab.key] || 0
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onChange(tab.key)}
+              className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-3.5 text-sm font-semibold transition ${
+                active ? 'bg-white text-[#102448] shadow-[0_3px_10px_rgba(15,23,42,0.09)]' : 'text-[#61758a] hover:bg-white/70 hover:text-[#17324d]'
+              }`}
+              aria-current={active ? 'page' : undefined}
+            >
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-[#eaf2fb] text-[#1d508a]' : 'bg-[#e9eff5] text-[#6b7f94]'}`}>
+                {count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </nav>
   )
 }
 
@@ -824,17 +835,10 @@ export default function BondTransactionsPage({
     const legacyStatus = normalizeText(params.get('status') || 'all') || 'all'
     return getBondTransactionViewFromStatus(legacyStatus)
   }, [location.search])
-  const selectedStatus = selectedView.status || 'all'
   const selectedDevelopmentId = useMemo(() => {
     const params = new URLSearchParams(location.search)
     return normalizeText(params.get('developmentId')) || 'all'
   }, [location.search])
-  const selectedStatusFilter = useMemo(() => {
-    const params = new URLSearchParams(location.search)
-    const explicit = normalizeStatusFilter(params.get('filter'))
-    if (explicit) return explicit
-    return statusFilterFromLegacyStatus(selectedView.status)
-  }, [location.search, selectedView.status])
   const selectedStageFilter = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const stage = normalizeText(params.get('stage') || 'all')
@@ -859,7 +863,7 @@ export default function BondTransactionsPage({
 
     try {
       const snapshot = await service.getBondTransactionTrackerSnapshot(workspaceContext, workspaceId, {
-        status: hqRequestScope ? 'all' : selectedStatus,
+        status: 'all',
         developmentId: selectedDevelopmentId,
         includeDemoRows: hqRequestScope ? isExplicitBondDemoModeEnabled(workspaceContext) : undefined,
       })
@@ -875,7 +879,7 @@ export default function BondTransactionsPage({
         snapshot: null,
       })
     }
-  }, [hqRequestScope, selectedDevelopmentId, selectedStatus, service, workspaceContext, workspaceId])
+  }, [hqRequestScope, selectedDevelopmentId, service, workspaceContext, workspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -887,13 +891,17 @@ export default function BondTransactionsPage({
 
   const filteredRows = useMemo(() => {
     const baselineRows = getDefaultSortRows(state.snapshot?.rows).filter((row) => matchesSearch(row, search))
-    const statusFilteredRows = baselineRows.filter((row) => matchesStatusFilter(row, selectedStatusFilter))
-    return statusFilteredRows.filter((row) => matchesStageFilter(row, selectedStageFilter))
-  }, [search, selectedStageFilter, selectedStatusFilter, state.snapshot?.rows])
+    const workspaceRows = baselineRows.filter((row) => matchesApplicationWorkspaceTab(row, selectedView.key))
+    return workspaceRows.filter((row) => matchesStageFilter(row, selectedStageFilter))
+  }, [search, selectedStageFilter, selectedView.key, state.snapshot?.rows])
 
   const hqRegisterRows = useMemo(() => buildHqApplicationRegisterRows(snapshot?.rows), [snapshot?.rows])
   const hqFilterOptions = useMemo(() => getHqApplicationFilterOptions(hqRegisterRows), [hqRegisterRows])
-  const hqFilteredRows = useMemo(() => filterHqApplicationRegisterRows(hqRegisterRows, hqFilters), [hqFilters, hqRegisterRows])
+  const hqWorkspaceRows = useMemo(
+    () => hqRegisterRows.filter((row) => matchesHqApplicationWorkspaceTab(row, selectedView.key)),
+    [hqRegisterRows, selectedView.key],
+  )
+  const hqFilteredRows = useMemo(() => filterHqApplicationRegisterRows(hqWorkspaceRows, hqFilters), [hqFilters, hqWorkspaceRows])
   const hqTotalPages = Math.max(1, Math.ceil(hqFilteredRows.length / hqRowsPerPage))
   const hqCurrentPage = Math.min(hqPage, hqTotalPages)
   const hqPagedRows = useMemo(
@@ -901,6 +909,14 @@ export default function BondTransactionsPage({
     [hqCurrentPage, hqFilteredRows, hqRowsPerPage],
   )
   const hqKpis = useMemo(() => getHqApplicationKpis(hqRegisterRows), [hqRegisterRows])
+  const hqTabCounts = useMemo(
+    () => Object.fromEntries(bondViews.transactions.tabs.map((tab) => [tab.key, hqRegisterRows.filter((row) => matchesHqApplicationWorkspaceTab(row, tab.key)).length])),
+    [hqRegisterRows],
+  )
+  const applicationTabCounts = useMemo(
+    () => Object.fromEntries(bondViews.transactions.tabs.map((tab) => [tab.key, parseRowsForQuery(snapshot?.rows).filter((row) => matchesApplicationWorkspaceTab(row, tab.key)).length])),
+    [snapshot?.rows],
+  )
   const hasActiveHqFilters = useMemo(
     () => Object.entries(HQ_FILTER_DEFAULTS).some(([key, value]) => hqFilters[key] !== value),
     [hqFilters],
@@ -920,6 +936,17 @@ export default function BondTransactionsPage({
     setHqRowsPerPage(value)
     setHqPage(1)
   }, [])
+
+  const handleApplicationTabChange = useCallback(
+    (nextView) => {
+      const params = new URLSearchParams(location.search)
+      params.set(BOND_TRANSACTION_VIEW_PARAM, nextView)
+      params.delete('status')
+      navigate(`${bondViews.transactions.basePath}?${params.toString()}`)
+      setHqPage(1)
+    },
+    [location.search, navigate],
+  )
 
   const handleOpenHqApplication = useCallback(
     (row) => {
@@ -973,6 +1000,13 @@ export default function BondTransactionsPage({
 
     return (
       <BondPageShell className="space-y-[clamp(1.1rem,1.6vw,1.75rem)]">
+        <section className="flex flex-col gap-4 rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div>
+            <p className="text-lg font-semibold text-[#102448]">Applications</p>
+            <p className="mt-1 text-sm text-[#60758d]">Manage each bond application from intake through registration.</p>
+          </div>
+          <ApplicationWorkspaceTabs value={selectedView.key} counts={hqTabCounts} onChange={handleApplicationTabChange} />
+        </section>
         <section className="rounded-[22px] border border-[#dce6f2] bg-white p-[clamp(0.5rem,0.75vw,0.75rem)] shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
           <div className="grid gap-[clamp(0.5rem,0.8vw,0.9rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,13.25rem),1fr))]">
             {hqKpis.map((item) => (
@@ -1040,7 +1074,14 @@ export default function BondTransactionsPage({
   }
 
   return (
-    <BondPageShell>
+    <BondPageShell className="space-y-[clamp(1rem,1.35vw,1.5rem)]">
+      <section className="flex flex-col gap-4 rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div>
+          <p className="text-lg font-semibold text-[#102448]">Applications</p>
+          <p className="mt-1 text-sm text-[#60758d]">Your bond application workspace, from incoming requests to registration.</p>
+        </div>
+        <ApplicationWorkspaceTabs value={selectedView.key} counts={applicationTabCounts} onChange={handleApplicationTabChange} />
+      </section>
       <div className="rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
         <div className="grid grid-cols-1 gap-[clamp(0.75rem,1vw,1rem)] md:grid-cols-2 lg:grid-cols-4">
           <label className="relative">

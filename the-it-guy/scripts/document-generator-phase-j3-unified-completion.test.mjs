@@ -7,7 +7,7 @@ for (const token of [
   'buildSigningCompletion',
   'Open completed PDF',
   'Reopening this link will continue to show this confirmation',
-  'result?.completion',
+  'session?.completion',
 ]) assert.match(portal, new RegExp(token.replace(/[?.()]/g, '\\$&')))
 
 const api = fs.readFileSync('src/lib/api.js', 'utf8')
@@ -22,7 +22,8 @@ const resolver = fs.readFileSync('../supabase/functions/resolve-signer-token/ind
 assert.match(resolver, /\["sent", "viewed", "signed"\]/)
 assert.match(resolver, /if \(!signerAlreadyCompleted\)/)
 assert.match(resolver, /SIGNING_COMPLETION_CONTRACT/)
-assert.match(resolver, /finalSignedUrl/)
+assert.match(resolver, /buildFinalArtifactAccessDescriptor/)
+assert.doesNotMatch(resolver, /const finalSignedUrl\b/)
 assert.match(resolver, /completion,/)
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))

@@ -5,8 +5,6 @@ import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts"
 import { handleReservationDepositReceivedEmail } from "./handlers/reservationDepositReceived.ts";
 import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
 import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
-import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
-import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
@@ -51,8 +49,6 @@ import type {
   SendOrganisationPartnerInvitationPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
-  SendSellerMandateSentPayload,
-  SendSellerMandateSignedPayload,
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
@@ -65,6 +61,10 @@ import type {
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { assessControlledTestRecipient } from "./utils/controlledTestRecipient.ts";
 import { normalizeText } from "./utils/text.ts";
+import {
+  FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED,
+  isRetiredFinalSignedLegalDocumentEmailType,
+} from "./legalDocumentEgress.ts";
 
 type EmailRequestEnvelope = Record<string, unknown>;
 
@@ -121,6 +121,18 @@ Deno.serve(async (req: Request) => {
     const transactionId = resolveTransactionId(payload);
     const recipient = normalizeText(payload.to).toLowerCase();
     const payloadKeys = Object.keys(payload || {});
+
+    // The generic endpoint cannot prove that a requested download link belongs
+    // to a completed packet/version. Do this before the controlled-recipient
+    // shortcut so every attempt receives the same fail-closed route result.
+    if (isRetiredFinalSignedLegalDocumentEmailType(type)) {
+      return jsonResponse(409, {
+        success: false,
+        error: "Final signed legal documents must be delivered through the packet-bound canonical final-delivery endpoint.",
+        errorCode: FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED,
+      });
+    }
+
     const recipientSafety = assessControlledTestRecipient({
       email: recipient,
       recipientName: payload.recipientName ?? payload.recipient_name ?? payload.buyerName ?? payload.sellerName,
@@ -296,24 +308,18 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
-      console.log("[send-email] routing template", {
-        route: "seller_mandate_sent",
-        recipient: recipient || null,
+    if (["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(type)) {
+      // Signing invitations must be authorised against the packet, its exact
+      // generated PDF, and its active signer token. The generic email router
+      // has none of that context, so retaining this route would let callers
+      // bypass the guarded send-mandate-signing-email endpoint.
+      return jsonResponse(409, {
+        success: false,
+        error: "Signing invitations must be sent through the packet-bound delivery endpoint.",
+        errorCode: type === "otp_signing"
+          ? "OTP_SIGNING_DELIVERY_ROUTE_RETIRED"
+          : "MANDATE_SIGNING_DELIVERY_ROUTE_RETIRED",
       });
-      return await handleSellerMandateSentEmail(
-        payload as SendSellerMandateSentPayload,
-      );
-    }
-
-    if (["seller_mandate_signed"].includes(type)) {
-      console.log("[send-email] routing template", {
-        route: "seller_mandate_signed",
-        recipient: recipient || null,
-      });
-      return await handleSellerMandateSignedEmail(
-        payload as SendSellerMandateSignedPayload,
-      );
     }
 
     if (
@@ -658,7 +664,6 @@ Deno.serve(async (req: Request) => {
           "seller_onboarding",
           "seller_onboarding_submitted",
           "seller_mandate_sent",
-          "seller_mandate_signed",
           "lead_property_share",
           "property_collection",
           "buyer_offer_link",
@@ -709,7 +714,6 @@ Deno.serve(async (req: Request) => {
         "seller_onboarding",
         "seller_onboarding_submitted",
         "seller_mandate_sent",
-        "seller_mandate_signed",
         "buyer_offer_link",
         "buyer_offer_submitted_agent",
         "seller_offer_review",

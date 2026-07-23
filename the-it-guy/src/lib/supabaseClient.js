@@ -24,6 +24,10 @@ function isPublishableApiKey(value = '') {
   return normalizeConfigValue(value).startsWith('sb_publishable_')
 }
 
+function isSecretApiKey(value = '') {
+  return normalizeConfigValue(value).startsWith('sb_secret_')
+}
+
 function decodeJwtPayload(token = '') {
   try {
     const [, payload = ''] = String(token).split('.')
@@ -52,15 +56,17 @@ function resolveSupabaseFrontendKey() {
   }
 
   if (isPublishableApiKey(selectedCandidate)) {
-    console.error(
-      '[supabase] Unsupported key type in frontend config. Use VITE_SUPABASE_ANON_KEY (JWT anon key), not sb_publishable_*.',
-    )
+    return selectedCandidate
+  }
+
+  if (isSecretApiKey(selectedCandidate)) {
+    console.error('[supabase] Refusing to use sb_secret key in frontend runtime.')
     return ''
   }
 
   if (!isJwtLikeKey(selectedCandidate)) {
     console.error(
-      '[supabase] Invalid frontend key format. Expected JWT anon key in VITE_SUPABASE_ANON_KEY (or legacy VITE_SUPABASE_KEY).',
+      '[supabase] Invalid frontend key format. Expected a publishable key or JWT anon key in VITE_SUPABASE_ANON_KEY (or legacy VITE_SUPABASE_KEY).',
     )
     return ''
   }

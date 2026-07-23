@@ -163,9 +163,30 @@ function defaultClientRoleForMatter(lead, matterType) {
 
 function canOwnConvertedMatter(assignee, matterType) {
   const leadership = ['owner', 'principal', 'partner', 'director', 'firm_admin', 'director_partner']
-  if (leadership.includes(assignee?.role) || ['attorney', 'conveyancer'].includes(assignee?.role)) return true
-  if (matterType === 'bond') return assignee?.role === 'bond_attorney'
-  return assignee?.role === 'transfer_attorney'
+  const role = String(assignee?.role || '').trim().toLowerCase()
+  const professionalRole = String(assignee?.professionalRole || '').trim().toLowerCase()
+  const qualifications = Array.isArray(assignee?.practiceQualifications)
+    ? assignee.practiceQualifications.map((value) => String(value || '').trim().toLowerCase())
+    : []
+  if (leadership.includes(role) || leadership.includes(professionalRole)) return true
+
+  const requiredLane = matterType === 'bond'
+    ? 'bond'
+    : matterType === 'cancellation'
+      ? 'cancellation'
+      : 'transfer'
+  if (qualifications.length) return qualifications.includes(requiredLane)
+
+  if (matterType === 'bond') {
+    return role === 'bond_attorney' || ['attorney', 'conveyancer', 'attorney_conveyancer'].includes(role)
+  }
+  if (matterType === 'cancellation') {
+    // A compatibility-role transfer attorney is not enough here. A
+    // cancellation-qualified member must surface its canonical qualification.
+    if (role === 'transfer_attorney' || professionalRole === 'transfer_attorney') return false
+    return role === 'cancellation_attorney' || ['attorney', 'conveyancer', 'attorney_conveyancer'].includes(role)
+  }
+  return role === 'transfer_attorney' || ['attorney', 'conveyancer', 'attorney_conveyancer'].includes(role)
 }
 
 function Field({ label, children, required = false }) {
@@ -684,6 +705,11 @@ function LeadDetailDrawer({
   const contact = lead.contact || {}
   const detail = lead.detail || {}
   const conversionReady = ['qualified', 'quote_sent', 'follow_up', 'won'].includes(lead.stage)
+  const assignmentMatterType = defaultMatterTypeForLead(lead)
+  const leadAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, assignmentMatterType))
+  const currentAssignmentNeedsReassignment = Boolean(
+    lead.assignedUserId && !leadAssignees.some((assignee) => assignee.userId === lead.assignedUserId),
+  )
   const conversionAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, matterType))
 
   return (
@@ -728,15 +754,23 @@ function LeadDetailDrawer({
               <Field label="Assigned team member">
                 <select className={inputClass} value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
                   <option value="">Unassigned queue</option>
-                  {assignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}{assignee.role ? ` · ${assignee.role.replaceAll('_', ' ')}` : ''}</option>)}
+                  {currentAssignmentNeedsReassignment ? (
+                    <option value={lead.assignedUserId} disabled>Current assignment is not qualified for this lead</option>
+                  ) : null}
+                  {leadAssignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}{assignee.role ? ` · ${assignee.role.replaceAll('_', ' ')}` : ''}</option>)}
                 </select>
               </Field>
+              {currentAssignmentNeedsReassignment ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  The current assignee is not qualified for this {assignmentMatterType === 'cancellation' ? 'cancellation' : assignmentMatterType} lead. Reassign it to a qualified team member or return it to the unassigned queue.
+                </p>
+              ) : null}
               {lead.assignedUserId && assignedUserId !== lead.assignedUserId ? (
                 <Field label="Reassignment reason" required>
                   <input className={inputClass} value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Why is ownership changing?" />
                 </Field>
               ) : null}
-              <div><button type="button" className="ui-button ui-button-secondary" disabled={assignmentSaving || assignedUserId === lead.assignedUserId} onClick={() => onAssignmentSave(assignedUserId, assignmentReason)}>{assignmentSaving ? <LoaderCircle className="animate-spin" size={16} /> : <UserRound size={16} />} Save assignment</button></div>
+              <div><button type="button" className="ui-button ui-button-secondary" disabled={assignmentSaving || assignedUserId === lead.assignedUserId || (Boolean(assignedUserId) && !leadAssignees.some((assignee) => assignee.userId === assignedUserId))} onClick={() => onAssignmentSave(assignedUserId, assignmentReason)}>{assignmentSaving ? <LoaderCircle className="animate-spin" size={16} /> : <UserRound size={16} />} Save assignment</button></div>
             </div>
           </section>
         ) : null}

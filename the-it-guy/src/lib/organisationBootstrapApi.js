@@ -871,7 +871,7 @@ async function ensureOrganisationContextCached(client) {
   return organisationContextInflight
 }
 
-async function resolveBrandingAssetUrl(client, { bucket = '', path = '', fallbackUrl = '' } = {}) {
+function resolveBrandingAssetSource({ bucket = '', path = '', fallbackUrl = '' } = {}) {
   let safeBucket = normalizeText(bucket)
   let safePath = normalizeText(path)
   const safeFallback = normalizeText(fallbackUrl)
@@ -882,57 +882,102 @@ async function resolveBrandingAssetUrl(client, { bucket = '', path = '', fallbac
       safePath = decodeURIComponent(storageMatch[2])
     }
   }
+
+  return {
+    bucket: safeBucket,
+    path: safePath,
+    fallbackUrl: safeFallback,
+  }
+}
+
+async function resolveBrandingStorageAssetUrl(client, { bucket = '', path = '' } = {}) {
+  const safeBucket = normalizeText(bucket)
+  const safePath = normalizeText(path)
   if (!safeBucket || !safePath) {
-    return safeFallback
+    return ''
   }
 
-  const signedResult = await client.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30)
+  const storage = client.storage.from(safeBucket)
+  const signedResult = await storage.createSignedUrl(safePath, 60 * 60 * 24 * 30)
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
   if (!signedResult?.error && signedUrl) {
     return signedUrl
   }
 
-  const { data: publicUrlData } = client.storage.from(safeBucket).getPublicUrl(safePath)
-  return normalizeText(publicUrlData?.publicUrl) || safeFallback
+  const { data: publicUrlData } = storage.getPublicUrl(safePath)
+  return normalizeText(publicUrlData?.publicUrl)
+}
+
+async function resolveBrandingAssetUrl(client, input = {}) {
+  const source = resolveBrandingAssetSource(input)
+  if (!source.bucket || !source.path) {
+    return source.fallbackUrl
+  }
+
+  const resolvedUrl = await resolveBrandingStorageAssetUrl(client, source)
+  return resolvedUrl || source.fallbackUrl
 }
 
 async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
   const branding = onboarding?.branding && typeof onboarding.branding === 'object' ? onboarding.branding : {}
-  const lightUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoLightBucket,
-    path: branding.logoLightPath,
-    fallbackUrl: branding.logoLight,
-  })
-  const iconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoIconBucket,
-    path: branding.logoIconPath,
-    fallbackUrl: branding.logoIcon || branding.logoIconUrl,
-  })
-  const darkUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.logoDarkBucket,
-    path: branding.logoDarkPath,
-    fallbackUrl: branding.logoDark,
-  })
-  const faviconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.faviconBucket,
-    path: branding.faviconPath,
-    fallbackUrl: branding.favicon,
-  })
-  const portalIconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.portalIconBucket,
-    path: branding.portalIconPath,
-    fallbackUrl: branding.portalIcon,
-  })
-  const mobileIconUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.mobileIconBucket,
-    path: branding.mobileIconPath,
-    fallbackUrl: branding.mobileIcon,
-  })
-  const browserTileUrl = await resolveBrandingAssetUrl(client, {
-    bucket: branding.browserTileBucket,
-    path: branding.browserTilePath,
-    fallbackUrl: branding.browserTile,
-  })
+  const storageUrlRequests = new Map()
+  const resolveAsset = (input = {}) => {
+    const source = resolveBrandingAssetSource(input)
+    if (!source.bucket || !source.path) {
+      return Promise.resolve(source.fallbackUrl)
+    }
+
+    // Multiple branding slots commonly reuse one source image. Share the
+    // signing request while still applying each slot's own fallback URL.
+    const sourceKey = `${source.bucket}\u0000${source.path}`
+    let request = storageUrlRequests.get(sourceKey)
+    if (!request) {
+      request = resolveBrandingStorageAssetUrl(client, source)
+      storageUrlRequests.set(sourceKey, request)
+    }
+
+    return request.then((resolvedUrl) => resolvedUrl || source.fallbackUrl)
+  }
+
+  // Branding does not have ordering dependencies. Starting all resolves at
+  // once removes a multi-request storage waterfall from organisation bootstrap.
+  const [lightUrl, iconUrl, darkUrl, faviconUrl, portalIconUrl, mobileIconUrl, browserTileUrl] = await Promise.all([
+    resolveAsset({
+      bucket: branding.logoLightBucket,
+      path: branding.logoLightPath,
+      fallbackUrl: branding.logoLight,
+    }),
+    resolveAsset({
+      bucket: branding.logoIconBucket,
+      path: branding.logoIconPath,
+      fallbackUrl: branding.logoIcon || branding.logoIconUrl,
+    }),
+    resolveAsset({
+      bucket: branding.logoDarkBucket,
+      path: branding.logoDarkPath,
+      fallbackUrl: branding.logoDark,
+    }),
+    resolveAsset({
+      bucket: branding.faviconBucket,
+      path: branding.faviconPath,
+      fallbackUrl: branding.favicon,
+    }),
+    resolveAsset({
+      bucket: branding.portalIconBucket,
+      path: branding.portalIconPath,
+      fallbackUrl: branding.portalIcon,
+    }),
+    resolveAsset({
+      bucket: branding.mobileIconBucket,
+      path: branding.mobileIconPath,
+      fallbackUrl: branding.mobileIcon,
+    }),
+    resolveAsset({
+      bucket: branding.browserTileBucket,
+      path: branding.browserTilePath,
+      fallbackUrl: branding.browserTile,
+    }),
+  ])
 
   return {
     ...onboarding,
@@ -998,3 +1043,10 @@ export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {
     throw error
   }
 }
+
+export const __organisationBootstrapApiTestUtils = Object.freeze({
+  hydrateAgencyOnboardingBrandingUrls,
+  resolveBrandingAssetSource,
+  resolveBrandingAssetUrl,
+  resolveBrandingStorageAssetUrl,
+})

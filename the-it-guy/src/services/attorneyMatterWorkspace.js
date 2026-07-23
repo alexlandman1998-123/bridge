@@ -291,6 +291,10 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const assistantName = assignedAssistant?.name || ''
   const waitingOnLabels = Array.isArray(row.waitingOnLabels) ? row.waitingOnLabels : []
   const statusKey = row.status || ''
+  const laneKey = row.laneKey || (row.attorneyRole === 'bond_attorney' ? 'bond' : row.attorneyRole === 'cancellation_attorney' ? 'cancellation' : 'transfer')
+  const matterTypeKeys = row.matterType === 'Transfer + Bond'
+    ? ['transfer', 'bond']
+    : [laneKey]
 
   const nextRow = {
     rowKind: row.rowKind || 'incoming',
@@ -303,7 +307,9 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     reference: row.reference || row.matterReference,
     matterReference: row.reference || row.matterReference,
     matterType: row.matterType || 'Transfer',
-    matterTypeKeys: ['transfer'],
+    matterTypeKeys,
+    laneKey,
+    attorneyRole: row.attorneyRole || '',
     property: row.property || 'Property pending',
     buyer: row.buyerName || 'Buyer pending',
     seller: row.sellerName || 'Seller pending',

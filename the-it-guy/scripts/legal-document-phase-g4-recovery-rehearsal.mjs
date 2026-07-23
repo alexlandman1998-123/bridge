@@ -13,12 +13,13 @@ const templateIds = [...new Set((manifest.templates || []).map((row) => String(r
 const g3Run = runJson('scripts/legal-document-phase-g3-operational-readiness.mjs')
 const deactivationRun = runJson('scripts/legal-document-phase-a3-deactivate.mjs', [`--project-ref=${projectRef}`, '--reason=G4-controlled-kill-switch-rehearsal'])
 const rollbackRun = runJson('scripts/legal-document-phase4-rollback.mjs', [`--template-ids=${templateIds.join(',')}`, '--reason=G4-controlled-template-revocation-rehearsal'])
-const mandateFinalizer = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
-const otpFinalizer = fs.readFileSync('../supabase/functions/generate-final-signed-otp/index.ts', 'utf8')
+const canonicalFinalizer = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
 const dispatcher = fs.readFileSync('../supabase/functions/dispatch-final-signed-document/index.ts', 'utf8')
+const canonicalExistingArtifactRetry = /if \(existingFinalPath && !forceRegenerate\)[\s\S]{0,8000}const finalDelivery = await dispatchFinalDelivery/.test(canonicalFinalizer)
 const retryContract = {
-  mandateExistingArtifactRetry: /if \(existingFinalPath && !forceRegenerate\)[\s\S]{0,8000}const finalDelivery = await dispatchFinalDelivery/.test(mandateFinalizer),
-  otpExistingArtifactRetry: /if \(text\(version\.final_signed_file_path\)\)[\s\S]{0,5000}dispatchFinalDelivery/.test(otpFinalizer),
+  // One canonical finaliser retries the immutable artifact for both packet types.
+  mandateExistingArtifactRetry: canonicalExistingArtifactRetry,
+  otpExistingArtifactRetry: canonicalExistingArtifactRetry,
   concurrentClaim: /bridge_claim_final_delivery_f3/.test(dispatcher),
   providerIdempotency: /idempotencyKey/.test(dispatcher),
   successfulRecipientSkip: /existing\?\.status[^\n]+sent[^\n]+provider_message_id/.test(dispatcher),

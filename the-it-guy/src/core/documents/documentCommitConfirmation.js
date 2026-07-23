@@ -13,11 +13,20 @@ function documentLabel(packetType) {
   return 'document'
 }
 
-export function buildDocumentCommitConfirmation({ action = '', packetType = 'document', signerCount = 0, remainingFields = 0, signerRole = '' } = {}) {
+export function buildDocumentCommitConfirmation({ action = '', packetType = 'document', signerCount = 0, recipients = [], remainingFields = 0, signerRole = '' } = {}) {
   const normalizedAction = key(action)
   const label = documentLabel(packetType)
   if (normalizedAction === 'send_signature') {
     const count = Math.max(0, Number(signerCount) || 0)
+    const confirmedRecipients = Array.isArray(recipients)
+      ? recipients
+        .map((recipient) => ({
+          label: text(recipient?.label || recipient?.role || 'Signer'),
+          name: text(recipient?.name || recipient?.signerName),
+          email: text(recipient?.email || recipient?.signerEmail).toLowerCase(),
+        }))
+        .filter((recipient) => recipient.email)
+      : []
     return {
       contract: 'arch9-document-commit-confirmation-v1',
       action: normalizedAction,
@@ -27,6 +36,7 @@ export function buildDocumentCommitConfirmation({ action = '', packetType = 'doc
         : 'No valid signing parties are available yet. Return to signature setup before sending.',
       confirmLabel: count > 0 ? `Send to ${count} ${count === 1 ? 'signer' : 'signers'}` : 'No signers available',
       canConfirm: count > 0,
+      recipients: confirmedRecipients,
       points: ['The generated PDF is the exact version being sent.', 'Each invitation is private to its signing party.', 'Later wording changes require a new signing version.'],
     }
   }

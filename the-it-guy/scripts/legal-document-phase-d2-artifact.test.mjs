@@ -9,17 +9,15 @@ const version = { rendered_file_path: artifact.renderedFilePath, validation_summ
 assert.equal(assessPersistedDraftArtifact({ version, packetType: 'mandate' }).ready, true)
 assert.ok(assessPersistedDraftArtifact({ version: { ...version, rendered_file_path: 'changed.docx' } }).reasons.includes('D2_VERSION_ARTIFACT_PATH_MISMATCH'))
 
-const mandateEdge = fs.readFileSync('../supabase/functions/generate-mandate/index.ts', 'utf8')
-const otpEdge = fs.readFileSync('../supabase/functions/generate-otp/index.ts', 'utf8')
+const canonicalGenerator = fs.readFileSync('../supabase/functions/generate-mandate/index.ts', 'utf8')
 const service = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
 const verify = fs.readFileSync('scripts/legal-document-phase-d2-verify.mjs', 'utf8')
 const a2 = fs.readFileSync('scripts/legal-document-phase-a2-readiness.mjs', 'utf8')
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-for (const source of [mandateEdge, otpEdge]) {
-  assert.match(source, /crypto\.subtle\.digest\("SHA-256"/)
-  assert.match(source, /byteLength:/)
-  assert.match(source, /sha256:/)
-}
+assert.match(canonicalGenerator, /packetType === "otp"/)
+assert.match(canonicalGenerator, /crypto\.subtle\.digest\("SHA-256"/)
+assert.match(canonicalGenerator, /byteLength:/)
+assert.match(canonicalGenerator, /sha256:/)
 assert.match(service, /assertGeneratedDraftArtifact/)
 assert.match(service, /artifact_provenance/)
 assert.match(verify, /D2_ARTIFACT_DIGEST_MISMATCH/)

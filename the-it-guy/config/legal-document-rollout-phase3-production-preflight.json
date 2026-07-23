@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_3",
+  "contract": "legal-document-production-preflight-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "productionOrigin": null,
+    "productionUrl": null,
+    "stagingProjectRef": null,
+    "stagingOrigin": null
+  },
+  "source": {
+    "phase0ManifestDigest": null,
+    "phase1ReceiptManifestDigest": null,
+    "phase2ReceiptManifestDigest": null,
+    "phase2ReceiptCommitSha": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "migrationSetDigest": null,
+    "edgeFunctionDeployUnitSha256": null,
+    "applicationManifestSha256": null
+  },
+  "safety": {
+    "pilotEnabled": false,
+    "scaleEnabled": false,
+    "creationPaused": true,
+    "organisationIdsSentinel": "__none__",
+    "generationEnabled": false,
+    "customerDeliveryEnabled": false
+  },
+  "execution": {
+    "productionDeployment": {
+      "status": "not_run",
+      "provider": null,
+      "deploymentId": null,
+      "target": null,
+      "state": null,
+      "productionUrl": null,
+      "productionSupabaseOrigin": null,
+      "sourceCommitSha": null,
+      "deploymentMetadataEvidenceDigest": null,
+      "releaseMarkerEvidenceDigest": null,
+      "artifactManifestSha256": null,
+      "indexHtmlSha256": null,
+      "artifactTreeSha256": null,
+      "attestedAt": null
+    },
+    "productionDatabase": {
+      "status": "not_run",
+      "baselineLedgerEvidenceDigest": null,
+      "finalLedgerEvidenceDigest": null,
+      "migrationEvidence": [],
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "productionFunctions": {
+      "status": "not_run",
+      "edgeFunctionEvidence": [],
+      "configurationReviews": [],
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "runtimeHold": {
+      "status": "not_run",
+      "pilotEnabled": false,
+      "organisationIdsSentinel": "__none__",
+      "creationPaused": true,
+      "scaleEnabled": false,
+      "generationEnabled": false,
+      "customerDeliveryEnabled": false,
+      "evidenceDigest": null,
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "templateRelease": {
+      "status": "not_run",
+      "boundB1ManifestDigest": null,
+      "templateRouteSetDigest": null,
+      "routableTemplateCount": null,
+      "evidenceDigest": null,
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "operationsReadiness": {
+      "status": "not_run",
+      "operationsOwner": null,
+      "monitoringEvidenceDigest": null,
+      "incidentRunbookDigest": null,
+      "rollbackPlanEvidenceDigest": null,
+      "rollbackDryRunEvidenceDigest": null,
+      "evidenceDigest": null,
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "overallEvidenceDigest": null
+  },
+  "evidence": {
+    "preparedBy": null,
+    "preparedAt": null,
+    "preflightRecordedBy": null,
+    "reviewedBy": null,
+    "preflightRecordedAt": null,
+    "changeReference": null
+  },
+  "manifestDigest": null
+}
