@@ -45,7 +45,6 @@ export function getUnsafeProductionFlags() {
 export function getRequiredProductionEnvVars() {
   return [
     'VITE_SUPABASE_URL',
-    'VITE_SUPABASE_ANON_KEY',
   ]
 }
 
@@ -56,7 +55,14 @@ export function validateProductionConfiguration({ strict = isProductionEnvironme
     .map(([name]) => name)
   const requiredEnvVars = getRequiredProductionEnvVars()
   const missingEnvVars = requiredEnvVars.filter((name) => !normalize(import.meta.env[name]))
+  const hasBrowserSupabaseKey = Boolean(
+    normalize(import.meta.env.VITE_SUPABASE_ANON_KEY) || normalize(import.meta.env.VITE_SUPABASE_KEY),
+  )
   const issues = []
+
+  if (strict && !hasBrowserSupabaseKey) {
+    missingEnvVars.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
+  }
 
   if (strict && enabledUnsafeFlags.length) {
     issues.push({
