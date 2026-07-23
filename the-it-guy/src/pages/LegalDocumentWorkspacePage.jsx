@@ -2897,17 +2897,28 @@ export default function LegalDocumentWorkspacePage() {
         (resolvedOrganisationId && normalizeLeadUuid(routeLeadId))
       )
       if (canResolveStatus) {
+        const statusRequest = resolveDocumentPacketStatus({
+          packetType: resolvedPacketType,
+          packetId: effectiveRoutePacketId,
+          transactionId: resolvedTransactionId,
+          leadId: routeLeadId,
+          organisationId: resolvedOrganisationId,
+        })
         status = await withLegalWorkspaceTimeout(
-          resolveDocumentPacketStatus({
-            packetType: resolvedPacketType,
-            packetId: effectiveRoutePacketId,
-            transactionId: resolvedTransactionId,
-            leadId: routeLeadId,
-            organisationId: resolvedOrganisationId,
-          }),
+          statusRequest,
           'Packet status lookup is taking too long.',
         ).catch((statusError) => {
           console.warn('[LegalDocumentWorkspacePage] packet status unavailable; opening workspace in draft mode.', statusError)
+          // A slow packet query must never strand the user on the one-section
+          // fallback. Let the original request finish and adopt its real
+          // template-backed status as soon as it arrives.
+          void statusRequest.then((lateStatus) => {
+            if ((hydratedRouteContextKeyRef.current && hydratedRouteContextKeyRef.current !== nextRouteContextKey) || !lateStatus?.packet?.id) return
+            applyInitialStatus(lateStatus)
+            setValidatedRoutePacketId(normalizeText(lateStatus.packet.id))
+          }).catch((lateStatusError) => {
+            console.warn('[LegalDocumentWorkspacePage] delayed packet status refresh failed.', lateStatusError)
+          })
           return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
         })
       }
