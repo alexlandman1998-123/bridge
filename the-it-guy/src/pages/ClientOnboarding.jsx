@@ -255,6 +255,9 @@ const FINANCE_DETAIL_KEYS = [
   'joint_bond_application',
   'bond_originator_name',
   'bond_originator_contact',
+  'bond_assistance_selection',
+  'bond_assistance_contact_consent',
+  'bond_assistance_consent_version',
 ]
 
 const COMPANY_DETAIL_KEYS = [
@@ -953,6 +956,9 @@ function createEmptyFinance() {
     joint_bond_application: '',
     bond_originator_name: '',
     bond_originator_contact: '',
+    bond_assistance_selection: '',
+    bond_assistance_contact_consent: '',
+    bond_assistance_consent_version: 'bond-assistance-v1',
   }
 }
 
@@ -1150,6 +1156,45 @@ const FINANCE_DETAIL_SECTIONS = [
         requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_preapproval_completed) === 'no',
       },
       {
+        key: 'bond_assistance_selection',
+        label: 'Who should assist with your bond application?',
+        type: 'select',
+        required: false,
+        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_help_requested) === 'yes',
+        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_help_requested) === 'yes',
+        options: [
+          { value: '', label: 'Select an option' },
+          { value: 'agency_partner', label: 'My agency’s preferred bond originator' },
+          { value: 'buyer_nominated', label: 'An originator I nominate' },
+          { value: 'third_party', label: 'A third-party originator' },
+        ],
+      },
+      {
+        key: 'bond_assistance_contact_consent',
+        label: 'I consent to the selected originator contacting me and accessing the finance information required for this bond application.',
+        type: 'select',
+        required: false,
+        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_help_requested) === 'yes',
+        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_help_requested) === 'yes',
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'bond_originator_name',
+        label: 'Originator or company name',
+        type: 'text',
+        required: false,
+        visibleWhen: ({ finance }) => ['buyer_nominated', 'third_party'].includes(normalizeInputValue(finance?.bond_assistance_selection)),
+        requiredWhen: ({ finance }) => ['buyer_nominated', 'third_party'].includes(normalizeInputValue(finance?.bond_assistance_selection)),
+      },
+      {
+        key: 'bond_originator_contact',
+        label: 'Originator contact details',
+        type: 'text',
+        required: false,
+        visibleWhen: ({ finance }) => ['buyer_nominated', 'third_party'].includes(normalizeInputValue(finance?.bond_assistance_selection)),
+        requiredWhen: ({ finance }) => ['buyer_nominated', 'third_party'].includes(normalizeInputValue(finance?.bond_assistance_selection)),
+      },
+      {
         key: 'joint_bond_application',
         label: 'Is this a joint bond application?',
         type: 'select',
@@ -1306,6 +1351,9 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
     finance.bond_preapproval_document_available = ''
   }
   finance.ooba_assist_requested = normalizeYesNoChoice(finance.ooba_assist_requested || finance.bond_help_requested)
+  finance.bond_assistance_selection = normalizeInputValue(finance.bond_assistance_selection)
+  finance.bond_assistance_contact_consent = normalizeYesNoChoice(finance.bond_assistance_contact_consent)
+  finance.bond_assistance_consent_version = normalizeInputValue(finance.bond_assistance_consent_version || 'bond-assistance-v1')
   finance.bank_statements_available = normalizeYesNoChoice(finance.bank_statements_available)
   finance.credit_check_consent = normalizeYesNoChoice(finance.credit_check_consent || finance.bond_readiness_consent || formData.credit_check_consent)
   finance.bond_readiness_consent = normalizeYesNoChoice(finance.bond_readiness_consent || finance.credit_check_consent)
@@ -1457,6 +1505,12 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   cleaned.bond_bank_name = cleaned.finance.bond_bank_name
   cleaned.bond_help_requested = normalizeYesNoChoice(cleaned.finance.bond_help_requested)
   cleaned.ooba_assist_requested = normalizeYesNoChoice(cleaned.bond_help_requested || cleaned.finance.ooba_assist_requested)
+  cleaned.finance.bond_assistance_selection = normalizeInputValue(cleaned.finance.bond_assistance_selection)
+  cleaned.bond_assistance_selection = cleaned.finance.bond_assistance_selection
+  cleaned.finance.bond_assistance_contact_consent = normalizeYesNoChoice(cleaned.finance.bond_assistance_contact_consent)
+  cleaned.bond_assistance_contact_consent = cleaned.finance.bond_assistance_contact_consent
+  cleaned.finance.bond_assistance_consent_version = normalizeInputValue(cleaned.finance.bond_assistance_consent_version || 'bond-assistance-v1')
+  cleaned.bond_assistance_consent_version = cleaned.finance.bond_assistance_consent_version
 
   stripFlatPurchaserFields(cleaned)
   delete cleaned.purchasers
@@ -1548,6 +1602,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     cleaned.finance.joint_bond_application = ''
     cleaned.finance.bond_originator_name = ''
     cleaned.finance.bond_originator_contact = ''
+    cleaned.finance.bond_assistance_selection = ''
+    cleaned.finance.bond_assistance_contact_consent = ''
     if (Array.isArray(cleaned.purchasers)) {
       cleaned.purchasers = cleaned.purchasers.map((purchaser) => {
         const nextPurchaser = { ...purchaser }
@@ -1582,6 +1638,17 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   }
 
   if (normalizeYesNoChoice(cleaned.bond_help_requested) !== 'yes') {
+    cleaned.bond_originator_name = ''
+    cleaned.bond_originator_contact = ''
+    cleaned.finance.bond_originator_name = ''
+    cleaned.finance.bond_originator_contact = ''
+    cleaned.bond_assistance_selection = ''
+    cleaned.bond_assistance_contact_consent = ''
+    cleaned.finance.bond_assistance_selection = ''
+    cleaned.finance.bond_assistance_contact_consent = ''
+  }
+
+  if (cleaned.finance.bond_assistance_selection === 'agency_partner') {
     cleaned.bond_originator_name = ''
     cleaned.bond_originator_contact = ''
     cleaned.finance.bond_originator_name = ''
@@ -2713,8 +2780,17 @@ function ClientOnboarding() {
       }
       if (fieldKey === 'bond_help_requested') {
         nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
+        nextFinance.bond_assistance_selection = ''
+        nextFinance.bond_assistance_contact_consent = ''
         nextFinance.bond_originator_name = ''
         nextFinance.bond_originator_contact = ''
+      }
+      if (fieldKey === 'bond_assistance_selection') {
+        nextFinance.bond_assistance_contact_consent = ''
+        if (value === 'agency_partner') {
+          nextFinance.bond_originator_name = ''
+          nextFinance.bond_originator_contact = ''
+        }
       }
       if (fieldKey === 'ooba_assist_requested') {
         nextFinance.bond_help_requested = normalizeYesNoChoice(value)

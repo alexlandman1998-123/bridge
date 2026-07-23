@@ -24,6 +24,7 @@ import {
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
 import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { appendDocumentPacketEvent } from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
@@ -1333,6 +1334,15 @@ function normalizeDocumentRows(rows = []) {
       storage_path: normalizeText(row?.storage_path || ''),
       file_url: normalizeText(row?.file_url || ''),
       fileUrl: normalizeText(row?.file_url || ''),
+      // Server-side Phase 4 payloads can represent the canonical final
+      // mandate as an identity-only descriptor. Keep that identity through
+      // the legacy listing mapper; it must never be converted back into a
+      // storage-path document.
+      canonicalFinalArtifact: row?.canonicalFinalArtifact === true,
+      packet_id: normalizeText(row?.packet_id || row?.packetId || ''),
+      packet_version_id: normalizeText(row?.packet_version_id || row?.packetVersionId || ''),
+      finalDocumentId: normalizeText(row?.finalDocumentId || row?.final_document_id || ''),
+      final_document_id: normalizeText(row?.final_document_id || row?.finalDocumentId || ''),
       uploaded_by: normalizeText(row?.uploaded_by || ''),
       status: normalizeText(row?.status || 'uploaded'),
       visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
@@ -1431,6 +1441,8 @@ function extractQuickAddMandateDates(value = '') {
 }
 
 function isMandateDocumentRow(row = {}) {
+  const documentType = normalizeKey(row?.document_type || row?.documentType)
+  if (documentType === 'manual_mandate_evidence') return false
   const searchable = [
     row?.document_type,
     row?.category,
@@ -1706,19 +1718,30 @@ async function resolvePrivateListingDocumentDownload(client, listingId, filePath
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
-  const allowedPrefixes = getPrivateListingDocumentDownloadAllowedPrefixes(normalizedListingId)
-  const isListingStoragePath = allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))
   const listing = await getPrivateListingById(normalizedListingId, {
-    includeRequirementsAndDocuments: !isListingStoragePath,
+    // Check the canonical final path before applying the broad listing-prefix
+    // allowance: a final artifact may itself live under a listing prefix.
+    includeRequirementsAndDocuments: true,
   })
   if (!listing?.id) {
     return { linked: false, bucket: '' }
   }
+
+  const mandateArtifactMatch = getPrivateListingMandateArtifactMatch(listing, normalizedFilePath)
+  if (mandateArtifactMatch) {
+    return {
+      linked: true,
+      bucket: normalizeText(mandateArtifactMatch.bucket),
+      canonicalFinalArtifact: true,
+    }
+  }
+
+  const allowedPrefixes = getPrivateListingDocumentDownloadAllowedPrefixes(normalizedListingId)
+  const isListingStoragePath = allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))
   if (isListingStoragePath) {
     return { linked: true, bucket: '' }
   }
 
-  const mandateArtifactMatch = getPrivateListingMandateArtifactMatch(listing, normalizedFilePath)
   const documents = Array.isArray(listing.documents) ? listing.documents : []
   const documentMatch = documents.find((document) => privateListingDocumentPathMatches(document, normalizedFilePath))
   if (documentMatch) {
@@ -1728,19 +1751,22 @@ async function resolvePrivateListingDocumentDownload(client, listingId, filePath
     }
   }
 
-  if (mandateArtifactMatch) {
-    return {
-      linked: true,
-      bucket: normalizeText(mandateArtifactMatch.bucket),
-    }
-  }
-
   return { linked: false, bucket: '' }
 }
 
 function mandatePacketHasFinalSignedArtifact(mandatePacket = null) {
   const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
-  return Boolean(artifact.filePath || artifact.fileUrl)
+  const version = mandatePacket?.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  return Boolean(
+    mandatePacket?.finalSignedRecorded === true ||
+      mandatePacket?.final_signed_recorded === true ||
+      mandatePacket?.finalDocumentId ||
+      mandatePacket?.finalSignedDocumentId ||
+      mandatePacket?.final_signed_document_id ||
+      version?.final_signed_document_id ||
+      artifact.filePath ||
+      artifact.fileUrl,
+  )
 }
 
 function getPrivateListingDocumentFileReference(document = {}) {
@@ -1752,32 +1778,6 @@ function getPrivateListingDocumentFileReference(document = {}) {
       document?.storage_path ||
       document?.file_path ||
       document?.filePath,
-  )
-}
-
-function documentLooksLikeSignedMandateForListing(document = {}) {
-  const searchable = [
-    document?.document_type,
-    document?.documentType,
-    document?.category,
-    document?.document_category,
-    document?.documentName,
-    document?.document_name,
-    document?.fileName,
-    document?.file_name,
-    document?.name,
-    document?.requirement_key,
-    document?.requirementKey,
-  ].map((value) => normalizeCompatibilityKey(value)).join(' ')
-
-  return Boolean(
-    getPrivateListingDocumentFileReference(document) &&
-      (
-        searchable.includes('signed_mandate') ||
-        searchable.includes('mandate_signature') ||
-        searchable.includes('final_signed_packet') ||
-        (searchable.includes('mandate') && searchable.includes('signed'))
-      ),
   )
 }
 
@@ -1794,13 +1794,12 @@ function buildSignedMandateDocumentFromPacketForListing(row = {}, mandatePacket 
     category: 'Mandate',
     document_name: artifact.fileName || 'Signed Mandate.pdf',
     file_name: artifact.fileName || 'Signed Mandate.pdf',
-    storage_path: artifact.filePath || '',
-    file_path: artifact.filePath || '',
-    file_url: artifact.fileUrl || '',
-    fileUrl: artifact.fileUrl || '',
-    url: artifact.fileUrl || '',
-    signedUrl: artifact.fileUrl || '',
-    status: 'signed',
+    // This is a packet/version descriptor, never a downloadable file record.
+    // The Phase 4 resolver alone may mint a final-artifact URL.
+    canonicalFinalArtifact: true,
+    packet_id: packetId,
+    packet_version_id: artifact.versionId || null,
+    status: 'finalisation_pending',
     visibility: 'seller_visible',
     requirement_key: 'signed_mandate',
     canonical_requirement_instance_id: normalizeText(mandatePacket.canonical_requirement_instance_id || mandatePacket.version?.canonical_requirement_instance_id),
@@ -1811,18 +1810,31 @@ function buildSignedMandateDocumentFromPacketForListing(row = {}, mandatePacket 
       source: 'signed_mandate_packet',
       packetId,
       packetVersionId: artifact.versionId || null,
-      finalSignedFileBucket: artifact.fileBucket || null,
       synthetic: true,
     },
   }
 }
 
+function isCanonicalFinalSignedMandateDocument(document = {}, mandatePacket = null) {
+  if (document?.canonicalFinalArtifact === true) return true
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const fileReference = getPrivateListingDocumentFileReference(document)
+  return Boolean(
+    (artifact.filePath && privateListingDocumentPathMatches(document, artifact.filePath)) ||
+      (artifact.fileUrl && fileReference && artifact.fileUrl === fileReference),
+  )
+}
+
 function mergeSignedMandatePacketDocument(row = {}, documents = [], mandatePacket = null) {
   const rows = Array.isArray(documents) ? documents : []
+  // Legacy projections can contain a raw duplicate of the same canonical
+  // final artifact. Exclude it and replace it with the safe descriptor.
+  const nonCanonicalRows = rows.filter(
+    (document) => !isCanonicalFinalSignedMandateDocument(document, mandatePacket),
+  )
   const syntheticDocument = buildSignedMandateDocumentFromPacketForListing(row, mandatePacket)
-  if (!syntheticDocument) return rows
-  const existingSignedMandate = rows.find((document) => documentLooksLikeSignedMandateForListing(document))
-  return existingSignedMandate ? rows : [syntheticDocument, ...rows]
+  if (!syntheticDocument) return nonCanonicalRows
+  return [syntheticDocument, ...nonCanonicalRows]
 }
 
 function getPrivateListingCommissionTerms(formData = {}) {
@@ -2463,6 +2475,118 @@ function attachBrandingToListing(listing = null, branding = null) {
   }
 }
 
+const FINAL_SIGNED_ARTIFACT_TRANSPORT_FIELDS = [
+  'finalSignedFilePath',
+  'final_signed_file_path',
+  'finalSignedFileBucket',
+  'final_signed_file_bucket',
+  'finalSignedFileUrl',
+  'final_signed_file_url',
+  'finalSignedFileAccessUrl',
+  'final_signed_file_access_url',
+  'finalSignedDownloadUrl',
+  'final_signed_download_url',
+  'mandateSignedDocumentPath',
+  'mandate_signed_document_path',
+  'mandateSignedDocumentUrl',
+  'mandate_signed_document_url',
+  'mandateSignedDocumentBucket',
+  'mandate_signed_document_bucket',
+]
+
+function stripFinalSignedArtifactTransportFields(source = {}) {
+  if (!source || typeof source !== 'object') return {}
+  const safe = { ...source }
+  for (const fieldName of FINAL_SIGNED_ARTIFACT_TRANSPORT_FIELDS) {
+    delete safe[fieldName]
+  }
+  // A legacy finalArtifact payload can contain the same raw storage fields.
+  delete safe.finalArtifact
+  delete safe.final_artifact
+  return safe
+}
+
+function sanitizeSellerPortalMandatePacket(mandatePacket = null) {
+  if (!mandatePacket || typeof mandatePacket !== 'object') return null
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const version = mandatePacket.version && typeof mandatePacket.version === 'object' ? mandatePacket.version : {}
+  const packet = mandatePacket.packet && typeof mandatePacket.packet === 'object' ? mandatePacket.packet : {}
+  const finalSignedRecorded = Boolean(
+    mandatePacket.finalSignedRecorded === true ||
+      mandatePacket.final_signed_recorded === true ||
+      mandatePacket.finalDocumentId ||
+      mandatePacket.finalSignedDocumentId ||
+      mandatePacket.final_signed_document_id ||
+      version.final_signed_document_id ||
+      artifact.filePath ||
+      artifact.fileUrl,
+  )
+  return {
+    ...stripFinalSignedArtifactTransportFields(mandatePacket),
+    packet: stripFinalSignedArtifactTransportFields(packet),
+    version: stripFinalSignedArtifactTransportFields(version),
+    finalSignedRecorded,
+  }
+}
+
+function sanitizeSellerPortalListingFinalArtifacts(listing = null, mandatePacket = null) {
+  if (!listing || typeof listing !== 'object') return listing
+  const artifact = getPrivateListingFinalSignedMandateArtifact(mandatePacket)
+  const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
+  const mandate = listing.mandate && typeof listing.mandate === 'object' ? listing.mandate : {}
+  const safeMandate = stripFinalSignedArtifactTransportFields(mandate)
+  if (artifact.filePath || artifact.fileUrl) {
+    // The mapped mandate is a portal-facing summary. Its final copy always
+    // travels by packet/version through resolve-final-signed-document-access.
+    delete safeMandate.signedUrl
+    delete safeMandate.documentUrl
+  }
+  return {
+    ...listing,
+    mandate: safeMandate,
+    mandatePacket: safeMandatePacket,
+    mandate_packet: safeMandatePacket,
+    ...(artifact.filePath || artifact.fileUrl
+      ? {
+          signedMandateUrl: '',
+          mandateSignedUrl: '',
+          mandateUrl: '',
+        }
+      : {}),
+  }
+}
+
+function mapSellerPortalTransactionTracking(transaction = null) {
+  if (!transaction || typeof transaction !== 'object') return null
+
+  // This is deliberately an allow-list. The seller-token RPC is a secure
+  // boundary and must never turn a raw transaction row into portal data.
+  const id = normalizeUuid(transaction?.id)
+  if (!id) return null
+
+  return {
+    id,
+    listing_id: normalizeUuid(transaction?.listing_id || transaction?.listingId) || null,
+    stage: normalizeText(transaction?.stage),
+    current_main_stage: normalizeText(transaction?.current_main_stage || transaction?.currentMainStage),
+    lifecycle_state: normalizeText(transaction?.lifecycle_state || transaction?.lifecycleState),
+    finance_type: normalizeText(transaction?.finance_type || transaction?.financeType),
+    attorney: normalizeText(transaction?.attorney),
+    assigned_attorney_email: normalizeText(transaction?.assigned_attorney_email || transaction?.assignedAttorneyEmail).toLowerCase(),
+    bond_originator: normalizeText(transaction?.bond_originator || transaction?.bondOriginator),
+    assigned_bond_originator_email: normalizeText(
+      transaction?.assigned_bond_originator_email || transaction?.assignedBondOriginatorEmail,
+    ).toLowerCase(),
+    assigned_agent: normalizeText(transaction?.assigned_agent || transaction?.assignedAgent),
+    assigned_agent_email: normalizeText(transaction?.assigned_agent_email || transaction?.assignedAgentEmail).toLowerCase(),
+    created_at: transaction?.created_at || transaction?.createdAt || null,
+    updated_at: transaction?.updated_at || transaction?.updatedAt || null,
+    completed_at: transaction?.completed_at || transaction?.completedAt || null,
+    registered_at: transaction?.registered_at || transaction?.registeredAt || null,
+    registration_date: transaction?.registration_date || transaction?.registrationDate || null,
+  }
+}
+
 function mapSellerClientPortalPayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
@@ -2494,16 +2618,19 @@ function mapSellerClientPortalPayload(payload) {
     listingForMap.mandatePacket = mandatePacket
     listingForMap.mandate_packet = mandatePacket
   }
+  const mappedListing = mapPrivateListingRow(
+    listingForMap,
+    onboardingMap,
+    new Map([[String(listingForMap.id), requirements]]),
+    new Map([[String(listingForMap.id), documents]]),
+  )
+  const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
   return {
     onboarding: onboardingRow,
     appointments,
-    mandatePacket,
-    listing: mapPrivateListingRow(
-      listingForMap,
-      onboardingMap,
-      new Map([[String(listingForMap.id), requirements]]),
-      new Map([[String(listingForMap.id), documents]]),
-    ),
+    mandatePacket: safeMandatePacket,
+    transaction: mapSellerPortalTransactionTracking(payload?.transaction),
+    listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, mandatePacket),
   }
 }
 
@@ -2587,7 +2714,8 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
     client_email: getSellerClientPortalEmail(listing, onboarding, formData) || null,
     client_contact_id: null,
     context_type: 'selling',
-    transaction_id: null,
+    // Once the database has linked a sale, do not clear that transaction on
+    // later onboarding or mandate refreshes.
     seller_lead_id: sellerLeadId,
     listing_id: listingId,
     mandate_packet_id: normalizeUuid(listing?.mandatePacketId || listing?.mandate_packet_id) || null,
@@ -4211,14 +4339,15 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
     const version = latestVersionByPacketId.get(packetId) || null
     const finalSignedFilePath = normalizeText(version?.final_signed_file_path)
     const finalSignedFileBucket = normalizeText(version?.final_signed_file_bucket)
-    const finalSignedDownloadUrl = finalSignedFilePath
-      ? await createPrivateListingDocumentSignedUrl(client, finalSignedFilePath, 120, finalSignedFileBucket)
-      : ''
+    const packetStatus = normalizeText(packet?.status).toLowerCase()
+    const packetCompleted = ['completed', 'fully_signed', 'finalised', 'finalized'].includes(packetStatus)
     packetSummaryByPacketId.set(packetId, {
       id: packetId,
-      state: finalSignedFilePath
+      // A file path alone is never proof of execution. The canonical packet
+      // must already be completed before exposing a fully-signed state.
+      state: packetCompleted && finalSignedFilePath
         ? 'fully_signed'
-        : normalizeText(packet?.status).toLowerCase() || 'generated',
+        : packetStatus || 'generated',
       status: normalizeText(packet?.status),
       packet,
       version,
@@ -4226,7 +4355,9 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
       finalSignedFilePath,
       finalSignedFileName: normalizeText(version?.final_signed_file_name || 'Signed Mandate.pdf'),
       finalSignedFileBucket,
-      finalSignedDownloadUrl,
+      // Raw final paths are retained here only as status inputs. Browser
+      // delivery must go through the Phase 4 packet/version resolver.
+      finalSignedDownloadUrl: '',
       generatedPreviewFilePath: normalizeText(version?.rendered_file_path),
       generatedPreviewFileName: normalizeText(version?.rendered_file_name || packet?.title || 'Mandate'),
       signedAt: normalizeText(version?.finalised_at || packet?.updated_at),
@@ -5439,6 +5570,14 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     }
   }
 
+  // A seller workspace is an authenticated portal surface. Never use the
+  // legacy table-by-token fallback here: it cannot prove the current seller
+  // session and could otherwise reintroduce raw final-artifact fields when an
+  // RPC deployment is incomplete or unavailable.
+  if (options?.requirePortalAccess === true) {
+    throw new Error('The secure seller portal is temporarily unavailable. Please try again shortly.')
+  }
+
   const query = await client
     .from('private_listing_seller_onboarding')
     .select('*')
@@ -5449,9 +5588,15 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw query.error
   }
   if (!query.data) return null
-  const listing = await getPrivateListingById(query.data.private_listing_id, {
+  const rawListing = await getPrivateListingById(query.data.private_listing_id, {
     includeRequirementsAndDocuments,
   })
+  const rawMandatePacket = rawListing?.mandatePacket && typeof rawListing.mandatePacket === 'object'
+    ? rawListing.mandatePacket
+    : rawListing?.mandate_packet && typeof rawListing.mandate_packet === 'object'
+      ? rawListing.mandate_packet
+      : null
+  const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
   const branding = await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
   return {
     onboarding: query.data,
@@ -6436,6 +6581,29 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 }
 
+/**
+ * The seller portal never receives a final signed storage path. This resolver
+ * authorizes the seller session and returns a fresh URL only after the Phase 3
+ * F2 record and published Documents row bind to the exact same artifact.
+ */
+export async function resolveSellerClientPortalFinalSignedDocumentAccess({
+  token,
+  accessToken = '',
+  packetId,
+  packetVersionId,
+  documentId = '',
+  download = false,
+} = {}) {
+  return resolveSellerPortalFinalSignedArtifactAccess({
+    portalToken: token,
+    sellerAccessToken: accessToken || getStoredSellerPortalAccessToken(token),
+    packetId,
+    packetVersionId,
+    documentId,
+    download,
+  })
+}
+
 export async function createSellerClientPortalDocumentSignedUrl({
   token,
   accessToken = '',
@@ -6457,6 +6625,9 @@ export async function createSellerClientPortalDocumentSignedUrl({
   const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
   if (!downloadContext.linked) {
     throw new Error('This document is not available in this client portal.')
+  }
+  if (downloadContext.canonicalFinalArtifact) {
+    throw new Error('The final signed mandate must be opened through its secure completion record.')
   }
 
   const signedUrl = await createPrivateListingDocumentSignedUrl(
@@ -6484,6 +6655,9 @@ export async function createPrivateListingDocumentDownloadUrl({
   if (!downloadContext.linked) {
     throw new Error('This document is not linked to the selected listing.')
   }
+  if (downloadContext.canonicalFinalArtifact) {
+    throw new Error('The final signed mandate must be opened through its secure completion record.')
+  }
 
   const signedUrl = await createPrivateListingDocumentSignedUrl(
     client,
@@ -6501,6 +6675,9 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   const validation = await validatePrivateListingTransition(listingId, targetStatus, options)
   const metadata = options?.metadata && typeof options.metadata === 'object' ? options.metadata : {}
   const transitionBlockers = [...validation.blockers]
+  const nonOverridableBlockers = Array.isArray(validation.nonOverridableBlockers)
+    ? validation.nonOverridableBlockers.filter(Boolean)
+    : []
   const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
   if (validation.targetStatus === 'mandate_sent') {
@@ -6524,8 +6701,8 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   if (!validation.transitionAllowed) {
     throw new Error('This listing cannot move to that stage yet.')
   }
-  if ((!validation.allowed || transitionBlockers.length) && !options?.allowOverride) {
-    throw new Error(transitionBlockers[0] || 'This listing cannot move to that stage yet.')
+  if ((!validation.allowed || transitionBlockers.length) && (!options?.allowOverride || nonOverridableBlockers.length)) {
+    throw new Error(nonOverridableBlockers[0] || transitionBlockers[0] || 'This listing cannot move to that stage yet.')
   }
 
   const sideEffects = getPrivateListingTransitionSideEffects(validation.targetStatus)

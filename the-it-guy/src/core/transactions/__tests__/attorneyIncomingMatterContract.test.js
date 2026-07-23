@@ -136,7 +136,7 @@ test('accepted instructions leave incoming and become active matters', () => {
   assert.equal(contract.leavesIncomingQueue, true)
 })
 
-test('non-transfer assignments do not appear in the incoming transfer queue', () => {
+test('bond and cancellation instructions enter the incoming queue without transfer OTP gating', () => {
   assert.equal(
     shouldShowInAttorneyIncomingQueue({
       assignment: {
@@ -146,6 +146,37 @@ test('non-transfer assignments do not appear in the incoming transfer queue', ()
       },
       transaction: {
         onboarding_status: 'awaiting_signed_otp',
+      },
+    }),
+    true,
+  )
+
+  const cancellationContract = buildAttorneyIncomingMatterContract({
+    assignment: {
+      assignment_type: 'cancellation',
+      attorney_role: 'cancellation_attorney',
+      instruction_status: 'new_instruction',
+      assignment_status: 'pending',
+    },
+    transaction: {
+      onboarding_status: 'awaiting_client_onboarding',
+    },
+  })
+
+  assert.equal(cancellationContract.status, ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance)
+  assert.equal(cancellationContract.visibleInIncomingQueue, true)
+  assert.deepEqual(cancellationContract.waitingOn, [ATTORNEY_INCOMING_WAITING_ON.attorneyAcceptance])
+})
+
+test('transfer instructions remain gated by buyer onboarding and signed OTP', () => {
+  assert.equal(
+    shouldShowInAttorneyIncomingQueue({
+      assignment: {
+        ...transferAssignment,
+        instruction_status: 'new_instruction',
+      },
+      transaction: {
+        onboarding_status: 'awaiting_client_onboarding',
       },
     }),
     false,

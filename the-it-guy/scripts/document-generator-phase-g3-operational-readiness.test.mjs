@@ -9,6 +9,8 @@ for (const token of [
   'FINAL_TRANSACTION_PUBLICATION_MISSING',
   'FINAL_SURFACE_COMPLETION_MISSING',
   'FINAL_COMPLETION_RETRY_STUCK',
+  'FINAL_DOCUMENT_PUBLICATION_INVALID',
+  'FINAL_ARTIFACT_STORAGE_MISMATCH',
   'missingTransactionPublications',
   'missingCompletionReceipts',
   'stuckCompletionRetries',
@@ -17,6 +19,7 @@ for (const token of [
 const verifier = fs.readFileSync('scripts/document-generator-phase-g3-operational-readiness.mjs', 'utf8')
 assert.match(verifier, /document-generator-phase-g1-verify\.mjs/)
 assert.match(verifier, /document-generator-phase-g2-browser-usability\.mjs/)
+assert.match(verifier, /legal-document-phase5-reconcile\.mjs/)
 assert.match(verifier, /system_health_snapshots/)
 assert.match(verifier, /mutatedData: false/)
 assert.doesNotMatch(verifier, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/)

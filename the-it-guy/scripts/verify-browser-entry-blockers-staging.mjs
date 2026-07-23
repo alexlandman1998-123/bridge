@@ -20,6 +20,47 @@ function safeJson(value) {
   return JSON.stringify(value, null, 2)
 }
 
+const FINAL_ARTIFACT_TRANSPORT_KEYS = new Set([
+  'finalsignedfilepath',
+  'finalsignedfilebucket',
+  'finalsignedfileurl',
+  'finalsignedfileaccessurl',
+  'finalsigneddownloadurl',
+  'generatedpreviewfilepath',
+  'generatedpreviewfilebucket',
+  'generatedpreviewfileurl',
+  'renderedfilepath',
+  'renderedfilebucket',
+  'renderedfileurl',
+  'finalartifact',
+  'finalartifactpath',
+  'finalartifactbucket',
+  'finalsignedartifactpath',
+  'finalsignedartifactbucket',
+  'mandatesigneddocumentpath',
+  'mandatesigneddocumenturl',
+  'mandatesigneddocumentbucket',
+  'signedmandateurl',
+  'mandatesignedurl',
+  'mandateurl',
+])
+
+function normalizePayloadKey(value) {
+  return String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase()
+}
+
+function findSellerFinalArtifactTransportFields(value, path = '$') {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => findSellerFinalArtifactTransportFields(item, `${path}[${index}]`))
+  }
+  if (!value || typeof value !== 'object') return []
+  return Object.entries(value).flatMap(([key, nested]) => {
+    const nextPath = `${path}.${key}`
+    if (FINAL_ARTIFACT_TRANSPORT_KEYS.has(normalizePayloadKey(key))) return [nextPath]
+    return findSellerFinalArtifactTransportFields(nested, nextPath)
+  })
+}
+
 const env = loadEnv()
 const supabaseUrl = env.VITE_SUPABASE_URL
 const anonKey = env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_KEY
@@ -47,6 +88,46 @@ const activeSellerRpc = await client.rpc('bridge_private_listing_seller_portal_p
 assert.equal(activeSellerRpc.error, null, `active seller token should resolve without RPC error: ${activeSellerRpc.error?.message || ''}`)
 assert.ok(activeSellerRpc.data?.listing?.id, 'active seller token should return a listing')
 assert.ok(activeSellerRpc.data?.onboarding?.private_listing_id, 'active seller token should return onboarding context')
+const sellerPayloadFinalArtifactTransportFields = findSellerFinalArtifactTransportFields(activeSellerRpc.data)
+assert.deepEqual(
+  sellerPayloadFinalArtifactTransportFields,
+  [],
+  `seller portal payload leaked a final-artifact transport field: ${sellerPayloadFinalArtifactTransportFields.join(', ')}`,
+)
+
+let sellerF2CoordinateComparison = 'skipped_no_service_role_or_final_version'
+const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY || ''
+const safeMandatePacket = activeSellerRpc.data?.mandatePacket || activeSellerRpc.data?.mandate_packet || null
+const safeMandateVersionId = String(
+  safeMandatePacket?.packetVersionId || safeMandatePacket?.packet_version_id || safeMandatePacket?.version?.id || '',
+).trim()
+if (serviceRoleKey && safeMandateVersionId) {
+  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+  const finalVersionQuery = await admin
+    .from('document_packet_versions')
+    .select('final_signed_file_path, final_signed_file_bucket, final_signed_file_url')
+    .eq('id', safeMandateVersionId)
+    .maybeSingle()
+  if (finalVersionQuery.error) throw finalVersionQuery.error
+  const finalCoordinates = [
+    finalVersionQuery.data?.final_signed_file_path,
+    finalVersionQuery.data?.final_signed_file_bucket,
+    finalVersionQuery.data?.final_signed_file_url,
+  ].filter((value) => String(value || '').trim())
+  if (finalCoordinates.length) {
+    const serializedSellerPayload = JSON.stringify(activeSellerRpc.data)
+    for (const coordinate of finalCoordinates) {
+      assert.equal(
+        serializedSellerPayload.includes(String(coordinate)),
+        false,
+        'seller portal payload must not serialize an F2 final artifact coordinate',
+      )
+    }
+    sellerF2CoordinateComparison = 'verified_against_current_final_version'
+  } else {
+    sellerF2CoordinateComparison = 'skipped_no_final_artifact_on_active_seller_fixture'
+  }
+}
 
 const inactiveTokenQuery = await client
   .from('private_listing_seller_onboarding')
@@ -88,12 +169,10 @@ assert.ok(portalLinkQuery.data?.token, 'expected at least one active client_port
 console.log(safeJson({
   ok: true,
   activeSellerTokenResolved: true,
+  sellerPayloadFinalArtifactTransportFields: sellerPayloadFinalArtifactTransportFields.length,
+  sellerF2CoordinateComparison,
   inactiveSellerTokenRejectedSafely,
   inactiveSellerTokenCheck,
   invalidSellerTokenRejectedSafely: true,
-  activeClientPortalLink: {
-    token: portalLinkQuery.data.token,
-    transactionId: portalLinkQuery.data.transaction_id,
-    path: `/client/${portalLinkQuery.data.token}/documents`,
-  },
+  activeClientPortalLinkAvailable: true,
 }))

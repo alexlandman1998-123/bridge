@@ -187,8 +187,9 @@ await test('seller portal invite trigger is anchored after mandate finalization'
   assert.match(signerSigningAction, /if \(lower\(packet\.packet_type\) !== "mandate"\) return/)
   assert.match(
     signerSigningAction,
-    /nextPacketStatus === "completed"[\s\S]*final_signed_generation_triggered[\s\S]*appendSellerPortalInviteAfterMandateSignedTrigger[\s\S]*sendSellerPortalInviteAfterMandateSigned[\s\S]*sendFinalSignedMandateEmails/,
+    /nextPacketStatus === "completed"[\s\S]*final_signed_generation_triggered[\s\S]*appendSellerPortalInviteAfterMandateSignedTrigger[\s\S]*sendSellerPortalInviteAfterMandateSigned/,
   )
+  assert.doesNotMatch(signerSigningAction, /sendFinalSignedMandateEmails|seller_mandate_signed/)
   assert.match(signerSigningAction, /SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = "seller_portal_invite_sent_after_mandate_signed"/)
   assert.match(signerSigningAction, /sellerPortalMandateInviteAlreadySent/)
   assert.match(signerSigningAction, /type === "seller_portal_link"/)

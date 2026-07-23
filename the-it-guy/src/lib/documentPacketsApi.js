@@ -7,13 +7,13 @@ import {
 } from './mandateSignatureRules'
 import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
+import { resolveWorkspaceFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 import { assertSigningEnvelopeReady } from '../core/documents/signingEnvelopeAssurance'
 import { assertSigningDispatchReady } from '../core/documents/signingDispatchAssurance'
 import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 import {
   assertDocumentLifecycleTransition,
-  normalizeDocumentLifecycleState,
   resolveDocumentLifecycleStateFromPacket,
   toDocumentPacketStorageStatus,
 } from '../core/documents/documentLifecycle'
@@ -420,15 +420,14 @@ async function hydratePacketVersionAccessUrls(client, version = {}) {
   }
 
   if (finalPath) {
-    const finalBucketHint = normalizeText(version?.final_signed_file_bucket)
-    const finalCandidates = finalBucketHint
-      ? [finalBucketHint, ...FINAL_SIGNED_BUCKET_CANDIDATES]
-      : FINAL_SIGNED_BUCKET_CANDIDATES
-    const finalSignedUrl = await createSignedUrlAcrossBuckets(client, finalPath, finalCandidates)
-    hydrated.final_signed_file_access_url = finalSignedUrl?.signedUrl || normalizeNullableText(version?.final_signed_file_url)
-    hydrated.final_signed_file_bucket = finalSignedUrl?.bucket || finalBucketHint || null
+    // Final signed artifacts have a stricter access contract than draft PDFs.
+    // Never pre-hydrate a raw storage URL here: the workspace resolves a fresh
+    // URL through F2 + publication verification when the user opens it.
+    hydrated.final_signed_file_access_url = ''
+    hydrated.final_signed_file_url = ''
   } else {
-    hydrated.final_signed_file_access_url = normalizeNullableText(version?.final_signed_file_url)
+    hydrated.final_signed_file_access_url = ''
+    hydrated.final_signed_file_url = ''
   }
 
   return hydrated
@@ -2483,6 +2482,16 @@ export async function retryFinalDocumentCompletion({ packetId, versionId } = {})
   return data
 }
 
+export async function resolveWorkspaceFinalSignedDocumentAccess({ packetId, versionId, download = false } = {}) {
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
+  return resolveWorkspaceFinalSignedArtifactAccess({
+    packetId,
+    packetVersionId: versionId,
+    download,
+  })
+}
+
 export async function getDocumentGeneratorLaunchChain({ packetId, versionId } = {}) {
   const client = requireClient()
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
@@ -2638,21 +2647,6 @@ export async function authorizeAppliedEnvelopeDispatch({ packetId, versionId, re
   }
   if (result?.contract !== 'e4-v1' || result?.authorized !== true || !result?.dispatchId) {
     throw new Error('Signing dispatch authorization returned an invalid result.')
-  }
-  return result
-}
-
-export async function completeAppliedEnvelopeDispatch({ dispatchId, success, deliveryEvidence = {} } = {}) {
-  const client = requireClient()
-  if (!normalizeNullableUuid(dispatchId)) throw new Error('dispatchId is required.')
-  const { data: result, error } = await client.rpc('bridge_complete_applied_envelope_dispatch_e4', {
-    p_dispatch_id: dispatchId,
-    p_success: Boolean(success),
-    p_delivery_evidence: deliveryEvidence && typeof deliveryEvidence === 'object' ? deliveryEvidence : {},
-  })
-  if (error) throw error
-  if (result?.contract !== 'e4-v1' || !['delivered', 'failed'].includes(result?.status)) {
-    throw new Error('Signing dispatch completion returned an invalid result.')
   }
   return result
 }
@@ -3746,6 +3740,7 @@ export async function generateDocumentPacketSigningLinks({
     const existingExpired = !Number.isFinite(Date.parse(signer?.token_expires_at || '')) || Date.parse(signer.token_expires_at) <= Date.now()
     const shouldRefresh = regenerate || !existingToken || existingExpired || Boolean(signer?.token_used_at)
     const nextToken = shouldRefresh ? generateSecureSigningToken() : existingToken
+    const activeDeliveryStatus = ['sent', 'viewed'].includes(signerStatus)
 
     const { data, error } = await client
       .from('document_packet_signers')
@@ -3754,7 +3749,14 @@ export async function generateDocumentPacketSigningLinks({
         token_expires_at: expiresAt,
         token_used_at: shouldRefresh ? null : signer?.token_used_at || null,
         viewed_at: shouldRefresh ? null : signer?.viewed_at || null,
-        status: ['signed', 'declined'].includes(normalizeText(signer?.status).toLowerCase()) ? signer.status : 'sent',
+        // A token is merely prepared here. The delivery endpoint promotes an
+        // initial invitation to `sent`; never let a browser regress an
+        // already delivered signer while staging an idempotent send or resend.
+        status: ['signed', 'declined'].includes(signerStatus)
+          ? signer.status
+          : activeDeliveryStatus
+            ? signer.status
+            : 'ready_to_send',
       })
       .eq('id', signer.id)
       .select(
@@ -3769,7 +3771,14 @@ export async function generateDocumentPacketSigningLinks({
     })
   }
 
-  const dispatchAssessment = assertSigningDispatchReady({ packet, version: targetVersion, signers: updates, fields: signingFields, issuedAt })
+  const dispatchAssessment = assertSigningDispatchReady({
+    packet,
+    version: targetVersion,
+    signers: updates,
+    fields: signingFields,
+    issuedAt,
+    targetSignerRole: normalizedTargetSignerRole,
+  })
   const dispatchReference = `signing-dispatch:${packet.id}:${targetVersion.id}:${issuedAt}`
 
   await appendDocumentPacketEvent({
@@ -3789,36 +3798,11 @@ export async function generateDocumentPacketSigningLinks({
     },
   })
 
-  const nowIso = new Date().toISOString()
-  const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
-    ? packet.source_context_json
-    : {}
   const linkSigner = updates.find((item) => normalizeText(item?.signing_link)) || null
   const linkSignerRole = normalizeText(linkSigner?.signer_role).toLowerCase()
   const signingStatus = isMandatePacket
     ? (linkSignerRole === 'agent' ? 'sent_to_agent' : linkSignerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
     : 'sent_for_signature'
-  await transitionDocumentPacketLifecycle({
-    packetId: packet.id,
-    nextState: 'sent',
-    versionId: targetVersion.id,
-    sourceContextPatch: {
-      signing_method: sourceContext.signing_method || 'digital',
-      signingMethod: sourceContext.signingMethod || 'digital',
-      signing_status: signingStatus,
-      signingStatus: signingStatus,
-      mandateStatus: signingStatus,
-      signingLinkLastSentAt: nowIso,
-      signingLinkResentAt: regenerate ? nowIso : sourceContext.signingLinkResentAt || null,
-      signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,
-      lastSigningRecipientRole: linkSignerRole || sourceContext.lastSigningRecipientRole || null,
-    },
-    eventPayload: {
-      signingStatus,
-      dispatchReference,
-      regenerate: Boolean(regenerate),
-    },
-  })
 
   return {
     packetId: packet.id,
@@ -3855,10 +3839,10 @@ export async function generateFinalSignedDocument({
     outputBucket: normalizeNullableText(outputBucket),
   }
 
-  const finaliserFunction = normalizeText(packet.packet_type).toLowerCase() === 'otp'
-    ? 'generate-final-signed-otp'
-    : 'generate-final-signed-document'
-  const invocation = await client.functions.invoke(finaliserFunction, { body: payload })
+  // The generic finaliser overlays stored signer assets onto the exact D3
+  // certified source PDF. The retired OTP endpoint rebuilt a document and is
+  // never a valid signing path.
+  const invocation = await client.functions.invoke('generate-final-signed-document', { body: payload })
   if (invocation.error) {
     const edgeError = new Error(
       normalizeText(invocation.error?.message) || 'Unable to generate final signed document right now.',
@@ -3879,9 +3863,17 @@ export async function generateFinalSignedDocument({
 
   const versionId = normalizeText(response?.packetVersionId || packetVersionId)
   const packetVersion = versionId ? await listDocumentPacketVersions(packet.id).then((items) => items.find((item) => item.id === versionId) || null) : null
-  const finalArtifactPath = normalizeText(response?.finalArtifact?.path || packetVersion?.final_signed_file_path)
-  if (!finalArtifactPath) {
-    const artifactError = new Error('Final signed artifact path is missing after finalization.')
+  const finalArtifact = response?.finalArtifact && typeof response.finalArtifact === 'object'
+    ? response.finalArtifact
+    : null
+  const finalArtifactDocumentId = normalizeText(finalArtifact?.documentId || finalArtifact?.document_id)
+  const finalArtifactSha256 = normalizeText(finalArtifact?.sha256)
+  const finalArtifactReady = finalArtifact?.ready === true && Boolean(
+    finalArtifactDocumentId ||
+    (normalizeText(finalArtifact?.packetId || finalArtifact?.packet_id) && normalizeText(finalArtifact?.packetVersionId || finalArtifact?.packet_version_id)),
+  )
+  if (!finalArtifactReady) {
+    const artifactError = new Error('Final signed artifact identity is missing after finalization.')
     artifactError.code = 'FINAL_SIGNED_ARTIFACT_MISSING'
     throw artifactError
   }
@@ -3893,7 +3885,8 @@ export async function generateFinalSignedDocument({
     eventType: 'final_signed_generated',
     eventPayload: {
       packetVersionId: versionId || null,
-      finalArtifactPath,
+      finalArtifactDocumentId: finalArtifactDocumentId || null,
+      finalArtifactSha256: finalArtifactSha256 || null,
       sourceFormat: normalizeText(response?.sourceFormat || ''),
     },
   })
@@ -3906,7 +3899,8 @@ export async function generateFinalSignedDocument({
     },
     actorUserId: context.user.id,
     metadata: {
-      final_artifact_path: finalArtifactPath,
+      final_artifact_document_id: finalArtifactDocumentId || null,
+      final_artifact_sha256: finalArtifactSha256 || null,
       source_format: normalizeText(response?.sourceFormat || ''),
     },
   })
@@ -3915,7 +3909,7 @@ export async function generateFinalSignedDocument({
     packetId: packet.id,
     packetVersionId: versionId || null,
     packetVersion,
-    finalArtifact: response?.finalArtifact || null,
+    finalArtifact,
     sourceFormat: response?.sourceFormat || null,
     note: normalizeNullableText(response?.note),
   }

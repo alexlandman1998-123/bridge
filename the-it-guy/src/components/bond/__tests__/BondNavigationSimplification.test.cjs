@@ -48,47 +48,40 @@ async function main() {
     })
     assert.deepEqual(
       defaultBondNav.map((item) => item.label),
-      ['Dashboard', 'My Applications', 'Developments', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks'],
+      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'My Commissions'],
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports'],
+      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'Commissions & Reconciliation', 'Team', 'Banks'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
       ['Settings'],
     )
     const applicationsNav = hqBondNav.find((item) => item.key === 'bond_applications')
-    assert.equal(applicationsNav?.to, '/bond/pipeline')
-    assert.deepEqual(applicationsNav?.children.map((item) => item.label), ['Pipeline', 'Applications'])
-    assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_pipeline')?.to, '/bond/pipeline')
-    assert.equal(applicationsNav?.children.find((item) => item.key === 'applications')?.to, '/bond/applications')
+    assert.equal(applicationsNav?.to, '/bond/applications?view=incoming')
+    assert.equal(Array.isArray(applicationsNav?.children), false)
     const developmentsNav = hqBondNav.find((item) => item.key === 'bond_developments')
     assert.equal(developmentsNav?.to, '/bond/developments?view=current')
     assert.deepEqual(developmentsNav?.children.map((item) => item.label), ['Current Developments', 'Developers'])
     assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_current')?.to, '/bond/developments?view=current')
     assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_developers')?.to, '/bond/developments?view=developers')
-    const organisationNav = hqBondNav.find((item) => item.key === 'bond_organisation')
-    assert.equal(organisationNav?.to, '/bond/organisation?view=overview')
-    assert.deepEqual(organisationNav?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
-    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_org_overview')?.to, '/bond/organisation?view=overview')
-    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_branches_regions')?.to, '/bond/organisation?view=branches')
-    assert.equal(organisationNav?.children.find((item) => item.key === 'bond_consultants')?.to, '/bond/organisation?view=consultants')
-    const reportsNav = hqBondNav.find((item) => item.key === 'bond_reports')
-    assert.deepEqual(reportsNav?.children.map((item) => item.label), ['Analytics', 'Predictive Intelligence'])
-    assert.equal(reportsNav?.children.find((item) => item.key === 'bond_reports_analytics')?.to, '/bond/reports')
-    assert.equal(reportsNav?.children.find((item) => item.key === 'predictive_intelligence')?.to, '/bond/predictive-intelligence')
+    const teamNav = hqBondNav.find((item) => item.key === 'bond_organisation')
+    assert.equal(teamNav?.label, 'Team')
+    assert.equal(teamNav?.to, '/bond/organisation?view=consultants')
+    assert.equal(Array.isArray(teamNav?.children), false)
     const settingsNav = hqBondNav.find((item) => item.key === 'settings')
     assert.equal(settingsNav?.to, '/settings')
     assert.equal(Array.isArray(settingsNav?.children), false)
-    assert.equal(hqBondNav.some((item) => item.key === 'documents' || item.key === 'tasks' || item.key === 'bond_calendar'), false)
-    assert.equal(hqBondNav.some((item) => item.key === 'banks' || item.key === 'teams' || item.key === 'performance'), false)
-    assert.equal(hqBondNav.some((item) => item.key === 'automation_rules' || item.key === 'predictive_intelligence' || item.key === 'branch_operations' || item.key === 'regional_operations'), false)
+    assert.equal(hqBondNav.some((item) => item.key === 'tasks'), true)
+    assert.equal(hqBondNav.some((item) => item.key === 'bank_relationships'), true)
+    assert.equal(hqBondNav.some((item) => item.key === 'bond_reports' || item.key === 'consultant_performance'), false)
+    assert.equal(defaultBondNav.some((item) => item.key === 'bond_organisation' || item.key === 'bank_relationships'), false)
 
     const appSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/App.jsx'), 'utf8')
     assert.match(appSource, /path="\/bond\/tasks"/)
@@ -97,11 +90,12 @@ async function main() {
 
     const sidebarSource = require('node:fs').readFileSync(path.join(PROJECT_ROOT, 'src/components/Sidebar.jsx'), 'utf8')
     assert.match(sidebarSource, /bond_applications/)
+    assert.match(sidebarSource, /'partners'/)
+    assert.match(sidebarSource, /'clients'/)
     assert.match(sidebarSource, /bond_developments/)
-    assert.match(sidebarSource, /bond_developments_developers/)
-    assert.match(sidebarSource, /bond_branches_regions/)
-    assert.match(sidebarSource, /bond_consultants/)
     assert.match(sidebarSource, /'tasks'/)
+    assert.match(sidebarSource, /revenue_commissions/)
+    assert.match(sidebarSource, /bank_relationships/)
 
     assert.deepEqual(
       viewsModule.bondViews.pipeline.tabs.map((tab) => tab.key),
@@ -109,12 +103,13 @@ async function main() {
     )
     assert.deepEqual(
       viewsModule.bondViews.transactions.tabs.map((tab) => tab.key),
-      ['all', 'active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'registered', 'at-risk', 'declined'],
+      ['incoming', 'processing', 'registered', 'declined'],
     )
     assert.equal(viewsModule.getBondPipelineView('new').filters.queue, 'awaiting_otp')
     assert.equal(viewsModule.getBondPipelineView('awaiting-documents').filters.queue, 'application_in_progress')
     assert.equal(viewsModule.getBondPipelineView('ready-for-submission').filters.queue, 'application_submitted')
-    assert.equal(viewsModule.getBondTransactionView('bond-approved').status, 'bond_approved')
+    assert.equal(viewsModule.getBondTransactionView('bond-approved').key, 'processing')
+    assert.equal(viewsModule.getBondTransactionView('all').key, 'incoming')
 
     const tabMarkup = renderToStaticMarkup(
       React.createElement(tabsModule.default, {
@@ -165,6 +160,7 @@ async function main() {
           },
         ],
         status: 'attorney_stage',
+        includeDemoRows: false,
       },
     )
     assert.equal(snapshot.selectedStatus, 'attorney_stage')

@@ -6,14 +6,10 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   applySignerField,
   completeSignerSigning,
+  resolveSignerFinalSignedArtifactAccess,
   resolveExternalSignerSession,
   saveSignerAsset,
 } from '../lib/externalSigningApi'
-import { fetchClientOtpSigningByToken, submitClientOtpSignature } from '../lib/api'
-import {
-  adaptCanonicalSigningSessionToPortal,
-  completePortalSessionField,
-} from '../core/documents/signingSessionPortalAdapter'
 import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 import { buildSigningCompletion } from '../core/documents/signingCompletionContract'
 import { getSigningCompletionAccess } from '../core/documents/signingCompletionAccess'
@@ -86,9 +82,19 @@ function resolveErrorMessage(error = null) {
   return message || 'Unable to process signing right now.'
 }
 
-function SigningCompleteScreen({ completion, packet = {}, signer = {}, version = {}, refreshing = false, onRefresh = null }) {
+function SigningCompleteScreen({
+  completion,
+  packet = {},
+  signer = {},
+  version = {},
+  refreshing = false,
+  finalArtifactBusy = false,
+  finalArtifactError = '',
+  onRefresh = null,
+  onOpenFinalArtifact = null,
+}) {
   const finalArtifact = completion?.finalArtifact || {}
-  const finalUrl = normalizeText(finalArtifact.url)
+  const finalArtifactReady = finalArtifact?.ready === true
   const documentType = normalizeKey(completion?.document?.type || packet?.packet_type)
   const completedLabel = documentType === 'otp' ? 'Offer to Purchase' : documentType === 'mandate' ? 'Mandate' : 'Document'
 
@@ -120,22 +126,29 @@ function SigningCompleteScreen({ completion, packet = {}, signer = {}, version =
           ) : null}
         </div>
 
-        {finalUrl ? (
-          <a
-            href={finalUrl}
-            target="_blank"
-            rel="noreferrer"
+        {finalArtifactReady && typeof onOpenFinalArtifact === 'function' ? (
+          <button
+            type="button"
+            onClick={onOpenFinalArtifact}
+            disabled={finalArtifactBusy}
             className="mt-6 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#12385f] px-5 text-sm font-bold text-white shadow-[0_14px_30px_rgba(18,56,95,0.22)] sm:w-auto"
           >
-            <Download className="h-5 w-5" /> Open completed PDF
-          </a>
+            {finalArtifactBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+            {finalArtifactBusy ? 'Preparing secure PDF…' : 'Open completed PDF'}
+          </button>
         ) : (
           <p className="mt-6 rounded-[14px] border border-[#d8e3ef] bg-[#f4f8fc] px-4 py-3 text-sm font-semibold text-[#35546c]">
             Your part is complete. The final PDF will be available in the transaction once every required signer has finished.
           </p>
         )}
 
-        {(!finalUrl || !completion?.transactionSaved) && typeof onRefresh === 'function' ? (
+        {finalArtifactError ? (
+          <p className="mt-3 rounded-[12px] border border-[#f0ccc7] bg-[#fff7f5] px-4 py-3 text-sm font-semibold text-[#8e1f15]">
+            {finalArtifactError}
+          </p>
+        ) : null}
+
+        {(!finalArtifactReady || !completion?.transactionSaved) && typeof onRefresh === 'function' ? (
           <button
             type="button"
             onClick={onRefresh}
@@ -591,27 +604,22 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
   )
 }
 
-export default function SignerPortal({ sessionSource = 'packet' } = {}) {
+export default function SignerPortal() {
   const { token = '' } = useParams()
-  const legacyOtpMode = sessionSource === 'legacy-otp'
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [session, setSession] = useState(null)
+  const [completionDownloadError, setCompletionDownloadError] = useState('')
   const [assets, setAssets] = useState({ initial: null, signature: null })
   const [activeFieldId, setActiveFieldId] = useState('')
   const [captureField, setCaptureField] = useState(null)
-  const [legacyOtpSignatureDataUrl, setLegacyOtpSignatureDataUrl] = useState('')
   const [completeConfirmationOpen, setCompleteConfirmationOpen] = useState(false)
   const lastSignerJourneyTelemetryRef = useRef('')
   const lastSignerOutcomeTelemetryRef = useRef('')
 
   async function resolvePortalSession() {
-    if (legacyOtpMode) {
-      const result = await fetchClientOtpSigningByToken(token)
-      return adaptCanonicalSigningSessionToPortal(result?.signingSession, { completion: result?.completion })
-    }
     const result = await resolveExternalSignerSession({ token })
     return result?.session || null
   }
@@ -639,7 +647,7 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
     }
     void load()
     return () => { active = false }
-  }, [legacyOtpMode, token])
+  }, [token])
 
   useEffect(() => {
     const completion = session?.completion
@@ -650,7 +658,7 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
       })
     }, 15000)
     return () => window.clearTimeout(timer)
-  }, [legacyOtpMode, session?.completion?.finalArtifact?.ready, session?.completion?.transactionSaved, token])
+  }, [session?.completion?.finalArtifact?.ready, session?.completion?.transactionSaved, token])
 
   const signer = session?.signer || {}
   const packet = session?.packet || {}
@@ -753,21 +761,6 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
   async function applyFieldWithAsset(field, asset) {
     const fieldId = getFieldId(field)
     const fieldType = normalizeKey(field?.field_type)
-    if (legacyOtpMode) {
-      const completedAt = new Date().toISOString()
-      const nextSession = {
-        ...session,
-        fields: fields.map((row) =>
-          getFieldId(row) === fieldId
-            ? { ...row, status: 'completed', completed_at: completedAt }
-            : row,
-        ),
-      }
-      setSession(nextSession)
-      setStatusMessage(`${fieldTypeLabel(fieldType)} added to ${fieldLocationLabel(field, { includeType: false })}. Complete signing to submit it.`)
-      setCaptureField(null)
-      return nextSession
-    }
     await applySignerField({
       token,
       fieldId,
@@ -790,13 +783,6 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
       setBusyAction(`field_${getFieldId(field)}`)
       setErrorMessage('')
       setStatusMessage('')
-      if (legacyOtpMode) {
-        const asset = { path: 'legacy-otp-local-signature', dataUrl }
-        setLegacyOtpSignatureDataUrl(dataUrl)
-        setAssets((current) => ({ ...current, [assetType]: asset }))
-        await applyFieldWithAsset(field, asset)
-        return
-      }
       const result = await saveSignerAsset({ token, assetType, dataUrl })
       const asset = result?.asset || null
       setAssets((current) => ({ ...current, [assetType]: asset }))
@@ -838,26 +824,8 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
       setBusyAction('complete_signing')
       setErrorMessage('')
       setStatusMessage('')
-      if (legacyOtpMode) {
-        if (!legacyOtpSignatureDataUrl) {
-          throw new Error('Add your signature before completing signing.')
-        }
-        const result = await submitClientOtpSignature({
-          token,
-          otpDocumentId: session?.version?.rendered_document_id || session?.version?.id || null,
-          signatureDataUrl: legacyOtpSignatureDataUrl,
-          confirmationAccepted: true,
-          signatureName: signer?.signer_name || '',
-        })
-        const signatureField = fields.find((field) => normalizeKey(field?.field_type) === 'signature')
-        setSession({
-          ...completePortalSessionField(session, getFieldId(signatureField), result?.signedAt),
-          completion: result?.completion || null,
-        })
-      } else {
-        await completeSignerSigning({ token })
-        await refreshSession()
-      }
+      await completeSignerSigning({ token })
+      await refreshSession()
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error))
     } finally {
@@ -872,6 +840,39 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
       await refreshSession()
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error))
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  async function handleOpenCompletedPdf() {
+    const completion = session?.completion || {}
+    const finalArtifact = completion?.finalArtifact || {}
+    const packetId = normalizeText(finalArtifact.packetId || completion?.document?.packetId || completion?.document?.id || session?.packet?.id)
+    const packetVersionId = normalizeText(finalArtifact.packetVersionId || completion?.version?.id || session?.version?.id)
+    const documentId = normalizeText(finalArtifact.documentId)
+    const targetWindow = window.open('', '_blank')
+    try {
+      setBusyAction('open_final_artifact')
+      setCompletionDownloadError('')
+      const access = await resolveSignerFinalSignedArtifactAccess({
+        token,
+        packetId,
+        packetVersionId,
+        documentId,
+        download: true,
+      })
+      const downloadUrl = normalizeText(access?.finalArtifact?.downloadUrl)
+      if (!downloadUrl) throw new Error(access?.message || 'The completed document is not ready for secure download yet.')
+      if (targetWindow) {
+        targetWindow.opener = null
+        targetWindow.location.replace(downloadUrl)
+      } else {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (error) {
+      targetWindow?.close()
+      setCompletionDownloadError(resolveErrorMessage(error))
     } finally {
       setBusyAction('')
     }
@@ -929,7 +930,10 @@ export default function SignerPortal({ sessionSource = 'packet' } = {}) {
         signer={signer}
         version={version}
         refreshing={busyAction === 'refresh_completion'}
+        finalArtifactBusy={busyAction === 'open_final_artifact'}
+        finalArtifactError={completionDownloadError}
         onRefresh={() => void handleRefreshCompletion()}
+        onOpenFinalArtifact={() => void handleOpenCompletedPdf()}
       />
     )
   }

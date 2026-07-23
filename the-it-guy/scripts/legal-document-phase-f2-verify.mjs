@@ -23,7 +23,7 @@ if (!blockers.length) {
       client.from('document_packet_versions').select('id, packet_id, organisation_id, version_number, render_status, validation_summary_json, final_signed_file_path, final_signed_file_bucket, final_signed_file_name, finalised_at, finalised_by').eq('id', target.versionId).maybeSingle(),
       client.from('document_packet_signers').select('id, packet_id, packet_version_id, signer_role, signer_email, status, viewed_at, signed_at').eq('packet_id', target.packetId).eq('packet_version_id', target.versionId),
       client.from('document_signing_fields').select('id, packet_id, packet_version_id, signer_role, signer_email, field_type, required, status, signature_asset_path').eq('packet_id', target.packetId).eq('packet_version_id', target.versionId),
-      client.from('document_packet_events').select('version_id, event_type, event_payload_json, created_at').eq('packet_id', target.packetId).in('event_type', ['signer_link_viewed', 'signer_completed_signing', 'all_signers_completed', 'final_signed_document_generated', 'final_signed_otp_generated']),
+      client.from('document_packet_events').select('version_id, event_type, event_payload_json, created_at').eq('packet_id', target.packetId).in('event_type', ['signer_link_viewed', 'signer_completed_signing', 'all_signers_completed', 'final_signed_document_generated']),
       client.from('legal_final_artifact_evidence').select('organisation_id, packet_id, packet_version_id, bucket, path, file_name, media_type, sha256, byte_length, signer_evidence_sha256, field_evidence_sha256, generated_at').eq('packet_version_id', target.versionId).maybeSingle(),
     ])
     for (const result of [packetResult, versionResult, signersResult, fieldsResult, eventsResult]) if (result.error) throw result.error
@@ -51,7 +51,7 @@ if (!blockers.length) {
         if (actualSha256 !== finalEvidence.sha256 || actualByteLength !== Number(finalEvidence.byte_length)) reasons.push('F2_FINAL_ARTIFACT_MISMATCH')
       }
     }
-    const finalEvent = (eventsResult.data || []).some((event) => event.version_id === target.versionId && ['final_signed_document_generated', 'final_signed_otp_generated'].includes(event.event_type) && event.event_payload_json?.finalArtifactSha256 === finalEvidence?.sha256)
+    const finalEvent = (eventsResult.data || []).some((event) => event.version_id === target.versionId && event.event_type === 'final_signed_document_generated' && event.event_payload_json?.finalArtifactSha256 === finalEvidence?.sha256)
     if (!finalEvent) reasons.push('F2_FINAL_EVENT_EVIDENCE_MISSING')
     if (reasons.length) blockers.push({ code: 'F2_FINAL_COMPLETION_INVALID', packetType: target.packetType, reasons: [...new Set(reasons)] })
     evidence.push({ packetType: target.packetType, packetId: target.packetId, versionId: target.versionId, status: reasons.length ? 'failed' : 'passed', signerCount: assessment.signerCount, requiredFieldCount: assessment.requiredFieldCount, finalArtifactPath: finalEvidence?.path || null, expectedSha256: finalEvidence?.sha256 || null, actualSha256: actualSha256 || null, expectedByteLength: Number(finalEvidence?.byte_length) || null, actualByteLength: actualByteLength || null, reasons: [...new Set(reasons)] })

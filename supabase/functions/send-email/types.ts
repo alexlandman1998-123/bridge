@@ -407,7 +407,7 @@ export type SendSellerMandateSentPayload = {
   organisationId?: string;
   packetId?: string;
   mandateId?: string;
-  recipientRole?: "agent" | "seller";
+  recipientRole?: "agent" | "seller" | "purchaser";
   recipientName?: string;
   sellerName?: string;
   propertyTitle?: string;
@@ -422,6 +422,7 @@ export type SendSellerMandateSentPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  idempotencyKey?: string;
 };
 
 export type SendSellerMandateSignedPayload = {

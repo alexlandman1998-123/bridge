@@ -2,7 +2,12 @@ import { buildSigningCompletion } from './signingCompletionContract.js'
 
 export function getSigningCompletionAccess(value = {}) {
   const completion = buildSigningCompletion(value)
-  const finalCopyReady = completion.finalArtifact.ready && Boolean(completion.finalArtifact.url || completion.finalArtifact.path)
+  const finalCopyReady = completion.finalArtifact.ready && Boolean(
+    completion.finalArtifact.documentId ||
+    (completion.finalArtifact.packetId && completion.finalArtifact.packetVersionId) ||
+    completion.finalArtifact.url ||
+    completion.finalArtifact.path,
+  )
   const transactionReady = completion.transactionSaved && completion.access.transactionVisible
   const portalReady = completion.access.clientVisible && Boolean(completion.access.portalSurface)
   const canonicalReady = completion.access.canonicalSatisfied

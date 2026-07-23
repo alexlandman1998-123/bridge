@@ -25,6 +25,8 @@ try {
       getHqApplicationKpis,
       HqApplicationsTable,
       isHqApplicationsScope,
+      matchesApplicationWorkspaceTab,
+      matchesHqApplicationWorkspaceTab,
     } = page
 
     assert.equal(isHqApplicationsScope({ reportingScope: { dashboardMode: 'owner_director' } }, {}), true)
@@ -120,6 +122,14 @@ try {
     assert.equal(kpis.awaiting_feedback, 1)
     assert.equal(kpis.instructions_issued, 1)
     assert.equal(Object.keys(kpis).length, 5)
+
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-ready'), 'incoming'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-feedback'), 'processing'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-instruction'), 'registered'), false)
+    assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'ready_for_review' }, 'incoming'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'submitted_to_banks' }, 'processing'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ status: 'registered' }, 'registered'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ status: 'cancelled' }, 'declined'), true)
 
     const rowMarkup = renderToStaticMarkup(
       React.createElement(HqApplicationsTable, {

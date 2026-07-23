@@ -16,11 +16,13 @@ assert.match(envelope, /E3_VERSION_BINDING_INVALID/)
 assert.match(envelope, /E3_PACKET_NOT_READY_TO_SEND/)
 assert.doesNotMatch(workspace, /canApprove|canLock|approve_draft|lock_document|requireApprovalValidation/)
 
-for (const source of [resolver, signingAction, mandateFinalizer, otpFinalizer]) {
+for (const source of [resolver, signingAction, mandateFinalizer]) {
   assert.doesNotMatch(source, /lock_snapshot|lockDecision|content_locked/)
   assert.match(source, /render_status/)
   assert.match(source, /current_version_number/)
 }
+assert.match(otpFinalizer, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
+assert.doesNotMatch(otpFinalizer, /buildPdf|bridge_record_final_artifact_f2/)
 
 assert.match(migration, /drop trigger if exists trg_legal_draft_review_before_token/)
 assert.match(migration, /drop trigger if exists trg_legal_draft_lock_before_token/)

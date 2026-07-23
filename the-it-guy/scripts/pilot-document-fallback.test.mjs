@@ -17,6 +17,22 @@ const pilotVersion = {
 assert.equal(isPilotDocumentFallbackVersion(pilotVersion), true)
 assert.equal(findLatestSignableGeneratedVersion([pilotVersion]), null)
 
+const noArtifactVersion = {
+  id: 'generated-without-artifact',
+  render_status: 'generated',
+  validation_summary_json: { generationStatus: 'generated' },
+}
+assert.equal(isPilotDocumentFallbackVersion(noArtifactVersion), true)
+assert.equal(findLatestSignableGeneratedVersion([noArtifactVersion]), null)
+
+const storedPdfVersion = {
+  ...noArtifactVersion,
+  id: 'generated-with-artifact',
+  rendered_file_path: 'document-packets/packet-1/generated.pdf',
+}
+assert.equal(isPilotDocumentFallbackVersion(storedPdfVersion), false)
+assert.equal(findLatestSignableGeneratedVersion([noArtifactVersion, storedPdfVersion])?.id, storedPdfVersion.id)
+
 const signing = resolveSigningOperationalStatus({ packetType: 'mandate', packet: { status: 'generated' }, versions: [pilotVersion] })
 assert.equal(signing.state, 'pilot_review_required')
 
@@ -28,5 +44,7 @@ assert.ok(envelope.reasons.includes('E3_PILOT_FALLBACK_NOT_SIGNABLE'))
 
 const packetService = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
 assert.match(packetService, /PILOT_FALLBACK_REVIEW_REQUIRED/)
-assert.match(packetService, /pilotFallback/)
-console.log('pilot-document-fallback: passed')
+assert.match(packetService, /recordGenerationFailure/)
+assert.doesNotMatch(packetService, /buildPilotDocumentFallback/)
+assert.doesNotMatch(packetService, /previewOnlyGeneration/)
+console.log('pilot-document-fallback historical-safety guard: passed')

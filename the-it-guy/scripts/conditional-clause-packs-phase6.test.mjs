@@ -146,14 +146,11 @@ for (const token of [
   'conditionalPackDataRequirements,',
   'conditionalPackMissingPlaceholders,',
   'conditionalPackCanProceed &&',
-  "const hasConditionalPackBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'conditional_pack')",
-  'const allowGenerationBypass = (',
-  'isMandatePacket &&',
-  '!hasConditionalPackBlockingIssues &&',
-  '!hasLegalScenarioBlockingIssues &&',
-  '!hasLegalScenarioRequirementBlockingIssues &&',
+  'if (!validation.isValidForGeneration) {',
 ]) {
   assert.ok(packetService.includes(token), `packetService should enforce conditional pack preflight: ${token}`)
 }
+
+assert.doesNotMatch(packetService, /allowGenerationBypass|forceGenerate/)
 
 console.log('Conditional clause packs Phase 6 contract passed.')

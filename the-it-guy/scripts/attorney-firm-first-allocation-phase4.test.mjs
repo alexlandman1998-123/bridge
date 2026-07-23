@@ -19,32 +19,32 @@ function assertWizard(pattern, message) {
 }
 
 assertApi(
-  /export function prepareFirmFirstTransferRoleplayer[\s\S]*firmFirstAllocation: true,[\s\S]*preferredAttorneyUserId,[\s\S]*userId: null,[\s\S]*activationTrigger: 'appointed_firm_staff_assignment'/,
-  'transfer roleplayer preparation should retain a preference but clear person ownership',
+  /export function prepareFirmFirstAttorneyRoleplayer[\s\S]*FIRM_FIRST_ATTORNEY_ROLE_TYPES\.has\(selection\?\.roleType\)[\s\S]*firmFirstAllocation: true,[\s\S]*preferredAttorneyUserId,[\s\S]*userId: null,[\s\S]*activationTrigger: 'appointed_firm_staff_assignment'/,
+  'firm-first attorney roleplayer preparation should retain a preference but clear person ownership for every attorney lane',
 )
 assertApi(
-  /const isFirmFirstTransfer = item\.roleType === 'transfer_attorney'[\s\S]*const resolvedUserId = isFirmFirstTransfer\s*\? null/,
-  'roleplayer persistence must not resolve a transfer contact into an assigned user',
+  /const FIRM_FIRST_ATTORNEY_ROLE_TYPES = new Set\(\[[\s\S]*'transfer_attorney',[\s\S]*'bond_attorney',[\s\S]*'cancellation_attorney',[\s\S]*export function isFirmFirstAttorneyAllocation[\s\S]*const resolvedUserId = isFirmFirstAttorneyAllocationForRoleplayer\s*\?\s*null/,
+  'roleplayer persistence must not resolve a firm-first attorney contact into an assigned user',
 )
 assertApi(
-  /status: isFirmFirstTransfer \? 'selected'[\s\S]*activated_at: isFirmFirstTransfer \? null/,
-  'the transfer roleplayer should remain selected rather than active while awaiting the firm',
+  /status: isFirmFirstAttorneyAllocationForRoleplayer \? 'selected'[\s\S]*activated_at: isFirmFirstAttorneyAllocationForRoleplayer \? null/,
+  'a firm-first attorney roleplayer should remain selected rather than active while awaiting the firm',
 )
 assertApi(
-  /export function buildCreationAttorneyAssignmentPayload[\s\S]*preferred_attorney_user_id: isFirmFirstTransfer[\s\S]*firm_acceptance_status: isFirmFirstTransfer \? 'awaiting_firm_acceptance'[\s\S]*allocation_state: isFirmFirstTransfer \? 'awaiting_firm_acceptance'[\s\S]*assignment_status: isFirmFirstTransfer \? 'pending'/,
+  /export function buildCreationAttorneyAssignmentPayload[\s\S]*preferred_attorney_user_id:\s*isFirmFirstAttorneyAllocationForRoleplayer[\s\S]*firm_acceptance_status:\s*isFirmFirstAttorneyAllocationForRoleplayer\s*\?\s*'awaiting_firm_acceptance'[\s\S]*allocation_state:\s*isFirmFirstAttorneyAllocationForRoleplayer[\s\S]*assignment_status:\s*isFirmFirstAttorneyAllocationForRoleplayer\s*\?\s*'pending'/,
   'deal creation should produce a pending firm-level canonical assignment',
 )
 assertApi(
-  /const attorneyUserId = isFirmFirstTransfer\s*\? null\s*:\s*await resolveAttorneyFirmPrimaryUserId/,
-  'deal creation must not auto-select the first member of a nominated transfer firm',
+  /const attorneyUserId = isFirmFirstAttorneyAllocationForRoleplayer\s*\?\s*null\s*:\s*await resolveAttorneyFirmPrimaryUserId/,
+  'deal creation must not auto-select the first member of a nominated attorney firm',
 )
 assertApi(
   /\.in\('allocation_state', \['awaiting_firm_acceptance', 'awaiting_staff_assignment', 'staff_assigned', 'active'\]\)/,
-  'retries should find every open firm-first transfer allocation',
+  'retries should find every open firm-first attorney allocation',
 )
 assertApi(
-  /\? 'attorney_firm_nominated'\s*:\s*'transfer_attorney_assigned'/,
-  'agent handoff events should distinguish firm nomination from person assignment',
+  /\['transfer_attorney', 'bond_attorney', 'cancellation_attorney'\]\.includes\(selection\.roleType\)[\s\S]*isFirmFirstAttorneyAllocation\(selection\)[\s\S]*\? 'attorney_firm_nominated'/,
+  'agent handoff events should distinguish firm nomination from person assignment in every attorney lane',
 )
 
 assertWizard(/Transfer Attorney Firm/, 'the agent flow should describe the selected entity as a firm')

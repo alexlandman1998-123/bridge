@@ -240,7 +240,14 @@ try {
 
   {
     const queue = buildAttorneyIncomingMatterQueueFromSources(source, { pageSize: 20 })
-    assert.deepEqual(queue.rows.map((row) => row.id), ['allocation-awaiting-buyer', 'assign-awaiting-otp', 'assign-docs', 'assign-ready'])
+    assert.deepEqual(queue.rows.map((row) => row.id), [
+      'allocation-awaiting-buyer',
+      'assign-awaiting-otp',
+      'assign-docs',
+      'assign-bond',
+      'assign-cancellation',
+      'assign-ready',
+    ])
     assert.deepEqual(queue.allRows.map((row) => row.id), [
       'allocation-awaiting-buyer',
       'assign-awaiting-otp',
@@ -248,20 +255,26 @@ try {
       'assign-ready',
       'assign-pre',
       'assign-accepted',
+      'assign-bond',
+      'assign-cancellation',
     ])
-    assert.equal(queue.summary.totalIncoming, 4)
-    assert.equal(queue.summary.allTransferInstructions, 6)
+    assert.equal(queue.summary.totalIncoming, 6)
+    assert.equal(queue.summary.allTransferInstructions, 8)
+    assert.equal(queue.summary.allAttorneyInstructions, 8)
     assert.equal(queue.summary.awaitingBuyer, 1)
     assert.equal(queue.summary.awaitingSignedOtp, 1)
     assert.equal(queue.summary.awaitingDocuments, 1)
-    assert.equal(queue.summary.readyForAcceptance, 1)
+    assert.equal(queue.summary.readyForAcceptance, 3)
     assert.equal(queue.summary.documentBlockers, 2)
     assert.deepEqual(queue.rows[0].waitingOn, ['buyer'])
     assert.equal(queue.rows[0].actionHref, '/legal-documents/packet-mandate')
     assert.equal(queue.rows[0].transactionId, '')
     assert.deepEqual(queue.rows[1].waitingOn, ['signed_otp', 'documents'])
     assert.equal(queue.rows[2].documents.reviewCount, 1)
-    assert.equal(queue.rows[3].nextAction, 'Accept the transfer instruction.')
+    assert.equal(queue.rows[3].matterType, 'Bond Registration')
+    assert.equal(queue.rows[3].nextAction, 'Accept the bond attorney instruction.')
+    assert.equal(queue.rows[4].matterType, 'Bond Cancellation')
+    assert.equal(queue.rows[5].nextAction, 'Accept the transfer attorney instruction.')
   }
 
   {

@@ -17,7 +17,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   PAYOUT_STATUSES,
@@ -33,6 +33,7 @@ import {
   COMMISSION_PARTY_TYPES,
   COMMISSION_RULE_TYPES,
 } from '../../services/bondCommissionRulesService'
+import { getBondReferralReconciliation } from '../../services/bondReferralTermsService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -549,6 +550,8 @@ export default function BondRevenueManagementPage() {
   const [notice, setNotice] = useState('')
   const [payoutTab, setPayoutTab] = useState(PAYOUT_STATUS_KEYS.readyToPay)
   const [commissionRuleDraft, setCommissionRuleDraft] = useState(null)
+  const [referralReconciliation, setReferralReconciliation] = useState({ rows: [], totals: { expected: 0, confirmed: 0, paid: 0, outstanding: 0 } })
+  const [referralReconciliationError, setReferralReconciliationError] = useState('')
   const options = useMemo(() => ({ workspaceId, refreshKey }), [workspaceId, refreshKey])
 
   const state = useMemo(() => {
@@ -578,6 +581,26 @@ export default function BondRevenueManagementPage() {
     paidThisMonth: (dashboard?.consultantEarnings || []).reduce((total, row) => total + Number(row.commissionPaid || 0), 0),
     topEarner: [...(dashboard?.consultantEarnings || [])].sort((left, right) => Number(right.commissionEarned || 0) - Number(left.commissionEarned || 0))[0] || null,
   }
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadReferralReconciliation() {
+      try {
+        const result = await getBondReferralReconciliation({ organisationId: workspaceId })
+        if (!cancelled) {
+          setReferralReconciliation(result)
+          setReferralReconciliationError('')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setReferralReconciliation({ rows: [], totals: { expected: 0, confirmed: 0, paid: 0, outstanding: 0 } })
+          setReferralReconciliationError(String(error?.message || 'Referral reconciliation could not be loaded.'))
+        }
+      }
+    }
+    if (canManagePayouts && workspaceId) void loadReferralReconciliation()
+    return () => { cancelled = true }
+  }, [canManagePayouts, refreshKey, workspaceId])
 
   function refresh() {
     setNotice('Commercial dashboard refreshed.')
@@ -826,6 +849,31 @@ export default function BondRevenueManagementPage() {
             ]}
           />
         </Section>
+
+        {canManagePayouts ? (
+          <Section title="Agency Referral Reconciliation" subtitle="Accepted partner terms, expected referral commission, invoices and payment status." icon={ReceiptText}>
+            {referralReconciliationError ? <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{referralReconciliationError}</p> : null}
+            <div className="mb-6 grid gap-4 md:grid-cols-4">
+              <MetricCard label="Expected" value={formatMoney(referralReconciliation.totals.expected)} trend={`${referralReconciliation.rows.length} applications`} />
+              <MetricCard label="Confirmed" value={formatMoney(referralReconciliation.totals.confirmed)} trend="Approved referral commission" />
+              <MetricCard label="Paid" value={formatMoney(referralReconciliation.totals.paid)} trend="Reconciled payments" />
+              <MetricCard label="Outstanding" value={formatMoney(referralReconciliation.totals.outstanding)} trend="Expected or invoiced less paid" />
+            </div>
+            <DataTable
+              rows={referralReconciliation.rows}
+              emptyTitle="No agency referral ledger entries yet."
+              emptyDescription="Accepted terms create an immutable snapshot when an application is connected to the agency; that snapshot is then used for reconciliation."
+              columns={[
+                { key: 'applicationId', label: 'Application', render: (row) => row.application_id },
+                { key: 'beneficiaryName', label: 'Agency / Agent', render: (row) => row.beneficiary_name },
+                { key: 'amountExpected', label: 'Expected', render: (row) => formatMoney(row.amount_expected) },
+                { key: 'amountConfirmed', label: 'Confirmed', render: (row) => formatMoney(row.amount_confirmed) },
+                { key: 'invoiceStatus', label: 'Invoice', render: (row) => <StatusPill status={row.invoice_status} /> },
+                { key: 'status', label: 'Payment', render: (row) => <StatusPill status={row.status} /> },
+              ]}
+            />
+          </Section>
+        ) : null}
 
         <div className="grid gap-8 xl:grid-cols-2">
           <PartnerRevenueCard rows={dashboard.partnerRevenue} grossRevenue={grossRevenue} />

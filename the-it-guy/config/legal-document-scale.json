@@ -3,7 +3,9 @@
   "enabled": false,
   "minimumHealthySnapshots": 7,
   "minimumObservationHours": 144,
+  "maximumWatchdogGapMinutes": 90,
   "minimumCompletedPackets": 10,
   "requiredFinalArtifactIntegrityPercent": 100,
-  "maximumOrganisationCohort": 25
+  "maximumOrganisationCohort": 25,
+  "requiredWatchdogContract": "phase5-f2-f3-f4-v2"
 }

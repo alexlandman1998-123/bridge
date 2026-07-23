@@ -90,8 +90,7 @@ const QUICK_ADD_FOLLOW_UP_TAB_BY_KEY = {
 const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not started' },
   { value: 'in_progress', label: 'Busy with seller' },
-  { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
-  { value: 'signed_uploaded', label: 'Signed and uploaded' },
+  { value: 'signed_external_pending_upload', label: 'Manual signature reported — verification required' },
   { value: 'expired', label: 'Expired' },
 ]
 const QUICK_ADD_INTENT_OPTIONS = [
@@ -106,12 +105,12 @@ const QUICK_ADD_INTENT_OPTIONS = [
   },
   {
     value: 'signed_mandate',
-    label: 'Signed mandate exists',
-    description: 'Use this when the seller has already signed and you need to upload or record it.',
+    label: 'Manual mandate evidence exists',
+    description: 'Store internal supporting evidence, then generate and complete the canonical signing packet.',
     listingStatus: 'active',
     mandateStatus: 'signed_external_pending_upload',
     nextStep: 'mandate',
-    requiredNow: 'Mandate dates, commission, signed mandate upload',
+    requiredNow: 'Mandate dates, commission, internal evidence (optional)',
   },
   {
     value: 'active_listing',
@@ -144,7 +143,7 @@ function isQuickListingMandatePackExpected(form = {}, mandateStatus = '') {
   return (
     ['signed_mandate', 'active_listing', 'under_offer'].includes(quickIntent) ||
     ['mandate_signed', 'active', 'under_offer', 'sold'].includes(listingStatus) ||
-    isQuickListingSignedMandateStatus(mandateStatus || form.manualMandateStatus)
+    isQuickListingManualMandateReportedStatus(mandateStatus || form.manualMandateStatus)
   )
 }
 
@@ -182,16 +181,18 @@ function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
     dateState: dateState.key,
     dateStateLabel: dateState.label,
     daysRemaining: dateState.daysRemaining,
-    signed: isQuickListingSignedMandateStatus(mandateStatus),
+    // A Quick Add file is supporting evidence only.  A canonical packet is the
+    // sole source of a signed/final mandate state.
+    signed: false,
     uploadStatus: normalizeText(form.manualMandateFileName)
-      ? 'uploaded'
-      : isQuickListingSignedMandateStatus(mandateStatus)
-        ? 'pending_upload'
+      ? 'evidence_selected'
+      : isQuickListingManualMandateReportedStatus(mandateStatus)
+        ? 'evidence_missing'
         : 'not_required',
     document: {
-      category: normalizeText(form.mandateDocumentCategory) || 'Mandate',
+      category: 'Mandate evidence',
       name: normalizeText(form.manualMandateFileName),
-      type: normalizeDocumentCategoryKey(form.mandateDocumentCategory || 'Mandate'),
+      type: 'manual_mandate_evidence',
     },
     supportingDocuments: supportingDocumentNames.map((name) => ({
       category: normalizeText(form.supportingDocumentCategory) || 'Other',
@@ -210,7 +211,10 @@ function getQuickListingMandateCaptureWarnings(form = {}, mandateStatusValue = '
   const mandatePack = buildQuickListingMandatePack(form, mandateStatusValue)
   if (!mandatePack.expected) return []
   const warnings = []
-  if (mandatePack.uploadStatus === 'pending_upload') warnings.push('Signed mandate upload outstanding')
+  if (mandatePack.uploadStatus === 'evidence_missing') warnings.push('Manual mandate evidence upload outstanding')
+  if (isQuickListingManualMandateReportedStatus(mandatePack.status)) {
+    warnings.push('Manual evidence cannot finalize a mandate or activate this listing. Complete the canonical signing packet.')
+  }
   if (!mandatePack.startDate || !mandatePack.endDate) warnings.push('Mandate dates missing')
   if (mandatePack.dateState === 'expired') warnings.push('Mandate expired')
   if (mandatePack.commission.status === 'missing') warnings.push('Commission missing')
@@ -222,10 +226,10 @@ function buildQuickAddDocumentUploadQueue(form = {}) {
   return [
     ...(form.manualMandateFile
       ? [{
-          kind: 'mandate',
+          kind: 'mandate_evidence',
           file: form.manualMandateFile,
-          documentType: normalizeDocumentCategoryKey(form.mandateDocumentCategory),
-          documentCategory: form.mandateDocumentCategory,
+          documentType: 'manual_mandate_evidence',
+          documentCategory: 'Mandate evidence',
           documentName: form.manualMandateFileName || form.manualMandateFile.name,
         }]
       : []),
@@ -585,9 +589,33 @@ function hasListingExternalLink(listing = {}, property = {}) {
   )
 }
 
+function isManualMandateEvidence(document = {}) {
+  return normalizeKey(document?.documentType || document?.document_type) === 'manual_mandate_evidence'
+}
+
+function hasCanonicalFinalMandatePacket(listing = {}) {
+  const packet = listing?.mandatePacket && typeof listing.mandatePacket === 'object'
+    ? listing.mandatePacket
+    : listing?.mandate_packet && typeof listing.mandate_packet === 'object'
+      ? listing.mandate_packet
+      : {}
+  const packetRecord = packet?.packet && typeof packet.packet === 'object' ? packet.packet : packet
+  const version = packet?.version && typeof packet.version === 'object' ? packet.version : {}
+  const packetId = normalizeText(packet?.id || packet?.packetId || packet?.packet_id || packetRecord?.id)
+  const packetStatus = normalizeKey(packet?.state || packet?.status || packetRecord?.status || packetRecord?.lifecycle_state)
+  const finalArtifactPath = normalizeText(
+    packet?.finalSignedFilePath ||
+      packet?.final_signed_file_path ||
+      version?.finalSignedFilePath ||
+      version?.final_signed_file_path,
+  )
+  return Boolean(packetId && ['completed', 'fully_signed', 'finalised', 'finalized'].includes(packetStatus) && finalArtifactPath)
+}
+
 function listingHasDocumentSignal(listing, matchers = []) {
   const normalizedMatchers = matchers.map(normalizeKey)
   return getListingDocuments(listing).some((document) => {
+    if (isManualMandateEvidence(document)) return false
     const key = normalizeKey([
       document.key,
       document.requirementKey,
@@ -670,9 +698,9 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
       normalizeText(listing.marketing?.mediaUrl || listing.coverImage?.url || listing.imageUrl || listing.image_url),
   )
   const mandateSignedExternally = mandateStatus === 'signed_external_pending_upload'
-  const hasMandate = ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed_mandate'])
+  const hasMandate = hasCanonicalFinalMandatePacket(listing)
   const warnings = []
-  if (mandateSignedExternally) warnings.push('Signed mandate upload outstanding')
+  if (!hasMandate && mandateSignedExternally) warnings.push('Canonical signed mandate packet outstanding')
   else if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
   if (!seller.registrationNumber || missingItems.has('seller id / registration number')) warnings.push('Seller ID / registration number missing')
   if (!listingHasFicaDocuments(listing) || missingItems.has('seller fica')) warnings.push('Seller FICA missing')
@@ -1230,10 +1258,12 @@ function mergeQuickListingMetadataInNotes(value = '', patch = {}) {
   return `${text.slice(0, markerIndex).trimEnd()}\n${nextSerialized}`
 }
 
-function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
+function buildListingCompleteness({ form } = {}) {
   const mandateStatus = getQuickListingMandateStatus(form)
   const mandatePackExpected = isQuickListingMandatePackExpected(form, mandateStatus)
-  const mandateSigned = normalizeKey(form?.manualMandateStatus) === 'signed_uploaded' || Boolean(form?.mandateSigned)
+  // Quick Add can only retain internal evidence. It cannot certify a signed
+  // mandate; that is derived from the server-attested canonical packet.
+  const mandateSigned = false
   const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
   const commissionCaptured = Boolean(
     normalizeText(form?.commissionValue) ||
@@ -1246,7 +1276,7 @@ function buildListingCompleteness({ form, mandateUploaded = false } = {}) {
     { label: 'Listing price', complete: Number(form?.listingPrice || form?.estimatedAskingPrice || 0) > 0 },
     { label: 'Seller name', complete: Boolean(normalizeText(form?.sellerName)) },
     { label: 'Seller contact details', complete: sellerHasContact },
-    { label: 'Signed mandate', complete: mandateSigned && mandateUploaded },
+    { label: 'Signed mandate', complete: mandateSigned },
     ...(mandatePackExpected ? [{ label: 'Mandate dates', complete: mandateDatesCaptured }] : []),
     { label: 'Seller ID / registration number', complete: Boolean(normalizeText(form?.sellerRegistrationNumber)) },
     { label: 'Seller FICA', complete: false },
@@ -1324,13 +1354,11 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
   return [...humanNotes, serializeQuickListingMetadata(metadata)].join('\n')
 }
 
-function hasQuickListingSignedMandate(form = {}) {
-  return normalizeKey(form?.manualMandateStatus) === 'signed_uploaded' && normalizeText(form?.manualMandateFileName)
-}
-
 function getQuickListingMandateStatus(form = {}) {
   const normalized = normalizeKey(form?.manualMandateStatus || (form?.mandateSigned ? 'signed_uploaded' : 'not_started'))
-  if (normalized === 'signed_uploaded') return hasQuickListingSignedMandate(form) ? 'signed_uploaded' : 'signed_external_pending_upload'
+  // Do not trust a local upload or legacy client flag as a signed mandate.
+  // Preserve the reported state only as a non-final follow-up state.
+  if (normalized === 'signed_uploaded') return 'signed_external_pending_upload'
   if (['not_started', 'in_progress', 'signed_external_pending_upload', 'expired'].includes(normalized)) return normalized
   return 'not_started'
 }
@@ -1340,15 +1368,16 @@ function getQuickListingMandateStatusLabel(value) {
   return QUICK_ADD_MANDATE_STATUS_OPTIONS.find((option) => option.value === normalized)?.label || 'Not started'
 }
 
-function isQuickListingSignedMandateStatus(value) {
-  return ['signed_uploaded', 'signed_external_pending_upload'].includes(normalizeKey(value))
+function isQuickListingManualMandateReportedStatus(value) {
+  return normalizeKey(value) === 'signed_external_pending_upload'
 }
 
-function canQuickListingActivateWithMandateStatus(value) {
-  return ['signed_uploaded', 'signed_external_pending_upload'].includes(normalizeKey(value))
+function canQuickListingActivateWithMandateStatus() {
+  // A Quick Add form has no server-attested canonical completion proof.
+  return false
 }
 
-function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '', complianceWarnings = [] } = {}) {
+function getQuickListingActivationTier({ listingStatus = '' } = {}) {
   const normalizedListingStatus = normalizeKey(listingStatus)
   if (normalizedListingStatus === 'mandate_signed') {
     return {
@@ -1383,16 +1412,9 @@ function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '',
     }
   }
 
-  const hasWarnings = Array.isArray(complianceWarnings) && complianceWarnings.length > 0
-  if (normalizeKey(mandateStatus) === 'signed_uploaded' && !hasWarnings) {
-    return {
-      key: 'fully_compliant_active',
-      statusLabel: 'Fully Compliant Active',
-      publicationLabel: 'Fully Compliant Active',
-      workflowLabel: 'Fully Compliant Active',
-    }
-  }
-
+  // Quick Add has no canonical completion receipt. Even an active legacy
+  // status remains an internal review state until the packet workflow proves
+  // a completed mandate.
   return {
     key: 'active_with_warning',
     statusLabel: 'Active With Warning',
@@ -1403,8 +1425,11 @@ function getQuickListingActivationTier({ listingStatus = '', mandateStatus = '',
 
 function resolveQuickListingStatus(form) {
   const normalized = normalizeKey(form.listingStatus)
-  if (normalized === 'active') return 'active'
-  if (['mandate_signed', 'under_offer', 'sold'].includes(normalized)) return normalized
+  // Manual capture and evidence upload must never publish or finalize a
+  // listing, including a back-captured historical/offer state. Preserve that
+  // context in the intake metadata, then move only after the canonical packet
+  // has completed.
+  if (['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'].includes(normalized)) return 'listing_review'
   return 'listing_review'
 }
 
@@ -1758,7 +1783,7 @@ function AgentListings({ initialTab = null } = {}) {
       quickStep: intent.nextStep,
       listingStatus: intent.listingStatus,
       manualMandateStatus: intent.mandateStatus,
-      mandateSigned: isQuickListingSignedMandateStatus(intent.mandateStatus),
+      mandateSigned: false,
       mandateStatusCaptured: intent.mandateStatus !== 'not_started',
     }))
     setQuickAddDuplicateMatches([])
@@ -1948,6 +1973,7 @@ function AgentListings({ initialTab = null } = {}) {
           name: uploadedDocument.document_name || documentUpload.documentName,
           type: uploadedDocument.document_type || documentUpload.documentType,
           status: uploadedDocument.status || 'uploaded',
+          visibility: 'internal',
         })
       } else {
         failedDocumentUploads.push({
@@ -2074,11 +2100,7 @@ function AgentListings({ initialTab = null } = {}) {
           : { uploadedDocuments: [], failedDocumentUploads: [] }
         uploadedDocuments = uploadResult.uploadedDocuments
         failedDocumentUploads = uploadResult.failedDocumentUploads
-        const finalMandateStatus = uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate')
-          ? 'signed_uploaded'
-          : mandateStatus === 'signed_uploaded'
-            ? 'signed_external_pending_upload'
-            : mandateStatus
+        const finalMandateStatus = mandateStatus
         const patch = {
           listingStatus: mergedListingStatus,
           listingVisibility: resolveQuickListingVisibility(form.visibility, mergedListingStatus),
@@ -2164,8 +2186,9 @@ function AgentListings({ initialTab = null } = {}) {
           name: documentUpload.documentName,
           type: documentUpload.documentType,
           status: 'uploaded',
+          visibility: 'internal',
         }))
-        const localMandateStatus = uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate') ? 'signed_uploaded' : mandateStatus
+        const localMandateStatus = mandateStatus
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: listingMatch.id,
           listingTitle: existingListing.listingTitle || existingListing.title || listingMatch.label || 'Existing listing',
@@ -2187,7 +2210,7 @@ function AgentListings({ initialTab = null } = {}) {
             updatedAt: new Date().toISOString(),
             listingStatus: mergedListingStatus,
             status: mergedListingStatus,
-            mandateStatus: uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate') ? 'signed_uploaded' : mandateStatus,
+            mandateStatus,
             internalListingNotes: localMergedNotes,
             notes: localMergedNotes,
             sellerCanonicalFacts,
@@ -2200,6 +2223,7 @@ function AgentListings({ initialTab = null } = {}) {
                 document_type: documentUpload.type,
                 document_name: documentUpload.name,
                 status: documentUpload.status,
+                visibility: 'internal',
                 uploaded_at: new Date().toISOString(),
               })),
             ],
@@ -2292,7 +2316,7 @@ function AgentListings({ initialTab = null } = {}) {
       const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
       const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
       const documentUploadQueue = buildQuickAddDocumentUploadQueue(form)
-      const initialMandateStatus = mandateStatus === 'signed_uploaded' ? 'signed_external_pending_upload' : mandateStatus
+      const initialMandateStatus = mandateStatus
       const selectedAgent =
         assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
         assignableAgents[0] ||
@@ -2318,7 +2342,6 @@ function AgentListings({ initialTab = null } = {}) {
       }
       const activationWarnings = validateQuickListingActiveRules({ form, assignedAgentKey: resolvedAssignedAgentKey })
       const resolvedListingStatus = resolveQuickListingStatus(form, { activationWarnings })
-      const resolvedListingIsActive = resolvedListingStatus === 'active'
       if (!resolvedAssignedAgentId && useDbFirstListingPersistence) {
         setError('Select an assigned agent.')
         return
@@ -2344,11 +2367,7 @@ function AgentListings({ initialTab = null } = {}) {
         property24ListingUrl: form.externalListingLink,
         documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
       }, completeness), ...getQuickListingMandateCaptureWarnings(form, mandateStatus), ...activationWarnings])]
-      const activationTier = getQuickListingActivationTier({
-        listingStatus: resolvedListingStatus,
-        mandateStatus,
-        complianceWarnings,
-      })
+      const activationTier = getQuickListingActivationTier({ listingStatus: resolvedListingStatus })
       const quickNotes = buildQuickListingNotes(
         {
           ...form,
@@ -2402,7 +2421,7 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId: listingOrganisationId,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
-          listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
+          listingStatus: resolvedListingStatus,
           sellerOnboardingStatus: 'not_started',
           mandateStatus: initialMandateStatus,
           listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingStatus),
@@ -2466,6 +2485,7 @@ function AgentListings({ initialTab = null } = {}) {
                 name: uploadedDocument.document_name || documentUpload.documentName,
                 type: uploadedDocument.document_type || documentUpload.documentType,
                 status: uploadedDocument.status || 'uploaded',
+                visibility: 'internal',
               })
             } else {
               failedDocumentUploads.push({
@@ -2475,20 +2495,6 @@ function AgentListings({ initialTab = null } = {}) {
               })
             }
           }
-          if (failedDocumentUploads.some((documentUpload) => documentUpload.kind === 'mandate')) {
-            await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
-            setError('Listing was created, but the signed mandate upload failed. Open the listing and upload the mandate again.')
-            window.dispatchEvent(new Event('itg:listings-updated'))
-            return
-          }
-        }
-        if (uploadedDocuments.some((documentUpload) => documentUpload.kind === 'mandate')) {
-          sellerUpdatePayload.mandateStatus = 'signed_uploaded'
-        }
-        if (resolvedListingIsActive) {
-          sellerUpdatePayload.listingStatus = 'active'
-          sellerUpdatePayload.listingVisibility = 'active_market'
-          sellerUpdatePayload.isActive = true
         }
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: created.listing.id,
@@ -2544,6 +2550,7 @@ function AgentListings({ initialTab = null } = {}) {
           name: documentUpload.documentName,
           type: documentUpload.documentType,
           status: 'uploaded',
+          visibility: 'internal',
         }))
         const quickListingId = generateId('listing')
         handoffPlan = buildQuickAddHandoffPlan({
@@ -2568,7 +2575,7 @@ function AgentListings({ initialTab = null } = {}) {
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          activatedAt: resolvedListingIsActive ? new Date().toISOString() : null,
+          activatedAt: null,
           listingTitle,
           propertyType: form.propertyType,
           propertyCategory: form.propertyCategory,
@@ -2628,6 +2635,7 @@ function AgentListings({ initialTab = null } = {}) {
             document_type: documentUpload.type,
             document_name: documentUpload.name,
             status: documentUpload.status,
+            visibility: 'internal',
             uploaded_at: new Date().toISOString(),
           })),
           requiredDocuments: [],
@@ -2691,9 +2699,7 @@ function AgentListings({ initialTab = null } = {}) {
         handoffPlan,
       })
       setWorkflowMessage(
-        `Quick Add Listing created as ${activationTier.workflowLabel}${
-          mandateStatus !== 'signed_uploaded' ? '. Mandate follow-up still requires attention before full activation.' : '. Signed mandate uploaded.'
-        }${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+        `Quick Add Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       return
@@ -4279,7 +4285,7 @@ function AgentListings({ initialTab = null } = {}) {
                         <Field as="select" value={form.manualMandateStatus} onChange={(event) => {
                           const nextStatus = event.target.value
                           updateForm('manualMandateStatus', nextStatus)
-                          updateForm('mandateSigned', isQuickListingSignedMandateStatus(nextStatus))
+                          updateForm('mandateSigned', false)
                           updateForm('mandateStatusCaptured', nextStatus !== 'not_started')
                         }}>
                           {QUICK_ADD_MANDATE_STATUS_OPTIONS.map((option) => (
@@ -4370,8 +4376,8 @@ function AgentListings({ initialTab = null } = {}) {
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                            <span className={`rounded-full px-2.5 py-1 ${mandatePack.uploadStatus === 'uploaded' ? 'bg-[#edf8f0] text-[#1f7d44]' : 'bg-[#fff8ea] text-[#9a5b13]'}`}>
-                              {mandatePack.uploadStatus === 'uploaded' ? 'Mandate selected' : mandatePack.uploadStatus === 'pending_upload' ? 'Upload outstanding' : 'Upload optional'}
+                            <span className={`rounded-full px-2.5 py-1 ${mandatePack.uploadStatus === 'evidence_selected' ? 'bg-[#edf8f0] text-[#1f7d44]' : 'bg-[#fff8ea] text-[#9a5b13]'}`}>
+                              {mandatePack.uploadStatus === 'evidence_selected' ? 'Internal evidence selected' : mandatePack.uploadStatus === 'evidence_missing' ? 'Evidence upload outstanding' : 'Evidence optional'}
                             </span>
                             <span className={`rounded-full px-2.5 py-1 ${mandatePack.commission.status === 'captured' ? 'bg-[#edf8f0] text-[#1f7d44]' : 'bg-[#fff8ea] text-[#9a5b13]'}`}>
                               {mandatePack.commission.status === 'captured' ? 'Commission captured' : 'Commission missing'}
@@ -4397,7 +4403,7 @@ function AgentListings({ initialTab = null } = {}) {
                     )
                   })()}
                   <div className="grid gap-4 md:grid-cols-2">
-                    {isQuickListingSignedMandateStatus(form.manualMandateStatus) ? (
+                    {isQuickListingManualMandateReportedStatus(form.manualMandateStatus) ? (
                       <>
                         <label className="grid gap-2">
                           <span className="text-sm font-semibold text-[#2d445e]">Document category</span>
@@ -4408,7 +4414,7 @@ function AgentListings({ initialTab = null } = {}) {
                           </Field>
                         </label>
                         <label className="grid gap-2">
-                          <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
+                          <span className="text-sm font-semibold text-[#2d445e]">Manual mandate evidence (internal only)</span>
                           <Field
                             type="file"
                             accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
@@ -4416,17 +4422,14 @@ function AgentListings({ initialTab = null } = {}) {
                               const file = event.target.files?.[0] || null
                               updateForm('manualMandateFile', file)
                               updateForm('manualMandateFileName', file?.name || '')
-                              if (file && normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload') {
-                                updateForm('manualMandateStatus', 'signed_uploaded')
-                              }
                             }}
                           />
                           <span className="text-xs text-[#6b7d93]">
                             {form.manualMandateFileName
-                              ? `Selected: ${form.manualMandateFileName}. It will upload when you save the listing.`
+                              ? `Selected: ${form.manualMandateFileName}. It will be stored as internal evidence when you save.`
                               : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
-                                ? 'The mandate is signed manually. Upload the document when it is available.'
-                                : 'Upload the signed mandate to mark this listing activation-ready.'}
+                                ? 'A manual signature report requires canonical packet completion before the listing can activate.'
+                                : 'Add internal evidence if useful, then complete the canonical signing packet.'}
                           </span>
                         </label>
                       </>
@@ -4548,25 +4551,9 @@ function AgentListings({ initialTab = null } = {}) {
                       form,
                       assignedAgentKey: normalizeText(form.assignedAgentId || form.assignedAgentEmail),
                     })
-                    const complianceWarnings = [...new Set([...getListingComplianceWarnings({
-                      mandateStatus,
-                      seller: {
-                        name: form.sellerName,
-                        email: form.sellerEmail,
-                        phone: form.sellerPhone,
-                        registrationNumber: form.sellerRegistrationNumber,
-                      },
-                      commission: { type: form.commissionType, value: form.commissionValue },
-                      property24ListingUrl: form.externalListingLink,
-                      documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
-                    }, completeness), ...mandateWarnings, ...activeWarnings])]
                     const summaryWarnings = [...new Set([...mandateWarnings, ...activeWarnings])]
                     const resolvedListingStatus = resolveQuickListingStatus(form, { activationWarnings: activeWarnings })
-                    const activationTier = getQuickListingActivationTier({
-                      listingStatus: resolvedListingStatus,
-                      mandateStatus,
-                      complianceWarnings,
-                    })
+                    const activationTier = getQuickListingActivationTier({ listingStatus: resolvedListingStatus })
                     const readinessLabel = activationTier.publicationLabel
                     return (
                       <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">

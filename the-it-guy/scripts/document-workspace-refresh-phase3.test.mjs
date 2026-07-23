@@ -40,18 +40,25 @@ assertIncludes('refreshWorkspaceData({ allowStale: true })', 'Phase 3 pre-send f
 assertIncludes('scheduleWorkspaceStatusRevalidation(\'draft status\')', 'Phase 3 generation background refresh')
 assertIncludes('scheduleWorkspaceStatusRevalidation(\'signing status\', SIGNING_STATUS_REVALIDATION_DELAYS_MS)', 'Phase 3 send background refresh')
 
-const sendStatusBlock = sliceBetween(
-  'const sentStatus = {',
-  'void appendDocumentPacketEvent({',
-  'Phase 3 send status block',
-)
-if (sendStatusBlock.includes('resolveDocumentPacketStatus({')) {
-  throw new Error('Phase 3 send status block must not call resolveDocumentPacketStatus directly after optimistic send.')
+// Phase 2 moved the sent transition to the controlled email-delivery
+// endpoint. The workspace must not fabricate a local sent state after a
+// provider response; it refreshes the server-owned packet state and then
+// revalidates it in the background.
+if (source.includes('const sentStatus = {')) {
+  throw new Error('Phase 3 signing delivery must not restore the retired browser-owned sent-state update.')
 }
-assertMatches(
-  /statusStateRef\.current = sentStatus[\s\S]*setStatusState\(sentStatus\)[\s\S]*lastWorkspaceRefreshAtRef\.current = Date\.now\(\)[\s\S]*scheduleWorkspaceStatusRevalidation\('signing status', SIGNING_STATUS_REVALIDATION_DELAYS_MS\)/,
-  'Phase 3 send optimistic status then scheduled revalidation',
+const sendStatusBlock = sliceBetween(
+  '// `send-mandate-signing-email` atomically completes E4 and promotes the',
+  'void appendDocumentPacketEvent({',
+  'Phase 3 authoritative send status block',
 )
+assertMatches(
+  /setActionProgressMessage\('Delivery confirmed\. Refreshing signing status…'\)[\s\S]*await refreshWorkspaceData\(\{ force: true \}\)[\s\S]*scheduleWorkspaceStatusRevalidation\('signing status', SIGNING_STATUS_REVALIDATION_DELAYS_MS\)/,
+  'Phase 3 authoritative send refresh then scheduled revalidation',
+)
+if (sendStatusBlock.includes("transitionLifecycleState('sent')") || sendStatusBlock.includes('statusStateRef.current = sentStatus')) {
+  throw new Error('Phase 3 send handling must not promote the packet lifecycle in the browser.')
+}
 assertMatches(
   /if \(generationResult\?\.status\) \{[\s\S]*statusStateRef\.current = generationResult\.status[\s\S]*setStatusState\(generationResult\.status\)[\s\S]*lastWorkspaceRefreshAtRef\.current = Date\.now\(\)/,
   'Phase 3 generation snapshot freshness marker',

@@ -1,0 +1,786 @@
+{
+  "mode": "apply",
+  "runId": "produktive-realty-agent-bulk-import-2026-07-23",
+  "generatedAt": "2026-07-23T06:19:58.617Z",
+  "csvPath": "/Users/alexanderlandman/the-it-guy/output/imports/produktive-realty-agent-import.csv",
+  "workspace": {
+    "id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+    "name": "Produktive Real Estate",
+    "type": "agency"
+  },
+  "branch": {
+    "id": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
+    "name": "Head Office"
+  },
+  "totals": {
+    "rows": 20,
+    "ok": 20,
+    "failed": 0,
+    "createdAuthUsers": 0,
+    "updatedAuthUsers": 20,
+    "createdMemberships": 19,
+    "updatedMemberships": 1
+  },
+  "results": [
+    {
+      "rowNumber": 2,
+      "email": "neo.tshelane@produktiverealty.co.za",
+      "fullName": "Neo Tshelane",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "74386d27-dd63-4576-848c-d717e9c987c9",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "25b08e35-1003-4fb5-832a-efe567ff0531"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "ed141f85-00f8-40a0-880d-4482c902ed6b"
+        }
+      ],
+      "ok": true,
+      "userId": "74386d27-dd63-4576-848c-d717e9c987c9",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "neo.tshelane@produktiverealty.co.za",
+        "userId": "74386d27-dd63-4576-848c-d717e9c987c9"
+      }
+    },
+    {
+      "rowNumber": 3,
+      "email": "sheree.erasmus@produktiverealty.co.za",
+      "fullName": "Sheree Erasmus",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "9f4e73be-8032-4f55-a0e5-e875a39ca1d7",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "0b04ff37-a5c1-4256-82f4-35d956dfe0d1"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "fc0b960c-727d-46c1-af52-70dca95c8c45"
+        }
+      ],
+      "ok": true,
+      "userId": "9f4e73be-8032-4f55-a0e5-e875a39ca1d7",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "sheree.erasmus@produktiverealty.co.za",
+        "userId": "9f4e73be-8032-4f55-a0e5-e875a39ca1d7"
+      }
+    },
+    {
+      "rowNumber": 4,
+      "email": "elrich.oliphant@produktiverealty.co.za",
+      "fullName": "Elrich Oliphant",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "3c81380d-0435-4166-ab23-700b6c9467a1",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "1ae8500f-3248-44b9-af28-e2b4339bfb6b"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "82a7dac8-7536-4762-9a9a-b4277763d870"
+        }
+      ],
+      "ok": true,
+      "userId": "3c81380d-0435-4166-ab23-700b6c9467a1",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "elrich.oliphant@produktiverealty.co.za",
+        "userId": "3c81380d-0435-4166-ab23-700b6c9467a1"
+      }
+    },
+    {
+      "rowNumber": 5,
+      "email": "keitumetse.melato@produktiverealty.co.za",
+      "fullName": "Keitumetse Melato",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "57570fb9-16e0-48f8-bf40-de8f4248965e",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "c9576b71-6d5e-4b5a-9168-fccb0788483f"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "94bb5c74-a554-4138-917a-b80bca6bbb5c"
+        }
+      ],
+      "ok": true,
+      "userId": "57570fb9-16e0-48f8-bf40-de8f4248965e",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "keitumetse.melato@produktiverealty.co.za",
+        "userId": "57570fb9-16e0-48f8-bf40-de8f4248965e"
+      }
+    },
+    {
+      "rowNumber": 6,
+      "email": "anneline.vanderbijl@produktiverealty.co.za",
+      "fullName": "Anneline Van Der Bijl",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "e536c6db-5013-4834-bd5b-d27ff0059cbf",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "fbcde7d4-a844-458d-8ed4-fd854168a3ff"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "ba1ab810-c291-4038-af31-c9c0b8efeab2"
+        }
+      ],
+      "ok": true,
+      "userId": "e536c6db-5013-4834-bd5b-d27ff0059cbf",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "anneline.vanderbijl@produktiverealty.co.za",
+        "userId": "e536c6db-5013-4834-bd5b-d27ff0059cbf"
+      }
+    },
+    {
+      "rowNumber": 7,
+      "email": "dumisani.ngwenya@produktiverealty.co.za",
+      "fullName": "Dumisani Ngwenya",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "32c28094-7ac3-46a1-8874-9790823fee0a",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "5fa65c49-bc12-41c9-abb0-c11bcc0f0a13"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "c825938f-5a3e-4cca-81b5-c4900d7b79c6"
+        }
+      ],
+      "ok": true,
+      "userId": "32c28094-7ac3-46a1-8874-9790823fee0a",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "dumisani.ngwenya@produktiverealty.co.za",
+        "userId": "32c28094-7ac3-46a1-8874-9790823fee0a"
+      }
+    },
+    {
+      "rowNumber": 8,
+      "email": "levi.petersen@produktiverealty.co.za",
+      "fullName": "Levi Petersen",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "42e22300-e2b5-4449-94e9-4f71ff238898",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "7cdf62d5-8171-43b9-9d49-63068ab3546e"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "b81ccd25-dd63-4c4b-9c84-1ef0691da573"
+        }
+      ],
+      "ok": true,
+      "userId": "42e22300-e2b5-4449-94e9-4f71ff238898",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "levi.petersen@produktiverealty.co.za",
+        "userId": "42e22300-e2b5-4449-94e9-4f71ff238898"
+      }
+    },
+    {
+      "rowNumber": 9,
+      "email": "chinash.brown@produktiverealty.co.za",
+      "fullName": "Chinash Brown",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "d7c190d1-e318-40a6-98e0-077262760d49",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "0217948a-b2a5-4149-b4c0-55d5db7d439c"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "fe1a8a00-b4e6-41d2-9898-565291b20127"
+        }
+      ],
+      "ok": true,
+      "userId": "d7c190d1-e318-40a6-98e0-077262760d49",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "chinash.brown@produktiverealty.co.za",
+        "userId": "d7c190d1-e318-40a6-98e0-077262760d49"
+      }
+    },
+    {
+      "rowNumber": 10,
+      "email": "emelda.r@produktiverealty.co.za",
+      "fullName": "Emelda Rooskrantz",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "80602b82-f5b1-4f8e-a8fd-f323dbc65e58",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "da0b5855-2581-447f-88a2-1222c68c4d96"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "c85dd171-2ad9-4b3b-80bf-ab595303c3af"
+        }
+      ],
+      "ok": true,
+      "userId": "80602b82-f5b1-4f8e-a8fd-f323dbc65e58",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "emelda.r@produktiverealty.co.za",
+        "userId": "80602b82-f5b1-4f8e-a8fd-f323dbc65e58"
+      }
+    },
+    {
+      "rowNumber": 11,
+      "email": "ryan.kapanda@produktiverealty.co.za",
+      "fullName": "Ryan Kapanda",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "998240a3-ab0f-4a9f-8d7a-471ef9896807",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "daae3bf9-9822-48dd-b870-d95a16050d7f"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "10b86bde-6b58-4ef0-a28d-f31ef09c72d5"
+        }
+      ],
+      "ok": true,
+      "userId": "998240a3-ab0f-4a9f-8d7a-471ef9896807",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "ryan.kapanda@produktiverealty.co.za",
+        "userId": "998240a3-ab0f-4a9f-8d7a-471ef9896807"
+      }
+    },
+    {
+      "rowNumber": 12,
+      "email": "jamiel.kader@produktiverealty.co.za",
+      "fullName": "Jamiel Kader",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "575dd463-81cc-4193-9a53-fbc33fe0f7d2",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "cc6d7077-0013-4276-ae97-14774539d72e"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "c45ecd1a-79e8-4aae-916f-371f4458cd9d"
+        }
+      ],
+      "ok": true,
+      "userId": "575dd463-81cc-4193-9a53-fbc33fe0f7d2",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "jamiel.kader@produktiverealty.co.za",
+        "userId": "575dd463-81cc-4193-9a53-fbc33fe0f7d2"
+      }
+    },
+    {
+      "rowNumber": 13,
+      "email": "edward.dunn@produktiverealty.co.za",
+      "fullName": "Edward Dunn",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "724a1da9-07c8-4ea4-beb9-4a1a770c0a31",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "updated_membership",
+          "membershipId": "b2b88c31-8b73-40c0-b510-43f5e769f79d"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "d995134b-e8f5-41e7-a7f5-6b03ee5b5275"
+        }
+      ],
+      "ok": true,
+      "userId": "724a1da9-07c8-4ea4-beb9-4a1a770c0a31",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "edward.dunn@produktiverealty.co.za",
+        "userId": "724a1da9-07c8-4ea4-beb9-4a1a770c0a31"
+      }
+    },
+    {
+      "rowNumber": 14,
+      "email": "hanelie@mystudenthouse.co.za",
+      "fullName": "Hanelie Van Der Merwe",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "7d953265-aa5e-4108-a54c-1bdb6abc92c3",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "6807533b-6a5d-4945-81f1-5f4ba7f73847"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "395ae6d2-56e9-47ff-b85b-4f1a5ab67304"
+        }
+      ],
+      "ok": true,
+      "userId": "7d953265-aa5e-4108-a54c-1bdb6abc92c3",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "hanelie@mystudenthouse.co.za",
+        "userId": "7d953265-aa5e-4108-a54c-1bdb6abc92c3"
+      }
+    },
+    {
+      "rowNumber": 15,
+      "email": "mercy.dhladhla@produktiverealty.co.za",
+      "fullName": "Mercy Dhladhla",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "1c305339-26dd-4054-a154-d49bf76adffb",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "cfa3d0a7-8de6-4be7-8cd2-0394705b932e"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "9b8faeae-09e7-4935-b6fe-52e0f4f61c48"
+        }
+      ],
+      "ok": true,
+      "userId": "1c305339-26dd-4054-a154-d49bf76adffb",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "mercy.dhladhla@produktiverealty.co.za",
+        "userId": "1c305339-26dd-4054-a154-d49bf76adffb"
+      }
+    },
+    {
+      "rowNumber": 16,
+      "email": "esme.brown@produktiverealty.co.za",
+      "fullName": "Esme Brown",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "bfc805a2-2421-48bf-a8b7-c058b77139c1",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "6aa0b70c-7538-4b28-b8ca-0adf64c281fc"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "7105239a-221d-4d03-aa96-5503ec8e66b8"
+        }
+      ],
+      "ok": true,
+      "userId": "bfc805a2-2421-48bf-a8b7-c058b77139c1",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "esme.brown@produktiverealty.co.za",
+        "userId": "bfc805a2-2421-48bf-a8b7-c058b77139c1"
+      }
+    },
+    {
+      "rowNumber": 17,
+      "email": "tiffany.harris@produktiverealty.co.za",
+      "fullName": "Tiffany Harris",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "996e3b2a-1a81-42c6-8e17-399628afb059",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "de78dd87-2b71-4858-8847-19a334bc085b"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "7820cb85-fed5-4990-8ffe-728b11ee3be2"
+        }
+      ],
+      "ok": true,
+      "userId": "996e3b2a-1a81-42c6-8e17-399628afb059",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "tiffany.harris@produktiverealty.co.za",
+        "userId": "996e3b2a-1a81-42c6-8e17-399628afb059"
+      }
+    },
+    {
+      "rowNumber": 18,
+      "email": "tina.fernandes@produktiverealty.co.za",
+      "fullName": "Tina Fernandes",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "b9459346-a1ad-40e8-9428-bf5d3643dbb0",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "de059ab1-556a-4150-b893-0f9050ba1b67"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "35ca4726-ddf0-4294-96cc-5fbe562ffe56"
+        }
+      ],
+      "ok": true,
+      "userId": "b9459346-a1ad-40e8-9428-bf5d3643dbb0",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "tina.fernandes@produktiverealty.co.za",
+        "userId": "b9459346-a1ad-40e8-9428-bf5d3643dbb0"
+      }
+    },
+    {
+      "rowNumber": 19,
+      "email": "thandisizwe.s@produktiverealty.co.za",
+      "fullName": "Sizwe Shabalala",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "fde5f1ac-8472-48d0-8673-361cc8c14fef",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "3ec65be3-ff67-4aec-9a21-4b48827b6a43"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "b10b6b5e-88a4-4064-a1fd-ec0caeed1263"
+        }
+      ],
+      "ok": true,
+      "userId": "fde5f1ac-8472-48d0-8673-361cc8c14fef",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "thandisizwe.s@produktiverealty.co.za",
+        "userId": "fde5f1ac-8472-48d0-8673-361cc8c14fef"
+      }
+    },
+    {
+      "rowNumber": 20,
+      "email": "rent@produktiverealty.co.za",
+      "fullName": "Ansie Durandt",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "8344d625-c7f4-4a78-8f5b-a68ff0c95e3b",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "8fe8a520-3f82-4962-9d5a-5685cbce1704"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "83abd95c-0e2d-4787-8646-8b3dbbe374c1"
+        }
+      ],
+      "ok": true,
+      "userId": "8344d625-c7f4-4a78-8f5b-a68ff0c95e3b",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "rent@produktiverealty.co.za",
+        "userId": "8344d625-c7f4-4a78-8f5b-a68ff0c95e3b"
+      }
+    },
+    {
+      "rowNumber": 21,
+      "email": "leroy.slava@produktiverealty.co.za",
+      "fullName": "Leroy Slava",
+      "actions": [
+        {
+          "action": "updated_auth_user",
+          "userId": "e22f40dc-b5fa-4b8a-8bc3-2f62380c1722",
+          "resolvedFrom": "profiles",
+          "emailConfirmed": true
+        },
+        {
+          "action": "upserted_profile"
+        },
+        {
+          "action": "created_membership",
+          "membershipId": "22fc1387-b950-47be-9df2-17f1554a8f75"
+        },
+        {
+          "action": "upserted_onboarding_state"
+        },
+        {
+          "action": "upserted_onboarding_completion"
+        },
+        {
+          "action": "inserted_onboarding_event",
+          "eventId": "312903f6-8336-484d-900a-a5fe9d3d9a97"
+        }
+      ],
+      "ok": true,
+      "userId": "e22f40dc-b5fa-4b8a-8bc3-2f62380c1722",
+      "validation": {
+        "ok": true,
+        "errors": [],
+        "email": "leroy.slava@produktiverealty.co.za",
+        "userId": "e22f40dc-b5fa-4b8a-8bc3-2f62380c1722"
+      }
+    }
+  ]
+}

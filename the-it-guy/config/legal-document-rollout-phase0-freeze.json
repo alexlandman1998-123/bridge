@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_0",
+  "contract": "legal-document-rollout-freeze-v1",
+  "status": "pending_freeze",
+  "environment": "production",
+  "productionProjectRef": null,
+  "source": {
+    "commitSha": null,
+    "packageLockSha256": null
+  },
+  "allowedPilotOrganisationIds": [],
+  "runtime": {
+    "pilotEnabled": false,
+    "organisationIdsSentinel": "__none__"
+  },
+  "creation": {
+    "paused": true
+  },
+  "templateReview": {
+    "boundB1ManifestDigest": null,
+    "evidenceProjectRef": null
+  },
+  "releaseAuthority": {
+    "states": {},
+    "stateDigest": null
+  },
+  "exceptions": {
+    "allowExistingSignerCompletion": true,
+    "allowFinalArtifactDownload": true
+  },
+  "frozenAt": null,
+  "frozenBy": null,
+  "releaseOwner": null,
+  "legalOwner": null,
+  "operationsOwner": null,
+  "changeReference": null,
+  "manifestDigest": null
+}

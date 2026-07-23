@@ -65,8 +65,13 @@ if (!blockers.length) {
       const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/${name}`, { method: 'POST', headers: { apikey: anon, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) })
       return { response, body: await response.json().catch(() => ({})) }
     }
+    const invalidVersionId = '00000000-0000-4000-8000-000000000000'
+    const mandateTarget = targets.find((target) => target.packetType === 'mandate')
+    const otpTarget = targets.find((target) => target.packetType === 'otp')
     const [mandate, otp, dispatcher, watchdog] = await Promise.all([
-      invoke('generate-final-signed-document'), invoke('generate-final-signed-otp'), invoke('dispatch-final-signed-document'), invoke('legal-document-watchdog'),
+      invoke('generate-final-signed-document', mandateTarget ? { packetId: mandateTarget.packetId, packetVersionId: invalidVersionId } : {}),
+      invoke('generate-final-signed-document', otpTarget ? { packetId: otpTarget.packetId, packetVersionId: invalidVersionId } : {}),
+      invoke('dispatch-final-signed-document'), invoke('legal-document-watchdog'),
     ])
     functionProbes.mandateFinalizerContract = ['h1-v1', 'h2-v1', 'h3-v1', 'h4-v1'].includes(mandate.response.headers.get('x-legal-finalizer-contract'))
     functionProbes.otpFinalizerContract = ['h1-v1', 'h2-v1', 'h3-v1', 'h4-v1'].includes(otp.response.headers.get('x-legal-finalizer-contract'))

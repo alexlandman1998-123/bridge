@@ -11,6 +11,7 @@ import {
   resolveActiveOrganisationMembership,
   resolveOrganisationMembershipRole,
 } from '../lib/organisationMembershipResolution'
+import { resolveCurrentWorkspaceAppRole } from '../services/roleResolutionService'
 
 const WORKSPACE_CONTEXT_GLOBAL_KEY = '__arch9WorkspaceContextV1'
 const WorkspaceContext =
@@ -60,7 +61,16 @@ export function WorkspaceProvider({ children }) {
   const onboardingState = authState.onboardingState || null
   const userId = authState.user?.id || null
   const baseRole = normalizeAppRole(authState.appRole || profile?.role || DEFAULT_APP_ROLE)
-  const role = baseRole
+  const role = resolveCurrentWorkspaceAppRole({
+    baseRole,
+    workspaceType: authState.workspaceType || authState.currentWorkspace?.type,
+    workspaceRole:
+      authState.workspaceRole ||
+      authState.currentMembership?.workspaceRole ||
+      authState.currentMembership?.workspace_role ||
+      authState.currentMembership?.role ||
+      '',
+  })
   const workspace = useMemo(
     () =>
       authState.currentWorkspace

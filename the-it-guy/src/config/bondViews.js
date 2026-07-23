@@ -29,15 +29,10 @@ export const bondViews = {
     basePath: '/bond/applications',
     legacyPath: '/bond/transactions',
     tabs: [
-      { key: 'all', label: 'All', status: 'all' },
-      { key: 'active', label: 'Active', status: 'active' },
-      { key: 'bond-approved', label: 'Bond Approved', status: 'bond_approved' },
-      { key: 'grant-signed', label: 'Grant Signed', status: 'grant_signed' },
-      { key: 'instruction-sent', label: 'Instruction Sent', status: 'instruction_sent' },
-      { key: 'attorney-stage', label: 'Attorney Stage', status: 'attorney_stage' },
+      { key: 'incoming', label: 'Incoming', status: 'all', aliases: ['all', 'new'] },
+      { key: 'processing', label: 'Processing', status: 'all', aliases: ['active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'at-risk'] },
       { key: 'registered', label: 'Registered', status: 'registered' },
-      { key: 'at-risk', label: 'At Risk', status: 'at_risk' },
-      { key: 'declined', label: 'Declined', status: 'cancelled' },
+      { key: 'declined', label: 'Declined', status: 'cancelled', aliases: ['cancelled', 'declined'] },
     ],
   },
 }
@@ -59,10 +54,12 @@ export function getBondPipelineViewFromFilters(filters = {}) {
   )
 }
 
-export function getBondTransactionView(viewKey = 'all') {
-  return bondViews.transactions.tabs.find((tab) => tab.key === viewKey) || bondViews.transactions.tabs[0]
+export function getBondTransactionView(viewKey = 'incoming') {
+  const normalized = String(viewKey || 'incoming')
+  return bondViews.transactions.tabs.find((tab) => tab.key === normalized || tab.aliases?.includes(normalized)) || bondViews.transactions.tabs[0]
 }
 
 export function getBondTransactionViewFromStatus(status = 'all') {
-  return bondViews.transactions.tabs.find((tab) => tab.status === status) || bondViews.transactions.tabs[0]
+  const normalized = String(status || 'all')
+  return bondViews.transactions.tabs.find((tab) => tab.status === normalized || tab.aliases?.includes(normalized)) || bondViews.transactions.tabs[0]
 }

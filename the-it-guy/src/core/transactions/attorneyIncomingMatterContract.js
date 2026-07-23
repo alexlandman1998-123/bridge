@@ -178,13 +178,35 @@ export function isAttorneyInstructionClosedStatus(status) {
 }
 
 export function isTransferAttorneyAssignment(assignment = {}) {
+  return getAttorneyInstructionLane(assignment) === 'transfer'
+}
+
+export function getAttorneyInstructionLane(assignment = {}) {
   const attorneyRole = normalizeKey(assignment.attorneyRole || assignment.attorney_role)
   const assignmentType = normalizeKey(assignment.assignmentType || assignment.assignment_type || assignment.matterType || assignment.matter_type)
-  return (
-    attorneyRole === 'transfer_attorney' ||
-    assignmentType === 'transfer' ||
-    assignmentType === 'transfer_and_bond'
-  )
+
+  if (attorneyRole === 'transfer_attorney') return 'transfer'
+  if (attorneyRole === 'bond_attorney') return 'bond'
+  if (attorneyRole === 'cancellation_attorney') return 'cancellation'
+  if (assignmentType === 'transfer' || assignmentType === 'transfer_and_bond') return 'transfer'
+  if (assignmentType === 'bond' || assignmentType === 'bond_registration') return 'bond'
+  if (assignmentType === 'cancellation' || assignmentType === 'bond_cancellation') return 'cancellation'
+  return ''
+}
+
+export function getAttorneyInstructionRole(assignment = {}) {
+  const lane = getAttorneyInstructionLane(assignment)
+  if (lane === 'bond') return 'bond_attorney'
+  if (lane === 'cancellation') return 'cancellation_attorney'
+  return lane === 'transfer' ? 'transfer_attorney' : ''
+}
+
+export function isAttorneyInstructionAssignment(assignment = {}) {
+  return Boolean(getAttorneyInstructionLane(assignment))
+}
+
+export function requiresSignedOtpBeforeAttorneyInstructionAcceptance(assignment = {}) {
+  return getAttorneyInstructionLane(assignment) === 'transfer'
 }
 
 export function getOpenAttorneyDocumentRequests(documentRequests = []) {
@@ -242,6 +264,17 @@ export function resolveAttorneyIncomingInstructionStatus({
   const openDocuments = getOpenAttorneyDocumentRequests(documentRequestRows)
   const reviewDocuments = getAttorneyDocumentRequestsInReview(documentRequestRows)
   const onboardingStatus = normalizeKey(readOnboardingStatus(transactionRow, onboardingRow))
+  const instructionLane = getAttorneyInstructionLane(assignmentRow)
+
+  // Bond-registration and cancellation instructions must reach their attorney
+  // independently of the buyer OTP. Transfer remains gated by the signed OTP,
+  // because it is the legal hand-off which requires the executed offer.
+  if (instructionLane && instructionLane !== 'transfer') {
+    if (openDocuments.length || reviewDocuments.length) {
+      return ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments
+    }
+    return ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance
+  }
 
   if (hasSignedOtpReceived(transactionRow)) {
     return openDocuments.length || reviewDocuments.length
@@ -317,19 +350,27 @@ export function resolveAttorneyIncomingWaitingOn({
 export function buildAttorneyIncomingMatterContract(input = {}) {
   const status = resolveAttorneyIncomingInstructionStatus(input)
   const waitingOn = resolveAttorneyIncomingWaitingOn({ ...input, status })
+  const isAttorneyInstruction = isAttorneyInstructionAssignment(input.assignment)
+  const requiresSignedOtp = requiresSignedOtpBeforeAttorneyInstructionAcceptance(input.assignment)
   return {
     status,
     label: getAttorneyIncomingStatusLabel(status),
     waitingOn,
-    visibleInIncomingQueue: isAttorneyIncomingQueueStatus(status),
-    visibleInPreIncoming: ATTORNEY_PRE_INCOMING_STATUSES.includes(status),
+    visibleInIncomingQueue:
+      isAttorneyIncomingQueueStatus(status) ||
+      (isAttorneyInstruction && !requiresSignedOtp && status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.newInstruction),
+    visibleInPreIncoming:
+      ATTORNEY_PRE_INCOMING_STATUSES.includes(status) &&
+      (!isAttorneyInstruction || requiresSignedOtp),
     visibleInActiveMatters: status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
     leavesIncomingQueue: isAttorneyInstructionClosedStatus(status),
-    requiresTransferAttorneyAssignment: true,
+    requiresAttorneyInstructionAssignment: isAttorneyInstruction,
+    // Retained while older consumers migrate to the generic property.
+    requiresTransferAttorneyAssignment: isTransferAttorneyAssignment(input.assignment),
   }
 }
 
 export function shouldShowInAttorneyIncomingQueue(input = {}) {
-  if (input.assignment && !isTransferAttorneyAssignment(input.assignment)) return false
+  if (input.assignment && !isAttorneyInstructionAssignment(input.assignment)) return false
   return buildAttorneyIncomingMatterContract(input).visibleInIncomingQueue
 }

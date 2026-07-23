@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, FileText, LayoutGrid, Plus, RefreshCw, Search, UserRoundCheck, Users, XCircle } from 'lucide-react'
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, FileText, LayoutGrid, Plus, RefreshCw, Search, UserRoundCheck, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -395,19 +395,6 @@ function NotificationSection({ label, items, onSelect }) {
   )
 }
 
-const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
-  { value: 'active', label: 'Incoming Matters' },
-  { value: 'all', label: 'All Matters' },
-  { value: 'registered', label: 'Registered Matters' },
-  { value: 'archived', label: 'Archived Matters' },
-  { value: 'transfer', label: 'Transfer Matters' },
-  { value: 'bond', label: 'Bond Matters' },
-  { value: 'cancellation', label: 'Cancellation Matters' },
-  { value: 'shared', label: 'Shared Matters' },
-  { value: 'delayed', label: 'Delayed Matters' },
-  { value: 'full-service', label: 'Full-Service Matters' },
-]
-
 function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -641,8 +628,7 @@ function HeaderBar({ onLogout, user }) {
     (location.pathname.startsWith('/attorney/matters') || location.pathname.startsWith('/attorney/transactions'))
   const hideQuickCreateInHeader =
     location.pathname === '/settings/legal-templates' ||
-    location.pathname === '/settings/signing-templates' ||
-    isAttorneyMatterWorkspaceRoute
+    location.pathname === '/settings/signing-templates'
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
   const showClientsWorkspaceTitle = role === 'attorney'
@@ -796,34 +782,6 @@ function HeaderBar({ onLogout, user }) {
   if (isAttorneyDashboardRoute) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
-        <div className="flex min-w-0 shrink-0 items-center gap-3">
-          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
-          <label className="relative min-w-[220px] max-w-[280px] flex-1 sm:flex-none">
-            <span className="sr-only">Matter view</span>
-            <select
-              className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-10 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-              value=""
-              onChange={(event) => {
-                const nextValue = event.target.value
-                if (nextValue) {
-                  navigate(`/attorney/matters/${encodeURIComponent(nextValue)}`)
-                }
-              }}
-            >
-              <option value="" disabled>
-                Matters
-              </option>
-              {ATTORNEY_DASHBOARD_ROLE_VIEWS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <Users className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-blue-700" />
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-          </label>
-        </div>
-
         <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
           <div className="ui-shell-search min-h-[40px] min-w-[240px] max-w-[520px]" aria-label="Search">
             <Search size={16} className="shrink-0 text-textSoft" />
@@ -833,6 +791,7 @@ function HeaderBar({ onLogout, user }) {
               placeholder="Search matters, clients, documents..."
             />
           </div>
+          {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
           {notificationsControl}
           {avatarControl}
         </div>
@@ -959,8 +918,6 @@ function HeaderBar({ onLogout, user }) {
       ) : null}
 
       <div className="ui-shell-actions">
-        {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
-
         {!isClientRole && !hideSearchInHeader ? (
           <div
             className={`ui-shell-search min-h-[42px] ${
@@ -994,6 +951,8 @@ function HeaderBar({ onLogout, user }) {
         ) : (
           <div className="flex-1" />
         )}
+
+        {!hideQuickCreateInHeader ? <QuickCreateDropdown /> : null}
 
         {notificationsControl}
         {avatarControl}

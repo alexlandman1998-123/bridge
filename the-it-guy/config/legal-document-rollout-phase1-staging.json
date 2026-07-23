@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "phase": "ROLL_OUT_1",
+  "contract": "legal-document-staging-release-v2",
+  "status": "pending_staging",
+  "environment": {
+    "productionProjectRef": null,
+    "stagingProjectRef": null,
+    "stagingOrigin": null
+  },
+  "source": {
+    "phase0ManifestDigest": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "b1ManifestDigest": null,
+    "b1EvidenceProjectRef": null,
+    "pendingReceiptManifestDigest": null
+  },
+  "artifacts": {
+    "migrations": [],
+    "migrationSetDigest": null,
+    "applicationManifestSha256": null,
+    "applicationManifestCoverageDigest": null,
+    "applicationManifestLinkedProjectRef": null,
+    "edgeFunctions": [],
+    "edgeFunctionSetDigest": null,
+    "edgeFunctionDeployUnitSha256": null,
+    "sharedRuntimeSha256": null,
+    "sharedRuntimeFileCount": null,
+    "sharedRuntimeRequiredFileSha256": null,
+    "configTomlSha256": null,
+    "databaseRunnerSourceSha256": null,
+    "databaseRunnerProtectedProjectRef": null,
+    "databaseRunnerTargetContract": null,
+    "databaseRunnerCliVersion": null,
+    "frontend": {
+      "root": null,
+      "buildCommand": null,
+      "vercelBuildCommand": null,
+      "vercelConfigSha256": null,
+      "packageJsonSha256": null,
+      "packageLockSha256": null,
+      "viteConfigSha256": null,
+      "sourceTreeSha256": null,
+      "sourceFileCount": null
+    },
+    "releaseOrder": {
+      "edgeFunctionsBeforeMigration": null,
+      "migrations": [],
+      "constrainedFunctions": []
+    }
+  },
+  "safety": {
+    "pilotEnabled": false,
+    "organisationIdsSentinel": "__none__",
+    "creationPaused": true,
+    "scaleEnabled": false
+  },
+  "execution": {
+    "databaseRunner": "scripts/supabase-phase6-staging-execution.mjs",
+    "databaseRunnerCliVersion": "2.109.1",
+    "recoveryEvidenceReference": null,
+    "preflightLedgerEvidenceDigest": null,
+    "migrationEvidence": [],
+    "edgeFunctionEvidence": [],
+    "functionConfigurationReviews": [],
+    "previewEvidence": {
+      "provider": null,
+      "attestationVersion": null,
+      "attestationEvidenceDigest": null,
+      "deploymentId": null,
+      "deploymentSourceCommitSha": null,
+      "deploymentMetadataEvidenceDigest": null,
+      "previewUrl": null,
+      "previewReleaseId": null,
+      "previewReleaseManifestSha256": null,
+      "previewIndexHtmlSha256": null,
+      "previewArtifactTreeSha256": null,
+      "publicSupabaseOrigin": null,
+      "attestedAt": null
+    },
+    "postDeployContractEvidenceDigest": null
+  },
+  "evidence": {
+    "preparedBy": null,
+    "preparedAt": null,
+    "evidenceRecordedBy": null,
+    "reviewedBy": null,
+    "evidenceRecordedAt": null,
+    "changeReference": null,
+    "fixtureWrites": 0
+  },
+  "manifestDigest": null
+}

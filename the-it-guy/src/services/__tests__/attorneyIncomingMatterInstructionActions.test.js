@@ -238,6 +238,7 @@ try {
 
   {
     const client = createFakeClient({
+      actorUserId: 'bond-attorney-1',
       assignments: [
         {
           id: 'assign-waiting',
@@ -293,10 +294,42 @@ try {
       transactions: [{ id: 'tx-bond' }],
     })
 
-    await assert.rejects(
-      () => acceptAttorneyIncomingInstruction(client, { assignmentId: 'assign-bond' }),
-      /only transfer incoming matters/i,
-    )
+    const result = await acceptAttorneyIncomingInstruction(client, {
+      assignmentId: 'assign-bond',
+      acceptedAt: '2026-07-09T07:40:00.000Z',
+    })
+    assert.equal(result.status, 'accepted')
+    assert.equal(client.tables.transaction_attorney_assignments[0].instruction_status, 'accepted')
+    assert.equal(client.tables.transactions[0].current_main_stage, undefined)
+    assert.equal(client.tables.transactions[0].next_action, 'Bond attorney instruction accepted. Begin legal preparation.')
+    assert.equal(client.tables.transaction_events[0].event_data.attorneyRole, 'bond_attorney')
+  }
+
+  {
+    const client = createFakeClient({
+      actorUserId: 'cancellation-attorney-1',
+      assignments: [
+        {
+          id: 'assign-cancellation',
+          transaction_id: 'tx-cancellation',
+          assignment_type: 'cancellation',
+          attorney_role: 'cancellation_attorney',
+          instruction_status: 'new_instruction',
+          assignment_status: 'pending',
+        },
+      ],
+      transactions: [{ id: 'tx-cancellation' }],
+      roleplayers: [{ id: 'roleplayer-cancellation', transaction_id: 'tx-cancellation', role_type: 'cancellation_attorney', status: 'pending', assignment_status: 'pending' }],
+    })
+
+    const result = await acceptAttorneyIncomingInstruction(client, {
+      assignmentId: 'assign-cancellation',
+      acceptedAt: '2026-07-09T07:45:00.000Z',
+    })
+    assert.equal(result.status, 'accepted')
+    assert.equal(client.tables.transaction_attorney_assignments[0].instruction_status, 'accepted')
+    assert.equal(client.tables.transaction_role_players[0].status, 'active')
+    assert.equal(client.tables.transaction_events[0].event_data.attorneyRole, 'cancellation_attorney')
   }
 
   {

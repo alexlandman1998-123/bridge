@@ -597,6 +597,7 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
     <div className="space-y-10 pb-8">
       <ExecutiveHeader />
       <ExecutiveKpiStrip snapshot={snapshot} hq={hq} performanceSnapshot={performanceSnapshot} />
+      <HqNewApplicationsRail applications={snapshot.activeApplications || []} />
       <WhatNeedsAttentionSection
         hq={hq}
         priorityActions={priorityActions}
@@ -610,6 +611,55 @@ export default function BondHqCommandCentre({ snapshot = {} }) {
       <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
       <SystemFooter hq={hq} health={health} />
     </div>
+  )
+}
+
+function HqNewApplicationsRail({ applications = [] }) {
+  const rows = Array.isArray(applications) ? applications.slice(0, 8) : []
+
+  return (
+    <section className="rounded-[22px] border border-[#e1e9f2] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#748aa0]">New Applications</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#142132]">Incoming and recently assigned work</h2>
+        </div>
+        <Link to="/bond/applications?view=incoming" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#204b84] hover:text-[#17324d]">
+          Open applications <ArrowRight size={15} />
+        </Link>
+      </div>
+
+      {rows.length ? (
+        <div className="mt-5 -mx-1 overflow-x-auto px-1 pb-2 [scrollbar-width:thin]">
+          <div className="flex min-w-max gap-3">
+            {rows.map((application, index) => (
+              <Link
+                key={application.id || application.transactionId || `${application.buyerName}-${index}`}
+                to={application.href || '/bond/applications?view=incoming'}
+                className="w-[285px] shrink-0 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 transition hover:-translate-y-px hover:border-[#bfd0e1] hover:bg-white hover:shadow-[0_10px_22px_rgba(15,23,42,0.06)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#142132]">{application.buyerName || 'Buyer pending'}</p>
+                    <p className="mt-1 truncate text-xs text-[#667f96]">{application.propertyLabel || application.developmentName || 'Property pending'}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[#eaf2fb] px-2 py-1 text-[11px] font-semibold text-[#24518a]">{application.statusLabel || 'Incoming'}</span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#7b8fa6]">Next action</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-[#38536c]">{application.nextAction || 'Review application'}</p>
+                  </div>
+                  <ArrowRight size={16} className="shrink-0 text-[#315f8c]" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 rounded-[14px] bg-[#f8fbff] px-4 py-3 text-sm text-[#60758d]">New applications will appear here as buyers choose or are referred to your bond team.</p>
+      )}
+    </section>
   )
 }
 

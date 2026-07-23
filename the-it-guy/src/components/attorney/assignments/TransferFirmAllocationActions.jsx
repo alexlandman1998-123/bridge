@@ -5,12 +5,13 @@ import {
   getAttorneyFirmAllocationAlerts,
 } from '../../../services/attorneyFirmAllocationAlertsService'
 import {
+  getAttorneyFirmAllocationLaneLabel,
   getTransferFirmAllocationLabel,
-  manageTransferFirmAllocation,
+  manageAttorneyFirmAllocation,
   TRANSFER_FIRM_ALLOCATION_STATES,
 } from '../../../services/transferFirmAllocationService'
 
-function TransferFirmAllocationActions({ allocation, canManage = false, onChanged }) {
+function TransferFirmAllocationActions({ allocation, canManage = false, onChanged, showAlerts = false }) {
   const [members, setMembers] = useState([])
   const [attorneyUserId, setAttorneyUserId] = useState(allocation?.attorneyUserId || '')
   const [declineReason, setDeclineReason] = useState('')
@@ -20,6 +21,8 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
   const [alerts, setAlerts] = useState([])
 
   const state = allocation?.allocationState || ''
+  const laneKey = allocation?.laneKey || 'transfer'
+  const laneLabel = getAttorneyFirmAllocationLaneLabel(laneKey)
   const isFirmFirst = allocation?.firmAcceptanceStatus !== 'not_required' || [
     TRANSFER_FIRM_ALLOCATION_STATES.awaitingFirmAcceptance,
     TRANSFER_FIRM_ALLOCATION_STATES.awaitingStaffAssignment,
@@ -29,9 +32,13 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
   const preferredContact = [allocation?.preferredContactName, allocation?.preferredContactEmail].filter(Boolean).join(' · ')
 
   useEffect(() => {
+    setAttorneyUserId(allocation?.attorneyUserId || '')
+  }, [allocation?.attorneyUserId, allocation?.id])
+
+  useEffect(() => {
     let active = true
     if (!needsMember || !allocation?.firmId) return undefined
-    getAssignableAttorneyFirmMembers(allocation.firmId, 'transfer')
+    getAssignableAttorneyFirmMembers(allocation.firmId, laneKey)
       .then((result) => {
         if (active) setMembers(result.primaryAttorneys || [])
       })
@@ -39,11 +46,11 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
         if (active) setError(loadError?.message || 'Unable to load eligible firm members.')
       })
     return () => { active = false }
-  }, [allocation?.firmId, needsMember])
+  }, [allocation?.firmId, laneKey, needsMember])
 
   useEffect(() => {
     let active = true
-    if (!allocation?.transactionId) return undefined
+    if (!showAlerts || !allocation?.transactionId) return undefined
     getAttorneyFirmAllocationAlerts({ transactionId: allocation.transactionId })
       .then((result) => {
         if (active) setAlerts(result.alerts || [])
@@ -52,7 +59,7 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
         if (active) setAlerts([])
       })
     return () => { active = false }
-  }, [allocation?.allocationState, allocation?.transactionId])
+  }, [allocation?.allocationState, allocation?.transactionId, showAlerts])
 
   if (!allocation || !isFirmFirst || !Object.values(TRANSFER_FIRM_ALLOCATION_STATES).includes(state)) return null
 
@@ -60,17 +67,18 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
     setBusyAction(action)
     setError('')
     try {
-      const result = await manageTransferFirmAllocation({
+      const result = await manageAttorneyFirmAllocation({
         assignmentId: allocation.id,
         action,
         attorneyUserId: action === 'assign_primary' ? attorneyUserId : null,
         reason: action === 'decline' ? declineReason : null,
+        laneKey,
       })
       setShowDecline(false)
       setDeclineReason('')
       await onChanged?.(result)
     } catch (actionError) {
-      setError(actionError?.message || 'Unable to update this transfer allocation.')
+      setError(actionError?.message || `Unable to update this ${laneLabel.toLowerCase()} allocation.`)
     } finally {
       setBusyAction('')
     }
@@ -106,7 +114,7 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
 
       {error ? <p className="mt-3 rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-sm text-danger">{error}</p> : null}
 
-      {alerts.length ? (
+      {showAlerts && alerts.length ? (
         <div className="mt-3 grid gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-textMuted">Operational alerts</p>
           {alerts.map((alert) => (
@@ -138,7 +146,7 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
       {canManage && needsMember ? (
         <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
           <label className="flex flex-col gap-1.5">
-            <span className="text-label font-semibold uppercase text-textMuted">Primary transfer attorney</span>
+            <span className="text-label font-semibold uppercase text-textMuted">Primary {laneLabel}</span>
             <select className="input" value={attorneyUserId} onChange={(event) => setAttorneyUserId(event.target.value)} disabled={Boolean(busyAction)}>
               <option value="">Select an active firm member</option>
               {members.map((member) => (
@@ -154,9 +162,9 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
 
       {canManage && state === TRANSFER_FIRM_ALLOCATION_STATES.staffAssigned ? (
         <div className="mt-3">
-          <p className="mb-2 text-sm text-textMuted">Firm acceptance and internal assignment are complete. Activating accepts the transfer instruction and opens the matter.</p>
+          <p className="mb-2 text-sm text-textMuted">Firm acceptance and internal assignment are complete. Activating accepts the instruction and opens the matter.</p>
           <button type="button" className="header-primary-cta" disabled={Boolean(busyAction)} onClick={() => void run('activate')}>
-            {busyAction === 'activate' ? 'Activating…' : 'Activate Transfer Matter'}
+            {busyAction === 'activate' ? 'Activating…' : `Activate ${laneLabel} Matter`}
           </button>
         </div>
       ) : null}
@@ -165,7 +173,7 @@ function TransferFirmAllocationActions({ allocation, canManage = false, onChange
         <div className="mt-3 grid gap-2">
           <label className="flex flex-col gap-1.5">
             <span className="text-label font-semibold uppercase text-textMuted">Decline reason</span>
-            <textarea className="input min-h-20" value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} placeholder="Explain why the firm cannot take this transfer" />
+            <textarea className="input min-h-20" value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} placeholder={`Explain why the firm cannot take this ${laneLabel.toLowerCase()} instruction`} />
           </label>
           <div className="flex gap-2">
             <button type="button" className="header-secondary-cta text-danger" disabled={Boolean(busyAction) || !declineReason.trim()} onClick={() => void run('decline')}>

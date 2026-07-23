@@ -27,20 +27,41 @@ function escapeHtmlAttribute(value = '') {
     .replaceAll('>', '&gt;')
 }
 
+export function resolveReleaseId({ viteReleaseId, vercelCommitSha, gitCommitSha, fallback = 'local-unknown' } = {}) {
+  const configured = String(viteReleaseId || '').trim()
+  const vercel = String(vercelCommitSha || '').trim()
+  // A preview attestation binds the public release marker to Vercel's source
+  // commit. A caller may set VITE_RELEASE_ID for non-Vercel builds, but it may
+  // never relabel a Vercel deployment as a different source revision.
+  if (configured && vercel && configured.toLowerCase() !== vercel.toLowerCase()) {
+    throw new Error('VITE_RELEASE_ID must match VERCEL_GIT_COMMIT_SHA for a Vercel deployment.')
+  }
+  return configured || vercel || String(gitCommitSha || '').trim() || fallback
+}
+
 function releaseIntegrityPlugin() {
   let releaseId = 'local-unknown'
+  let supabaseOrigin = null
 
   return {
     name: 'arch9-release-integrity',
     configResolved(config) {
       const env = loadEnv(config.mode, config.root, '')
-      releaseId = String(
-        env.VITE_RELEASE_ID ||
-        process.env.VITE_RELEASE_ID ||
-        process.env.VERCEL_GIT_COMMIT_SHA ||
-        process.env.GIT_COMMIT_SHA ||
-        releaseId,
-      ).trim() || 'local-unknown'
+      releaseId = resolveReleaseId({
+        viteReleaseId: env.VITE_RELEASE_ID || process.env.VITE_RELEASE_ID,
+        vercelCommitSha: process.env.VERCEL_GIT_COMMIT_SHA,
+        gitCommitSha: process.env.GIT_COMMIT_SHA,
+        fallback: releaseId,
+      })
+      const configuredSupabaseUrl = String(env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim()
+      try {
+        const parsed = new URL(configuredSupabaseUrl)
+        supabaseOrigin = parsed.protocol === 'https:' && parsed.hostname && !parsed.username && !parsed.password
+          ? parsed.origin
+          : null
+      } catch {
+        supabaseOrigin = null
+      }
     },
     transformIndexHtml(html) {
       const marker = `<meta name="arch9-release" content="${escapeHtmlAttribute(releaseId)}" />`
@@ -69,6 +90,10 @@ function releaseIntegrityPlugin() {
         source: `${JSON.stringify({
           version: 1,
           releaseId,
+          // VITE_* values are already public browser configuration. Recording
+          // the canonical origin lets a staging preview attestation prove the
+          // compiled bundle targets its declared Supabase environment.
+          supabaseOrigin,
           generatedAt: new Date().toISOString(),
           criticalAssets: [...criticalFiles].sort(),
           listingDetailAssetDetected: seedFiles.some((fileName) => fileName.includes('AgentListingDetail')),

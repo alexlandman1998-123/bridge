@@ -176,11 +176,9 @@ const AGENT_WORKSPACE_TABS = [
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'application', label: 'Application' },
+  { id: 'workflow', label: 'Workflow' },
+  { id: 'application', label: 'Bond Application' },
   { id: 'documents', label: 'Documents' },
-  { id: 'banks_quotes', label: 'Banks & Quotes' },
-  { id: 'stakeholders', label: 'Roleplayers' },
-  { id: 'tasks', label: 'Tasks' },
   { id: 'activity', label: 'Activity' },
 ]
 
@@ -423,6 +421,16 @@ function resolveDocumentLibraryCategory(document = {}) {
   return 'buyer'
 }
 
+function isBondOriginatorFinanceDocument(document = {}) {
+  const category = resolveDocumentLibraryCategory(document)
+  if (['finance', 'bond'].includes(category)) return true
+  const tokens = [document?.name, document?.category, document?.document_type, document?.documentType, document?.key]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return /(bank statement|payslip|salary|income|affordability|credit|proof of funds|deposit|bond|grant|approval letter|identity|fica|passport)/.test(tokens)
+}
+
 function resolveRequirementLibraryCategory(requirement = {}) {
   const requirementTokens = `${String(requirement?.key || '').trim().toLowerCase()} ${String(requirement?.label || '').trim().toLowerCase()} ${String(
     requirement?.groupKey || requirement?.group_key || requirement?.group || '',
@@ -597,6 +605,80 @@ function getUploadCategoryForLibraryFilter(filterKey = '') {
   if (normalized === 'cancellation') return 'Clearance Documents'
   if (normalized === 'internal') return 'Internal Working Documents'
   return ATTORNEY_DOCUMENT_CATEGORIES[0]
+}
+
+const ATTORNEY_DOCUMENT_LANE_ROLES = {
+  transfer: 'transfer_attorney',
+  bond: 'bond_attorney',
+  cancellation: 'cancellation_attorney',
+}
+
+function normalizeAttorneyDocumentLaneKey(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (normalized.includes('cancellation')) return 'cancellation'
+  if (normalized.includes('bond') || normalized.includes('finance')) return 'bond'
+  if (normalized.includes('transfer')) return 'transfer'
+  if (['transfer', 'transfer_attorney', 'attorney'].includes(normalized)) return 'transfer'
+  if (['bond', 'bond_attorney', 'finance', 'bond_registration'].includes(normalized)) return 'bond'
+  if (['cancellation', 'cancellation_attorney', 'bond_cancellation'].includes(normalized)) return 'cancellation'
+  return null
+}
+
+function resolveAttorneyDocumentUploadLane({
+  laneKey = '',
+  relatedWorkflow = '',
+  category = '',
+  requirement = null,
+  document = null,
+  workflowLanes = [],
+} = {}) {
+  const candidates = [
+    laneKey,
+    requirement?.laneKey,
+    requirement?.lane_key,
+    requirement?.attorneyRole,
+    requirement?.attorney_role,
+    requirement?.owningWorkflow,
+    requirement?.visibleSection,
+    requirement?.groupKey,
+    requirement?.group,
+    document?.laneKey,
+    document?.lane_key,
+    document?.attorneyRole,
+    document?.attorney_role,
+    document?.stageKey,
+    document?.stage_key,
+    relatedWorkflow,
+  ]
+  const resolvedLaneKey = candidates.map(normalizeAttorneyDocumentLaneKey).find(Boolean)
+  if (resolvedLaneKey) {
+    return {
+      laneKey: resolvedLaneKey,
+      attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[resolvedLaneKey],
+    }
+  }
+
+  const categoryLaneKey = normalizeAttorneyDocumentLaneKey(normalizeLibraryCategory(category))
+  if (categoryLaneKey) {
+    return {
+      laneKey: categoryLaneKey,
+      attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[categoryLaneKey],
+    }
+  }
+
+  const fallbackLaneKey = (Array.isArray(workflowLanes) ? workflowLanes : [])
+    .find((lane) => lane?.permissions?.canUploadDocuments)
+    ?.laneKey
+  const normalizedFallbackLaneKey = normalizeAttorneyDocumentLaneKey(fallbackLaneKey)
+  if (!normalizedFallbackLaneKey) return null
+
+  return {
+    laneKey: normalizedFallbackLaneKey,
+    attorneyRole: ATTORNEY_DOCUMENT_LANE_ROLES[normalizedFallbackLaneKey],
+  }
 }
 
 function resolveUploadedByLabel(document = {}, participants = []) {
@@ -8677,6 +8759,7 @@ function AttorneyTransactionDetail() {
     documentType: '',
     visibility: 'client_visible',
     relatedWorkflow: '',
+    attorneyLaneKey: '',
     satisfiesRequiredDocument: 'yes',
     requiredDocumentKey: '',
     requiredDocumentId: '',
@@ -9004,7 +9087,11 @@ function AttorneyTransactionDetail() {
       active = false
     }
   }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt])
-  const documents = data?.documents ?? EMPTY_ARRAY
+  const allDocuments = data?.documents ?? EMPTY_ARRAY
+  const documents = useMemo(
+    () => workspaceRole === 'bond_originator' ? allDocuments.filter(isBondOriginatorFinanceDocument) : allDocuments,
+    [allDocuments, workspaceRole],
+  )
   const routingDiagnostics = useMemo(
     () => (transaction ? buildTransactionRoutingDiagnostics(transaction) : null),
     [transaction],
@@ -9012,7 +9099,11 @@ function AttorneyTransactionDetail() {
   const canEditRoutingProfile = ['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(
     String(workspaceRole || '').trim().toLowerCase(),
   )
-  const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
+  const requiredDocumentChecklist = useMemo(() => {
+    const rows = data?.requiredDocumentChecklist || EMPTY_ARRAY
+    if (workspaceRole !== 'bond_originator') return rows
+    return rows.filter((requirement) => isBondOriginatorFinanceDocument(requirement))
+  }, [data?.requiredDocumentChecklist, workspaceRole])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -9109,7 +9200,7 @@ function AttorneyTransactionDetail() {
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
-    if (workspaceRole === 'bond_originator' && (workspaceMenu === 'finance' || workspaceMenu === 'bond')) return 'banks_quotes'
+    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'tasks', 'stakeholders'].includes(workspaceMenu)) return 'workflow'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
@@ -9510,14 +9601,11 @@ function AttorneyTransactionDetail() {
     if (tab.id === 'application') {
       return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
     }
-    if (tab.id === 'banks_quotes') {
+    if (tab.id === 'workflow') {
       return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
     }
     if (tab.id === 'finance') {
       return { ...tab, meta: financeTypeLabel }
-    }
-    if (tab.id === 'tasks') {
-      return { ...tab, meta: 'Action hub' }
     }
     if (tab.id === 'activity') {
       return { ...tab, meta: `${visibleTransactionDiscussion.length + transactionEvents.length} updates` }
@@ -10471,6 +10559,19 @@ function AttorneyTransactionDetail() {
   }
   function handleOpenFinanceDocument(document = {}) {
     const url = document?.url || document?.publicUrl || document?.downloadUrl || ''
+    if (workspaceRole === 'bond_originator' && transaction?.id && isSupabaseConfigured && supabase) {
+      void supabase
+        .from('bond_finance_document_access_audit')
+        .insert({
+          transaction_id: transaction.id,
+          document_id: document?.id || null,
+          actor_user_id: profile?.id || profile?.userId || null,
+          action: 'download_requested',
+          metadata: { source: 'bond_finance_workspace', documentName: document?.name || document?.label || null },
+        })
+        .then(() => null)
+        .catch(() => null)
+    }
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
   const financeCommandCenterPanel = (
@@ -11156,7 +11257,7 @@ function AttorneyTransactionDetail() {
       return
     }
     if (normalizedTarget === 'finance') {
-      setWorkspaceMenu(workspaceRole === 'bond_originator' ? 'banks_quotes' : 'finance')
+      setWorkspaceMenu(workspaceRole === 'bond_originator' ? 'workflow' : 'finance')
       return
     }
     if (normalizedTarget === 'activity') {
@@ -13157,11 +13258,25 @@ function AttorneyTransactionDetail() {
   function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
     const canonicalRequirementInstanceId = requirement ? getRequirementCanonicalId(requirement) || requirement.canonicalRequirementInstanceId || '' : ''
     const requiredDocumentKey = requirement?.key || requirement?.documentKey || requirement?.document_key || ''
+    const contextCategory = category || activeDocumentLibraryCategory
     const selectedCategory = requirement
       ? getAttorneyCategoryForRequiredDocument(requirement)
       : category
         ? getUploadCategoryForLibraryFilter(category)
         : getUploadCategoryForLibraryFilter(activeDocumentLibraryCategory)
+    const requirementWorkflow =
+      requirement?.laneKey ||
+      requirement?.lane_key ||
+      requirement?.owningWorkflow ||
+      requirement?.attorneyRole ||
+      requirement?.attorney_role ||
+      ''
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      relatedWorkflow: requirementWorkflow,
+      category: contextCategory,
+      requirement,
+      workflowLanes,
+    })
 
     setUploadDraft((previous) => ({
       ...previous,
@@ -13170,7 +13285,8 @@ function AttorneyTransactionDetail() {
       category: selectedCategory,
       documentType: requiredDocumentKey || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
-      relatedWorkflow: requirement?.owningWorkflow || requirement?.visibleSection || previous.relatedWorkflow || '',
+      relatedWorkflow: requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: requirement ? 'yes' : 'no',
       requiredDocumentKey,
       requiredDocumentId: requirement?.id || '',
@@ -13210,6 +13326,12 @@ function AttorneyTransactionDetail() {
   }
 
   function openConveyancingDocumentUpload(shortcut = {}) {
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: shortcut.laneKey || shortcut.lane_key || shortcut.attorneyRole || shortcut.attorney_role,
+      relatedWorkflow: shortcut.relatedWorkflow,
+      category: shortcut.category,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       file: null,
@@ -13217,7 +13339,8 @@ function AttorneyTransactionDetail() {
       category: shortcut.category || 'Internal Working Documents',
       documentType: shortcut.documentType || '',
       visibility: shortcut.visibility === 'internal_only' ? 'internal' : 'shared',
-      relatedWorkflow: shortcut.relatedWorkflow || 'transfer',
+      relatedWorkflow: shortcut.relatedWorkflow || attorneyLane?.laneKey || 'transfer',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
       requiredDocumentKey: '',
       requiredDocumentId: '',
@@ -13249,6 +13372,21 @@ function AttorneyTransactionDetail() {
         : null
     const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
     const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
+    const isAttorneyUpload = String(workspaceRole || '').trim().toLowerCase() === 'attorney'
+    const attorneyLane = isAttorneyUpload
+      ? resolveAttorneyDocumentUploadLane({
+          laneKey: uploadDraft.attorneyLaneKey,
+          relatedWorkflow: uploadDraft.relatedWorkflow,
+          category: uploadDraft.category,
+          requirement: linkedRequirement,
+          workflowLanes,
+        })
+      : null
+
+    if (isAttorneyUpload && !attorneyLane) {
+      setError('No editable attorney workflow lane is available for this upload.')
+      return
+    }
 
     try {
       setSaving(true)
@@ -13259,11 +13397,14 @@ function AttorneyTransactionDetail() {
         category: uploadDraft.category,
         isClientVisible: visibilityScope !== 'internal',
         visibilityScope,
-        stageKey: uploadDraft.relatedWorkflow || transferStageKey,
+        stageKey: uploadDraft.relatedWorkflow || attorneyLane?.laneKey || transferStageKey,
         requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
         documentType: uploadDraft.documentType || uploadDraft.requiredDocumentKey || null,
         canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
         documentRequestId: uploadDraft.documentRequestId || null,
+        source: isAttorneyUpload ? 'attorney_workspace' : 'internal',
+        attorneyLaneKey: attorneyLane?.laneKey || null,
+        attorneyRole: attorneyLane?.attorneyRole || null,
       })
       setUploadDraft((previous) => ({
         ...previous,
@@ -13299,12 +13440,22 @@ function AttorneyTransactionDetail() {
 
   function handleReplaceDocument(document, requirement) {
     const canonicalRequirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document)
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: requirement?.laneKey || requirement?.lane_key || document?.laneKey || document?.lane_key,
+      relatedWorkflow: requirement?.owningWorkflow || document?.stage_key || document?.stageKey,
+      category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : document?.category,
+      requirement,
+      document,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       canonicalRequirementInstanceId: canonicalRequirementInstanceId || '',
       requiredDocumentKey: requirement?.key || document?.document_type || '',
       category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
       visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
+      relatedWorkflow: attorneyLane?.laneKey || previous.relatedWorkflow,
+      attorneyLaneKey: attorneyLane?.laneKey || '',
     }))
     setWorkspaceMenu('documents')
     setUploadDocumentModalOpen(true)
@@ -13312,6 +13463,14 @@ function AttorneyTransactionDetail() {
   }
 
   function openDocumentRequestUploadModal(row = {}) {
+    const attorneyLane = resolveAttorneyDocumentUploadLane({
+      laneKey: row.laneKey || row.lane_key || row.attorneyRole || row.attorney_role,
+      relatedWorkflow: row.relatedWorkflow,
+      category: row.category,
+      requirement: row.requirement || row.requiredDocument || null,
+      document: row.raw || row.rawRequest || null,
+      workflowLanes,
+    })
     setUploadDraft((previous) => ({
       ...previous,
       file: null,
@@ -13319,7 +13478,8 @@ function AttorneyTransactionDetail() {
       category: getUploadCategoryForLibraryFilter(row.category || 'finance'),
       documentType: row.requiredDocumentKey || row.displayName || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
-      relatedWorkflow: row.relatedWorkflow || previous.relatedWorkflow || 'finance',
+      relatedWorkflow: row.relatedWorkflow || attorneyLane?.laneKey || 'finance',
+      attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
       requiredDocumentKey: '',
       requiredDocumentId: '',
@@ -13860,7 +14020,19 @@ function AttorneyTransactionDetail() {
                   </label>
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Related workflow</span>
-                    <Field as="select" value={uploadDraft.relatedWorkflow} onChange={(event) => setUploadDraft((previous) => ({ ...previous, relatedWorkflow: event.target.value }))}>
+                    <Field
+                      as="select"
+                      value={uploadDraft.relatedWorkflow}
+                      onChange={(event) => {
+                        const relatedWorkflow = event.target.value
+                        const attorneyLaneKey = normalizeAttorneyDocumentLaneKey(relatedWorkflow)
+                        setUploadDraft((previous) => ({
+                          ...previous,
+                          relatedWorkflow,
+                          attorneyLaneKey: attorneyLaneKey || previous.attorneyLaneKey,
+                        }))
+                      }}
+                    >
                       {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Field>
                   </label>
@@ -14273,8 +14445,12 @@ function AttorneyTransactionDetail() {
             <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Documents</h2>
-                  <p className="mt-1 text-sm leading-6 text-textMuted">Manage all documents and requirements for this transaction.</p>
+                  <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">{workspaceRole === 'bond_originator' ? 'Finance Documents' : 'Documents'}</h2>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">
+                    {workspaceRole === 'bond_originator'
+                      ? 'Request and manage only the buyer finance documents required for this bond application.'
+                      : 'Manage all documents and requirements for this transaction.'}
+                  </p>
                 </div>
                 <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
                   documentHealthSummary.submissionReady
@@ -14424,9 +14600,9 @@ function AttorneyTransactionDetail() {
                               <td className="py-3 pl-4">
                                 <div className="flex items-center justify-end gap-2">
                                   {row.fileUrl ? (
-                                    <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-[8px] border border-[#d8e4f0] px-3 text-xs font-semibold text-primary">
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenFinanceDocument({ ...document, url: row.fileUrl })}>
                                       View
-                                    </a>
+                                    </Button>
                                   ) : null}
                                   {!row.fileUrl || row.status === 'missing' || row.status === 'requested' ? (
                                     <Button type="button" variant="secondary" size="sm" onClick={() => openDocumentUploadModal({ requirement: row.requirement })}>
@@ -14886,7 +15062,15 @@ function AttorneyTransactionDetail() {
                     <Field
                       as="select"
                       value={uploadDraft.relatedWorkflow}
-                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, relatedWorkflow: event.target.value }))}
+                      onChange={(event) => {
+                        const relatedWorkflow = event.target.value
+                        const attorneyLaneKey = normalizeAttorneyDocumentLaneKey(relatedWorkflow)
+                        setUploadDraft((previous) => ({
+                          ...previous,
+                          relatedWorkflow,
+                          attorneyLaneKey: attorneyLaneKey || previous.attorneyLaneKey,
+                        }))
+                      }}
                     >
                       {DOCUMENT_RELATED_WORKFLOW_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -15322,7 +15506,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'banks_quotes' ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
           <section className="space-y-7">
             <BondBankSubmissionCommandCenter
               rows={bondBankCommandRows}
@@ -15393,7 +15577,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'tasks' ? (
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -15428,7 +15612,7 @@ function AttorneyTransactionDetail() {
                     ['Request Documents', FileText, handleQuickRequestDocuments],
                     ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
                     ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
-                    ['Assign Consultant', UsersRound, () => setWorkspaceMenu('stakeholders')],
+                    ['View Application', UsersRound, () => setWorkspaceMenu('application')],
                     ['Add Note', MessageSquarePlus, () => setWorkspaceMenu('activity')],
                   ].map(([label, Icon, action]) => (
                     <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>

@@ -7,12 +7,28 @@ function summaryFor(version = {}) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+/** A generated version is only signable once a persisted PDF artifact can be located. */
+export function hasGeneratedPdfArtifact(version = {}) {
+  return [
+    version?.rendered_file_path,
+    version?.renderedFilePath,
+    version?.rendered_file_url,
+    version?.renderedFileUrl,
+    version?.rendered_file_access_url,
+    version?.renderedFileAccessUrl,
+  ].some((value) => Boolean(text(value)))
+}
+
 /** A fallback is review material only; it is never a document eligible for signing. */
 export function isPilotDocumentFallbackVersion(version = {}) {
   const summary = summaryFor(version)
   return summary.previewOnly === true ||
     summary.generationStatus === 'preview_only' ||
-    summary.pilotFallback?.active === true
+    summary.pilotFallback?.active === true ||
+    (
+      text(version?.render_status || version?.renderStatus).toLowerCase() === 'generated' &&
+      !hasGeneratedPdfArtifact(version)
+    )
 }
 
 export function buildPilotDocumentFallback({ packetType = 'mandate', reason = '', failureCode = '' } = {}) {
@@ -35,6 +51,7 @@ export function findLatestPilotDocumentFallback(versions = []) {
 export function findLatestSignableGeneratedVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find((version) =>
     text(version?.render_status || version?.renderStatus).toLowerCase() === 'generated' &&
+    hasGeneratedPdfArtifact(version) &&
     !isPilotDocumentFallbackVersion(version),
   ) || null
 }

@@ -34,6 +34,44 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * Completed signer sessions receive only an identity reference. The resolver
+ * performs the final F2/F3/F4 checks and mints any short-lived download URL;
+ * this public signing endpoint must never transport storage coordinates.
+ */
+function buildFinalArtifactAccessDescriptor({
+  ready,
+  packetId,
+  packetVersionId,
+  documentId,
+  fileName,
+  sha256,
+  byteLength,
+  finalisedAt,
+}: {
+  ready: boolean;
+  packetId: unknown;
+  packetVersionId: unknown;
+  documentId: unknown;
+  fileName: unknown;
+  sha256: unknown;
+  byteLength: unknown;
+  finalisedAt: unknown;
+}) {
+  return {
+    kind: "final_signed_document",
+    resolver: "resolve-final-signed-document-access",
+    ready,
+    packetId: normalizeText(packetId) || null,
+    packetVersionId: normalizeText(packetVersionId) || null,
+    documentId: normalizeText(documentId) || null,
+    fileName: normalizeText(fileName) || "signed-document.pdf",
+    sha256: ready ? normalizeText(sha256) || null : null,
+    byteLength: ready && Number.isFinite(Number(byteLength)) && Number(byteLength) > 0 ? Number(byteLength) : null,
+    finalisedAt: normalizeText(finalisedAt) || null,
+  };
+}
+
 function normalizeSigningRole(value: unknown) {
   const role = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   const aliases: Record<string, string> = {
@@ -693,16 +731,6 @@ Deno.serve(async (req: Request) => {
     });
     const documentPreviewUrl = freshSignedPreviewUrl || normalizeText(documentPreviewVersion.rendered_file_url);
     const finalSignedFilePath = normalizeText(version.final_signed_file_path);
-    const finalSignedUrl = finalSignedFilePath
-      ? await resolveSignedPreviewUrl({
-        supabase,
-        filePath: finalSignedFilePath,
-        bucketCandidates: parseBucketCandidates(
-          normalizeText(version.final_signed_file_bucket),
-          ...bucketCandidates,
-        ),
-      }) || normalizeText(version.final_signed_file_url)
-      : normalizeText(version.final_signed_file_url);
 
     let updatedSigner = signer;
     if (!signerAlreadyCompleted) {
@@ -803,7 +831,13 @@ Deno.serve(async (req: Request) => {
         validationSummary.rendered_sha256,
     );
     const finalEvidenceSha256 = normalizeText(finalArtifactEvidence?.sha256);
-    const transactionPublicationValid = Boolean(finalTransactionPublication) &&
+    const finalArtifactEvidenceValid = Boolean(finalArtifactEvidence) &&
+      Boolean(finalSignedFilePath) &&
+      Boolean(finalEvidenceSha256) &&
+      Number(finalArtifactEvidence?.byte_length) > 0 &&
+      normalizeText(finalArtifactEvidence?.path) === finalSignedFilePath &&
+      normalizeText(finalArtifactEvidence?.bucket) === normalizeText(version.final_signed_file_bucket);
+    const transactionPublicationValid = finalArtifactEvidenceValid && Boolean(finalTransactionPublication) &&
       normalizeText(finalTransactionPublication?.artifact_sha256) === finalEvidenceSha256 &&
       normalizeText(finalTransactionPublication?.artifact_path) === finalSignedFilePath;
     const completionReceiptValid = transactionPublicationValid && Boolean(finalCompletionReceipt) &&
@@ -813,10 +847,24 @@ Deno.serve(async (req: Request) => {
     const portalPublicationValid = Boolean(finalPortalPublication) &&
       normalizeText(finalPortalPublication?.artifact_sha256) === finalEvidenceSha256 &&
       normalizeText(finalPortalPublication?.artifact_path) === finalSignedFilePath;
+    const finalArtifactReady = finalArtifactEvidenceValid &&
+      Boolean(normalizeText(version.final_signed_document_id)) &&
+      completionReceiptValid &&
+      portalPublicationValid;
+    const finalArtifact = buildFinalArtifactAccessDescriptor({
+      ready: finalArtifactReady,
+      packetId: packet.id,
+      packetVersionId: version.id,
+      documentId: version.final_signed_document_id,
+      fileName: version.final_signed_file_name,
+      sha256: finalEvidenceSha256,
+      byteLength: finalArtifactEvidence?.byte_length,
+      finalisedAt: version.finalised_at,
+    });
     const finalEmailStatus = normalizeText(finalSignerDelivery?.status).toLowerCase() || "not_confirmed";
     const completionDeliveryStatus = finalEmailStatus === "sent" && completionReceiptValid && portalPublicationValid
       ? "delivered"
-      : completionReceiptValid && portalPublicationValid && Boolean(finalSignedFilePath || finalSignedUrl)
+      : finalArtifactReady
         ? "available"
         : "preparing";
     const completion = signerAlreadyCompleted
@@ -848,16 +896,7 @@ Deno.serve(async (req: Request) => {
           role: normalizedSignerRole,
           signedAt: normalizeText(updatedSigner.signed_at) || null,
         },
-        finalArtifact: {
-          ready: Boolean(finalSignedFilePath || finalSignedUrl),
-          documentId: normalizeText(version.final_signed_document_id) || null,
-          fileName: normalizeText(version.final_signed_file_name) || null,
-          bucket: normalizeText(version.final_signed_file_bucket) || null,
-          path: finalSignedFilePath || null,
-          url: finalSignedUrl || null,
-          sha256: finalEvidenceSha256 || null,
-          byteLength: Number(finalArtifactEvidence?.byte_length) || null,
-        },
+        finalArtifact,
         transactionSaved: completionReceiptValid,
         access: {
           transactionVisible: finalCompletionReceipt?.transaction_visible === true,

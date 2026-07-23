@@ -2,6 +2,19 @@ import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 
+// RETIRED BY ROLL_OUT_6.  This historical activator predates the
+// server-owned release-epoch contract and can only widen the v1 environment
+// allowlist.  Keeping its implementation below preserves the audit trail,
+// but it must never execute or mutate a remote runtime again.
+console.log(JSON.stringify({
+  phase: 'A3',
+  status: 'RETIRED_HOLD',
+  errorCode: 'LEGAL_DOCUMENT_LEGACY_EXPANSION_RETIRED',
+  message: 'Legacy A3 activation is permanently retired. Use the separately approved server-owned successor-release process; this command made no changes.',
+  mutatedData: false,
+}, null, 2))
+process.exit(1)
+
 const WRITE_FLAG = 'LEGAL_DOCUMENT_PHASE_A3_WRITE'
 const CONFIG_PATH = 'config/legal-document-pilot.json'
 

@@ -21,6 +21,7 @@ try {
     isClientManagedFinance,
     isFinanceAssistanceDeclined,
     isFinanceAssistanceRequested,
+    hasBondOriginatorContactConsent,
     isOriginatorManagedFinance,
     normalizeFinanceManagedBy,
     resolveFinanceAssistancePreference,
@@ -49,6 +50,8 @@ try {
   assert.equal(resolveFinanceAssistancePreference({}), FINANCE_ASSISTANCE_PREFERENCES.UNKNOWN)
   assert.equal(isFinanceAssistanceRequested({ ooba_assist_requested: 'yes' }), true)
   assert.equal(isFinanceAssistanceDeclined({ ooba_assist_requested: 'no' }), true)
+  assert.equal(hasBondOriginatorContactConsent({ finance: { bond_assistance_selection: 'agency_partner', bond_assistance_contact_consent: 'yes' } }), true)
+  assert.equal(hasBondOriginatorContactConsent({ finance: { bond_assistance_selection: 'agency_partner', bond_assistance_contact_consent: 'no' } }), false)
 
   assert.equal(deriveFinanceManagedBy({ financeType: 'cash' }), 'client')
   assert.equal(deriveFinanceManagedBy({ financeType: 'developer' }), 'internal')

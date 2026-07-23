@@ -270,6 +270,10 @@ function collectStageSignals(transaction = {}) {
 }
 
 function resolveStageKeyFromSignals(signals = []) {
+  if (signals.includes('reg')) return 'registered'
+  if (signals.includes('atty') || signals.includes('att') || signals.includes('xfer')) return 'transfer'
+  if (signals.includes('dep') || signals.includes('otp') || signals.includes('fin')) return 'offer_accepted'
+
   for (const stageKey of [...SELLER_STAGE_ORDER].reverse()) {
     const keywords = SELLER_STAGE_KEYWORDS[stageKey] || []
     if (hasSignal(signals, keywords)) {
@@ -280,7 +284,17 @@ function resolveStageKeyFromSignals(signals = []) {
   return 'mandate_signed'
 }
 
+function resolveExplicitTransactionMainStage(transaction = {}) {
+  const mainStage = normalizeStageSignal(transaction?.current_main_stage || transaction?.currentMainStage)
+  if (['reg', 'registered', 'registration'].includes(mainStage)) return 'registered'
+  if (['atty', 'att', 'xfer', 'transfer'].includes(mainStage)) return 'transfer'
+  if (['dep', 'otp', 'fin', 'finance'].includes(mainStage)) return 'offer_accepted'
+  return null
+}
+
 export function getSellerPortalStage(transaction = {}) {
+  const transactionMainStage = resolveExplicitTransactionMainStage(transaction)
+  if (transactionMainStage) return transactionMainStage
   return resolveStageKeyFromSignals(collectStageSignals(transaction))
 }
 

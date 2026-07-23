@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_5",
+  "contract": "legal-document-production-pilot-observation-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "productionOrigin": null,
+    "productionUrl": null
+  },
+  "source": {
+    "phase0ManifestDigest": null,
+    "phase1ReceiptManifestDigest": null,
+    "phase2ReceiptManifestDigest": null,
+    "phase2ReceiptCommitSha": null,
+    "phase3ReceiptManifestDigest": null,
+    "phase3ReceiptCommitSha": null,
+    "phase4ReceiptManifestDigest": null,
+    "phase4ReceiptCommitSha": null,
+    "commitSha": null,
+    "packageLockSha256": null,
+    "activationPlanDigest": null,
+    "observationPlanDigest": null
+  },
+  "cohort": {
+    "organisationIds": [],
+    "cohortDigest": null,
+    "maxOrganisations": 1,
+    "requiredPacketTypes": []
+  },
+  "safety": {
+    "creationPaused": true,
+    "scaleEnabled": false,
+    "noScaleAuthorization": true,
+    "rollbackToDarkLaunchRequired": true,
+    "customerDeliveryPolicy": "activated_cohort_and_release_marker_only",
+    "runtimeGuardContract": "legal-document-pilot-release-v1",
+    "watchdogContract": "phase5-f2-f3-f4-v2"
+  },
+  "observation": {
+    "minimumObservationHours": 144,
+    "minimumHealthyScopedSnapshots": 7,
+    "maximumWarningSnapshots": 0,
+    "maximumCriticalSnapshots": 0,
+    "maximumBlockers": 0,
+    "maximumSnapshotGapMinutes": 90
+  },
+  "execution": {
+    "lifecycleProofs": [],
+    "monitoring": {
+      "status": "not_run",
+      "watchdogContract": null,
+      "runtimeGuardContract": null,
+      "scopeMode": null,
+      "organisationIds": [],
+      "cohortDigest": null,
+      "activationPlanDigest": null,
+      "observationStartedAt": null,
+      "observationEndedAt": null,
+      "healthyScopedSnapshotCount": null,
+      "warningScopedSnapshotCount": null,
+      "criticalScopedSnapshotCount": null,
+      "blockerCount": null,
+      "maximumObservedGapMinutes": null,
+      "snapshotEvidenceDigest": null,
+      "evidenceDigest": null,
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "reconciliation": {
+      "status": "not_run",
+      "organisationIds": [],
+      "cohortDigest": null,
+      "activationPlanDigest": null,
+      "packetTypes": [],
+      "unresolvedGenerationFailures": null,
+      "staleSigningPackets": null,
+      "missingFinalArtifacts": null,
+      "f2Failures": null,
+      "f3Failures": null,
+      "f4Failures": null,
+      "finalResolverAccessFailures": null,
+      "blockerCount": null,
+      "evidenceDigest": null,
+      "reviewedAt": null,
+      "reviewedBy": null
+    },
+    "rollbackReadiness": {
+      "status": "not_run",
+      "organisationIds": [],
+      "activationPlanDigest": null,
+      "pilotEnabled": null,
+      "creationPaused": null,
+      "scaleEnabled": null,
+      "rollbackPlanEvidenceDigest": null,
+      "darkLaunchRestoreEvidenceDigest": null,
+      "evidenceDigest": null,
+      "checkedAt": null,
+      "checkedBy": null
+    },
+    "overallEvidenceDigest": null,
+    "evidencePacketDigest": null
+  },
+  "evidence": {
+    "preparedBy": null,
+    "preparedAt": null,
+    "observationRecordedBy": null,
+    "reviewedBy": null,
+    "observationRecordedAt": null,
+    "changeReference": null
+  },
+  "manifestDigest": null
+}

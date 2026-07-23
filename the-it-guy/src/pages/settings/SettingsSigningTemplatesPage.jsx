@@ -6667,6 +6667,7 @@ export default function SettingsSigningTemplatesPage({
     () => selectedLibraryPacketDetail || documentPackets.find((packet) => packet.id === selectedLibraryPacketId) || null,
     [documentPackets, selectedLibraryPacketDetail, selectedLibraryPacketId],
   )
+  const selectedLibraryPacketIsOtp = normalizeText(selectedLibraryPacket?.packet_type || packetType).toLowerCase() === 'otp'
   const selectedLibraryPacketSourceContext = useMemo(
     () => (selectedLibraryPacket?.source_context_json && typeof selectedLibraryPacket.source_context_json === 'object'
       ? selectedLibraryPacket.source_context_json
@@ -7981,6 +7982,10 @@ export default function SettingsSigningTemplatesPage({
 
   async function handleGenerateSigningLinksForLibraryPacket(packet = selectedLibraryPacket) {
     if (!packet?.id) return
+    if (normalizeText(packet?.packet_type || packetType).toLowerCase() === 'otp') {
+      setError('OTP signing links are issued one required signer at a time from the Legal Document Workspace after its visual signing layout is applied. This template library does not send OTP invitations.')
+      return
+    }
     const targetVersion = latestGeneratedLibraryPacketVersion
     if (!targetVersion?.id) {
       setError('Generate the document before creating signing links.')
@@ -12179,12 +12184,18 @@ export default function SettingsSigningTemplatesPage({
                         type="button"
                         className={studioPrimaryButtonClass}
                         onClick={() => void handleGenerateSigningLinksForLibraryPacket(selectedLibraryPacket)}
-                        disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion || !(selectedPacketSigningSummary?.signerCount)}
+                        disabled={Boolean(packetActionId) || !latestGeneratedLibraryPacketVersion || !(selectedPacketSigningSummary?.signerCount) || selectedLibraryPacketIsOtp}
                       >
                         <Upload size={14} />
-                        <span>{packetActionId.startsWith('signing-links:') ? 'Sending...' : 'Send / Generate Links'}</span>
+                        <span>{selectedLibraryPacketIsOtp ? 'Use Legal Workspace for OTP' : packetActionId.startsWith('signing-links:') ? 'Sending...' : 'Send / Generate Links'}</span>
                       </button>
                     </div>
+
+                    {selectedLibraryPacketIsOtp ? (
+                      <p className="mt-3 rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs leading-5 text-[#7d520d]">
+                        OTP invitations require a signer-specific server dispatch and confirmed provider delivery. Open this packet in the Legal Document Workspace to send it.
+                      </p>
+                    ) : null}
 
                     {Array.isArray(selectedPacketSigningSummary?.signers) && selectedPacketSigningSummary.signers.length ? (
                       <div className="mt-4 space-y-2">

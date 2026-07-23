@@ -12,12 +12,12 @@ for (const token of ['H3_AUTHORISED_EMAIL', 'H3_REVOKED_EMAIL', 'STAGING_PROJECT
 assert.match(verifier, /documentGeneratorProtectedTables/)
 assert.doesNotMatch(verifier, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/)
 
-for (const file of ['../supabase/functions/generate-final-signed-document/index.ts', '../supabase/functions/generate-final-signed-otp/index.ts']) {
-  const source = fs.readFileSync(file, 'utf8')
-  assert.match(source, /authorizeFinalisation/)
-  assert.match(source, /\["active", "accepted"\]/)
-  assert.match(source, /FINALISATION_FORBIDDEN/)
+const mandateFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
+const otpFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-otp/index.ts', 'utf8')
+for (const marker of [/authorizeFinalisation/, /\["active", "accepted"\]/, /FINALISATION_FORBIDDEN/]) {
+  assert.match(mandateFinaliser, marker)
 }
+assert.match(otpFinaliser, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
 const retry = fs.readFileSync('../supabase/functions/retry-final-document-completion/index.ts', 'utf8')
 assert.ok(retry.indexOf('F5_ACCESS_DENIED') < retry.indexOf('if(rehearsal)'))
 

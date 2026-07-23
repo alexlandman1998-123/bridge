@@ -219,3 +219,21 @@ export function getLegacyAppRoleForWorkspace(workspaceType = '', workspaceRole =
   if (normalizedRole === ORG_ROLES.bondOriginator) return APP_ROLES.bondOriginator
   return APP_ROLES.agent
 }
+
+export function resolveCurrentWorkspaceAppRole({ baseRole = '', workspaceType = '', workspaceRole = '' } = {}) {
+  const normalizedBaseRole = normalizeCanonicalAppRole(baseRole, '')
+
+  // Client and platform-admin identities are not workspace presentation modes.
+  // Keep those explicit identities intact rather than inferring a professional
+  // module from a selected workspace.
+  if ([APP_ROLES.client, APP_ROLES.platformAdmin].includes(normalizedBaseRole)) {
+    return normalizedBaseRole
+  }
+
+  const normalizedWorkspaceType = normalizeWorkspaceType(workspaceType, '')
+  if (!normalizedWorkspaceType) {
+    return normalizedBaseRole || APP_ROLES.agent
+  }
+
+  return getLegacyAppRoleForWorkspace(normalizedWorkspaceType, workspaceRole)
+}

@@ -1,7 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import {
+  assessLegalDocumentPilotRelease,
+  LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+} from "../_shared/legalDocumentPilotRelease.ts";
+import {
+  assertLegalDocumentPilotLifecycleBinding,
+  recordLegalDocumentPilotLifecycleTrace,
+} from "../_shared/legalDocumentPilotLifecycleTrace.ts";
 import { handleSellerMandateSentEmail } from "../send-email/handlers/sellerMandateSent.ts";
-import { handleSellerMandateSignedEmail } from "../send-email/handlers/sellerMandateSigned.ts";
 import { handleSellerOnboardingEmail } from "../send-email/handlers/sellerOnboarding.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -28,8 +35,89 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * This endpoint is called by an unauthenticated signer link. Finalisation
+ * retries may pass through a finaliser response, so reduce it to resolver
+ * identities before sending it back to the browser.
+ */
+function buildPublicFinalArtifactDescriptor(artifact: unknown, packetId: string, packetVersionId: string) {
+  const source = artifact && typeof artifact === "object" && !Array.isArray(artifact)
+    ? artifact as Record<string, unknown>
+    : {};
+  return {
+    kind: "final_signed_document",
+    resolver: "resolve-final-signed-document-access",
+    ready: source.ready === true,
+    packetId: normalizeText(source.packetId || source.packet_id) || packetId || null,
+    packetVersionId: normalizeText(source.packetVersionId || source.packet_version_id) || packetVersionId || null,
+    documentId: normalizeText(source.documentId || source.document_id) || null,
+    fileName: normalizeText(source.fileName || source.file_name) || "signed-document.pdf",
+    sha256: normalizeText(source.sha256) || null,
+    byteLength: Number.isFinite(Number(source.byteLength)) && Number(source.byteLength) > 0 ? Number(source.byteLength) : null,
+    finalisedAt: normalizeText(source.finalisedAt || source.finalised_at) || null,
+  };
+}
+
 function lower(value: unknown) {
   return normalizeText(value).toLowerCase();
+}
+
+function buildSigningStatusContext({
+  packetType,
+  existingSourceContext,
+  signingStatus,
+  signerRole,
+  signedAt,
+  lastSignerCompletedAt,
+  sellerInviteSent = false,
+}: {
+  packetType: string;
+  existingSourceContext: Record<string, unknown>;
+  signingStatus: string;
+  signerRole: unknown;
+  signedAt: string | null;
+  lastSignerCompletedAt: string;
+  sellerInviteSent?: boolean;
+}) {
+  const normalizedPacketType = lower(packetType);
+  const normalizedRole = lower(signerRole);
+  const base = normalizedPacketType === "otp"
+    ? (() => {
+        const { mandateStatus: _mandateStatus, finalisationBlockedAt: _blockedAt, finalisationBlockReason: _blockReason, ...rest } = existingSourceContext;
+        return rest;
+      })()
+    : existingSourceContext;
+  const common = {
+    ...base,
+    signing_method: existingSourceContext.signing_method || "digital",
+    signingMethod: existingSourceContext.signingMethod || "digital",
+    signing_status: signingStatus,
+    signingStatus: signingStatus,
+    signedAt: signedAt || existingSourceContext.signedAt || null,
+    lastSignerCompletedAt,
+  };
+  if (normalizedPacketType === "otp") {
+    return {
+      ...common,
+      otpStatus: signingStatus,
+      purchaserSignedAt: normalizedRole.startsWith("purchaser") || normalizedRole.startsWith("buyer")
+        ? lastSignerCompletedAt
+        : existingSourceContext.purchaserSignedAt || null,
+      sellerSignedAt: normalizedRole === "seller" || normalizedRole === "seller_spouse"
+        ? lastSignerCompletedAt
+        : existingSourceContext.sellerSignedAt || null,
+    };
+  }
+  return {
+    ...common,
+    mandateStatus: signingStatus,
+    agentSignedAt: isMandateAgent(signerRole) ? lastSignerCompletedAt : existingSourceContext.agentSignedAt || null,
+    sellerSignedAt: isMandateSeller(signerRole) ? lastSignerCompletedAt : existingSourceContext.sellerSignedAt || null,
+    sellerSigningEmailSentAt:
+      sellerInviteSent || signingStatus === "sent_to_seller"
+        ? existingSourceContext.sellerSigningEmailSentAt || lastSignerCompletedAt
+        : existingSourceContext.sellerSigningEmailSentAt || null,
+  };
 }
 
 function valueIndicatesMarried(value: unknown) {
@@ -274,9 +362,11 @@ function decodeDataUrl(dataUrl: string) {
 async function loadSignerByToken({
   supabase,
   token,
+  deferExpiryMutation = false,
 }: {
   supabase: any;
   token: string;
+  deferExpiryMutation?: boolean;
 }) {
   const signerQuery = await supabase
     .from("document_packet_signers")
@@ -302,7 +392,7 @@ async function loadSignerByToken({
   const expiry = normalizeText(signer?.token_expires_at);
   if (!expiry) {
     return {
-      signer: null,
+      signer: deferExpiryMutation ? signer : null,
       error: {
         status: 410,
         message: "This signing link is no longer active.",
@@ -313,11 +403,11 @@ async function loadSignerByToken({
   if (expiry) {
     const expiryDate = new Date(expiry);
     if (Number.isNaN(expiryDate.getTime()) || expiryDate.getTime() <= Date.now()) {
-      if (normalizeText(signer.status).toLowerCase() !== "expired") {
+      if (!deferExpiryMutation && normalizeText(signer.status).toLowerCase() !== "expired") {
         await supabase.from("document_packet_signers").update({ status: "expired" }).eq("id", String(signer.id));
       }
       return {
-        signer: null,
+        signer: deferExpiryMutation ? signer : null,
         error: {
           status: 410,
           message: "This signing link has expired.",
@@ -387,7 +477,19 @@ function choosePacketStatusFromSigners(signers: Record<string, unknown>[]) {
   return allSigned ? "completed" : "partially_signed";
 }
 
-function resolveSigningStatusFromSigners(signers: Record<string, unknown>[]) {
+function resolveSigningStatusFromSigners(signers: Record<string, unknown>[], packetType = "mandate") {
+  if (lower(packetType) === "otp") {
+    const purchasers = signers.filter((item) => {
+      const role = lower(item.signer_role);
+      return role.startsWith("purchaser") || role.startsWith("buyer");
+    });
+    const seller = signers.find((item) => ["seller", "seller_spouse"].includes(lower(item.signer_role)));
+    if (seller && lower(seller.status) === "signed") return "seller_signed";
+    if (seller && ["sent", "viewed"].includes(lower(seller.status))) return "sent_to_seller";
+    if (purchasers.some((item) => lower(item.status) === "signed")) return "purchaser_signed";
+    if (purchasers.some((item) => ["sent", "viewed"].includes(lower(item.status)))) return "sent_to_purchaser";
+    return "sent_for_signature";
+  }
   const agent = signers.find((item) => isMandateAgent(item.signer_role));
   const seller = signers.find((item) => isMandateSeller(item.signer_role));
   if (seller && normalizeText(seller.status).toLowerCase() === "signed") return "seller_signed";
@@ -406,15 +508,13 @@ async function invokeSendEmail({
   const response =
     type === "seller_mandate_sent"
       ? await handleSellerMandateSentEmail(body as never)
-      : type === "seller_mandate_signed"
-        ? await handleSellerMandateSignedEmail(body as never)
-        : type === "seller_portal_link"
-          ? await handleSellerOnboardingEmail({
-            ...(body as Record<string, unknown>),
-            type: "seller_portal_link",
-            emailKind: "portal_documents",
-          } as never)
-          : jsonResponse(400, { error: `Unsupported internal email type: ${type || "unknown"}.` });
+      : type === "seller_portal_link"
+        ? await handleSellerOnboardingEmail({
+          ...(body as Record<string, unknown>),
+          type: "seller_portal_link",
+          emailKind: "portal_documents",
+        } as never)
+        : jsonResponse(400, { error: `Unsupported internal email type: ${type || "unknown"}.` });
   const responseBody = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, body: responseBody as Record<string, unknown> };
 }
@@ -954,6 +1054,82 @@ async function maybeSendSellerMandateInvite({
     };
   }
 
+  // This function is invoked from a public signer-completion request. Do not
+  // throw from here: keep the completion durable, retain the ready-to-send
+  // seller signer, and fail closed only for the new outbound invitation.
+  const pilotRelease = assessLegalDocumentPilotRelease({
+    organisationId,
+    operation: "signing_invite",
+  });
+  if (!pilotRelease.allowed) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "seller_signing_email_pilot_blocked",
+      contract: LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+      packetId,
+      packetVersionId,
+      errorCode: pilotRelease.code,
+    }));
+    try {
+      await appendPacketEvent({
+        supabase,
+        packetId,
+        organisationId,
+        versionId: packetVersionId,
+        eventType: "seller_signing_email_pilot_blocked",
+        payload: {
+          signerId: sellerSigner.id,
+          signerRole: "seller",
+          pilotReleaseContract: pilotRelease.contract,
+          pilotReleaseCode: pilotRelease.code,
+          blockedAt: nowIso,
+        },
+      });
+    } catch (error) {
+      // Audit persistence must never turn a pilot hold into a failed signer
+      // completion. The structured non-PII runtime log above remains.
+      console.warn("[mandate-signing] seller invite pilot-block audit failed", error);
+    }
+    return {
+      allSigners: workingSigners,
+      sellerInviteSent: false,
+    };
+  }
+  try {
+    await assertLegalDocumentPilotLifecycleBinding({
+      supabase,
+      packetId,
+      packetVersionId,
+      activeRelease: pilotRelease,
+    });
+  } catch (error) {
+    // This caller is a public signer-completion path. Keep completion
+    // non-blocking, but do not let its optional next-signer email escape
+    // without the immutable release binding required for Phase 5 evidence.
+    console.warn("[mandate-signing] seller invite release trace binding unavailable", error);
+    const typed = error as { code?: unknown };
+    try {
+      await appendPacketEvent({
+        supabase,
+        packetId,
+        organisationId,
+        versionId: packetVersionId,
+        eventType: "seller_signing_email_pilot_blocked",
+        payload: {
+          pilotReleaseContract: LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+          pilotReleaseCode: normalizeText(typed.code) || "PHASE5_RELEASE_TRACE_BINDING_REQUIRED",
+          blockedAt: nowIso,
+        },
+      });
+    } catch {
+      // Optional audit never changes the signer-completion result.
+    }
+    return {
+      allSigners: workingSigners,
+      sellerInviteSent: false,
+    };
+  }
+
   const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString();
   const nextToken = normalizeText(sellerSigner.signing_token) || generateSecureSigningToken();
   const sellerUpdate = await supabase
@@ -961,7 +1137,10 @@ async function maybeSendSellerMandateInvite({
     .update({
       signing_token: nextToken,
       token_expires_at: expiresAt,
-      status: "sent",
+      // A prepared link is not an invitation that has been delivered. The
+      // Phase 0 database recorder promotes this exact signer only after the
+      // provider confirms the message.
+      status: "ready_to_send",
     })
     .eq("id", String(sellerSigner.id))
     .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
@@ -982,6 +1161,7 @@ async function maybeSendSellerMandateInvite({
       mandateType: "Mandate",
       portalLink: `${appBaseUrl}/sign/${nextToken}`,
       agentName: agentSigner.signer_name || "Agent",
+      idempotencyKey: `mandate-signing:${packetId}:${packetVersionId}:${normalizeText(sellerSigner.id)}:automatic`,
     },
   });
   console.log("[mandate-signing] seller invite send result", {
@@ -1029,109 +1209,85 @@ async function maybeSendSellerMandateInvite({
     };
   }
 
-  const updatedSigners = workingSigners.map((item) =>
-    normalizeText(item.id) === normalizeText(sellerUpdate.data?.id) ? sellerUpdate.data as Record<string, unknown> : item
-  );
-  await appendPacketEvent({
-    supabase,
-    packetId,
-    organisationId,
-    versionId: packetVersionId,
-    eventType: "seller_signing_email_sent",
-    payload: {
-      signerId: sellerUpdate.data?.id,
-      signerRole: "seller",
+  const providerMessageId = normalizeText(emailResult.body?.emailId);
+  const deliveryRecord = providerMessageId
+    ? await supabase.rpc("bridge_record_mandate_signing_delivery_phase0", {
+      p_packet_id: packetId,
+      p_version_id: packetVersionId,
+      p_signer_id: normalizeText(sellerUpdate.data?.id || sellerSigner.id),
+      p_signing_token: nextToken,
+      p_provider_message_id: providerMessageId,
+      p_delivery_evidence: {
+        provider: "resend",
+        providerMessageId,
+        providerStatus: emailResult.body?.providerStatus || null,
+        recipientEmail: sellerEmail,
+        recipientRole: "seller",
+        emailConfirmed: true,
+        idempotencyKey: `mandate-signing:${packetId}:${packetVersionId}:${normalizeText(sellerSigner.id)}:automatic`,
+      },
+      p_dispatch_id: null,
+      p_is_resend: false,
+    })
+    : { data: null, error: new Error("The email provider did not return a message identifier.") };
+  if (deliveryRecord.error || !deliveryRecord.data) {
+    console.error("[mandate-signing] seller invite delivery record failed", {
+      mandateId: packetId,
+      signerId: sellerUpdate.data?.id || sellerSigner.id,
+      recipientRole: "seller",
       recipientEmailPresent: true,
-      sentAt: nowIso,
-    },
-  });
+      providerMessageId: providerMessageId || null,
+      error: deliveryRecord.error,
+    });
+    await appendPacketEvent({
+      supabase,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      eventType: "seller_signing_delivery_record_failed",
+      payload: {
+        signerId: sellerUpdate.data?.id || sellerSigner.id,
+        signerRole: "seller",
+        recipientEmailPresent: true,
+        providerMessageId: providerMessageId || null,
+        failedAt: nowIso,
+      },
+    });
+    return {
+      allSigners: workingSigners.map((item) =>
+        normalizeText(item.id) === normalizeText(sellerUpdate.data?.id)
+          ? { ...(sellerUpdate.data as Record<string, unknown>), status: "ready_to_send" }
+          : item
+      ),
+      sellerInviteSent: false,
+    };
+  }
+  try {
+    await recordLegalDocumentPilotLifecycleTrace({
+      supabase,
+      packetId,
+      packetVersionId,
+      stage: "signing_invite_delivered",
+    });
+  } catch (error) {
+    // The provider acceptance stays durable; retain the completed signing
+    // result and let Phase 5 hold acceptance until operators reconcile the
+    // missing immutable lifecycle trace.
+    console.warn("[mandate-signing] seller invite lifecycle trace unavailable", error);
+  }
+
+  const deliveredSeller = {
+    ...(sellerUpdate.data as Record<string, unknown>),
+    status: normalizeText((deliveryRecord.data as Record<string, unknown>)?.signerStatus) || "sent",
+  };
+  const updatedSigners = workingSigners.map((item) =>
+    normalizeText(item.id) === normalizeText(sellerUpdate.data?.id) ? deliveredSeller : item
+  );
 
   return {
     allSigners: updatedSigners,
     sellerInviteSent: true,
   };
-}
-
-async function sendFinalSignedMandateEmails({
-  supabase,
-  packet,
-  packetId,
-  organisationId,
-  allSigners,
-  finalBody,
-  nowIso,
-}: {
-  supabase: any;
-  packet: Record<string, unknown>;
-  packetId: string;
-  organisationId: string;
-  allSigners: Record<string, unknown>[];
-  finalBody: Record<string, unknown>;
-  nowIso: string;
-}) {
-  if (finalBody?.finalDelivery && typeof finalBody.finalDelivery === "object") return;
-  const artifact = finalBody?.finalArtifact && typeof finalBody.finalArtifact === "object"
-    ? finalBody.finalArtifact as Record<string, unknown>
-    : {};
-  const artifactBucket = normalizeText(artifact.bucket);
-  const artifactPath = normalizeText(artifact.path);
-  const artifactUrl = normalizeText(artifact.url);
-  const signedDocumentName = normalizeText(artifact.fileName) || "signed-mandate.pdf";
-  let downloadLink = "";
-
-  if (artifactBucket && artifactPath) {
-    const signedUrlResult = await supabase.storage.from(artifactBucket).createSignedUrl(artifactPath, 60 * 60 * 24 * 7);
-    downloadLink = normalizeText(signedUrlResult.data?.signedUrl);
-  }
-  if (!downloadLink) downloadLink = artifactUrl;
-
-  const recipients = new Map<string, Record<string, unknown>>();
-  for (const signer of allSigners || []) {
-    const email = normalizeText(signer.signer_email).toLowerCase();
-    if (!email || email.endsWith("@bridge.local")) continue;
-    if (!recipients.has(email)) recipients.set(email, signer);
-  }
-
-  const sellerName = normalizeText((allSigners || []).find((item) => isMandateSeller(item.signer_role))?.signer_name) || "Seller";
-  const propertyTitle = normalizeText(packet.title) || "your property";
-  let sentCount = 0;
-  for (const [email, signer] of recipients.entries()) {
-    const emailResult = await invokeSendEmail({
-      body: {
-        type: "seller_mandate_signed",
-        to: email,
-        organisationId,
-        packetId,
-        recipientName: normalizeText(signer.signer_name) || "there",
-        sellerName,
-        propertyTitle,
-        signedAt: nowIso,
-        signedDocumentName,
-        downloadLink,
-      },
-    });
-    console.log("[mandate-signing] final signed email result", {
-      mandateId: packetId,
-      recipientRole: normalizeText(signer.signer_role) || null,
-      recipientEmailPresent: true,
-      emailProviderStatus: emailResult.status,
-    });
-    if (emailResult.ok) sentCount += 1;
-  }
-
-  await appendPacketEvent({
-    supabase,
-    packetId,
-    organisationId,
-    versionId: normalizeText(finalBody?.packetVersionId),
-    eventType: "final_signed_mandate_email_sent",
-    payload: {
-      recipientCount: sentCount,
-      attemptedRecipientCount: recipients.size,
-      downloadLinkPresent: Boolean(downloadLink),
-      sentAt: nowIso,
-    },
-  });
 }
 
 async function appendSellerPortalInviteAfterMandateSignedTrigger({
@@ -1548,6 +1704,46 @@ async function sendSellerPortalInviteAfterMandateSigned({
     return { skipped: true, reason: "already_sent" };
   }
 
+  // Portal-invite delivery is a non-blocking post-completion side effect. A
+  // release hold must not undo the completed signature or its secure download
+  // path, so record a best-effort skipped outcome and return normally.
+  const pilotRelease = assessLegalDocumentPilotRelease({
+    organisationId,
+    operation: "final_delivery",
+  });
+  if (!pilotRelease.allowed) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "seller_portal_invite_pilot_blocked",
+      contract: LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT,
+      packetId,
+      packetVersionId: versionId,
+      errorCode: pilotRelease.code,
+    }));
+    try {
+      await appendSellerPortalMandateInviteOutcome({
+        supabase,
+        packetId,
+        organisationId,
+        versionId,
+        eventType: SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT,
+        finalBody,
+        payload: {
+          portalInviteStatus: "blocked",
+          skipReason: "pilot_release_blocked",
+          pilotReleaseContract: pilotRelease.contract,
+          pilotReleaseCode: pilotRelease.code,
+          blockedAt: nowIso,
+        },
+      });
+    } catch (error) {
+      // The invite is intentionally skipped; audit failure cannot fail the
+      // signer-completion response.
+      console.warn("[mandate-signing] portal-invite pilot-block audit failed", error);
+    }
+    return { skipped: true, reason: "pilot_release_blocked" };
+  }
+
   const listing = await resolveSellerPortalInviteListing({ supabase, packet, packetId, organisationId, finalBody });
   if (!listing?.id) {
     await appendSellerPortalMandateInviteOutcome({
@@ -1674,6 +1870,8 @@ function humanizePacketEventMessage(eventType = "", payload: Record<string, unkn
     signer_completed_signing: `${signerLabel} signed the mandate.`,
     all_signers_completed: "All required signers completed the mandate.",
     mandate_signed_by_seller: `${signerLabel} signed the mandate.`,
+    seller_signing_email_pilot_blocked: "Seller signing email was withheld by the pilot release guard.",
+    final_signed_mandate_email_pilot_blocked: "Final signed-document email was withheld by the pilot release guard.",
     [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT]: "Seller portal password setup invite is ready after mandate signature.",
     [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT]: "Seller portal password setup invite was sent after mandate signature.",
     [SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT]: "Seller portal password setup invite was skipped after mandate signature.",
@@ -1739,12 +1937,11 @@ Deno.serve(async (req: Request) => {
         error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
       });
     }
-    const SUPABASE_FUNCTION_AUTH_KEY =
-      Deno.env.get("SUPABASE_ANON_KEY") ||
-      Deno.env.get("SUPABASE_FUNCTION_AUTH_KEY") ||
-      Deno.env.get("FUNCTION_AUTH_KEY") ||
-      Deno.env.get("VITE_SUPABASE_ANON_KEY") ||
-      SUPABASE_SERVICE_ROLE_KEY;
+    // This public signer function is allowed to call a finaliser only after it
+    // has authenticated the signer token and persisted their evidence. The
+    // finaliser itself is privileged, so never propagate an anon/browser key
+    // into this internal call.
+    const FINALISER_SERVICE_ROLE_KEY = SUPABASE_SERVICE_ROLE_KEY;
 
     const payload = (await req.json()) as {
       action?: string;
@@ -1767,15 +1964,22 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const signerResult = await loadSignerByToken({ supabase, token });
-    if (signerResult.error) {
+    const signerResult = await loadSignerByToken({ supabase, token, deferExpiryMutation: true });
+    const signer = signerResult.signer as Record<string, unknown> | null;
+    if (signerResult.error && !signer) {
       return jsonResponse(Number(signerResult.error.status || 400), {
         success: false,
         error: signerResult.error.message,
         errorCode: signerResult.error.errorCode,
       });
     }
-    const signer = signerResult.signer as Record<string, unknown>;
+    if (!signer) {
+      return jsonResponse(404, {
+        success: false,
+        error: "This signing link is invalid.",
+        errorCode: "INVALID_SIGNING_TOKEN",
+      });
+    }
     const signerId = String(signer.id || "");
     const packetId = String(signer.packet_id || "");
     const packetVersionId = String(signer.packet_version_id || "");
@@ -1783,11 +1987,11 @@ Deno.serve(async (req: Request) => {
     const nowIso = new Date().toISOString();
     const [runtimePacketResult, runtimeVersionResult] = await Promise.all([
       supabase.from("document_packets")
-        .select("id, organisation_id, status, current_version_number")
+        .select("id, organisation_id, packet_type, status, current_version_number")
         .eq("id", packetId)
         .maybeSingle(),
       supabase.from("document_packet_versions")
-        .select("id, packet_id, organisation_id, version_number, render_status, validation_summary_json")
+        .select("id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_bucket, rendered_file_path, rendered_media_type, rendered_byte_length, rendered_sha256, render_input_verified, native_pdf_verified, transaction_pdf_persisted, validation_summary_json")
         .eq("id", packetVersionId)
         .eq("packet_id", packetId)
         .maybeSingle(),
@@ -1808,6 +2012,41 @@ Deno.serve(async (req: Request) => {
         success: false,
         error: "This signer action is not bound to the current generated document version.",
         errorCode: "SIGNER_SESSION_BINDING_INVALID",
+      });
+    }
+    if (normalizeText(runtimePacket?.packet_type).toLowerCase() === "otp") {
+      const renderedSha256 = normalizeText(runtimeVersion?.rendered_sha256).toLowerCase();
+      const canonicalOtpPdfReady =
+        Boolean(runtimeVersion?.rendered_document_id) &&
+        Boolean(runtimeVersion?.rendered_file_bucket) &&
+        normalizeText(runtimeVersion?.rendered_file_path).toLowerCase().endsWith(".pdf") &&
+        normalizeText(runtimeVersion?.rendered_media_type).toLowerCase() === "application/pdf" &&
+        Boolean(runtimeVersion?.render_input_verified) &&
+        Boolean(runtimeVersion?.native_pdf_verified) &&
+        Boolean(runtimeVersion?.transaction_pdf_persisted) &&
+        /^sha256:[0-9a-f]{64}$/.test(renderedSha256) &&
+        Number(runtimeVersion?.rendered_byte_length || 0) > 0;
+      if (!canonicalOtpPdfReady) {
+        return jsonResponse(409, {
+          success: false,
+          error: "This Offer to Purchase does not have the exact certified PDF required for signing.",
+          errorCode: "OTP_CANONICAL_PDF_REQUIRED",
+          retryable: false,
+          requiredAction: "REISSUE_CANONICAL_OTP_PDF",
+        });
+      }
+    }
+    if (signerResult.error) {
+      if (
+        signerResult.error.errorCode === "SIGNING_TOKEN_EXPIRED" &&
+        normalizeText(signer.status).toLowerCase() !== "expired"
+      ) {
+        await supabase.from("document_packet_signers").update({ status: "expired" }).eq("id", signerId);
+      }
+      return jsonResponse(Number(signerResult.error.status || 400), {
+        success: false,
+        error: signerResult.error.message,
+        errorCode: signerResult.error.errorCode,
       });
     }
     const signerStatus = normalizeText(signer.status).toLowerCase();
@@ -2053,15 +2292,13 @@ Deno.serve(async (req: Request) => {
         if (retryPacketResult.error) throw retryPacketResult.error;
         if (retryVersionResult.error) throw retryVersionResult.error;
         if (!normalizeText(retryVersionResult.data?.final_signed_file_path)) {
-          const retryFinaliser = normalizeText(retryPacketResult.data?.packet_type).toLowerCase() === "otp"
-            ? "generate-final-signed-otp"
-            : "generate-final-signed-document";
+          const retryFinaliser = "generate-final-signed-document";
           const retryResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${retryFinaliser}`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "apikey": SUPABASE_FUNCTION_AUTH_KEY,
-              "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
+              "apikey": FINALISER_SERVICE_ROLE_KEY,
+              "Authorization": `Bearer ${FINALISER_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({ packetId, packetVersionId, finalisedBy: null }),
           });
@@ -2081,7 +2318,7 @@ Deno.serve(async (req: Request) => {
             alreadyCompleted: true,
             packetStatus: "completed",
             signingStatus: "completed",
-            finalArtifact: retryBody?.finalArtifact || null,
+            finalArtifact: buildPublicFinalArtifactDescriptor(retryBody?.finalArtifact, packetId, packetVersionId),
             finalisationRetried: true,
           });
         }
@@ -2131,29 +2368,22 @@ Deno.serve(async (req: Request) => {
         });
         const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
         const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
-        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
+        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners, normalizeText(packet.packet_type));
 
         await supabase
           .from("document_packets")
           .update({
             status: nextPacketStatus,
             completed_at: nextPacketStatus === "completed" ? existingSourceContext.signedAt || nowIso : null,
-            source_context_json: {
-              ...existingSourceContext,
-              signing_method: existingSourceContext.signing_method || "digital",
-              signingMethod: existingSourceContext.signingMethod || "digital",
-              signing_status: workflowSigningStatus,
+            source_context_json: buildSigningStatusContext({
+              packetType: normalizeText(packet.packet_type),
+              existingSourceContext,
               signingStatus: workflowSigningStatus,
-              mandateStatus: workflowSigningStatus,
-              agentSignedAt: isMandateAgent(signer.signer_role) ? existingSourceContext.agentSignedAt || signer.signed_at || nowIso : existingSourceContext.agentSignedAt || null,
-              sellerSignedAt: isMandateSeller(signer.signer_role) ? existingSourceContext.sellerSignedAt || signer.signed_at || nowIso : existingSourceContext.sellerSignedAt || null,
-              sellerSigningEmailSentAt:
-                sellerInviteSent || workflowSigningStatus === "sent_to_seller"
-                  ? existingSourceContext.sellerSigningEmailSentAt || nowIso
-                  : existingSourceContext.sellerSigningEmailSentAt || null,
-              signedAt: nextPacketStatus === "completed" ? existingSourceContext.signedAt || nowIso : existingSourceContext.signedAt || null,
-              lastSignerCompletedAt: existingSourceContext.lastSignerCompletedAt || signer.signed_at || nowIso,
-            },
+              signerRole: signer.signer_role,
+              signedAt: nextPacketStatus === "completed" ? normalizeText(existingSourceContext.signedAt) || nowIso : normalizeText(existingSourceContext.signedAt) || null,
+              lastSignerCompletedAt: normalizeText(existingSourceContext.lastSignerCompletedAt) || normalizeText(signer.signed_at) || nowIso,
+              sellerInviteSent,
+            }),
           })
           .eq("id", packetId);
 
@@ -2272,7 +2502,7 @@ Deno.serve(async (req: Request) => {
       });
       const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
       const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
-      const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
+      const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners, normalizeText(packet.packet_type));
       const progressSigningStatus = nextPacketStatus === "completed" ? "finalising" : workflowSigningStatus;
 
       const preFinalPacketStatus = nextPacketStatus === "completed" ? "partially_signed" : nextPacketStatus;
@@ -2281,22 +2511,15 @@ Deno.serve(async (req: Request) => {
         .update({
           status: preFinalPacketStatus,
           completed_at: null,
-          source_context_json: {
-            ...existingSourceContext,
-            signing_method: existingSourceContext.signing_method || "digital",
-            signingMethod: existingSourceContext.signingMethod || "digital",
-            signing_status: progressSigningStatus,
+          source_context_json: buildSigningStatusContext({
+            packetType: normalizeText(packet.packet_type),
+            existingSourceContext,
             signingStatus: progressSigningStatus,
-            mandateStatus: progressSigningStatus,
-            agentSignedAt: isMandateAgent(signer.signer_role) ? nowIso : existingSourceContext.agentSignedAt || null,
-            sellerSignedAt: isMandateSeller(signer.signer_role) ? nowIso : existingSourceContext.sellerSignedAt || null,
-            sellerSigningEmailSentAt:
-              sellerInviteSent || progressSigningStatus === "sent_to_seller"
-                ? existingSourceContext.sellerSigningEmailSentAt || nowIso
-                : existingSourceContext.sellerSigningEmailSentAt || null,
-            signedAt: nextPacketStatus === "completed" ? nowIso : existingSourceContext.signedAt || null,
+            signerRole: signer.signer_role,
+            signedAt: nextPacketStatus === "completed" ? nowIso : normalizeText(existingSourceContext.signedAt) || null,
             lastSignerCompletedAt: nowIso,
-          },
+            sellerInviteSent,
+          }),
         })
         .eq("id", packetId);
       if (packetProgressUpdate.error) throw packetProgressUpdate.error;
@@ -2318,7 +2541,9 @@ Deno.serve(async (req: Request) => {
           packetId,
           organisationId,
           versionId: packetVersionId,
-          eventType: "mandate_signed_by_seller",
+          eventType: normalizeText(packet.packet_type).toLowerCase() === "otp"
+            ? "otp_signed_by_final_signer"
+            : "mandate_signed_by_seller",
           payload: {
             signerId,
             signerRole: signer.signer_role,
@@ -2327,15 +2552,13 @@ Deno.serve(async (req: Request) => {
             signedAt: nowIso,
           },
         });
-        const finaliserFunction = normalizeText(packet.packet_type).toLowerCase() === "otp"
-          ? "generate-final-signed-otp"
-          : "generate-final-signed-document";
+        const finaliserFunction = "generate-final-signed-document";
         const finalResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${finaliserFunction}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "apikey": SUPABASE_FUNCTION_AUTH_KEY,
-            "Authorization": `Bearer ${SUPABASE_FUNCTION_AUTH_KEY}`,
+            "apikey": FINALISER_SERVICE_ROLE_KEY,
+            "Authorization": `Bearer ${FINALISER_SERVICE_ROLE_KEY}`,
           },
           body: JSON.stringify({
             packetId,
@@ -2366,25 +2589,26 @@ Deno.serve(async (req: Request) => {
             eventType: "final_signed_generation_triggered",
             payload: {
               generatedAt: new Date().toISOString(),
-              finalArtifactPath: finalBody?.finalArtifact?.path || null,
+              finalArtifactDocumentId: finalBody?.finalArtifact?.documentId || null,
             },
           });
-          try {
-            await syncSellerMandateCompletion({
+          if (normalizeText(packet.packet_type).toLowerCase() === "mandate") {
+            try {
+              await syncSellerMandateCompletion({
               supabase,
               packet,
               packetId,
               organisationId,
               nowIso,
-            });
-          } catch (syncError) {
-            console.error("[mandate-signing] seller mandate completion sync failed", {
-              mandateId: packetId,
-              error: String(syncError),
-            });
-          }
-          try {
-            await appendSellerPortalInviteAfterMandateSignedTrigger({
+              });
+            } catch (syncError) {
+              console.error("[mandate-signing] seller mandate completion sync failed", {
+                mandateId: packetId,
+                error: String(syncError),
+              });
+            }
+            try {
+              await appendSellerPortalInviteAfterMandateSignedTrigger({
               supabase,
               packet,
               packetId,
@@ -2392,15 +2616,15 @@ Deno.serve(async (req: Request) => {
               versionId: packetVersionId,
               finalBody,
               nowIso,
-            });
-          } catch (triggerError) {
-            console.error("[mandate-signing] seller portal invite trigger marker failed", {
-              mandateId: packetId,
-              error: String(triggerError),
-            });
-          }
-          try {
-            const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
+              });
+            } catch (triggerError) {
+              console.error("[mandate-signing] seller portal invite trigger marker failed", {
+                mandateId: packetId,
+                error: String(triggerError),
+              });
+            }
+            try {
+              const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
               supabase,
               packet,
               packetId,
@@ -2409,35 +2633,20 @@ Deno.serve(async (req: Request) => {
               finalBody,
               allSigners: completionSigners,
               nowIso,
-            });
-            console.log("[mandate-signing] seller portal invite after mandate signed result", {
+              });
+              console.log("[mandate-signing] seller portal invite after mandate signed result", {
               mandateId: packetId,
               sent: Boolean(portalInviteResult?.sent),
               skipped: Boolean(portalInviteResult?.skipped),
               failed: Boolean(portalInviteResult?.failed),
               reason: normalizeText(portalInviteResult?.reason) || null,
-            });
-          } catch (portalInviteError) {
-            console.error("[mandate-signing] seller portal invite after mandate signed failed", {
-              mandateId: packetId,
-              error: String(portalInviteError),
-            });
-          }
-          try {
-            await sendFinalSignedMandateEmails({
-              supabase,
-              packet,
-              packetId,
-              organisationId,
-              allSigners: completionSigners,
-              finalBody,
-              nowIso,
-            });
-          } catch (emailError) {
-            console.error("[mandate-signing] final signed email delivery failed", {
-              mandateId: packetId,
-              error: String(emailError),
-            });
+              });
+            } catch (portalInviteError) {
+              console.error("[mandate-signing] seller portal invite after mandate signed failed", {
+                mandateId: packetId,
+                error: String(portalInviteError),
+              });
+            }
           }
         }
       }

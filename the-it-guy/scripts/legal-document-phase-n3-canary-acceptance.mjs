@@ -49,7 +49,7 @@ if (n2.status === 'READY_FOR_N3' && claim?.claimedAt) {
       const version = versionResult.data
       const [signers, events, artifact, deliveries, publication] = await Promise.all([
         client.from('document_packet_signers').select('id, packet_id, packet_version_id, status, signed_at').eq('packet_id', packet.id).eq('packet_version_id', version.id),
-        client.from('document_packet_events').select('version_id, event_type, event_payload_json, created_at').eq('packet_id', packet.id).in('event_type', ['version_generated', 'packet_regenerated', 'draft_approved', 'document_locked', 'signer_links_generated', 'signer_link_viewed', 'all_signers_completed', 'final_signed_document_generated', 'final_signed_otp_generated', 'final_signed_delivery_completed']).order('created_at'),
+        client.from('document_packet_events').select('version_id, event_type, event_payload_json, created_at').eq('packet_id', packet.id).in('event_type', ['version_generated', 'packet_regenerated', 'draft_approved', 'document_locked', 'signer_links_generated', 'signer_link_viewed', 'all_signers_completed', 'final_signed_document_generated', 'final_signed_delivery_completed']).order('created_at'),
         client.from('legal_final_artifact_evidence').select('packet_version_id, path, sha256').eq('packet_version_id', version.id).maybeSingle(),
         client.from('legal_final_artifact_deliveries').select('signer_id, artifact_sha256, artifact_path, attempt_number, status, attempted_at').eq('packet_version_id', version.id),
         client.from('legal_final_artifact_publications').select('packet_version_id, artifact_sha256, artifact_path, portal_surface, verified_at').eq('packet_version_id', version.id).maybeSingle(),

@@ -13,6 +13,7 @@ const manifest = JSON.parse(manifestRaw)
 
 assert.equal(manifest.version, 1, 'Unexpected release manifest version.')
 assert.ok(manifest.releaseId, 'Release manifest is missing releaseId.')
+assert.ok(manifest.supabaseOrigin === null || (typeof manifest.supabaseOrigin === 'string' && /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(manifest.supabaseOrigin)), 'Release manifest has an invalid supabaseOrigin.')
 assert.equal(manifest.listingDetailAssetDetected, true, 'Release manifest does not include the listing-detail chunk.')
 assert.ok(Array.isArray(manifest.criticalAssets) && manifest.criticalAssets.length > 0, 'Release manifest has no critical assets.')
 assert.match(indexHtml, new RegExp(`<meta name="arch9-release" content="${manifest.releaseId}"`), 'HTML and release manifest markers do not match.')
@@ -23,6 +24,7 @@ console.log(JSON.stringify({
   version: 'arch9_build_release_manifest_v1',
   passed: true,
   releaseId: manifest.releaseId,
+  supabaseOrigin: manifest.supabaseOrigin,
   criticalAssetCount: manifest.criticalAssets.length,
   listingDetailAssetDetected: manifest.listingDetailAssetDetected,
 }, null, 2))

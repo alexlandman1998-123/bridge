@@ -4,6 +4,19 @@ import fs from 'node:fs'
 import { buildLegalDocumentNextExpandedCohortActivation } from '../src/core/documents/legalDocumentNextExpandedCohortActivation.js'
 import { canonicalLegalDocumentReleaseValue } from '../src/core/documents/legalDocumentReleaseReceipt.js'
 
+// RETIRED BY ROLL_OUT_6.  This historical activator mutates the v1
+// environment allowlist and cannot establish a server-owned release epoch.
+// Its retained source is audit material only; terminate before any local or
+// remote mutation can occur.
+console.log(JSON.stringify({
+  phase: 'V2',
+  status: 'RETIRED_HOLD',
+  errorCode: 'LEGAL_DOCUMENT_LEGACY_EXPANSION_RETIRED',
+  message: 'Legacy V2 expansion activation is permanently retired. Use the separately approved server-owned successor-release process; this command made no changes.',
+  mutatedData: false,
+}, null, 2))
+process.exit(1)
+
 const PILOT_PATH = 'config/legal-document-pilot.json'
 const STATE_PATH = 'config/legal-document-next-expansion-activation.json'
 const WRITE_FLAG = 'LEGAL_DOCUMENT_PHASE_V2_WRITE'

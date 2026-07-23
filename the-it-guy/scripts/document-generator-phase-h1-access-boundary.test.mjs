@@ -11,11 +11,11 @@ const generatedPolicy = fs.readFileSync('../supabase/migrations/202607180012_dur
 const finalPolicy = fs.readFileSync('../supabase/migrations/202607180020_final_signed_transaction_publication_f3.sql', 'utf8')
 assert.match(generatedPolicy, /generated_legal_pdf_packet_access_d3[\s\S]*bridge_can_access_legal_packet_h2/)
 assert.match(finalPolicy, /final_signed_legal_pdf_access_f3[\s\S]*bridge_can_access_legal_packet_h2/)
-for (const file of ['../supabase/functions/generate-final-signed-document/index.ts', '../supabase/functions/generate-final-signed-otp/index.ts']) {
-  const source = fs.readFileSync(file, 'utf8')
-  assert.match(source, /authorizeFinalisation/)
-  assert.match(source, /FINALISATION_FORBIDDEN/)
-}
+const mandateFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-document/index.ts', 'utf8')
+const otpFinaliser = fs.readFileSync('../supabase/functions/generate-final-signed-otp/index.ts', 'utf8')
+assert.match(mandateFinaliser, /authorizeFinalisation/)
+assert.match(mandateFinaliser, /FINALISATION_FORBIDDEN/)
+assert.match(otpFinaliser, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
 const retry = fs.readFileSync('../supabase/functions/retry-final-document-completion/index.ts', 'utf8')
 assert.ok(retry.indexOf('F5_ACCESS_DENIED') < retry.indexOf('if(rehearsal)'))
 

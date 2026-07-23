@@ -9,13 +9,27 @@ const confirmed = flags.has('--confirm-repair')
 const organisationId = (args.find((arg) => arg.startsWith('--organisation-id=')) || '').split('=').slice(1).join('=').trim()
 const listingId = (args.find((arg) => arg.startsWith('--listing-id=')) || '').split('=').slice(1).join('=').trim()
 const transactionId = (args.find((arg) => arg.startsWith('--transaction-id=')) || '').split('=').slice(1).join('=').trim()
-const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || ''
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+const stagingProjectRef = (process.env.SUPABASE_STAGING_PROJECT_REF || '').trim()
+const url = process.env.SUPABASE_STAGING_URL || process.env.VITE_SUPABASE_STAGING_URL || process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || ''
+const key = process.env.SUPABASE_STAGING_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
 const accessToken = process.env.SELLER_DOCUMENT_AUDIT_ACCESS_TOKEN || ''
 
 if (!url || !key) {
   console.error('Supabase URL and a service-role or authenticated key are required.')
   process.exit(2)
+}
+if (stagingProjectRef) {
+  let configuredProjectRef = ''
+  try {
+    configuredProjectRef = new URL(url).hostname.split('.')[0] || ''
+  } catch {
+    console.error('The configured Supabase URL is invalid.')
+    process.exit(2)
+  }
+  if (configuredProjectRef !== stagingProjectRef) {
+    console.error(`Refusing seller-document staging audit: URL targets ${configuredProjectRef || 'an unknown project'}, expected staging project ${stagingProjectRef}. Set SUPABASE_STAGING_URL and SUPABASE_STAGING_SERVICE_ROLE_KEY before retrying.`)
+    process.exit(2)
+  }
 }
 if (repair && (!confirmed || !listingId)) {
   console.error('Repair mode requires both --listing-id=<uuid> and --confirm-repair.')

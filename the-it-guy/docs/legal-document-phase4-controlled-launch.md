@@ -5,11 +5,18 @@ Phase 4 adds the enforceable go-live boundary around OTP and SalesMandate genera
 ## Runtime controls
 
 - The app blocks generation before invoking an Edge Function when the selected template is not published, active, and independently approved.
-- `generate-otp` and `generate-mandate` repeat the check server-side using the database template row.
+- The canonical `generate-mandate` entry point repeats the check server-side using the database template row for both OTP and mandate packets. `generate-otp` is retired and must remain unavailable.
+- A published legal approval is not a runtime release by itself: both the browser and canonical generator require its frozen B1 binding and B3 application evidence (`legal_b1_manifest_digest`, `legal_b3_applied_at`, `legal_b3_applied_by`, `legal_b3_application_reference`, and `legal_phase4_b3_release_contract=phase4-b3-integrity-v1`), plus a matching protected provenance row emitted by the B3 audit trigger. Otherwise they fail closed with `LEGAL_TEMPLATE_RUNTIME_APPROVAL_REQUIRED`. The Phase 4 contract deliberately invalidates earlier B3 caches; every OTP and mandate pilot template must complete a fresh B3 promotion after migrations `202607220007` through `202607220009` are deployed.
+- The final persistence boundary repeats that release check inside PostgreSQL. Migration `202607220011_phase4_legal_release_persistence_fence.sql` locks the packet/template, then matches the current B3 cache to its protected provenance and audit row before an internal legal document link, generated version, or new F2 artifact evidence can commit. A C3 restart therefore serializes before or after the protected write—never between validation and persistence. It preserves the existing authorized mandate I1/D3 workflow; it does not turn those workspace operations into service-only calls. If C3 wins after raw storage upload, the write is rejected with `PHASE4_LEGAL_RELEASE_PERSISTENCE_FENCE_REJECTED`; any uploaded object is private and unlinked, never signable or client-visible, and should be reclaimed by normal reconciliation.
 - Edge Functions require an authenticated caller and reject approved-template ID/source substitutions.
 - Edge Functions also require `LEGAL_DOCUMENT_PILOT_ENABLED=true` and an organisation ID listed in `LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS`.
 - `forceGenerate` does not bypass legal approval.
+- A signed OTP or mandate is downloaded only through the server-owned final-artifact resolver. It rechecks immutable F2 evidence, the exact finalisation event, and the shared/client-visible Documents row before issuing a 60-second URL; browser payloads carry packet/version/document IDs rather than final storage coordinates.
 - Approval, source-mismatch, start, completion, and failure outcomes use structured logs without signer personal data.
+
+### Controlled staging guard smoke
+
+`npm run verify:legal-documents:phase4-staging-smoke` is intentionally an audit-writing smoke, not a read-only verifier. Before running it, an operator must explicitly set `LEGAL_DOCUMENT_PHASE4_AUDIT_SMOKE_APPROVED=true` and provide a designated, actor-authorized OTP fixture in `LEGAL_DOCUMENT_PHASE4_OTP_SMOKE_PACKET_ID` plus a mandate fixture in `LEGAL_DOCUMENT_PHASE4_MANDATE_SMOKE_PACKET_ID`. Each expected approval-lock rejection records one non-PII `legal_template_approval_blocked` packet event. It does not create a document version, generated artifact, storage object, template change, or pilot-configuration change. Do not run it against an arbitrary client packet.
 
 ## Recording genuine approval
 
@@ -188,7 +195,7 @@ F1 no longer falls back to a different version's preview and never creates missi
 
 F2 prevents a packet from becoming completed merely because every signer clicked Finish. Both OTP and mandate finalisers require the explicitly supplied current E2-locked version, every configured signer to be signed, and every required signature or initial field to be complete with its own stored asset. Finalisation fails when a field targets a page outside the produced PDF.
 
-Deploy `202607170023_legal_final_signed_assurance_f2.sql` together with the updated `generate-final-signed-otp`, `generate-final-signed-document`, and `signer-signing-action` functions. Complete the controlled OTP and mandate through their signer links, then run:
+Deploy `202607170023_legal_final_signed_assurance_f2.sql` together with the canonical `generate-final-signed-document` and updated `signer-signing-action` functions. Complete the controlled OTP and mandate through their signer links, then run:
 
 ```bash
 npm run verify:legal-documents:phase-f2
@@ -310,7 +317,7 @@ The verifier sends concurrent dry-run reservations against the exact controlled 
 
 ### Phase I2 concurrent renderer capacity and isolation
 
-I2 adds a service-role-only `capacityProbe` mode to `generate-otp` and `generate-mandate`. It runs the exact approval, source download, data mapping, DOCX/native rendering, and output hashing path, then returns before the first storage upload or database insert. Responses expose only media type, byte length, SHA-256, duration, and the `i2-v1` contract.
+I2 adds a service-role-only `capacityProbe` mode to canonical `generate-mandate` for both OTP and mandate packets. It runs the exact approval, source download, data mapping, DOCX/native rendering, and output hashing path, then returns before the first storage upload or database insert. Responses expose only media type, byte length, SHA-256, duration, and the `i2-v1` contract.
 
 Deploy both updated generators, then run:
 
@@ -981,7 +988,7 @@ Apply only with `LEGAL_TEMPLATE_APPROVAL_WRITE=true`, `--apply`, and `--confirm-
 
 B3 promotes the complete B2 decision set into enforceable runtime approval metadata as one database transaction. It locks every target template, requires every route to remain active and published, binds the approval to the exact B1 content and B2 evidence digests, and writes an explicit audit event. A failure on any template rolls back the entire batch.
 
-Deploy `202607170016_legal_document_counsel_approval_b3.sql` before applying. The operator is a non-mutating dry run by default:
+Deploy `202607170016_legal_document_counsel_approval_b3.sql` and Phase 4 migrations `202607220007` through `202607220011` in numeric order before applying. The operator is a non-mutating dry run by default. Existing B3 metadata is intentionally not grandfathered: promote the complete frozen OTP/mandate set again after this deployment.
 
 ```bash
 npm run apply:legal-documents:phase-b3

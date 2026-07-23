@@ -206,13 +206,14 @@ export const APP_NAV_BY_ROLE = {
   ],
   bond_originator: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-    { key: 'bond_applications', label: 'Applications', to: '/bond/pipeline', navSection: 'main', activeMatch: ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/transactions', '/applications'] },
-    { key: 'bond_developments', label: 'Developments', to: '/bond/developments?view=current', navSection: 'main', activeMatch: ['/bond/developments'] },
-    { key: 'bond_organisation', label: 'Organisation', to: '/bond/organisation?view=overview', navSection: 'main', activeMatch: ['/bond/organisation', '/bond/hq-command-centre', '/bond/branch-operations', '/bond/regional-operations', '/bond/consultant-performance'] },
+    { key: 'bond_applications', label: 'Applications', to: '/bond/applications?view=incoming', navSection: 'main', activeMatch: ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/bond/files', '/transactions', '/applications'] },
     { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
-    { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
-    { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-    { key: 'bond_reports', label: 'Reports', to: '/bond/reports', navSection: 'main', activeMatch: ['/bond/reports', '/reports'] },
+    { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
+    { key: 'bond_developments', label: 'Developments', to: '/bond/developments?view=current', navSection: 'main', activeMatch: ['/bond/developments'] },
+    { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
+    { key: 'revenue_commissions', label: 'Commissions & Reconciliation', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
+    { key: 'bond_organisation', label: 'Team', to: '/bond/organisation?view=consultants', navSection: 'main', activeMatch: ['/bond/organisation', '/bond/hq-command-centre', '/bond/branch-operations', '/bond/regional-operations', '/bond/consultant-performance'] },
+    { key: 'bank_relationships', label: 'Banks', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
     { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
   ],
   client: [
@@ -254,7 +255,7 @@ const BOND_BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'tea
 const BOND_CONSULTANT_ROLES = new Set(['bond_originator', 'consultant', 'bond_consultant', 'processor', 'bond_processor'])
 const BOND_INDEPENDENT_ROLES = new Set(['bond_independent_consultant', 'independent_consultant', 'independent_originator'])
 
-const BOND_APPLICATIONS_ACTIVE_MATCH = ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/transactions', '/applications']
+const BOND_APPLICATIONS_ACTIVE_MATCH = ['/bond/pipeline', '/bond/applications', '/bond/transactions', '/bond/files', '/transactions', '/applications']
 const BOND_DEVELOPMENTS_ACTIVE_MATCH = ['/bond/developments']
 const BOND_ORGANISATION_ACTIVE_MATCH = [
   '/bond/organisation',
@@ -263,26 +264,65 @@ const BOND_ORGANISATION_ACTIVE_MATCH = [
   '/bond/regional-operations',
   '/bond/consultant-performance',
 ]
-const BOND_BRANCH_REGION_ACTIVE_MATCH = [
-  '/bond/branch-operations',
-  '/bond/regional-operations',
-  '/bond/organisation/regions',
-  '/bond/organisation/branches',
-]
-const BOND_REPORTS_ACTIVE_MATCH = ['/bond/reports', '/reports', '/bond/predictive-intelligence']
 const BOND_SETTINGS_ACTIVE_MATCH = ['/settings', '/bond/automation']
 
 function createBondApplicationsNav() {
   return {
     key: 'bond_applications',
     label: 'Applications',
-    to: '/bond/pipeline',
+    to: '/bond/applications?view=incoming',
     navSection: 'main',
     activeMatch: BOND_APPLICATIONS_ACTIVE_MATCH,
-    children: [
-      { key: 'bond_pipeline', label: 'Pipeline', to: '/bond/pipeline', activeMatch: ['/bond/pipeline', '/applications'] },
-      { key: 'applications', label: 'Applications', to: '/bond/applications', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
-    ],
+  }
+}
+
+function createBondPartnersNav() {
+  return {
+    key: 'partners',
+    label: 'Partners',
+    to: '/bond/partners',
+    navSection: 'main',
+    activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'],
+  }
+}
+
+function createBondClientsNav() {
+  return {
+    key: 'clients',
+    label: 'Clients',
+    to: '/bond/clients',
+    navSection: 'main',
+    activeMatch: ['/bond/clients', '/clients'],
+  }
+}
+
+function createBondTasksNav() {
+  return {
+    key: 'tasks',
+    label: 'Tasks',
+    to: '/bond/tasks',
+    navSection: 'main',
+    activeMatch: ['/bond/tasks'],
+  }
+}
+
+function createBondCommissionsNav({ ownOnly = false } = {}) {
+  return {
+    key: 'revenue_commissions',
+    label: ownOnly ? 'My Commissions' : 'Commissions & Reconciliation',
+    to: '/bond/revenue',
+    navSection: 'main',
+    activeMatch: ['/bond/revenue'],
+  }
+}
+
+function createBondTeamNav({ defaultView = 'consultants' } = {}) {
+  return {
+    key: 'bond_organisation',
+    label: 'Team',
+    to: `/bond/organisation?view=${defaultView}`,
+    navSection: 'main',
+    activeMatch: BOND_ORGANISATION_ACTIVE_MATCH,
   }
 }
 
@@ -296,57 +336,6 @@ function createBondDevelopmentsNav() {
     children: [
       { key: 'bond_developments_current', label: 'Current Developments', to: '/bond/developments?view=current' },
       { key: 'bond_developments_developers', label: 'Developers', to: '/bond/developments?view=developers' },
-    ],
-  }
-}
-
-function createBondOrganisationNav({ includeOverview = false, includeBranchRegions = true, includeConsultants = true, defaultView = 'overview' } = {}) {
-  const children = []
-  if (includeOverview) {
-    children.push({
-      key: 'bond_org_overview',
-      label: 'Overview',
-      to: '/bond/organisation?view=overview',
-      activeMatch: ['/bond/hq-command-centre'],
-    })
-  }
-  if (includeBranchRegions) {
-    children.push({
-      key: 'bond_branches_regions',
-      label: 'Branches / Regions',
-      to: '/bond/organisation?view=branches',
-      activeMatch: BOND_BRANCH_REGION_ACTIVE_MATCH,
-    })
-  }
-  if (includeConsultants) {
-    children.push({
-      key: 'bond_consultants',
-      label: 'Consultants',
-      to: '/bond/organisation?view=consultants',
-      activeMatch: ['/bond/consultant-performance', '/bond/organisation/consultants'],
-    })
-  }
-
-  return {
-    key: 'bond_organisation',
-    label: 'Organisation',
-    to: `/bond/organisation?view=${defaultView}`,
-    navSection: 'main',
-    activeMatch: BOND_ORGANISATION_ACTIVE_MATCH,
-    children,
-  }
-}
-
-function createBondReportsNav() {
-  return {
-    key: 'bond_reports',
-    label: 'Reports',
-    to: '/bond/reports',
-    navSection: 'main',
-    activeMatch: BOND_REPORTS_ACTIVE_MATCH,
-    children: [
-      { key: 'bond_reports_analytics', label: 'Analytics', to: '/bond/reports', activeMatch: ['/bond/reports', '/reports'] },
-      { key: 'predictive_intelligence', label: 'Predictive Intelligence', to: '/bond/predictive-intelligence', activeMatch: ['/bond/predictive-intelligence'] },
     ],
   }
 }
@@ -428,12 +417,12 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (independent) {
       return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'bond_applications', label: 'Applications', to: '/bond/applications?scope=mine&view=incoming', navSection: 'main', activeMatch: BOND_APPLICATIONS_ACTIVE_MATCH },
+        createBondPartnersNav(),
+        createBondClientsNav(),
         createBondDevelopmentsNav(),
-        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-        { key: 'revenue_commissions', label: 'My Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
-        { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
+        createBondTasksNav(),
+        createBondCommissionsNav({ ownOnly: true }),
         { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
       ], hqContext)
     }
@@ -442,12 +431,13 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
+        createBondPartnersNav(),
+        createBondClientsNav(),
         createBondDevelopmentsNav(),
-        createBondOrganisationNav({ includeOverview: true, defaultView: 'overview' }),
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
-        { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
-        { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        createBondReportsNav(),
+        createBondTasksNav(),
+        createBondCommissionsNav(),
+        createBondTeamNav({ defaultView: 'consultants' }),
+        { key: 'bank_relationships', label: 'Banks', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         createBondSettingsNav(),
       ], hqContext)
     }
@@ -456,12 +446,13 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
+        createBondPartnersNav(),
+        createBondClientsNav(),
         createBondDevelopmentsNav(),
-        createBondOrganisationNav({ includeOverview: true, defaultView: 'branches' }),
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
-        { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
-        { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        createBondReportsNav(),
+        createBondTasksNav(),
+        createBondCommissionsNav(),
+        createBondTeamNav({ defaultView: 'consultants' }),
+        { key: 'bank_relationships', label: 'Banks', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         createBondSettingsNav(),
       ], hqContext)
     }
@@ -470,12 +461,13 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
+        createBondPartnersNav(),
+        createBondClientsNav(),
         createBondDevelopmentsNav(),
-        createBondOrganisationNav({ includeOverview: false, includeBranchRegions: true, defaultView: 'branches' }),
-        { key: 'partners', label: 'Partners', to: '/bond/partners', navSection: 'main', activeMatch: ['/bond/partners', '/partners', '/bond/partner-intelligence', '/bond/organisation/partners'] },
-        { key: 'bank_relationships', label: 'Bank Relationships', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
-        { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        createBondReportsNav(),
+        createBondTasksNav(),
+        createBondCommissionsNav(),
+        createBondTeamNav({ defaultView: 'consultants' }),
+        { key: 'bank_relationships', label: 'Banks', to: '/bond/banks', navSection: 'main', activeMatch: ['/bond/banks'] },
         createBondSettingsNav(),
       ], hqContext)
     }
@@ -483,12 +475,12 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     if (BOND_CONSULTANT_ROLES.has(normalizedMembershipRole) || !normalizedMembershipRole || normalizedMembershipRole === 'viewer') {
       return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
-        { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
+        { key: 'bond_applications', label: 'Applications', to: '/bond/applications?scope=mine&view=incoming', navSection: 'main', activeMatch: BOND_APPLICATIONS_ACTIVE_MATCH },
+        createBondPartnersNav(),
+        createBondClientsNav(),
         createBondDevelopmentsNav(),
-        { key: 'consultant_performance', label: 'Consultant Performance', to: '/bond/consultant-performance', navSection: 'main', activeMatch: ['/bond/consultant-performance'] },
-        { key: 'revenue_commissions', label: 'My Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
-        { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
-        { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
+        createBondTasksNav(),
+        createBondCommissionsNav({ ownOnly: true }),
       ], hqContext)
     }
 

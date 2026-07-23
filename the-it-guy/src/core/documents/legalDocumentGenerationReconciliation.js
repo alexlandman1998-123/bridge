@@ -1,3 +1,5 @@
+import { hasGeneratedPdfArtifact, isPilotDocumentFallbackVersion } from './pilotDocumentFallback.js'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -18,7 +20,9 @@ function versionsFromStatus(status) {
 }
 
 function isGeneratedVersion(version) {
-  return normalizeText(version?.render_status).toLowerCase() === 'generated'
+  return normalizeText(version?.render_status).toLowerCase() === 'generated' &&
+    hasGeneratedPdfArtifact(version) &&
+    !isPilotDocumentFallbackVersion(version)
 }
 
 export function isAmbiguousLegalDocumentGenerationFailure(error = null) {

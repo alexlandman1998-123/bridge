@@ -7957,6 +7957,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
     const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
+    let dispatchId = normalizeText(options.dispatchId)
     const statusPacket =
       mandatePacketStatus?.packet &&
       documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
@@ -8060,6 +8061,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               : 'https://app.arch9.co.za',
             targetSignerRole,
           })
+          dispatchId = normalizeText(linkResult?.dispatchId) || dispatchId
           agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', agentRecipientEmail)
           sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
@@ -8132,36 +8134,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         return
       }
 
-      if (isSupabaseConfigured) {
-        try {
-          const emailResponse = await withPipelineTimeout(
-            invokeEdgeFunction('send-mandate-signing-email', {
-              body: {
-                type: 'seller_mandate_sent',
-                to: recipientEmail,
-                organisationId,
-                packetId: mandatePacketId,
-                recipientRole,
-                recipientName,
-                sellerName,
-                propertyTitle,
-                mandateType: 'Mandate',
-                mandateStartDate: '',
-                mandateEndDate: '',
-                askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-                portalLink: outboundMandateLink,
-                agentName: agentRecipientName,
-              },
-            }),
-            'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
-            PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
-          )
-          assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
-        } catch (emailError) {
-          signingEmailFailed = true
-          console.warn('[MANDATE] signing email failed after link preparation', emailError)
-          throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
+      if (!isSupabaseConfigured) {
+        throw new Error('Mandate signing email delivery is not configured. No sent status was recorded.')
+      }
+      let emailDelivery = null
+      try {
+        const emailResponse = await withPipelineTimeout(
+          invokeEdgeFunction('send-mandate-signing-email', {
+            body: {
+              type: 'seller_mandate_sent',
+              to: recipientEmail,
+              organisationId,
+              packetId: mandatePacketId,
+              recipientRole,
+              recipientName,
+              sellerName,
+              propertyTitle,
+              mandateType: 'Mandate',
+              mandateStartDate: '',
+              mandateEndDate: '',
+              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+              portalLink: outboundMandateLink,
+              agentName: agentRecipientName,
+              resend: options.resend === true,
+              reminder: options.reminder === true,
+              dispatchId,
+            },
+          }),
+          'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
+          PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
+        )
+        assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
+        const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
+        const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+        if (!emailConfirmed) {
+          const error = new Error('Mandate signing email was prepared, but provider delivery was not confirmed. No sent status was recorded.')
+          error.code = 'SIGNING_EMAIL_UNCONFIRMED'
+          throw error
         }
+        emailDelivery = { emailDeliveryId, emailConfirmed, delivery: emailResponse?.data?.delivery || null }
+      } catch (emailError) {
+        signingEmailFailed = true
+        console.warn('[MANDATE] signing email failed after link preparation', emailError)
+        throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
@@ -8266,6 +8281,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
         : 'Mandate sent to seller.')
       await reloadRecords(organisationId)
+      return {
+        emailDeliveryId: emailDelivery?.emailDeliveryId || null,
+        emailConfirmed: emailDelivery?.emailConfirmed === true,
+        recipientRole,
+        recipientEmail,
+        delivery: emailDelivery?.delivery || null,
+      }
     } finally {
       setIsMandateSending(false)
     }

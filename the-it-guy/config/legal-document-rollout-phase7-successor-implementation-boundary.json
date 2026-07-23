@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "phase": "ROLL_OUT_7",
+  "contract": "legal-document-successor-implementation-boundary-v1",
+  "status": "not_recorded",
+  "environment": {
+    "productionProjectRef": null,
+    "productionOrigin": null,
+    "productionUrl": null
+  },
+  "source": {
+    "phase6ReceiptCommitSha": null,
+    "phase6ReceiptManifestDigest": null,
+    "phase6ProposalPlanDigest": null,
+    "phase6EvidencePacketDigest": null,
+    "phase5ReceiptCommitSha": null,
+    "phase5ReceiptManifestDigest": null,
+    "phase5ObservationPlanDigest": null,
+    "phase4ReceiptCommitSha": null,
+    "phase4ReceiptManifestDigest": null,
+    "activationPlanDigest": null,
+    "commitSha": null,
+    "implementationCommitSha": null,
+    "implementationCommitDiffDigest": null,
+    "implementationSourceTreeDigest": null,
+    "packageLockSha256": null,
+    "boundaryPlanDigest": null
+  },
+  "cohort": {
+    "organisationIds": [],
+    "cohortDigest": null,
+    "maxOrganisations": 1,
+    "requiredPacketTypes": []
+  },
+  "boundary": {
+    "kind": "successor_implementation_boundary_only",
+    "authority": "non_authoritative",
+    "requestedAction": "separately_authorised_future_implementation_review_only"
+  },
+  "changeSurface": {
+    "phase6Migration": "unapplied_reference_only",
+    "releaseEpoch": "absent_no_epoch_id",
+    "membership": "no_candidate_or_membership_assignment",
+    "runtime": "no_runtime_hook_or_allowlist_change",
+    "deployment": "no_deployment_or_production_activation",
+    "customerEgress": "no_customer_document_or_email_delivery",
+    "templates": "unchanged"
+  },
+  "migrationReference": {
+    "migrationId": "phase6_server_owned_release_epoch_integrity",
+    "migrationSourceDigest": null,
+    "migrationInvariantDigest": null,
+    "state": "unapplied_reference_only"
+  },
+  "safety": {
+    "noActivationAuthorization": true,
+    "noScaleAuthorization": true,
+    "noSecondOrganisationAuthorization": true,
+    "noEpochPreparationAuthorization": true,
+    "noMembershipRegistrationAuthorization": true,
+    "noRuntimeChangeAuthorization": true,
+    "noDeploymentAuthorization": true,
+    "noCustomerDocumentAuthorization": true,
+    "noCustomerEmailAuthorization": true,
+    "noRollbackAuthorization": true
+  },
+  "evidence": {
+    "preparedByReference": null,
+    "preparedAt": null,
+    "changeReference": null,
+    "architectureReviewEvidenceDigest": null,
+    "architectureReviewReviewedAt": null,
+    "architectureReviewActorReference": null,
+    "securityReviewEvidenceDigest": null,
+    "securityReviewReviewedAt": null,
+    "securityReviewActorReference": null,
+    "nonActivationReviewEvidenceDigest": null,
+    "nonActivationReviewReviewedAt": null,
+    "nonActivationReviewActorReference": null,
+    "boundaryRecordedAt": null,
+    "boundaryRecordedByReference": null,
+    "reviewedByReference": null,
+    "evidencePacketDigest": null
+  },
+  "manifestDigest": null
+}
