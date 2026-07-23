@@ -5428,9 +5428,9 @@ function ArchlineStatusPill({ children, tone = 'success' }) {
 
 function ArchlinePanel({ title, action = null, children, className = '' }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.035)] ${className}`.trim()}>
+    <section className={`rounded-[22px] border border-slate-200/75 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.045)] ${className}`.trim()}>
       {title || action ? (
-        <header className="flex items-center justify-between gap-3 px-4 py-4">
+        <header className="flex items-center justify-between gap-3 px-5 py-5">
           {title ? <h3 className="text-base font-semibold tracking-[-0.015em] text-slate-950">{title}</h3> : <span />}
           {action}
         </header>
@@ -5457,76 +5457,90 @@ function ArchlineMatterHeader({
   onMoreActions,
 }) {
   const metadata = [
-    { key: 'property', label: 'Property', value: property || 'Property pending', icon: MapPin, wide: true },
     { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound },
     { key: 'seller', label: 'Seller', value: seller || 'Seller pending', icon: UserCircle },
     { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured', icon: BriefcaseBusiness },
     { key: 'date', label: 'Instruction Date', value: instructionDate || 'Not set', icon: CalendarCheck2 },
     { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign },
   ]
+  const propertyDisplay = property || 'Property pending'
 
   return (
-    <header className="no-print -mx-3 border-b border-slate-200 bg-white px-3 pt-3 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
-      <div className="mx-auto max-w-[1680px]">
-        <div className="flex flex-col gap-4 py-2 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
-              <ChevronRight size={15} className="rotate-180" />
-              {backLabel || 'Back to Matters'}
-            </Link>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <h1 className="break-words text-[1.85rem] font-semibold leading-tight tracking-[-0.02em] text-slate-950 md:text-[2.25rem]">
-                {reference || 'Matter'}
-              </h1>
-              <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
-            onClick={onMoreActions}
-          >
-            More Actions
-            <ChevronRight size={15} className="rotate-90" />
-          </button>
-        </div>
-
-        <div className="grid gap-3 py-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]">
-          {metadata.map((item) => {
-            const Icon = item.icon
-            return (
-              <div key={item.key} className="flex min-w-0 items-start gap-2.5">
-                <Icon size={18} className="mt-0.5 shrink-0 text-slate-700" />
-                <div className="min-w-0">
-                  <span className="block text-xs font-medium text-slate-500">{item.label}</span>
-                  <strong className="mt-1 block text-sm font-medium leading-5 text-slate-900">{item.value}</strong>
-                </div>
+    <header className="no-print -mx-3 border-b border-slate-200/70 bg-slate-50/55 px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
+      <div className="mx-auto max-w-[1680px] space-y-4">
+        <section className="rounded-[24px] border border-slate-200/75 bg-white px-6 py-6 shadow-[0_20px_60px_rgba(15,23,42,0.055)] md:px-9 md:py-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 transition hover:text-emerald-700">
+                <ChevronRight size={15} className="rotate-180" />
+                {backLabel || 'Back to Matters'}
+              </Link>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <h1 className="break-words text-[2rem] font-semibold leading-none tracking-[-0.02em] text-slate-950 md:text-[2.45rem]">
+                  {reference || 'Matter'}
+                </h1>
+                <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
               </div>
-            )
-          })}
-        </div>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-950 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
+              onClick={onMoreActions}
+            >
+              More Actions
+              <MoreHorizontal size={17} />
+            </button>
+          </div>
 
-        <nav className="flex gap-5 overflow-x-auto" aria-label="Matter navigation">
-          {tabs.map((tab) => {
-            const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
-            const active = tab.id === activeTab
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
-                  active
-                    ? 'border-slate-950 text-slate-950'
-                    : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-950'
-                }`}
-                onClick={() => onTabChange?.(tab.id)}
-              >
-                <Icon size={16} />
-                {tab.label}
-                {tab.count ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[0.68rem] text-slate-600">{tab.count}</span> : null}
-              </button>
-            )
-          })}
+          <div className="mt-7 flex max-w-5xl items-start gap-4">
+            <span className="mt-1 inline-flex size-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-800">
+              <MapPin size={25} />
+            </span>
+            <h2 className="line-clamp-2 text-balance text-[1.45rem] font-semibold leading-[1.35] tracking-[-0.02em] text-slate-950 md:text-[1.85rem]">
+              {propertyDisplay}
+            </h2>
+          </div>
+
+          <div className="mt-9 grid gap-5 border-t border-slate-100 pt-6 sm:grid-cols-2 lg:grid-cols-5">
+            {metadata.map((item) => {
+              const Icon = item.icon
+              return (
+                <div key={item.key} className="flex min-w-0 items-start gap-3 lg:border-r lg:border-slate-100 lg:pr-5 last:lg:border-r-0">
+                  <Icon size={19} className="mt-0.5 shrink-0 text-slate-700" />
+                  <div className="min-w-0">
+                    <span className="block text-xs font-semibold text-slate-500">{item.label}</span>
+                    <strong className="mt-2 block truncate text-sm font-semibold leading-5 text-slate-950">{item.value}</strong>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <nav className="rounded-[24px] border border-slate-200/75 bg-white px-5 shadow-[0_18px_44px_rgba(15,23,42,0.045)]" aria-label="Matter navigation">
+          <div className="grid min-w-full gap-1 overflow-x-auto" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(132px, 1fr))` }}>
+            {tabs.map((tab) => {
+              const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
+              const active = tab.id === activeTab
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`relative inline-flex h-16 min-w-0 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-semibold transition ${
+                    active
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                  }`}
+                  onClick={() => onTabChange?.(tab.id)}
+                >
+                  <Icon size={17} className="shrink-0" />
+                  <span className="min-w-0 truncate">{tab.label}</span>
+                  {tab.count ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[0.68rem] text-slate-600">{tab.count}</span> : null}
+                  {active ? <span className="absolute bottom-0 left-6 right-6 h-0.5 rounded-full bg-emerald-700" /> : null}
+                </button>
+              )
+            })}
+          </div>
         </nav>
       </div>
     </header>
@@ -5574,9 +5588,9 @@ function ArchlineOverviewWorkspace({
   const totalDocs = documentHealthSummary.requiredCount || requiredDocuments.length || 0
 
   return (
-    <section className="space-y-4">
-      <ArchlinePanel title="Matter Progress" className="p-4">
-        <div className="overflow-x-auto px-1 pb-2 pt-5">
+    <section className="space-y-5">
+      <ArchlinePanel title="Matter Progress" className="p-5">
+        <div className="overflow-x-auto px-1 pb-3 pt-6">
           <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
             {progressStages.map((stage, index) => {
               const completed = index < currentIndex
@@ -5598,9 +5612,11 @@ function ArchlineOverviewWorkspace({
             })}
           </div>
         </div>
-        <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-6 flex flex-col gap-3 rounded-[18px] border border-emerald-100/80 bg-emerald-50/35 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
+            <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-800 shadow-sm">
+              <CalendarDays size={21} />
+            </span>
             <div>
               <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
               <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
@@ -5614,7 +5630,7 @@ function ArchlineOverviewWorkspace({
       </ArchlinePanel>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ArchlinePanel title="Key Dates" className="p-4">
+        <ArchlinePanel title="Key Dates" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>} className="p-5">
           <div className="divide-y divide-slate-100">
             {keyDates.slice(0, 5).map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
@@ -5625,7 +5641,7 @@ function ArchlineOverviewWorkspace({
           </div>
         </ArchlinePanel>
 
-        <ArchlinePanel title="Financial Summary" className="p-4">
+        <ArchlinePanel title="Financial Summary" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('finance')}>View all</Button>} className="p-5">
           <div className="divide-y divide-slate-100">
             {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
               <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
@@ -5636,7 +5652,7 @@ function ArchlineOverviewWorkspace({
           </div>
         </ArchlinePanel>
 
-        <ArchlinePanel title="Parties" className="p-4">
+        <ArchlinePanel title="Parties" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all</Button>} className="p-5">
           <div className="divide-y divide-slate-100">
             {roleplayerItems.slice(0, 4).map((item) => (
               <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
