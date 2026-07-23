@@ -27,6 +27,8 @@ function parseArgs(argv) {
     apply: false,
     csvPath: DEFAULT_CSV_PATH,
     reportPath: DEFAULT_REPORT_PATH,
+    workspaceId: '',
+    branchId: '',
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,6 +47,10 @@ function parseArgs(argv) {
       options.csvPath = path.resolve(process.cwd(), readValue('--csv='))
     } else if (arg === '--report' || arg.startsWith('--report=')) {
       options.reportPath = path.resolve(process.cwd(), readValue('--report='))
+    } else if (arg === '--workspace-id' || arg.startsWith('--workspace-id=')) {
+      options.workspaceId = normalizeText(readValue('--workspace-id='))
+    } else if (arg === '--branch-id' || arg.startsWith('--branch-id=')) {
+      options.branchId = normalizeText(readValue('--branch-id='))
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -214,12 +220,21 @@ async function ensureAuthUser(client, row, { apply, workspace }) {
   }
 }
 
-async function resolveWorkspace(client) {
-  const result = await client
-    .from('organisations')
-    .select('*')
-    .or('name.ilike.%Produktive Realty%,display_name.ilike.%Produktive Realty%')
-    .limit(20)
+async function resolveWorkspace(client, options = {}) {
+  let result
+  if (options.workspaceId) {
+    result = await client
+      .from('organisations')
+      .select('*')
+      .eq('id', options.workspaceId)
+      .limit(1)
+  } else {
+    result = await client
+      .from('organisations')
+      .select('*')
+      .or('name.ilike.%Produktive Realty%,display_name.ilike.%Produktive Realty%')
+      .limit(20)
+  }
 
   if (result.error) throw new Error(`Produktive Realty workspace lookup failed: ${result.error.message}`)
   const rows = result.data || []
@@ -241,6 +256,7 @@ async function resolveWorkspace(client) {
   }
   const branches = branchResult.data || []
   const branch =
+    branches.find((row) => options.branchId && row.id === options.branchId) ||
     branches.find((row) => normalizeText(row.name).toLowerCase() === WORKSPACE_NAME.toLowerCase()) ||
     branches.find((row) => row.is_default || row.is_head_office) ||
     branches[0] ||
@@ -449,7 +465,7 @@ async function main() {
 
   const client = createServiceClient()
   const [workspaceContext, tableColumns] = await Promise.all([
-    resolveWorkspace(client),
+    resolveWorkspace(client, options),
     Promise.all([
       getTableColumns(client, 'profiles'),
       getTableColumns(client, 'organisation_users'),
