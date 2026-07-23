@@ -128,15 +128,26 @@ async function sha256Hex(bytes: Uint8Array) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-async function requireCaller(supabase: any, req: Request) {
+function requireCaller(req: Request) {
   const authorization = normalizeText(req.headers.get("authorization"));
   const token = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
   if (!token) throw Object.assign(new Error("Authentication is required."), { code: "AUTH_REQUIRED", status: 401 });
-  const userResult = await supabase.auth.getUser(token);
-  if (userResult.error || !userResult.data.user) {
+
+  // This function is deployed with verify_jwt enabled, so the gateway has already
+  // verified the signature before this handler runs. Avoid a second remote Auth
+  // request here: it can stall an otherwise completed document render when Auth is
+  // degraded, while adding no extra assurance.
+  try {
+    const payloadPart = token.split(".")[1] || "";
+    const base64Payload = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = base64Payload.padEnd(base64Payload.length + ((4 - (base64Payload.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(paddedPayload)) as { sub?: unknown };
+    const id = normalizeText(payload.sub);
+    if (!id) throw new Error("JWT subject missing");
+    return { id };
+  } catch (_error) {
     throw Object.assign(new Error("The authenticated user could not be verified."), { code: "AUTH_INVALID", status: 401 });
   }
-  return userResult.data.user;
 }
 
 const PRIVILEGED_PACKET_ROLES = new Set([
@@ -1101,7 +1112,7 @@ Deno.serve(async (req: Request) => {
       ? { id: null, service: true }
       : bearer === SUPABASE_SERVICE_ROLE_KEY
         ? { id: null, service: true }
-        : { ...(await requireCaller(supabase, req)), service: false };
+        : { ...requireCaller(req), service: false };
     let approval: { templateId: string; packetType: string; packet: JsonRecord; isPhase4LegalPacket: boolean };
     let pilotReleaseDecision: { planDigest?: string | null } | null = null;
     try {

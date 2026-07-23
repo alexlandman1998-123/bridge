@@ -1707,11 +1707,15 @@ function resolveBuyerLandingBrand(payload = {}) {
     payload?.transaction,
   )
   const name = branding.organisationName || 'Your property team'
-  const logoUrl = branding.logoDarkUrl || branding.logoLightUrl || branding.logoIconUrl
+  const logoLightUrl = branding.logoLightUrl || ''
+  const logoDarkUrl = branding.logoDarkUrl || ''
+  const logoUrl = logoLightUrl || logoDarkUrl || branding.logoIconUrl
 
   return {
     name,
     logoUrl,
+    logoLightUrl,
+    logoDarkUrl,
     initials: getOnboardingBrandInitials(name),
     primaryColour: branding.primaryColour,
     secondaryColour: branding.secondaryColour,
@@ -4507,7 +4511,7 @@ function ClientOnboarding() {
         {showLandingPage ? (
           <PremiumOnboardingLanding
             portalType="buyer"
-            agencyLogo={onboardingBrand.logoUrl}
+            agencyLogo={onboardingBrand.logoLightUrl || onboardingBrand.logoUrl || onboardingBrand.logoDarkUrl || ''}
             agencyName={onboardingBrand.name}
             personName={buyerLandingName === 'there' ? '' : buyerLandingName}
             propertyAddress={onboardingLocationLabel}

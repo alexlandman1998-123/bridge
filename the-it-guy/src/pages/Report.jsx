@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Printer, RotateCcw } from 'lucide-react'
+import { CheckCircle2, Printer, RotateCcw, Target, TrendingUp } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ReportView from '../components/ReportView'
 import Field from '../components/ui/Field'
@@ -10,10 +11,12 @@ import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { STAGES, isInTransferStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { getCommissionOverview, updateCommissionTarget } from '../services/commissionService'
 
 const REPORT_TYPES = [
   { value: 'overview', label: 'Overview' },
   { value: 'unit_view', label: 'Unit View' },
+  { value: 'performance', label: 'Performance' },
 ]
 
 const TRANSACTION_SCOPE_OPTIONS = [
@@ -644,11 +647,93 @@ function getPurchasePriceValue(row) {
   return Number.isFinite(value) ? value : 0
 }
 
+function formatCurrency(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'R0'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(numeric).replace('ZAR', 'R')
+}
+
+function getInitialReportType(searchParams) {
+  const view = String(searchParams?.get('view') || '').trim().toLowerCase()
+  return REPORT_TYPES.some((option) => option.value === view) ? view : 'overview'
+}
+
+function PerformanceTargetsPanel({ tracker = {}, draft, setDraft, saving, error, message, onSave }) {
+  const targetAmount = Number(tracker?.targetAmount || draft.targetAmount || 0)
+  const projected = Number(tracker?.projectedCommission || tracker?.currentAmount || 0)
+  const remaining = Math.max(0, targetAmount - projected)
+  const projectedPercent = targetAmount ? Math.min(100, Math.round((projected / targetAmount) * 100)) : Number(tracker?.projectedPercentage || 0)
+
+  return (
+    <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+      <div className="mb-5 flex flex-col gap-4 border-b border-[#edf2f7] pb-5 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h4 className="text-[1.04rem] font-semibold tracking-[-0.025em] text-[#142132]">Performance Targets</h4>
+          <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Manage agency targets across performance reporting. Commission is one KPI in the wider operating picture.</p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#d8f0de] bg-[#edfdf3] px-3 py-1.5 text-xs font-semibold text-[#1e7a46]">
+          <TrendingUp size={14} />
+          {projectedPercent || 0}% forecast
+        </span>
+      </div>
+
+      {error ? <p className="mb-4 rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
+      {message ? <p className="mb-4 rounded-[14px] border border-[#cfe8dc] bg-[#edf8f2] px-4 py-3 text-sm text-[#0f7f4f]">{message}</p> : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <PerformanceMetric label="Monthly Target" value={formatCurrency(targetAmount || 500000)} />
+            <PerformanceMetric label="Forecast" value={formatCurrency(projected)} />
+            <PerformanceMetric label="Remaining" value={formatCurrency(remaining)} />
+          </div>
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#dfe8f1]">
+            <span className="block h-full rounded-full bg-[#1e7a46]" style={{ width: `${Math.min(100, projectedPercent || 0)}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-[#60758d]">
+            <span>{projectedPercent || 0}% projected</span>
+            <span>{tracker?.daysLeftInMonth ?? 0} Days left</span>
+          </div>
+        </div>
+
+        <form className="grid gap-4 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4" onSubmit={onSave}>
+          <label className="grid gap-2">
+            <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Target</span>
+            <Field type="number" min="0" step="1000" value={draft.targetAmount} onChange={(event) => setDraft((previous) => ({ ...previous, targetAmount: event.target.value }))} />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Start Month</span>
+            <Field type="date" value={draft.startMonth} onChange={(event) => setDraft((previous) => ({ ...previous, startMonth: event.target.value }))} />
+          </label>
+          <Button variant="primary" type="submit" disabled={saving}>
+            {saving ? <Target size={15} /> : <CheckCircle2 size={15} />}
+            <span>{saving ? 'Saving...' : 'Save Target'}</span>
+          </Button>
+        </form>
+      </div>
+    </section>
+  )
+}
+
+function PerformanceMetric({ label, value }) {
+  return (
+    <article className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+      <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#7b8fa5]">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-[#142132]">{value}</p>
+    </article>
+  )
+}
+
 function Report() {
   const { workspace } = useWorkspace()
+  const [searchParams] = useSearchParams()
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [filters, setFilters] = useState({
-    reportType: 'overview',
+    reportType: getInitialReportType(searchParams),
     developmentId: workspace.id === 'all' ? 'all' : workspace.id,
     transactionScope: 'all_transactions',
     financeType: 'all',
@@ -660,6 +745,11 @@ function Report() {
   const [generatedAt, setGeneratedAt] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [commissionOverview, setCommissionOverview] = useState(null)
+  const [targetDraft, setTargetDraft] = useState({ targetAmount: 500000, startMonth: new Date().toISOString().slice(0, 7) + '-01' })
+  const [targetSaving, setTargetSaving] = useState(false)
+  const [targetError, setTargetError] = useState('')
+  const [targetMessage, setTargetMessage] = useState('')
 
   const loadReport = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -672,16 +762,24 @@ function Report() {
       setLoading(true)
       const settings = await fetchOrganisationSettings().catch(() => null)
       const scopedOrganisationId = String(settings?.organisation?.id || '').trim()
-      const [rows, options] = await Promise.all([
+      const [rows, options, commissionResult] = await Promise.all([
         fetchReportRows({
           developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
           organisationId: scopedOrganisationId || null,
         }),
         fetchDevelopmentOptions({ organisationId: scopedOrganisationId || null }),
+        getCommissionOverview().catch(() => null),
       ])
 
       setBaseRows(rows)
       setDevelopmentOptions(options)
+      setCommissionOverview(commissionResult)
+      if (commissionResult?.companyTracker) {
+        setTargetDraft({
+          targetAmount: commissionResult.companyTracker.targetAmount || 500000,
+          startMonth: new Date().toISOString().slice(0, 7) + '-01',
+        })
+      }
       if (
         filters.developmentId !== 'all' &&
         !options.some((option) => option.id === filters.developmentId)
@@ -706,6 +804,11 @@ function Report() {
       developmentId: workspace.id === 'all' ? previous.developmentId : workspace.id,
     }))
   }, [workspace.id])
+
+  useEffect(() => {
+    const nextReportType = getInitialReportType(searchParams)
+    setFilters((previous) => previous.reportType === nextReportType ? previous : { ...previous, reportType: nextReportType })
+  }, [searchParams])
 
   useEffect(() => {
     document.body.classList.remove('report-export-active')
@@ -913,6 +1016,29 @@ function Report() {
     }))
   }
 
+  async function handleSavePerformanceTarget(event) {
+    event.preventDefault()
+    try {
+      setTargetSaving(true)
+      setTargetError('')
+      setTargetMessage('')
+      await updateCommissionTarget({
+        targetType: 'company',
+        targetMetric: 'company_commission',
+        period: 'monthly',
+        targetAmount: Number(targetDraft.targetAmount || 0),
+        startMonth: targetDraft.startMonth || new Date().toISOString().slice(0, 7) + '-01',
+      })
+      const refreshedOverview = await getCommissionOverview().catch(() => null)
+      setCommissionOverview(refreshedOverview)
+      setTargetMessage('Performance target updated.')
+    } catch (saveError) {
+      setTargetError(saveError.message || 'Unable to save performance target.')
+    } finally {
+      setTargetSaving(false)
+    }
+  }
+
   const showDevelopmentFilter = workspace.id === 'all' && developmentOptions.length > 1
 
   return (
@@ -941,49 +1067,78 @@ function Report() {
           marketingSummary={marketingSummary}
           onReportTypeChange={(value) => setFilters((previous) => ({ ...previous, reportType: value }))}
           filtersPanel={
-            <section className="no-print rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="mb-5 flex flex-col gap-4 border-b border-[#edf2f7] pb-5 xl:flex-row xl:items-end xl:justify-between">
-                <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.025em] text-[#142132]">Report Filters</h4>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                    {showDevelopmentFilter
-                      ? 'Refine the snapshot across developments, stage exposure, finance mix, and risk.'
-                      : 'Refine the snapshot by scope, stage exposure, finance mix, and risk.'}
-                  </p>
-                </div>
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                  <Button variant="ghost" className="w-full sm:w-auto" onClick={handleResetFilters}>
-                    <RotateCcw size={15} />
-                    <span>Reset Filters</span>
-                  </Button>
-                  <Button variant="primary" className="w-full sm:w-auto" onClick={handleExportPdf}>
-                    <Printer size={15} />
-                    <span>Export PDF</span>
-                  </Button>
-                </div>
-              </div>
+            <>
+              {filters.reportType === 'performance' ? (
+                <PerformanceTargetsPanel
+                  tracker={commissionOverview?.companyTracker || {}}
+                  draft={targetDraft}
+                  setDraft={setTargetDraft}
+                  saving={targetSaving}
+                  error={targetError}
+                  message={targetMessage}
+                  onSave={handleSavePerformanceTarget}
+                />
+              ) : null}
 
-              <div className={`grid gap-4 md:grid-cols-2 xl:grid-cols-3 ${showDevelopmentFilter ? '2xl:grid-cols-6' : '2xl:grid-cols-5'}`}>
-                {showDevelopmentFilter ? (
+              <section className="no-print rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+                <div className="mb-5 flex flex-col gap-4 border-b border-[#edf2f7] pb-5 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <h4 className="text-[1.04rem] font-semibold tracking-[-0.025em] text-[#142132]">Report Filters</h4>
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+                      {showDevelopmentFilter
+                        ? 'Refine the snapshot across developments, stage exposure, finance mix, and risk.'
+                        : 'Refine the snapshot by scope, stage exposure, finance mix, and risk.'}
+                    </p>
+                  </div>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <Button variant="ghost" className="w-full sm:w-auto" onClick={handleResetFilters}>
+                      <RotateCcw size={15} />
+                      <span>Reset Filters</span>
+                    </Button>
+                    <Button variant="primary" className="w-full sm:w-auto" onClick={handleExportPdf}>
+                      <Printer size={15} />
+                      <span>Export PDF</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className={`grid gap-4 md:grid-cols-2 xl:grid-cols-3 ${showDevelopmentFilter ? '2xl:grid-cols-6' : '2xl:grid-cols-5'}`}>
                   <label className="grid gap-2">
-                    <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development</span>
+                    <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Report</span>
                     <Field
                       as="select"
                       className="bg-[#fbfdff]"
-                      value={filters.developmentId}
-                      onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
+                      value={filters.reportType}
+                      onChange={(event) => setFilters((previous) => ({ ...previous, reportType: event.target.value }))}
                     >
-                      <option value="all">All Developments</option>
-                      {developmentOptions.map((option) => (
-                        <option value={option.id} key={option.id}>
-                          {option.name}
+                      {REPORT_TYPES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
                         </option>
                       ))}
                     </Field>
                   </label>
-                ) : null}
 
-                <label className="grid gap-2">
+                  {showDevelopmentFilter ? (
+                    <label className="grid gap-2">
+                      <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development</span>
+                      <Field
+                        as="select"
+                        className="bg-[#fbfdff]"
+                        value={filters.developmentId}
+                        onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
+                      >
+                        <option value="all">All Developments</option>
+                        {developmentOptions.map((option) => (
+                          <option value={option.id} key={option.id}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                  ) : null}
+
+                  <label className="grid gap-2">
                   <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Transaction Scope</span>
                   <Field
                     as="select"
@@ -1060,7 +1215,8 @@ function Report() {
                   />
                 </label>
               </div>
-            </section>
+              </section>
+            </>
           }
         />
       ) : null}

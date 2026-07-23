@@ -1342,6 +1342,18 @@ function shouldUseNativeGeneration(template = null, packetType = '') {
   return false
 }
 
+function templateUsesConditionalMaster(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const masterFlag = metadata.conditional_master
+  const masterVersion = normalizeText(metadata.conditional_master_version)
+  return masterFlag === true || String(masterFlag || '').toLowerCase() === 'true' ||
+    (Boolean(masterVersion) && masterFlag !== false && String(masterFlag || '').toLowerCase() !== 'false')
+}
+
 function extractGeneratedArtifact(result = {}) {
   return {
     renderedDocumentId: normalizeNullableText(
@@ -2171,7 +2183,7 @@ function mapTemplateSectionToManifest(section = {}, placeholders = {}) {
   }
 }
 
-async function resolveSeededSectionManifest({ packetType, template = null, placeholders = {} } = {}) {
+async function resolveSeededSectionManifest({ packetType, template = null, placeholders = {}, scenarioProfile = null } = {}) {
   if (!template?.id) {
     return buildPacketSectionManifest({ packetType, placeholders })
   }
@@ -2193,8 +2205,18 @@ async function resolveSeededSectionManifest({ packetType, template = null, place
     return buildPacketSectionManifest({ packetType, placeholders })
   }
 
+  // A normal legal-template revision owns its own ordered wording. Conditional
+  // master overrides are opt-in, and this production line does not include the
+  // conditional-master engine modules.
+  const templatePlaceholders = templateUsesConditionalMaster(hydratedTemplate) && scenarioProfile
+    ? {
+        ...placeholders,
+        ...buildLegalDocumentScenarioPlaceholders(scenarioProfile),
+      }
+    : placeholders
+
   return sections
-    .map((section) => mapTemplateSectionToManifest(section, placeholders))
+    .map((section) => mapTemplateSectionToManifest(section, templatePlaceholders))
     .filter((section) => section.visible !== false)
     .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0))
 }
@@ -2430,7 +2452,7 @@ function mapMandateTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { re
 function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
   if (normalizeText(validation?.packetType).toLowerCase() !== 'mandate') return null
   const template = templateResolution?.template || null
-  if (!template?.id) return null
+  if (!template?.id || !templateUsesConditionalMaster(template)) return null
 
   const routeKey = resolveMandateTemplateRuntimeRouteKey(validation, templateResolution)
   const gate = buildMandateTemplatePublishGateReport(
@@ -2459,6 +2481,8 @@ function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolut
 function withMandateTemplateRoutingWarnings(validation = {}, templateResolution = null) {
   const templateResolutionSource =
     normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
+  const coverageTemplate = templateResolution?.template || null
+  const isConditionalMaster = templateUsesConditionalMaster(coverageTemplate)
   const fallbackWarning = buildMandateTemplateFallbackWarning({
     validation,
     templateResolution,
@@ -2468,9 +2492,11 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
     templateResolution,
   })
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
-  const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
-    action: validation?.validationAction,
-  })
+  const launchReadiness = isConditionalMaster
+    ? buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
+        action: validation?.validationAction,
+      })
+    : null
   const contentGateBlockers = (contentGate?.blockers || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: true }),
   )
@@ -2489,7 +2515,6 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
         required: false,
       }),
   )
-
   return {
     ...validation,
     templateResolutionSource,
@@ -2690,6 +2715,7 @@ export async function validatePacket({ packetType, context = {}, template = null
       packetType: normalizedPacketType,
       template,
       placeholders,
+      scenarioProfile: legalDocumentScenarioProfile,
     }))
   const ruleValidation = validatePacketPlaceholders({
     packetType: normalizedPacketType,
@@ -3508,6 +3534,8 @@ export async function generatePacketVersion({
         throw error
       }
 
+      // A failed render is never a generated legal document. Persist the failed attempt
+      // for support/audit purposes, then return a clear error to the workflow.
       await releaseDocumentPacketGenerationLease({
         packetId: packet.id,
         generationAttemptId,
@@ -3559,6 +3587,8 @@ export async function generatePacketVersion({
       }
     }
 
+    const pilotFallback = null
+
     const renderProvenance = buildRenderProvenance({
       packetType: validation.packetType,
       template: effectiveTemplate,
@@ -3608,6 +3638,8 @@ export async function generatePacketVersion({
           ...buildValidationSummary(validation),
           generationStatus: 'generated',
           previewOnly: false,
+          previewOnlyReason: null,
+          pilotFallback,
           generationPayload,
           templateVersion,
           templateResolution: prepared.templateResolution || null,
@@ -3720,6 +3752,8 @@ export async function generatePacketVersion({
         renderedDocumentId: version.rendered_document_id,
         renderedFilePath: version.rendered_file_path,
         previewOnly: false,
+        previewOnlyReason: null,
+        pilotFallback,
         templateResolutionSource: generationPayload.templateResolutionSource || null,
         mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
         mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,

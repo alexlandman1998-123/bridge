@@ -4,16 +4,17 @@ export const BUYER_PORTAL_DEMO_TOKEN = 'demo-buyer-portal'
 export const SELLER_PORTAL_DEMO_TOKEN = 'demo-seller-portal'
 
 const DEMO_BRAND = {
-  organisationId: 'demo-arch9-agency',
-  organisationName: 'Kingstons Real Estate',
-  agencyName: 'Kingstons Real Estate',
-  senderName: 'Sarah Williams',
-  logoUrl: '/brand/kingstons-logo-cover.png',
-  logoDarkUrl: '/brand/kingstons-logo-cover.png',
-  logoLightUrl: '/brand/kingstons-logo-form.png',
-  primaryColour: '',
-  secondaryColour: '',
-  initials: 'K',
+  organisationId: 'demo-produktive-realty',
+  organisationName: 'Produktive Realty',
+  agencyName: 'Produktive Realty',
+  senderName: 'Produktive Realty',
+  logoUrl: '/brand/produktive-realty-logo-white.svg',
+  logoDarkUrl: '/brand/produktive-realty-logo-white.svg',
+  logoLightUrl: '/brand/produktive-realty-logo-white.svg',
+  primaryColour: '#28256f',
+  secondaryColour: '#17164a',
+  accentColour: '#d1ad61',
+  initials: 'P',
 }
 
 const DEMO_PROPERTY_ADDRESS = {

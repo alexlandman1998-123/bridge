@@ -277,7 +277,7 @@ const SECTION_CARD_CLASS =
 const INNER_PANEL_CLASS =
   'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#138a3d]/45 focus:ring-2 focus:ring-[#138a3d]/10 sm:rounded-[18px]'
+  'w-full min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[var(--seller-brand-action-border)] focus:ring-2 focus:ring-[var(--seller-brand-action-soft)] sm:rounded-[18px]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
@@ -412,7 +412,7 @@ async function notifySellerOnboardingSubmitted(updated = {}, form = {}) {
 function choiceCardClass(isActive) {
   return `w-full rounded-[14px] border px-3 py-2.5 text-left transition duration-150 ease-out sm:rounded-[20px] sm:px-5 sm:py-5 ${
     isActive
-      ? 'border-[#138a3d]/55 bg-[#f0fbf4] shadow-[0_12px_28px_rgba(19,138,61,0.10)]'
+      ? 'border-[var(--seller-brand-action-border)] bg-[var(--seller-brand-action-softer)] shadow-[0_12px_28px_rgba(15,23,42,0.08)]'
       : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
   }`
 }
@@ -432,14 +432,14 @@ function getPropertyStructureOptionsByCategory(category) {
 
 function chipChoiceClass(isActive) {
   return `inline-flex items-center gap-2 rounded-full border px-3.5 py-2.5 text-xs font-semibold transition ${
-    isActive ? 'border-[#138a3d]/55 bg-[#f0fbf4] text-[#126b34]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
+    isActive ? 'border-[var(--seller-brand-action-border)] bg-[var(--seller-brand-action-softer)] text-[var(--seller-brand-action)]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
   }`
 }
 
 function disclosureAnswerClass(isActive) {
   return `inline-flex min-h-[44px] items-center justify-center rounded-[14px] border px-3 text-sm font-semibold transition ${
     isActive
-      ? 'border-[#138a3d] bg-[#eaf8ef] text-[#126b34] shadow-[0_10px_22px_rgba(19,138,61,0.12)]'
+      ? 'border-[var(--seller-brand-action)] bg-[var(--seller-brand-action-softer)] text-[var(--seller-brand-action)] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
       : 'border-[#d8e2ec] bg-white text-[#4f6378]'
   }`
 }
@@ -482,25 +482,64 @@ function getSpecialMandateConditionLabels(conditions = {}) {
 }
 
 function resolveAgencyBrand(listing = {}) {
-  const onboardingBranding = listing?.sellerOnboarding?.formData?.portalBranding || {}
+  const sellerOnboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const sellerOnboardingSnakeFormData = listing?.seller_onboarding?.form_data && typeof listing.seller_onboarding.form_data === 'object'
+    ? listing.seller_onboarding.form_data
+    : {}
+  const onboardingFormData = listing?.onboardingFormData?.formData && typeof listing.onboardingFormData.formData === 'object'
+    ? listing.onboardingFormData.formData
+    : {}
+  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingSnakeFormData.portalBranding || onboardingFormData.portalBranding || {}
   const listingBranding = {
     agencyOrganisation: listing?.agencyOrganisation,
+    agency_organisation: listing?.agency_organisation,
     organisationName: listing?.organisationName,
+    organisation_name: listing?.organisation_name,
     agencyName: listing?.agencyName,
+    agency_name: listing?.agency_name,
     assignedAgencyName: listing?.assignedAgencyName,
+    assigned_agency_name: listing?.assigned_agency_name,
     agencyLogoUrl: listing?.agencyLogoUrl,
+    agency_logo_url: listing?.agency_logo_url,
     agencyLogoDarkUrl: listing?.agencyLogoDarkUrl,
+    agency_logo_dark_url: listing?.agency_logo_dark_url,
     agencyLogoLightUrl: listing?.agencyLogoLightUrl,
+    agency_logo_light_url: listing?.agency_logo_light_url,
     organisationLogoUrl: listing?.organisationLogoUrl,
+    organisation_logo_url: listing?.organisation_logo_url,
     organisationLogoDarkUrl: listing?.organisationLogoDarkUrl,
+    organisation_logo_dark_url: listing?.organisation_logo_dark_url,
     organisationLogoLightUrl: listing?.organisationLogoLightUrl,
+    organisation_logo_light_url: listing?.organisation_logo_light_url,
+    primaryColour: listing?.primaryColour,
+    primary_colour: listing?.primary_colour,
+    primaryColor: listing?.primaryColor,
+    primary_color: listing?.primary_color,
+    secondaryColour: listing?.secondaryColour,
+    secondary_colour: listing?.secondary_colour,
+    secondaryColor: listing?.secondaryColor,
+    secondary_color: listing?.secondary_color,
+    accentColour: listing?.accentColour,
+    accent_colour: listing?.accent_colour,
+    accentColor: listing?.accentColor,
+    accent_color: listing?.accent_color,
   }
   const brandingSources = [
     listing?.branding,
     onboardingBranding,
+    sellerOnboardingFormData.branding,
+    sellerOnboardingSnakeFormData.branding,
+    onboardingFormData.branding,
+    listing?.sellerOnboarding?.portalBranding,
+    listing?.sellerOnboarding?.portal_branding,
+    listing?.seller_onboarding?.portalBranding,
+    listing?.seller_onboarding?.portal_branding,
     listingBranding,
     listing?.agency,
     listing?.organisation,
+    listing?.organization,
   ]
   const branding = resolveOnboardingBranding(...brandingSources)
   const hasAgencyName = hasResolvedOnboardingBrandingValue(
@@ -521,6 +560,74 @@ function resolveAgencyBrand(listing = {}) {
     primaryColour: branding.primaryColour,
     secondaryColour: branding.secondaryColour,
     accentColour: branding.accentColour,
+  }
+}
+
+function normalizeSellerBrandColour(value = '', fallback = '') {
+  const text = String(value || '').trim()
+  if (!text) return fallback
+  if (/^#[0-9a-f]{3}$/i.test(text)) {
+    return `#${text.slice(1).split('').map((char) => `${char}${char}`).join('')}`
+  }
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text
+  return fallback
+}
+
+function sellerBrandHexToRgb(hex = '#0e1b2b') {
+  const safeHex = normalizeSellerBrandColour(hex, '#0e1b2b').slice(1)
+  const value = Number.parseInt(safeHex, 16)
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  }
+}
+
+function sellerBrandRgba(hex = '#0e1b2b', alpha = 1) {
+  const { r, g, b } = sellerBrandHexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getSellerBrandContrastText(hex = '#ffffff', darkText = '#0e1b2b') {
+  const { r, g, b } = sellerBrandHexToRgb(hex)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000
+  return yiq >= 150 ? darkText : '#ffffff'
+}
+
+function resolveSellerWelcomeTheme(brand = {}) {
+  const primary = normalizeSellerBrandColour(brand?.primaryColour, '#0e1b2b')
+  const secondary = normalizeSellerBrandColour(brand?.secondaryColour, primary)
+  const configuredAccent = normalizeSellerBrandColour(brand?.accentColour, '')
+  const accent = configuredAccent || '#ffffff'
+  const action = configuredAccent || primary
+  const accentText = getSellerBrandContrastText(accent, primary)
+  const actionText = getSellerBrandContrastText(action, '#0e1b2b')
+
+  return {
+    primary,
+    secondary,
+    accent,
+    action,
+    accentText,
+    actionText,
+    accentSoft: sellerBrandRgba(accent, 0.12),
+    accentSofter: sellerBrandRgba(accent, 0.07),
+    primarySoft: sellerBrandRgba(primary, 0.1),
+    actionSoft: sellerBrandRgba(action, 0.1),
+    shadow: sellerBrandRgba(primary, 0.24),
+    backgroundFallback: `linear-gradient(150deg, ${primary} 0%, ${secondary} 52%, ${primary} 100%)`,
+    overlay: `linear-gradient(180deg, ${sellerBrandRgba(primary, 0.66)} 0%, ${sellerBrandRgba(primary, 0.32)} 35%, ${sellerBrandRgba(primary, 0.82)} 100%)`,
+    cssVars: {
+      '--seller-brand-primary': primary,
+      '--seller-brand-secondary': secondary,
+      '--seller-brand-accent': accent,
+      '--seller-brand-accent-text': accentText,
+      '--seller-brand-action': action,
+      '--seller-brand-action-text': actionText,
+      '--seller-brand-action-soft': sellerBrandRgba(action, 0.1),
+      '--seller-brand-action-softer': sellerBrandRgba(action, 0.06),
+      '--seller-brand-action-border': sellerBrandRgba(action, 0.55),
+    },
   }
 }
 
@@ -1631,12 +1738,13 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   )
 }
 
-function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
+function SellerWelcomeScreen({ brand, listing, form, currentStep = 0, onContinue }) {
   const sellerName = getSellerDisplayName(listing, form)
   const propertyAddress = getPropertyDisplayAddress(listing, form)
   const welcomeName = sellerName && sellerName !== 'Seller'
     ? sellerName.split(/\s+/).filter(Boolean)[0]
     : ''
+  const actionLabel = currentStep > 0 ? 'Resume seller onboarding' : 'Start seller onboarding'
 
   return (
     <PremiumOnboardingLanding
@@ -1649,6 +1757,7 @@ function SellerWelcomeScreen({ brand, listing, form, onContinue }) {
       primaryColour={brand?.primaryColour}
       secondaryColour={brand?.secondaryColour}
       accentColour={brand?.accentColour}
+      ctaLabel={actionLabel}
       onStart={onContinue}
     />
   )
@@ -1659,16 +1768,16 @@ function SellerStepProgress({ currentStep, progress }) {
     <section className="rounded-[24px] border border-[#dce6ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:rounded-[28px] sm:bg-white/90 sm:p-5 sm:shadow-[0_12px_30px_rgba(15,23,42,0.04)] lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#137a4a]">Step {currentStep + 1} of {STEPS.length}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--seller-brand-action)]">Step {currentStep + 1} of {STEPS.length}</p>
           <h2 className="mt-1 break-words text-[1.45rem] font-semibold leading-tight tracking-normal text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
-        <span className="shrink-0 rounded-full bg-[#eaf8ef] px-3 py-1.5 text-xs font-semibold text-[#126b34]">{progress}%</span>
+        <span className="shrink-0 rounded-full bg-[var(--seller-brand-action-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--seller-brand-action)]">{progress}%</span>
       </div>
       <p className="mt-2 text-[13px] leading-5 text-[#516981] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
-          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[var(--seller-brand-action)] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1676,7 +1785,7 @@ function SellerStepProgress({ currentStep, progress }) {
         {STEP_META.map((step, index) => (
           <span
             key={step.label}
-            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[#138a3d]' : 'w-1.5 bg-[#d8e2ee]'}`}
+            className={`h-1.5 rounded-full transition-all ${index <= currentStep ? 'w-5 bg-[var(--seller-brand-action)]' : 'w-1.5 bg-[#d8e2ee]'}`}
           />
         ))}
       </div>
@@ -1686,11 +1795,11 @@ function SellerStepProgress({ currentStep, progress }) {
           <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
           <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
         </div>
-        <span className="rounded-full bg-[#f0fbf4] px-3 py-1 text-xs font-semibold text-[#126b34]">{progress}% complete</span>
+        <span className="rounded-full bg-[var(--seller-brand-action-soft)] px-3 py-1 text-xs font-semibold text-[var(--seller-brand-action)]">{progress}% complete</span>
       </div>
       <div className="mt-4 hidden h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:block">
         <span
-          className="block h-full rounded-full bg-[#138a3d] transition-[width] duration-300"
+          className="block h-full rounded-full bg-[var(--seller-brand-action)] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -1705,7 +1814,7 @@ function SellerStepProgress({ currentStep, progress }) {
               type="button"
               className={`flex items-center gap-3 rounded-[18px] border px-3 py-3.5 text-left transition ${
                 isActive
-                  ? 'border-[#138a3d]/65 bg-[#f0fbf4] shadow-[0_12px_26px_rgba(19,138,61,0.10)]'
+                  ? 'border-[var(--seller-brand-action-border)] bg-[var(--seller-brand-action-softer)] shadow-[0_12px_26px_rgba(15,23,42,0.08)]'
                   : isComplete
                     ? 'border-[#d8ecdf] bg-[#f5fbf7]'
                     : 'border-[#e1e9f3] bg-white/90'
@@ -1713,7 +1822,7 @@ function SellerStepProgress({ currentStep, progress }) {
               disabled
             >
               <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                isComplete ? 'bg-[#1f7d44] text-white' : isActive ? 'bg-[#172334] text-white' : 'bg-white text-[#7890a8]'
+                isComplete ? 'bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)]' : isActive ? 'bg-[var(--seller-brand-primary)] text-white' : 'bg-white text-[#7890a8]'
               }`}>
                 {isComplete ? <CheckCircle2 size={17} /> : <Icon size={17} />}
               </span>
@@ -1768,7 +1877,7 @@ function ChoiceCard({ active, title, description, icon = Circle, onClick }) {
       className={`${choiceCardClass(active)} flex min-h-[62px] items-start gap-3 sm:min-h-[92px]`}
     >
       <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
-        active ? 'border-[#138a3d]/30 bg-white text-[#138a3d]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
+        active ? 'border-[var(--seller-brand-action-border)] bg-white text-[var(--seller-brand-action)]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
       }`}>
         {createElement(icon, { size: 18, strokeWidth: 2.2 })}
       </span>
@@ -2120,7 +2229,7 @@ function PropertyDisclosureSection({
                     return (
                       <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                         <div className="flex items-start gap-3">
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef6f2] text-sm font-semibold text-[#138a3d]">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--seller-brand-action-soft)] text-sm font-semibold text-[var(--seller-brand-action)]">
                             {question.number}
                           </span>
                           <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
@@ -4478,7 +4587,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                               ...(form.specialMandateConditions || {}),
                               [option.key]: event.target.checked,
                             })}
-                            className="mt-1 h-4 w-4 rounded border-[#b8c7d8] accent-[#138a3d]"
+                            className="mt-1 h-4 w-4 rounded border-[#b8c7d8] accent-[var(--seller-brand-action)]"
                           />
                           <span className="min-w-0">
                             <span className="block font-semibold text-[#172334]">{option.label}</span>
@@ -5194,7 +5303,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 />
                 <div className={`rounded-[20px] border p-4 ${attorneyMissing.length ? 'border-[#efb6ad] bg-[#fff8f6]' : 'border-[#b9dfc7] bg-[#f5fcf7]'}`}>
                   <div className="flex items-start gap-3">
-                    <span className="mt-0.5 rounded-full bg-white p-2 text-[#1f7d44] shadow-sm">
+                    <span className="mt-0.5 rounded-full bg-white p-2 text-[var(--seller-brand-action)] shadow-sm">
                       <Landmark size={18} />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -5281,13 +5390,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </Button>
             ) : null}
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105 sm:w-auto">
                 Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[#138a3d] text-white hover:bg-[#0f7533] sm:w-auto">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105 sm:w-auto">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
@@ -5304,6 +5413,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     </div>
   )
 
+  const sellerBrandTheme = resolveSellerWelcomeTheme(agencyBrand)
   const content = shouldShowWelcome ? (
     <SellerWelcomeScreen
       brand={agencyBrand}
@@ -5315,7 +5425,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   ) : formContent
 
   if (embedded) {
-    return <div className="w-full">{content}</div>
+    return <div className="w-full" style={sellerBrandTheme.cssVars}>{content}</div>
   }
 
   const sellerMainClass = shouldShowWelcome
@@ -5323,7 +5433,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
 
   return (
-    <main className={sellerMainClass}>
+    <main className={sellerMainClass} style={sellerBrandTheme.cssVars}>
       {!shouldShowWelcome ? (
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
@@ -5362,13 +5472,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </div>
             </div>
             {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
+              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
                 {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[#138a3d] text-white shadow-[0_14px_28px_rgba(19,138,61,0.22)] hover:bg-[#0f7533]">
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
