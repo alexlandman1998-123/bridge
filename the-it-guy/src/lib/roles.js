@@ -522,20 +522,13 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     {
       key: 'agency',
       label: 'Organisation',
-      to: '/agency/overview',
-      activeMatch: ['/agency', '/partners', '/settings/legal-templates', '/settings/branding', '/settings/users', '/settings/activity'],
+      to: '/agency/branches',
+      activeMatch: ['/agency/branches', '/agency/agents', '/agency/commission', '/settings/legal-templates'],
       children: [
-        { key: 'agency_overview', label: 'Overview', to: '/agency/overview' },
-        ...(!isBranchManager ? [{ key: 'agency_people', label: 'People', to: '/agency/agents' }] : []),
         { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
+        ...(!isBranchManager ? [{ key: 'agency_people', label: 'Agents', to: '/agency/agents' }] : []),
         ...(!isBranchManager ? [{ key: 'agency_commission', label: 'Commission', to: '/agency/commission' }] : []),
-        { key: 'agency_branding', label: 'Branding', to: '/agency/branding' },
-        ...(!isBranchManager
-          ? [
-              { key: 'agency_roles', label: 'Roles & Permissions', to: '/agency/roles' },
-            ]
-          : []),
-        { key: 'agency_activity', label: 'Activity', to: '/agency/activity' },
+        ...(!isBranchManager ? [{ key: 'agency_legal_templates', label: 'Legal Templates', to: '/settings/legal-templates' }] : []),
       ],
     },
     { key: 'clients', label: 'Clients', to: '/clients' },

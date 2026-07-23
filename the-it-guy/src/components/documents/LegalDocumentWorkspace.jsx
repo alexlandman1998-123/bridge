@@ -2759,10 +2759,10 @@ function MandateRoutePanel({ routing = null, className = '' }) {
           <p className="font-semibold text-[#7a4d10]">Route-specific template missing</p>
           <p className="mt-1 leading-5">{routing.warningMessage}</p>
           <a
-            href="/settings/signing-templates"
+            href="/settings/legal-templates"
             className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f1d4a5] bg-white px-3 py-2 text-xs font-semibold text-[#7a4d10]"
           >
-            Open Template Settings
+            Open Legal Templates
             <ChevronRight size={13} />
           </a>
         </div>

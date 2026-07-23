@@ -276,7 +276,6 @@ const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/Setting
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const LegalDocumentEditorRoute = lazy(() => import('./pages/settings/LegalDocumentEditorRoute'))
-const LegalDocumentsLandingPage = lazy(() => import('./pages/settings/LegalDocumentsLandingPage'))
 const LegalDocumentOverviewPage = lazy(() => import('./pages/settings/LegalDocumentOverviewPage'))
 const LegalDocumentPreviewPage = lazy(() => import('./pages/settings/LegalDocumentPreviewPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
@@ -2476,18 +2475,16 @@ function AppRoutes() {
                 path="/agency"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/agency/overview" replace />
+                    <Navigate to="/agency/branches" replace />
                   </RoleRoute>
                 }
               />
               <Route
                 path="/agency/overview"
                 element={
-                  <AgentManagementRoute allowBranchOperations>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <SettingsOrganisationPage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agency/branches" replace />
+                  </RoleRoute>
                 }
               />
               <Route
@@ -2563,31 +2560,25 @@ function AppRoutes() {
               <Route
                 path="/agency/branding"
                 element={
-                  <AgentManagementRoute allowBranchOperations>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <SettingsOrganisationPage section="branding" />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/settings/branding" replace />
+                  </RoleRoute>
                 }
               />
               <Route
                 path="/agency/roles"
                 element={
-                  <AgentManagementRoute>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <SettingsUsersPage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/settings/users" replace />
+                  </RoleRoute>
                 }
               />
               <Route
                 path="/agency/activity"
                 element={
-                  <AgentManagementRoute allowBranchOperations>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <SettingsActivityPage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/settings/activity" replace />
+                  </RoleRoute>
                 }
               />
               <Route
@@ -2787,7 +2778,7 @@ function AppRoutes() {
                 element={
                   <OrganisationSettingsManageRoute>
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentsLandingPage />
+                      <SettingsSigningTemplatesPage />
                     </RoleRoute>
                   </OrganisationSettingsManageRoute>
                 }
@@ -2892,7 +2883,7 @@ function AppRoutes() {
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['developer', 'agent']}>
-                        <SettingsSigningTemplatesPage />
+                        <Navigate to="/settings/legal-templates" replace />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }
