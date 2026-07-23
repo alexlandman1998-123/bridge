@@ -172,6 +172,7 @@ function normalizeKey(value) {
 }
 
 const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+const SIGNING_PREPARATION_TIMEOUT_MS = 15000
 const SIGNING_DELIVERY_TIMEOUT_MS = 12000
 const WORKSPACE_STATUS_FRESH_MS = 2500
 const WORKSPACE_STATUS_REVALIDATION_DELAYS_MS = [1000, 4000]
@@ -4245,7 +4246,16 @@ export default function LegalDocumentWorkspace({
     const resolvedPacketId = normalizeText(currentStatus?.packet?.id || packetId)
     if (!resolvedPacketId) throw new Error('Generate a packet first before assigning signers.')
     const currentSigningVersion = getGeneratedPacketVersionForSigning(currentStatus?.versions || [])
-    if (!currentSigningVersion?.id) throw createWorkspaceError('NO_GENERATED_VERSION', 'Generate a packet version before assigning signers.')
+    if (!currentSigningVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(currentStatus?.versions || [])
+      if (pilotVersion) {
+        throw createWorkspaceError(
+          'PILOT_FALLBACK_REVIEW_REQUIRED',
+          'This draft is an internal preview, not a signable mandate. Generate a verified mandate before preparing signers.',
+        )
+      }
+      throw createWorkspaceError('NO_GENERATED_VERSION', 'Generate a verified mandate before assigning signers.')
+    }
 
     const payload = effectiveSignerRoster
       .map((row, index) => {
@@ -4281,8 +4291,8 @@ export default function LegalDocumentWorkspace({
         organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
         markSigningPrep: true,
       }),
-      'Signer details are taking too long to save.',
-      10000,
+      'Signer details could not be confirmed within 15 seconds. Check your connection and retry once.',
+      SIGNING_PREPARATION_TIMEOUT_MS,
     )
     return payload.length
   }
@@ -4294,6 +4304,14 @@ export default function LegalDocumentWorkspace({
       setLoadError('Generate a document packet before preparing signer fields.')
       return
     }
+    const verifiedVersion = getGeneratedPacketVersionForSigning(statusState?.versions || [])
+    if (!verifiedVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
+      setLoadError(pilotVersion
+        ? 'This is an internal review preview, not a signable mandate. Generate a verified mandate before preparing signatures.'
+        : 'Generate a verified mandate before preparing signatures.')
+      return
+    }
     assertMandateActionValidation('generate', {
       packetId: resolvedPacketId,
       versionId: latestVersion?.id,
@@ -4302,16 +4320,36 @@ export default function LegalDocumentWorkspace({
     setLoadError('')
     setActionFeedback('')
     try {
-      const signingVersion = getSigningVersionSnapshot(statusState, latestVersion)
-      const prepared = await prepareSigningFields({
-        packetId: resolvedPacketId,
-        packetType,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
-        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
-        context: statusState?.packet?.source_context_json || {},
-      })
+      setActionProgressMessage('Saving signer details…')
+      const savedCount = await saveSignerDetails({ includeOptional: true })
+      let workingStatus = statusStateRef.current || statusState
+      if (savedCount > 0) {
+        try {
+          const refreshed = await refreshWorkspaceData()
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+            workingStatus = refreshed.resolved
+          }
+        } catch (refreshError) {
+          console.warn('[LegalDocumentWorkspace] signer save was confirmed but the status refresh was slow.', refreshError)
+        }
+      }
+      setActionProgressMessage('Preparing signature fields…')
+      const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
+      const prepared = await withWorkspaceTimeout(
+        prepareSigningFields({
+          packetId: resolvedPacketId,
+          packetType,
+          organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+          placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
+          context: workingStatus?.packet?.source_context_json || {},
+        }),
+        'Signature preparation could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+        SIGNING_PREPARATION_TIMEOUT_MS,
+      )
       applyPreparedSigningState(prepared)
-      setActionFeedback('Signer fields prepared. Review signer details and send when ready.')
+      setActionFeedback(savedCount > 0 ? 'Signer details saved and signature fields prepared.' : 'Signature fields prepared. Signer details were already up to date.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare signer fields right now.'))
     } finally {
@@ -4397,16 +4435,30 @@ export default function LegalDocumentWorkspace({
   async function ensureSignerReadinessBeforeSend({ isResend = false, targetSignerRole = '' } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
+    const verifiedVersion = getGeneratedPacketVersionForSigning(workingStatus?.versions || [])
+    if (!verifiedVersion?.id) {
+      const pilotVersion = findLatestPilotDocumentFallback(workingStatus?.versions || [])
+      throw createWorkspaceError(
+        pilotVersion ? 'PILOT_FALLBACK_REVIEW_REQUIRED' : 'NO_GENERATED_VERSION',
+        pilotVersion
+          ? 'This is an internal review preview, not a signable mandate. Generate a verified mandate before sending.'
+          : 'Generate a verified mandate before sending it for signature.',
+      )
+    }
     let preparedVersionId = ''
     const ensurePrepared = async () => {
       const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
-      const prepared = await prepareSigningFields({
-        packetId: normalizeText(workingStatus?.packet?.id || packetId),
-        packetType,
-        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
-        context: workingStatus?.packet?.source_context_json || {},
-      })
+      const prepared = await withWorkspaceTimeout(
+        prepareSigningFields({
+          packetId: normalizeText(workingStatus?.packet?.id || packetId),
+          packetType,
+          organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+          placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
+          context: workingStatus?.packet?.source_context_json || {},
+        }),
+        'Signature preparation could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+        SIGNING_PREPARATION_TIMEOUT_MS,
+      )
       preparedVersionId = normalizeText(prepared?.version?.id) || preparedVersionId
       workingStatus = applyPreparedSigningState(prepared, workingStatus)
     }
@@ -4509,15 +4561,19 @@ export default function LegalDocumentWorkspace({
     })
 
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
-    const linkResult = await generateSigningLinks({
-      packetId: resolvedPacketId,
-      packetVersionId: versionId,
-      expiresInHours: 168,
-      baseUrl: origin,
-      organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-      regenerate: Boolean(isResend),
-      targetSignerRole,
-    })
+    const linkResult = await withWorkspaceTimeout(
+      generateSigningLinks({
+        packetId: resolvedPacketId,
+        packetVersionId: versionId,
+        expiresInHours: 168,
+        baseUrl: origin,
+        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
+        regenerate: Boolean(isResend),
+        targetSignerRole,
+      }),
+      'Secure signing links could not be confirmed within 15 seconds. Refresh the signer status before retrying.',
+      SIGNING_PREPARATION_TIMEOUT_MS,
+    )
 
     return {
       linkResult,

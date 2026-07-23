@@ -3534,6 +3534,8 @@ export async function generatePacketVersion({
         throw error
       }
 
+      // A failed render is never a generated legal document. Persist the failed attempt
+      // for support/audit purposes, then return a clear error to the workflow.
       await releaseDocumentPacketGenerationLease({
         packetId: packet.id,
         generationAttemptId,
@@ -3585,6 +3587,8 @@ export async function generatePacketVersion({
       }
     }
 
+    const pilotFallback = null
+
     const renderProvenance = buildRenderProvenance({
       packetType: validation.packetType,
       template: effectiveTemplate,
@@ -3634,6 +3638,8 @@ export async function generatePacketVersion({
           ...buildValidationSummary(validation),
           generationStatus: 'generated',
           previewOnly: false,
+          previewOnlyReason: null,
+          pilotFallback,
           generationPayload,
           templateVersion,
           templateResolution: prepared.templateResolution || null,
@@ -3746,6 +3752,8 @@ export async function generatePacketVersion({
         renderedDocumentId: version.rendered_document_id,
         renderedFilePath: version.rendered_file_path,
         previewOnly: false,
+        previewOnlyReason: null,
+        pilotFallback,
         templateResolutionSource: generationPayload.templateResolutionSource || null,
         mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
         mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
