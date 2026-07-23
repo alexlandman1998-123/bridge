@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 
 function getFunctionBlock(name) {
@@ -28,15 +29,39 @@ assert.equal(
   'package.json should expose the lead mandate quick-start regression.',
 )
 
+assert.ok(
+  !appSource.includes("import('./pages/AgentLeadsPage')"),
+  'The retired AgentLeadsPage should not be mounted through App routes.',
+)
+assert.match(
+  appSource,
+  /path="\/pipeline\/leads"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
+  'The canonical leads list route should use the unified pipeline workspace.',
+)
+assert.match(
+  appSource,
+  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
+  'The canonical lead detail route should use the unified pipeline workspace.',
+)
+
 for (const reference of [
   'function resolveMandateQuickStartPrimaryLabel',
   'function resolveMandateQuickStartIntro',
+  'function resolveOtpQuickStartPrimaryLabel',
+  'function resolveOtpQuickStartIntro',
   'const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)',
   'const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)',
+  'const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)',
+  'const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)',
   'const selectedLeadMandateQuickStartRows = useMemo',
   'const selectedLeadMandateQuickStartBlockers = useMemo',
   'const selectedLeadMandateQuickStartWarnings = useMemo',
+  'const selectedLeadOtpQuickStartRows = useMemo',
+  'const selectedLeadOtpQuickStartBlockers = useMemo',
+  'const selectedLeadOtpQuickStartWarnings = useMemo',
+  'title="Confirm OTP details"',
   'title="Confirm mandate details"',
+  'Edit Offer / Terms',
   'Edit Wording / Terms',
   'autoGenerateEnabled={false}',
 ]) {
@@ -65,6 +90,22 @@ for (const reference of [
   'setMandateQuickStartOpen(false)',
 ]) {
   assert.ok(quickStartBlock.includes(reference), `Quick start flow should keep ${reference}.`)
+}
+
+const otpActionBlock = getFunctionBlock('handleSelectedLeadOtpPrimaryAction')
+assert.ok(
+  otpActionBlock.includes('setOtpQuickStartOpen(true)'),
+  'Generate OTP actions should open the confirmation modal.',
+)
+
+const otpQuickStartBlock = getFunctionBlock('handleOtpQuickStartGenerateAndSend')
+for (const reference of [
+  'selectedLeadOtpQuickStartBlockers.length',
+  'createAndSendOfferLinkForLead',
+  "successPrefix: 'OTP '",
+  'setOtpQuickStartOpen(false)',
+]) {
+  assert.ok(otpQuickStartBlock.includes(reference), `OTP quick start flow should keep ${reference}.`)
 }
 
 const workspaceBlock = getFunctionBlock('openSelectedLeadMandateWorkspace')

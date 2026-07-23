@@ -31,7 +31,6 @@ import {
   SettingsBanner,
   SettingsEmptyState,
   SettingsLoadingState,
-  settingsPageClass,
 } from './settingsUi'
 
 const COMMISSION_TABS = [
@@ -44,6 +43,7 @@ const COMMISSION_TABS = [
 const INPUT_CLASS = 'h-11 rounded-[12px] border-[#d8e3ee] bg-white text-sm text-[#17233a] shadow-[0_1px_0_rgba(15,23,42,0.02)] placeholder:text-[#9aa8b8] focus:border-[#0f7f4f] focus:ring-[#dff2e8]'
 const LABEL_CLASS = 'text-[0.78rem] font-semibold text-[#43566d]'
 const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.055)] sm:p-6'
+const COMMISSION_PAGE_CLASS = 'w-full space-y-7'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -259,7 +259,7 @@ function OverviewMetric({ title, value, description, children }) {
   return (
     <article className="flex items-center gap-4 rounded-[22px] bg-white/70 p-4 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.9)]">
       <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[18px] bg-[#f0f7f3] text-[#0f7f4f]">
-          {children}
+        {children}
       </div>
       <div>
         <p className="text-sm font-semibold text-[#40566d]">{title}</p>
@@ -291,6 +291,26 @@ function CommissionOverviewDashboard({ levels, referralRules, structures, assign
   const activeRules = referralRules.filter((rule) => rule.isActive !== false)
   const totalAgents = assignableRows.length
   const overrides = assignableRows.filter((row) => row.assignedLevelId).length
+  const defaultLevelId = normalizeText(defaultLevel.id)
+  const defaultRows = assignableRows.filter((row) => {
+    if (!defaultLevelId) return !row.assignedLevelId
+    return normalizeText(row.effectiveLevelId) === defaultLevelId
+  })
+  const defaultUsage = defaultRows.length || Number(defaultLevel.assignedAgentsCount || 0) || totalAgents
+  const levelRows = levels.map((level) => {
+    const levelId = normalizeText(level.id)
+    const assignedCount = assignableRows.filter((row) => normalizeText(row.effectiveLevelId) === levelId).length
+    return {
+      ...level,
+      overviewAssignedCount: assignedCount || Number(level.assignedAgentsCount || 0),
+    }
+  })
+  const featuredLevels = levelRows.slice(0, 4)
+  const featuredAgents = assignableRows
+    .slice()
+    .sort((first, second) => Number(Boolean(second.assignedLevelId)) - Number(Boolean(first.assignedLevelId)) || first.name.localeCompare(second.name))
+    .slice(0, 5)
+  const inactiveRules = referralRules.length - activeRules.length
 
   return (
     <div className="space-y-8">
@@ -304,21 +324,147 @@ function CommissionOverviewDashboard({ levels, referralRules, structures, assign
           <p className="mt-4 text-5xl font-semibold tracking-[-0.02em] text-[#101828]">
             {formatPercent(defaultLevel.agentPercentage, 50).replace('%', '')} / {formatPercent(defaultLevel.agencyPercentage, 50).replace('%', '')}
           </p>
-          <p className="mt-3 text-sm font-medium text-[#60758d]">Used by {totalAgents || 0} agent{totalAgents === 1 ? '' : 's'}</p>
+          <p className="mt-3 text-sm font-medium text-[#60758d]">Used by {defaultUsage || 0} agent{defaultUsage === 1 ? '' : 's'}</p>
+          <div className="mt-6">
+            <SplitBar agent={defaultLevel.agentPercentage} agency={defaultLevel.agencyPercentage} />
+          </div>
         </button>
 
         <div className="grid gap-3 md:grid-cols-3">
           <OverviewMetric title="Commission Levels" value={levels.length || 0} description="Reusable templates">
-          <BadgePercent className="h-5 w-5" strokeWidth={2} />
+            <BadgePercent className="h-5 w-5" strokeWidth={2} />
           </OverviewMetric>
           <OverviewMetric title="Referral Rules" value={activeRules.length || 0} description={`${structures.length || 0} operational templates`}>
-          <Handshake className="h-5 w-5" strokeWidth={2} />
+            <Handshake className="h-5 w-5" strokeWidth={2} />
           </OverviewMetric>
           <OverviewMetric title="Overrides" value={overrides || 0} description="Agent-specific assignments">
             <UsersRound className="h-5 w-5" strokeWidth={2} />
           </OverviewMetric>
         </div>
       </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.78fr)]">
+        <CommissionCard
+          title="Level Distribution"
+          actions={
+            <IconButton onClick={() => setActiveTab('levels')}>
+              Manage Levels
+            </IconButton>
+          }
+        >
+          {!featuredLevels.length ? (
+            <SettingsEmptyState title="No levels yet" description="Create reusable commission levels before assigning agents." />
+          ) : (
+            <div className="grid gap-3">
+              {featuredLevels.map((level) => (
+                <button
+                  key={level.id || level.name}
+                  type="button"
+                  onClick={() => setActiveTab('levels')}
+                  className="grid gap-4 rounded-[20px] bg-[#fbfdff] p-4 text-left shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)] transition hover:bg-white sm:grid-cols-[minmax(0,1fr)_160px] sm:items-center"
+                >
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-base font-semibold text-[#17233a]">{level.name}</span>
+                      {level.isDefault ? <StatusPill tone="green">Default</StatusPill> : null}
+                    </span>
+                    <span className="mt-1 block text-sm font-medium text-[#60758d]">
+                      {level.overviewAssignedCount || 0} agent{Number(level.overviewAssignedCount || 0) === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                  <div>
+                    <span className="block text-right text-2xl font-semibold tracking-[-0.02em] text-[#0f7f4f]">
+                      {formatPercent(level.agentPercentage).replace('%', '')} / {formatPercent(level.agencyPercentage).replace('%', '')}
+                    </span>
+                    <div className="mt-2">
+                      <SplitBar agent={level.agentPercentage} agency={level.agencyPercentage} />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CommissionCard>
+
+        <CommissionCard
+          title="Agent Coverage"
+          actions={
+            <IconButton onClick={() => setActiveTab('agents')}>
+              Manage Agents
+            </IconButton>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TargetMetric label="Agents" value={totalAgents || 0} />
+            <TargetMetric label="Default" value={defaultUsage || 0} />
+            <TargetMetric label="Overrides" value={overrides || 0} />
+          </div>
+          <div className="mt-5 grid gap-2">
+            {featuredAgents.length ? featuredAgents.map((row) => (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => setActiveTab('agents')}
+                className="flex items-center justify-between gap-3 rounded-[18px] bg-[#fbfdff] px-4 py-3 text-left shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)] transition hover:bg-white"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <AgentAvatar row={row} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-[#17233a]">{row.name}</span>
+                    <span className="mt-0.5 block truncate text-xs font-medium text-[#60758d]">{row.levelName}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-[#0f7f4f]">
+                  {formatPercent(row.agentPercentage).replace('%', '')} / {formatPercent(row.agencyPercentage).replace('%', '')}
+                </span>
+              </button>
+            )) : (
+              <SettingsEmptyState title="No agents yet" description="Invite agents before managing commission coverage." />
+            )}
+          </div>
+        </CommissionCard>
+      </section>
+
+      <CommissionCard
+        title="Rule Summary"
+        actions={
+          <IconButton onClick={() => setActiveTab('rules')}>
+            Manage Rules
+          </IconButton>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="rounded-[22px] bg-[#fbfdff] p-5 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)]">
+            <p className="text-sm font-semibold text-[#40566d]">Referral Rules</p>
+            <p className="mt-3 text-4xl font-semibold tracking-[-0.02em] text-[#101828]">{activeRules.length}</p>
+            <p className="mt-2 text-sm font-medium text-[#60758d]">
+              {inactiveRules > 0 ? `${inactiveRules} inactive rule${inactiveRules === 1 ? '' : 's'}` : 'All referral rules active'}
+            </p>
+            <p className="mt-5 text-sm font-semibold text-[#40566d]">Operational Templates</p>
+            <p className="mt-2 text-2xl font-semibold text-[#17233a]">{structures.length || 0}</p>
+          </div>
+          <div className="grid gap-2">
+            {activeRules.length ? activeRules.slice(0, 4).map((rule) => (
+              <button
+                key={rule.id || rule.referralType || rule.name}
+                type="button"
+                onClick={() => setActiveTab('rules')}
+                className="grid gap-2 rounded-[18px] bg-[#fbfdff] px-4 py-3 text-left shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)] transition hover:bg-white sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-[#17233a]">{rule.name || 'Referral rule'}</span>
+                  <span className="mt-0.5 block text-xs font-medium text-[#60758d]">{normalizeText(rule.referralType || 'referral').replaceAll('_', ' ')}</span>
+                </span>
+                <span className="text-sm font-semibold text-[#0f7f4f]">
+                  {formatPercent(rule.percentage)} {normalizeText(rule.basis || 'gross_commission').replaceAll('_', ' ')}
+                </span>
+              </button>
+            )) : (
+              <SettingsEmptyState title="No referral rules yet" description="Create referral rules for cross-agent and branch referrals." />
+            )}
+          </div>
+        </div>
+      </CommissionCard>
     </div>
   )
 }
@@ -1134,7 +1280,7 @@ export default function SettingsCommissionStructuresPage() {
 
   if (!canEdit) {
     return (
-      <div className={settingsPageClass}>
+      <div className={COMMISSION_PAGE_CLASS}>
         <TabRail activeTab={activeTab} setActiveTab={setActiveTab} />
         <SettingsBanner tone="warning">
           Access restricted. Only {administratorLabel} can view and manage agency commission rules.
@@ -1144,7 +1290,7 @@ export default function SettingsCommissionStructuresPage() {
   }
 
   return (
-    <div className={settingsPageClass}>
+    <div className={COMMISSION_PAGE_CLASS}>
       <TabRail activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}

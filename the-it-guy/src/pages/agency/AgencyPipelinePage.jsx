@@ -1675,6 +1675,14 @@ function resolveMandateQuickStartIntro(actionKey = '') {
   return 'Confirm the seller, property, and signer details before Arch9 generates the mandate and starts the signing flow.'
 }
 
+function resolveOtpQuickStartPrimaryLabel() {
+  return 'Generate & Send OTP'
+}
+
+function resolveOtpQuickStartIntro() {
+  return 'Confirm the buyer, property, and delivery details before Arch9 prepares the OTP pack and sends the buyer the secure offer flow.'
+}
+
 function dedupeByKey(rows = [], resolveKey) {
   const map = new Map()
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -2531,6 +2539,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     whatsapp: false,
   })
   const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
+  const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)
+  const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)
+  const [otpQuickStartProgress, setOtpQuickStartProgress] = useState('')
+  const [otpQuickStartError, setOtpQuickStartError] = useState('')
   const [selectedLeadOffers, setSelectedLeadOffers] = useState([])
   const [selectedLeadOfferPortalSessions, setSelectedLeadOfferPortalSessions] = useState([])
   const [selectedLeadOffersLoading, setSelectedLeadOffersLoading] = useState(false)
@@ -5241,6 +5253,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadOfferPropertyOptions,
     selectedLeadViewingAppointments,
   ])
+
+  const selectedLeadOtpQuickStartRows = useMemo(() => {
+    const buyerName = normalizeText(offerLinkForm.buyerName || selectedLeadContactName)
+    const buyerEmail = normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email).toLowerCase()
+    const buyerPhone = normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone)
+    const propertyTitle = normalizeText(selectedLeadOfferCentreProperty?.title || selectedLeadPropertyLabel)
+    const propertyPrice = normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel)
+    const deliveryMode = normalizeClientIntakePreference(offerLinkForm.clientIntakePreference)
+    const requiresDigitalContact = deliveryMode === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
+    const agentEmail = normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase()
+    const agentName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
+    return [
+      { key: 'buyer', label: 'Buyer', value: buyerName || 'Missing buyer name', ready: Boolean(buyerName) },
+      {
+        key: 'buyer_contact',
+        label: 'Buyer contact',
+        value: [buyerEmail, buyerPhone].filter(Boolean).join(' / ') || 'Missing buyer email or phone',
+        ready: requiresDigitalContact ? Boolean(isValidEmail(buyerEmail) || buyerPhone) : Boolean(buyerEmail || buyerPhone),
+        optional: !requiresDigitalContact,
+      },
+      { key: 'property', label: 'Property', value: propertyTitle || 'Missing property', ready: Boolean(selectedLeadOfferCentreProperty?.id || propertyTitle) },
+      { key: 'price', label: 'Price context', value: propertyPrice || 'Not captured', ready: Boolean(propertyPrice), optional: true },
+      {
+        key: 'viewing',
+        label: 'Viewing context',
+        value: selectedLeadOfferCentreProperty?.viewingStatusLabel || (selectedLeadActiveViewing ? 'Viewing linked' : 'No completed viewing linked'),
+        ready: Boolean(selectedLeadOfferCentreProperty?.viewing || selectedLeadActiveViewing),
+        optional: true,
+      },
+      { key: 'delivery', label: 'Delivery', value: getClientIntakePreferenceLabel(deliveryMode), ready: Boolean(deliveryMode) },
+      { key: 'agent', label: 'Signing agent', value: agentName || 'Missing agent name', ready: Boolean(agentName) },
+      { key: 'agent_email', label: 'Agent email', value: agentEmail || 'Missing agent email', ready: isValidEmail(agentEmail) },
+    ]
+  }, [
+    currentAgent.email,
+    currentAgent.fullName,
+    offerLinkForm.buyerEmail,
+    offerLinkForm.buyerName,
+    offerLinkForm.buyerPhone,
+    offerLinkForm.clientIntakePreference,
+    selectedLead,
+    selectedLeadActiveViewing,
+    selectedLeadBuyerBudgetLabel,
+    selectedLeadContact,
+    selectedLeadContactName,
+    selectedLeadOfferCentreProperty,
+    selectedLeadPropertyLabel,
+  ])
+  const selectedLeadOtpQuickStartBlockers = useMemo(
+    () =>
+      selectedLeadOtpQuickStartRows
+        .filter((row) => !row.ready && !row.optional)
+        .map((row) => row.value || `${row.label} is required.`),
+    [selectedLeadOtpQuickStartRows],
+  )
+  const selectedLeadOtpQuickStartWarnings = useMemo(
+    () =>
+      selectedLeadOtpQuickStartRows
+        .filter((row) => !row.ready && row.optional)
+        .map((row) => row.value || `${row.label} is not complete.`),
+    [selectedLeadOtpQuickStartRows],
+  )
 
   const selectedLeadOfferReasons = useMemo(() => {
     if (!selectedLeadOfferCentreProperty) return []
@@ -9111,6 +9185,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(offerError?.message || 'Unable to create the offer link.')
     } finally {
       setIsOfferLinkSending(false)
+    }
+  }
+
+  function openSelectedLeadOtpEditor() {
+    setOtpQuickStartOpen(false)
+    setOtpQuickStartError('')
+    setOtpQuickStartProgress('')
+    setLeadWorkspaceTab('offers')
+  }
+
+  function handleSelectedLeadOtpPrimaryAction() {
+    if (!selectedLead || selectedLeadIsSeller) return
+    setOtpQuickStartError('')
+    setOtpQuickStartProgress('')
+    setOtpQuickStartOpen(true)
+  }
+
+  async function handleOtpQuickStartGenerateAndSend() {
+    if (!selectedLead || selectedLeadIsSeller || !organisationId) return
+    if (selectedLeadOtpQuickStartBlockers.length) {
+      setOtpQuickStartError(selectedLeadOtpQuickStartBlockers[0])
+      return
+    }
+
+    setOtpQuickStartBusy(true)
+    setOtpQuickStartError('')
+    setOtpQuickStartProgress('Preparing OTP pack…')
+    setIsOfferLinkSending(true)
+    try {
+      const result = await createAndSendOfferLinkForLead({
+        directOfferCentreSubmission: true,
+        successPrefix: 'OTP ',
+      })
+      if (result?.successMessage) setMessage(result.successMessage)
+      if (result?.errorMessage) setError(result.errorMessage)
+      setOtpQuickStartProgress('Refreshing lead…')
+      await reloadRecords(organisationId)
+      setOtpQuickStartOpen(false)
+      setOtpQuickStartProgress('')
+    } catch (otpError) {
+      setOtpQuickStartError(otpError?.message || 'Unable to generate and send the OTP right now.')
+    } finally {
+      setIsOfferLinkSending(false)
+      setOtpQuickStartBusy(false)
+      setOtpQuickStartProgress('')
     }
   }
 
@@ -13822,10 +13941,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         type="button"
                         size="sm"
                         className="mt-5 bg-white text-[#102033] hover:bg-[#edf4fa]"
-                        onClick={() => void handleCreateBuyerOfferDraft()}
-                        disabled={selectedLeadIsSeller}
+                        onClick={handleSelectedLeadOtpPrimaryAction}
+                        disabled={selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending}
                       >
-                        Generate OTP
+                        {otpQuickStartBusy || isOfferLinkSending ? 'Preparing...' : 'Generate OTP'}
                       </Button>
                       {!selectedLeadIsSeller ? (
                         <Button
@@ -13902,8 +14021,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {
                             label: 'Generate OTP',
                             Icon: CheckSquare,
-                            disabled: selectedLeadIsSeller,
-                            onClick: () => void handleCreateBuyerOfferDraft(),
+                            disabled: selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending,
+                            onClick: handleSelectedLeadOtpPrimaryAction,
                           },
                           {
                             label: 'Send WhatsApp',
@@ -14875,6 +14994,131 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={otpQuickStartOpen}
+        onClose={() => {
+          if (otpQuickStartBusy) return
+          setOtpQuickStartOpen(false)
+          setOtpQuickStartError('')
+          setOtpQuickStartProgress('')
+        }}
+        title="Confirm OTP details"
+        subtitle={resolveOtpQuickStartIntro()}
+        className="max-w-2xl"
+        footer={(
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={openSelectedLeadOtpEditor}
+              disabled={otpQuickStartBusy}
+            >
+              <Pencil className="h-4 w-4" />
+              Edit Offer / Terms
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setOtpQuickStartOpen(false)
+                  setOtpQuickStartError('')
+                  setOtpQuickStartProgress('')
+                }}
+                disabled={otpQuickStartBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleOtpQuickStartGenerateAndSend()}
+                disabled={otpQuickStartBusy || selectedLeadOtpQuickStartBlockers.length > 0}
+              >
+                {otpQuickStartBusy
+                  ? (otpQuickStartProgress || 'Working…')
+                  : resolveOtpQuickStartPrimaryLabel()}
+              </Button>
+            </div>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {selectedLeadOtpQuickStartRows.map((row) => {
+              const ready = row.ready === true
+              const Icon = ready ? CheckCircle2 : AlertTriangle
+              const stateLabel = ready ? 'Ready' : row.optional ? 'Review' : 'Required'
+              return (
+                <div
+                  key={row.key}
+                  className={`rounded-[14px] border px-3 py-2.5 ${
+                    ready
+                      ? 'border-[#d4eadb] bg-[#f3fbf6]'
+                      : row.optional
+                        ? 'border-[#f2ddb7] bg-[#fff8eb]'
+                        : 'border-[#f0c8c3] bg-[#fff5f4]'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : row.optional ? 'text-[#a86b17]' : 'text-[#ba382f]'}`} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
+                          ready
+                            ? 'bg-white text-[#237a4d]'
+                            : row.optional
+                              ? 'bg-white text-[#936018]'
+                              : 'bg-white text-[#a63830]'
+                        }`}>
+                          {stateLabel}
+                        </span>
+                      </div>
+                      <p className="mt-1 break-words text-sm text-[#5d7288]">{row.value}</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {selectedLeadOtpQuickStartBlockers.length ? (
+            <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
+              <p className="font-semibold">Required before sending</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {selectedLeadOtpQuickStartBlockers.map((blocker, index) => (
+                  <li key={`${blocker}-${index}`}>{blocker}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {selectedLeadOtpQuickStartWarnings.length ? (
+            <div className="rounded-[14px] border border-[#f0ddb7] bg-[#fff9ed] px-3 py-3 text-sm text-[#7a5417]">
+              <p className="font-semibold">Can continue, but worth checking</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {selectedLeadOtpQuickStartWarnings.map((warning, index) => (
+                  <li key={`${warning}-${index}`}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {otpQuickStartProgress && otpQuickStartBusy ? (
+            <div className="flex items-center gap-2 rounded-[14px] border border-[#d6e7f5] bg-[#f4f9ff] px-3 py-3 text-sm font-semibold text-[#315f8c]">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              {otpQuickStartProgress}
+            </div>
+          ) : null}
+
+          {otpQuickStartError ? (
+            <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm font-semibold text-[#8f3029]">
+              {otpQuickStartError}
+            </div>
+          ) : null}
+        </div>
       </Modal>
 
       <Modal

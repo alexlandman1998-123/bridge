@@ -90,7 +90,6 @@ const AgentIntelligencePricingPage = lazy(() => import('./pages/agent-intelligen
 const AgentListingDetail = lazy(() => import('./pages/AgentListingDetail'))
 const AgentListings = lazy(() => import('./pages/AgentListings'))
 const AgentEnquiriesPage = lazy(() => import('./pages/AgentEnquiriesPage'))
-const AgentLeadsPage = lazy(() => import('./pages/AgentLeadsPage'))
 const AgentReportingPage = lazy(() => import('./pages/AgentReportingPage'))
 const AgentsPage = lazy(() => import('./pages/Agents'))
 const AgentWorkspacePage = lazyNamed(() => import('./pages/Agents'), 'AgentWorkspacePage')
@@ -2359,7 +2358,7 @@ function AppRoutes() {
                 path="/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <AgentLeadsPage />
+                    <Pipeline initialAgentViewMode="leads" />
                   </RoleRoute>
                 }
               />
@@ -2377,7 +2376,7 @@ function AppRoutes() {
                 path="/pipeline/leads/:leadId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <AgentLeadsPage />
+                    <Pipeline initialAgentViewMode="leads" />
                   </RoleRoute>
                 }
               />

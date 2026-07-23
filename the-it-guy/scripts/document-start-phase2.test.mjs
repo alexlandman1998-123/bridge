@@ -9,18 +9,11 @@ function assertIncludes(source, needle, message) {
   assert.ok(source.includes(needle), message)
 }
 
-function assertNotIncludes(source, needle, message) {
-  assert.ok(!source.includes(needle), message)
-}
-
 function getFunctionBlock(source, name) {
-  const declarationMatch = source.match(new RegExp(`(?:const\\s+${name}\\s*=\\s*useCallback|function\\s+${name})`))
+  const declarationMatch = source.match(new RegExp(`(?:async\\s+function|function)\\s+${name}\\s*\\(`))
   assert.ok(declarationMatch, `${name} should remain defined.`)
 
-  const callbackBodyMarker = source.indexOf('=> {', declarationMatch.index)
-  const bodyStart = callbackBodyMarker >= 0
-    ? source.indexOf('{', callbackBodyMarker)
-    : source.indexOf('{', declarationMatch.index)
+  const bodyStart = source.indexOf('{', declarationMatch.index)
   assert.notEqual(bodyStart, -1, `${name} should have a function body.`)
 
   let depth = 0
@@ -35,7 +28,8 @@ function getFunctionBlock(source, name) {
 }
 
 const packageJson = JSON.parse(await read('../package.json'))
-const page = await read('../src/pages/AgentLeadsPage.jsx')
+const app = await read('../src/App.jsx')
+const agencyPipeline = await read('../src/pages/agency/AgencyPipelinePage.jsx')
 const rolloutDoc = await read('../docs/audits/document-start-phase-2.md')
 
 assert.equal(
@@ -44,72 +38,83 @@ assert.equal(
   'package.json should expose the document-start Phase 2 audit.',
 )
 
-for (const reference of [
-  "import StartDocumentModal from '../components/documents/StartDocumentModal'",
-  'DOCUMENT_START_DOCUMENT_KINDS',
-  'DOCUMENT_START_ENTRY_POINTS',
-  'DOCUMENT_START_PACKET_TYPES',
-  'DOCUMENT_START_SOURCE_MODES',
-  'const [mandateStartOpen, setMandateStartOpen] = useState(false)',
-  'const sellerMandateStartSummary = useMemo',
-  'contextSummary={sellerMandateStartSummary}',
-  'entryPoint={DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate}',
-  'packetType={DOCUMENT_START_PACKET_TYPES.mandate}',
-  'documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}',
-  'hasClientContact={Boolean(normalizeText(row.email || row.contact?.email || row.phone || row.contact?.phone))}',
-  'onContinue={handleStartMandateDocument}',
-]) {
-  assertIncludes(page, reference, `AgentLeadsPage should keep Phase 2 wiring ${reference}.`)
-}
-
-const openMandateBlock = getFunctionBlock(page, 'openMandateWorkspace')
-for (const reference of [
-  'const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)',
-  'if (!mandateMeta.hasRecord)',
-  'setMandateStartOpen(true)',
-  'const returnTo = `/pipeline/leads/${row.leadId}`',
-  'navigate(`/pipeline/leads/${row.leadId}/legal/mandate?mode=${mandateMeta.mode}&returnTo=${returnTo}`)',
-]) {
-  assertIncludes(openMandateBlock, reference, `openMandateWorkspace should keep ${reference}.`)
-}
-assertNotIncludes(
-  openMandateBlock,
-  'Send seller onboarding and wait for the seller to submit their details before generating the mandate.',
-  'openMandateWorkspace should not hard-block mandate generation behind seller onboarding.',
+assert.ok(
+  !app.includes("import('./pages/AgentLeadsPage')"),
+  'The retired AgentLeadsPage should not be mounted by App routes.',
+)
+assert.match(
+  app,
+  /path="\/pipeline\/leads"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
+  'The lead list route should use the unified pipeline workspace.',
+)
+assert.match(
+  app,
+  /path="\/pipeline\/leads\/:leadId"[\s\S]{0,180}<Pipeline initialAgentViewMode="leads" \/>/,
+  'The lead detail route should use the unified pipeline workspace.',
+)
+assert.match(
+  app,
+  /path="\/pipeline\/leads\/:leadId\/legal\/:packetType"[\s\S]{0,280}?<LegalDocumentWorkspacePage \/>/,
+  'Explicit legal document URLs should still open the legal workspace.',
 )
 
-const startMandateBlock = getFunctionBlock(page, 'handleStartMandateDocument')
 for (const reference of [
-  'sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding',
-  'void sendSellerOnboardingForLead()',
-  "params.set('mode', 'generate')",
-  "params.set('sourceMode', sourceMode)",
-  "params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.sellerLeadMandate)",
-  'navigate(`/pipeline/leads/${row.leadId}/legal/mandate?${params.toString()}`)',
+  'function resolveOtpQuickStartPrimaryLabel',
+  'function resolveOtpQuickStartIntro',
+  'function resolveMandateQuickStartPrimaryLabel',
+  'function resolveMandateQuickStartIntro',
+  'const selectedLeadOtpQuickStartRows = useMemo',
+  'const selectedLeadOtpQuickStartBlockers = useMemo',
+  'const selectedLeadOtpQuickStartWarnings = useMemo',
+  'const selectedLeadMandateQuickStartRows = useMemo',
+  'const selectedLeadMandateQuickStartBlockers = useMemo',
+  'const selectedLeadMandateQuickStartWarnings = useMemo',
+  'title="Confirm OTP details"',
+  'title="Confirm mandate details"',
+  'Edit Offer / Terms',
+  'Edit Wording / Terms',
+  'onGenerate={handleGenerateMandateFromSellerLead}',
+  'onSend={handleSendMandateToSeller}',
+  'autoGenerateEnabled={false}',
 ]) {
-  assertIncludes(startMandateBlock, reference, `handleStartMandateDocument should keep ${reference}.`)
+  assertIncludes(agencyPipeline, reference, `Unified lead workspace should keep ${reference}.`)
 }
 
+const primaryActionBlock = getFunctionBlock(agencyPipeline, 'handleSelectedLeadMandatePrimaryAction')
 assertIncludes(
-  page,
-  'Start the mandate with saved lead details, manual details, or seller onboarding.',
-  'Seller Actions copy should explain all three start paths.',
+  primaryActionBlock,
+  'setMandateQuickStartOpen(true)',
+  'Lead mandate generate/edit/send should open the confirm modal first.',
 )
+assert.ok(
+  !primaryActionBlock.includes('setLegalWorkspaceOpen(true)'),
+  'Lead mandate generate/edit/send should not open the full legal workspace directly.',
+)
+
+const quickStartBlock = getFunctionBlock(agencyPipeline, 'handleMandateQuickStartGenerateAndSend')
+for (const reference of [
+  'handleGenerateMandateFromSellerLead',
+  'handleSendMandateToSeller({ packetId: mandatePacketId })',
+  'setMandateQuickStartOpen(false)',
+]) {
+  assertIncludes(quickStartBlock, reference, `Quick start flow should keep ${reference}.`)
+}
+
+const otpPrimaryActionBlock = getFunctionBlock(agencyPipeline, 'handleSelectedLeadOtpPrimaryAction')
 assertIncludes(
-  page,
-  'Choose saved details, manual details, or seller onboarding.',
-  'Seller Actions mandate CTA should explain the non-blocking choice.',
+  otpPrimaryActionBlock,
+  'setOtpQuickStartOpen(true)',
+  'Lead OTP generation should open the confirm modal first.',
 )
-assertNotIncludes(
-  page,
-  'const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)',
-  'Header action menu should no longer disable Generate Mandate behind onboarding.',
-)
-assertNotIncludes(
-  page,
-  'title={mandateRequiresOnboarding ?',
-  'Header action menu should not show the old hard-block tooltip.',
-)
+
+const otpQuickStartBlock = getFunctionBlock(agencyPipeline, 'handleOtpQuickStartGenerateAndSend')
+for (const reference of [
+  'createAndSendOfferLinkForLead',
+  "successPrefix: 'OTP '",
+  'setOtpQuickStartOpen(false)',
+]) {
+  assertIncludes(otpQuickStartBlock, reference, `OTP quick start flow should keep ${reference}.`)
+}
 
 for (const reference of [
   'Seller lead mandate entry point',

@@ -32,8 +32,7 @@ const smokeSteps = [
       'toggle quick filters',
       'open Create Buyer Lead modal',
       'edit buyer qualification fields',
-      'open Import Leads modal',
-      'close modal safely',
+    'confirm lead list remains interactive',
     ],
   },
   {
@@ -188,6 +187,22 @@ async function clickByRole(page, role, name, options = {}) {
   return locator.first()
 }
 
+async function chooseLeadType(page, label) {
+  const tab = page.getByRole('tab', { name: new RegExp(label), exact: false }).first()
+  if (await tab.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await tab.click()
+    return
+  }
+  const selector = page.locator('select').filter({ has: page.locator('option', { hasText: label }) }).first()
+  await selector.waitFor({ state: 'visible', timeout: 10_000 })
+  const optionValue = await selector.evaluate((element, targetLabel) => {
+    const options = Array.from(element.options || [])
+    return options.find((option) => option.textContent?.includes(targetLabel))?.value || ''
+  }, label)
+  assert.ok(optionValue, `Lead type option ${label} should be available.`)
+  await selector.selectOption(optionValue)
+}
+
 async function fillByLabel(page, name, value) {
   const locator = page.getByLabel(name, { exact: false }).first()
   await locator.waitFor({ state: 'visible', timeout: 10_000 })
@@ -227,8 +242,16 @@ async function closeDialog(page) {
 
 async function openCreateLeadModal(page, categoryLabel) {
   const title = `Create ${categoryLabel} Lead`
-  await clickByRole(page, 'button', /^Create Lead$/)
+  const createButton = page.getByRole('button', { name: /^Create Lead$/ }).first()
+  if (await createButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await createButton.click()
+  } else {
+    await clickByRole(page, 'button', /^Add Lead$/)
+  }
   if (await page.getByText(title).first().isVisible({ timeout: 1000 }).catch(() => false)) {
+    return
+  }
+  if (await page.getByText(/^Create Lead$/).first().isVisible({ timeout: 1000 }).catch(() => false)) {
     return
   }
   await clickByRole(page, 'menuitem', new RegExp(`${categoryLabel} Lead`))
@@ -237,26 +260,25 @@ async function openCreateLeadModal(page, categoryLabel) {
 
 async function runLeadSmoke(page, baseUrl) {
   await openAsAgent(page, baseUrl, '/pipeline/leads')
-  await clickByRole(page, 'tab', /Seller Leads/)
+  await chooseLeadType(page, 'Seller Leads')
   await openCreateLeadModal(page, 'Seller')
-  await fillByLabel(page, 'Name', 'Phase Four Seller')
-  await fillByLabel(page, 'Phone', '+27820000000')
-  await fillByPlaceholder(page, '116 Ridge Road', '12 Smoke Test Road')
+  await fillByPlaceholder(page, 'Name', 'Phase Four')
+  await fillByPlaceholder(page, 'Surname', 'Seller')
+  await fillByPlaceholder(page, 'Phone', '+27820000000')
+  await fillByPlaceholder(page, 'Property Area', '12 Smoke Test Road')
   await closeDialog(page)
 
-  await clickByRole(page, 'tab', /Buyer Leads/)
-  await clickByRole(page, 'button', /Unassigned Leads/)
-  await clickByRole(page, 'button', /Overdue Leads/)
+  await chooseLeadType(page, 'Buyer Leads')
+  await clickByRole(page, 'button', /^Filter$/)
   await openCreateLeadModal(page, 'Buyer')
-  await fillByLabel(page, 'Name', 'Phase Four Buyer')
-  await fillByLabel(page, 'Email', 'buyer.phase4@example.test')
-  await fillByLabel(page, 'Budget', '2500000')
-  await fillByLabel(page, 'Area interest', 'Sandton')
+  await fillByPlaceholder(page, 'Name', 'Phase Four')
+  await fillByPlaceholder(page, 'Surname', 'Buyer')
+  await fillByPlaceholder(page, 'Email', 'buyer.phase4@example.test')
+  await fillByPlaceholder(page, 'Budget', '2500000')
+  await fillByPlaceholder(page, 'Area Interest', 'Sandton')
   await closeDialog(page)
 
-  await clickByRole(page, 'button', /^Import$/)
-  await page.getByText(/Import/i).first().waitFor({ state: 'visible', timeout: 10_000 })
-  await closeDialog(page)
+  await page.getByRole('button', { name: /^Add Lead$/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
 }
 
 async function runListingSmoke(page, baseUrl) {
