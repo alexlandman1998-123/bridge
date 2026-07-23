@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T22:03:40.698Z",
+  "generatedAt": "2026-07-20T08:05:40.732Z",
   "linkedProjectRef": "isdowlnollckzvltkasn",
   "status": "MODULE_AUDIT_READY",
   "rows": [
@@ -753,9 +753,21 @@
       "dependsOn": "stream preflight",
       "module": "transaction_network",
       "file": "202607180046_mvp_atomic_transaction_creation_phase2a.sql",
+      "objectStatus": "all_live",
+      "liveCount": 6,
+      "objectCount": 6,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied."
+    },
+    {
+      "version": "20260719194500",
+      "stream": "other",
+      "dependsOn": "stream preflight",
+      "module": "lead_capture_crm",
+      "file": "20260719194500_seller_onboarding_preferred_transfer_attorney_acceptance.sql",
       "objectStatus": "none_live",
       "liveCount": 0,
-      "objectCount": 6,
+      "objectCount": 2,
       "action": "apply_original_after_dependency_check",
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     }

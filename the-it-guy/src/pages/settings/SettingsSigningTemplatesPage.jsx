@@ -5804,6 +5804,7 @@ export default function SettingsSigningTemplatesPage({
   const [selectedSectionIndex, setSelectedSectionIndex] = useState(0)
   const [selectedCanvasBlockIndex, setSelectedCanvasBlockIndex] = useState(0)
   const [outlineCollapsed, setOutlineCollapsed] = useState(false)
+  const [editorToolsCollapsed, setEditorToolsCollapsed] = useState(true)
   const [showSourceEditor, setShowSourceEditor] = useState(false)
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [publishReviewAccepted, setPublishReviewAccepted] = useState(false)
@@ -8809,8 +8810,12 @@ export default function SettingsSigningTemplatesPage({
               className={[
                 'grid min-w-0 gap-4 lg:gap-5 xl:min-h-[760px] xl:items-start',
                 outlineCollapsed
-                  ? 'xl:grid-cols-[64px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(280px,320px)]'
-                  : 'xl:grid-cols-[220px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(280px,320px)]',
+                  ? editorToolsCollapsed
+                    ? 'xl:grid-cols-[64px_minmax(0,1fr)_64px]'
+                    : 'xl:grid-cols-[64px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(280px,320px)]'
+                  : editorToolsCollapsed
+                    ? 'xl:grid-cols-[220px_minmax(0,1fr)_64px] 2xl:grid-cols-[260px_minmax(0,1fr)_64px]'
+                    : 'xl:grid-cols-[220px_minmax(0,1fr)_minmax(260px,300px)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(280px,320px)]',
               ].join(' ')}
             >
               <aside className={[
@@ -9272,16 +9277,62 @@ export default function SettingsSigningTemplatesPage({
                 )}
               </main>
 
-              <aside className="min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)] xl:overflow-y-auto xl:pr-1">
-                <section data-editor-tool="content" className="min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Selected situation' : 'Standard Conditions'}</p>
-                      <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a situation' : 'Legal Coverage'}</h2>
-                    </div>
-                    <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
-                      {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
-                    </span>
+              <aside
+                data-editor-tools-collapsed={editorToolsCollapsed ? 'true' : 'false'}
+                className={[
+                  'min-w-0 max-w-full space-y-4 overflow-x-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-140px)]',
+                  editorToolsCollapsed ? '[&>*:not(:first-child)]:hidden' : 'xl:overflow-y-auto xl:pr-1',
+                ].join(' ')}
+              >
+                <section
+                  data-editor-tool="content"
+                  className={[
+                    'min-w-0 max-w-full rounded-[20px] border border-[#dbe7f3] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.05)]',
+                    editorToolsCollapsed ? 'p-3 [&>*:not(:first-child)]:hidden' : 'p-4',
+                  ].join(' ')}
+                >
+                  <div className={editorToolsCollapsed ? 'flex flex-col items-center gap-3' : 'flex items-start justify-between gap-3'}>
+                    {editorToolsCollapsed ? (
+                      <>
+                        <button
+                          type="button"
+                          className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#dbe7f3] bg-white text-[#52667d] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642]"
+                          onClick={() => setEditorToolsCollapsed(false)}
+                          aria-label="Expand legal coverage and editor tools"
+                          title="Expand Standard Conditions"
+                        >
+                          <ChevronDown size={16} className="-rotate-90" />
+                        </button>
+                        <ShieldCheck size={18} className="text-[#128642]" aria-hidden="true" />
+                        <span
+                          className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2 py-1 text-[0.65rem] font-semibold text-[#128642]"
+                          title={normalizedEditorScope === 'situations' ? 'Sections in this situation' : 'Standard conditions covered'}
+                        >
+                          {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">{normalizedEditorScope === 'situations' ? 'Selected situation' : 'Standard Conditions'}</p>
+                          <h2 className="mt-2 text-base font-semibold text-[#102033]">{normalizedEditorScope === 'situations' ? editorSituation?.label || 'Choose a situation' : 'Legal Coverage'}</h2>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="rounded-full border border-[#cdebd8] bg-[#eef9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#128642]">
+                            {normalizedEditorScope === 'situations' ? scopedSectionEntries.length : `${legalConditionCoverage.coveredCount}/${legalConditionCoverage.totalCount}`}
+                          </span>
+                          <button
+                            type="button"
+                            className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#dbe7f3] bg-white text-[#52667d] transition hover:border-[#96d7ad] hover:bg-[#f6fbf8] hover:text-[#128642]"
+                            onClick={() => setEditorToolsCollapsed(true)}
+                            aria-label="Collapse legal coverage and editor tools"
+                            title="Collapse Standard Conditions"
+                          >
+                            <ChevronDown size={16} className="rotate-90" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                   {normalizedEditorScope === 'situations' ? (
                     <div className="mt-3">
