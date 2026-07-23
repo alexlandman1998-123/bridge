@@ -8691,6 +8691,7 @@ function AttorneyTransactionDetail() {
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('today')
+  const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -8928,6 +8929,7 @@ function AttorneyTransactionDetail() {
     setWorkflowDrawerLaneKey('')
     setWorkflowFocusedStepKey('')
     setWorkflowInlineStepDraft(null)
+    setLocalLegalWorkflowDetailKey('')
     setLoading(!navigationPreviewData)
   }, [navigationPreviewData, transactionId])
 
@@ -9154,7 +9156,8 @@ function AttorneyTransactionDetail() {
     }),
     [currentMembership, preferredRoutingRules, profile, workspaceOrganisationId, workspaceRole],
   )
-  const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
+  const routeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
+  const activeLegalWorkflowDetailKey = routeLegalWorkflowDetailKey || localLegalWorkflowDetailKey
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
   const canCreateLegalPartnerInvites = workspaceRole === 'attorney'
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
@@ -11181,22 +11184,28 @@ function AttorneyTransactionDetail() {
 
   const openWorkspaceMenu = useCallback((nextMenu) => {
     setWorkspaceMenu(nextMenu)
-    if (activeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+    if (localLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+      setLocalLegalWorkflowDetailKey('')
+    }
+    if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
       navigate(transactionWorkspaceBasePath)
     }
-  }, [activeLegalWorkflowDetailKey, navigate, transactionWorkspaceBasePath])
+  }, [localLegalWorkflowDetailKey, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   const openLegalWorkflowDetail = useCallback((detailKey) => {
     const normalized = normalizeLegalWorkflowDetailKey(detailKey)
     if (!normalized) return
     setWorkspaceMenu('transfer')
-    navigate(`${transactionWorkspaceBasePath}/transfer/${normalized}`)
-  }, [navigate, transactionWorkspaceBasePath])
+    setLocalLegalWorkflowDetailKey(normalized)
+  }, [])
 
   const closeLegalWorkflowDetail = useCallback(() => {
     setWorkspaceMenu('transfer')
-    navigate(transactionWorkspaceBasePath)
-  }, [navigate, transactionWorkspaceBasePath])
+    setLocalLegalWorkflowDetailKey('')
+    if (routeLegalWorkflowDetailKey) {
+      navigate(transactionWorkspaceBasePath)
+    }
+  }, [navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   function handleOverviewActionTarget(target = 'overview') {
     const normalizedTarget = normalizeDetailKey(target)
