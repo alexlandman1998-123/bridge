@@ -3,6 +3,7 @@ import { fetchTransactionsByParticipant } from '../../lib/api'
 import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { getOrganisationPrivateListings } from '../../services/privateListingService'
 import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
 
 const TYPE_PRIORITY = [
@@ -33,7 +34,7 @@ function normalizePhone(value) {
 }
 
 function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalizeText(value))
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
 function isMissingColumnError(error, columnName = '') {
@@ -196,7 +197,11 @@ function sourceKeys(source = {}) {
   const name = normalizeLower(source.name)
   if (email) keys.push(`email:${email}`)
   if (phone) keys.push(`phone:${phone}`)
-  if (name) keys.push(`name:${name}`)
+  if (name && !['unnamed lead', 'unnamed contact', 'unnamed client', 'seller', 'buyer'].includes(name)) keys.push(`name:${name}`)
+  if (!keys.length) {
+    const recordId = normalizeLower(source.sourceRecordId || source.leadId || source.listingId || source.transactionId || source.contactId || source.prospectId)
+    if (recordId) keys.push(`record:${recordId}`)
+  }
   return keys
 }
 
@@ -321,7 +326,7 @@ function finalizeClient(client) {
 function resolvePrimaryLinkedRecord(client = {}) {
   const records = Array.isArray(client.linkedRecords) ? client.linkedRecords : []
   const sorted = [...records].sort((left, right) => {
-    const kindScore = (record) => (record?.kind === 'transaction' ? 4 : record?.kind === 'lead' ? 3 : record?.kind === 'prospect' ? 2 : 1)
+    const kindScore = (record) => (record?.kind === 'transaction' ? 4 : record?.kind === 'listing' ? 3 : record?.kind === 'lead' ? 2 : record?.kind === 'prospect' ? 1 : 0)
     const scoreDelta = kindScore(right) - kindScore(left)
     if (scoreDelta) return scoreDelta
     return toDateValue(right?.lastActivityAt || right?.updatedAt || right?.createdAt) - toDateValue(left?.lastActivityAt || left?.updatedAt || left?.createdAt)
@@ -603,6 +608,106 @@ function buildManualBuyerSources(rows = []) {
   }))
 }
 
+function getListingSellerFormData(listing = {}) {
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || listing?.onboarding || {}
+  const formData = onboarding?.formData || onboarding?.form_data || listing?.formData || listing?.form_data || {}
+  return formData && typeof formData === 'object' ? formData : {}
+}
+
+function getListingSellerFacts(listing = {}) {
+  const facts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || listing?.sellerOnboarding?.canonicalFacts || {}
+  return facts && typeof facts === 'object' ? facts : {}
+}
+
+function getListingPropertyLabel(listing = {}) {
+  return normalizeText(
+    listing?.title ||
+      listing?.listingTitle ||
+      listing?.propertyAddress ||
+      listing?.formattedAddress ||
+      listing?.addressLine1 ||
+      listing?.address_line_1 ||
+      [listing?.suburb, listing?.city].map(normalizeText).filter(Boolean).join(', ') ||
+      listing?.listingReference ||
+      listing?.listing_reference,
+  ) || 'Private listing'
+}
+
+function buildPrivateListingSellerSources(rows = []) {
+  return (rows || [])
+    .map((listing) => {
+      const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
+      if (!listingId) return null
+      const formData = getListingSellerFormData(listing)
+      const facts = getListingSellerFacts(listing)
+      const propertyLabel = getListingPropertyLabel(listing)
+      const seller = listing?.seller && typeof listing.seller === 'object' ? listing.seller : {}
+      const sellerName = normalizeText(
+        listing?.sellerName ||
+          listing?.seller_name ||
+          seller?.name ||
+          facts?.fullName ||
+          facts?.sellerName ||
+          facts?.name ||
+          [facts?.firstName, facts?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
+          formData?.sellerName ||
+          formData?.fullName ||
+          [formData?.sellerFirstName || formData?.firstName, formData?.sellerSurname || formData?.lastName].map(normalizeText).filter(Boolean).join(' '),
+      )
+      const email = normalizeLower(
+        listing?.sellerEmail ||
+          listing?.seller_email ||
+          seller?.email ||
+          facts?.email ||
+          facts?.sellerEmail ||
+          formData?.sellerEmail ||
+          formData?.email ||
+          formData?.contactEmail,
+      )
+      const phone = normalizeText(
+        listing?.sellerPhone ||
+          listing?.seller_phone ||
+          seller?.phone ||
+          facts?.phone ||
+          facts?.sellerPhone ||
+          facts?.mobile ||
+          formData?.sellerPhone ||
+          formData?.phone ||
+          formData?.contactNumber ||
+          formData?.mobile,
+      )
+      const lastActivityAt = latestDate(listing?.updatedAt, listing?.updated_at, listing?.createdAt, listing?.created_at)
+      return {
+        sourceRecordId: `listing:${listingId}`,
+        name: sellerName || `Seller for ${propertyLabel}`,
+        email,
+        phone,
+        typeLabel: 'Seller',
+        sourceLabel: 'Private Listing',
+        status: listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || listing?.listingStatus || listing?.listing_status || listing?.status || 'Active',
+        stage: listing?.listingStatus || listing?.listing_status || listing?.status,
+        leadId: normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id),
+        listingId,
+        organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
+        assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id),
+        assignedAgentName: normalizeText(listing?.assignedAgentName || listing?.assignedAgent),
+        assignedAgentEmail: normalizeLower(listing?.assignedAgentEmail || listing?.assigned_agent_email),
+        lastActivityAt,
+        createdAt: listing?.createdAt || listing?.created_at,
+        updatedAt: listing?.updatedAt || listing?.updated_at,
+        linkedRecord: {
+          kind: 'listing',
+          id: listingId,
+          label: propertyLabel,
+          reference: normalizeText(listing?.listingReference || listing?.listing_reference || listingId),
+          path: `/agent/listings/${encodeURIComponent(listingId)}`,
+          lastActivityAt,
+        },
+      }
+    })
+    .filter(Boolean)
+}
+
 async function fetchTransactionSellerRows(transactionIds = []) {
   if (!isSupabaseConfigured || !supabase || !transactionIds.length) return []
   try {
@@ -738,6 +843,12 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     fetchTransactionSellerRows(transactionIds),
     fetchManualBuyerRows({ organisationId }),
   ])
+  let privateListingRows = []
+  try {
+    privateListingRows = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
+  } catch {
+    privateListingRows = []
+  }
   let canvassingStore = { prospects: [], activities: [] }
   try {
     canvassingStore = await listCanvassingWorkspace(organisationId, { includeLocalFallback: false })
@@ -750,6 +861,7 @@ export async function loadAgentClientDirectory({ profile = {}, role = 'agent', w
     ...buildTransactionBuyerSources(transactionRows),
     ...buildTransactionSellerSources(transactionRows, sellerRows),
     ...buildManualBuyerSources(manualBuyerRows),
+    ...buildPrivateListingSellerSources(privateListingRows),
   ]
 
   const clients = buildDirectory(sourceRows)

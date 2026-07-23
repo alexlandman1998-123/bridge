@@ -10,6 +10,10 @@ const crossModuleVisibilityMigrationSource = readFileSync(
   new URL('../../supabase/migrations/202607190001_transaction_workflow_cross_module_visibility.sql', import.meta.url),
   'utf8',
 )
+const stepCompletionAdvanceMigrationSource = readFileSync(
+  new URL('../../supabase/migrations/202607230013_attorney_workflow_step_completion_advance.sql', import.meta.url),
+  'utf8',
+)
 const serviceSource = readFileSync(
   new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url),
   'utf8',
@@ -70,6 +74,16 @@ function verifyAtomicCompletionContract() {
   assert.doesNotMatch(stepUpdateSource, /insertTransactionEvent\(/)
 }
 
+function verifyAtomicCompletionAdvanceContract() {
+  assert.match(stepCompletionAdvanceMigrationSource, /create or replace function public\.bridge_update_attorney_workflow_step/)
+  assert.match(stepCompletionAdvanceMigrationSource, /v_next_stage_key text/)
+  assert.match(stepCompletionAdvanceMigrationSource, /and step\.status <> 'completed'/)
+  assert.match(stepCompletionAdvanceMigrationSource, /current_stage = v_next_stage_key/)
+  assert.doesNotMatch(stepCompletionAdvanceMigrationSource, /current_stage = v_step\.step_key/)
+  assert.match(stepCompletionAdvanceMigrationSource, /'currentStage', v_next_stage_key/)
+  assert.match(stepCompletionAdvanceMigrationSource, /status in \('not_started', 'in_progress', 'completed', 'blocked', 'waiting'\)/)
+}
+
 function verifyCrossModuleVisibilityContract() {
   assert.match(crossModuleVisibilityMigrationSource, /transaction_subprocesses_select_cross_module/)
   assert.match(crossModuleVisibilityMigrationSource, /transaction_subprocess_steps_select_cross_module/)
@@ -82,6 +96,7 @@ function verifyCrossModuleVisibilityContract() {
 verifyCanonicalBackfill()
 verifyExtensibleEventContract()
 verifyAtomicCompletionContract()
+verifyAtomicCompletionAdvanceContract()
 verifyCrossModuleVisibilityContract()
 
 console.log('Attorney workflow Phase 1 foundation verification passed.')

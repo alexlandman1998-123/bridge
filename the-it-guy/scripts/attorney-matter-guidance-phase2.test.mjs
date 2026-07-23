@@ -64,6 +64,9 @@ assert.equal(today.guidance.workstreams.length, 2)
 assert.equal(today.guidance.recommendedWorkflowKey, 'cancellation')
 
 const source = await readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
+const overviewStart = source.indexOf('function ArchlineOverviewWorkspace')
+const overviewEnd = source.indexOf('function ArchlineWorkflowWorkspace', overviewStart)
+const overviewSource = source.slice(overviewStart, overviewEnd)
 for (const expected of [
   'What needs to happen next?',
   'To finish this checkpoint',
@@ -74,5 +77,25 @@ for (const expected of [
 ]) {
   assert.ok(source.includes(expected), `Phase 2 guided Today workspace should include: ${expected}`)
 }
+
+for (const expected of [
+  '<section className="space-y-4">',
+  '<ArchlinePanel title="Matter Progress" className="p-4">',
+  '<div className="grid gap-4 lg:grid-cols-3">',
+  '<ArchlinePanel title="Key Dates" className="p-4">',
+  '<ArchlinePanel title="Financial Summary" className="p-4">',
+  '<ArchlinePanel title="Parties" className="p-4">',
+  '<div className="grid gap-4 xl:grid-cols-2">',
+  '<ArchlinePanel title="Matter Notes"',
+  '<ArchlinePanel title="Document Checklist" className="p-4">',
+]) {
+  assert.ok(overviewSource.includes(expected), `Matter overview should include updated layout element: ${expected}`)
+}
+
+assert.ok(overviewStart >= 0 && overviewEnd > overviewStart, 'Matter overview workspace source should be discoverable.')
+assert.doesNotMatch(overviewSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,0\.36fr\)\]/)
+assert.doesNotMatch(overviewSource, /<aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">/)
+assert.doesNotMatch(overviewSource, /<ArchlinePanel title="Quick Actions"/)
+assert.doesNotMatch(overviewSource, /<ArchlinePanel title="Tasks"/)
 
 console.log('Attorney matter guidance Phase 2 checks passed.')

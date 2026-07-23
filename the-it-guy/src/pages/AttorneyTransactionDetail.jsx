@@ -5552,7 +5552,6 @@ function ArchlineProgressRing({ completed = 0, total = 0, label = 'Complete' }) 
 
 function ArchlineOverviewWorkspace({
   lifecycleProgress,
-  overviewNextActions = [],
   roleplayerItems = [],
   requiredDocuments = [],
   documentHealthSummary = {},
@@ -5560,9 +5559,7 @@ function ArchlineOverviewWorkspace({
   keyDates = [],
   financialRows = [],
   onOpenWorkspace,
-  onUploadDocument,
   onAddNote,
-  onRequestDocuments,
 }) {
   const progressStages = [
     { key: 'instruction', label: 'Instruction' },
@@ -5575,131 +5572,94 @@ function ArchlineOverviewWorkspace({
   const currentIndex = Math.max(0, progressStages.findIndex((stage) => stage.key === lifecycleProgress?.currentStage))
   const completedDocs = documentHealthSummary.uploadedCount || 0
   const totalDocs = documentHealthSummary.requiredCount || requiredDocuments.length || 0
-  const taskRows = overviewNextActions.slice(0, 5)
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.36fr)]">
-      <div className="space-y-4">
-        <ArchlinePanel title="Matter Progress" className="p-4">
-          <div className="overflow-x-auto px-1 pb-2 pt-5">
-            <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
-              {progressStages.map((stage, index) => {
-                const completed = index < currentIndex
-                const current = index === currentIndex
-                return (
-                  <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
-                    {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
-                    <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
-                      completed ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50' : 'border-slate-300 text-slate-500'
-                    }`}>
-                      {completed ? <CheckCircle2 size={18} /> : <FileText size={17} />}
-                    </span>
-                    <div>
-                      <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
-                      <span className="mt-1 block text-xs text-slate-500">{current ? 'In Progress' : completed ? 'Completed' : 'Pending'}</span>
-                    </div>
+    <section className="space-y-4">
+      <ArchlinePanel title="Matter Progress" className="p-4">
+        <div className="overflow-x-auto px-1 pb-2 pt-5">
+          <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
+            {progressStages.map((stage, index) => {
+              const completed = index < currentIndex
+              const current = index === currentIndex
+              return (
+                <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
+                  {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
+                  <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
+                    completed ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50' : 'border-slate-300 text-slate-500'
+                  }`}>
+                    {completed ? <CheckCircle2 size={18} /> : <FileText size={17} />}
+                  </span>
+                  <div>
+                    <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
+                    <span className="mt-1 block text-xs text-slate-500">{current ? 'In Progress' : completed ? 'Completed' : 'Pending'}</span>
                   </div>
-                )
-              })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
+            <div>
+              <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
             </div>
           </div>
-          <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <CalendarDays size={20} className="mt-0.5 shrink-0 text-slate-800" />
-              <div>
-                <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
+            View Transfer Timeline
+            <ChevronRight size={14} />
+          </Button>
+        </div>
+      </ArchlinePanel>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <ArchlinePanel title="Key Dates" className="p-4">
+          <div className="divide-y divide-slate-100">
+            {keyDates.slice(0, 5).map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <span className="font-medium text-slate-600">{label}</span>
+                <strong className="text-right font-medium text-slate-950">{value}</strong>
               </div>
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
-              View Transfer Timeline
-              <ChevronRight size={14} />
-            </Button>
+            ))}
           </div>
         </ArchlinePanel>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ArchlinePanel title="Key Dates" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {keyDates.slice(0, 5).map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span className="font-medium text-slate-600">{label}</span>
-                  <strong className="text-right font-medium text-slate-950">{value}</strong>
-                </div>
-              ))}
-            </div>
-          </ArchlinePanel>
+        <ArchlinePanel title="Financial Summary" className="p-4">
+          <div className="divide-y divide-slate-100">
+            {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
+              <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <span className="font-medium text-slate-600">{label}</span>
+                <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
+              </div>
+            ))}
+          </div>
+        </ArchlinePanel>
 
-          <ArchlinePanel title="Financial Summary" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
-                <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span className="font-medium text-slate-600">{label}</span>
-                  <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
-                </div>
-              ))}
-            </div>
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Parties" className="p-4">
-            <div className="divide-y divide-slate-100">
-              {roleplayerItems.slice(0, 4).map((item) => (
-                <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
-                    <span className="min-w-0">
-                      <span className="block text-xs text-slate-500">{item.label}</span>
-                      <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
-                    </span>
+        <ArchlinePanel title="Parties" className="p-4">
+          <div className="divide-y divide-slate-100">
+            {roleplayerItems.slice(0, 4).map((item) => (
+              <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
+                  <span className="min-w-0">
+                    <span className="block text-xs text-slate-500">{item.label}</span>
+                    <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
                   </span>
-                  <ChevronRight size={14} className="shrink-0 text-slate-400" />
-                </button>
-              ))}
-            </div>
-          </ArchlinePanel>
-        </div>
+                </span>
+                <ChevronRight size={14} className="shrink-0 text-slate-400" />
+              </button>
+            ))}
+          </div>
+        </ArchlinePanel>
+      </div>
 
+      <div className="grid gap-4 xl:grid-cols-2">
         <ArchlinePanel title="Matter Notes" action={<Button type="button" variant="ghost" size="sm" onClick={onAddNote}>Add Note</Button>} className="p-4">
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">
             {activityFeed[0]?.body || activityFeed[0]?.title || 'No notes have been recorded yet.'}
           </div>
           {activityFeed[0]?.createdAt ? <p className="mt-3 text-xs text-slate-500">Last updated {formatDateTime(activityFeed[0].createdAt)}</p> : null}
-        </ArchlinePanel>
-      </div>
-
-      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <ArchlinePanel title="Tasks" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>View all tasks</Button>} className="p-4">
-          <div className="divide-y divide-slate-100">
-            {taskRows.map((item) => (
-              <button key={`${item.title}-${item.workflow}`} type="button" className="flex w-full items-start gap-3 py-3 text-left" onClick={() => onOpenWorkspace?.(item.actionTarget || 'transfer')}>
-                <span className={`mt-1 size-3 rounded-full border ${item.priority === 'high' ? 'border-red-500' : 'border-slate-300'}`} />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-sm font-semibold text-slate-950">{item.title}</strong>
-                  <span className="mt-1 block text-xs text-slate-500">{item.description}</span>
-                </span>
-                <span className="shrink-0 text-xs font-semibold text-amber-700">{formatDate(item.dueDate, 'TBD')}</span>
-              </button>
-            ))}
-            {!taskRows.length ? <p className="py-3 text-sm text-slate-500">No urgent tasks right now.</p> : null}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Quick Actions" className="p-4">
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              ['Upload Document', Upload, onUploadDocument],
-              ['Send Email', Send, () => onOpenWorkspace?.('activity')],
-              ['Add Note', MessageSquarePlus, onAddNote],
-              ['Create Task', ListChecks, () => onOpenWorkspace?.('tasks')],
-              ['Request Document', FileText, onRequestDocuments],
-              ['Log Call', Bell, () => onOpenWorkspace?.('activity')],
-            ].map(([label, Icon, action]) => (
-              <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                {createElement(Icon, { size: 14 })}
-                {label}
-              </Button>
-            ))}
-          </div>
         </ArchlinePanel>
 
         <ArchlinePanel title="Document Checklist" className="p-4">
@@ -5715,7 +5675,7 @@ function ArchlineOverviewWorkspace({
             View Checklist
           </Button>
         </ArchlinePanel>
-      </aside>
+      </div>
     </section>
   )
 }
@@ -10605,7 +10565,7 @@ function AttorneyTransactionDetail() {
       const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
       setWorkflowOperations(operations)
     }
-    await loadData({ background: true })
+    void loadData({ background: true })
   }
 
   async function handleResendProgressNotification(delivery) {
@@ -11979,7 +11939,7 @@ function AttorneyTransactionDetail() {
     { id: 'overview', label: 'Overview' },
     { id: 'documents', label: 'Documents' },
     { id: 'transfer', label: 'Transfer' },
-    { id: 'finance', label: 'Finance' },
+    { id: 'finance', label: 'Attorney Finance' },
     ...(requiresCancellationWorkflow ? [{ id: 'cancellation', label: 'Cancellation', count: 1 }] : []),
     { id: 'activity', label: 'Activity' },
     { id: 'roleplayers', label: 'Role Players' },
@@ -12101,8 +12061,8 @@ function AttorneyTransactionDetail() {
       key: 'finance',
       detailKey: 'finance',
       accentKey: 'finance',
-      title: 'Finance Workflow',
-      summary: bondWorkflowSummary?.currentStageLabel || bondWorkflow?.summary || 'Track bond application documents, bank submission, approval, guarantees, and fulfilment.',
+      title: 'Bond Attorney Workflow',
+      summary: bondWorkflowSummary?.currentStageLabel || bondWorkflow?.summary || 'Track the attorney-side bond lane: bank instruction, bond documents, guarantees, lodgement readiness, and fulfilment.',
       statusLabel: bondWorkflow?.statusLabel || WORKFLOW_STATUS_META[getBondWorkflowStatusKey(transactionFinanceWorkflow)]?.label || 'In Progress',
       financeData: transactionFinanceWorkflow,
       lane: bondAttorneyWorkflowLane,
@@ -13894,21 +13854,43 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {workspaceRole === 'attorney' && (activeWorkspaceMenu === 'finance' || activeLegalWorkflowDetailKey === 'bond-registration') ? (
-          <ArchlineWorkflowWorkspace
-            workflow={archlineFinanceWorkflow}
-            workflowKey="finance"
-            title="Finance Workflow"
-            badge={financeTypeLabel}
-            summaryRows={archlineFinanceSummaryRows}
-            documents={archlineDocumentsByWorkflow.finance}
-            blockers={archlineFinanceWorkflow.blockers || []}
-            keyDates={archlineKeyDates}
-            activityFeed={overviewConversationEntries}
-            saving={Boolean(bondHybridFinanceActionLoading)}
-            onUploadDocument={() => openDocumentUploadModal({ category: 'finance' })}
-            onAddNote={handleQuickAddWorkflowNote}
-            onOpenDocuments={() => openWorkspaceMenu('documents')}
-          />
+          <section className="space-y-5">
+            <section className="rounded-[18px] border border-slate-200 bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attorney finance workspace</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-slate-950">Matter finance and bond attorney workflow</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {['Matter accounts', 'Buyer / seller payment evidence', 'Guarantees', 'Bond-registration readiness', 'Originator workflow separate'].map((label) => (
+                  <span key={label} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </section>
+
+            {transaction?.id ? (
+              <AttorneyMatterAccountsPanel
+                transactionId={transaction.id}
+                buyerName={buyerDisplayName}
+                sellerName={sellerDisplayName}
+              />
+            ) : null}
+
+            <ArchlineWorkflowWorkspace
+              workflow={archlineFinanceWorkflow}
+              workflowKey="finance"
+              title="Bond Attorney Workflow"
+              badge={financeTypeLabel}
+              summaryRows={archlineFinanceSummaryRows}
+              documents={archlineDocumentsByWorkflow.finance}
+              blockers={archlineFinanceWorkflow.blockers || []}
+              keyDates={archlineKeyDates}
+              activityFeed={overviewConversationEntries}
+              saving={Boolean(bondHybridFinanceActionLoading)}
+              onUploadDocument={() => openDocumentUploadModal({ category: 'finance' })}
+              onAddNote={handleQuickAddWorkflowNote}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+            />
+          </section>
         ) : null}
 
         {workspaceRole === 'attorney' && activeWorkspaceMenu === 'documents' ? (
@@ -15566,13 +15548,6 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
-            {workspaceRole === 'attorney' && transaction?.id ? (
-              <AttorneyMatterAccountsPanel
-                transactionId={transaction.id}
-                buyerName={buyerDisplayName}
-                sellerName={sellerDisplayName}
-              />
-            ) : null}
             {financeCommandCenterPanel}
           </section>
         ) : null}
