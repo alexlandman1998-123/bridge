@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Eye, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Eye, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -53,8 +53,10 @@ import {
   updateAgencyCrmLeadRecord,
   updateAgencyCrmLeadTask,
 } from '../../lib/agencyCrmRepository'
-import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
+import { listOrganisationPreferredPartners, listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { filterPreferredPartners } from '../../lib/preferredPartners'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../../lib/partnersRepository'
 import { upsertAreaByName, upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import Modal from '../../components/ui/Modal'
 import {
@@ -461,6 +463,136 @@ function canMovePipelineCard({ user = {}, card = null, fromStage = '', toStage =
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getPreferredAttorneyInitials(attorney = {}) {
+  const words = normalizeText(attorney.companyName || attorney.contactPerson || attorney.email).split(/\s+/).filter(Boolean)
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'TA'
+}
+
+function mapConnectedAttorneyToPreferredAttorney(assignment = {}) {
+  const partnerOrganisationId = normalizeText(assignment.partnerOrganisationId || assignment.partner_organisation_id || assignment.organisationId || assignment.organisation_id)
+  const relationshipId = normalizeText(assignment.relationshipId || assignment.relationship_id || assignment.id)
+  const companyName = normalizeText(assignment.organisationName || assignment.organisation_name || assignment.companyName || assignment.company_name || assignment.name || assignment.label)
+  if (!partnerOrganisationId && !relationshipId && !companyName) return null
+  return {
+    id: relationshipId || partnerOrganisationId || companyName,
+    preferredPartnerId: relationshipId || partnerOrganisationId,
+    partnerOrganisationId,
+    partnerType: 'transfer_attorney',
+    companyName: companyName || 'Connected transfer attorney',
+    contactPerson: normalizeText(assignment.contactPerson || assignment.contact_person || assignment.primaryContactName || assignment.primary_contact_name || assignment.email),
+    email: normalizeText(assignment.email || assignment.primaryContactEmail || assignment.primary_contact_email),
+    province: normalizeText(assignment.province || assignment.region),
+    isPreferredDefault: assignment.isPreferredDefault === true || assignment.preferred === true,
+  }
+}
+
+function getPreferredAttorneyDedupKey(attorney = {}) {
+  const partnerOrganisationId = normalizeText(attorney.partnerOrganisationId)
+  if (partnerOrganisationId) return `partner:${partnerOrganisationId}`
+  const preferredPartnerId = normalizeText(attorney.preferredPartnerId)
+  if (preferredPartnerId) return `preferred:${preferredPartnerId}`
+  const email = normalizeText(attorney.email).toLowerCase()
+  const companyName = normalizeText(attorney.companyName).toLowerCase()
+  return `identity:${companyName}:${email || normalizeText(attorney.id)}`
+}
+
+function mergePreferredAttorneyOptions(primaryRows = [], fallbackRows = []) {
+  const seen = new Set()
+  const merged = []
+  ;[...(Array.isArray(primaryRows) ? primaryRows : []), ...(Array.isArray(fallbackRows) ? fallbackRows : [])].forEach((attorney) => {
+    const key = getPreferredAttorneyDedupKey(attorney)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    merged.push(attorney)
+  })
+  return merged
+}
+
+function PreferredAttorneySelectionModal({
+  open = false,
+  attorneys = [],
+  loading = false,
+  error = '',
+  selectedId = '',
+  sending = false,
+  onSelect,
+  onClose,
+  onConfirm,
+}) {
+  const selectedAttorney = attorneys.find((attorney) => String(attorney.id) === String(selectedId)) || null
+  return (
+    <Modal
+      open={open}
+      onClose={sending ? undefined : onClose}
+      title="Choose the seller's transferring attorney"
+      subtitle="Select the attorney before creating the onboarding link. The seller will see and accept this nomination during onboarding."
+      className="max-w-2xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <button type="button" onClick={onClose} disabled={sending} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancel</button>
+          <button
+            type="button"
+            onClick={() => onConfirm?.(selectedAttorney)}
+            disabled={loading || sending || !selectedAttorney}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <Send size={15} />
+            {sending ? 'Sending onboarding...' : 'Confirm attorney & send'}
+          </button>
+        </div>
+      )}
+    >
+      {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+      {loading ? (
+        <div className="grid gap-3">
+          {[0, 1].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-slate-100" />)}
+        </div>
+      ) : attorneys.length ? (
+        <div className="grid max-h-[430px] gap-3 overflow-y-auto pr-1" role="radiogroup" aria-label="Preferred transferring attorneys">
+          {attorneys.map((attorney) => {
+            const selected = String(attorney.id) === String(selectedId)
+            return (
+              <button
+                key={attorney.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => onSelect?.(attorney.id)}
+                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-400 bg-blue-50 shadow-[0_8px_24px_rgba(37,99,235,0.08)]' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'}`}
+              >
+                <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-blue-100 bg-gradient-to-br from-blue-50 to-slate-100 text-xs font-bold tracking-wide text-blue-800">
+                  {getPreferredAttorneyInitials(attorney)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-950">{attorney.companyName}</span>
+                    {attorney.isPreferredDefault ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-800">
+                        <Star size={10} fill="currentColor" /> Agency preferred
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
+                    <Building2 size={12} className="shrink-0" />
+                    <span className="truncate">{attorney.contactPerson || attorney.email || attorney.province || 'Transfer attorney'}</span>
+                  </span>
+                </span>
+                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>
+                  <CheckCircle2 size={14} />
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          No active transfer attorneys are configured. Add one under Organisation / Partners before sending seller onboarding.
+        </div>
+      )}
+    </Modal>
+  )
 }
 
 function normalizeKey(value) {
@@ -2435,7 +2567,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
-  const { role, profile, currentWorkspace } = useWorkspace()
+  const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -2562,6 +2694,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentManualParticipantOpen, setAppointmentManualParticipantOpen] = useState(false)
   const [appointmentDeselectedParticipantKeys, setAppointmentDeselectedParticipantKeys] = useState([])
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
+  const [sellerAttorneyPickerOpen, setSellerAttorneyPickerOpen] = useState(false)
+  const [sellerPreferredAttorneys, setSellerPreferredAttorneys] = useState([])
+  const [sellerPreferredAttorneysLoading, setSellerPreferredAttorneysLoading] = useState(false)
+  const [sellerPreferredAttorneysError, setSellerPreferredAttorneysError] = useState('')
+  const [selectedSellerAttorneyId, setSelectedSellerAttorneyId] = useState('')
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
   const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)
@@ -7084,7 +7221,77 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
-  async function handleSendSellerOnboarding() {
+  async function requestSellerOnboardingAttorneySelection() {
+    if (!selectedLead) return
+    if (isSellerOnboardingSending || sellerPreferredAttorneysLoading) return
+    if (!organisationId) {
+      setError('Organisation membership is not active yet. Reload and ensure this principal account is linked to an organisation.')
+      return
+    }
+    if (!selectedLeadIsSeller) return
+    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    if (!isValidEmail(sellerEmail)) {
+      setError('Seller email is required to send onboarding.')
+      return
+    }
+
+    setError('')
+    setSellerPreferredAttorneysError('')
+    setSellerAttorneyPickerOpen(true)
+    setSellerPreferredAttorneysLoading(true)
+    try {
+      const partners = await listOrganisationPreferredPartners()
+      let connectedAttorneyOptions = []
+      try {
+        const partnerSnapshot = await fetchPartnersSnapshot({
+          organisationId,
+          workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
+          includeDirectory: false,
+          accessContext: {
+            organisationId,
+            role,
+            profile,
+            currentMembership,
+          },
+        })
+        connectedAttorneyOptions = getPartnerAssignmentOptions(partnerSnapshot, 'transfer_attorney', {
+          organisationId,
+          role,
+          profile,
+          currentMembership,
+        })
+          .map(mapConnectedAttorneyToPreferredAttorney)
+          .filter(Boolean)
+      } catch (partnerSnapshotError) {
+        console.warn('[Seller onboarding] Connected transfer attorneys could not be loaded.', partnerSnapshotError)
+      }
+      const attorneys = mergePreferredAttorneyOptions(
+        filterPreferredPartners(partners || [], { type: 'transfer_attorney', activeOnly: true }),
+        connectedAttorneyOptions,
+      )
+      setSellerPreferredAttorneys(attorneys)
+      const existingAttorneyId = normalizeText(
+        selectedLeadLinkedListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
+        selectedLeadLinkedListing?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId,
+      )
+      const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId || String(attorney.preferredPartnerId) === existingAttorneyId)
+        || attorneys.find((attorney) => attorney.isPreferredDefault)
+        || attorneys[0]
+        || null
+      setSelectedSellerAttorneyId(initialAttorney?.id || '')
+      if (!attorneys.length) {
+        setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation / Partners before sending onboarding.')
+      }
+    } catch (loadError) {
+      setSellerPreferredAttorneys([])
+      setSelectedSellerAttorneyId('')
+      setSellerPreferredAttorneysError(loadError?.message || 'Preferred transfer attorneys could not be loaded.')
+    } finally {
+      setSellerPreferredAttorneysLoading(false)
+    }
+  }
+
+  async function handleSendSellerOnboarding(preferredAttorney = null) {
     if (!selectedLead) return
     if (isSellerOnboardingSending) return
     if (!organisationId) {
@@ -7092,6 +7299,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!selectedLeadIsSeller) return
+    const preferredAttorneyId = normalizeText(preferredAttorney?.id || preferredAttorney?.preferredPartnerId)
+    if (!preferredAttorneyId) {
+      await requestSellerOnboardingAttorneySelection()
+      return
+    }
 
     const resolvedSellerDisplayName = selectedLeadDisplayName && selectedLeadDisplayName !== 'Lead Workspace'
       ? selectedLeadDisplayName
@@ -7162,6 +7374,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const onboarding = await sendSellerOnboarding(canonicalListingId, {
             sellerContactEmail: sellerEmail,
             sellerContactPhone: normalizeText(selectedLeadContact?.phone),
+            transferAttorneyPreferredPartnerId: preferredAttorneyId,
           })
           token = normalizeText(onboarding?.token) || token
           onboardingLink = normalizeText(onboarding?.link) || onboardingLink
@@ -7276,7 +7489,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Sent',
-        activityNote: `Seller onboarding was sent to ${sellerName}.`,
+        activityNote: `Seller onboarding was sent to ${sellerName} with ${preferredAttorney.companyName || 'the selected firm'} nominated as transferring attorney.`,
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
@@ -7349,7 +7562,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setError('')
-      setMessage('Seller onboarding sent.')
+      setMessage(`Seller onboarding sent with ${preferredAttorney.companyName || 'the selected transfer attorney'} nominated.`)
+      setSellerAttorneyPickerOpen(false)
       await reloadRecords(organisationId)
     } catch (sendError) {
       setError(sendError?.message || 'Unable to send seller onboarding right now.')
@@ -11978,28 +12192,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </span>
                         </div>
 
-                        <div className="mt-6 grid gap-3 lg:grid-cols-6" data-testid="seller-journey-rail">
-                          {selectedSellerJourney.steps.map((step) => (
-                            <div
-                              key={step.key}
-                              className={`rounded-[16px] border px-3 py-3 ${
-                                step.state === 'current'
-                                  ? 'border-[#87c7a0] bg-[#f0fbf4]'
-                                  : step.state === 'completed'
-                                    ? 'border-[#d7eadf] bg-[#fbfefc]'
-                                    : 'border-[#e1eaf4] bg-[#fbfdff]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className={`h-2.5 w-2.5 rounded-full ${step.state === 'upcoming' ? 'bg-[#cfdbe8]' : 'bg-[#2f9b69]'}`} />
-                                <span className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#5f7389]">
-                                  {step.state === 'current' ? 'Current' : step.state === 'completed' ? 'Completed' : 'Upcoming'}
-                                </span>
-                              </div>
-                              <p className="mt-2 min-h-[38px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
-                              {step.status ? <p className="mt-1 text-xs font-semibold text-[#60758b]">{step.status}</p> : null}
-                            </div>
-                          ))}
+                        <div className="mt-6 overflow-x-auto pb-1" data-testid="seller-journey-rail">
+                          <ol
+                            className="grid min-w-[920px] gap-0"
+                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(132px, 1fr))` }}
+                          >
+                            {selectedSellerJourney.steps.map((step, index) => {
+                              const isCurrent = step.state === 'current'
+                              const isCompleted = step.state === 'completed'
+                              const dotClass = isCurrent
+                                ? 'border-[#2f9b69] bg-[#2f9b69] shadow-[0_0_0_6px_rgba(47,155,105,0.12)]'
+                                : isCompleted
+                                  ? 'border-[#2f9b69] bg-white text-[#2f9b69]'
+                                  : 'border-[#cad7e5] bg-white text-[#9aabbc]'
+                              const lineClass = isCompleted || isCurrent ? 'bg-[#bfe3cf]' : 'bg-[#dce6f1]'
+                              return (
+                                <li key={step.key} className="relative px-2 pb-1">
+                                  {index < selectedSellerJourney.steps.length - 1 ? (
+                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
+                                  ) : null}
+                                  <div className="relative flex flex-col items-center text-center">
+                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
+                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                    </span>
+                                    <span className={`mt-3 rounded-full px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.1em] ${
+                                      isCurrent
+                                        ? 'bg-[#e7f7ee] text-[#237348]'
+                                        : isCompleted
+                                          ? 'bg-[#f0fbf4] text-[#2f7d56]'
+                                          : 'bg-[#eef3f8] text-[#7b8fa5]'
+                                    }`}>
+                                      {isCurrent ? 'Current' : isCompleted ? 'Completed' : 'Upcoming'}
+                                    </span>
+                                    <p className="mt-2 min-h-[40px] max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
+                                    {step.status ? <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#60758b]" title={step.status}>{step.status}</p> : null}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ol>
                         </div>
 
                         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]" data-testid="seller-readiness-card">
@@ -14995,6 +15226,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
         </form>
       </Modal>
+
+      <PreferredAttorneySelectionModal
+        open={sellerAttorneyPickerOpen}
+        attorneys={sellerPreferredAttorneys}
+        loading={sellerPreferredAttorneysLoading}
+        error={sellerPreferredAttorneysError}
+        selectedId={selectedSellerAttorneyId}
+        sending={isSellerOnboardingSending}
+        onSelect={(attorneyId) => {
+          setSelectedSellerAttorneyId(attorneyId)
+          setSellerPreferredAttorneysError('')
+        }}
+        onClose={() => {
+          if (isSellerOnboardingSending) return
+          setSellerAttorneyPickerOpen(false)
+        }}
+        onConfirm={(preferredAttorney) => void handleSendSellerOnboarding(preferredAttorney)}
+      />
 
       <Modal
         open={otpQuickStartOpen}
