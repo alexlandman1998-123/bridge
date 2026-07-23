@@ -64,7 +64,8 @@ export function isLeadLinkedToListing(lead = {}, listing = {}) {
 }
 
 export function getBuyerLeadOptions(leadRows = [], listing = {}) {
-  const listingId = text(listing.id || listing.listingId || listing.listing_id)
+  const safeListing = record(listing)
+  const listingId = text(safeListing.id || safeListing.listingId || safeListing.listing_id)
   return (Array.isArray(leadRows) ? leadRows : [])
     .filter(isBuyerStyleLead)
     .sort((left, right) => {
@@ -75,12 +76,13 @@ export function getBuyerLeadOptions(leadRows = [], listing = {}) {
 }
 
 export function buildLeadListingLinkPatch(listing = {}) {
-  const listingId = text(listing.id || listing.listingId || listing.listing_id)
+  const safeListing = record(listing)
+  const listingId = text(safeListing.id || safeListing.listingId || safeListing.listing_id)
   return {
     listingId,
     enquiredListingId: listingId,
-    enquiredPropertyTitle: text(listing.listingTitle || listing.title),
-    enquiredPropertyAddress: text(listing.propertyAddress || listing.addressLine1 || listing.streetAddress),
-    enquiredPropertyPrice: Number(listing.askingPrice || listing.estimatedValue || 0) || null,
+    enquiredPropertyTitle: text(safeListing.listingTitle || safeListing.title),
+    enquiredPropertyAddress: text(safeListing.propertyAddress || safeListing.addressLine1 || safeListing.streetAddress),
+    enquiredPropertyPrice: Number(safeListing.askingPrice || safeListing.estimatedValue || 0) || null,
   }
 }
