@@ -191,6 +191,7 @@
     "verify:build-release-manifest": "node scripts/verify-build-release-manifest.mjs",
     "verify:release-assets": "node scripts/verify-deployed-release-assets.mjs",
     "test:storage-upload-fallback-hardening": "node scripts/storage-upload-fallback-hardening.test.mjs",
+    "verify:portal-storage-token-smoke": "node scripts/verify-portal-storage-token-smoke.mjs",
     "test:role-resolution": "node scripts/role-resolution.test.mjs",
     "test:attorney-role-governance-phase0": "node scripts/attorney-role-governance-phase0.test.mjs",
     "test:attorney-role-security-phase1": "node scripts/attorney-role-security-phase1.test.mjs",

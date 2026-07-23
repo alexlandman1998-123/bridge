@@ -23,7 +23,7 @@ import {
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
-import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { createScopedSupabaseClient, DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { appendDocumentPacketEvent } from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -103,6 +103,25 @@ function requireClient() {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
   }
   return supabase
+}
+
+function requireSellerPortalStorageClient(token, accessToken = '') {
+  const normalizedToken = normalizeText(token)
+  const normalizedAccessToken = normalizeText(accessToken)
+  if (!normalizedToken) {
+    throw new Error('Seller client portal token is required.')
+  }
+
+  const client = createScopedSupabaseClient({
+    'x-bridge-seller-portal-token': normalizedToken,
+    ...(normalizedAccessToken ? { 'x-bridge-seller-portal-access-token': normalizedAccessToken } : {}),
+  })
+
+  if (!client) {
+    throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
+  }
+
+  return client
 }
 
 function normalizeText(value) {
@@ -6365,13 +6384,16 @@ export async function uploadSellerClientPortalDocument({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!file) throw new Error('A file is required.')
 
+  const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: true,
     requirePortalAccess: true,
-    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+    sellerPortalAccessToken: resolvedAccessToken,
   })
   const listing = context?.listing || null
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
@@ -6415,7 +6437,7 @@ export async function uploadSellerClientPortalDocument({
   const timestamp = Date.now()
   const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
 
-  await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+  await uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
     upsert: false,
     contentType: file.type || undefined,
   })
@@ -6429,7 +6451,7 @@ export async function uploadSellerClientPortalDocument({
     p_document_type: normalizedDocumentType,
     p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
     p_category: category || 'Seller Document',
-    p_access_token: accessToken || getStoredSellerPortalAccessToken(normalizedToken) || null,
+    p_access_token: resolvedAccessToken || null,
   })
 
   if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
@@ -6514,7 +6536,7 @@ export async function uploadSellerClientPortalDocument({
     visibility: documentRow?.visibility || 'seller_visible',
     created_at: documentRow?.created_at || documentRow?.uploaded_at || new Date().toISOString(),
     uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
-    url: await createPrivateListingDocumentSignedUrl(client, documentRow?.storage_path || filePath),
+    url: await createPrivateListingDocumentSignedUrl(storageClient, documentRow?.storage_path || filePath),
     privateListingId: listing.id,
     requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
@@ -6645,10 +6667,12 @@ export async function createSellerClientPortalDocumentSignedUrl({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
+  const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: false,
     requirePortalAccess: true,
-    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+    sellerPortalAccessToken: resolvedAccessToken,
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
   const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
@@ -6659,8 +6683,10 @@ export async function createSellerClientPortalDocumentSignedUrl({
     throw new Error('The final signed mandate must be opened through its secure completion record.')
   }
 
+  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
+
   const signedUrl = await createPrivateListingDocumentSignedUrl(
-    client,
+    storageClient,
     normalizedFilePath,
     expiresInSeconds,
     downloadContext.bucket,

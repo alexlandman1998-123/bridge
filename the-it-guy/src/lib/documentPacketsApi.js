@@ -2670,7 +2670,9 @@ export async function uploadFinalSignedPacketArtifact({
   if (packetError) throw packetError
 
   const organisationSegment = normalizeStorageSafeName(packetRecord?.organisation_id || 'organisation', 'organisation')
-  const relatedSegment = normalizeStorageSafeName(packetRecord?.lead_id || packetRecord?.transaction_id || packetId, 'packet')
+  // Keep the packet ID in the Storage path so the bucket policy can enforce
+  // the same packet-scoped legal authority as the packet APIs.
+  const relatedSegment = `packet-${normalizeStorageSafeName(packetId, 'packet')}`
   const versionSegment = packetVersionId ? `${normalizeStorageSafeName(packetVersionId, 'version')}-` : ''
   const objectPath = `mandates/${organisationSegment}/${relatedSegment}/signed/${Date.now()}-${versionSegment}${safeName}`
   const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({

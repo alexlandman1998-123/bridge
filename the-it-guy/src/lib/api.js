@@ -16508,12 +16508,16 @@ async function uploadToDocumentsBucket(client, filePath, file, options = undefin
   return bucket
 }
 
-async function getSignedUrl(filePath) {
-  const client = requireClient()
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+async function getSignedUrl(filePath, { client: suppliedClient = null, fileBucket = '', expiresInSeconds = 60 * 60 } = {}) {
+  const client = suppliedClient || requireClient()
+  const candidateBuckets = Array.from(
+    new Set([String(fileBucket || '').trim(), ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
+  )
+
+  for (const bucketName of candidateBuckets) {
     const bucket = client.storage.from(bucketName)
 
-    const { data, error } = await bucket.createSignedUrl(filePath, 60 * 60)
+    const { data, error } = await bucket.createSignedUrl(filePath, expiresInSeconds)
     if (!error && data?.signedUrl) {
       return data.signedUrl
     }
@@ -16561,7 +16565,7 @@ function toClientPortalFinalSignedDocumentDescriptor(document = {}) {
   }
 }
 
-async function enrichDocuments(documents, { clientPortalFinalArtifactDescriptors = false } = {}) {
+async function enrichDocuments(documents, { client = null, clientPortalFinalArtifactDescriptors = false } = {}) {
   return Promise.all(
     documents.map(async (document) => {
       if (clientPortalFinalArtifactDescriptors && isCanonicalFinalSignedDocumentRow(document)) {
@@ -16569,7 +16573,10 @@ async function enrichDocuments(documents, { clientPortalFinalArtifactDescriptors
       }
       return {
         ...document,
-        url: await getSignedUrl(document.file_path),
+        url: await getSignedUrl(document.file_path, {
+          client,
+          fileBucket: document.file_bucket || document.fileBucket || document.bucket_key || document.bucketKey || '',
+        }),
       }
     }),
   )
@@ -16842,7 +16849,7 @@ async function loadSharedDocuments(
   const visibleRows = filterSharedDocumentsByViewer(rows, viewer, {
     viewerRole,
   })
-  return enrichDocuments(visibleRows, { clientPortalFinalArtifactDescriptors })
+  return enrichDocuments(visibleRows, { client, clientPortalFinalArtifactDescriptors })
 }
 
 async function attemptPromotePendingSellerDocumentsIfPossible(client, listingId) {
@@ -22782,7 +22789,12 @@ export async function fetchClientPortalMatterFinancialAccounts({ token, workspac
       const documents = await Promise.all(
         normalizedAccount.documents.map(async (document) => ({
           ...document,
-          url: document.storagePath ? await getSignedUrl(document.storagePath) : null,
+          url: document.storagePath
+            ? await getSignedUrl(document.storagePath, {
+                client,
+                fileBucket: document.storageBucket || document.fileBucket || '',
+              })
+            : null,
         })),
       )
       return {
@@ -22899,7 +22911,12 @@ export async function uploadClientPortalMatterFinancialProof({
     document: document
       ? {
           ...document,
-          url: document.storagePath ? await getSignedUrl(document.storagePath) : null,
+          url: document.storagePath
+            ? await getSignedUrl(document.storagePath, {
+                client,
+                fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
+              })
+            : null,
         }
       : null,
     message: payload.message || 'Proof of payment uploaded for attorney review.',
@@ -22977,7 +22994,12 @@ export async function uploadClientPortalMatterFinancialRequestDocument({
     document: document
       ? {
           ...document,
-          url: document.storagePath ? await getSignedUrl(document.storagePath) : null,
+          url: document.storagePath
+            ? await getSignedUrl(document.storagePath, {
+                client,
+                fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
+              })
+            : null,
         }
       : null,
     request: payload.request || null,
@@ -40873,7 +40895,7 @@ export async function fetchClientPortalByToken(token) {
     issues = await Promise.all(
       (clientIssuesData || []).map(async (item) => ({
         ...item,
-        photo_url: item.photo_path ? await getSignedUrl(item.photo_path) : null,
+        photo_url: item.photo_path ? await getSignedUrl(item.photo_path, { client }) : null,
       })),
     )
   }
@@ -40909,9 +40931,11 @@ export async function fetchClientPortalByToken(token) {
     alterations = await Promise.all(
       (alterationData || []).map(async (item) => ({
         ...item,
-        reference_image_url: item.reference_image_path ? await getSignedUrl(item.reference_image_path) : null,
-        invoice_url: item.invoice_path ? await getSignedUrl(item.invoice_path) : null,
-        proof_url: item.proof_of_payment_path ? await getSignedUrl(item.proof_of_payment_path) : null,
+        reference_image_url: item.reference_image_path
+          ? await getSignedUrl(item.reference_image_path, { client })
+          : null,
+        invoice_url: item.invoice_path ? await getSignedUrl(item.invoice_path, { client }) : null,
+        proof_url: item.proof_of_payment_path ? await getSignedUrl(item.proof_of_payment_path, { client }) : null,
       })),
     )
   }
@@ -43146,7 +43170,7 @@ export async function uploadClientPortalDocument({
   const filePath = `client-portal/${link.transaction_id}/${generatedFileName}`
   const persistedDocumentName = isReservationDepositProofUpload ? generatedFileName : file.name
 
-  await uploadToDocumentsBucket(client, filePath, file)
+  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
 
   const basePayload = {
     transaction_id: link.transaction_id,
@@ -43163,7 +43187,7 @@ export async function uploadClientPortalDocument({
     uploaded_by_party: normalizeNullableText(uploadedByParty),
     bucket_key: normalizeNullableText(bucketKey),
     source: normalizeNullableText(source),
-    file_bucket: normalizeNullableText(fileBucket),
+    file_bucket: normalizeNullableText(uploadedBucket || fileBucket),
     finance_lane: normalizeNullableText(financeLane),
     related_entity_type: normalizeNullableText(relatedEntityType),
     related_entity_id: normalizeNullableUuid(relatedEntityId),
@@ -43298,7 +43322,12 @@ export async function uploadClientPortalDocument({
 
   return {
     ...result.data,
-    url: await getSignedUrl(result.data.file_path),
+    url: await createClientPortalDocumentSignedUrl({
+      token,
+      filePath: result.data.file_path,
+      fileBucket: result.data.file_bucket || uploadedBucket,
+      expiresInSeconds: 60,
+    }),
   }
 }
 
@@ -44923,7 +44952,7 @@ export async function uploadExternalDocument({
   category,
   requiredDocumentKey = null,
 }) {
-  const client = requireClient()
+  const client = requireExternalAccessTokenClient(accessToken)
   const access = await resolveExternalAccessByToken(client, accessToken)
   ensureExternalWorkspaceRole(access)
   const accessibleTransactionIds = await resolveExternalWorkspaceTransactionIds(client, access)
@@ -45024,7 +45053,7 @@ export async function uploadExternalDocument({
 
   return {
     ...result.data,
-    url: await getSignedUrl(result.data.file_path),
+    url: await getSignedUrl(result.data.file_path, { client, fileBucket: result.data.file_bucket || '' }),
   }
 }
 
