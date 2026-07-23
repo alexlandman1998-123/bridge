@@ -32,6 +32,20 @@ Deno.test("pilot release allows only an enabled, exactly allowlisted organisatio
   expect(decision.planDigest === digest, "The attested digest must be retained in the decision.");
 });
 
+Deno.test("pilot release accepts a valid multi-organisation demo cohort", () => {
+  const decision = assessLegalDocumentPilotRelease({
+    organisationId: otherOrganisationId,
+    operation: "signing_invite",
+    environment: environment({
+      LEGAL_DOCUMENT_PILOT_ENABLED: "true",
+      LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS: `${organisationId},${otherOrganisationId}`,
+      LEGAL_DOCUMENT_PILOT_PLAN_DIGEST: digest,
+    }),
+  });
+  expect(decision.allowed, "The second configured organisation should be released.");
+  expect(decision.organisationId === otherOrganisationId, "The selected organisation should be retained.");
+});
+
 Deno.test("pilot release fails closed for disabled, missing-digest, malformed-digest, and non-allowlisted states", () => {
   const base = {
     LEGAL_DOCUMENT_PILOT_ENABLED: "true",
@@ -42,7 +56,7 @@ Deno.test("pilot release fails closed for disabled, missing-digest, malformed-di
     [{ ...base, LEGAL_DOCUMENT_PILOT_ENABLED: "false" }, "LEGAL_DOCUMENT_PILOT_DISABLED"],
     [{ ...base, LEGAL_DOCUMENT_PILOT_PLAN_DIGEST: "" }, "LEGAL_DOCUMENT_PILOT_PLAN_DIGEST_REQUIRED"],
     [{ ...base, LEGAL_DOCUMENT_PILOT_PLAN_DIGEST: "sha256:not-a-digest" }, "LEGAL_DOCUMENT_PILOT_PLAN_DIGEST_INVALID"],
-    [{ ...base, LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS: `${organisationId},${otherOrganisationId}` }, "LEGAL_DOCUMENT_PILOT_COHORT_INVALID"],
+    [{ ...base, LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS: `${organisationId},not-a-uuid` }, "LEGAL_DOCUMENT_PILOT_COHORT_INVALID"],
     [base, "LEGAL_DOCUMENT_PILOT_ORGANISATION_NOT_ALLOWLISTED"],
   ] as const;
   for (const [values, expectedCode] of cases) {

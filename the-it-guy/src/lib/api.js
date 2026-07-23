@@ -45542,8 +45542,10 @@ export async function uploadTransactionFinanceDocument({
   relatedEntityId = null,
   category = 'Finance',
   actorRole = null,
+  uploadedByParty = null,
   isClientVisible = true,
 } = {}) {
+  const uploadRole = normalizeRoleType(actorRole || uploadedByParty || 'agent')
   const uploaded = await uploadDocument({
     transactionId,
     file,
@@ -45553,7 +45555,7 @@ export async function uploadTransactionFinanceDocument({
     requiredDocumentKey,
     canonicalRequirementInstanceId,
     source: 'finance_tab',
-    uploadedByParty: normalizeRoleType(actorRole || 'agent'),
+    uploadedByParty: uploadRole,
     bucketKey: 'finance',
     fileBucket: 'documents',
     financeLane,
@@ -45572,7 +45574,7 @@ export async function uploadTransactionFinanceDocument({
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'TransactionUpdated',
-    createdByRole: normalizeRoleType(actorRole || 'agent'),
+    createdByRole: uploadRole,
     eventData: {
       source: 'transaction_finance_document_upload',
       financeEventType: 'finance_document_uploaded',

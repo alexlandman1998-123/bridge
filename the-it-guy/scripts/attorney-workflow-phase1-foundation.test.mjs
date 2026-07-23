@@ -62,6 +62,11 @@ function verifyAtomicCompletionContract() {
   assert.match(serviceSource, /stageDefinition\?\.defaultVisibility \|\| 'professional_shared'/)
   assert.match(pageSource, /visibility:\s*draft\.visibility \|\| null/)
   assert.match(serviceSource, /Phase 1 database foundation is deployed/)
+  assert.match(pageSource, /const currentKeyStep = steps\.find/)
+  assert.match(pageSource, /normalizeWorkspaceStatus\(currentKeyStep\.status\) !== 'completed' \|\| !nextOpenStep/)
+  assert.match(pageSource, /const updated = await onUpdateStep/)
+  assert.match(pageSource, /if \(updated === false\) return/)
+  assert.doesNotMatch(pageSource, /onUpdateStep=\{\(step, status, note\) => void handleArchlineLegalWorkflowStepUpdate/)
 
   const stepUpdateStart = serviceSource.indexOf('export async function updateAttorneyWorkflowStepStatus')
   const stepUpdateEnd = serviceSource.indexOf('export async function getAttorneyUpdateOptionsForTransaction', stepUpdateStart)

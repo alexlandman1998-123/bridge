@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import React from 'react'
 import ReactDOMServer from 'react-dom/server'
@@ -19,9 +20,9 @@ try {
   const financeCommandModule = await server.ssrLoadModule('/src/components/transaction/TransactionFinanceCommandCenter.jsx')
 
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake'), 0)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 14)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 29)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 86)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 9)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 18)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 91)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('complete'), 100)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake', 'completed'), 100)
 
@@ -135,6 +136,16 @@ try {
   ]) {
     assert.ok(hybridMarkup.includes(expectedText), `expected rendered finance command center to include "${expectedText}"`)
   }
+
+  const attorneyTransactionDetailSource = await readFile(
+    path.join(PROJECT_ROOT, 'src/pages/AttorneyTransactionDetail.jsx'),
+    'utf8',
+  )
+  assert.match(
+    attorneyTransactionDetailSource,
+    /workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow'[\s\S]*\{financeCommandCenterPanel\}/,
+    'bond originator workflow tab should expose the finance command center for grant upload and attorney instruction handoff',
+  )
 
   console.log('finance tab launch-readiness checks passed')
 } finally {

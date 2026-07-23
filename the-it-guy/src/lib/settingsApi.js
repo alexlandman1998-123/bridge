@@ -5296,7 +5296,7 @@ function normalizeOrganisationUserRow(row) {
       [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') ||
       normalizeText(row?.email),
     email: normalizeText(row?.email),
-    avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
+    avatarUrl: normalizeText(scopeMetadata.avatarUrl || scopeMetadata.avatar_url || row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
     role,
     status,
     membershipStatus: status,
@@ -5704,6 +5704,74 @@ export async function updateOrganisationUserJobTitle(userRowId, jobTitle) {
     targetType: 'organisation_user',
     targetId: userRowId,
     metadata: { jobTitle: normalizedJobTitle || null },
+  })
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return normalizeOrganisationUserRow(data)
+}
+
+export async function updateOrganisationUserAvatar(userRowId, avatarUrl) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation members')
+
+  const membershipId = normalizeText(userRowId)
+  if (!membershipId) {
+    throw new Error('Organisation user is required before updating an avatar.')
+  }
+
+  const existing = await client
+    .from('organisation_users')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, email, role, workspace_role, organisation_role, status, scope_metadata')
+    .eq('id', membershipId)
+    .eq('organisation_id', context.organisation.id)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+
+  assertAgencyAuthority(
+    AGENCY_AUTHORITY_ACTIONS.manageBranchAgents,
+    getAuthorityActorFromContext(context),
+    getAuthorityTargetFromOrganisationUser(existing.data),
+    { message: 'You do not have authority to update this agent profile.' },
+  )
+
+  const nextAvatarUrl = normalizeNullableText(avatarUrl)
+  const nextScopeMetadata = {
+    ...(existing.data.scope_metadata && typeof existing.data.scope_metadata === 'object' ? existing.data.scope_metadata : {}),
+  }
+  if (nextAvatarUrl) {
+    nextScopeMetadata.avatarUrl = nextAvatarUrl
+    nextScopeMetadata.avatar_url = nextAvatarUrl
+  } else {
+    delete nextScopeMetadata.avatarUrl
+    delete nextScopeMetadata.avatar_url
+  }
+
+  const { data, error } = await client
+    .from('organisation_users')
+    .update({ scope_metadata: nextScopeMetadata })
+    .eq('id', membershipId)
+    .eq('organisation_id', context.organisation.id)
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, scope_metadata, invited_at, accepted_at, last_active_at')
+    .single()
+
+  if (error) throw error
+
+  if (normalizeText(existing.data.user_id) && normalizeText(existing.data.user_id) === normalizeText(context.profile?.id)) {
+    await updateUserProfile({
+      userId: existing.data.user_id,
+      avatarUrl: nextAvatarUrl || '',
+    })
+  }
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'organisation_user_avatar_changed',
+    targetType: 'organisation_user',
+    targetId: membershipId,
+    metadata: { hasAvatar: Boolean(nextAvatarUrl) },
   })
   organisationUsersCache = null
   clearOrganisationRuntimeCache()

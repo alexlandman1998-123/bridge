@@ -122,15 +122,11 @@ export function assessLegalDocumentPilotRelease({
     });
   }
 
-  // This contract is intentionally the Phase 4 one-organisation release
-  // marker. A later cohort expansion requires a different, explicitly
-  // reviewed runtime contract; a broadened comma-separated secret cannot
-  // silently turn this pilot into a multi-organisation release.
   const configuredCohort = [...allowlistedOrganisationIds];
-  if (configuredCohort.length !== 1 || !ORGANISATION_UUID.test(configuredCohort[0])) {
+  if (!configuredCohort.length || configuredCohort.some((id) => !ORGANISATION_UUID.test(id))) {
     return denied({
       code: "LEGAL_DOCUMENT_PILOT_COHORT_INVALID",
-      message: "Legal-document customer delivery requires exactly one valid pilot organisation.",
+      message: "Legal-document customer delivery requires a valid pilot organisation cohort.",
       operation,
       organisationId: resolvedOrganisationId,
       planDigest,

@@ -5303,6 +5303,80 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   }
 }
 
+function normalizePartnerRelationshipStatus(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'approved' || normalized === 'connected') return 'accepted'
+  if (normalized === 'rejected' || normalized === 'revoked') return 'declined'
+  if (normalized === 'inactive' || normalized === 'archived' || normalized === 'deleted') return 'removed'
+  return normalized || 'pending'
+}
+
+function resolveConnectedPartnerContactEmail(organisation = {}) {
+  const settings = organisation.settings_json && typeof organisation.settings_json === 'object' ? organisation.settings_json : {}
+  return normalizeText(
+    organisation.contact_email ||
+      organisation.contactEmail ||
+      settings.contactEmail ||
+      settings.contact_email ||
+      settings.email ||
+      settings.inviteEmail,
+  ).toLowerCase()
+}
+
+async function resolveConnectedTransferAttorneySelection(client, organisationId = '', relationshipId = '') {
+  const scopedOrganisationId = normalizeText(organisationId)
+  const selectedRelationshipId = normalizeText(relationshipId)
+  if (!scopedOrganisationId || !selectedRelationshipId) return null
+
+  const relationshipQuery = await client
+    .from('organisation_partners')
+    .select('id, organisation_id, partner_organisation_id, partner_type, status, relationship_status, relationship_type, preferred')
+    .eq('id', selectedRelationshipId)
+    .maybeSingle()
+
+  if (relationshipQuery.error) {
+    if (isMissingTableError(relationshipQuery.error, 'organisation_partners') || isMissingColumnError(relationshipQuery.error)) return null
+    throw relationshipQuery.error
+  }
+
+  const relationship = relationshipQuery.data || null
+  if (!relationship?.id) return null
+  const ownerOrganisationId = normalizeText(relationship.organisation_id)
+  const partnerOrganisationId = normalizeText(relationship.partner_organisation_id)
+  if (ownerOrganisationId !== scopedOrganisationId && partnerOrganisationId !== scopedOrganisationId) return null
+  const relationshipStatuses = [relationship.relationship_status, relationship.status].map(normalizePartnerRelationshipStatus)
+  if (!relationshipStatuses.includes('accepted')) return null
+
+  const attorneyOrganisationId = ownerOrganisationId === scopedOrganisationId ? partnerOrganisationId : ownerOrganisationId
+  if (!attorneyOrganisationId || attorneyOrganisationId === scopedOrganisationId) return null
+
+  const organisationQuery = await client
+    .from('organisations')
+    .select('id, name, display_name, legal_name, type, settings_json')
+    .eq('id', attorneyOrganisationId)
+    .maybeSingle()
+
+  if (organisationQuery.error) {
+    if (isMissingTableError(organisationQuery.error, 'organisations') || isMissingColumnError(organisationQuery.error)) return null
+    throw organisationQuery.error
+  }
+
+  const organisation = organisationQuery.data || {}
+  const companyName = normalizeText(organisation.display_name || organisation.name || organisation.legal_name)
+  if (!companyName) return null
+
+  return {
+    preferredPartnerId: relationship.id,
+    partnerRelationshipId: relationship.id,
+    partnerOrganisationId: attorneyOrganisationId,
+    companyName,
+    contactPerson: companyName,
+    email: resolveConnectedPartnerContactEmail(organisation),
+    phone: '',
+    selectionSource: 'connected_partner',
+  }
+}
+
 export async function sendSellerOnboarding(
   listingId,
   {
@@ -5354,19 +5428,25 @@ export async function sendSellerOnboarding(
     preferredAttorneyQuery = await legacyPreferredAttorneyBuilder.maybeSingle()
   }
   if (preferredAttorneyQuery.error) throw preferredAttorneyQuery.error
-  if (!preferredAttorneyQuery.data?.id || !normalizeText(preferredAttorneyQuery.data?.company_name)) {
+  let preferredTransferAttorney = null
+  if (preferredAttorneyQuery.data?.id && normalizeText(preferredAttorneyQuery.data?.company_name)) {
+    preferredTransferAttorney = {
+      preferredPartnerId: preferredAttorneyQuery.data.id,
+      partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
+      companyName: normalizeText(preferredAttorneyQuery.data.company_name),
+      contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
+      email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
+      phone: normalizeText(preferredAttorneyQuery.data.phone_number),
+      selectionSource: 'agency_recommended',
+    }
+  } else if (requestedPreferredAttorneyId) {
+    preferredTransferAttorney = await resolveConnectedTransferAttorneySelection(client, listing.organisationId, requestedPreferredAttorneyId)
+  }
+
+  if (!preferredTransferAttorney?.preferredPartnerId || !normalizeText(preferredTransferAttorney.companyName)) {
     throw new Error(requestedPreferredAttorneyId
       ? 'The selected transfer attorney is no longer active for this agency.'
       : 'Configure an active preferred transfer attorney before sending seller onboarding.')
-  }
-  const preferredTransferAttorney = {
-    preferredPartnerId: preferredAttorneyQuery.data.id,
-    partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
-    companyName: normalizeText(preferredAttorneyQuery.data.company_name),
-    contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
-    email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
-    phone: normalizeText(preferredAttorneyQuery.data.phone_number),
-    selectionSource: 'agency_recommended',
   }
 
   const existingQuery = await client

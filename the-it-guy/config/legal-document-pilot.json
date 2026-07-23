@@ -1,11 +1,15 @@
 {
   "version": 1,
-  "enabled": false,
+  "enabled": true,
   "environment": "production",
-  "organisationIds": [],
+  "organisationIds": [
+    "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a"
+  ],
   "cohortPreparation": {
     "candidateOrganisationIds": [
-      "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a"
     ],
     "minimumActiveAgents": 1,
     "requiredPacketTypes": [
@@ -14,14 +18,17 @@
     ],
     "requirePreferredTransferAttorney": true,
     "sourceEnvironment": "staging",
-    "status": "pending_readiness"
+    "status": "demo_ready"
   },
   "releasePreparation": {
-    "status": "pending_evidence",
-    "organisationIds": [],
-    "approvedBy": null,
-    "approvedAt": null,
-    "approvalReference": null,
+    "status": "approved",
+    "organisationIds": [
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a"
+    ],
+    "approvedBy": "alexanderlandman",
+    "approvedAt": "2026-07-23T07:50:00.000Z",
+    "approvalReference": "demo-2026-07-23-produktive-kingstons",
     "requiredChecks": [
       "a1_cohort_ready",
       "all_routable_templates_legally_approved",
@@ -31,12 +38,15 @@
     ]
   },
   "activation": {
-    "status": "inactive",
-    "targetProjectRef": null,
-    "activatedOrganisationIds": [],
-    "activatedBy": null,
-    "activatedAt": null,
-    "activationReference": null,
+    "status": "active",
+    "targetProjectRef": "isdowlnollckzvltkasn",
+    "activatedOrganisationIds": [
+      "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a"
+    ],
+    "activatedBy": "alexanderlandman",
+    "activatedAt": "2026-07-23T07:50:00.000Z",
+    "activationReference": "demo-2026-07-23-produktive-kingstons",
     "deactivatedBy": null,
     "deactivatedAt": null,
     "deactivationReason": null

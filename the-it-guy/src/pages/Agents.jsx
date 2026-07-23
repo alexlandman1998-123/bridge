@@ -46,7 +46,9 @@ import {
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
+  updateOrganisationUserAvatar,
   updateOrganisationUserRole,
+  uploadAccountAvatar,
 } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -61,6 +63,7 @@ import {
   removeAgentFromOrganisation,
   revokeAgentInvite,
   setAgentStatus,
+  updateAgentAvatar,
   updateAgentRole,
 } from '../lib/agentInviteService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -255,6 +258,17 @@ function getAgentAvatarUrl(agent = {}) {
       agent?.picture ||
       '',
   ).trim()
+}
+
+function isValidAvatarUrl(value = '') {
+  const normalized = String(value || '').trim()
+  if (!normalized) return true
+  try {
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 function AgentAvatar({ agent = {}, initials = '', className = '' }) {
@@ -571,6 +585,131 @@ function normalizeAgentIdentity(row) {
     name: name || '',
     email: email || '',
   }
+}
+
+function getPrivateListingAssignmentKeys(listing = {}) {
+  const idKeys = [
+    listing.assignedAgentId,
+    listing.assigned_agent_id,
+    listing.assignedUserId,
+    listing.assigned_user_id,
+    listing.agentId,
+    listing.agent_id,
+    listing.listingAgentId,
+    listing.listing_agent_id,
+    listing.ownerAgentId,
+    listing.owner_agent_id,
+    listing.createdBy,
+    listing.created_by,
+    listing?.commission?.agentId,
+    listing?.commission?.agent_id,
+  ].map(normalizeAgentRecordId).filter(Boolean)
+
+  const emailKeys = [
+    listing.assignedAgentEmail,
+    listing.assigned_agent_email,
+    listing.agentEmail,
+    listing.agent_email,
+  ].map(normalizeIdentityEmail).filter(Boolean)
+
+  const nameKeys = [
+    listing.assignedAgentName,
+    listing.assigned_agent_name,
+    listing.assignedAgent,
+    listing.assigned_agent,
+    listing.agentName,
+    listing.agent_name,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+
+  return { idKeys, emailKeys, nameKeys }
+}
+
+function addAgentWorkspaceDirectoryRows(groupedByAgent, agentRows = []) {
+  for (const directoryAgent of agentRows.filter(Boolean)) {
+    const directoryId = normalizeAgentRecordId(
+      directoryAgent?.id ||
+        directoryAgent?.userId ||
+        directoryAgent?.user_id ||
+        directoryAgent?.organisationUserId ||
+        directoryAgent?.organisation_user_id ||
+        directoryAgent?.email ||
+        directoryAgent?.name,
+    )
+    if (!directoryId) continue
+    if (!groupedByAgent.has(directoryId)) {
+      groupedByAgent.set(directoryId, {
+        id: directoryId,
+        organisationUserId: normalizeAgentRecordId(directoryAgent?.organisationUserId || directoryAgent?.organisation_user_id),
+        userId: normalizeAgentRecordId(directoryAgent?.userId || directoryAgent?.user_id),
+        name: directoryAgent?.name || directoryAgent?.fullName || directoryAgent?.full_name || 'Agent',
+        fullName: directoryAgent?.fullName || directoryAgent?.full_name || directoryAgent?.name || '',
+        email: directoryAgent?.email || '',
+        phone: directoryAgent?.phone || '',
+        avatarUrl: getAgentAvatarUrl(directoryAgent),
+        profilePhotoUrl: getAgentAvatarUrl(directoryAgent),
+        office: directoryAgent?.office || directoryAgent?.branchName || 'Office',
+        branchId: directoryAgent?.branchId || directoryAgent?.branch_id || null,
+        organisationId: normalizeAgentRecordId(directoryAgent?.organisationId || directoryAgent?.agencyId || ''),
+        organisationName: directoryAgent?.organisationName || directoryAgent?.agencyName || '',
+        role: directoryAgent?.role || 'agent',
+        status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
+        invitedAt: directoryAgent?.invitedAt || null,
+        activatedAt: directoryAgent?.activatedAt || directoryAgent?.acceptedAt || null,
+        lastActiveAt: directoryAgent?.lastActiveAt || null,
+        deals: [],
+        developmentListings: [],
+      })
+    } else {
+      const existing = groupedByAgent.get(directoryId)
+      groupedByAgent.set(directoryId, {
+        ...existing,
+        organisationUserId: existing.organisationUserId || normalizeAgentRecordId(directoryAgent?.organisationUserId || directoryAgent?.organisation_user_id),
+        userId: existing.userId || normalizeAgentRecordId(directoryAgent?.userId || directoryAgent?.user_id),
+        name: existing.name || directoryAgent?.name || directoryAgent?.fullName || existing.name,
+        fullName: existing.fullName || directoryAgent?.fullName || directoryAgent?.full_name || directoryAgent?.name || existing.fullName,
+        email: existing.email || directoryAgent?.email || existing.email,
+        phone: existing.phone || directoryAgent?.phone || existing.phone,
+        avatarUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
+        profilePhotoUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
+        office: existing.office || directoryAgent?.office || directoryAgent?.branchName || existing.office,
+        branchId: existing.branchId || directoryAgent?.branchId || directoryAgent?.branch_id || null,
+        organisationId: existing.organisationId || normalizeAgentRecordId(directoryAgent?.organisationId || directoryAgent?.agencyId || ''),
+        organisationName: existing.organisationName || directoryAgent?.organisationName || directoryAgent?.agencyName || '',
+      })
+    }
+  }
+}
+
+function createAgentAssignmentLookup(groupedByAgent) {
+  const agentIdByEmail = new Map()
+  const agentIdByName = new Map()
+  for (const [agentId, agentRecord] of groupedByAgent.entries()) {
+    const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
+    const normalizedName = String(agentRecord?.name || agentRecord?.fullName || '').trim().toLowerCase()
+    if (normalizedEmail) {
+      agentIdByEmail.set(normalizedEmail, agentId)
+    }
+    if (normalizedName) {
+      agentIdByName.set(normalizedName, agentId)
+    }
+  }
+  return { agentIdByEmail, agentIdByName }
+}
+
+function resolveListingAgentId(listing = {}, groupedByAgent, agentIdByEmail, agentIdByName) {
+  const { idKeys, emailKeys, nameKeys } = getPrivateListingAssignmentKeys(listing)
+  for (const key of idKeys) {
+    if (groupedByAgent.has(key)) return key
+  }
+  for (const key of emailKeys) {
+    const agentId = agentIdByEmail.get(key)
+    if (agentId) return agentId
+  }
+  for (const key of nameKeys) {
+    const agentId = agentIdByName.get(key)
+    if (agentId) return agentId
+  }
+  return ''
 }
 
 function formatCurrency(value) {
@@ -1130,7 +1269,7 @@ function normalizeDealStatus(row) {
   return 'active'
 }
 
-function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null }) {
+function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null, organisationUsers = [], organisation = null }) {
   const groupedByAgent = new Map()
 
   for (const row of transactions) {
@@ -1173,18 +1312,6 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     }
   }
 
-  const listingsByAgent = privateListings.reduce((accumulator, listing) => {
-    const agentId = String(listing?.commission?.agent_id || '').trim().toLowerCase()
-    if (!agentId) {
-      return accumulator
-    }
-    if (!accumulator.has(agentId)) {
-      accumulator.set(agentId, [])
-    }
-    accumulator.get(agentId).push(listing)
-    return accumulator
-  }, new Map())
-
   const developmentAgentMap = new Map()
   for (const row of transactions) {
     const developmentId = String(row?.development?.id || row?.transaction?.development_id || row?.unit?.development_id || '').trim()
@@ -1196,6 +1323,30 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
       developmentAgentMap.set(developmentId, identity.id)
     }
   }
+
+  const organisationAgentRows = (Array.isArray(organisationUsers) ? organisationUsers : [])
+    .map((user) => normalizeOrganisationUserAgent(user, {
+      organisationId: organisation?.id || agentDirectory?.agency?.id,
+      organisationName: organisation?.name || agentDirectory?.agency?.name,
+    }))
+    .filter(Boolean)
+  addAgentWorkspaceDirectoryRows(groupedByAgent, [
+    ...getDirectoryWorkspaceAgents(agentDirectory || {}),
+    ...organisationAgentRows,
+  ])
+
+  const { agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
+  const listingsByAgent = privateListings.reduce((accumulator, listing) => {
+    const agentId = resolveListingAgentId(listing, groupedByAgent, agentIdByEmail, agentIdByName)
+    if (!agentId) {
+      return accumulator
+    }
+    if (!accumulator.has(agentId)) {
+      accumulator.set(agentId, [])
+    }
+    accumulator.get(agentId).push(listing)
+    return accumulator
+  }, new Map())
 
   const defaultAgentId = groupedByAgent.keys().next().value || ''
   const pipelineByAgent = pipelineRows.reduce((accumulator, item) => {
@@ -1211,50 +1362,6 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     accumulator.get(agentId).push(item)
     return accumulator
   }, new Map())
-
-  const directoryAgents = Array.isArray(agentDirectory?.agents) ? agentDirectory.agents : []
-  for (const directoryAgent of directoryAgents) {
-    const directoryId = String(directoryAgent?.id || directoryAgent?.email || directoryAgent?.name || '').trim().toLowerCase()
-    if (!directoryId) continue
-    if (!groupedByAgent.has(directoryId)) {
-      groupedByAgent.set(directoryId, {
-        id: directoryId,
-        name: directoryAgent?.name || 'Agent',
-        email: directoryAgent?.email || '',
-        phone: directoryAgent?.phone || '',
-        avatarUrl: getAgentAvatarUrl(directoryAgent),
-        profilePhotoUrl: getAgentAvatarUrl(directoryAgent),
-        office: directoryAgent?.office || 'Office',
-        status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
-        deals: [],
-        developmentListings: [],
-      })
-    } else {
-      const existing = groupedByAgent.get(directoryId)
-      groupedByAgent.set(directoryId, {
-        ...existing,
-        name: existing.name || directoryAgent?.name || existing.name,
-        email: existing.email || directoryAgent?.email || existing.email,
-        phone: existing.phone || directoryAgent?.phone || existing.phone,
-        avatarUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
-        profilePhotoUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
-        office: existing.office || directoryAgent?.office || existing.office,
-      })
-    }
-  }
-
-  const agentIdByEmail = new Map()
-  const agentIdByName = new Map()
-  for (const [agentId, agentRecord] of groupedByAgent.entries()) {
-    const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
-    const normalizedName = String(agentRecord?.name || '').trim().toLowerCase()
-    if (normalizedEmail) {
-      agentIdByEmail.set(normalizedEmail, agentId)
-    }
-    if (normalizedName) {
-      agentIdByName.set(normalizedName, agentId)
-    }
-  }
 
   const appointmentsByAgent = new Map()
   for (const appointment of appointments) {
@@ -3994,6 +4101,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [permissionsForm, setPermissionsForm] = useState({ role: '' })
   const [permissionsSaving, setPermissionsSaving] = useState(false)
   const [permissionsError, setPermissionsError] = useState('')
+  const [profileForm, setProfileForm] = useState({ avatarUrl: '' })
+  const [profileAvatarFile, setProfileAvatarFile] = useState(null)
+  const [profileAvatarPreviewUrl, setProfileAvatarPreviewUrl] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
 
   const effectiveActiveTab = AGENT_WORKSPACE_TABS.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
   const activeCommissionStructures = commissionStructures.filter((structure) => structure?.isActive)
@@ -4039,6 +4151,25 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     setPermissionsError('')
     setPermissionsForm({ role: agent.role || 'agent' })
   }, [agent.role, modalMode])
+
+  useEffect(() => {
+    if (modalMode !== 'profile') return
+    setProfileError('')
+    setProfileAvatarFile(null)
+    setProfileForm({ avatarUrl: getAgentAvatarUrl(agent) })
+  }, [agent, modalMode])
+
+  useEffect(() => {
+    if (!profileAvatarFile || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+      setProfileAvatarPreviewUrl('')
+      return undefined
+    }
+    const nextPreviewUrl = URL.createObjectURL(profileAvatarFile)
+    setProfileAvatarPreviewUrl(nextPreviewUrl)
+    return () => {
+      URL.revokeObjectURL(nextPreviewUrl)
+    }
+  }, [profileAvatarFile])
 
   useEffect(() => {
     const agentUserId = normalizeAgentRecordId(agent.userId || agent.user_id)
@@ -4095,13 +4226,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const privateListings = agent.privateListings || []
   const allListings = [...developmentListings, ...privateListings.map((listing) => ({
     id: listing.id,
-    title: listing.listingTitle,
+    title: listing.listingTitle || listing.title || listing.listingReference,
     listingType: 'private_sale',
     developmentName: 'Private Sale',
-    suburb: listing.suburb || 'Area pending',
-    price: Number(listing.askingPrice || 0),
-    status: listing.status || 'Active',
-    mandateStatus: listing.mandateType || '—',
+    suburb: listing.suburb || listing.city || 'Area pending',
+    address: listing.formattedAddress || listing.streetAddress || listing.addressLine1 || '',
+    price: Number(listing.askingPrice || listing.price || listing.estimatedValue || 0),
+    status: listing.status || listing.listingStatus || 'Active',
+    mandateStatus: listing.mandateStatus || listing.mandateType || '—',
     sellerOnboardingStatus: listing?.sellerOnboarding?.status || '—',
     documentsStatus: listing.documentsStatus || '—',
     listedAt: listing.createdAt || null,
@@ -4317,6 +4449,47 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     }
   }
 
+  async function handleSaveProfileAvatar() {
+    if (!canManageSettings || profileSaving) return
+    const typedAvatarUrl = String(profileForm.avatarUrl || '').trim()
+    if (!profileAvatarFile && !isValidAvatarUrl(typedAvatarUrl)) {
+      setProfileError('Enter a valid image URL, or upload an image file.')
+      return
+    }
+    if (!agent.organisationUserId && !agent.email) {
+      setProfileError('This agent needs a linked profile or email before the avatar can be saved.')
+      return
+    }
+
+    try {
+      setProfileSaving(true)
+      setProfileError('')
+      let nextAvatarUrl = typedAvatarUrl
+      if (profileAvatarFile) {
+        const upload = await uploadAccountAvatar({ file: profileAvatarFile })
+        nextAvatarUrl = upload?.publicUrl || upload?.resolvedUrl || ''
+      }
+
+      if (agent.organisationUserId) {
+        await updateOrganisationUserAvatar(agent.organisationUserId, nextAvatarUrl)
+      } else {
+        updateAgentAvatar({
+          agentEmail: agent.email,
+          organisationId: agent.organisationId,
+          avatarUrl: nextAvatarUrl,
+        })
+      }
+
+      setActionNotice(nextAvatarUrl ? 'Agent avatar updated.' : 'Agent avatar cleared.')
+      setModalMode('')
+      await onRefresh?.()
+    } catch (saveError) {
+      setProfileError(saveError?.message || 'Unable to save agent avatar.')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
   function handleConfirmedAction() {
     if (!pendingAction) return
     const label = pendingAction === 'remove' ? 'Remove agent' : pendingAction === 'archive' ? 'Archive agent' : 'Deactivate agent'
@@ -4364,6 +4537,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     ['Commission Earned', getMonthSummaryValue('commissionGenerated', formatCurrency(getNumericMetric(agent, 'commissionEarned')))],
     ['Commission Forecast', formatCurrency(projectedCommission)],
   ]
+  const profileAvatarPreviewSource = profileAvatarPreviewUrl || profileForm.avatarUrl || getAgentAvatarUrl(agent)
 
   function handleWorkspaceAction(key) {
     setEditMenuOpen(false)
@@ -5030,7 +5204,9 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             ? 'Assign the structure, split override, effective date and company target for this agent.'
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
-            : 'This management surface is ready for the connected workflow.'
+              : modalMode === 'profile'
+                ? 'Upload or paste an image URL for this agent avatar.'
+                : 'This management surface is ready for the connected workflow.'
         }
         className={modalMode === 'commission' || modalMode === 'permissions' ? 'max-w-2xl' : 'max-w-xl'}
         footer={
@@ -5056,6 +5232,17 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 {permissionsSaving ? 'Saving…' : 'Save Permissions'}
               </Button>
             </div>
+          ) : modalMode === 'profile' ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setModalMode('')} disabled={profileSaving}>Cancel</Button>
+              <Button
+                type="button"
+                onClick={handleSaveProfileAvatar}
+                disabled={!canManageSettings || profileSaving}
+              >
+                {profileSaving ? 'Saving…' : 'Save Avatar'}
+              </Button>
+            </div>
           ) : (
             <div className="flex justify-end">
               <Button type="button" variant="secondary" onClick={() => setModalMode('')}>Close</Button>
@@ -5077,7 +5264,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
                   Create at least one active commission level before assigning a plan to this agent.
                 </p>
-                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
+                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/agency/commission')}>
                   Open Commission
                 </Button>
               </div>
@@ -5300,6 +5487,73 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             {!agent.organisationUserId ? (
               <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
                 This agent is not linked to an organisation user row, so role changes cannot be saved here.
+              </div>
+            ) : null}
+          </div>
+        ) : modalMode === 'profile' ? (
+          <div className="space-y-4">
+            {profileError ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                {profileError}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <AgentAvatar
+                agent={{ ...agent, avatarUrl: profileAvatarPreviewSource }}
+                className="h-24 w-24 border border-[#dfe8f2] bg-[#f4f8fc] text-xl font-semibold text-[#1f4f78]"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[#10243a]">{agentDisplayName}</p>
+                <p className="mt-1 truncate text-xs font-medium text-[#6f839a]">{agent.email || 'No email on profile'}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <label className="inline-flex h-9 cursor-pointer items-center rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#20364d] shadow-sm">
+                    Upload image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={!canManageSettings || profileSaving}
+                      onChange={(event) => setProfileAvatarFile(event.target.files?.[0] || null)}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!canManageSettings || profileSaving || (!profileForm.avatarUrl && !profileAvatarFile && !getAgentAvatarUrl(agent))}
+                    onClick={() => {
+                      setProfileAvatarFile(null)
+                      setProfileForm({ avatarUrl: '' })
+                      setProfileError('')
+                    }}
+                  >
+                    Clear Avatar
+                  </Button>
+                </div>
+                {profileAvatarFile ? (
+                  <p className="mt-2 truncate text-xs font-medium text-[#60758d]">{profileAvatarFile.name}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Image URL</span>
+              <Field
+                value={profileForm.avatarUrl}
+                disabled={!canManageSettings || profileSaving}
+                onChange={(event) => {
+                  setProfileAvatarFile(null)
+                  setProfileError('')
+                  setProfileForm({ avatarUrl: event.target.value })
+                }}
+                placeholder="https://..."
+              />
+            </label>
+
+            {!canManageSettings ? (
+              <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm font-medium text-[#7a5a16]">
+                You can view this avatar, but only Principal-level users can change agent profiles.
               </div>
             ) : null}
           </div>
@@ -5672,6 +5926,8 @@ export function AgentsPage() {
         pipelineRows,
         appointments: performanceSources.appointments,
         agentDirectory: directory,
+        organisationUsers: performanceSources.organisationUsers,
+        organisation: liveOrganisation,
       })
 
       const inviteMap = new Map()
@@ -6766,7 +7022,7 @@ export function AgentsPage() {
             showOrganisationSelect={organisationOptions.length > 1}
             onManageCommissionStructures={() => {
               setInviteModalOpen(false)
-              navigate('/settings/commission-structures')
+              navigate('/agency/commission')
             }}
           />
 
@@ -6980,6 +7236,8 @@ export function AgentWorkspacePage() {
         pipelineRows: Array.isArray(performanceSources.leads) ? performanceSources.leads : [],
         appointments: Array.isArray(performanceSources.appointments) ? performanceSources.appointments : [],
         agentDirectory,
+        organisationUsers: performanceSources.organisationUsers,
+        organisation: performanceSources.organisationSettings?.organisation || null,
       })
       const organisationAgentRows = (performanceSources.organisationUsers || [])
         .map((user) => normalizeOrganisationUserAgent(user, {

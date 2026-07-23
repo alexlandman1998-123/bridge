@@ -3179,9 +3179,7 @@ export async function generatePacketVersion({
     const hasMandateTemplateContentGateBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_content_gate',
     )
-    const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(
-      (issue) => issue?.source === 'mandate_template_launch_readiness',
-    )
+    const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')
     if (!validation.isValidForGeneration) {
       const error = createPacketError(
         hasMandateTemplateLaunchReadinessBlockingIssues

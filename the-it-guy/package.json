@@ -237,6 +237,8 @@
     "test:transaction-live-cross-module-phase5": "node scripts/transaction-live-cross-module-phase5.test.mjs",
     "test:transaction-propagation-assurance-phase6": "node scripts/transaction-propagation-assurance-phase6.test.mjs",
     "test:transaction-progress-controlled-rollout-phase7": "node scripts/transaction-progress-controlled-rollout-phase7.test.mjs",
+    "test:transaction-progress-schedule-proof-phase8": "node scripts/transaction-progress-schedule-proof-phase8.test.mjs",
+    "verify:transaction-progress-schedule:production": "node --env-file=.env.production.local scripts/verify-transaction-progress-schedule.mjs --expected-project-ref isdowlnollckzvltkasn --require-recovery-enabled --require-notification-dispatch",
     "test:attorney-lead-contract": "node src/core/leads/__tests__/attorneyLeadContract.test.js",
     "test:attorney-leads-foundation-phase2": "node scripts/attorney-public-intake-leads-foundation-phase2.test.mjs",
     "test:attorney-leads-security-phase3": "node scripts/attorney-public-intake-leads-security-phase3.test.mjs",

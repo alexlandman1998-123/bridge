@@ -1442,10 +1442,15 @@ function getAssignedFirmLabel(lane = {}) {
 function getCurrentWorkflowStep(lane = {}) {
   const steps = Array.isArray(lane?.steps) ? lane.steps : []
   const currentKey = lane?.currentStage || lane?.summary?.currentStage
+  const currentKeyStep = steps.find((step) => step.stepKey === currentKey || step.step_key === currentKey) || null
+  const nextOpenStep = steps.find((step) => normalizeWorkspaceStatus(step.status) !== 'completed') || null
+  if (currentKeyStep && (normalizeWorkspaceStatus(currentKeyStep.status) !== 'completed' || !nextOpenStep)) {
+    return currentKeyStep
+  }
   return (
-    steps.find((step) => step.stepKey === currentKey || step.step_key === currentKey) ||
     steps.find((step) => ['blocked', 'waiting', 'in_progress'].includes(normalizeWorkspaceStatus(step.status))) ||
-    steps.find((step) => normalizeWorkspaceStatus(step.status) !== 'completed') ||
+    nextOpenStep ||
+    currentKeyStep ||
     steps.at(-1) ||
     null
   )
@@ -5731,6 +5736,7 @@ function ArchlineWorkflowWorkspace({
   keyDates = [],
   activityFeed = [],
   saving = false,
+  error = '',
   onUpdateStep,
   onUploadDocument,
   onAddNote,
@@ -5759,10 +5765,11 @@ function ArchlineWorkflowWorkspace({
     setStatusDraft({ open: true, step, status: step.displayStatus === 'completed' ? 'completed' : 'in_progress', note: step.comment || '' })
   }
 
-  function submitStatusDraft(event) {
+  async function submitStatusDraft(event) {
     event.preventDefault()
     if (!statusDraft.step) return
-    void onUpdateStep?.(statusDraft.step, statusDraft.status, statusDraft.note)
+    const updated = await onUpdateStep?.(statusDraft.step, statusDraft.status, statusDraft.note)
+    if (updated === false) return
     setStatusDraft({ open: false, step: null, status: 'completed', note: '' })
   }
 
@@ -6024,6 +6031,9 @@ function ArchlineWorkflowWorkspace({
             />
           </label>
           <p className="text-xs text-slate-500">This will be recorded in the matter activity feed.</p>
+          {error ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>
+          ) : null}
         </form>
       </Modal>
     </>
@@ -8860,7 +8870,7 @@ function AttorneyTransactionDetail() {
   const [hydratingDetail, setHydratingDetail] = useState(false)
   const [workflowOperations, setWorkflowOperations] = useState(null)
   const [, setWorkflowLoading] = useState(false)
-  const [, setWorkflowError] = useState('')
+  const [workflowError, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
   const [, setTransactionRollupError] = useState('')
   const [workflowDrawerLaneKey, setWorkflowDrawerLaneKey] = useState('')
@@ -10898,7 +10908,7 @@ function AttorneyTransactionDetail() {
   }
 
   async function submitWorkflowStepUpdate(draft = null) {
-    if (!draft || !transaction?.id) return
+    if (!draft || !transaction?.id) return false
     setWorkflowSaving(true)
     setWorkflowError('')
     try {
@@ -10915,8 +10925,10 @@ function AttorneyTransactionDetail() {
       setWorkflowStepDraft(null)
       setWorkflowInlineStepDraft(null)
       await refreshWorkflowAfterChange(next)
+      return true
     } catch (stepError) {
       setWorkflowError(stepError?.message || 'Unable to update workflow step.')
+      return false
     } finally {
       setWorkflowSaving(false)
     }
@@ -12148,9 +12160,9 @@ function AttorneyTransactionDetail() {
 
   async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note) {
     const lane = workflow?.lane || null
-    if (!lane) return
+    if (!lane) return false
     const draft = buildWorkflowInlineStepDraft(lane, step, status)
-    await submitWorkflowStepUpdate({
+    return submitWorkflowStepUpdate({
       ...draft,
       note: typeof note === 'string' ? note : draft.note,
     })
@@ -13865,7 +13877,8 @@ function AttorneyTransactionDetail() {
               keyDates={archlineKeyDates}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineCancellationWorkflow, step, status, note)}
+              error={workflowError}
+              onUpdateStep={(step, status, note) => handleArchlineLegalWorkflowStepUpdate(archlineCancellationWorkflow, step, status, note)}
               onUploadDocument={() => openDocumentUploadModal({ category: 'cancellation' })}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
@@ -13885,7 +13898,8 @@ function AttorneyTransactionDetail() {
               keyDates={archlineKeyDates}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
+              error={workflowError}
+              onUpdateStep={(step, status, note) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
               onUploadDocument={() => openDocumentUploadModal({ category: 'transfer' })}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
@@ -15538,6 +15552,8 @@ function AttorneyTransactionDetail() {
                 }}
               />
             </section>
+
+            {financeCommandCenterPanel}
 
             <BondMatterConversationPanel
               discussionBody={discussionBody}

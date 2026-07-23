@@ -536,6 +536,36 @@ export function updateAgentRole({ agentEmail, organisationId, role }) {
   }
 }
 
+export function updateAgentAvatar({ agentEmail, organisationId, avatarUrl }) {
+  const normalizedEmail = normalizeEmail(agentEmail)
+  const normalizedOrgId = String(organisationId || '').trim().toLowerCase()
+  if (!normalizedEmail) throw new Error('Agent email is required.')
+
+  const directory = readAgentDirectory()
+  const nextDirectory = ensureDirectoryShape(directory)
+  const targetKey = getAgentKey(normalizedEmail, normalizedOrgId)
+  const safeAvatarUrl = String(avatarUrl || '').trim()
+
+  let found = false
+  nextDirectory.agents = nextDirectory.agents.map((agent) => {
+    if (getAgentKey(agent?.email, agent?.agencyId) !== targetKey) return agent
+    found = true
+    return {
+      ...agent,
+      avatarUrl: safeAvatarUrl,
+      avatar_url: safeAvatarUrl,
+      profilePhotoUrl: safeAvatarUrl,
+      photoUrl: safeAvatarUrl,
+    }
+  })
+
+  if (!found) throw new Error('Agent not found.')
+  persistDirectory(nextDirectory)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('itg:agent-directory-updated'))
+  }
+}
+
 export function setAgentStatus({ agentEmail, organisationId, status }) {
   const normalizedEmail = normalizeEmail(agentEmail)
   const normalizedOrgId = String(organisationId || '').trim().toLowerCase()

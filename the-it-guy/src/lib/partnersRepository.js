@@ -528,7 +528,7 @@ export function mapPartnerRelationship(row = {}, currentOrganisationId = '') {
   const scopeId = normalizeText(row.scope_id || row.scopeId) || (scopeType === 'organisation' ? organisationId : '')
   const preferred = isPreferredRelationship(row)
   const relationshipType = normalizeText(row.relationship_type || row.relationshipType) || (preferred ? 'preferred' : 'approved')
-  const relationshipStatus = normalizePartnerRelationshipStatus(row.status || row.relationship_status || row.relationshipStatus)
+  const relationshipStatus = normalizePartnerRelationshipStatus(row.relationship_status || row.relationshipStatus || row.status)
 
   return {
     id: normalizeText(row.id),
