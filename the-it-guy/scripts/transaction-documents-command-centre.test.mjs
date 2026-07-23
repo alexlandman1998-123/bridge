@@ -5,6 +5,7 @@ import path from 'node:path'
 const root = process.cwd()
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const source = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
+const matterModelSource = fs.readFileSync(path.join(root, 'src/services/documents/matterDocumentWorkspaceModel.js'), 'utf8')
 
 assert.equal(
   packageJson.scripts['test:transaction-documents-command-centre'],
@@ -23,8 +24,10 @@ const workflowDetailBlock = source.slice(
   source.indexOf('function handleOverviewActionTarget'),
 )
 
-assert.match(source, /const requiredDocumentRows = useMemo/, 'required table should be built from canonical required-document rows')
-assert.match(source, /const documentLibraryRows = useMemo/, 'library table should be built from uploaded/generated document rows')
+assert.match(source, /buildMatterDocumentWorkspaceModel/, 'document workspace derivation should use the extracted matter document model')
+assert.match(source, /const requiredDocumentRows = matterDocumentWorkspaceModel\.requiredRows/, 'required table should be built from canonical required-document rows')
+assert.match(source, /const documentLibraryRows = matterDocumentWorkspaceModel\.libraryRows/, 'library table should be built from uploaded/generated document rows')
+assert.match(matterModelSource, /export function filterMatterDocumentLibraryRows/, 'library table filtering should live in the pure matter document model')
 assert.match(source, /documentHealthSummary/, 'Documents tab should compute the health summary from canonical rows')
 assert.match(source, /visibilityScope,/, 'uploads should pass canonical document visibility into uploadDocument')
 assert.match(source, /documentRequestId: uploadDraft\.documentRequestId \|\| null/, 'uploads should preserve document request linkage')
@@ -38,7 +41,7 @@ assert.match(source, /ArchlinePanel title="Recent Activity"/, 'Documents workspa
 assert.match(documentsBlock, /open=\{uploadDocumentModalOpen\}/, 'Upload should be modal-driven')
 assert.match(documentsBlock, /Satisfies required document\?/, 'Upload modal should support linking to required documents')
 assert.match(source, /requiredRows\.slice\(0, 8\)/, 'Required table should default to a compact first-eight view')
-assert.match(source, /activeDocumentLibraryCategory === 'all' \|\| row\.category === activeDocumentLibraryCategory/, 'filter pills should only filter the library')
+assert.match(matterModelSource, /row\.category === normalizedFilter \|\| row\.canonicalCategory === normalizedFilter/, 'filter pills should only filter the library')
 assert.match(source, /routeLegalWorkflowDetailKey \|\| localLegalWorkflowDetailKey/, 'workflow details should support route-backed and state-backed activation')
 assert.match(workflowDetailBlock, /setLocalLegalWorkflowDetailKey\(normalized\)/, 'opening a workflow detail from the workspace should not require a route change')
 assert.doesNotMatch(workflowDetailBlock, /navigate\(`\$\{transactionWorkspaceBasePath\}\/transfer\/\$\{normalized\}`\)/, 'opening a workflow detail should not remount the matter workspace via nested route navigation')

@@ -16,6 +16,7 @@ import {
   Download,
   FileCheck2,
   FileText,
+  Filter,
   Landmark,
   ListChecks,
   LockKeyhole,
@@ -27,6 +28,7 @@ import {
   Search,
   Send,
   Smile,
+  Star,
   Upload,
   UserRound,
   UserCircle,
@@ -34,7 +36,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -80,6 +82,7 @@ import {
   requestAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
+import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
 import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
 import {
   buildAttorneyWorkflowActionCommand,
@@ -129,7 +132,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
 import { getTransferInstructionLifecycle } from '../services/transferInstructionLifecycleService'
-import { getDocumentReadiness } from '../services/documentReadinessService'
+import { buildMatterDocumentWorkspaceModel } from '../services/documents/matterDocumentWorkspaceModel'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
   markBondGrantMilestone,
@@ -317,6 +320,7 @@ const DOCUMENT_LIBRARY_FILTERS = [
   { key: 'transfer', label: 'Transfer' },
   { key: 'bond', label: 'Bond' },
   { key: 'cancellation', label: 'Cancellation' },
+  { key: 'general', label: 'General' },
   { key: 'generated', label: 'Generated' },
   { key: 'internal', label: 'Internal' },
 ]
@@ -489,6 +493,7 @@ function normalizeLibraryCategory(category = '') {
     'transfer',
     'bond',
     'cancellation',
+    'general',
     'generated',
     'internal',
   ].includes(normalized)) {
@@ -585,6 +590,7 @@ function getDocumentCommandCategoryLabel(category = '') {
     transfer: 'Transfer',
     bond: 'Bond',
     cancellation: 'Cancellation',
+    general: 'General',
     generated: 'Generated',
     internal: 'Internal',
     critical: 'Critical',
@@ -603,7 +609,7 @@ function getUploadCategoryForLibraryFilter(filterKey = '') {
   if (normalized === 'finance' || normalized === 'bond') return 'Guarantees'
   if (normalized === 'transfer' || normalized === 'generated') return 'Drafting Documents'
   if (normalized === 'cancellation') return 'Clearance Documents'
-  if (normalized === 'internal') return 'Internal Working Documents'
+  if (normalized === 'general' || normalized === 'internal') return 'Internal Working Documents'
   return ATTORNEY_DOCUMENT_CATEGORIES[0]
 }
 
@@ -5517,8 +5523,8 @@ function ArchlineMatterHeader({
           </div>
         </section>
 
-        <nav className="rounded-[24px] border border-slate-200/75 bg-white px-5 shadow-[0_18px_44px_rgba(15,23,42,0.045)]" aria-label="Matter navigation">
-          <div className="grid min-w-full gap-1 overflow-x-auto" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(132px, 1fr))` }}>
+        <nav className="rounded-[24px] border border-slate-200/75 bg-white px-3 shadow-[0_18px_44px_rgba(15,23,42,0.045)] sm:px-5" aria-label="Matter navigation">
+          <div className="grid min-w-max gap-1 overflow-x-auto md:min-w-full" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(136px, 1fr))` }}>
             {tabs.map((tab) => {
               const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
               const active = tab.id === activeTab
@@ -5526,11 +5532,12 @@ function ArchlineMatterHeader({
                 <button
                   key={tab.id}
                   type="button"
-                  className={`relative inline-flex h-16 min-w-0 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-semibold transition ${
+                  className={`relative inline-flex h-16 min-w-0 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 ${
                     active
                       ? 'bg-emerald-50 text-emerald-800'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
                   }`}
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => onTabChange?.(tab.id)}
                 >
                   <Icon size={17} className="shrink-0" />
@@ -5711,6 +5718,7 @@ function ArchlineWorkflowWorkspace({
   onUploadDocument,
   onAddNote,
   onOpenDocuments,
+  onOpenParties,
 }) {
   const [statusDraft, setStatusDraft] = useState({ open: false, step: null, status: 'completed', note: '' })
   const canUpdateSteps = typeof onUpdateStep === 'function'
@@ -6006,8 +6014,845 @@ function ArchlineWorkflowWorkspace({
   )
 }
 
+function ArchlineTransferWorkspace({
+  workflow = null,
+  documents = [],
+  keyDates = [],
+  parties = [],
+  activityFeed = [],
+  saving = false,
+  onUpdateStep,
+  onUploadDocument,
+  onAddNote,
+  onOpenDocuments,
+}) {
+  const [selectedTaskKey, setSelectedTaskKey] = useState('')
+  const [search, setSearch] = useState('')
+  const [attentionFilter, setAttentionFilter] = useState('')
+  const [phaseFilter, setPhaseFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [expandedPhaseKeys, setExpandedPhaseKeys] = useState({})
+  const [activeTaskTab, setActiveTaskTab] = useState('overview')
+  const [statusDraft, setStatusDraft] = useState({
+    open: false,
+    task: null,
+    actionId: '',
+    actionLabel: '',
+    status: 'completed',
+    reason: '',
+    note: '',
+    followUpDate: '',
+    linkedDocumentKey: '',
+    requiresReason: false,
+    requiresNote: false,
+  })
+  const selectedTaskButtonRef = useRef(null)
+  const canUpdateSteps = typeof onUpdateStep === 'function'
+  const viewModel = useMemo(
+    () => buildTransferWorkspaceViewModel({
+      workflow,
+      workflowKey: 'transfer',
+      documents,
+      keyDates,
+      parties,
+      activityFeed,
+      selectedTaskKey,
+      search,
+      filters: { attention: attentionFilter, phaseKey: phaseFilter, status: statusFilter },
+    }),
+    [activityFeed, attentionFilter, documents, keyDates, parties, phaseFilter, search, selectedTaskKey, statusFilter, workflow],
+  )
+  const selectedTask = viewModel.selectedTask
+  const currentPhase = viewModel.currentPhase
+  const visibleTaskKeys = useMemo(
+    () => new Set(viewModel.visibleTasks.map((task) => task.key)),
+    [viewModel.visibleTasks],
+  )
+  const selectedDocuments = viewModel.selectedTaskContext.relatedDocuments || []
+  const documentSummary = viewModel.selectedTaskContext.documentSummary || { required: 0, received: 0, missing: 0, label: 'No required documents' }
+  const taskTabs = viewModel.selectedTaskContext.tabs || [{ key: 'overview', label: 'Overview' }]
+  const checklistItems = viewModel.selectedTaskContext.checklistItems || []
+  const taskNotes = viewModel.selectedTaskContext.notes || []
+  const taskActivity = viewModel.selectedTaskContext.activityFeed || []
+  const statusMeta = WORKFLOW_STATUS_META[selectedTask?.displayStatus] || WORKFLOW_STATUS_META.not_started
+  const dependencyMeta = WORKFLOW_STATUS_META[selectedTask?.dependencySummary?.status] || WORKFLOW_STATUS_META.not_started
+  const completionReadiness = selectedTask?.completionReadiness || { canComplete: false, warnings: [] }
+  const activeFilterCount = [attentionFilter, phaseFilter, statusFilter].filter(Boolean).length
+  const navigatorFiltersActive = Boolean(search || attentionFilter || phaseFilter || statusFilter)
+  const actionSortOrder = ['mark_complete', 'mark_blocked', 'mark_waiting', 'mark_in_progress']
+  const primaryTaskActions = [...viewModel.availableActions.primary].sort(
+    (left, right) => {
+      const leftIndex = actionSortOrder.includes(left.id) ? actionSortOrder.indexOf(left.id) : actionSortOrder.length
+      const rightIndex = actionSortOrder.includes(right.id) ? actionSortOrder.indexOf(right.id) : actionSortOrder.length
+      return leftIndex - rightIndex
+    },
+  )
+  const statusFilterOptions = [
+    ['', 'All'],
+    ['open', 'Open'],
+    ['completed', 'Completed'],
+    ['blocked', 'Blocked'],
+    ['delayed', 'Delayed'],
+    ['overdue', 'Overdue'],
+    ['due_this_week', 'Due This Week'],
+    ['assigned_to_me', 'Assigned to Me'],
+    ['missing_documents', 'Missing Documents'],
+  ]
+
+  useEffect(() => {
+    if (!selectedTaskKey && selectedTask?.key) {
+      setSelectedTaskKey(selectedTask.key)
+    }
+  }, [selectedTask?.key, selectedTaskKey])
+
+  useEffect(() => {
+    const selectedPhaseKey = selectedTask?.phaseKey || currentPhase?.key
+    if (!selectedPhaseKey) return
+    setExpandedPhaseKeys((previous) => {
+      if (previous[selectedPhaseKey]) return previous
+      if (!Object.keys(previous).length) return { [selectedPhaseKey]: true }
+      return { ...previous, [selectedPhaseKey]: true }
+    })
+  }, [currentPhase?.key, selectedTask?.phaseKey])
+
+  useEffect(() => {
+    if (!navigatorFiltersActive || !viewModel.visibleTasks.length) return
+    const visiblePhaseKeys = new Set(viewModel.visibleTasks.map((task) => task.phaseKey))
+    setExpandedPhaseKeys((previous) => {
+      let changed = false
+      const next = { ...previous }
+      visiblePhaseKeys.forEach((keyValue) => {
+        if (!next[keyValue]) {
+          next[keyValue] = true
+          changed = true
+        }
+      })
+      return changed ? next : previous
+    })
+  }, [navigatorFiltersActive, viewModel.visibleTasks])
+
+  useEffect(() => {
+    selectedTaskButtonRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [selectedTask?.key, expandedPhaseKeys])
+
+  useEffect(() => {
+    if (!taskTabs.some((tab) => tab.key === activeTaskTab)) {
+      setActiveTaskTab('overview')
+    }
+  }, [activeTaskTab, taskTabs])
+
+  function togglePhase(phaseKey) {
+    setExpandedPhaseKeys((previous) => ({ ...previous, [phaseKey]: !previous[phaseKey] }))
+  }
+
+  function clearToolbarFilters() {
+    setAttentionFilter('')
+    setPhaseFilter('')
+    setStatusFilter('')
+    setSearch('')
+  }
+
+  function renderHighlightedText(value) {
+    const textValue = String(value || '')
+    const query = search.trim()
+    if (!query) return textValue
+    const start = textValue.toLowerCase().indexOf(query.toLowerCase())
+    if (start < 0) return textValue
+    const end = start + query.length
+    return (
+      <>
+        {textValue.slice(0, start)}
+        <mark className="rounded bg-amber-100 px-0.5 text-inherit">{textValue.slice(start, end)}</mark>
+        {textValue.slice(end)}
+      </>
+    )
+  }
+
+  function openStatusDraft(task, action = null) {
+    if (!task || !action || action.disabled || !canUpdateSteps) return
+    setStatusDraft({
+      open: true,
+      task,
+      actionId: action.id || '',
+      actionLabel: action.label || 'Update Status',
+      status: action?.status || (task.displayStatus === 'completed' ? 'completed' : 'in_progress'),
+      reason: '',
+      note: task.comment || '',
+      followUpDate: '',
+      linkedDocumentKey: '',
+      requiresReason: ['blocked', 'waiting'].includes(action?.status),
+      requiresNote: Boolean(action?.requiresNote),
+    })
+  }
+
+  function closeStatusDraft() {
+    setStatusDraft({
+      open: false,
+      task: null,
+      actionId: '',
+      actionLabel: '',
+      status: 'completed',
+      reason: '',
+      note: '',
+      followUpDate: '',
+      linkedDocumentKey: '',
+      requiresReason: false,
+      requiresNote: false,
+    })
+  }
+
+  function buildStatusDraftNote() {
+    const linkedDocument = selectedDocuments.find((document) => (document.id || document.key || document.sourceRequirementKey) === statusDraft.linkedDocumentKey)
+    return [
+      statusDraft.reason ? `Reason: ${statusDraft.reason.trim()}` : '',
+      statusDraft.note ? `Note: ${statusDraft.note.trim()}` : '',
+      statusDraft.followUpDate ? `Follow-up date: ${statusDraft.followUpDate}` : '',
+      linkedDocument ? `Linked document: ${linkedDocument.displayName || linkedDocument.label || linkedDocument.name || linkedDocument.sourceRequirementKey}` : '',
+    ].filter(Boolean).join('\n')
+  }
+
+  async function submitStatusDraft(event) {
+    event.preventDefault()
+    if (!statusDraft.task) return
+    const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
+    const updateSucceeded = await onUpdateStep?.(statusDraft.task, statusDraft.status, buildStatusDraftNote())
+    if (updateSucceeded === false) return
+    if (nextTaskKey) {
+      setSelectedTaskKey(nextTaskKey)
+      setExpandedPhaseKeys((previous) => ({ ...previous, [viewModel.nextActionableTask.phaseKey]: true }))
+      setActiveTaskTab('overview')
+    }
+    closeStatusDraft()
+  }
+
+  return (
+    <>
+      <section className="space-y-4">
+        <ArchlinePanel className="px-5 py-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(180px,0.22fr)_minmax(240px,0.28fr)_minmax(360px,1fr)_minmax(300px,0.34fr)] xl:items-center">
+            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
+              <span className="text-xs font-semibold text-slate-500">Current Phase</span>
+              <strong className="mt-1 block text-base font-semibold text-emerald-800">{currentPhase?.label || 'Transfer Workflow'}</strong>
+            </div>
+            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-slate-500">Overall Progress</span>
+                <strong className="text-xs font-semibold text-slate-700">{viewModel.progress.percent}%</strong>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-slate-950">{viewModel.progress.label}</p>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-emerald-700" style={{ width: `${viewModel.progress.percent}%` }} />
+              </div>
+            </div>
+            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
+              <span className="text-xs font-semibold text-slate-500">Needs Attention</span>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ['blocked', 'Blocked', viewModel.attention.blocked, 'bg-red-50 text-red-700 border-red-100'],
+                  ['overdue', 'Overdue', viewModel.attention.overdue, 'bg-orange-50 text-orange-700 border-orange-100'],
+                  ['due_this_week', 'Due This Week', viewModel.attention.dueThisWeek, 'bg-amber-50 text-amber-700 border-amber-100'],
+                  ['missing_documents', 'Missing Docs', viewModel.attention.missingDocuments, 'bg-blue-50 text-blue-700 border-blue-100'],
+                ].map(([keyValue, label, value, tone]) => (
+                  <button
+                    key={keyValue}
+                    type="button"
+                    className={`rounded-lg border px-3 py-2 text-left transition ${attentionFilter === keyValue ? 'ring-2 ring-emerald-700/20' : ''} ${tone}`}
+                    onClick={() => setAttentionFilter((previous) => previous === keyValue ? '' : keyValue)}
+                  >
+                    <strong className="block text-lg leading-none">{value}</strong>
+                    <span className="mt-1 block text-[0.7rem] font-semibold">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
+              <label className="relative min-w-0 flex-1 xl:max-w-[230px]">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Field value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks or sections" className="h-10 pl-9 text-sm" />
+              </label>
+              <Button type="button" variant={showFilters ? 'accent' : 'secondary'} size="sm" onClick={() => setShowFilters((previous) => !previous)}>
+                <Filter size={15} />
+                Filters
+                {activeFilterCount ? <span className="rounded-full bg-emerald-700 px-1.5 py-0.5 text-[0.68rem] text-white">{activeFilterCount}</span> : null}
+              </Button>
+              {activeFilterCount || search ? (
+                <Button type="button" variant="ghost" size="sm" onClick={clearToolbarFilters}>
+                  Reset Filters
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          {showFilters ? (
+            <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.34fr)]">
+              <div>
+                <span className="text-xs font-semibold text-slate-500">Phase</span>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {viewModel.phases.map((phase) => (
+                    <button
+                      key={phase.key}
+                      type="button"
+                      className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        phaseFilter === phase.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                      onClick={() => setPhaseFilter((previous) => previous === phase.key ? '' : phase.key)}
+                    >
+                      {phase.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-slate-500">Status</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {statusFilterOptions.map(([value, label]) => (
+                    <button
+                      key={value || 'all'}
+                      type="button"
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        statusFilter === value ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                      onClick={() => setStatusFilter(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </ArchlinePanel>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(280px,0.34fr)_minmax(0,1fr)_minmax(300px,0.34fr)]">
+          <aside className="space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-1">
+            <ArchlinePanel className="overflow-hidden">
+              <div className="border-b border-slate-200 px-4 py-4">
+                <h2 className="text-sm font-semibold text-slate-950">Workflow Navigator</h2>
+                <p className="mt-1 text-xs text-slate-500">{viewModel.visibleTasks.length} of {viewModel.tasks.length} tasks visible</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {viewModel.phases.map((phase, phaseIndex) => {
+                  const phaseTasks = phase.tasks.filter((task) => visibleTaskKeys.has(task.key))
+                  if (!phaseTasks.length) return null
+                  const phaseMeta = WORKFLOW_STATUS_META[phase.status] || WORKFLOW_STATUS_META.not_started
+                  const expanded = expandedPhaseKeys[phase.key] !== false && (expandedPhaseKeys[phase.key] || navigatorFiltersActive || phase.tasks.some((task) => task.key === selectedTask?.key))
+                  const selectedInPhase = phase.tasks.some((task) => task.key === selectedTask?.key)
+                  return (
+                    <section key={phase.key}>
+                      <button
+                        type="button"
+                        className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition ${selectedInPhase ? 'bg-emerald-50/70' : 'bg-slate-50 hover:bg-slate-100'}`}
+                        aria-expanded={expanded}
+                        onClick={() => togglePhase(phase.key)}
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-lg border bg-white ${phaseMeta.border} ${phaseMeta.text}`}>
+                            <ChevronRight size={15} className={`transition ${expanded ? 'rotate-90' : ''}`} />
+                          </span>
+                          <span className="min-w-0">
+                            <strong className="block truncate text-sm font-semibold text-slate-950">
+                              {String(phase.sequence || phaseIndex + 1).padStart(2, '0')}. {renderHighlightedText(phase.label)}
+                            </strong>
+                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span>{phase.completed} / {phase.total}</span>
+                              {phase.warningCount ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                                  <AlertTriangle size={11} />
+                                  {phase.warningCount}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="w-16 shrink-0 text-right">
+                          <span className={`inline-flex rounded-full border px-2 py-1 text-[0.68rem] font-semibold ${phaseMeta.border} ${phaseMeta.bg} ${phaseMeta.text}`}>
+                            {phase.percent}%
+                          </span>
+                          <span className="mt-1 block h-1 overflow-hidden rounded-full bg-slate-200">
+                            <span className="block h-full rounded-full bg-emerald-700" style={{ width: `${phase.percent}%` }} />
+                          </span>
+                        </span>
+                      </button>
+                      {expanded ? (
+                        <div className="space-y-1 px-3 py-2">
+                          {phaseTasks.map((task) => {
+                            const taskMeta = WORKFLOW_STATUS_META[task.displayStatus] || WORKFLOW_STATUS_META.not_started
+                            const active = selectedTask?.key === task.key
+                            const subdued = task.displayStatus === 'completed' && !active
+                            const taskWarnings = [
+                              task.isOverdue ? ['overdue', 'Overdue', 'text-red-700 bg-red-50 border-red-100'] : null,
+                              !task.isOverdue && task.isDueThisWeek ? ['due', 'Due soon', 'text-amber-700 bg-amber-50 border-amber-100'] : null,
+                              task.missingDocumentCount ? ['docs', `${task.missingDocumentCount} docs`, 'text-blue-700 bg-blue-50 border-blue-100'] : null,
+                            ].filter(Boolean)
+                            return (
+                              <button
+                                key={task.key}
+                                ref={active ? selectedTaskButtonRef : null}
+                                type="button"
+                                className={`flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition ${
+                                  active
+                                    ? 'bg-emerald-50 ring-1 ring-emerald-200'
+                                    : task.displayStatus === 'blocked'
+                                      ? 'bg-red-50/50 hover:bg-red-50'
+                                      : 'hover:bg-slate-50'
+                                }`}
+                                onClick={() => {
+                                  setSelectedTaskKey(task.key)
+                                  setExpandedPhaseKeys((previous) => ({ ...previous, [task.phaseKey]: true }))
+                                  setActiveTaskTab('overview')
+                                }}
+                              >
+                                <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-white ${taskMeta.border} ${taskMeta.text}`}>
+                                  {task.displayStatus === 'completed' ? <CheckCircle2 size={13} /> : task.displayStatus === 'blocked' ? <AlertTriangle size={12} /> : task.displayStatus === 'waiting' ? <Clock3 size={12} /> : null}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <strong className={`block text-sm font-semibold ${subdued ? 'text-slate-500' : 'text-slate-950'}`}>{renderHighlightedText(task.label)}</strong>
+                                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    <span className={`text-xs font-medium ${taskMeta.text}`}>{taskMeta.label}</span>
+                                    {taskWarnings.map(([keyValue, label, tone]) => (
+                                      <span key={keyValue} className={`rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${tone}`}>
+                                        {label}
+                                      </span>
+                                    ))}
+                                  </span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </section>
+                  )
+                })}
+                {!viewModel.visibleTasks.length ? <p className="px-4 py-8 text-sm text-slate-500">No tasks match this filter.</p> : null}
+              </div>
+            </ArchlinePanel>
+          </aside>
+
+          <main className="min-w-0 space-y-4">
+            <ArchlinePanel className="overflow-hidden">
+              <div className="px-5 py-5">
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Current Task</span>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950">{selectedTask?.label || 'Transfer Workflow'}</h2>
+                    <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                      {statusMeta.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{selectedTask?.description || 'Select a workflow task to review the required action.'}</p>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Current Status', statusMeta.label, <span key="status" className={`inline-block size-2 rounded-full ${statusMeta.dot}`} />],
+                    ['Assignee', selectedTask?.ownerLabel || workflow?.assignedDisplay || 'Matter team', <UserRound key="assignee" size={15} className="text-slate-500" />],
+                    ['Due Date', formatDate(selectedTask?.dueDate, 'Not set'), <CalendarDays key="due" size={15} className="text-slate-500" />],
+                    ['Dependencies', selectedTask?.dependencySummary?.label || 'Dependencies clear', <span key="dependency" className={`inline-block size-2 rounded-full ${dependencyMeta.dot}`} />],
+                  ].map(([label, value, icon]) => (
+                    <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                      <span className="text-xs font-semibold text-slate-500">{label}</span>
+                      <strong className="mt-1 flex min-h-6 items-center gap-2 text-sm font-semibold text-slate-950">
+                        {icon}
+                        <span className="min-w-0 truncate">{value}</span>
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+
+                {!completionReadiness.canComplete && completionReadiness.warnings?.length ? (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-700" />
+                      <div>
+                        <strong className="block text-sm font-semibold text-amber-900">Completion requirements still need attention</strong>
+                        <p className="mt-1 text-sm leading-6 text-amber-800">{completionReadiness.warnings.slice(0, 2).join(' ')}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-slate-200 px-5 py-4">
+                {primaryTaskActions.map((action) => (
+                  <Button
+                    key={action.id}
+                    type="button"
+                    variant={action.status === 'completed' ? 'primary' : 'secondary'}
+                    size="sm"
+                    disabled={saving || action.disabled}
+                    title={action.reason || ''}
+                    onClick={() => openStatusDraft(selectedTask, action)}
+                  >
+                    {action.status === 'completed' ? <CheckCircle2 size={15} /> : null}
+                    {action.status === 'blocked' ? <AlertTriangle size={15} /> : null}
+                    {action.label}
+                  </Button>
+                ))}
+                {viewModel.availableActions.unsupported.map((action) => (
+                  <Button key={action.id} type="button" variant="ghost" size="sm" disabled title={action.reason}>
+                    {action.label}
+                  </Button>
+                ))}
+                <Button type="button" variant="ghost" size="sm" onClick={onAddNote}>
+                  <MoreHorizontal size={15} />
+                </Button>
+              </div>
+
+              <div className="border-t border-slate-200">
+                <div className="flex gap-6 overflow-x-auto px-5 pt-4">
+                  {taskTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      className={`shrink-0 border-b-2 px-1 pb-3 text-sm font-semibold ${activeTaskTab === tab.key ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                      onClick={() => setActiveTaskTab(tab.key)}
+                    >
+                      {tab.label}
+                      {typeof tab.count === 'number' ? <span className="ml-1 text-xs text-slate-400">{tab.count}</span> : null}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 px-5 py-5 lg:grid-cols-2">
+                  {activeTaskTab === 'overview' ? (
+                    <>
+                      <section className="rounded-lg border border-slate-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-slate-950">Summary & Instructions</h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{selectedTask?.description || 'No task description is configured.'}</p>
+                        {selectedTask?.readinessGate?.label ? (
+                          <div className="mt-4 inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                            {selectedTask.readinessGate.label}
+                          </div>
+                        ) : null}
+                      </section>
+                      <section className="rounded-lg border border-slate-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-slate-950">Dependencies</h3>
+                        <div className="mt-2 rounded-lg bg-slate-50 px-3 py-3">
+                          <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${dependencyMeta.border} ${dependencyMeta.bg} ${dependencyMeta.text}`}>
+                            {selectedTask?.dependencySummary?.label || 'Dependencies clear'}
+                          </span>
+                          {selectedTask?.dependencySummary?.blockers?.length ? (
+                            <div className="mt-3 space-y-2">
+                              {selectedTask.dependencySummary.blockers.map((task) => (
+                                <div key={task.key} className="flex items-center justify-between gap-3 text-sm">
+                                  <span className="min-w-0 truncate text-slate-700">{task.label}</span>
+                                  <span className="shrink-0 text-xs font-semibold text-amber-700">{task.statusLabel}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                      <section className="rounded-lg border border-slate-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-slate-950">Completion Conditions</h3>
+                        <div className="mt-3 space-y-2">
+                          {(selectedTask?.evidenceRequirements || []).slice(0, 4).map((item) => (
+                            <div key={item} className="flex items-start gap-2 text-sm text-slate-600">
+                              <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-700" />
+                              <span>{item}</span>
+                            </div>
+                          ))}
+                          {completionReadiness.warnings?.slice(0, 3).map((item) => (
+                            <div key={item} className="flex items-start gap-2 text-sm text-amber-800">
+                              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                              <span>{item}</span>
+                            </div>
+                          ))}
+                          {!selectedTask?.evidenceRequirements?.length && !completionReadiness.warnings?.length ? <p className="text-sm text-slate-500">No completion conditions are configured.</p> : null}
+                        </div>
+                      </section>
+                      <section className="rounded-lg border border-slate-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-slate-950">Linked Parties & Metadata</h3>
+                        <div className="mt-3 divide-y divide-slate-100">
+                          {(viewModel.selectedTaskContext.parties || []).slice(0, 3).map((item) => (
+                            <div key={`${item.label || item.role}-${item.value || item.name}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                              <span className="text-slate-600">{item.label || item.role}</span>
+                              <strong className="text-right font-medium text-slate-950">{item.value || item.name || 'Pending'}</strong>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between gap-3 py-2 text-sm">
+                            <span className="text-slate-600">Phase</span>
+                            <strong className="text-right font-medium text-slate-950">{selectedTask?.phaseLabel || 'Transfer'}</strong>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 py-2 text-sm">
+                            <span className="text-slate-600">Visibility</span>
+                            <strong className="text-right font-medium text-slate-950">{toTitle(selectedTask?.defaultVisibility || 'professional_shared')}</strong>
+                          </div>
+                        </div>
+                      </section>
+                    </>
+                  ) : activeTaskTab === 'checklist' ? (
+                    <section className="lg:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-950">Checklist</h3>
+                          <p className="mt-1 text-sm text-slate-500">Checklist rows are derived from configured task requirements. No per-item toggle mutation exists yet.</p>
+                        </div>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">Read-only</span>
+                      </div>
+                      <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                        {checklistItems.map((item) => (
+                          <div key={item.id} className="flex items-start gap-3 px-4 py-3">
+                            <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded border ${item.complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-400'}`}>
+                              {item.complete ? <CheckCircle2 size={13} /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <strong className="block text-sm font-semibold text-slate-950">{item.label}</strong>
+                              <span className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span>{toTitle(item.type)}</span>
+                                <span>{item.required ? 'Required' : 'Optional'}</span>
+                                {!item.persisted ? <span>Configured requirement</span> : null}
+                              </span>
+                              {item.description ? <span className="mt-1 block text-xs text-slate-500">{item.description}</span> : null}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ) : activeTaskTab === 'documents' ? (
+                    <section className="lg:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-950">Task Documents</h3>
+                          <p className="mt-1 text-sm text-slate-500">These documents are matched to this task from configured document requirements and uploaded matter documents.</p>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" onClick={onUploadDocument}>
+                          <Upload size={14} />
+                          Upload
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {selectedDocuments.map((document) => (
+                          <article key={document.id || document.sourceRequirementKey} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
+                            <span className="min-w-0">
+                              <strong className="block truncate text-sm font-semibold text-slate-950">{document.displayName || document.label || document.name || toTitle(document.sourceRequirementKey)}</strong>
+                              <span className="mt-1 block text-xs text-slate-500">{document.sourceRequirementKey || 'Requirement'}</span>
+                            </span>
+                            <span className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(document.status)}`}>
+                              {getDocumentCommandStatusLabel(document.status)}
+                            </span>
+                          </article>
+                        ))}
+                        {!selectedDocuments.length ? <p className="text-sm text-slate-500">No documents are mapped to this task.</p> : null}
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" className="mt-3" onClick={onOpenDocuments}>
+                        Open Document Library
+                      </Button>
+                    </section>
+                  ) : activeTaskTab === 'notes' ? (
+                    <section className="lg:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-950">Notes</h3>
+                          <p className="mt-1 text-sm text-slate-500">Internal and shared notes are shown from the existing matter activity feed.</p>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" onClick={onAddNote}>
+                          <MessageSquarePlus size={15} />
+                          Add Note
+                        </Button>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {taskNotes.map((entry) => (
+                          <article key={entry.id} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <strong className="text-sm font-semibold text-slate-950">{entry.title || 'Matter note'}</strong>
+                              <span className={`rounded-full px-2 py-1 text-[0.68rem] font-semibold ${entry.internal ? 'bg-slate-900 text-white' : 'bg-emerald-50 text-emerald-800'}`}>
+                                {entry.visibilityLabel}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">{entry.body || entry.message || 'Note recorded.'}</p>
+                            <span className="mt-3 block text-xs text-slate-500">{entry.authorName || entry.actor || 'Matter team'} · {formatDateTime(entry.createdAt || entry.timestamp, '')}</span>
+                          </article>
+                        ))}
+                        {!taskNotes.length ? <p className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">No notes are linked to this task yet.</p> : null}
+                      </div>
+                    </section>
+                  ) : activeTaskTab === 'activity' ? (
+                    <section className="lg:col-span-2">
+                      <h3 className="text-sm font-semibold text-slate-950">Task Activity</h3>
+                      <div className="mt-3 space-y-3">
+                        {taskActivity.map((entry) => (
+                          <article key={entry.id} className="flex gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                            <span className="mt-1 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
+                              {String(entry.authorName || entry.actor || 'TM').slice(0, 2).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <strong className="block text-sm font-semibold text-slate-950">{entry.title || entry.label || 'Matter update'}</strong>
+                              <span className="mt-1 block text-sm leading-6 text-slate-600">{entry.body || entry.message || 'Activity recorded.'}</span>
+                              <span className="mt-2 block text-xs text-slate-500">{entry.authorName || entry.actor || 'Matter team'} · {formatDateTime(entry.createdAt || entry.timestamp, '')}</span>
+                            </span>
+                          </article>
+                        ))}
+                        {!taskActivity.length ? <p className="text-sm text-slate-500">No activity is linked to this task yet.</p> : null}
+                      </div>
+                    </section>
+                  ) : (
+                    <p className="lg:col-span-2 text-sm text-slate-500">This task section is not available for the selected task.</p>
+                  )}
+                </div>
+              </div>
+            </ArchlinePanel>
+          </main>
+
+          <aside className="space-y-4 xl:max-h-[calc(100vh-230px)] xl:overflow-y-auto xl:pr-1">
+            <ArchlinePanel
+              title="Required Documents"
+              action={<span className={`text-xs font-semibold ${documentSummary.missing ? 'text-amber-700' : 'text-emerald-700'}`}>{documentSummary.label}</span>}
+              className="p-4"
+            >
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {[
+                  ['Required', documentSummary.required],
+                  ['Received', documentSummary.received],
+                  ['Missing', documentSummary.missing],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center">
+                    <strong className="block text-base font-semibold text-slate-950">{value}</strong>
+                    <span className="mt-0.5 block text-[0.68rem] font-semibold text-slate-500">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {selectedDocuments.slice(0, 6).map((document) => (
+                  <article key={document.id || document.sourceRequirementKey} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
+                    <FileText size={15} className={`mt-0.5 shrink-0 ${document.ready ? 'text-emerald-700' : 'text-amber-700'}`} />
+                    <div className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{document.displayName || document.label || document.name || toTitle(document.sourceRequirementKey)}</strong>
+                      <span className={`mt-1 inline-flex rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(document.status)}`}>
+                        {getDocumentCommandStatusLabel(document.status)}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+                {!selectedDocuments.length ? <p className="text-sm text-slate-500">No required documents are mapped to this task.</p> : null}
+              </div>
+              <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={onUploadDocument}>
+                <Upload size={14} />
+                Upload Document
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="mt-2 w-full justify-center" onClick={onOpenDocuments}>
+                Open Document Library
+              </Button>
+            </ArchlinePanel>
+
+            <ArchlinePanel title="Key Dates" className="p-4">
+              <div className="divide-y divide-slate-100">
+                {(viewModel.selectedTaskContext.keyDates || []).slice(0, 6).map((item) => (
+                  <div key={item.key || item.label} className="flex items-center justify-between gap-3 py-3 text-sm">
+                    <span className="text-slate-600">{item.label}</span>
+                    <strong className="text-right font-medium text-slate-950">{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </ArchlinePanel>
+
+            <ArchlinePanel title="Parties" className="p-4">
+              <div className="divide-y divide-slate-100">
+                {(viewModel.selectedTaskContext.parties || []).slice(0, 4).map((item) => (
+                  <button
+                    key={`${item.label || item.role}-${item.value || item.name}`}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 py-3 text-left text-sm transition hover:text-emerald-800"
+                    onClick={() => onOpenParties?.(item)}
+                    disabled={!onOpenParties}
+                  >
+                    <span className="flex items-center gap-2 text-slate-600">
+                      <UserRound size={15} />
+                      {item.label || item.role}
+                    </span>
+                    <strong className="text-right font-medium text-slate-950">{item.value || item.name || 'Pending'}</strong>
+                  </button>
+                ))}
+              </div>
+            </ArchlinePanel>
+          </aside>
+        </section>
+      </section>
+
+      <Modal
+        open={canUpdateSteps && statusDraft.open}
+        title={statusDraft.actionLabel || 'Update Task Status'}
+        onClose={closeStatusDraft}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={closeStatusDraft}>Cancel</Button>
+            <Button
+              type="submit"
+              form="archline-transfer-status-update-form"
+              disabled={saving || (statusDraft.requiresReason && !statusDraft.reason.trim()) || (statusDraft.requiresNote && !statusDraft.note.trim())}
+            >
+              {saving ? 'Updating...' : 'Update Status'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="archline-transfer-status-update-form" onSubmit={submitStatusDraft} className="space-y-4">
+          <div>
+            <span className="text-xs font-medium text-slate-500">Task</span>
+            <strong className="mt-1 block text-sm font-semibold text-slate-950">{statusDraft.task?.label || 'Workflow task'}</strong>
+          </div>
+          {statusDraft.requiresReason ? (
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Reason <span className="text-red-600">*</span>
+              <Field
+                value={statusDraft.reason}
+                onChange={(event) => setStatusDraft((previous) => ({ ...previous, reason: event.target.value }))}
+                placeholder={statusDraft.status === 'blocked' ? 'What is blocking this task?' : 'What are we waiting for?'}
+              />
+            </label>
+          ) : null}
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Notes {statusDraft.requiresNote ? <span className="text-red-600">*</span> : null}
+            <textarea
+              rows={4}
+              value={statusDraft.note}
+              onChange={(event) => setStatusDraft((previous) => ({ ...previous, note: event.target.value }))}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-700"
+              placeholder="Add notes about the status update..."
+            />
+          </label>
+          {['blocked', 'waiting'].includes(statusDraft.status) ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Follow-up date
+                <Field
+                  type="date"
+                  value={statusDraft.followUpDate}
+                  onChange={(event) => setStatusDraft((previous) => ({ ...previous, followUpDate: event.target.value }))}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Linked document
+                <select
+                  value={statusDraft.linkedDocumentKey}
+                  onChange={(event) => setStatusDraft((previous) => ({ ...previous, linkedDocumentKey: event.target.value }))}
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+                >
+                  <option value="">No linked document</option>
+                  {selectedDocuments.map((document) => {
+                    const documentKey = document.id || document.key || document.sourceRequirementKey
+                    return (
+                      <option key={documentKey} value={documentKey}>
+                        {document.displayName || document.label || document.name || toTitle(document.sourceRequirementKey)}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            </div>
+          ) : null}
+          <p className="text-xs text-slate-500">This update will use the existing attorney workflow status mutation and activity flow.</p>
+        </form>
+      </Modal>
+    </>
+  )
+}
+
 function ArchlineDocumentsWorkspace({
   documentHealthSummary = {},
+  categorySummaries = [],
   requiredRows = [],
   libraryRows = [],
   missingRows = [],
@@ -6022,202 +6867,438 @@ function ArchlineDocumentsWorkspace({
   onReplace,
   onReview,
 }) {
+  const categoryIcons = {
+    buyer: UserRound,
+    seller: UserCircle,
+    finance: CircleDollarSign,
+    transfer: Workflow,
+    bond: Landmark,
+    cancellation: AlertTriangle,
+    general: FileText,
+  }
   const kpis = [
     ['Required', documentHealthSummary.requiredCount || requiredRows.length || 0, FileText, 'bg-blue-50 text-blue-700'],
     ['Received', documentHealthSummary.uploadedCount || 0, Upload, 'bg-emerald-50 text-emerald-700'],
     ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
     ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
   ]
+  const [activeCategoryGroup, setActiveCategoryGroup] = useState('all')
+  const systemCategoryKeys = ['buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'general']
+  const activeCategorySummary = systemCategoryKeys.includes(activeFilter)
+    ? categorySummaries.find((category) => category.key === activeFilter)
+    : null
+  const categoryGroupSummaries = activeCategorySummary?.groupSummaries || []
+  const visibleLibraryRows = activeCategoryGroup === 'all'
+    ? libraryRows
+    : libraryRows.filter((row) => row.categoryGroup === activeCategoryGroup)
+
+  useEffect(() => {
+    setActiveCategoryGroup('all')
+  }, [activeFilter])
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
-      <div className="space-y-4">
-        <ArchlinePanel title="Document Readiness" className="p-4">
-          <div className="grid gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:items-center">
-            <div className="mx-auto grid size-36 place-items-center rounded-full" style={{ background: `conic-gradient(#087b4b ${documentHealthSummary.score || 0}%, #e8edf2 0)` }}>
-              <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
-                <div>
-                  <strong className="block text-3xl font-semibold text-slate-950">{documentHealthSummary.score || 0}%</strong>
-                  <span className="text-xs font-semibold text-slate-500">{documentHealthSummary.scoreLabel || 'Ready'}</span>
-                </div>
-              </div>
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-2xl font-semibold tracking-[-0.02em] text-slate-950">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                {documentHealthSummary.submissionReady
-                  ? 'All critical requirements are in place. Keep reviewing incoming uploads as the matter moves.'
-                  : 'Clear the missing or rejected requirements before this matter can move cleanly to the next stage.'}
-              </p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {kpis.map(([label, value, Icon, tone]) => (
-                  <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <span className={`inline-flex size-9 items-center justify-center rounded-lg ${tone}`}>
-                      {createElement(Icon, { size: 16 })}
+    <section className="space-y-4">
+      {categorySummaries.length ? (
+        <ArchlinePanel title="Document Category Overview" className="p-4">
+          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+            {categorySummaries.map((category) => {
+              const Icon = categoryIcons[category.key] || FileText
+              const active = activeFilter === category.key
+              return (
+                <button
+                  key={category.key}
+                  type="button"
+                  className={`rounded-lg border p-4 text-left transition ${
+                    active
+                      ? 'border-emerald-700 bg-emerald-50 shadow-[0_12px_26px_rgba(8,123,75,0.10)]'
+                      : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40'
+                  }`}
+                  aria-pressed={active}
+                  onClick={() => onFilterChange?.(category.key)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <Icon size={16} />
                     </span>
-                    <strong className="mt-3 block text-xl font-semibold text-slate-950">{value}</strong>
-                    <span className="text-xs font-medium text-slate-500">{label}</span>
-                  </article>
+                    <span className="text-right text-xs font-semibold text-slate-500">{category.requiredCount} required</span>
+                  </div>
+                  <strong className="mt-3 block text-sm font-semibold text-slate-950">{category.label}</strong>
+                  <span className="mt-1 block text-xs font-semibold text-slate-500">
+                    {category.totalDocuments} document{category.totalDocuments === 1 ? '' : 's'}
+                  </span>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs" aria-label={`${category.label} status summary`}>
+                    <span className="font-semibold text-emerald-700">{category.verifiedCount} Verified</span>
+                    <span className="font-semibold text-amber-700">{category.pendingReviewCount} Pending Review</span>
+                    <span className="font-semibold text-red-700">{category.missingCount} Missing</span>
+                    <span className="font-semibold text-blue-700">{category.uploadedOrUnreviewedCount ?? category.uploadedCount} Uploaded</span>
+                  </div>
+                  {category.groupSummaries?.length ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5 text-[0.68rem] font-semibold text-slate-500" aria-label={`${category.label} category groups`}>
+                      {category.groupSummaries.slice(0, 3).map((group) => (
+                        <span key={group.key} className="rounded-md bg-slate-100 px-2 py-1">{group.label} ({group.count})</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200" aria-label={`${category.progressPercent}% complete`}>
+                    <div className="h-full rounded-full bg-emerald-700" style={{ width: `${category.progressPercent}%` }} />
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </ArchlinePanel>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
+        <div className="space-y-4">
+          <ArchlinePanel title="Document Toolbar" className="p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(260px,0.34fr)_minmax(0,1fr)_auto] lg:items-center">
+              <label className="relative min-w-0">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
+                {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
+                    onClick={() => onFilterChange?.(filter.key)}
+                  >
+                    {filter.label}
+                  </button>
                 ))}
               </div>
-            </div>
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Required Documents" className="overflow-hidden">
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Document</th>
-                  <th className="px-4 py-3">Owner</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {requiredRows.slice(0, 8).map((row) => {
-                  const document = row.linkedDocument || row.raw || {}
-                  return (
-                    <tr key={row.id}>
-                      <td className="px-4 py-4">
-                        <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                        <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel || row.category || 'Requirement'}</span>
-                      </td>
-                      <td className="px-4 py-4 text-slate-700">{row.requiredParty || 'Matter team'}</td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                          {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end gap-2">
-                          {row.fileUrl ? (
-                            <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">View</a>
-                          ) : (
-                            <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                              Upload
-                            </Button>
-                          )}
-                          {row.fileUrl ? (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
-                              Replace
-                            </Button>
-                          ) : null}
-                          {row.fileUrl && onReview ? (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => onReview('approve', document, row.requirement || row.requiredDocument)}>
-                              Approve
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="grid gap-3 p-4 md:hidden">
-            {requiredRows.slice(0, 8).map((row) => (
-              <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                    <span className="mt-1 block text-xs text-slate-500">{row.requiredParty || 'Matter team'}</span>
-                  </div>
-                  <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                    {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
-                  </span>
-                </div>
-                <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onUploadRequirement?.(row)}>
-                  {row.fileUrl ? 'Replace' : 'Upload'}
+              <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                <Button type="button" variant="secondary" size="sm" onClick={onRequest}>
+                  <FileText size={14} />
+                  Request
                 </Button>
-              </article>
-            ))}
-          </div>
-        </ArchlinePanel>
+                <Button type="button" size="sm" onClick={onUpload}>
+                  <Upload size={14} />
+                  Upload
+                </Button>
+              </div>
+            </div>
+          </ArchlinePanel>
 
-        <ArchlinePanel title="Document Library" className="overflow-hidden">
-          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+          {categoryGroupSummaries.length > 1 ? (
+            <ArchlinePanel title="Category Groups" className="p-4">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 <button
-                  key={filter.key}
                   type="button"
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
-                  onClick={() => onFilterChange?.(filter.key)}
+                  className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
+                    activeCategoryGroup === 'all'
+                      ? 'border-emerald-700 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
+                  }`}
+                  aria-pressed={activeCategoryGroup === 'all'}
+                  onClick={() => setActiveCategoryGroup('all')}
                 >
-                  {filter.label}
+                  <span className="block">{activeCategorySummary?.shortLabel || activeCategorySummary?.label || 'Category'}</span>
+                  <span className="mt-1 block font-medium text-slate-500">{libraryRows.length} document{libraryRows.length === 1 ? '' : 's'}</span>
                 </button>
+                {categoryGroupSummaries.map((group) => (
+                  <button
+                    key={group.key}
+                    type="button"
+                    className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
+                      activeCategoryGroup === group.key
+                        ? 'border-emerald-700 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
+                    }`}
+                    aria-pressed={activeCategoryGroup === group.key}
+                    onClick={() => setActiveCategoryGroup(group.key)}
+                  >
+                    <span className="block">{group.label}</span>
+                    <span className="mt-1 block font-medium text-slate-500">{group.count} document{group.count === 1 ? '' : 's'}</span>
+                    <span className="mt-1 block font-medium text-slate-500">{group.verifiedCount} verified - {group.missingCount} missing</span>
+                  </button>
+                ))}
+              </div>
+            </ArchlinePanel>
+          ) : null}
+
+          <ArchlinePanel title="Document Library" className="overflow-hidden">
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[1120px] text-left text-sm">
+                <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Document</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Document Type</th>
+                    <th className="px-4 py-3">Party / Owner</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Uploaded</th>
+                    <th className="px-4 py-3">Linked To</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleLibraryRows.slice(0, 12).map((row) => {
+                    const document = row.raw || {}
+                    const canUploadRow = !row.fileUrl && (row.source === 'requirement' || row.source === 'document_request')
+                    const isPendingReview = row.status === 'pending_review'
+                    const ownerLabel = row.ownerLabel || row.requiredParty || row.uploadedBy || 'Matter team'
+                    const linkedToLabel = row.linkedToLabel || row.relatedWorkflow || row.requiredDocumentKey || 'Matter library'
+                    const documentMeta = [row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')
+                    const moreActionsLabel = row.fileUrl
+                      ? 'More document actions: preview, verify, reject, replace, upload new version, link to task, change category, add tag, rename, request replacement, mark not applicable, archive, delete'
+                      : 'More document actions: upload, request replacement, link to task, change category, add tag, rename, mark not applicable, archive, delete'
+                    return (
+                      <tr key={row.id}>
+                        <td className="max-w-[340px] px-4 py-4">
+                          <div className="flex items-start gap-3">
+                            <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                              <FileText size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                                <button
+                                  type="button"
+                                  className={`shrink-0 rounded-full p-1 ${row.isFavourite ? 'text-amber-500' : 'text-slate-300 hover:text-amber-500'}`}
+                                  aria-label={row.isFavourite ? 'Favourite document' : 'Mark document as favourite'}
+                                  title={row.isFavourite ? 'Favourite document' : 'Mark document as favourite'}
+                                >
+                                  <Star size={14} fill={row.isFavourite ? 'currentColor' : 'none'} />
+                                </button>
+                              </div>
+                              <span className="mt-1 block truncate text-xs text-slate-500">{documentMeta || row.requiredDocumentKey || row.source || 'Matter document'}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">{row.categoryLabel || getDocumentCommandCategoryLabel(row.category)}</td>
+                        <td className="px-4 py-4 text-slate-700">{row.documentTypeLabel || row.documentType || 'Document'}</td>
+                        <td className="px-4 py-4">
+                          <span className="block text-slate-700">{ownerLabel}</span>
+                          {row.uploadedBy && row.uploadedBy !== ownerLabel ? <span className="mt-1 block text-xs text-slate-500">Uploaded by {row.uploadedBy}</span> : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                            {getDocumentCommandStatusLabel(row.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">{formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</td>
+                        <td className="max-w-[180px] px-4 py-4">
+                          <span className="block truncate text-slate-700">{linkedToLabel}</span>
+                          {row.priority ? <span className="mt-1 block text-xs text-slate-500">{row.priority} priority</span> : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end gap-1.5">
+                            {row.fileUrl ? (
+                              <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a>
+                            ) : null}
+                            {canUploadRow ? (
+                              <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                                Upload
+                              </Button>
+                            ) : null}
+                            {isPendingReview && row.fileUrl && onReview ? (
+                              <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', document, row.requiredDocument)}>
+                                Verify
+                              </Button>
+                            ) : null}
+                            {row.fileUrl ? (
+                              <a href={row.fileUrl} download className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700" title="Download document" aria-label={`Download ${row.displayName}`}>
+                                <Download size={14} />
+                              </a>
+                            ) : null}
+                            {row.fileUrl ? (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requiredDocument)}>
+                                Replace
+                              </Button>
+                            ) : null}
+                            <button type="button" className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50" title={moreActionsLabel} aria-label={`More document actions for ${row.displayName}`}>
+                              <MoreHorizontal size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {!visibleLibraryRows.length ? (
+                    <tr>
+                      <td colSpan="8" className="px-4 py-8 text-center text-sm text-slate-500">No documents match this filter.</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-3 p-4 md:hidden">
+              {visibleLibraryRows.slice(0, 12).map((row) => (
+                <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText size={15} className="shrink-0 text-slate-500" />
+                        <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                        <Star size={13} className={row.isFavourite ? 'shrink-0 text-amber-500' : 'shrink-0 text-slate-300'} fill={row.isFavourite ? 'currentColor' : 'none'} />
+                      </div>
+                      <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel} - {row.documentTypeLabel || 'Document'}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{row.ownerLabel || row.requiredParty || row.uploadedBy || 'Matter team'} - {row.linkedToLabel || row.relatedWorkflow || 'Matter library'}</span>
+                      {row.versionLabel || row.fileSizeLabel ? <span className="mt-1 block text-xs text-slate-500">{[row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')}</span> : null}
+                    </div>
+                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                      {getDocumentCommandStatusLabel(row.status)}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a> : null}
+                    {!row.fileUrl ? (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                        Upload
+                      </Button>
+                    ) : null}
+                    {row.status === 'pending_review' && row.fileUrl && onReview ? (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', row.raw || {}, row.requiredDocument)}>
+                        Verify
+                      </Button>
+                    ) : null}
+                    {row.fileUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(row.raw || {}, row.requiredDocument)}>Replace</Button> : null}
+                    <button type="button" className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600" title="More document actions" aria-label={`More document actions for ${row.displayName}`}>
+                      <MoreHorizontal size={15} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {!visibleLibraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Required Documents" className="overflow-hidden">
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Document</th>
+                    <th className="px-4 py-3">Owner</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {requiredRows.slice(0, 8).map((row) => {
+                    const document = row.linkedDocument || row.raw || {}
+                    return (
+                      <tr key={row.id}>
+                        <td className="px-4 py-4">
+                          <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                          <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel || row.category || 'Requirement'}</span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-700">{row.requiredParty || 'Matter team'}</td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                            {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end gap-2">
+                            {row.fileUrl ? (
+                              <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">View</a>
+                            ) : (
+                              <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                                Upload
+                              </Button>
+                            )}
+                            {row.fileUrl ? (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
+                                Replace
+                              </Button>
+                            ) : null}
+                            {row.fileUrl && onReview ? (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => onReview('approve', document, row.requirement || row.requiredDocument)}>
+                                Approve
+                              </Button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-3 p-4 md:hidden">
+              {requiredRows.slice(0, 8).map((row) => (
+                <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                      <span className="mt-1 block text-xs text-slate-500">{row.requiredParty || 'Matter team'}</span>
+                    </div>
+                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                      {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+                    </span>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onUploadRequirement?.(row)}>
+                    {row.fileUrl ? 'Replace' : 'Upload'}
+                  </Button>
+                </article>
               ))}
             </div>
-            <label className="relative min-w-[220px]">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
-            </label>
-          </div>
-          <div className="divide-y divide-slate-100 border-t border-slate-200">
-            {libraryRows.slice(0, 12).map((row) => (
-              <article key={row.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                  <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel} · {formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                    {getDocumentCommandStatusLabel(row.status)}
+          </ArchlinePanel>
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <ArchlinePanel title="Document Overview" className="p-4">
+            <strong className="block text-lg font-semibold text-slate-950">{documentHealthSummary.score || 0}% {documentHealthSummary.scoreLabel || 'Ready'}</strong>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {kpis.map(([label, value, Icon, tone]) => (
+                <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <span className={`inline-flex size-8 items-center justify-center rounded-lg ${tone}`}>
+                    {createElement(Icon, { size: 15 })}
                   </span>
-                  {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-800">View</a> : null}
-                </div>
-              </article>
-            ))}
-            {!libraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
-          </div>
-        </ArchlinePanel>
+                  <strong className="mt-2 block text-lg font-semibold text-slate-950">{value}</strong>
+                  <span className="text-xs font-medium text-slate-500">{label}</span>
+                </article>
+              ))}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Quick Actions" className="p-4">
+            <div className="grid gap-2">
+              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onUpload}>
+                <Upload size={14} />
+                Upload Document
+              </Button>
+              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onRequest}>
+                <FileText size={14} />
+                Request Document
+              </Button>
+              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onFilterChange?.('missing')}>
+                <AlertTriangle size={14} />
+                View Missing
+              </Button>
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Missing Documents" className="p-4">
+            <div className="space-y-2">
+              {missingRows.slice(0, 5).map((row) => (
+                <button key={row.id} type="button" className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-left" onClick={() => onUploadRequirement?.(row)}>
+                  <strong className="block text-sm font-semibold text-amber-950">{row.displayName}</strong>
+                  <span className="mt-1 block text-xs text-amber-800">{row.requiredParty || 'Matter team'}</span>
+                </button>
+              ))}
+              {!missingRows.length ? <p className="text-sm text-slate-500">No critical missing documents.</p> : null}
+            </div>
+          </ArchlinePanel>
+
+          <ArchlinePanel title="Recent Activity" className="p-4">
+            <div className="space-y-2">
+              {recentActivity.slice(0, 5).map((row) => (
+                <article key={row.id} className="rounded-lg bg-slate-50 p-3">
+                  <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
+                  <span className="mt-1 block text-xs text-slate-500">{formatDateTime(row.timestamp, '')}</span>
+                </article>
+              ))}
+              {!recentActivity.length ? <p className="text-sm text-slate-500">No document activity yet.</p> : null}
+            </div>
+          </ArchlinePanel>
+        </aside>
       </div>
-
-      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <ArchlinePanel title="Quick Actions" className="p-4">
-          <div className="grid gap-2">
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onUpload}>
-              <Upload size={14} />
-              Upload Document
-            </Button>
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onRequest}>
-              <FileText size={14} />
-              Request Document
-            </Button>
-            <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onFilterChange?.('missing')}>
-              <AlertTriangle size={14} />
-              View Missing
-            </Button>
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Outstanding Items" className="p-4">
-          <div className="space-y-2">
-            {missingRows.slice(0, 5).map((row) => (
-              <button key={row.id} type="button" className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-left" onClick={() => onUploadRequirement?.(row)}>
-                <strong className="block text-sm font-semibold text-amber-950">{row.displayName}</strong>
-                <span className="mt-1 block text-xs text-amber-800">{row.requiredParty || 'Matter team'}</span>
-              </button>
-            ))}
-            {!missingRows.length ? <p className="text-sm text-slate-500">No critical missing documents.</p> : null}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Recent Activity" className="p-4">
-          <div className="space-y-2">
-            {recentActivity.slice(0, 5).map((row) => (
-              <article key={row.id} className="rounded-lg bg-slate-50 p-3">
-                <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
-                <span className="mt-1 block text-xs text-slate-500">{formatDateTime(row.timestamp, '')}</span>
-              </article>
-            ))}
-            {!recentActivity.length ? <p className="text-sm text-slate-500">No document activity yet.</p> : null}
-          </div>
-        </ArchlinePanel>
-      </aside>
     </section>
   )
 }
@@ -9521,7 +10602,7 @@ function AttorneyTransactionDetail() {
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
   const workspaceReference = formatRoleFriendlyReference(transaction, workspaceRole)
   const workspaceBackPath = workspaceRole === 'bond_originator' ? '/bond/applications' : '/transactions'
-  const workspaceBackLabel = workspaceRole === 'bond_originator' ? 'Back to Applications' : 'Back to Transactions'
+  const workspaceBackLabel = workspaceRole === 'bond_originator' ? 'Back to Applications' : workspaceRole === 'attorney' ? 'Back to Matters' : 'Back to Transactions'
   const transactionWorkspaceBasePath = location.pathname.startsWith('/bond/files/')
     ? `/bond/files/${transactionId}`
     : `/transactions/${transactionId}`
@@ -9595,130 +10676,60 @@ function AttorneyTransactionDetail() {
     return { ...tab, meta: transferStageLabel }
   })
 
-  const groupedDocuments = useMemo(() => {
-    const groups = ATTORNEY_DOCUMENT_GROUPS.reduce((accumulator, group) => {
-      accumulator[group.key] = []
-      return accumulator
-    }, {})
-    const seenDocumentIds = new Set()
-
-    for (const document of documents) {
-      const linkedRequirement = getLinkedRequirementForDocument(document)
-      const currentRequirementDocumentId = linkedRequirement ? getRequirementDocumentId(linkedRequirement) : null
-      if (currentRequirementDocumentId && document?.id && String(currentRequirementDocumentId) !== String(document.id)) {
-        continue
-      }
-      const category = ATTORNEY_DOCUMENT_CATEGORIES.includes(document?.category)
-        ? document.category
-        : linkedRequirement
-          ? getAttorneyCategoryForRequiredDocument(linkedRequirement)
-          : 'Internal Working Documents'
-      const groupKey = getAttorneyDocumentGroupKey(category)
-      const normalizedDocument = { ...document, normalizedCategory: category, linkedRequirement }
-      const documentKey = String(document?.id || `${document?.name || ''}:${document?.file_path || ''}`)
-      if (seenDocumentIds.has(documentKey)) continue
-      seenDocumentIds.add(documentKey)
-      groups.all_documents.push(normalizedDocument)
-      groups[groupKey].push(normalizedDocument)
-    }
-
-    return groups
-  }, [documents, getLinkedRequirementForDocument])
-  const requirementDocumentLookup = useMemo(() => {
-    const byCanonicalId = new Map()
-    const byDocumentId = new Map()
-    for (const document of documents) {
-      const linkedRequirement = getLinkedRequirementForDocument(document)
-      const canonicalId = getRequirementCanonicalId(linkedRequirement)
-      if (canonicalId && !byCanonicalId.has(String(canonicalId))) {
-        byCanonicalId.set(String(canonicalId), document)
-      }
-      if (document?.id && !byDocumentId.has(String(document.id))) {
-        byDocumentId.set(String(document.id), document)
-      }
-    }
-    return { byCanonicalId, byDocumentId }
-  }, [documents, getLinkedRequirementForDocument])
-  const requiredDocumentRows = useMemo(
+  const configuredOriginatorBanks = useMemo(
     () =>
-      requiredDocumentChecklist.map((requirement) => {
-        const canonicalId = getRequirementCanonicalId(requirement)
-        const uploadedDocumentId = getRequirementDocumentId(requirement)
-        const linkedDocument =
-          (canonicalId ? requirementDocumentLookup.byCanonicalId.get(String(canonicalId)) : null) ||
-          (uploadedDocumentId ? requirementDocumentLookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
-          requirement?.matchedDocument ||
-          null
-        const status = normalizeDocumentCommandStatus(requirement?.status || linkedDocument?.review_status || linkedDocument?.status, {
-          hasDocument: Boolean(linkedDocument || uploadedDocumentId),
-        })
-        const category = resolveRequirementLibraryCategory(requirement)
-        const priority = getDocumentPriorityLabel(requirement)
-
-        return {
-          id: String(canonicalId || requirement?.id || requirement?.key || requirement?.documentKey || requirement?.document_key),
-          transactionId: transaction?.id || requirement?.transactionId || requirement?.transaction_id || '',
-          displayName: requirement?.label || requirement?.documentLabel || requirement?.document_label || requirement?.key || 'Document requirement',
-          category,
-          categoryLabel: getDocumentCommandCategoryLabel(category),
-          status,
-          statusLabel: getDocumentCommandStatusLabel(status),
-          priority,
-          blocksStage: Boolean(requirement?.isBlocking || requirement?.blocksStage || requirement?.blocks_stage),
-          requiredParty: getRequirementPartyLabel(requirement),
-          relatedWorkflow: requirement?.owningWorkflow || requirement?.workflow || requirement?.visibleSection || '',
-          requiredDocumentId: requirement?.id || null,
-          requiredDocumentKey: requirement?.key || requirement?.documentKey || requirement?.document_key || '',
-          canonicalRequirementInstanceId: canonicalId || '',
-          fileUrl: linkedDocument?.url || '',
-          requirement,
-          linkedDocument,
-          source: 'transaction_required_documents',
-          satisfiesRequirement: Boolean(linkedDocument || uploadedDocumentId),
-        }
-      }),
-    [requiredDocumentChecklist, requirementDocumentLookup, transaction?.id],
+      workspaceRole === 'bond_originator'
+        ? getBankPanelForCurrentUser(
+            { workspace, currentWorkspace: workspace, currentMembership, profile, workspaceId: workspaceOrganisationId },
+            { workspaceId: workspaceOrganisationId },
+          )
+        : [],
+    [currentMembership, profile, workspace, workspaceOrganisationId, workspaceRole],
   )
-  const allDocumentLibraryRows = useMemo(
+  const matterDocumentWorkspaceModel = useMemo(
     () =>
-      uniqueDocumentsByRenderKey(documents)
-        .filter((document) => !document?.archived_at)
-        .map((document) => {
-          const linkedRequirement = getLinkedRequirementForDocument(document)
-          const category = resolveDocumentLibraryCategory({ ...document, linkedRequirement })
-          const rawStatus =
-            document?.source === 'generated' || category === 'generated'
-              ? 'generated'
-              : document?.review_status || document?.status || linkedRequirement?.status || 'uploaded'
-
-          return {
-            id: String(document?.id || `${document?.name || ''}:${document?.file_path || ''}`),
-            transactionId: transaction?.id || document?.transaction_id || document?.transactionId || '',
-            displayName: document?.name || document?.displayName || 'Untitled document',
-            category,
-            categoryLabel: getDocumentCommandCategoryLabel(category),
-            status: normalizeDocumentCommandStatus(rawStatus, { hasDocument: true }),
-            visibility: resolveDocumentLibraryVisibility(document),
-            requiredParty: linkedRequirement ? getRequirementPartyLabel(linkedRequirement) : '',
-            uploadedBy: resolveUploadedByLabel(document, transactionParticipants),
-            uploadedAt: document?.created_at || document?.uploaded_at || document?.uploadedAt || '',
-            updatedAt: document?.updated_at || document?.updatedAt || document?.created_at || '',
-            source: document?.source || (category === 'generated' ? 'generated' : 'documents'),
-            fileUrl: document?.url || '',
-            relatedWorkflow: resolveDocumentWorkflowLabel(document),
-            requiredDocumentId: linkedRequirement?.id || null,
-            requiredDocumentKey: linkedRequirement?.key || document?.document_type || '',
-            requiredDocument: linkedRequirement,
-            requiredDocumentStatus: linkedRequirement?.status || '',
-            requiredDocumentCanonicalId: getRequirementCanonicalId(linkedRequirement) || getDocumentCanonicalId(document) || '',
-            documentRequestId: document?.document_request_id || document?.documentRequestId || '',
-            satisfiesRequirement: Boolean(linkedRequirement),
-            priority: linkedRequirement ? getDocumentPriorityLabel(linkedRequirement) : '',
-            blocksStage: Boolean(linkedRequirement?.isBlocking || linkedRequirement?.blocksStage || linkedRequirement?.blocks_stage),
-            raw: document,
-          }
-        }),
-    [documents, getLinkedRequirementForDocument, transaction?.id, transactionParticipants],
+      buildMatterDocumentWorkspaceModel({
+        transaction,
+        documents,
+        requiredDocumentChecklist,
+        documentRequests: additionalDocumentRequests,
+        transactionParticipants,
+        activeFilter: activeDocumentLibraryCategory,
+        search: documentLibrarySearch,
+        configuredBanks: configuredOriginatorBanks,
+        workflowData: transactionFinanceWorkflow,
+        getLinkedRequirementForDocument,
+        documentGroups: ATTORNEY_DOCUMENT_GROUPS,
+        documentCategories: ATTORNEY_DOCUMENT_CATEGORIES,
+        requestedFromOptions: ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS,
+        priorityOptions: ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS,
+      }),
+    [
+      activeDocumentLibraryCategory,
+      additionalDocumentRequests,
+      configuredOriginatorBanks,
+      documentLibrarySearch,
+      documents,
+      getLinkedRequirementForDocument,
+      requiredDocumentChecklist,
+      transaction,
+      transactionFinanceWorkflow,
+      transactionParticipants,
+    ],
+  )
+  const groupedDocuments = matterDocumentWorkspaceModel.groupedDocuments
+  const requiredDocumentRows = matterDocumentWorkspaceModel.requiredRows
+  const allDocumentLibraryRows = matterDocumentWorkspaceModel.allLibraryRows
+  const documentReadiness = matterDocumentWorkspaceModel.readiness
+  const documentHealthSummary = matterDocumentWorkspaceModel.healthSummary
+  const documentLibraryRows = matterDocumentWorkspaceModel.libraryRows
+  const archlineDocumentsByWorkflow = matterDocumentWorkspaceModel.documentsByWorkflow
+  const attorneyDocumentControl = useMemo(
+    () => buildAttorneyDocumentControl({
+      requiredDocumentRows,
+      additionalRequests: additionalDocumentRequests,
+    }),
+    [additionalDocumentRequests, requiredDocumentRows],
   )
   const activeStakeholders = useMemo(
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
@@ -10225,229 +11236,10 @@ function AttorneyTransactionDetail() {
   const canEditBondHybridFinanceWorkflow = ['bond_originator', 'internal_admin', 'admin'].includes(
     String(workspaceRole || '').toLowerCase(),
   )
-  const configuredOriginatorBanks = useMemo(
-    () =>
-      workspaceRole === 'bond_originator'
-        ? getBankPanelForCurrentUser(
-            { workspace, currentWorkspace: workspace, currentMembership, profile, workspaceId: workspaceOrganisationId },
-            { workspaceId: workspaceOrganisationId },
-          )
-        : [],
-    [currentMembership, profile, workspace, workspaceOrganisationId, workspaceRole],
-  )
   const bondSubmissionRows = useMemo(
     () => buildConfiguredBankRows({ workflowData: transactionFinanceWorkflow, bankPanel: configuredOriginatorBanks }),
     [configuredOriginatorBanks, transactionFinanceWorkflow],
   )
-  const documentReadiness = useMemo(
-    () =>
-      getDocumentReadiness({
-        applicationId: transaction?.bond_application_id || transaction?.bondApplicationId || transaction?.id || null,
-        requiredDocumentRows,
-        documentRequests: additionalDocumentRequests,
-        documentLibraryRows: allDocumentLibraryRows,
-        configuredBanks: configuredOriginatorBanks,
-        workflowData: transactionFinanceWorkflow,
-      }),
-    [
-      additionalDocumentRequests,
-      allDocumentLibraryRows,
-      configuredOriginatorBanks,
-      requiredDocumentRows,
-      transaction?.bondApplicationId,
-      transaction?.bond_application_id,
-      transaction?.id,
-      transactionFinanceWorkflow,
-    ],
-  )
-  const documentHealthSummary = useMemo(() => {
-    const kpis = documentReadiness.kpis || {}
-    const statusRank = {
-      missing: 0,
-      requested: 1,
-      rejected: 2,
-      pending_review: 3,
-      uploaded: 4,
-      verified: 5,
-    }
-    const requiredDocuments = [...requiredDocumentRows].sort((left, right) => {
-      const leftRank = statusRank[left.status] ?? 9
-      const rightRank = statusRank[right.status] ?? 9
-      if (leftRank !== rightRank) return leftRank - rightRank
-      return String(left.displayName || '').localeCompare(String(right.displayName || ''))
-    })
-    const recentActivity = [
-      ...allDocumentLibraryRows.map((row) => ({
-        id: `document:${row.id}`,
-        label: row.displayName || 'Document uploaded',
-        detail: `${row.categoryLabel || 'Document'} • ${getDocumentCommandStatusLabel(row.status)}`,
-        timestamp: row.updatedAt || row.uploadedAt || '',
-        fileUrl: row.fileUrl || '',
-      })),
-      ...additionalDocumentRequests.map((request) => ({
-        id: `request:${request.id || request.title}`,
-        label: request.title || request.documentType || 'Document requested',
-        detail: `${getAdditionalRequestStatusLabel(request.status)} • ${getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS, request.requestedFrom, 'Buyer')}`,
-        timestamp: request.updatedAt || request.createdAt || '',
-        fileUrl: '',
-      })),
-    ]
-      .filter((item) => item.label)
-      .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
-      .slice(0, 5)
-
-    return {
-      applicationId: documentReadiness.applicationId,
-      score: documentReadiness.score,
-      scoreLabel: documentReadiness.scoreLabel,
-      summaryText: documentReadiness.summaryText,
-      submissionReady: documentReadiness.submissionReady,
-      blockerCount: documentReadiness.blockerCount,
-      requiredDocuments,
-      recentActivity,
-      kpis,
-      requiredCount: kpis.required || requiredDocuments.length,
-      uploadedCount: kpis.received || 0,
-      missingCount: kpis.missing || 0,
-      pendingReviewCount: kpis.pendingReview || 0,
-      approvedCount: kpis.verified || 0,
-      rejectedCount: kpis.rejected || 0,
-      percentComplete: kpis.required ? Math.round(((kpis.received || 0) / kpis.required) * 100) : 0,
-    }
-  }, [
-    additionalDocumentRequests,
-    allDocumentLibraryRows,
-    documentReadiness,
-    requiredDocumentRows,
-  ])
-  const attorneyDocumentControl = useMemo(
-    () => buildAttorneyDocumentControl({
-      requiredDocumentRows,
-      additionalRequests: additionalDocumentRequests,
-    }),
-    [additionalDocumentRequests, requiredDocumentRows],
-  )
-  const documentLibraryRows = useMemo(() => {
-    const activeFilter = String(activeDocumentLibraryCategory || 'all').trim().toLowerCase()
-    const search = String(documentLibrarySearch || '').trim().toLowerCase()
-    const criticalIds = new Set((documentReadiness.criticalDocuments || []).map((row) => String(row.id || '')))
-    const bankRequestIds = new Set(
-      (documentReadiness.bankRequestedDocuments || [])
-        .flatMap((group) => group.items || [])
-        .map((row) => String(row.id || '')),
-    )
-
-    const mapRequirementAsLibraryRow = (row, suffix = 'requirement') => ({
-      id: `${suffix}-${row.id || row.displayName}`,
-      transactionId: row.transactionId || transaction?.id || '',
-      displayName: row.displayName || row.title || 'Document requirement',
-      category: row.category || 'finance',
-      categoryLabel: row.categoryLabel || getDocumentCommandCategoryLabel(row.category || 'finance'),
-      status: row.status || 'missing',
-      visibility: 'Buyer & seller visible',
-      requiredParty: row.requiredParty || 'Buyer',
-      uploadedBy: row.requiredParty || 'Buyer',
-      uploadedAt: row.linkedDocument?.created_at || row.linkedDocument?.uploaded_at || row.updatedAt || '',
-      updatedAt: row.linkedDocument?.updated_at || row.updatedAt || '',
-      source: 'requirement',
-      fileUrl: row.fileUrl || row.linkedDocument?.url || '',
-      relatedWorkflow: row.relatedWorkflow || '',
-      requiredDocumentId: row.requiredDocumentId || '',
-      requiredDocumentKey: row.requiredDocumentKey || '',
-      requiredDocument: row.requirement || row.requiredDocument || null,
-      requiredDocumentStatus: row.status || '',
-      requiredDocumentCanonicalId: row.canonicalRequirementInstanceId || row.id || '',
-      documentRequestId: '',
-      satisfiesRequirement: row.satisfiesRequirement,
-      priority: row.priority || '',
-      blocksStage: row.blocksStage,
-      raw: row.linkedDocument || null,
-    })
-
-    const mapRequestAsLibraryRow = (request, bankName = '') => ({
-      id: `request-${request.id || request.title}`,
-      transactionId: request.transactionId || transaction?.id || '',
-      displayName: request.title || request.documentType || 'Bank requested document',
-      category: 'bank_requested',
-      categoryLabel: bankName || 'Bank Requested',
-      status: request.status || 'missing',
-      visibility: request.clientVisible ? 'Buyer & seller visible' : 'Professional / roleplayers only',
-      requiredParty: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS, request.requestedFrom, 'Buyer'),
-      uploadedBy: bankName || 'Bank request',
-      uploadedAt: request.createdAt || '',
-      updatedAt: request.updatedAt || request.createdAt || '',
-      source: 'document_request',
-      fileUrl: '',
-      relatedWorkflow: 'bank requested',
-      requiredDocumentId: '',
-      requiredDocumentKey: request.documentType || request.title || '',
-      requiredDocument: null,
-      requiredDocumentStatus: request.status || '',
-      requiredDocumentCanonicalId: '',
-      documentRequestId: request.id || '',
-      satisfiesRequirement: false,
-      priority: getAdditionalRequestOptionLabel(ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS, request.additionalPriority || request.priority, 'Normal'),
-      blocksStage: true,
-      raw: null,
-    })
-
-    let rows = allDocumentLibraryRows
-
-    if (activeFilter === 'critical') {
-      rows = [
-        ...allDocumentLibraryRows.filter((row) => criticalIds.has(String(row.requiredDocumentCanonicalId || row.requiredDocumentId || row.requiredDocumentKey || row.id))),
-        ...(documentReadiness.criticalDocuments || [])
-          .filter((row) => !row.fileUrl)
-          .map((row) => mapRequirementAsLibraryRow(row, 'critical')),
-      ]
-    } else if (activeFilter === 'missing') {
-      rows = (documentReadiness.missingDocuments || []).map((row) => mapRequirementAsLibraryRow(row, 'missing'))
-    } else if (activeFilter === 'pending_review') {
-      rows = [
-        ...allDocumentLibraryRows.filter((row) => row.status === 'pending_review'),
-        ...requiredDocumentRows
-          .filter((row) => row.status === 'pending_review' && !row.fileUrl)
-          .map((row) => mapRequirementAsLibraryRow(row, 'pending')),
-      ]
-    } else if (activeFilter === 'verified') {
-      rows = allDocumentLibraryRows.filter((row) => row.status === 'verified')
-    } else if (activeFilter === 'bank_requested') {
-      rows = (documentReadiness.bankRequestedDocuments || []).flatMap((group) =>
-        (group.items || [])
-          .filter((request) => !bankRequestIds.size || bankRequestIds.has(String(request.id || '')))
-          .map((request) => mapRequestAsLibraryRow(request, group.bankName)),
-      )
-    } else if (activeFilter !== 'all') {
-      rows = allDocumentLibraryRows.filter((row) => activeDocumentLibraryCategory === 'all' || row.category === activeDocumentLibraryCategory)
-    }
-
-    const deduped = []
-    const seen = new Set()
-    for (const row of rows) {
-      const key = String(row.id || `${row.displayName}:${row.source}`)
-      if (seen.has(key)) continue
-      seen.add(key)
-      deduped.push(row)
-    }
-
-    if (!search) return deduped
-    return deduped.filter((row) =>
-      [
-        row.displayName,
-        row.categoryLabel,
-        row.uploadedBy,
-        row.status,
-        row.requiredParty,
-      ].map((value) => String(value || '').toLowerCase()).join(' ').includes(search),
-    )
-  }, [
-    activeDocumentLibraryCategory,
-    allDocumentLibraryRows,
-    documentLibrarySearch,
-    documentReadiness,
-    requiredDocumentRows,
-    transaction?.id,
-  ])
   const bestBondQuote = useMemo(
     () => getBestQuote(transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []),
     [transactionFinanceWorkflow],
@@ -10877,7 +11669,7 @@ function AttorneyTransactionDetail() {
   }
 
   async function submitWorkflowStepUpdate(draft = null) {
-    if (!draft || !transaction?.id) return
+    if (!draft || !transaction?.id) return false
     setWorkflowSaving(true)
     setWorkflowError('')
     try {
@@ -10894,8 +11686,10 @@ function AttorneyTransactionDetail() {
       setWorkflowStepDraft(null)
       setWorkflowInlineStepDraft(null)
       await refreshWorkflowAfterChange(next)
+      return true
     } catch (stepError) {
       setWorkflowError(stepError?.message || 'Unable to update workflow step.')
+      return false
     } finally {
       setWorkflowSaving(false)
     }
@@ -12040,37 +12834,6 @@ function AttorneyTransactionDetail() {
     { key: 'agent', label: 'Agent', value: transaction?.assigned_agent || getParticipantDisplayName(assignedAgent) || 'Not assigned' },
     { key: 'bond-originator', label: 'Bond Originator', value: assignedBondOriginator?.organisationName || transaction?.bond_originator || 'Not assigned' },
   ], [assignedAgent, assignedBondOriginator?.organisationName, buyerDisplayName, sellerDisplayName, transaction?.assigned_agent, transaction?.bond_originator])
-  const archlineDocumentsByWorkflow = useMemo(() => {
-    const rows = [...allDocumentLibraryRows, ...requiredDocumentRows]
-    const dedupeRows = (items = []) => {
-      const seen = new Set()
-      return items.filter((row) => {
-        const key = String(row.id || `${row.displayName}:${row.relatedWorkflow}`)
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-    }
-    const pickRows = (tokens = []) => {
-      const matches = rows.filter((row) => {
-        const haystack = [
-          row.displayName,
-          row.category,
-          row.categoryLabel,
-          row.relatedWorkflow,
-          row.requiredDocumentKey,
-          row.requiredParty,
-        ].map((value) => String(value || '').toLowerCase()).join(' ')
-        return tokens.some((token) => haystack.includes(token))
-      })
-      return dedupeRows(matches.length ? matches : rows).slice(0, 8)
-    }
-    return {
-      transfer: pickRows(['transfer', 'registration', 'lodgement', 'instruction', 'signed', 'otp', 'title deed']),
-      finance: pickRows(['finance', 'bond', 'bank', 'payslip', 'statement', 'income', 'guarantee']),
-      cancellation: pickRows(['cancel', 'cancellation', 'existing bond', 'settlement']),
-    }
-  }, [allDocumentLibraryRows, requiredDocumentRows])
   const archlineTransferWorkflow = useMemo(
     () => legalWorkflowModels.find((workflow) => workflow.detailKey === 'transfer') || legalWorkflowModels[0] || null,
     [legalWorkflowModels],
@@ -12133,9 +12896,9 @@ function AttorneyTransactionDetail() {
 
   async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note) {
     const lane = workflow?.lane || null
-    if (!lane) return
+    if (!lane) return false
     const draft = buildWorkflowInlineStepDraft(lane, step, status)
-    await submitWorkflowStepUpdate({
+    return submitWorkflowStepUpdate({
       ...draft,
       note: typeof note === 'string' ? note : draft.note,
     })
@@ -13856,24 +14619,18 @@ function AttorneyTransactionDetail() {
               onOpenDocuments={() => openWorkspaceMenu('documents')}
             />
           ) : (
-            <ArchlineWorkflowWorkspace
+            <ArchlineTransferWorkspace
               workflow={archlineTransferWorkflow}
-              workflowKey="transfer"
-              title="Transfer Progress"
-              summaryRows={[
-                ['Assigned', archlineTransferWorkflow?.assignedDisplay || 'Not assigned'],
-                ['Progress', `${archlineTransferWorkflow?.progressPercent || 0}%`],
-                ['Next', archlineTransferWorkflow?.nextStep || 'Review workflow'],
-              ]}
               documents={archlineDocumentsByWorkflow.transfer}
-              blockers={archlineTransferWorkflow?.blockers || []}
               keyDates={archlineKeyDates}
+              parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note) => void handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
+              onUpdateStep={(step, status, note) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
               onUploadDocument={() => openDocumentUploadModal({ category: 'transfer' })}
               onAddNote={handleQuickAddWorkflowNote}
               onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onOpenParties={() => openWorkspaceMenu('stakeholders')}
             />
           )
         ) : null}
@@ -13922,6 +14679,7 @@ function AttorneyTransactionDetail() {
           <section className="space-y-4">
             <ArchlineDocumentsWorkspace
               documentHealthSummary={documentHealthSummary}
+              categorySummaries={matterDocumentWorkspaceModel.categorySummaries}
               requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
               libraryRows={documentLibraryRows}
               missingRows={documentReadiness.missingDocuments || []}
