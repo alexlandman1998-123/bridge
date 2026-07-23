@@ -573,6 +573,132 @@ function normalizeAgentIdentity(row) {
   }
 }
 
+function getPrivateListingAssignmentKeys(listing = {}) {
+  const idKeys = [
+    listing.assignedAgentId,
+    listing.assigned_agent_id,
+    listing.assignedUserId,
+    listing.assigned_user_id,
+    listing.agentId,
+    listing.agent_id,
+    listing.listingAgentId,
+    listing.listing_agent_id,
+    listing.ownerAgentId,
+    listing.owner_agent_id,
+    listing.createdBy,
+    listing.created_by,
+    listing?.commission?.agentId,
+    listing?.commission?.agent_id,
+  ].map(normalizeAgentRecordId).filter(Boolean)
+
+  const emailKeys = [
+    listing.assignedAgentEmail,
+    listing.assigned_agent_email,
+    listing.agentEmail,
+    listing.agent_email,
+  ].map(normalizeIdentityEmail).filter(Boolean)
+
+  const nameKeys = [
+    listing.assignedAgentName,
+    listing.assigned_agent_name,
+    listing.assignedAgent,
+    listing.assigned_agent,
+    listing.agentName,
+    listing.agent_name,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+
+  return { idKeys, emailKeys, nameKeys }
+}
+
+function addAgentWorkspaceDirectoryRows(groupedByAgent, agentRows = []) {
+  for (const directoryAgent of agentRows.filter(Boolean)) {
+    const directoryId = normalizeAgentRecordId(
+      directoryAgent?.id ||
+        directoryAgent?.userId ||
+        directoryAgent?.user_id ||
+        directoryAgent?.organisationUserId ||
+        directoryAgent?.organisation_user_id ||
+        directoryAgent?.email ||
+        directoryAgent?.name,
+    )
+    if (!directoryId) continue
+
+    const directoryPatch = {
+      organisationUserId: normalizeAgentRecordId(directoryAgent?.organisationUserId || directoryAgent?.organisation_user_id),
+      userId: normalizeAgentRecordId(directoryAgent?.userId || directoryAgent?.user_id),
+      name: directoryAgent?.name || directoryAgent?.fullName || directoryAgent?.full_name || 'Agent',
+      fullName: directoryAgent?.fullName || directoryAgent?.full_name || directoryAgent?.name || '',
+      email: directoryAgent?.email || '',
+      phone: directoryAgent?.phone || '',
+      avatarUrl: getAgentAvatarUrl(directoryAgent),
+      profilePhotoUrl: getAgentAvatarUrl(directoryAgent),
+      office: directoryAgent?.office || directoryAgent?.branchName || 'Office',
+      branchId: directoryAgent?.branchId || directoryAgent?.branch_id || null,
+      organisationId: normalizeAgentRecordId(directoryAgent?.organisationId || directoryAgent?.agencyId || ''),
+      organisationName: directoryAgent?.organisationName || directoryAgent?.agencyName || '',
+      role: directoryAgent?.role || 'agent',
+      status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
+      invitedAt: directoryAgent?.invitedAt || null,
+      activatedAt: directoryAgent?.activatedAt || directoryAgent?.acceptedAt || null,
+      lastActiveAt: directoryAgent?.lastActiveAt || null,
+    }
+
+    if (!groupedByAgent.has(directoryId)) {
+      groupedByAgent.set(directoryId, {
+        id: directoryId,
+        ...directoryPatch,
+        deals: [],
+        developmentListings: [],
+      })
+    } else {
+      const existing = groupedByAgent.get(directoryId)
+      groupedByAgent.set(directoryId, {
+        ...existing,
+        organisationUserId: existing.organisationUserId || directoryPatch.organisationUserId,
+        userId: existing.userId || directoryPatch.userId,
+        name: existing.name || directoryPatch.name,
+        fullName: existing.fullName || directoryPatch.fullName,
+        email: existing.email || directoryPatch.email,
+        phone: existing.phone || directoryPatch.phone,
+        avatarUrl: getAgentAvatarUrl(existing) || directoryPatch.avatarUrl,
+        profilePhotoUrl: getAgentAvatarUrl(existing) || directoryPatch.profilePhotoUrl,
+        office: existing.office || directoryPatch.office,
+        branchId: existing.branchId || directoryPatch.branchId,
+        organisationId: existing.organisationId || directoryPatch.organisationId,
+        organisationName: existing.organisationName || directoryPatch.organisationName,
+      })
+    }
+  }
+}
+
+function createAgentAssignmentLookup(groupedByAgent) {
+  const agentIdByEmail = new Map()
+  const agentIdByName = new Map()
+  for (const [agentId, agentRecord] of groupedByAgent.entries()) {
+    const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
+    const normalizedName = String(agentRecord?.name || agentRecord?.fullName || '').trim().toLowerCase()
+    if (normalizedEmail) agentIdByEmail.set(normalizedEmail, agentId)
+    if (normalizedName) agentIdByName.set(normalizedName, agentId)
+  }
+  return { agentIdByEmail, agentIdByName }
+}
+
+function resolveListingAgentId(listing = {}, groupedByAgent, agentIdByEmail, agentIdByName) {
+  const { idKeys, emailKeys, nameKeys } = getPrivateListingAssignmentKeys(listing)
+  for (const key of idKeys) {
+    if (groupedByAgent.has(key)) return key
+  }
+  for (const key of emailKeys) {
+    const agentId = agentIdByEmail.get(key)
+    if (agentId) return agentId
+  }
+  for (const key of nameKeys) {
+    const agentId = agentIdByName.get(key)
+    if (agentId) return agentId
+  }
+  return ''
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -1130,7 +1256,7 @@ function normalizeDealStatus(row) {
   return 'active'
 }
 
-function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null }) {
+function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null, organisationUsers = [], organisation = null }) {
   const groupedByAgent = new Map()
 
   for (const row of transactions) {
@@ -1173,18 +1299,6 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     }
   }
 
-  const listingsByAgent = privateListings.reduce((accumulator, listing) => {
-    const agentId = String(listing?.commission?.agent_id || '').trim().toLowerCase()
-    if (!agentId) {
-      return accumulator
-    }
-    if (!accumulator.has(agentId)) {
-      accumulator.set(agentId, [])
-    }
-    accumulator.get(agentId).push(listing)
-    return accumulator
-  }, new Map())
-
   const developmentAgentMap = new Map()
   for (const row of transactions) {
     const developmentId = String(row?.development?.id || row?.transaction?.development_id || row?.unit?.development_id || '').trim()
@@ -1212,49 +1326,26 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     return accumulator
   }, new Map())
 
-  const directoryAgents = Array.isArray(agentDirectory?.agents) ? agentDirectory.agents : []
-  for (const directoryAgent of directoryAgents) {
-    const directoryId = String(directoryAgent?.id || directoryAgent?.email || directoryAgent?.name || '').trim().toLowerCase()
-    if (!directoryId) continue
-    if (!groupedByAgent.has(directoryId)) {
-      groupedByAgent.set(directoryId, {
-        id: directoryId,
-        name: directoryAgent?.name || 'Agent',
-        email: directoryAgent?.email || '',
-        phone: directoryAgent?.phone || '',
-        avatarUrl: getAgentAvatarUrl(directoryAgent),
-        profilePhotoUrl: getAgentAvatarUrl(directoryAgent),
-        office: directoryAgent?.office || 'Office',
-        status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
-        deals: [],
-        developmentListings: [],
-      })
-    } else {
-      const existing = groupedByAgent.get(directoryId)
-      groupedByAgent.set(directoryId, {
-        ...existing,
-        name: existing.name || directoryAgent?.name || existing.name,
-        email: existing.email || directoryAgent?.email || existing.email,
-        phone: existing.phone || directoryAgent?.phone || existing.phone,
-        avatarUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
-        profilePhotoUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
-        office: existing.office || directoryAgent?.office || existing.office,
-      })
-    }
-  }
+  const organisationAgentRows = (Array.isArray(organisationUsers) ? organisationUsers : [])
+    .map((user) => normalizeOrganisationUserAgent(user, {
+      organisationId: organisation?.id || agentDirectory?.agency?.id,
+      organisationName: organisation?.name || agentDirectory?.agency?.name,
+    }))
+    .filter(Boolean)
+  addAgentWorkspaceDirectoryRows(groupedByAgent, [
+    ...getDirectoryWorkspaceAgents(agentDirectory || {}),
+    ...organisationAgentRows,
+  ])
 
-  const agentIdByEmail = new Map()
-  const agentIdByName = new Map()
-  for (const [agentId, agentRecord] of groupedByAgent.entries()) {
-    const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
-    const normalizedName = String(agentRecord?.name || '').trim().toLowerCase()
-    if (normalizedEmail) {
-      agentIdByEmail.set(normalizedEmail, agentId)
-    }
-    if (normalizedName) {
-      agentIdByName.set(normalizedName, agentId)
-    }
-  }
+  const { agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
+
+  const listingsByAgent = privateListings.reduce((accumulator, listing) => {
+    const agentId = resolveListingAgentId(listing, groupedByAgent, agentIdByEmail, agentIdByName)
+    if (!agentId) return accumulator
+    if (!accumulator.has(agentId)) accumulator.set(agentId, [])
+    accumulator.get(agentId).push(listing)
+    return accumulator
+  }, new Map())
 
   const appointmentsByAgent = new Map()
   for (const appointment of appointments) {
@@ -5672,6 +5763,8 @@ export function AgentsPage() {
         pipelineRows,
         appointments: performanceSources.appointments,
         agentDirectory: directory,
+        organisationUsers: performanceSources.organisationUsers,
+        organisation: liveOrganisation,
       })
 
       const inviteMap = new Map()
@@ -6980,6 +7073,8 @@ export function AgentWorkspacePage() {
         pipelineRows: Array.isArray(performanceSources.leads) ? performanceSources.leads : [],
         appointments: Array.isArray(performanceSources.appointments) ? performanceSources.appointments : [],
         agentDirectory,
+        organisationUsers: performanceSources.organisationUsers,
+        organisation: performanceSources.organisationSettings?.organisation || null,
       })
       const organisationAgentRows = (performanceSources.organisationUsers || [])
         .map((user) => normalizeOrganisationUserAgent(user, {

@@ -32,6 +32,16 @@ assert.match(
   /Pending Invitations/,
   'Agents page pending invite panel should not describe every invite as an agent invite.',
 )
+assert.match(
+  agentsPageSource,
+  /function getPrivateListingAssignmentKeys[\s\S]*assignedAgentId[\s\S]*assigned_agent_id[\s\S]*assignedUserId[\s\S]*assigned_user_id[\s\S]*assignedAgentEmail[\s\S]*assigned_agent_email/,
+  'Agent workspaces should match private listings by live assignment IDs and legacy assignment email, not only commission agent id.',
+)
+assert.match(
+  agentsPageSource,
+  /computeAgentWorkspaceData\(\{[\s\S]*organisationUsers: performanceSources\.organisationUsers/,
+  'Agent workspace data should include live organisation user identities before listing assignment bucketing.',
+)
 
 const today = new Date()
 const yesterday = new Date(today)
