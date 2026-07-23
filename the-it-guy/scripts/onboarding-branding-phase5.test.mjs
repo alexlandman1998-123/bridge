@@ -50,6 +50,9 @@ assert.match(files.clientOnboarding, /accentColour=\{onboardingBrand\.accentColo
 assert.match(files.sellerOnboarding, /primaryColour=\{brand\?\.primaryColour\}/)
 assert.match(files.sellerOnboarding, /secondaryColour=\{brand\?\.secondaryColour\}/)
 assert.match(files.sellerOnboarding, /accentColour=\{brand\?\.accentColour\}/)
+assert.match(files.sellerOnboarding, /<PremiumOnboardingLanding[\s\S]*portalType="seller"/, 'seller onboarding welcome should use the premium landing surface')
+assert.match(files.sellerOnboarding, /agencyLogo=\{brand\?\.logoLightUrl \|\| brand\?\.logoUrl \|\| brand\?\.logoDarkUrl \|\| ''\}/, 'seller premium landing should prefer the light logo for dark backgrounds')
+assert.match(files.sellerOnboarding, /ctaLabel=\{actionLabel\}/, 'seller premium landing should receive the resume-aware CTA label')
 
 assert.match(files.packageJson, /"test:onboarding-branding-phase5": "node scripts\/onboarding-branding-phase5\.test\.mjs"/)
 

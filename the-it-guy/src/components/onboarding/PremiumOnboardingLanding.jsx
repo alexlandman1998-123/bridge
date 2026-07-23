@@ -96,8 +96,8 @@ function resolveTheme({ primaryColour = '', secondaryColour = '', accentColour =
     accentBorder: hexToRgba(accent, 0.6),
     accentShadow: hexToRgba(accent, 0.28),
     primaryMuted: hexToRgba(primary, 0.4),
-    overlayHorizontal: `linear-gradient(90deg, ${hexToRgba(primary, 0.96)} 0%, ${hexToRgba(secondary, 0.9)} 42%, ${hexToRgba(secondary, 0.68)} 72%, ${hexToRgba(primary, 0.88)} 100%)`,
-    overlayVertical: `linear-gradient(180deg, ${hexToRgba(primary, 0.28)} 0%, ${hexToRgba(primary, 0.74)} 100%)`,
+    overlayHorizontal: `linear-gradient(90deg, ${hexToRgba(primary, 0.88)} 0%, ${hexToRgba(secondary, 0.76)} 42%, ${hexToRgba(secondary, 0.54)} 72%, ${hexToRgba(primary, 0.78)} 100%)`,
+    overlayVertical: `linear-gradient(180deg, ${hexToRgba(primary, 0.12)} 0%, ${hexToRgba(primary, 0.62)} 100%)`,
   }
 }
 
@@ -109,7 +109,7 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
       <img
         src={logoUrl}
         alt={`${safeName} logo`}
-        className="h-14 w-auto max-w-[230px] object-contain drop-shadow-[0_16px_30px_rgba(0,0,0,0.35)] sm:h-16 sm:max-w-[280px]"
+        className="h-20 w-auto max-w-[320px] object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-24 sm:max-w-[420px]"
       />
     )
   }
@@ -133,12 +133,14 @@ export default function PremiumOnboardingLanding({
   primaryColour = '',
   secondaryColour = '',
   accentColour = '',
+  ctaLabel = '',
   onStart,
 }) {
   const type = normalizePortalType(portalType)
   const content = CONTENT[type]
   const resolvedBackgroundImage = backgroundImage || DEFAULT_BACKGROUND_IMAGES[type]
   const theme = resolveTheme({ primaryColour, secondaryColour, accentColour })
+  const ctaText = String(ctaLabel || '').trim() || content.cta
   const safePersonName = String(personName || '').trim()
   const safePropertyAddress = String(propertyAddress || '').trim()
   const contextRows = [
@@ -169,7 +171,7 @@ export default function PremiumOnboardingLanding({
       <div aria-hidden className="absolute inset-0" style={{ background: theme.overlayHorizontal }} />
       <div aria-hidden className="absolute inset-0" style={{ background: theme.overlayVertical }} />
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 py-5 sm:px-8 sm:py-7 lg:px-10 lg:py-8">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 pb-32 pt-5 sm:px-8 sm:pb-36 sm:pt-7 lg:px-10 lg:pb-36 lg:pt-8">
         <header className="flex items-center">
           <AgencyLogo logoUrl={agencyLogo} agencyName={agencyName} />
         </header>
@@ -203,15 +205,6 @@ export default function PremiumOnboardingLanding({
               })}
             </div>
 
-            <button
-              type="button"
-              onClick={onStart}
-              className="mt-8 inline-flex min-h-[58px] w-full items-center justify-center gap-3 rounded-[18px] bg-[var(--landing-accent)] px-6 py-4 text-base font-semibold text-[var(--landing-accent-text)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--landing-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--landing-primary)] sm:w-auto sm:min-w-[270px]"
-              style={{ boxShadow: `0 18px 38px ${theme.accentShadow}` }}
-            >
-              {content.cta}
-              <ChevronRight size={21} />
-            </button>
           </div>
 
           <aside className="rounded-lg border border-white/15 bg-white/10 p-5 shadow-[0_24px_58px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:p-6">
@@ -237,6 +230,20 @@ export default function PremiumOnboardingLanding({
               You can save and continue later. Your agent will use this information to prepare the listing, mandate, and document checklist.
             </p>
           </aside>
+        </div>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-20 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-8 lg:px-10">
+        <div className="mx-auto flex w-full max-w-[1440px]">
+          <button
+            type="button"
+            onClick={onStart}
+            className="inline-flex min-h-[58px] w-full items-center justify-center gap-3 rounded-[18px] bg-[var(--landing-accent)] px-6 py-4 text-base font-semibold text-[var(--landing-accent-text)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--landing-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--landing-primary)] sm:w-auto sm:min-w-[300px]"
+            style={{ boxShadow: `0 18px 38px ${theme.accentShadow}` }}
+          >
+            {ctaText}
+            <ChevronRight size={21} />
+          </button>
         </div>
       </div>
     </section>
