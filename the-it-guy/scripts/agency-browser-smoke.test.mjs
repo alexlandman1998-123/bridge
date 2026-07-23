@@ -294,7 +294,7 @@ async function runListingSmoke(page, baseUrl) {
   await fillFirstByTextLabel(page, 'Listing price', '3200000')
   await clickByRole(page, 'button', /Add mandate details/)
   await page.getByText('Mandate capture pack').first().waitFor({ state: 'visible', timeout: 10_000 })
-  await clickByRole(page, 'button', /Generate Mandate/)
+  await page.getByRole('button', { name: /Generate Mandate/ }).last().click()
   await page.getByText('Mandate generation will be available from the listing workspace after save.').first().waitFor({ state: 'visible', timeout: 10_000 })
   await closeDialog(page)
 }
