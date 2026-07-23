@@ -41,6 +41,11 @@ function releaseIdentifier() {
   ).trim()
 }
 
+function isVercelGitDeployment() {
+  return String(process.env.VERCEL || '').trim() === '1'
+    && Boolean(String(process.env.VERCEL_GIT_COMMIT_SHA || '').trim())
+}
+
 async function verifyReleaseScope(manifestArgument, headCommit) {
   if (!manifestArgument) return null
 
@@ -86,21 +91,27 @@ const declaredRepositoryDirectory = runGit(['rev-parse', '--show-toplevel'])
 assert.equal(declaredRepositoryDirectory, repositoryDirectory, 'Release verifier is not running against its expected repository root.')
 
 const headCommit = runGit(['rev-parse', 'HEAD'])
-const dirtyEntries = runGit(['status', '--porcelain=v1', '--untracked-files=all'])
-  .split('\n')
-  .filter(Boolean)
-assert.deepEqual(
-  dirtyEntries,
-  [],
-  `Release source is not contained: commit or remove every changed/untracked path before building.\n${dirtyEntries.join('\n')}`,
-)
-
 const declaredReleaseId = releaseIdentifier()
 if (declaredReleaseId) {
   assert.equal(
     declaredReleaseId.toLowerCase(),
     headCommit.toLowerCase(),
     `Release identifier ${declaredReleaseId} does not match checked-out commit ${headCommit}.`,
+  )
+}
+
+const dirtyEntries = runGit(['status', '--porcelain=v1', '--untracked-files=all'])
+  .split('\n')
+  .filter(Boolean)
+// Vercel's Git builder may remove paths covered by .vercelignore and update
+// generated deployment metadata before the configured build command runs.
+// In that one environment, the checked-out Git SHA above is the containment
+// proof. Everywhere else, a dirty tree remains a hard release failure.
+if (!isVercelGitDeployment()) {
+  assert.deepEqual(
+    dirtyEntries,
+    [],
+    `Release source is not contained: commit or remove every changed/untracked path before building.\n${dirtyEntries.join('\n')}`,
   )
 }
 
