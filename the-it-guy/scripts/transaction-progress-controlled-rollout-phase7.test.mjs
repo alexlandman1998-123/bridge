@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const migration = await readFile('../supabase/migrations/202607190006_transaction_progress_controlled_rollout_phase7.sql', 'utf8')
+const schedulerMigration = await readFile('../supabase/migrations/202607230010_transaction_progress_scheduler_proof_phase8.sql', 'utf8')
 const cron = await readFile('api/cron/transaction-progress-notifications.js', 'utf8')
 const service = await readFile('src/services/transactionSharedProgressService.js', 'utf8')
 const diagnosticsPage = await readFile('src/pages/PlatformDiagnosticsPage.jsx', 'utf8')
@@ -26,8 +27,11 @@ assert.match(migration, /abs\(mod\(hashtextextended/i)
 assert.match(migration, /staleClientVisible/i)
 assert.match(migration, /exhaustedEmailNotifications/i)
 
-assert.equal(vercel.crons?.length, 1)
-assert.equal(vercel.crons[0].schedule, '*/5 * * * *')
+assert.equal(vercel.crons, undefined)
+assert.match(schedulerMigration, /arch9-transaction-progress-recovery-5m/i)
+assert.match(schedulerMigration, /bridge_run_transaction_progress_schedule_phase8/i)
+assert.match(schedulerMigration, /supabase_cron_phase8/i)
+assert.match(schedulerMigration, /notification_dispatch_enabled/i)
 assert.match(cron, /bridge_run_transaction_progress_assurance_phase7/)
 assert.doesNotMatch(cron, /rest\/v1\/rpc\/bridge_reconcile_transaction_progress_phase6/)
 assert.match(cron, /rolloutMode/)

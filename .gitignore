@@ -8,3 +8,4 @@ test-results
 supabase/.temp/
 .vercel
 migration-evidence/**/backups/
+output/imports/

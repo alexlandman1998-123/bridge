@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "transaction-spine-20260723",
+  "baseCommit": "64a2a7c041e621be40c87f7a7eee47cadffc4757",
+  "allowedChangedPaths": [
+    ".gitignore",
+    ".vercelignore",
+    "supabase/migrations/202607230010_transaction_progress_scheduler_proof_phase8.sql",
+    "supabase/migrations/202607230011_bond_bank_outcome_originator_rls_repair.sql",
+    "the-it-guy/package.json",
+    "the-it-guy/scripts/bond-bank-outcome-originator-rls.test.mjs",
+    "the-it-guy/scripts/release-containment.test.mjs",
+    "the-it-guy/scripts/release-integrity-contract.test.mjs",
+    "the-it-guy/scripts/transaction-progress-controlled-rollout-phase7.test.mjs",
+    "the-it-guy/scripts/transaction-progress-schedule-proof-phase8.test.mjs",
+    "the-it-guy/scripts/transaction-propagation-assurance-phase6.test.mjs",
+    "the-it-guy/scripts/verify-release-containment.mjs",
+    "the-it-guy/scripts/verify-transaction-progress-schedule.mjs",
+    "the-it-guy/release/transaction-spine-20260723.json",
+    "the-it-guy/vite.config.js"
+  ],
+  "migrations": [
+    {
+      "path": "supabase/migrations/202607230010_transaction_progress_scheduler_proof_phase8.sql",
+      "sha256": "ecc019cfe4754463b4f4527f4e2c055ac39a179060a8e8414dc228ee39e20145"
+    },
+    {
+      "path": "supabase/migrations/202607230011_bond_bank_outcome_originator_rls_repair.sql",
+      "sha256": "629f9a88bb741749c1e03ea63497d395eb817e8370e0fec2e36deea9f65bd116"
+    }
+  ]
+}
