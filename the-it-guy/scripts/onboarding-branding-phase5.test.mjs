@@ -32,6 +32,7 @@ const files = {
   sellerService: await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
   clientOnboarding: await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8'),
   sellerOnboarding: await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8'),
+  onboardingDemoLinks: await readFile(new URL('../src/lib/onboardingDemoLinks.js', import.meta.url), 'utf8'),
   sellerBrandingApi: await readFile(new URL('../server/services/sellerOnboardingBrandingApi.js', import.meta.url), 'utf8'),
   sellerBrandingRoute: await readFile(new URL('../api/public/seller-onboarding-branding.js', import.meta.url), 'utf8'),
   packageJson: await readFile(new URL('../package.json', import.meta.url), 'utf8'),
@@ -57,12 +58,18 @@ assert.match(files.sellerBrandingRoute, /createSellerOnboardingBrandingResponse/
 assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryColour\}/)
 assert.match(files.clientOnboarding, /secondaryColour=\{onboardingBrand\.secondaryColour\}/)
 assert.match(files.clientOnboarding, /accentColour=\{onboardingBrand\.accentColour\}/)
+assert.match(files.clientOnboarding, /const logoLightUrl = branding\.logoLightUrl \|\| ''/, 'buyer landing brand should retain the resolved light logo URL')
+assert.match(files.clientOnboarding, /agencyLogo=\{onboardingBrand\.logoLightUrl \|\| onboardingBrand\.logoUrl \|\| onboardingBrand\.logoDarkUrl \|\| ''\}/, 'buyer premium landing should prefer the light logo for dark backgrounds')
 assert.match(files.sellerOnboarding, /primaryColour=\{brand\?\.primaryColour\}/)
 assert.match(files.sellerOnboarding, /secondaryColour=\{brand\?\.secondaryColour\}/)
 assert.match(files.sellerOnboarding, /accentColour=\{brand\?\.accentColour\}/)
 assert.match(files.sellerOnboarding, /<PremiumOnboardingLanding[\s\S]*portalType="seller"/, 'seller onboarding welcome should use the premium landing surface')
 assert.match(files.sellerOnboarding, /agencyLogo=\{brand\?\.logoLightUrl \|\| brand\?\.logoUrl \|\| brand\?\.logoDarkUrl \|\| ''\}/, 'seller premium landing should prefer the light logo for dark backgrounds')
 assert.match(files.sellerOnboarding, /ctaLabel=\{actionLabel\}/, 'seller premium landing should receive the resume-aware CTA label')
+assert.match(files.onboardingDemoLinks, /organisationName: 'Produktive Realty'/, 'static onboarding demo links should use the Produktive demo organisation')
+assert.match(files.onboardingDemoLinks, /logoLightUrl: '\/brand\/produktive-realty-logo-white\.svg'/, 'static onboarding demo links should use the Produktive white logo on premium dark landings')
+assert.match(files.onboardingDemoLinks, /primaryColour: '#28256f'/, 'static onboarding demo links should use the Produktive primary colour')
+assert.match(files.onboardingDemoLinks, /accentColour: '#d1ad61'/, 'static onboarding demo links should use the Produktive gold accent')
 
 assert.match(files.packageJson, /"test:onboarding-branding-phase5": "node scripts\/onboarding-branding-phase5\.test\.mjs"/)
 
