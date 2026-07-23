@@ -3635,11 +3635,21 @@ export default function LegalDocumentWorkspace({
         }
       }
 
+      const currentSourceContext = currentStatus?.packet?.source_context_json &&
+        typeof currentStatus.packet.source_context_json === 'object'
+        ? currentStatus.packet.source_context_json
+        : {}
+      const currentLeadId = normalizeText(
+        currentStatus?.packet?.lead_id ||
+          currentStatus?.packet?.leadId ||
+          currentSourceContext.leadId ||
+          currentSourceContext.lead_id,
+      )
       const statusRequest = resolveDocumentPacketStatus({
         packetType,
         packetId: currentPacketId,
         transactionId,
-        leadId,
+        leadId: currentLeadId,
         organisationId,
         includeActivity: false,
       })
