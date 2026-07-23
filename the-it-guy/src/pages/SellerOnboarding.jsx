@@ -1749,7 +1749,7 @@ function SellerWelcomeScreen({ brand, listing, form, currentStep = 0, onContinue
   return (
     <PremiumOnboardingLanding
       portalType="seller"
-      agencyLogo={brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl || ''}
+      agencyLogo={brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl || ''}
       agencyName={brand?.name || ''}
       personName={welcomeName}
       propertyAddress={propertyAddress}

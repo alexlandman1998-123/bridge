@@ -1,20 +1,15 @@
 import {
   BadgePercent,
   CheckCircle2,
-  ChevronRight,
-  CircleDollarSign,
   Edit3,
   Handshake,
-  History,
   MoreHorizontal,
   Plus,
   Search,
-  TrendingUp,
   UsersRound,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
@@ -41,13 +36,14 @@ import {
 
 const COMMISSION_TABS = [
   { key: 'overview', label: 'Overview' },
-  { key: 'levels', label: 'Commission Levels' },
-  { key: 'business_rules', label: 'Business Rules' },
+  { key: 'levels', label: 'Levels' },
+  { key: 'agents', label: 'Agents' },
+  { key: 'rules', label: 'Rules' },
 ]
 
 const INPUT_CLASS = 'h-11 rounded-[12px] border-[#d8e3ee] bg-white text-sm text-[#17233a] shadow-[0_1px_0_rgba(15,23,42,0.02)] placeholder:text-[#9aa8b8] focus:border-[#0f7f4f] focus:ring-[#dff2e8]'
 const LABEL_CLASS = 'text-[0.78rem] font-semibold text-[#43566d]'
-const CARD_CLASS = 'rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)] sm:p-6'
+const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.055)] sm:p-6'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -136,31 +132,48 @@ function isAgentLikeRole(role) {
   return ['agent', 'branch_manager', 'admin', 'principal', 'super_admin'].includes(normalizeText(role).toLowerCase())
 }
 
-function CommissionPageHeader({ openModal }) {
+function getAgentInitials(name = '', email = '') {
+  const words = normalizeText(name).split(/\s+/).filter(Boolean)
+  if (words.length) return words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join('')
+  const fallback = normalizeText(email).charAt(0).toUpperCase()
+  return fallback || 'A'
+}
+
+function getAgentBranchLabel(row = {}) {
+  return normalizeText(
+    row.branchName ||
+      row.branch ||
+      row.user?.branchName ||
+      row.user?.branch_name ||
+      row.user?.branch?.name ||
+      row.user?.teamName ||
+      row.user?.team_name,
+  )
+}
+
+function getActiveTransactionsLabel(row = {}) {
+  const rawValue =
+    row.activeTransactions ??
+    row.activeTransactionCount ??
+    row.user?.activeTransactions ??
+    row.user?.active_transaction_count ??
+    row.user?.activeTransactionsCount
+  const value = Number(rawValue || 0)
+  if (!Number.isFinite(value) || value <= 0) return ''
+  return `${value} Active Transaction${value === 1 ? '' : 's'}`
+}
+
+function AgentAvatar({ row = {}, size = 'md' }) {
+  const avatarUrl = normalizeText(row.avatarUrl || row.user?.avatarUrl || row.user?.avatar_url)
+  const name = row.name || row.email || 'Agent'
+  const sizeClass = size === 'lg' ? 'h-16 w-16 text-lg' : 'h-12 w-12 text-sm'
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={`${name} avatar`} className={`${sizeClass} rounded-full object-cover shadow-[0_10px_24px_rgba(15,23,42,0.08)]`} />
+  }
   return (
-    <header className="flex flex-col gap-4 pb-1 lg:flex-row lg:items-end lg:justify-between">
-      <div>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[#17233a]">
-          <span className="text-[#6b7d93]">Organisation</span>
-          <ChevronRight className="h-4 w-4 text-[#9aa8b8]" strokeWidth={2} />
-          <span>Commission</span>
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-          Manage how your agency pays its people: reusable levels, agent assignments, referral logic and operational exceptions.
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() => openModal('history')}
-        className="inline-flex w-fit items-center gap-3 rounded-[14px] border border-[#dfe8f1] bg-white px-4 py-3 text-left shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition hover:border-[#c8d6e4]"
-      >
-        <History className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
-        <span>
-          <span className="block text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#7b8fa5]">Last Updated</span>
-          <span className="block text-sm font-semibold text-[#17233a]">Recent · View History</span>
-        </span>
-      </button>
-    </header>
+    <span className={`${sizeClass} grid shrink-0 place-items-center rounded-full bg-[#eef7f2] font-semibold text-[#0f7f4f] shadow-[inset_0_0_0_1px_rgba(15,127,79,0.08)]`}>
+      {getAgentInitials(name, row.email)}
+    </span>
   )
 }
 
@@ -220,45 +233,39 @@ function IconButton({ children, onClick, variant = 'secondary', type = 'button',
 
 function TabRail({ activeTab, setActiveTab }) {
   return (
-    <div className="overflow-x-auto border-b border-[#dfe7f0]">
-      <div className="flex min-w-max gap-2 py-1">
+    <nav className="overflow-x-auto border-b border-[#dfe7f0]" aria-label="Commission sections">
+      <div className="flex min-w-max gap-8">
         {COMMISSION_TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
             className={[
-              'h-10 rounded-[12px] px-3 text-sm font-semibold transition',
+              'relative h-12 px-0 text-sm font-semibold transition',
               activeTab === tab.key
-                ? 'bg-[#eaf7f1] text-[#0f7f4f] shadow-[inset_0_0_0_1px_rgba(15,127,79,0.1)]'
-                : 'text-[#52667d] hover:bg-white hover:text-[#17233a]',
+                ? 'text-[#0f7f4f] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[#0f7f4f]'
+                : 'text-[#52667d] hover:text-[#17233a]',
             ].join(' ')}
           >
             {tab.label}
           </button>
         ))}
       </div>
-    </div>
+    </nav>
   )
 }
 
-function KpiCard({ title, value, description, quickAction, onAction, children }) {
+function OverviewMetric({ title, value, description, children }) {
   return (
-    <article className="flex min-h-[172px] flex-col rounded-[18px] border border-[#dfe8f1] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="grid h-11 w-11 place-items-center rounded-[15px] bg-[#ecfdf3] text-[#0f7f4f]">
+    <article className="flex items-center gap-4 rounded-[22px] bg-white/70 p-4 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.9)]">
+      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[18px] bg-[#f0f7f3] text-[#0f7f4f]">
           {children}
-        </div>
       </div>
-      <h3 className="mt-4 text-sm font-semibold text-[#40566d]">{title}</h3>
-      <p className="mt-2 text-[1.55rem] font-semibold leading-none text-[#17233a]">{value}</p>
-      <p className="mt-2 text-sm leading-5 text-[#60758d]">{description}</p>
-      {quickAction ? (
-        <button type="button" onClick={onAction} className="mt-auto flex items-center justify-between border-t border-[#edf2f7] pt-3 text-sm font-semibold text-[#0f7f4f]">
-          {quickAction}
-          <ChevronRight className="h-4 w-4" strokeWidth={2} />
-        </button>
-      ) : null}
+      <div>
+        <p className="text-sm font-semibold text-[#40566d]">{title}</p>
+        <p className="mt-1 text-2xl font-semibold leading-none text-[#17233a]">{value}</p>
+        {description ? <p className="mt-1 text-sm text-[#60758d]">{description}</p> : null}
+      </div>
     </article>
   )
 }
@@ -280,88 +287,38 @@ function SplitBar({ agent = 70, agency = 30 }) {
   )
 }
 
-function CommissionOverviewDashboard({ levels, referralRules, tracker, assignableRows, defaultLevel, setActiveTab, openModal, viewReports }) {
+function CommissionOverviewDashboard({ levels, referralRules, structures, assignableRows, defaultLevel, setActiveTab }) {
   const activeRules = referralRules.filter((rule) => rule.isActive !== false)
-  const assigned = assignableRows.filter((row) => row.assignedLevelId).length
   const totalAgents = assignableRows.length
-  const customLevels = levels.filter((level) => !['standard', 'senior', 'top_producer', 'principal'].includes(normalizeText(level.key).toLowerCase())).length
+  const overrides = assignableRows.filter((row) => row.assignedLevelId).length
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-[#17233a]">Commission Overview</h2>
-        <p className="mt-1 text-sm leading-6 text-[#60758d]">A complete snapshot of commission configuration, assignment coverage and current performance.</p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard title="Agency Default Split" value={`${formatPercent(defaultLevel.agentPercentage, 70)} / ${formatPercent(defaultLevel.agencyPercentage, 30)}`} description="Agent / Agency" quickAction="Edit levels" onAction={() => setActiveTab('levels')}>
-          <CircleDollarSign className="h-5 w-5" strokeWidth={2} />
-        </KpiCard>
-        <KpiCard title="Commission Levels" value={levels.length || 4} description={`${customLevels} custom level${customLevels === 1 ? '' : 's'}`} quickAction="Manage levels" onAction={() => setActiveTab('levels')}>
+    <div className="space-y-8">
+      <section className="grid gap-4 rounded-[24px] border border-[#e1eaf2] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbf8_100%)] p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.4fr)] lg:items-center lg:p-8">
+        <button
+          type="button"
+          onClick={() => setActiveTab('levels')}
+          className="rounded-[22px] bg-white/75 p-6 text-left shadow-[inset_0_0_0_1px_rgba(226,235,244,0.9)] transition hover:bg-white"
+        >
+          <p className="text-sm font-semibold text-[#40566d]">Agency Default</p>
+          <p className="mt-4 text-5xl font-semibold tracking-[-0.02em] text-[#101828]">
+            {formatPercent(defaultLevel.agentPercentage, 50).replace('%', '')} / {formatPercent(defaultLevel.agencyPercentage, 50).replace('%', '')}
+          </p>
+          <p className="mt-3 text-sm font-medium text-[#60758d]">Used by {totalAgents || 0} agent{totalAgents === 1 ? '' : 's'}</p>
+        </button>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <OverviewMetric title="Commission Levels" value={levels.length || 0} description="Reusable templates">
           <BadgePercent className="h-5 w-5" strokeWidth={2} />
-        </KpiCard>
-        <KpiCard title="Agents Assigned" value={`${assigned}/${totalAgents || 0}`} description={totalAgents ? 'Agents with explicit commission levels' : 'Invite agents before assigning levels'} quickAction="Assign agents" onAction={() => openModal('override')}>
-          <UsersRound className="h-5 w-5" strokeWidth={2} />
-        </KpiCard>
-        <KpiCard title="Referral Rules" value={`${activeRules.length} Active`} description="Rules enabled" quickAction="Edit rules" onAction={() => setActiveTab('business_rules')}>
+          </OverviewMetric>
+          <OverviewMetric title="Referral Rules" value={activeRules.length || 0} description={`${structures.length || 0} operational templates`}>
           <Handshake className="h-5 w-5" strokeWidth={2} />
-        </KpiCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <CommissionCard title="Commission Levels" description="Reusable agency pay structures shown the way principals assign them.">
-          <div className="grid gap-3">
-            {(levels.length ? levels : []).map((level) => (
-              <button
-                key={level.id || level.name}
-                type="button"
-                onClick={() => openModal('level', level)}
-                className="group grid gap-3 rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4 text-left transition hover:border-[#bfd2e4] hover:bg-white md:grid-cols-[1fr_auto] md:items-center"
-              >
-                <span>
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-base font-semibold text-[#17233a]">{level.name}</span>
-                    {level.isDefault ? <StatusPill tone="green">Default</StatusPill> : null}
-                  </span>
-                  <span className="mt-1 block text-sm leading-5 text-[#60758d]">{getLevelDescription(level)}</span>
-                </span>
-                <span className="flex flex-wrap items-center gap-3">
-                  <span className="text-lg font-semibold text-[#0f7f4f]">{formatPercent(level.agentPercentage)} / {formatPercent(level.agencyPercentage)}</span>
-                  <span className="text-sm font-semibold text-[#60758d]">{level.assignedAgentsCount || 0} Agents</span>
-                  <MoreHorizontal className="h-4 w-4 text-[#8ca0b5] transition group-hover:text-[#17233a]" strokeWidth={2} />
-                </span>
-              </button>
-            ))}
-          </div>
-        </CommissionCard>
-        <MonthlyCommissionProgress tracker={tracker} onViewReports={viewReports} />
-      </div>
-
-      <CommissionHealth levels={levels} rows={assignableRows} referralRules={referralRules} tracker={tracker} defaultLevel={defaultLevel} />
-
-      <CommissionCard title="Quick Actions" description="Common commission management tasks without leaving this workspace.">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <IconButton onClick={() => openModal('override')}>
-            <UsersRound className="h-4 w-4" strokeWidth={2} />
-            Assign Agents
-          </IconButton>
-          <IconButton variant="primary" onClick={() => openModal('level')}>
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            Create Level
-          </IconButton>
-          <IconButton onClick={() => setActiveTab('business_rules')}>
-            <Handshake className="h-4 w-4" strokeWidth={2} />
-            Add Referral Rule
-          </IconButton>
-          <IconButton onClick={() => openModal('override')}>
-            <UsersRound className="h-4 w-4" strokeWidth={2} />
-            Create Override
-          </IconButton>
-          <IconButton onClick={viewReports}>
-            <TrendingUp className="h-4 w-4" strokeWidth={2} />
-            View Reports
-          </IconButton>
+          </OverviewMetric>
+          <OverviewMetric title="Overrides" value={overrides || 0} description="Agent-specific assignments">
+            <UsersRound className="h-5 w-5" strokeWidth={2} />
+          </OverviewMetric>
         </div>
-      </CommissionCard>
+      </section>
     </div>
   )
 }
@@ -374,158 +331,110 @@ function getLevelDescription(level = {}) {
   return 'Reusable commission level'
 }
 
-function MonthlyCommissionProgress({ tracker, onViewReports }) {
-  const targetAmount = Number(tracker?.targetAmount || 0)
-  const projected = Number(tracker?.projectedCommission || tracker?.currentAmount || 0)
-  const forecastPercent = targetAmount ? Math.min(100, Math.round((projected / targetAmount) * 100)) : Number(tracker?.projectedPercentage || 0)
-  const remaining = Math.max(0, targetAmount - projected)
-
+function CommissionLevelsWorkspace({ levels, openModal }) {
   return (
-    <CommissionCard title="Monthly Commission Progress" description="Target progress now belongs with performance reporting.">
-      <div className="space-y-5">
-        <div>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#7b8fa5]">Monthly Target</p>
-          <p className="mt-2 text-3xl font-semibold text-[#17233a]">{formatCurrency(targetAmount || 500000)}</p>
-        </div>
-        <div>
-          <div className="h-3 overflow-hidden rounded-full bg-[#dfe8f1]">
-            <span className="block h-full rounded-full bg-[#0f7f4f]" style={{ width: `${Math.min(100, forecastPercent || 0)}%` }} />
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-[#60758d]">
-            <span>{forecastPercent || tracker?.projectedPercentage || 0}% Forecast</span>
-            <span>{tracker?.daysLeftInMonth ?? 0} Days left</span>
-          </div>
-        </div>
-        <div className="grid gap-3">
-          <TargetMetric label="Forecast" value={formatCurrency(projected, { compact: true })} />
-          <TargetMetric label="Remaining" value={formatCurrency(remaining, { compact: true })} />
-        </div>
-        <IconButton onClick={onViewReports}>
-          <TrendingUp className="h-4 w-4" strokeWidth={2} />
-          Open Performance
+    <CommissionCard
+      title="Levels"
+      actions={
+        <IconButton variant="primary" onClick={() => openModal('level')}>
+          <Plus className="h-4 w-4" strokeWidth={2} />
+          Create Level
         </IconButton>
-      </div>
-    </CommissionCard>
-  )
-}
-
-function CommissionHealth({ levels, rows, referralRules, tracker, defaultLevel }) {
-  const assigned = rows.filter((row) => row.assignedLevelId).length
-  const overrides = rows.filter((row) => row.assignedLevelId).length
-  const activeRules = referralRules.filter((rule) => rule.isActive !== false).length
-  const items = [
-    { label: 'Default split', value: `${formatPercent(defaultLevel?.agentPercentage, 70)} / ${formatPercent(defaultLevel?.agencyPercentage, 30)}`, verified: true },
-    { label: 'Assigned agents', value: assigned, verified: assigned > 0 },
-    { label: 'Referral rules', value: activeRules, verified: activeRules > 0 },
-    { label: 'Overrides', value: overrides, verified: true },
-    { label: 'Target forecast', value: `${tracker?.projectedPercentage || 0}%`, verified: Number(tracker?.projectedPercentage || 0) >= 80 },
-  ]
-
-  return (
-    <CommissionCard title="Commission Health" description={levels.length ? 'Everything configured' : 'Create commission levels to complete setup.'}>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {items.map((item) => (
-          <div key={item.label} className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#7b8fa5]">{item.label}</p>
-            <p className="mt-2 inline-flex items-center gap-2 text-lg font-semibold text-[#17233a]">
-              {item.verified ? <CheckCircle2 className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} /> : null}
-              {item.value}
-            </p>
-          </div>
-        ))}
-      </div>
-    </CommissionCard>
-  )
-}
-
-function CommissionLevelsWorkspace({ levels, assignableRows, openModal, assignLevel, saving }) {
-  return (
-    <div className="space-y-6">
-      <CommissionCard
-        title="Commission Levels"
-        description="Reusable commission structures managed as operational business objects."
-        actions={
-          <IconButton variant="primary" onClick={() => openModal('level')}>
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            Create Level
-          </IconButton>
-        }
-      >
+      }
+    >
         {!levels.length ? (
-          <SettingsEmptyState title="No Commission Levels Yet" description="Create your first commission level." />
+          <SettingsEmptyState title="No levels yet" description="Create your first reusable commission level." />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {levels.map((level) => (
-              <button key={level.id || level.name} type="button" onClick={() => openModal('level', level)} className="group rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 text-left transition hover:border-[#bfd2e4] hover:bg-white">
+              <button key={level.id || level.name} type="button" onClick={() => openModal('level', level)} className="group rounded-[24px] bg-[#fbfdff] p-5 text-left shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95),0_16px_38px_rgba(15,23,42,0.04)] transition hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(190,209,226,0.95),0_20px_48px_rgba(15,23,42,0.07)]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-semibold text-[#17233a]">{level.name}</p>
-                    <p className="mt-2 text-2xl font-semibold text-[#0f7f4f]">{formatPercent(level.agentPercentage)} / {formatPercent(level.agencyPercentage)}</p>
+                    <p className="text-lg font-semibold text-[#17233a]">{level.name}</p>
+                    <p className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-[#0f7f4f]">
+                      {formatPercent(level.agentPercentage).replace('%', '')} / {formatPercent(level.agencyPercentage).replace('%', '')}
+                    </p>
                   </div>
                   {level.isDefault ? <StatusPill tone="green">Default</StatusPill> : null}
                 </div>
-                <p className="mt-2 text-sm leading-5 text-[#60758d]">{getLevelDescription(level)}</p>
-                <p className="mt-2 text-sm font-semibold text-[#60758d]">{level.assignedAgentsCount || 0} Agents</p>
+                <p className="mt-4 text-sm font-semibold text-[#60758d]">{level.assignedAgentsCount || 0} Agent{Number(level.assignedAgentsCount || 0) === 1 ? '' : 's'}</p>
                 <div className="mt-4">
                   <SplitBar agent={level.agentPercentage} agency={level.agencyPercentage} />
                 </div>
-                <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#0f7f4f]">
-                  <Edit3 className="h-4 w-4" strokeWidth={2} />
-                  Edit Level
+                <div className="mt-5 flex items-center justify-between text-sm font-semibold text-[#0f7f4f]">
+                  <span className="inline-flex items-center gap-2"><Edit3 className="h-4 w-4" strokeWidth={2} />Edit</span>
+                  <MoreHorizontal className="h-4 w-4 text-[#8ca0b5]" strokeWidth={2} />
                 </div>
               </button>
             ))}
           </div>
         )}
-      </CommissionCard>
-
-      <AgentAssignmentsTable rows={assignableRows} levels={levels} onAssign={assignLevel} saving={saving} />
-    </div>
+    </CommissionCard>
   )
 }
 
-function AgentAssignmentsTable({ rows, levels, onAssign, saving }) {
+function AgentCard({ row, onEdit }) {
+  const branchLabel = getAgentBranchLabel(row)
+  const transactionLabel = getActiveTransactionsLabel(row)
   return (
-    <CommissionCard title="Agent Assignments" description="Assign a commission level to each agent. Agents can view their level and tracker but cannot edit rules.">
+    <article className="group rounded-[24px] bg-white p-5 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95),0_16px_40px_rgba(15,23,42,0.045)] transition hover:shadow-[inset_0_0_0_1px_rgba(190,209,226,0.95),0_22px_52px_rgba(15,23,42,0.075)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <AgentAvatar row={row} />
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold text-[#17233a]">{row.name}</h3>
+            {branchLabel ? <p className="mt-1 truncate text-sm text-[#60758d]">{branchLabel}</p> : null}
+          </div>
+        </div>
+        <button type="button" className="grid h-9 w-9 place-items-center rounded-full text-[#8ca0b5] transition hover:bg-[#f4f8fb] hover:text-[#17233a]" aria-label={`More actions for ${row.name}`}>
+          <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <StatusPill tone={row.assignedLevelId ? 'green' : 'neutral'}>{row.levelName}</StatusPill>
+        <span className="rounded-full bg-[#f7fafc] px-3 py-1 text-xs font-semibold text-[#60758d]">
+          {formatPercent(row.agentPercentage)} / {formatPercent(row.agencyPercentage)}
+        </span>
+      </div>
+      <div className="mt-5">
+        <p className="text-[0.72rem] font-bold uppercase tracking-[0.12em] text-[#8ca0b5]">Commission Split</p>
+        <p className="mt-2 text-3xl font-semibold tracking-[-0.02em] text-[#101828]">
+          {formatPercent(row.agentPercentage).replace('%', '')} / {formatPercent(row.agencyPercentage).replace('%', '')}
+        </p>
+      </div>
+      {transactionLabel ? <p className="mt-4 text-sm font-medium text-[#60758d]">{transactionLabel}</p> : null}
+      <button
+        type="button"
+        onClick={() => onEdit(row)}
+        className="mt-6 inline-flex h-10 items-center justify-center rounded-[14px] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(15,127,79,0.18)] transition hover:bg-[#0d6f45]"
+      >
+        Edit Split
+      </button>
+    </article>
+  )
+}
+
+function AgentsWorkspace({ rows, filters, setFilters, openModal }) {
+  const filteredRows = rows.filter((row) => {
+    const search = normalizeText(filters.search).toLowerCase()
+    const branch = getAgentBranchLabel(row).toLowerCase()
+    return !search || `${row.name} ${row.email} ${row.levelName} ${branch}`.toLowerCase().includes(search)
+  })
+
+  return (
+    <CommissionCard title="Agents">
       {!rows.length ? (
-        <SettingsEmptyState title="No active users yet" description="Invite users first, then assign their commission levels." />
+        <SettingsEmptyState title="No active agents yet" description="Invite agents first, then manage their commission assignments here." />
       ) : (
-        <div className="overflow-hidden rounded-[18px] border border-[#dfe8f1] bg-white">
-          <div className="hidden grid-cols-[1.1fr_1fr_0.7fr_1fr_0.9fr_0.8fr] gap-4 border-b border-[#e4ebf3] bg-[#f8fbfe] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8da6] lg:grid">
-            <span>Agent</span>
-            <span>Level</span>
-            <span>Split</span>
-            <span>Monthly Commission</span>
-            <span>Status</span>
-            <span>Actions</span>
+        <div className="space-y-5">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8fa0b4]" strokeWidth={2} />
+            <Field className={`${INPUT_CLASS} pl-9`} placeholder="Search agents" value={filters.search} onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))} />
           </div>
-          <div className="divide-y divide-[#e9eff5]">
-            {rows.map((row) => (
-              <div key={row.key} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.1fr_1fr_0.7fr_1fr_0.9fr_0.8fr] lg:items-center lg:gap-4">
-                <div>
-                  <strong className="text-sm text-[#17233a]">{row.name}</strong>
-                  <p className="mt-1 text-xs text-[#60758d]">{row.email}</p>
-                </div>
-                <Field as="select" value={row.assignedLevelId || ''} className={`${INPUT_CLASS} py-2.5`} disabled={saving} onChange={(event) => onAssign(row.user, event.target.value)}>
-                  <option value="">Use default</option>
-                  {levels.filter((level) => level.isActive !== false).map((level) => (
-                    <option key={level.id} value={level.id}>{level.name}</option>
-                  ))}
-                </Field>
-                <span className="text-sm font-semibold text-[#17233a]">{formatPercent(row.agentPercentage)} / {formatPercent(row.agencyPercentage)}</span>
-                <span className="text-sm font-semibold text-[#17233a]">{formatCurrency(row.monthlyCommission || 0, { compact: true })}</span>
-                <StatusPill tone={row.assignedLevelId ? 'green' : 'neutral'}>{row.assignedLevelId ? 'Assigned' : 'Default'}</StatusPill>
-                <div className="flex flex-wrap gap-2">
-                  <IconButton disabled={saving} onClick={() => onAssign(row.user, row.assignedLevelId || row.effectiveLevelId)}>
-                    Assign
-                  </IconButton>
-                  <IconButton disabled={saving || !row.assignedLevelId} onClick={() => onAssign(row.user, '')}>
-                    Remove
-                  </IconButton>
-                </div>
-              </div>
-            ))}
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {filteredRows.map((row) => <AgentCard key={row.key} row={row} onEdit={(agentRow) => openModal('agent', agentRow)} />)}
           </div>
+          {!filteredRows.length ? <SettingsEmptyState title="No agents found" description="Try a different name, branch or level." /> : null}
         </div>
       )}
     </CommissionCard>
@@ -589,9 +498,9 @@ function ReferralRulesWorkspace({ referralRules, referralDraft, setReferralDraft
             <p className="text-sm font-semibold text-[#17233a]">Rule Preview</p>
             <div className="mt-4 grid gap-3 text-center text-sm font-semibold text-[#40566d] md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
               <span className="rounded-[14px] bg-white p-3">Agent A refers</span>
-              <ChevronRight className="mx-auto h-4 w-4 text-[#9aa8b8]" strokeWidth={2} />
+              <span className="text-xs uppercase tracking-[0.12em] text-[#9aa8b8]">then</span>
               <span className="rounded-[14px] bg-white p-3">{referralDraft.name || 'Same Branch'}</span>
-              <ChevronRight className="mx-auto h-4 w-4 text-[#9aa8b8]" strokeWidth={2} />
+              <span className="text-xs uppercase tracking-[0.12em] text-[#9aa8b8]">then</span>
               <span className="rounded-[14px] bg-white p-3 text-[#0f7f4f]">{formatPercent(referralDraft.percentage)} {normalizeText(referralDraft.basis).replaceAll('_', ' ')}</span>
             </div>
           </div>
@@ -665,20 +574,16 @@ function BusinessRulesWorkspace({
   structures,
   openModal,
   removeStructure,
-  assignableRows,
-  levels,
-  filters,
-  setFilters,
-  onAssign,
   saving,
 }) {
+  const activeRules = referralRules.filter((rule) => rule.isActive !== false).length
   return (
     <div className="space-y-6">
-      <CommissionCard title="Business Rules" description="Referral rules, overrides and templates are managed together because they all shape commission logic.">
+      <CommissionCard title="Rules">
         <div className="grid gap-3 md:grid-cols-3">
-          <TargetMetric label="Referral Rules" value={`${referralRules.filter((rule) => rule.isActive !== false).length} Active`} />
-          <TargetMetric label="Overrides" value={`${assignableRows.filter((row) => row.assignedLevelId).length} Agents`} />
-          <TargetMetric label="Templates" value={`${structures.length} Reusable`} />
+          <TargetMetric label="Referral Rules" value={`${activeRules} Active`} />
+          <TargetMetric label="Operational Rules" value={`${structures.length} Templates`} />
+          <TargetMetric label="Exceptions" value="Managed in Agents" />
         </div>
       </CommissionCard>
 
@@ -691,104 +596,8 @@ function BusinessRulesWorkspace({
         saving={saving}
       />
 
-      <SimplifiedOverridesWorkflow
-        rows={assignableRows}
-        levels={levels}
-        filters={filters}
-        setFilters={setFilters}
-        onAssign={onAssign}
-        saving={saving}
-      />
-
       <TemplatesWorkspace structures={structures} openModal={openModal} removeStructure={removeStructure} saving={saving} />
     </div>
-  )
-}
-
-function SimplifiedOverridesWorkflow({ rows, levels, filters, setFilters, onAssign, saving }) {
-  const filteredRows = rows.filter((row) => {
-    const search = normalizeText(filters.search).toLowerCase()
-    const matchesSearch = !search || `${row.name} ${row.email}`.toLowerCase().includes(search)
-    const matchesLevel = !filters.level || row.effectiveLevelId === filters.level || row.assignedLevelId === filters.level
-    return matchesSearch && matchesLevel
-  })
-  const selectedRow = filteredRows[0] || rows[0] || null
-  const [overrideDraft, setOverrideDraft] = useState({ agentKey: '', levelId: '' })
-  const activeRow = rows.find((row) => row.key === overrideDraft.agentKey) || selectedRow
-  const activeLevelId = overrideDraft.agentKey === activeRow?.key && overrideDraft.levelId
-    ? overrideDraft.levelId
-    : activeRow?.assignedLevelId || activeRow?.effectiveLevelId || levels[0]?.id || ''
-
-  function submitOverride(event) {
-    event.preventDefault()
-    if (activeRow) onAssign(activeRow.user, activeLevelId)
-  }
-
-  return (
-    <CommissionCard title="Overrides" description="Search one person, review their current level, choose an override and save.">
-      <form className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" onSubmit={submitOverride}>
-        <div className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8fa0b4]" strokeWidth={2} />
-              <Field className={`${INPUT_CLASS} pl-9`} placeholder="Search Agent" value={filters.search} onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))} />
-            </div>
-            <Field as="select" className={INPUT_CLASS} value={filters.level} onChange={(event) => setFilters((previous) => ({ ...previous, level: event.target.value }))}>
-              <option value="">All Levels</option>
-              {levels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
-            </Field>
-          </div>
-          <div className="max-h-[340px] overflow-y-auto rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-2">
-            {filteredRows.length ? filteredRows.slice(0, 12).map((row) => (
-              <button
-                key={row.key}
-                type="button"
-                onClick={() => setOverrideDraft({
-                  agentKey: row.key,
-                  levelId: row.assignedLevelId || row.effectiveLevelId || levels[0]?.id || '',
-                })}
-                className={`flex w-full items-center justify-between gap-3 rounded-[12px] px-3 py-3 text-left transition ${activeRow?.key === row.key ? 'bg-white text-[#0f7f4f] shadow-[0_6px_14px_rgba(15,23,42,0.05)]' : 'text-[#40566d] hover:bg-white'}`}
-              >
-                <span>
-                  <span className="block text-sm font-semibold">{row.name}</span>
-                  <span className="block text-xs text-[#60758d]">{row.email}</span>
-                </span>
-                <StatusPill tone={row.assignedLevelId ? 'green' : 'neutral'}>{row.levelName}</StatusPill>
-              </button>
-            )) : <SettingsEmptyState title="No agents found" description="Try a different name, email, or level filter." />}
-          </div>
-        </div>
-
-        <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
-          <p className="text-sm font-semibold text-[#17233a]">Agent Lookup</p>
-          <div className="mt-4 grid gap-4">
-            <TargetMetric label="Agent" value={activeRow?.name || 'Select an agent'} />
-            <TargetMetric label="Current Level" value={activeRow?.levelName || 'None'} />
-            <FieldLabel label="Override" id="business-rule-override-level">
-              <Field
-                as="select"
-                id="business-rule-override-level"
-                className={INPUT_CLASS}
-                value={activeLevelId}
-                onChange={(event) => setOverrideDraft((previous) => ({ ...previous, agentKey: activeRow?.key || previous.agentKey, levelId: event.target.value }))}
-              >
-                {levels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
-              </Field>
-            </FieldLabel>
-            <div className="grid gap-3 md:grid-cols-2">
-              <TargetMetric label="Effective" value="Today" />
-              <TargetMetric label="Expiry" value="None" />
-            </div>
-            <div className="flex justify-end">
-              <IconButton variant="primary" type="submit" disabled={saving || !activeRow || !activeLevelId}>
-                <CheckCircle2 className="h-4 w-4" strokeWidth={2} />
-                {saving ? 'Saving...' : 'Save Override'}
-              </IconButton>
-            </div>
-          </div>
-        </div>
-      </form>
-    </CommissionCard>
   )
 }
 
@@ -914,32 +723,74 @@ function TemplateEditor({ draft, updateDraft, onSubmit, onCancel, saving }) {
   )
 }
 
-function OverrideEditor({ rows, levels, selectedRow, onAssign, onCancel, saving }) {
-  const [agentKey, setAgentKey] = useState(selectedRow?.key || rows[0]?.key || '')
-  const [levelId, setLevelId] = useState(selectedRow?.assignedLevelId || selectedRow?.effectiveLevelId || levels[0]?.id || '')
-  const row = rows.find((item) => item.key === agentKey) || selectedRow || rows[0]
+function AgentCommissionDrawer({ row, levels, onAssign, onCancel, saving }) {
+  const [levelId, setLevelId] = useState(row?.assignedLevelId || row?.effectiveLevelId || levels[0]?.id || '')
+  const [overrideEnabled, setOverrideEnabled] = useState(Boolean(row?.assignedLevelId))
+  const selectedLevel = levels.find((level) => normalizeText(level.id) === normalizeText(levelId)) || row || {}
+  const agentSplit = normalizePercentage(selectedLevel.agentPercentage ?? row?.agentPercentage, 70)
+  const agencySplit = normalizePercentage(selectedLevel.agencyPercentage ?? (100 - agentSplit), 30)
+
+  useEffect(() => {
+    setLevelId(row?.assignedLevelId || row?.effectiveLevelId || levels[0]?.id || '')
+    setOverrideEnabled(Boolean(row?.assignedLevelId))
+  }, [levels, row])
+
   return (
-    <form className="grid gap-4" onSubmit={(event) => {
+    <form className="grid gap-6" onSubmit={(event) => {
       event.preventDefault()
-      if (row) onAssign(row.user, levelId)
+      if (row) onAssign(row.user, overrideEnabled ? levelId : '')
     }}>
-      <FieldLabel label="Agent" id="override-agent">
-        <Field as="select" id="override-agent" className={INPUT_CLASS} value={agentKey} onChange={(event) => setAgentKey(event.target.value)}>
-          {rows.map((item) => <option key={item.key} value={item.key}>{item.name} - {item.email}</option>)}
-        </Field>
-      </FieldLabel>
-      <FieldLabel label="Level" id="override-level">
-        <Field as="select" id="override-level" className={INPUT_CLASS} value={levelId} onChange={(event) => setLevelId(event.target.value)}>
-          {levels.map((level) => <option key={level.id} value={level.id}>{level.name} ({formatPercent(level.agentPercentage)} / {formatPercent(level.agencyPercentage)})</option>)}
-        </Field>
-      </FieldLabel>
-      <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
-        <p className="text-sm font-semibold text-[#17233a]">Override Preview</p>
-        <p className="mt-2 text-sm text-[#60758d]">{row?.name || 'Agent'} will use the selected commission level from today. Expiry can be added once dated overrides are enabled.</p>
+      <div className="flex items-center gap-4">
+        <AgentAvatar row={row} size="lg" />
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-semibold text-[#17233a]">{row?.name || 'Agent'}</h2>
+          <p className="mt-1 truncate text-sm text-[#60758d]">{getAgentBranchLabel(row) || row?.email || 'Commission assignment'}</p>
+        </div>
       </div>
+
+      <div className="h-px bg-[#edf2f7]" />
+
+      <FieldLabel label="Commission Level" id="agent-commission-level">
+        <Field as="select" id="agent-commission-level" className={INPUT_CLASS} value={levelId} onChange={(event) => {
+          setLevelId(event.target.value)
+          setOverrideEnabled(true)
+        }}>
+          {levels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
+        </Field>
+      </FieldLabel>
+
+      <div className="h-px bg-[#edf2f7]" />
+
+      <section className="grid gap-4">
+        <label className="flex items-center justify-between gap-3 rounded-[18px] bg-[#fbfdff] p-4 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)]">
+          <span>
+            <span className="block text-sm font-semibold text-[#17233a]">Override Split</span>
+            <span className="mt-1 block text-sm text-[#60758d]">Use an agent-specific assignment.</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={overrideEnabled}
+            onChange={(event) => setOverrideEnabled(event.target.checked)}
+            className="h-5 w-5 rounded border-[#cfd9e4] text-[#0f7f4f] focus:ring-[#dff2e8]"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <FieldLabel label="Agent" id="agent-split-percentage">
+            <Field id="agent-split-percentage" className={INPUT_CLASS} value={formatPercent(agentSplit)} disabled />
+          </FieldLabel>
+          <FieldLabel label="Agency" id="agency-split-percentage">
+            <Field id="agency-split-percentage" className={INPUT_CLASS} value={formatPercent(agencySplit)} disabled />
+          </FieldLabel>
+        </div>
+      </section>
+
+      <div className="h-px bg-[#edf2f7]" />
+
+      <TargetMetric label="Effective Date" value="Today" />
+
       <div className="flex justify-end gap-2">
         <IconButton onClick={onCancel}>Cancel</IconButton>
-        <IconButton variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Override'}</IconButton>
+        <IconButton variant="primary" type="submit" disabled={saving || !row}>{saving ? 'Saving...' : 'Save Changes'}</IconButton>
       </div>
     </form>
   )
@@ -989,7 +840,6 @@ function AuditTrail({ levels, structures, referralRules }) {
 
 export default function SettingsCommissionStructuresPage() {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
-  const navigate = useNavigate()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [activeTab, setActiveTab] = useState('overview')
@@ -1058,7 +908,6 @@ export default function SettingsCommissionStructuresPage() {
   const levels = useMemo(() => overview?.levels || [], [overview?.levels])
   const structures = useMemo(() => overview?.structures || [], [overview?.structures])
   const referralRules = useMemo(() => overview?.referralRules || [], [overview?.referralRules])
-  const tracker = useMemo(() => overview?.companyTracker || {}, [overview?.companyTracker])
   const defaultLevel = useMemo(
     () => overview?.defaultLevel || levels.find((level) => level.isDefault) || levels[0] || {},
     [levels, overview?.defaultLevel],
@@ -1093,6 +942,7 @@ export default function SettingsCommissionStructuresPage() {
         user,
         name: user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Agent',
         email: user.email || '',
+        branchName: user.branchName || user.branch_name || user.branch?.name || '',
         role: user.role,
         profile,
         assignedLevelId,
@@ -1285,7 +1135,7 @@ export default function SettingsCommissionStructuresPage() {
   if (!canEdit) {
     return (
       <div className={settingsPageClass}>
-        <CommissionPageHeader openModal={openModal} />
+        <TabRail activeTab={activeTab} setActiveTab={setActiveTab} />
         <SettingsBanner tone="warning">
           Access restricted. Only {administratorLabel} can view and manage agency commission rules.
         </SettingsBanner>
@@ -1295,7 +1145,7 @@ export default function SettingsCommissionStructuresPage() {
 
   return (
     <div className={settingsPageClass}>
-      <CommissionPageHeader openModal={openModal} />
+      <TabRail activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
@@ -1305,33 +1155,35 @@ export default function SettingsCommissionStructuresPage() {
         </SettingsBanner>
       ) : null}
 
-      <TabRail activeTab={activeTab} setActiveTab={setActiveTab} />
-
       <main className="min-w-0">
         {activeTab === 'overview' ? (
           <CommissionOverviewDashboard
             levels={levels}
             referralRules={referralRules}
-            tracker={tracker}
+            structures={structures}
             assignableRows={assignableRows}
             defaultLevel={defaultLevel}
             setActiveTab={setActiveTab}
-            openModal={openModal}
-            viewReports={() => navigate('/reports?view=performance')}
           />
         ) : null}
 
         {activeTab === 'levels' ? (
           <CommissionLevelsWorkspace
             levels={levels}
-            assignableRows={assignableRows}
             openModal={openModal}
-            assignLevel={assignLevel}
-            saving={saving}
           />
         ) : null}
 
-        {activeTab === 'business_rules' ? (
+        {activeTab === 'agents' ? (
+          <AgentsWorkspace
+            rows={assignableRows}
+            filters={overrideFilters}
+            setFilters={setOverrideFilters}
+            openModal={openModal}
+          />
+        ) : null}
+
+        {activeTab === 'rules' ? (
           <BusinessRulesWorkspace
             referralRules={referralRules}
             referralDraft={referralDraft}
@@ -1341,11 +1193,6 @@ export default function SettingsCommissionStructuresPage() {
             structures={structures}
             openModal={openModal}
             removeStructure={removeStructure}
-            assignableRows={assignableRows}
-            levels={levels}
-            filters={overrideFilters}
-            setFilters={setOverrideFilters}
-            onAssign={assignLevel}
             saving={saving}
           />
         ) : null}
@@ -1363,9 +1210,9 @@ export default function SettingsCommissionStructuresPage() {
         </CommissionModal>
       ) : null}
 
-      {modal.type === 'override' ? (
-        <CommissionModal title="Add Override" description="Assign or change an agent commission level." onClose={closeModal}>
-          <OverrideEditor rows={assignableRows} levels={levels} selectedRow={modal.payload} onAssign={assignLevel} onCancel={closeModal} saving={saving} />
+      {modal.type === 'agent' ? (
+        <CommissionModal title="Edit Commission" onClose={closeModal} variant="drawer">
+          <AgentCommissionDrawer row={modal.payload} levels={levels} onAssign={assignLevel} onCancel={closeModal} saving={saving} />
         </CommissionModal>
       ) : null}
 

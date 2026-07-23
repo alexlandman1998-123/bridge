@@ -25,6 +25,39 @@ assert.equal(resolvedBranding.primaryColour, '#123456')
 assert.equal(resolvedBranding.secondaryColour, '#234567')
 assert.equal(resolvedBranding.accentColour, '#345678')
 
+const resolvedLandingAliasBranding = resolveOnboardingBranding({
+  landingDarkLogo: '/brand/landing-dark.svg',
+  landingLogo: '/brand/landing-primary.svg',
+  landingIconLogo: '/brand/landing-icon.svg',
+  landingColours: {
+    landingPrimary: '#494B8A',
+    landingSecondary: '#000000',
+    landingAccent: '#CEAC69',
+  },
+})
+assert.equal(resolvedLandingAliasBranding.logoLightUrl, '/brand/landing-primary.svg')
+assert.equal(resolvedLandingAliasBranding.logoDarkUrl, '/brand/landing-dark.svg')
+assert.equal(resolvedLandingAliasBranding.logoIconUrl, '/brand/landing-icon.svg')
+assert.equal(resolvedLandingAliasBranding.primaryColour, '#494B8A')
+assert.equal(resolvedLandingAliasBranding.secondaryColour, '#000000')
+assert.equal(resolvedLandingAliasBranding.accentColour, '#CEAC69')
+
+const resolvedLandingSpecificColours = resolveOnboardingBranding({
+  brandColours: {
+    primary: '#111111',
+    secondary: '#222222',
+    accent: '#333333',
+  },
+  landingColours: {
+    primary: '#494B8A',
+    secondary: '#000000',
+    accent: '#CEAC69',
+  },
+})
+assert.equal(resolvedLandingSpecificColours.primaryColour, '#494B8A')
+assert.equal(resolvedLandingSpecificColours.secondaryColour, '#000000')
+assert.equal(resolvedLandingSpecificColours.accentColour, '#CEAC69')
+
 const files = {
   settingsPage: await readFile(new URL('../src/pages/settings/SettingsOrganisationPage.jsx', import.meta.url), 'utf8'),
   settingsApi: await readFile(new URL('../src/lib/settingsApi.js', import.meta.url), 'utf8'),
@@ -60,12 +93,13 @@ assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryCo
 assert.match(files.clientOnboarding, /secondaryColour=\{onboardingBrand\.secondaryColour\}/)
 assert.match(files.clientOnboarding, /accentColour=\{onboardingBrand\.accentColour\}/)
 assert.match(files.clientOnboarding, /const logoLightUrl = branding\.logoLightUrl \|\| ''/, 'buyer landing brand should retain the resolved light logo URL')
-assert.match(files.clientOnboarding, /agencyLogo=\{onboardingBrand\.logoLightUrl \|\| onboardingBrand\.logoUrl \|\| onboardingBrand\.logoDarkUrl \|\| ''\}/, 'buyer premium landing should prefer the light logo for dark backgrounds')
+assert.match(files.clientOnboarding, /const logoUrl = logoDarkUrl \|\| logoLightUrl \|\| branding\.logoIconUrl/, 'buyer landing brand should prefer the configured dark logo')
+assert.match(files.clientOnboarding, /agencyLogo=\{onboardingBrand\.logoDarkUrl \|\| onboardingBrand\.logoUrl \|\| onboardingBrand\.logoLightUrl \|\| ''\}/, 'buyer premium landing should prefer the dark logo configured for onboarding landings')
 assert.match(files.sellerOnboarding, /primaryColour=\{brand\?\.primaryColour\}/)
 assert.match(files.sellerOnboarding, /secondaryColour=\{brand\?\.secondaryColour\}/)
 assert.match(files.sellerOnboarding, /accentColour=\{brand\?\.accentColour\}/)
 assert.match(files.sellerOnboarding, /<PremiumOnboardingLanding[\s\S]*portalType="seller"/, 'seller onboarding welcome should use the premium landing surface')
-assert.match(files.sellerOnboarding, /agencyLogo=\{brand\?\.logoLightUrl \|\| brand\?\.logoUrl \|\| brand\?\.logoDarkUrl \|\| ''\}/, 'seller premium landing should prefer the light logo for dark backgrounds')
+assert.match(files.sellerOnboarding, /agencyLogo=\{brand\?\.logoDarkUrl \|\| brand\?\.logoUrl \|\| brand\?\.logoLightUrl \|\| ''\}/, 'seller premium landing should prefer the dark logo configured for onboarding landings')
 assert.match(files.sellerOnboarding, /ctaLabel=\{actionLabel\}/, 'seller premium landing should receive the resume-aware CTA label')
 assert.match(files.premiumLanding, /data-onboarding-fixed-cta/, 'premium onboarding landing should keep the CTA in a fixed bottom action bar')
 assert.doesNotMatch(files.premiumLanding, /rounded-\[18px\][\s\S]*boxShadow: `0 18px 38px/, 'premium onboarding CTA should not regress to a floating pill treatment')

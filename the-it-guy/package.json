@@ -13,6 +13,7 @@
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:legal-template-source-of-truth": "node scripts/legal-template-source-of-truth.test.mjs",
     "test:mandate-signing-send-responsiveness": "node scripts/mandate-signing-send-responsiveness.test.mjs",
+    "test:lead-mandate-quick-start": "node scripts/lead-mandate-quick-start.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",
     "test:workspace-branding-observability": "node scripts/workspace-branding-observability.test.mjs",
     "test:dashboard-performance-telemetry": "node --test src/services/observability/__tests__/dashboardPerformanceTelemetry.test.js && node scripts/dashboard-performance-telemetry.test.mjs",
