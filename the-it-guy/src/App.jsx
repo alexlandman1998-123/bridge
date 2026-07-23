@@ -2476,8 +2476,18 @@ function AppRoutes() {
                 path="/agency"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/agency/branches" replace />
+                    <Navigate to="/agency/overview" replace />
                   </RoleRoute>
+                }
+              />
+              <Route
+                path="/agency/overview"
+                element={
+                  <AgentManagementRoute allowBranchOperations>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsOrganisationPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
                 }
               />
               <Route
@@ -2536,6 +2546,46 @@ function AppRoutes() {
                   <AgentManagementRoute>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgentWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/commission"
+                element={
+                  <OrganisationSettingsManageRoute>
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsCommissionStructuresPage />
+                    </RoleRoute>
+                  </OrganisationSettingsManageRoute>
+                }
+              />
+              <Route
+                path="/agency/branding"
+                element={
+                  <AgentManagementRoute allowBranchOperations>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsOrganisationPage section="branding" />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/roles"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsUsersPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/activity"
+                element={
+                  <AgentManagementRoute allowBranchOperations>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsActivityPage />
                     </RoleRoute>
                   </AgentManagementRoute>
                 }
@@ -2807,7 +2857,7 @@ function AppRoutes() {
                   path="commission"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsCommissionStructuresPage />
+                      <Navigate to="/agency/commission" replace />
                     </RoleRoute>
                   }
                 />
@@ -2815,7 +2865,7 @@ function AppRoutes() {
                   path="commission-structures"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsCommissionStructuresPage />
+                      <Navigate to="/agency/commission" replace />
                     </RoleRoute>
                   }
                 />

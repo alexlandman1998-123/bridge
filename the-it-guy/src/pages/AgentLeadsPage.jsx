@@ -86,6 +86,8 @@ import {
   normalizeDocumentStatus,
 } from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
+import { filterPreferredPartners } from '../lib/preferredPartners'
+import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { listOrganisationPreferredPartners, listOrganisationUsers } from '../lib/settingsApi'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -15413,6 +15415,52 @@ function getPreferredAttorneyInitials(attorney = {}) {
   return words.length ? words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() : 'TA'
 }
 
+function mapConnectedAttorneyToPreferredAttorney(assignment = {}) {
+  const companyName = normalizeText(assignment.companyName)
+  const partnerOrganisationId = normalizeText(assignment.organisationId)
+  const relationshipId = normalizeText(assignment.relationshipId || assignment.id)
+  if (!companyName && !partnerOrganisationId) return null
+
+  return {
+    id: relationshipId || partnerOrganisationId,
+    preferredPartnerId: relationshipId || partnerOrganisationId,
+    partnerRelationshipId: relationshipId || null,
+    partnerOrganisationId: partnerOrganisationId || null,
+    partnerType: 'transfer_attorney',
+    companyName: companyName || 'Connected transfer attorney',
+    contactPerson: normalizeText(assignment.contactPerson),
+    email: normalizeText(assignment.email).toLowerCase(),
+    phone: normalizeText(assignment.phone),
+    province: '',
+    notes: normalizeText(assignment.notes) || 'Available from connected partner network.',
+    isActive: true,
+    isPreferredDefault: Boolean(assignment.preferred),
+    source: 'connected_partner',
+    scopeType: normalizeText(assignment.scopeType),
+    scopeLabel: normalizeText(assignment.scopeLabel),
+  }
+}
+
+function getPreferredAttorneyDedupKey(attorney = {}) {
+  const partnerOrganisationId = normalizeText(attorney.partnerOrganisationId)
+  if (partnerOrganisationId) return `organisation:${partnerOrganisationId}`
+  const email = normalizeText(attorney.email).toLowerCase()
+  const companyName = normalizeText(attorney.companyName).toLowerCase()
+  return `identity:${companyName}:${email || normalizeText(attorney.id)}`
+}
+
+function mergePreferredAttorneyOptions(primaryRows = [], fallbackRows = []) {
+  const seen = new Set()
+  const merged = []
+  ;[...(Array.isArray(primaryRows) ? primaryRows : []), ...(Array.isArray(fallbackRows) ? fallbackRows : [])].forEach((attorney) => {
+    const key = getPreferredAttorneyDedupKey(attorney)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    merged.push(attorney)
+  })
+  return merged
+}
+
 function PreferredAttorneySelectionModal({
   open = false,
   attorneys = [],
@@ -21170,12 +21218,39 @@ function AgentLeadWorkspace() {
     setSellerPreferredAttorneysLoading(true)
     try {
       const partners = await listOrganisationPreferredPartners()
-      const attorneys = (partners || []).filter((partner) => partner?.isActive && partner?.partnerType === 'transfer_attorney')
+      let connectedAttorneyOptions = []
+      try {
+        const partnerSnapshot = await fetchPartnersSnapshot({
+          organisationId,
+          workspaceType: workspaceContext.currentWorkspace?.type || workspaceContext.workspace?.type || 'agency',
+          includeDirectory: false,
+          accessContext: {
+            organisationId,
+            role: actor.workspaceRole || actor.role,
+            profile: workspaceContext.profile || actor,
+            currentMembership: workspaceContext.currentMembership,
+          },
+        })
+        connectedAttorneyOptions = getPartnerAssignmentOptions(partnerSnapshot, 'transfer_attorney', {
+          organisationId,
+          role: actor.workspaceRole || actor.role,
+          profile: workspaceContext.profile || actor,
+          currentMembership: workspaceContext.currentMembership,
+        })
+          .map(mapConnectedAttorneyToPreferredAttorney)
+          .filter(Boolean)
+      } catch (partnerSnapshotError) {
+        console.warn('[Seller onboarding] Connected transfer attorneys could not be loaded.', partnerSnapshotError)
+      }
+      const attorneys = mergePreferredAttorneyOptions(
+        filterPreferredPartners(partners || [], { type: 'transfer_attorney', activeOnly: true }),
+        connectedAttorneyOptions,
+      )
       setSellerPreferredAttorneys(attorneys)
       const existingAttorneyId = normalizeText(
         linkedSellerListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId,
       )
-      const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId)
+      const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId || String(attorney.preferredPartnerId) === existingAttorneyId)
         || attorneys.find((attorney) => attorney.isPreferredDefault)
         || attorneys[0]
         || null
@@ -21190,7 +21265,7 @@ function AgentLeadWorkspace() {
     } finally {
       setSellerPreferredAttorneysLoading(false)
     }
-  }, [isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerOnboarding])
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerOnboarding, workspaceContext])
 
   const sendSellerOnboardingForLead = useCallback(async (preferredAttorney = null) => {
     if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding || sellerOnboardingInFlightRef.current) return

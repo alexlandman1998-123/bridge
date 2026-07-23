@@ -1,5 +1,4 @@
 import {
-  BadgePercent,
   Building2,
   CreditCard,
   History,
@@ -36,7 +35,7 @@ export const SETTINGS_NAV_GROUPS = [
   {
     label: 'WORKSPACE',
     title: 'Workspace',
-    description: 'Organisation identity, team access, and commercial rules.',
+    description: 'Workspace behaviour, identity, access, and platform controls.',
     items: [
       {
         to: '/settings/organisation',
@@ -55,15 +54,6 @@ export const SETTINGS_NAV_GROUPS = [
         roles: ['developer', 'agent', 'attorney', 'bond_originator'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'logo colours colors brand portal reports primary icon dark',
-      },
-      {
-        to: '/settings/commission',
-        label: 'Commission',
-        description: 'Commission structures, splits, and referral rules.',
-        icon: BadgePercent,
-        roles: ['developer', 'agent'],
-        requiresManage: true,
-        keywords: 'commission splits targets referrals overrides templates finance agency performance',
       },
       {
         to: '/settings/users',

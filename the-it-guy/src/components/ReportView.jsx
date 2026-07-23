@@ -107,23 +107,12 @@ const MAIN_STAGE_LABELS = {
   XFER: 'Transfer',
   REG: 'Registered',
 }
-const STAGE_SLA_DAYS = {
-  AVAIL: 30,
-  DEP: 10,
-  OTP: 12,
-  FIN: 18,
-  ATTY: 20,
-  XFER: 14,
-  REG: 0,
-}
 const FINANCE_COLOR_MAP = {
   cash: '#37576f',
   bond: '#22c55e',
   combination: '#2563eb',
   unknown: '#cbd5e1',
 }
-const BUYER_AGE_GROUPS = ['Under 30', '30-40', '40-50', '50+', 'Unknown']
-
 function normalizeMainStageKey(value) {
   const normalized = String(value || '')
     .trim()
@@ -152,14 +141,6 @@ function getMainStageIndex(row) {
   return MAIN_STAGE_ORDER.indexOf(getMainStageKey(row))
 }
 
-function getStageStartedAt(row) {
-  return row?.report?.stageDate || row?.transaction?.updated_at || row?.transaction?.created_at || null
-}
-
-function getDaysInCurrentPhase(row) {
-  return daysSince(getStageStartedAt(row))
-}
-
 function daysSince(dateLike) {
   if (!dateLike) return 0
   const parsed = new Date(dateLike)
@@ -171,22 +152,6 @@ function daysSince(dateLike) {
 
 function normalizeFinanceType(raw) {
   return normalizeCanonicalFinanceType(raw, { allowUnknown: true })
-}
-
-function getBuyerAgeGroup(row) {
-  const rawAge = Number(row?.buyer?.age)
-  if (!Number.isFinite(rawAge) || rawAge <= 0) return 'Unknown'
-  if (rawAge < 30) return 'Under 30'
-  if (rawAge <= 40) return '30-40'
-  if (rawAge <= 50) return '40-50'
-  return '50+'
-}
-
-function getRiskBand(days, slaDays) {
-  if (!slaDays) return 'ok'
-  if (days > slaDays * 1.4) return 'high'
-  if (days > slaDays) return 'watch'
-  return 'ok'
 }
 
 function buildDonutGradient(segments) {
@@ -1011,6 +976,7 @@ function ReportTypeToggle({ reportType, onChange }) {
       {[
         { value: 'overview', label: 'Overview Table' },
         { value: 'unit_view', label: 'Unit View' },
+        { value: 'performance', label: 'Performance' },
       ].map((option) => (
         <button
           key={option.value}
@@ -1757,6 +1723,13 @@ function ReportView({ reportType, reportTypeLabel, title, transactionScopeLabel,
         </section>
 
         <section className="space-y-5">
+          <div className="flex flex-col gap-3 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#7b8ca2]">Report Mode</p>
+              <h3 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[#142132]">{reportTypeLabel}</h3>
+            </div>
+            <ReportTypeToggle reportType={reportType} onChange={onReportTypeChange} />
+          </div>
           {filtersPanel}
           <PipelineOverviewSection stageRows={dashboardData.activeStageRows} bottleneckKey={dashboardData.bottleneck} />
           <FunnelAndFinanceSection
