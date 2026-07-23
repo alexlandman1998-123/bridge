@@ -43,6 +43,8 @@ assert.match(files.settingsApi, /clearOrganisationRuntimeCache\(\)[\s\S]*onboard
 assert.match(files.buyerApi, /async function fetchOrganisationBrandContext[\s\S]*\.from\('organisation_settings'\)[\s\S]*settingsJson/)
 assert.match(files.buyerApi, /getOrganisationOnboardingBrandingSources[\s\S]*agencyOnboarding\.branding[\s\S]*settingsJson\.branding/)
 assert.match(files.sellerService, /const settingsBranding[\s\S]*resolveOnboardingBranding\(\s*branding,\s*settingsBranding/)
+assert.match(files.sellerService, /function resolveListingOrganisationId/, 'seller onboarding service should normalize listing organisation id casing')
+assert.match(files.sellerService, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal payload should attach organisation settings branding')
 
 assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryColour\}/)
 assert.match(files.clientOnboarding, /secondaryColour=\{onboardingBrand\.secondaryColour\}/)

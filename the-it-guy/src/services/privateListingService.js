@@ -2505,6 +2505,10 @@ function attachBrandingToListing(listing = null, branding = null) {
   }
 }
 
+function resolveListingOrganisationId(listing = {}) {
+  return normalizeText(listing?.organisationId || listing?.organisation_id || listing?.organizationId || listing?.organization_id)
+}
+
 const FINAL_SIGNED_ARTIFACT_TRANSPORT_FIELDS = [
   'finalSignedFilePath',
   'final_signed_file_path',
@@ -5605,7 +5609,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   }
   if (portalPayload?.listing) {
     const [branding, mediaByListingId] = await Promise.all([
-      fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId),
+      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),
     ])
     const listingWithMedia = attachDistributionMediaToListing(
@@ -5645,7 +5649,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? rawListing.mandate_packet
       : null
   const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
-  const branding = await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
+  const branding = await fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing))
   return {
     onboarding: query.data,
     listing: attachBrandingToListing(listing, branding),
