@@ -233,13 +233,18 @@ export default function PremiumOnboardingLanding({
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-8 lg:px-10">
-        <div className="mx-auto flex w-full max-w-[1440px]">
+      <div
+        data-onboarding-fixed-cta
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-white/12 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-18px_44px_rgba(0,0,0,0.26)] backdrop-blur-xl sm:px-8 lg:px-10"
+        style={{
+          background: `linear-gradient(180deg, ${hexToRgba(theme.primary, 0.9)} 0%, ${hexToRgba(theme.secondary, 0.98)} 100%)`,
+        }}
+      >
+        <div className="mx-auto flex w-full max-w-[1440px] justify-center sm:justify-start">
           <button
             type="button"
             onClick={onStart}
-            className="inline-flex min-h-[58px] w-full items-center justify-center gap-3 rounded-[18px] bg-[var(--landing-accent)] px-6 py-4 text-base font-semibold text-[var(--landing-accent-text)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--landing-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--landing-primary)] sm:w-auto sm:min-w-[300px]"
-            style={{ boxShadow: `0 18px 38px ${theme.accentShadow}` }}
+            className="inline-flex min-h-[58px] w-full items-center justify-center gap-3 rounded-lg bg-[var(--landing-accent)] px-6 py-4 text-base font-semibold text-[var(--landing-accent-text)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--landing-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--landing-primary)] sm:w-auto sm:min-w-[300px]"
           >
             {ctaText}
             <ChevronRight size={21} />
