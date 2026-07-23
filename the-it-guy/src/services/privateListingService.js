@@ -2479,6 +2479,23 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
   }
 }
 
+async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || typeof fetch !== 'function') return null
+
+  try {
+    const response = await fetch(`/api/public/seller-onboarding-branding?token=${encodeURIComponent(normalizedToken)}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return null
+    const payload = await response.json().catch(() => null)
+    return payload?.branding && typeof payload.branding === 'object' ? payload.branding : null
+  } catch (error) {
+    console.warn('[Private Listings] public seller onboarding branding snapshot unavailable.', error)
+    return null
+  }
+}
+
 function attachBrandingToListing(listing = null, branding = null) {
   if (!listing || !branding) return listing
   const mergedBranding = {
@@ -5608,10 +5625,11 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
-    const [branding, mediaByListingId] = await Promise.all([
+    const [initialBranding, mediaByListingId] = await Promise.all([
       fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),
     ])
+    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
     const listingWithMedia = attachDistributionMediaToListing(
       portalPayload.listing,
       mediaByListingId.get(String(portalPayload.listing.id)) || [],
@@ -5649,7 +5667,9 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? rawListing.mandate_packet
       : null
   const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
-  const branding = await fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing))
+  const branding =
+    await fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing)) ||
+    await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
   return {
     onboarding: query.data,
     listing: attachBrandingToListing(listing, branding),

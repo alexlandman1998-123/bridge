@@ -32,6 +32,8 @@ const files = {
   sellerService: await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
   clientOnboarding: await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8'),
   sellerOnboarding: await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8'),
+  sellerBrandingApi: await readFile(new URL('../server/services/sellerOnboardingBrandingApi.js', import.meta.url), 'utf8'),
+  sellerBrandingRoute: await readFile(new URL('../api/public/seller-onboarding-branding.js', import.meta.url), 'utf8'),
   packageJson: await readFile(new URL('../package.json', import.meta.url), 'utf8'),
 }
 
@@ -45,6 +47,12 @@ assert.match(files.buyerApi, /getOrganisationOnboardingBrandingSources[\s\S]*age
 assert.match(files.sellerService, /const settingsBranding[\s\S]*resolveOnboardingBranding\(\s*branding,\s*settingsBranding/)
 assert.match(files.sellerService, /function resolveListingOrganisationId/, 'seller onboarding service should normalize listing organisation id casing')
 assert.match(files.sellerService, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal payload should attach organisation settings branding')
+assert.match(files.sellerService, /fetchSellerOnboardingPublicBrandingSnapshot\(normalizedToken\)/, 'seller onboarding should fall back to token-scoped public branding when anonymous settings reads are blocked')
+assert.match(files.sellerBrandingApi, /seller_portal_token/, 'public seller branding API should resolve stable portal tokens')
+assert.match(files.sellerBrandingApi, /seller_portal_invite_token_hash/, 'public seller branding API should resolve invite tokens by hash without exposing token material')
+assert.match(files.sellerBrandingApi, /createSignedUrl\(normalizedPath, 60 \* 60 \* 24 \* 7\)/, 'public seller branding API should mint fresh logo URLs from storage paths')
+assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(/, 'public seller branding API should use the shared onboarding branding resolver')
+assert.match(files.sellerBrandingRoute, /createSellerOnboardingBrandingResponse/, 'seller branding route should delegate to the token-scoped API service')
 
 assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryColour\}/)
 assert.match(files.clientOnboarding, /secondaryColour=\{onboardingBrand\.secondaryColour\}/)
