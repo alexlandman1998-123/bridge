@@ -1035,10 +1035,18 @@ function buildAppointmentListingLabel(listing = {}) {
   const address = normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1)
   const suburb = normalizeText(listing?.suburb)
   const price = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.estimatedValue || 0)
+  const displayReference = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(reference)
+    ? ''
+    : reference
+  const primaryLabel = title || address || displayReference || suburb || 'Listing'
+  const primaryLabelKey = primaryLabel.toLowerCase()
+  const addressKey = address.toLowerCase()
+  const suburbKey = suburb.toLowerCase()
+  const showSuburb = suburb && suburb !== primaryLabel && !primaryLabelKey.includes(suburbKey) && !addressKey.includes(suburbKey)
   return [
-    reference || title || address || 'Listing',
-    address && address !== title ? address : '',
-    suburb,
+    primaryLabel,
+    address && address !== primaryLabel ? address : '',
+    showSuburb ? suburb : '',
     Number.isFinite(price) && price > 0 ? formatCurrency(price) : '',
   ].filter(Boolean).join(' — ')
 }
@@ -1638,7 +1646,7 @@ function ListingPicker({ listings = [], value = '', onChange, label = 'Linked Li
 
   const selectedTitle = normalizeText(selectedListing?.label || selectedListing?.title || selectedListing?.address) || 'No listing selected'
   const selectedDetail = selectedListing
-    ? [normalizeText(selectedListing?.suburb), Number(selectedListing?.askingPrice || 0) > 0 ? formatCurrency(selectedListing.askingPrice) : ''].filter(Boolean).join(' · ') || 'Listing linked to this lead'
+    ? [normalizeText(selectedListing?.suburb), normalizeText(selectedListing?.status)].filter(Boolean).join(' · ') || 'Listing linked to this lead'
     : 'Choose a listing if this buyer enquiry is property-specific'
 
   return (
@@ -1687,7 +1695,7 @@ function ListingPicker({ listings = [], value = '', onChange, label = 'Linked Li
             const listingValue = normalizeText(listing.id)
             const isSelected = normalizeKey(listingValue) === normalizeKey(selectedListing?.id)
             const title = normalizeText(listing.label || listing.title || listing.address) || 'Listing'
-            const detail = [normalizeText(listing.suburb), Number(listing.askingPrice || 0) > 0 ? formatCurrency(listing.askingPrice) : ''].filter(Boolean).join(' · ') || 'Listing details'
+            const detail = [normalizeText(listing.suburb), normalizeText(listing.status)].filter(Boolean).join(' · ') || 'Listing details'
             return (
               <button
                 key={listingValue}
@@ -11062,7 +11070,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-2" role="tablist" aria-label="Lead categories">
-                  {LEAD_CATEGORY_VIEW_TABS.map(({ key, label, Icon }) => {
+                  {LEAD_CATEGORY_VIEW_TABS.map((tab) => {
+                    const { key, label } = tab
+                    const TabIcon = tab.Icon
                     const isActive = activeLeadCategoryView === key
                     const count = leadCategoryCounts[key] || 0
                     return (
@@ -11082,7 +11092,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[10px] ${
                             isActive ? 'bg-[#eaf3fb] text-[#1f4f78]' : 'bg-white text-[#7890a8]'
                           }`}>
-                            <Icon size={15} />
+                            <TabIcon size={15} />
                           </span>
                           <span className="truncate text-sm font-semibold">{label}</span>
                         </span>

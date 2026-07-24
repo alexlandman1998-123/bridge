@@ -2424,18 +2424,10 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/listings"
+                path="/listings/:listingSection?"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <AgentListings />
-                  </RoleRoute>
-                }
-              />
-              <Route
-                path="/listings/developments"
-                element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentListings initialTab="developments" />
                   </RoleRoute>
                 }
               />

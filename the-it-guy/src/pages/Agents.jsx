@@ -5121,9 +5121,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             ? 'Assign the structure, split override, effective date and company target for this agent.'
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
+              : modalMode === 'profile'
+                ? 'Review the saved profile photo, contact details and workspace access.'
             : 'This management surface is ready for the connected workflow.'
         }
-        className={modalMode === 'commission' || modalMode === 'permissions' ? 'max-w-2xl' : 'max-w-xl'}
+        className={modalMode === 'commission' || modalMode === 'permissions' || modalMode === 'profile' ? 'max-w-2xl' : 'max-w-xl'}
         footer={
           modalMode === 'commission' ? (
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -5393,6 +5395,67 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 This agent is not linked to an organisation user row, so role changes cannot be saved here.
               </div>
             ) : null}
+          </div>
+        ) : modalMode === 'profile' ? (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4 sm:flex-row sm:items-center">
+              <AgentAvatar
+                agent={agent}
+                initials={getAgentInitials(agent)}
+                className="h-20 w-20 bg-[#1f4f78] text-lg font-semibold text-white ring-4 ring-white"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-lg font-semibold text-[#10243a]">{agentDisplayName}</p>
+                <p className="mt-1 truncate text-sm font-medium text-[#60758d]">{agent.email || 'No email captured'}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#d7e6f7] bg-[#eef6ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
+                    {formatRoleLabel(agent.role)}
+                  </span>
+                  <span className="rounded-full border border-[#e2eaf3] bg-white px-3 py-1 text-xs font-semibold text-[#526981]">
+                    {branchName}
+                  </span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAgentStatusMeta(agent).className}`}>
+                    {getAgentStatusMeta(agent).label}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <AgentManagementCard title="Contact Details">
+                <div className="space-y-1">
+                  {contactRows.map(([label, value]) => (
+                    <DetailInfoRow key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+
+              <AgentManagementCard title="Workspace Access">
+                <div className="space-y-1">
+                  {permissionRows.slice(0, 5).map(([label, value]) => (
+                    <DetailInfoRow key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+
+              <AgentManagementCard title="Team Allocation">
+                <div className="space-y-1">
+                  {teamAllocationRows.map(([label, value]) => (
+                    <DetailInfoRow key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </AgentManagementCard>
+
+              <AgentManagementCard title="Profile Source">
+                <div className="space-y-1">
+                  <DetailInfoRow label="User ID" value={getWorkspaceDisplayValue(agent.userId || agent.id)} />
+                  <DetailInfoRow label="Organisation User" value={getWorkspaceDisplayValue(agent.organisationUserId)} />
+                  <DetailInfoRow label="Organisation" value={getWorkspaceDisplayValue(agent.organisationName)} />
+                  <DetailInfoRow label="Invite" value={getWorkspaceDisplayValue(agent.inviteId)} />
+                  <DetailInfoRow label="Photo" value={getAgentAvatarUrl(agent) ? 'Available' : 'Initials fallback'} />
+                </div>
+              </AgentManagementCard>
+            </div>
           </div>
         ) : (
           <div className="rounded-2xl border border-[#dfe7f1] bg-[#fbfcfe] p-4 text-sm leading-6 text-[#526981]">

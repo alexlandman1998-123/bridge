@@ -1716,14 +1716,13 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     const pathIsDevelopments = location.pathname.startsWith('/listings/developments')
-    if (pathIsDevelopments) {
-      let cancelled = false
-      queueMicrotask(() => {
-        if (!cancelled) setListingsTab((previous) => (previous === 'developments' ? previous : 'developments'))
-      })
-      return () => {
-        cancelled = true
-      }
+    const nextTab = pathIsDevelopments ? 'developments' : 'residential'
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) setListingsTab((previous) => (previous === nextTab ? previous : nextTab))
+    })
+    return () => {
+      cancelled = true
     }
   }, [location.pathname])
 
