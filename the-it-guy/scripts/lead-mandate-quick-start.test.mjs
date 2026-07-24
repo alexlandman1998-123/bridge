@@ -65,7 +65,7 @@ for (const reference of [
   'sellerAttorneyPickerOpen',
   'transferAttorneyPreferredPartnerId: preferredAttorneyId',
   'data-testid="seller-journey-rail"',
-  'gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(132px, 1fr))`',
+  'gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`',
   'Edit Offer / Terms',
   'Edit Wording / Terms',
   'autoGenerateEnabled={false}',
