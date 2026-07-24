@@ -3603,13 +3603,15 @@ function AgentListingDetail() {
   }
 
   function openSellerWorkspaceSection(tab, message = '') {
+    if (!SELLER_WORKSPACE_TABS.some((item) => item.key === tab)) return
     setActiveTab('seller')
-    setSellerWorkspaceTab(tab)
+    setSellerWorkspaceTab((currentTab) => (currentTab === tab ? currentTab : tab))
     setDetailError('')
     if (message) setDetailMessage(message)
     if (typeof window !== 'undefined') {
-      window.history.replaceState(window.history.state, '', `${location.pathname}?tab=${encodeURIComponent(tab)}`)
-      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+      const nextUrl = new URL(window.location.href)
+      nextUrl.searchParams.set('tab', tab)
+      window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
     }
   }
 
