@@ -23,6 +23,7 @@ import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/age
 import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
 import { buildListingSellerLeadPayload } from '../lib/listingSellerLeadPayload'
+import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   buildSellerOnboardingLink,
   createAgentSellerLead,
@@ -87,6 +88,8 @@ const QUICK_ADD_FOLLOW_UP_TAB_BY_KEY = {
   add_external_link: 'listing',
   create_deal: 'offers',
 }
+const ORGANISATION_LISTING_SCOPE_ROLES = ['principal', 'owner', 'admin', 'hq', 'branch_manager', 'manager', 'team_lead']
+const ORGANISATION_ASSIGNMENT_SCOPE_ROLES = ['principal', 'owner', 'admin', 'hq']
 const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not started' },
   { value: 'in_progress', label: 'Busy with seller' },
@@ -293,6 +296,27 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function resolveMembershipListingScopeRole({ currentMembership = null, workspaceRole = '' } = {}) {
+  return normalizeOrganisationMembershipRole(
+    workspaceRole ||
+      currentMembership?.workspaceRole ||
+      currentMembership?.workspace_role ||
+      currentMembership?.role ||
+      currentMembership?.organisationRole ||
+      currentMembership?.organisation_role ||
+      currentMembership?.organizationRole ||
+      currentMembership?.organization_role ||
+      currentMembership?.raw?.workspace_role ||
+      currentMembership?.raw?.organisation_role ||
+      currentMembership?.raw?.organization_role ||
+      currentMembership?.raw?.role,
+  )
+}
+
+function canAccessOrganisationListings({ agencyWorkflowMode = '', currentMembership = null, workspaceRole = '' } = {}) {
+  return normalizeKey(agencyWorkflowMode) === 'principal' || ORGANISATION_LISTING_SCOPE_ROLES.includes(resolveMembershipListingScopeRole({ currentMembership, workspaceRole }))
 }
 
 function resolveSelectedWorkspaceOrganisationId({ workspace = null, currentMembership = null, fallbackOrganisationId = '' } = {}) {
@@ -1565,7 +1589,7 @@ function validateQuickListingActiveRules({ form, assignedAgentKey }) {
 function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, profile, agencyWorkflowMode, currentMembership } = useWorkspace()
+  const { workspace, profile, agencyWorkflowMode, currentMembership, workspaceRole } = useWorkspace()
   const pilotCreationFreeze = resolveMvpPilotCreationFreeze()
 
   const [loading, setLoading] = useState(true)
@@ -1654,11 +1678,11 @@ function AgentListings({ initialTab = null } = {}) {
             organisationId: resolvedOrganisationId,
             assignedAgentEmail: profile?.email || '',
             assignedAgentIds: agentAssignmentIds,
-            includeAllOrganisationListings:
-              agencyWorkflowMode === 'principal' ||
-              ['principal', 'owner', 'admin', 'hq', 'branch_manager', 'manager', 'team_lead'].includes(
-                normalizeKey(currentMembership?.workspaceRole || currentMembership?.role || currentMembership?.organisationRole || currentMembership?.organisation_role),
-              ),
+            includeAllOrganisationListings: canAccessOrganisationListings({
+              agencyWorkflowMode,
+              currentMembership,
+              workspaceRole,
+            }),
           })
         }
       }
@@ -1685,7 +1709,7 @@ function AgentListings({ initialTab = null } = {}) {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [agencyWorkflowMode, currentMembership, profile, selectedWorkspaceOrganisationId])
+  }, [agencyWorkflowMode, currentMembership, profile, selectedWorkspaceOrganisationId, workspaceRole])
 
   useEffect(() => {
     let cancelled = false
@@ -1855,8 +1879,8 @@ function AgentListings({ initialTab = null } = {}) {
     (form.quickStep === 'mandate' || isQuickListingMandatePackExpected(form, form.manualMandateStatus))
 
   const currentBranchId = normalizeText(currentMembership?.branchId || currentMembership?.branch_id)
-  const currentMembershipRole = normalizeKey(currentMembership?.workspaceRole || currentMembership?.role || currentMembership?.organisationRole || currentMembership?.organisation_role)
-  const canAssignAcrossOrganisation = agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(currentMembershipRole)
+  const currentMembershipRole = resolveMembershipListingScopeRole({ currentMembership, workspaceRole })
+  const canAssignAcrossOrganisation = normalizeKey(agencyWorkflowMode) === 'principal' || ORGANISATION_ASSIGNMENT_SCOPE_ROLES.includes(currentMembershipRole)
   const canAssignWithinBranch = canAssignAcrossOrganisation || ['branch_manager', 'manager', 'team_lead'].includes(currentMembershipRole)
   const assignableAgents = useMemo(() => {
     const selfOption = {
