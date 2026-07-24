@@ -19,6 +19,7 @@ import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCa
 
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
+const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -333,6 +334,7 @@ export function AuthSessionProvider({ children }) {
       })
       let bridgeOutcome = 'success'
       let resolvedBridgeState = null
+      let slowTimerId = null
       setAuthState((previous) => ({
         ...previous,
         status: 'loading',
@@ -345,13 +347,30 @@ export function AuthSessionProvider({ children }) {
           userId: session.user.id,
           selectedWorkspaceId: selectedWorkspaceId || null,
           attempt: bootAttempt + 1,
-          timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+          slowWarningMs: BRIDGE_AUTH_BOOTSTRAP_SLOW_MS,
         })
-        const nextState = await withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
-          timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
-          phase: 'bridge',
-          getDiagnostics: getActiveAuthBootStepDiagnostics,
-        })
+        slowTimerId = window.setTimeout(() => {
+          if (!active) return
+          const diagnostics = getActiveAuthBootStepDiagnostics()
+          console.warn('[AUTH] bridge-boot:slow', {
+            userId: session.user.id,
+            selectedWorkspaceId: selectedWorkspaceId || null,
+            attempt: bootAttempt + 1,
+            durationMs: BRIDGE_AUTH_BOOTSTRAP_SLOW_MS,
+            activeSteps: diagnostics,
+          })
+          void trackAuthMetric('auth_boot_slow', {
+            userId: session.user.id,
+            metadata: {
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              activeSteps: diagnostics.map((step) => ({
+                label: step.label,
+                durationMs: step.durationMs,
+              })),
+            },
+          })
+        }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
+        const nextState = await loadBridgeAuthState({ session, selectedWorkspaceId })
         resolvedBridgeState = nextState
         if (!active) {
           bridgeOutcome = 'cancelled'
@@ -400,6 +419,7 @@ export function AuthSessionProvider({ children }) {
           bootError: error?.message || 'Unable to load your Arch9 workspace.',
         })
       } finally {
+        if (slowTimerId) window.clearTimeout(slowTimerId)
         const bridgeWorkspaceId =
           resolvedBridgeState?.workspaceType === WORKSPACE_TYPES.agency ||
           resolvedBridgeState?.currentWorkspace?.type === WORKSPACE_TYPES.agency

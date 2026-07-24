@@ -262,6 +262,8 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       listing?.lifecycleStatus ||
       listing?.lifecycle_status,
   )
+  const explicitPendingOnboardingStatus = Boolean(status && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status))
+  const listingLifecycleImpliesSubmitted = ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle)
   const sent = Boolean(
     token ||
       SELLER_ONBOARDING_SENT_STATUSES.has(status) ||
@@ -271,14 +273,15 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
   )
   const submitted = Boolean(
     SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status) ||
-      leadJourneySignals.some((signal) => SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS.has(signal) || signal === 'submitted' || signal === 'completed') ||
-      ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle),
+      (!explicitPendingOnboardingStatus && leadJourneySignals.some((signal) => SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS.has(signal) || signal === 'submitted' || signal === 'completed')) ||
+      listingLifecycleImpliesSubmitted,
   )
   return {
     sent,
     submitted,
     status,
     token,
+    pending: sent && !submitted && Boolean(status || token),
   }
 }
 
@@ -410,7 +413,14 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   const evidenceStage = derivedStage || sellerJourneyStageSnapshot('contacted', 'Active')
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
-  const canUseLeadStageAsProgressFloor = leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing })
+  const onboardingSentIndex = STAGE_INDEX.get('seller_onboarding_sent') ?? 1
+  const leadStageContradictedByPendingOnboarding =
+    onboardingSignals.pending &&
+    leadStageIndex > onboardingSentIndex &&
+    (STAGE_INDEX.get(evidenceStage?.key) ?? 0) <= onboardingSentIndex
+  const canUseLeadStageAsProgressFloor =
+    !leadStageContradictedByPendingOnboarding &&
+    (leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing }))
   return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
 }
 

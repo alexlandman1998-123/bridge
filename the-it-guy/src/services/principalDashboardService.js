@@ -1696,19 +1696,26 @@ async function getPrincipalDashboardDataUncached({
   const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId)
   const scopedActorId = normalizeText(actorId).toLowerCase()
   const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
+  const matchesActorScope = (row = {}) => {
+    const assignedUserIds = [
+      row.assigned_user_id,
+      row.assigned_agent_id,
+      row.owner_user_id,
+      row.created_by,
+    ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+    const assignedEmail = normalizeText(row.assigned_agent_email).toLowerCase()
+    return Boolean(
+      (scopedActorId && assignedUserIds.includes(scopedActorId)) ||
+        (scopedActorEmail && assignedEmail === scopedActorEmail),
+    )
+  }
   const scopedAllTransactions = canViewAllTransactions
     ? allTransactions
-    : allTransactions.filter((row) => {
-        const assignedUserId = normalizeText(row.assigned_user_id || row.owner_user_id).toLowerCase()
-        const assignedEmail = normalizeText(row.assigned_agent_email).toLowerCase()
-        return Boolean(
-          (scopedActorId && assignedUserId === scopedActorId) ||
-          (scopedActorEmail && assignedEmail === scopedActorEmail),
-        )
-  })
+    : allTransactions.filter(matchesActorScope)
   const organisationUserEnrichmentPromise = enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers)
   const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
-  const leads = allLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
+  const scopedAllLeads = canViewAllTransactions ? allLeads : allLeads.filter(matchesActorScope)
+  const leads = scopedAllLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
   const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
   const documentPackets = allDocumentPackets.filter((packet) => {

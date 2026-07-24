@@ -96,6 +96,38 @@ function HeaderFilterSelect({ icon: Icon, value, options = [], label, onChange }
   )
 }
 
+function HeaderScopeToggle({ value = 'company', options = [], onChange }) {
+  const normalizedOptions = Array.isArray(options) && options.length
+    ? options
+    : [
+        { value: 'company', label: 'Company' },
+        { value: 'agent', label: 'Agent' },
+      ]
+
+  return (
+    <div className="inline-flex min-h-[44px] shrink-0 items-center rounded-[14px] border border-[#d8e2ee] bg-[#f7f9fc] p-1 shadow-[0_8px_20px_rgba(15,23,42,0.05)]" aria-label="Dashboard data scope">
+      {normalizedOptions.map((option) => {
+        const active = value === option.value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={`inline-flex h-9 min-w-[82px] items-center justify-center rounded-[11px] px-3 text-[0.78rem] font-semibold transition ${
+              active
+                ? 'bg-white text-[#102236] shadow-[0_5px_14px_rgba(15,23,42,0.1)]'
+                : 'text-[#66758b] hover:text-[#102236]'
+            }`}
+            aria-pressed={active}
+            onClick={() => onChange?.(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function getUserInitials(user) {
   const fullName = String(
     user?.fullName ||
@@ -859,6 +891,18 @@ function HeaderBar({ onLogout, user }) {
         <div className="ui-shell-actions ui-shell-actions-premium">
           {showPrincipalDashboardHeaderControls ? (
             <div className="ui-shell-dashboard-filters" aria-label="Dashboard filters">
+              <HeaderScopeToggle
+                value={dashboardHeaderControls?.dataScope || 'company'}
+                options={dashboardHeaderControls?.dataScopeOptions || [
+                  { value: 'company', label: 'Company' },
+                  { value: 'agent', label: 'Agent' },
+                ]}
+                onChange={(value) => {
+                  window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-filter-change', {
+                    detail: { key: 'dataScope', value },
+                  }))
+                }}
+              />
               <HeaderFilterSelect
                 icon={LayoutGrid}
                 label="Filter dashboard by branch"

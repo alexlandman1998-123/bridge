@@ -14,6 +14,32 @@ const baseLead = {
   estimatedValue: 2500000,
 }
 
+const expectedStepKeys = [
+  'contacted',
+  'seller_onboarding_sent',
+  'seller_onboarding_submitted',
+  'mandate_sent',
+  'mandate_signed',
+  'listing_created',
+  'listing_live',
+  'documents_submitted',
+]
+
+function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
+  assert.deepEqual(journey.steps.map((step) => step.key), expectedStepKeys)
+  for (const key of expectedStepKeys) {
+    const step = journey.steps.find((item) => item.key === key)
+    assert.equal(Boolean(step), true, `expected journey step ${key}`)
+    if (key === currentKey) {
+      assert.equal(step.state, 'current', `${key} should be current`)
+    } else if (completedKeys.includes(key)) {
+      assert.equal(step.state, 'completed', `${key} should be completed`)
+    } else {
+      assert.equal(step.state, 'upcoming', `${key} should be upcoming`)
+    }
+  }
+}
+
 {
   const stage = getSellerJourneyStage({ lead: baseLead })
   assert.equal(stage.key, 'contacted')
@@ -104,6 +130,32 @@ const baseLead = {
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
+  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, false)
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      listingId: 'listing-onboarding-sent-with-stale-submitted-stage',
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
+      sellerOnboardingToken: 'seller-token-stale-stage',
+      sellerOnboardingStatus: 'sent',
+    },
+    listing: {
+      id: 'listing-onboarding-sent-with-stale-submitted-stage',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'onboarding_sent',
+      mandateStatus: 'not_started',
+      sellerOnboarding: { token: 'seller-token-stale-stage', status: 'sent' },
+    },
+  })
+  assert.equal(journey.onboardingSent, true)
+  assert.equal(journey.onboardingSubmitted, false)
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
+  assertJourneyStepStates(journey, 'seller_onboarding_sent', ['contacted'])
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'upcoming')
   assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, false)
 }
 
@@ -268,6 +320,133 @@ const baseLead = {
   assert.equal(journey.stage.key, 'documents_submitted')
   assert.equal(journey.documentsSubmitted, true)
   assert.equal(journey.steps.find((step) => step.key === 'documents_submitted').state, 'current')
+}
+
+{
+  const journeyCases = [
+    {
+      currentKey: 'contacted',
+      args: { lead: baseLead },
+      completed: ['contacted'],
+    },
+    {
+      currentKey: 'seller_onboarding_sent',
+      args: {
+        lead: {
+          ...baseLead,
+          stage: 'Seller Onboarding Sent',
+          status: 'Sent',
+          sellerOnboardingToken: 'seller-token-matrix-sent',
+          sellerOnboardingStatus: 'sent',
+        },
+      },
+      completed: ['contacted'],
+    },
+    {
+      currentKey: 'seller_onboarding_submitted',
+      args: {
+        lead: {
+          ...baseLead,
+          stage: 'Seller Onboarding Submitted',
+          status: 'Submitted',
+          sellerOnboardingToken: 'seller-token-matrix-submitted',
+          sellerOnboardingStatus: 'completed',
+        },
+      },
+      completed: ['contacted', 'seller_onboarding_sent'],
+    },
+    {
+      currentKey: 'mandate_sent',
+      args: {
+        lead: {
+          ...baseLead,
+          mandatePacketId: 'packet-matrix-sent',
+          sellerOnboardingStatus: 'completed',
+        },
+        mandatePacketStatus: { packet: { id: 'packet-matrix-sent', status: 'sent' } },
+      },
+      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted'],
+    },
+    {
+      currentKey: 'mandate_signed',
+      args: {
+        lead: {
+          ...baseLead,
+          mandatePacketId: 'packet-matrix-signed',
+          sellerOnboardingStatus: 'completed',
+        },
+        mandatePacketStatus: { packet: { id: 'packet-matrix-signed', status: 'completed' }, signingSummary: { allSignersSigned: true } },
+      },
+      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent'],
+    },
+    {
+      currentKey: 'listing_created',
+      args: {
+        lead: {
+          ...baseLead,
+          listingId: 'listing-matrix-created',
+          sellerOnboardingStatus: 'completed',
+        },
+        listing: {
+          id: 'listing-matrix-created',
+          originatingCrmLeadId: 'lead-1',
+          listingStatus: 'mandate_signed',
+          mandateStatus: 'signed',
+        },
+      },
+      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'],
+    },
+    {
+      currentKey: 'listing_live',
+      args: {
+        lead: {
+          ...baseLead,
+          listingId: 'listing-matrix-live',
+          sellerOnboardingStatus: 'completed',
+        },
+        listing: {
+          id: 'listing-matrix-live',
+          originatingCrmLeadId: 'lead-1',
+          listingStatus: 'active',
+          listingVisibility: 'active_market',
+          mandateStatus: 'signed',
+        },
+      },
+      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created'],
+    },
+    {
+      currentKey: 'documents_submitted',
+      args: {
+        lead: {
+          ...baseLead,
+          listingId: 'listing-matrix-documents',
+          sellerOnboardingStatus: 'completed',
+        },
+        listing: {
+          id: 'listing-matrix-documents',
+          originatingCrmLeadId: 'lead-1',
+          listingStatus: 'active',
+          listingVisibility: 'active_market',
+          mandateStatus: 'signed',
+          documentRequirements: [
+            { id: 'req-id', requirement_key: 'seller_id_document', requirement_name: 'Seller ID Document', status: 'required', is_required: true },
+            { id: 'req-rates', requirement_key: 'rates_account', requirement_name: 'Rates Account', status: 'required', is_required: true },
+          ],
+          documents: [
+            { id: 'doc-id', requirement_id: 'req-id', document_type: 'seller_id_document', status: 'uploaded', storage_path: 'private-listings/listing-matrix-documents/id.pdf' },
+            { id: 'doc-rates', requirement_id: 'req-rates', document_type: 'rates_account', status: 'approved', file_url: '/rates.pdf' },
+          ],
+        },
+      },
+      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created', 'listing_live'],
+    },
+  ]
+
+  for (const item of journeyCases) {
+    const journey = buildSellerJourney(item.args)
+    assert.equal(journey.stage.key, item.currentKey)
+    assertJourneyStepStates(journey, item.currentKey, item.completed)
+  }
 }
 
 {

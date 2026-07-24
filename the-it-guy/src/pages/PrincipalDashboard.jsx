@@ -2224,34 +2224,35 @@ function _buildPrincipalPremiumModel(data = {}) {
   }
 }
 
-function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRange = 'last_30_days', branchId = '', onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
+function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
+  const dashboardScope = dataScope === 'agent' ? 'agent' : 'principal'
   const model = useMemo(
     () =>
       deriveResidentialDashboardMetrics({
-        scope: 'principal',
+        scope: dashboardScope,
         mode,
         dateRange,
         branchId,
         currentUserId: profile?.id || profile?.userId || '',
         source: data || {},
       }),
-    [branchId, data, dateRange, mode, profile?.id, profile?.userId],
+    [branchId, dashboardScope, data, dateRange, mode, profile?.id, profile?.userId],
   )
 
   return (
     <>
       <ResidentialCommandCenterGrid
         model={model}
-        scope="principal"
+        scope={dashboardScope}
         mode={mode}
         kpiIcons={[ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark, Users]}
         organisationId={data?.meta?.agencyId || ''}
         userId={profile?.id || profile?.userId || ''}
         userEmail={profile?.email || ''}
-        includeAllAppointments
+        includeAllAppointments={dashboardScope !== 'agent'}
         canManageAppointments
-        appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
-        commissionTracker={data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
+        appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}:${dashboardScope}`}
+        commissionTracker={dashboardScope === 'agent' ? null : data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
         onViewTransactions={onViewTransactions}
         onOpenTransaction={onOpenTransaction}
         onViewCalendar={onViewCalendar}
@@ -2260,7 +2261,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
         onOpenAppointment={onOpenAppointment}
         onScheduleAppointment={onScheduleAppointment}
       />
-      <PartnerBusinessDistributionPanel distribution={data?.partnerBusinessDistribution} scope="principal" />
+      {dashboardScope !== 'agent' ? <PartnerBusinessDistributionPanel distribution={data?.partnerBusinessDistribution} scope="principal" /> : null}
     </>
   )
 }
@@ -2270,7 +2271,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const navigate = useNavigate()
   const location = useLocation()
   const [dateRange, setDateRange] = useState('last_30_days')
-  const [residentialMode, setResidentialMode] = useState('sales')
+  const [residentialMode] = useState('sales')
+  const [dataScope, setDataScope] = useState('company')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode] = useState('overview')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
@@ -2354,7 +2356,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         workspaceId: selectedWorkspaceId,
         dateRangePreset: dateRange,
         overviewMode,
-        canViewAllTransactions,
+        canViewAllTransactions: canViewAllTransactions && dataScope !== 'agent',
         actorId: profile?.id || profile?.userId || '',
         actorEmail: profile?.email || '',
         forceRefresh,
@@ -2402,7 +2404,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
       })
       if (isLatestDashboardLoad()) setLoading(false)
     }
-  }, [agencyId, agencyResolutionComplete, canViewAllTransactions, dateRange, location.pathname, overviewMode, profile?.email, profile?.id, profile?.role, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
+  }, [agencyId, agencyResolutionComplete, canViewAllTransactions, dataScope, dateRange, location.pathname, overviewMode, profile?.email, profile?.id, profile?.role, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
 
   useEffect(() => {
     void loadDashboard()
@@ -2431,6 +2433,13 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     () => PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label })),
     [],
   )
+  const dataScopeOptions = useMemo(
+    () => [
+      { value: 'company', label: 'Company' },
+      { value: 'agent', label: 'Agent' },
+    ],
+    [],
+  )
   const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
   const isInitialLoading = loading && !data
   const isRefreshing = loading && data
@@ -2443,13 +2452,15 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         workspaceOptions,
         dateRange,
         dateOptions,
+        dataScope,
+        dataScopeOptions,
       },
     }))
 
     return () => {
       window.dispatchEvent(new CustomEvent('itg:principal-dashboard-header-controls', { detail: null }))
     }
-  }, [dateOptions, dateRange, selectedWorkspaceId, workspaceOptions])
+  }, [dataScope, dataScopeOptions, dateOptions, dateRange, selectedWorkspaceId, workspaceOptions])
 
   useEffect(() => {
     function handleHeaderFilterChange(event) {
@@ -2459,6 +2470,10 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
       }
       if (key === 'dateRange') {
         setDateRange(String(value || 'last_30_days').trim() || 'last_30_days')
+      }
+      if (key === 'dataScope') {
+        const nextScope = String(value || 'company').trim()
+        setDataScope(nextScope === 'agent' ? 'agent' : 'company')
       }
     }
 
@@ -2487,6 +2502,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
             <PrincipalPremiumCommandCenter
               data={data}
               mode={residentialMode}
+              dataScope={dataScope}
               profile={profile}
               dateRange={dateRange}
               branchId={selectedWorkspaceId}
