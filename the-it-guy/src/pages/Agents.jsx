@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  Camera,
   CheckCircle2,
   Clock3,
   Copy,
@@ -17,6 +18,7 @@ import {
   MoreHorizontal,
   Phone,
   Plus,
+  Save,
   Send,
   ShieldCheck,
   Trash2,
@@ -46,7 +48,9 @@ import {
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
+  updateOrganisationUserProfile,
   updateOrganisationUserRole,
+  uploadAccountAvatar,
 } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -266,6 +270,34 @@ function AgentAvatar({ agent = {}, initials = '', className = '' }) {
       {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : safeInitials}
     </span>
   )
+}
+
+function splitAgentName(agent = {}) {
+  const firstName = String(agent.firstName || agent.first_name || '').trim()
+  const lastName = String(agent.lastName || agent.last_name || agent.surname || '').trim()
+  if (firstName || lastName) return { firstName, lastName }
+
+  const nameParts = String(agent.fullName || agent.name || agent.displayName || '').trim().split(/\s+/).filter(Boolean)
+  return {
+    firstName: nameParts[0] || '',
+    lastName: nameParts.slice(1).join(' '),
+  }
+}
+
+function buildAgentProfileForm(agent = {}) {
+  const { firstName, lastName } = splitAgentName(agent)
+  const phone = String(agent.phone || agent.phoneNumber || agent.phone_number || '').trim()
+  const mobile = String(agent.mobile || agent.mobileNumber || agent.mobile_number || phone).trim()
+  return {
+    firstName,
+    lastName,
+    email: String(agent.email || '').trim(),
+    phone,
+    mobile,
+    avatarUrl: getAgentAvatarUrl(agent),
+    branchId: String(agent.branchId || agent.branch_id || '').trim(),
+    role: String(agent.role || agent.workspaceRole || agent.organisationRole || 'agent').trim().toLowerCase(),
+  }
 }
 
 function buildInviteMessage({ invite, inviteLink }) {
@@ -672,21 +704,37 @@ function addAgentWorkspaceDirectoryRows(groupedByAgent, agentRows = []) {
 }
 
 function createAgentAssignmentLookup(groupedByAgent) {
+  const agentIdByAssignmentId = new Map()
   const agentIdByEmail = new Map()
   const agentIdByName = new Map()
   for (const [agentId, agentRecord] of groupedByAgent.entries()) {
+    const assignmentIds = [
+      agentId,
+      agentRecord?.id,
+      agentRecord?.userId,
+      agentRecord?.user_id,
+      agentRecord?.organisationUserId,
+      agentRecord?.organisation_user_id,
+      agentRecord?.profile?.id,
+      agentRecord?.profile?.user_id,
+    ].map(normalizeAgentRecordId).filter(Boolean)
     const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
     const normalizedName = String(agentRecord?.name || agentRecord?.fullName || '').trim().toLowerCase()
+    assignmentIds.forEach((assignmentId) => {
+      if (!agentIdByAssignmentId.has(assignmentId)) agentIdByAssignmentId.set(assignmentId, agentId)
+    })
     if (normalizedEmail) agentIdByEmail.set(normalizedEmail, agentId)
     if (normalizedName) agentIdByName.set(normalizedName, agentId)
   }
-  return { agentIdByEmail, agentIdByName }
+  return { agentIdByAssignmentId, agentIdByEmail, agentIdByName }
 }
 
-function resolveListingAgentId(listing = {}, groupedByAgent, agentIdByEmail, agentIdByName) {
+function resolveListingAgentId(listing = {}, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId = new Map()) {
   const { idKeys, emailKeys, nameKeys } = getPrivateListingAssignmentKeys(listing)
   for (const key of idKeys) {
     if (groupedByAgent.has(key)) return key
+    const agentId = agentIdByAssignmentId.get(key)
+    if (agentId) return agentId
   }
   for (const key of emailKeys) {
     const agentId = agentIdByEmail.get(key)
@@ -1337,10 +1385,10 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     ...organisationAgentRows,
   ])
 
-  const { agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
+  const { agentIdByAssignmentId, agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
 
   const listingsByAgent = privateListings.reduce((accumulator, listing) => {
-    const agentId = resolveListingAgentId(listing, groupedByAgent, agentIdByEmail, agentIdByName)
+    const agentId = resolveListingAgentId(listing, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
     if (!agentId) return accumulator
     if (!accumulator.has(agentId)) accumulator.set(agentId, [])
     accumulator.get(agentId).push(listing)
@@ -4066,13 +4114,18 @@ function isTaskDone(row = {}) {
   return String(row.status || '').toLowerCase().includes('complete')
 }
 
-function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, onRefresh }) {
+function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, branchOptions = [], onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [modalMode, setModalMode] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [actionNotice, setActionNotice] = useState('')
+  const profileAvatarInputRef = useRef(null)
+  const [profileForm, setProfileForm] = useState(() => buildAgentProfileForm(agent))
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileUploading, setProfileUploading] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const [commissionForm, setCommissionForm] = useState({
     commissionStructureId: '',
     overrideAgentSplitPercentage: '',
@@ -4130,6 +4183,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     setPermissionsError('')
     setPermissionsForm({ role: agent.role || 'agent' })
   }, [agent.role, modalMode])
+
+  useEffect(() => {
+    if (modalMode !== 'profile') return
+    setProfileError('')
+    setProfileForm(buildAgentProfileForm(agent))
+  }, [agent, modalMode])
 
   useEffect(() => {
     const agentUserId = normalizeAgentRecordId(agent.userId || agent.user_id)
@@ -4251,36 +4310,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     canAssignListing: true,
   }
 
-  const recentActivity = [
-    ...agent.recentDeals.map((row) => ({
-      id: `deal-${row?.transaction?.id || row?.transaction?.updated_at}`,
-      label: normalizeDealStatus(row) === 'completed' ? 'Registered deal' : 'Updated deal',
-      record: row?.development?.name || row?.buyer?.name || row?.seller?.name || 'Deal workspace',
-      timestamp: row?.transaction?.updated_at || row?.transaction?.created_at,
-      icon: BriefcaseBusiness,
-      tone: 'bg-[#eef4ff] text-[#1769d1]',
-    })),
-    ...allListings.slice(0, 4).map((listing) => ({
-      id: `listing-${listing.id}`,
-      label: 'Created listing',
-      record: listing.title || listing.listingTitle || 'Listing',
-      timestamp: listing.listedAt || listing.createdAt,
-      icon: Building2,
-      tone: 'bg-[#ecfdf3] text-[#16894f]',
-    })),
-    ...(agent.appointments || []).slice(0, 4).map((appointment) => ({
-      id: `appointment-${appointment.appointmentId || appointment.id}`,
-      label: 'Added appointment',
-      record: appointment.title || appointment.appointmentType || 'Appointment',
-      timestamp: appointment.updatedAt || appointment.dateTime,
-      icon: CalendarDays,
-      tone: 'bg-[#fff7ed] text-[#d77d00]',
-    })),
-  ]
-    .filter((item) => item.id)
-    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
-    .slice(0, 7)
-
   const contactRows = [
     ['Email', getWorkspaceDisplayValue(agent.email)],
     ['Phone', getWorkspaceDisplayValue(agent.phone)],
@@ -4332,6 +4361,76 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
   function updateCommissionForm(key, value) {
     setCommissionForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function updateProfileForm(key, value) {
+    setProfileForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleProfileAvatarChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setProfileUploading(true)
+      setProfileError('')
+      const uploaded = await uploadAccountAvatar({ file })
+      setProfileForm((previous) => ({
+        ...previous,
+        avatarUrl: uploaded.resolvedUrl || uploaded.publicUrl || previous.avatarUrl,
+      }))
+    } catch (uploadError) {
+      setProfileError(uploadError?.message || 'Unable to upload profile picture.')
+    } finally {
+      setProfileUploading(false)
+      if (event.target) event.target.value = ''
+    }
+  }
+
+  async function handleSaveProfileAssignment() {
+    if (!canManageSettings || profileSaving || profileUploading) return
+    if (!agent.organisationUserId) {
+      setProfileError('This agent is not linked to an organisation user row, so profile changes cannot be saved here.')
+      return
+    }
+
+    const nextFirstName = String(profileForm.firstName || '').trim()
+    const nextLastName = String(profileForm.lastName || '').trim()
+    const nextEmail = String(profileForm.email || '').trim()
+    const nextRole = String(profileForm.role || 'agent').trim().toLowerCase()
+
+    if (!nextFirstName && !nextLastName) {
+      setProfileError('Add at least a first name or surname before saving.')
+      return
+    }
+    if (!nextEmail) {
+      setProfileError('Email is required before saving.')
+      return
+    }
+
+    try {
+      setProfileSaving(true)
+      setProfileError('')
+      await updateOrganisationUserProfile(agent.organisationUserId, {
+        firstName: nextFirstName,
+        lastName: nextLastName,
+        fullName: [nextFirstName, nextLastName].filter(Boolean).join(' '),
+        email: nextEmail,
+        phoneNumber: String(profileForm.mobile || profileForm.phone || '').trim(),
+        avatarUrl: String(profileForm.avatarUrl || '').trim(),
+        branchId: String(profileForm.branchId || '').trim(),
+      })
+      if (nextRole && nextRole !== String(agent.role || '').trim().toLowerCase()) {
+        await updateOrganisationUserRole(agent.organisationUserId, nextRole)
+      }
+      setActionNotice('Agent profile updated.')
+      setModalMode('')
+      await onRefresh?.()
+    } catch (saveError) {
+      setProfileError(saveError?.message || 'Unable to save agent profile.')
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   async function handleSaveCommissionAssignment() {
@@ -4618,44 +4717,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             ))}
           </div>
 
-          <WorkspaceCard title="Prospecting Activity" actionLabel="This Month">
-            {commandCentre?.prospectingActivity?.hasActivity ? (
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {prospectingMetrics.map((metric) => (
-                  <AgentMetricCard key={metric.label} label={metric.label} value={metric.value} helper={metric.helper} />
-                ))}
-              </div>
-            ) : (
-              <EmptyWorkspaceState>No prospecting activity logged this month.</EmptyWorkspaceState>
-            )}
-          </WorkspaceCard>
-
-          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-            <WorkspaceCard title="Pipeline Health">
-              {commandCentre?.pipelineHealth?.hasPipeline ? (
-                <>
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-3">
-                    <AgentMetricCard label="Pipeline Value" value={formatCurrency(commandCentre.pipelineHealth.pipelineValue)} helper="Open opportunities" />
-                    <AgentMetricCard label="Active Deals" value={commandCentre.pipelineHealth.activeDeals} helper="Live transactions" />
-                    <AgentMetricCard label="At Risk / Overdue" value={commandCentre.pipelineHealth.atRiskDeals} helper="Needs intervention" />
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {commandCentre.pipelineHealth.stages.map((stage) => (
-                      <div key={stage.key} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{stage.label}</p>
-                        <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{stage.count}</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-                  No pipeline activity is currently assigned to this agent.
-                </div>
-              )}
-            </WorkspaceCard>
-          </div>
-
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
             <WorkspaceCard title="Follow-Up Compliance">
               {commandCentre?.followUpCompliance?.hasSignals ? (
@@ -4749,29 +4810,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             onScheduleAppointment={() => navigate('/pipeline/calendar')}
             refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
           />
-
-          <WorkspaceCard title="Recent Activity">
-            {recentActivity.length ? (
-              <div className="space-y-2">
-                {recentActivity.map((item) => (
-                  <div key={item.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                    <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
-                      {createElement(item.icon, { size: 16 })}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[#10243a]">{item.label}</p>
-                      <p className="truncate text-xs text-[#60758d]">{item.record}</p>
-                    </div>
-                    <span className="shrink-0 text-xs font-medium text-[#6f839a]">{formatDateTime(item.timestamp)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-                No recent activity has been logged for this agent.
-              </div>
-            )}
-          </WorkspaceCard>
 
           <PartnerBusinessDistributionPanel distribution={partnerBusinessDistribution} scope="agent" />
         </section>
@@ -4958,14 +4996,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                   ))}
                 </div>
               </AgentManagementCard>
-              <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
+              <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openPlaceholder('commission')}>
                 <AgentCommissionStructureSummary
                   summary={commissionSummary}
                   statusLabel={getAgentStatusMeta(agent).label}
                   loading={commissionSummaryLoading}
                 />
               </AgentManagementCard>
-              <AgentManagementCard title="Profile & Permissions" actionLabel="Manage" onAction={() => openPlaceholder('permissions')}>
+              <AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
                 <div className="space-y-1">
                   {[...contactRows.slice(0, 4), ...permissionRows.slice(0, 4), ...teamAllocationRows.slice(0, 3)].map(([label, value]) => (
                     <DetailInfoRow key={label} label={label} value={value} />
@@ -5047,7 +5085,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             </AgentManagementCard>
 
-            <AgentManagementCard title="Permissions" actionLabel="Manage" onAction={() => openPlaceholder('permissions')}>
+            <AgentManagementCard title="Permissions" actionLabel="Edit" onAction={() => openPlaceholder('permissions')}>
               <div className="space-y-1">
                 {permissionRows.map(([label, value]) => (
                   <DetailInfoRow key={label} label={label} value={value} />
@@ -5055,7 +5093,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             </AgentManagementCard>
 
-            <AgentManagementCard title="Sales Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
+            <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openPlaceholder('commission')}>
               <AgentCommissionStructureSummary
                 summary={commissionSummary}
                 statusLabel={getAgentStatusMeta(agent).label}
@@ -5107,13 +5145,13 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         onClose={() => setModalMode('')}
         title={
           modalMode === 'commission'
-            ? 'Manage Commission'
+            ? 'Edit Commission'
             : modalMode === 'permissions'
-              ? 'Manage Permissions'
+              ? 'Edit Permissions'
               : modalMode === 'team'
                 ? 'Manage Team'
                 : modalMode === 'profile'
-                  ? 'Agent Profile'
+                  ? 'Edit Agent Profile'
                   : 'Agent Action'
         }
         subtitle={
@@ -5122,7 +5160,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
               : modalMode === 'profile'
-                ? 'Review the saved profile photo, contact details and workspace access.'
+                ? 'Update the saved profile photo, contact details and workspace access.'
             : 'This management surface is ready for the connected workflow.'
         }
         className={modalMode === 'commission' || modalMode === 'permissions' || modalMode === 'profile' ? 'max-w-2xl' : 'max-w-xl'}
@@ -5149,6 +5187,18 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 {permissionsSaving ? 'Saving…' : 'Save Permissions'}
               </Button>
             </div>
+          ) : modalMode === 'profile' ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setModalMode('')} disabled={profileSaving || profileUploading}>Cancel</Button>
+              <Button
+                type="button"
+                onClick={handleSaveProfileAssignment}
+                disabled={!canManageSettings || profileSaving || profileUploading || !agent.organisationUserId}
+              >
+                <Save size={16} />
+                {profileSaving ? 'Saving…' : 'Save Profile'}
+              </Button>
+            </div>
           ) : (
             <div className="flex justify-end">
               <Button type="button" variant="secondary" onClick={() => setModalMode('')}>Close</Button>
@@ -5168,11 +5218,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <div className="rounded-2xl border border-[#e3ebf5] bg-[#fbfcfe] p-5">
                 <h3 className="text-base font-semibold text-[#10243a]">No active commission levels</h3>
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
-                  Create at least one active commission level before assigning a plan to this agent.
+                  Add an active commission level before assigning a plan to this agent. Once a level exists, this same panel will save the plan, split, effective date and target here.
                 </p>
-                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
-                  Open Commission
-                </Button>
               </div>
             ) : (
               <>
@@ -5381,7 +5428,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             </div>
 
             <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm leading-6 text-[#7a5a16]">
-              Branch reassignment and per-user visibility overrides are not connected to an editable agent-workspace API yet. This modal saves the role now and shows the access granted by that role.
+              Branch reassignment is managed from Edit profile. This modal saves the role and shows the access granted by that role.
             </div>
 
             {!canManageSettings ? (
@@ -5398,43 +5445,141 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           </div>
         ) : modalMode === 'profile' ? (
           <div className="space-y-4">
+            {profileError ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                {profileError}
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-4 rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4 sm:flex-row sm:items-center">
-              <AgentAvatar
-                agent={agent}
-                initials={getAgentInitials(agent)}
-                className="h-20 w-20 bg-[#1f4f78] text-lg font-semibold text-white ring-4 ring-white"
-              />
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  className="relative block rounded-full focus:outline-none focus:ring-4 focus:ring-[#cfe0f3]"
+                  onClick={() => profileAvatarInputRef.current?.click()}
+                  disabled={!canManageSettings || profileSaving || profileUploading}
+                  title="Change profile photo"
+                >
+                  <AgentAvatar
+                    agent={{ ...agent, avatarUrl: profileForm.avatarUrl, profilePhotoUrl: profileForm.avatarUrl }}
+                    initials={getAgentInitials({ ...agent, firstName: profileForm.firstName, lastName: profileForm.lastName })}
+                    className="h-20 w-20 bg-[#1f4f78] text-lg font-semibold text-white ring-4 ring-white"
+                  />
+                  <span className="absolute -bottom-1 -right-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d9e3ef] bg-white text-[#1769d1] shadow-sm">
+                    <Camera size={15} />
+                  </span>
+                </button>
+                <input
+                  ref={profileAvatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfileAvatarChange}
+                  disabled={!canManageSettings || profileSaving || profileUploading}
+                />
+              </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-semibold text-[#10243a]">{agentDisplayName}</p>
-                <p className="mt-1 truncate text-sm font-medium text-[#60758d]">{agent.email || 'No email captured'}</p>
+                <p className="truncate text-lg font-semibold text-[#10243a]">
+                  {[profileForm.firstName, profileForm.lastName].filter(Boolean).join(' ') || agentDisplayName}
+                </p>
+                <p className="mt-1 truncate text-sm font-medium text-[#60758d]">{profileForm.email || 'No email captured'}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full border border-[#d7e6f7] bg-[#eef6ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
-                    {formatRoleLabel(agent.role)}
+                    {formatRoleLabel(profileForm.role)}
                   </span>
                   <span className="rounded-full border border-[#e2eaf3] bg-white px-3 py-1 text-xs font-semibold text-[#526981]">
-                    {branchName}
+                    {branchOptions.find((branch) => branch.id === profileForm.branchId)?.name || branchName}
                   </span>
                   <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAgentStatusMeta(agent).className}`}>
                     {getAgentStatusMeta(agent).label}
                   </span>
                 </div>
+                {profileUploading ? (
+                  <p className="mt-2 text-xs font-semibold text-[#60758d]">Uploading photo…</p>
+                ) : null}
               </div>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
               <AgentManagementCard title="Contact Details">
-                <div className="space-y-1">
-                  {contactRows.map(([label, value]) => (
-                    <DetailInfoRow key={label} label={label} value={value} />
-                  ))}
+                <div className="grid gap-3">
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">First Name</span>
+                    <Field
+                      value={profileForm.firstName}
+                      disabled={!canManageSettings || profileSaving}
+                      onChange={(event) => updateProfileForm('firstName', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Surname</span>
+                    <Field
+                      value={profileForm.lastName}
+                      disabled={!canManageSettings || profileSaving}
+                      onChange={(event) => updateProfileForm('lastName', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Email</span>
+                    <Field
+                      type="email"
+                      value={profileForm.email}
+                      disabled={!canManageSettings || profileSaving}
+                      onChange={(event) => updateProfileForm('email', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Mobile</span>
+                    <Field
+                      value={profileForm.mobile}
+                      disabled={!canManageSettings || profileSaving}
+                      onChange={(event) => {
+                        updateProfileForm('mobile', event.target.value)
+                        updateProfileForm('phone', event.target.value)
+                      }}
+                    />
+                  </label>
                 </div>
               </AgentManagementCard>
 
               <AgentManagementCard title="Workspace Access">
-                <div className="space-y-1">
-                  {permissionRows.slice(0, 5).map(([label, value]) => (
-                    <DetailInfoRow key={label} label={label} value={value} />
-                  ))}
+                <div className="grid gap-3">
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Role / Permission</span>
+                    <Field
+                      as="select"
+                      value={profileForm.role}
+                      disabled={!canManageSettings || profileSaving || !agent.organisationUserId}
+                      onChange={(event) => updateProfileForm('role', event.target.value)}
+                    >
+                      {ORGANISATION_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Branch</span>
+                    <Field
+                      as="select"
+                      value={profileForm.branchId}
+                      disabled={!canManageSettings || profileSaving || !branchOptions.length}
+                      onChange={(event) => updateProfileForm('branchId', event.target.value)}
+                    >
+                      <option value="">{branchOptions.length ? 'Head Office / Unassigned' : branchName}</option>
+                      {branchOptions.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <div className="rounded-xl border border-[#e6edf5] bg-[#fbfcfe] px-3 py-2.5">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Access Preview</p>
+                    <p className="mt-1 text-sm font-semibold text-[#20364d]">{getAgentRoleAccessSummary(profileForm.role).workspaceAccess}</p>
+                    <p className="mt-1 text-xs font-medium text-[#6f839a]">{getAgentRoleAccessSummary(profileForm.role).listings}</p>
+                  </div>
                 </div>
               </AgentManagementCard>
 
@@ -6812,15 +6957,6 @@ export function AgentsPage() {
 
       {!loading && canManageDirectory ? (
         <section className="space-y-4">
-          <InvitedAgentsPanel
-            rows={invitedAgentRows}
-            actionSlot={inviteAgentAction}
-            onShowPending={() => setStatusFilter(AGENT_INVITE_STATUS.PENDING_INVITE)}
-            onResendInvite={handleResendAgentInvite}
-            onCopyInviteLink={handleCopyAgentInviteLink}
-            onRevokeInvite={(agent) => openConfirm('revoke', agent)}
-          />
-
           {commandCentreModel.agentsTable.length ? (
             <AgentPerformanceTable
               rows={commandCentreModel.agentsTable}
@@ -6885,6 +7021,15 @@ export function AgentsPage() {
               </ChartShell>
             </section>
           </details>
+
+          <InvitedAgentsPanel
+            rows={invitedAgentRows}
+            actionSlot={inviteAgentAction}
+            onShowPending={() => setStatusFilter(AGENT_INVITE_STATUS.PENDING_INVITE)}
+            onResendInvite={handleResendAgentInvite}
+            onCopyInviteLink={handleCopyAgentInviteLink}
+            onRevokeInvite={(agent) => openConfirm('revoke', agent)}
+          />
         </section>
       ) : null}
 
@@ -7057,12 +7202,25 @@ export function AgentWorkspacePage() {
   const [hydratingSnapshot, setHydratingSnapshot] = useState(false)
   const [error, setError] = useState('')
   const [agent, setAgent] = useState(null)
+  const [branches, setBranches] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(() => createEmptyAgentWorkspaceSnapshot())
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   const permissionCheckPending = profileLoading || !workspaceReady || (!canAccess && !membershipRoleLoaded)
+  const detailBranchOptions = useMemo(
+    () =>
+      branches
+        .filter((branch) => branch?.isActive !== false)
+        .map((branch) => ({
+          id: String(branch?.id || branch?.branchId || '').trim(),
+          name: String(branch?.name || branch?.branchName || branch?.location || 'Untitled Branch').trim(),
+        }))
+        .filter((branch) => branch.id && branch.name)
+        .filter((branch, index, list) => list.findIndex((item) => item.id === branch.id) === index),
+    [branches],
+  )
 
   useEffect(() => {
     if (membershipRoleLoaded) return
@@ -7127,6 +7285,7 @@ export function AgentWorkspacePage() {
       const nextCommissionStructures = Array.isArray(commissionStructureRows) ? commissionStructureRows : []
       const commissionProfileMap = createCommissionProfileMap(Array.isArray(commissionProfileRows) ? commissionProfileRows : [])
       setCommissionStructures(nextCommissionStructures)
+      setBranches(Array.isArray(performanceSources.branches) ? performanceSources.branches : [])
 
       const agentDirectory = readAgentDirectory()
       const mappedAgents = computeAgentWorkspaceData({
@@ -7174,6 +7333,7 @@ export function AgentWorkspacePage() {
       if (blockInitialRender) {
         setError(loadError?.message || 'Unable to load agent workspace.')
         setAgent(null)
+        setBranches([])
         setCommissionStructures([])
         setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
       } else {
@@ -7202,6 +7362,7 @@ export function AgentWorkspacePage() {
     try {
       setLoading(true)
       setError('')
+      setBranches([])
       setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
 
       const directory = readAgentDirectory()
@@ -7249,6 +7410,7 @@ export function AgentWorkspacePage() {
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agent workspace.')
       setAgent(null)
+      setBranches([])
       setCommissionStructures([])
       setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
       setLoading(false)
@@ -7301,6 +7463,7 @@ export function AgentWorkspacePage() {
         canManageSettings={canManageSettings}
         commissionStructures={commissionStructures}
         workspaceSnapshot={workspaceSnapshot}
+        branchOptions={detailBranchOptions}
         onRefresh={loadWorkspace}
       />
     </section>

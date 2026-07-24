@@ -5272,6 +5272,7 @@ function normalizeOrganisationUserRow(row) {
   const profileFirstName = normalizeText(row?.profile?.first_name || row?.profile?.firstName)
   const profileLastName = normalizeText(row?.profile?.last_name || row?.profile?.lastName)
   const profileFullName = normalizeText(row?.profile?.full_name || row?.profile?.fullName)
+  const profilePhone = normalizeText(row?.profile?.phone_number || row?.profile?.phoneNumber)
   const scopeMetadata = row?.scope_metadata && typeof row.scope_metadata === 'object' ? row.scope_metadata : {}
   const genericRole = normalizeText(row?.workspace_role || row?.organisation_role || row?.organization_role || row?.role) || 'viewer'
   const status = normalizeText(row?.membership_status || row?.status) || 'invited'
@@ -5296,6 +5297,8 @@ function normalizeOrganisationUserRow(row) {
       [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') ||
       normalizeText(row?.email),
     email: normalizeText(row?.email),
+    phone: normalizeText(row?.phone || row?.phone_number) || profilePhone,
+    mobile: normalizeText(row?.mobile || row?.mobile_number) || profilePhone,
     avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
     role,
     status,
@@ -5322,10 +5325,19 @@ async function fetchOrganisationUserProfileAvatars(client, rows = []) {
   async function fetchProfilesBy(column, values) {
     if (!values.length) return []
 
-    const { data, error } = await client
+    let profilesQuery = await client
       .from('profiles')
-      .select('id, email, avatar_url, first_name, last_name, full_name')
+      .select('id, email, avatar_url, first_name, last_name, full_name, phone_number')
       .in(column, values)
+
+    if (profilesQuery.error && isMissingColumnError(profilesQuery.error, 'phone_number')) {
+      profilesQuery = await client
+        .from('profiles')
+        .select('id, email, avatar_url, first_name, last_name, full_name')
+        .in(column, values)
+    }
+
+    const { data, error } = profilesQuery
 
     if (error) {
       if (
@@ -5355,6 +5367,7 @@ async function fetchOrganisationUserProfileAvatars(client, rows = []) {
       first_name: normalizeText(row?.first_name),
       last_name: normalizeText(row?.last_name),
       full_name: normalizeText(row?.full_name),
+      phone_number: normalizeText(row?.phone_number),
     }
     const id = normalizeText(row?.id)
     const email = normalizeEmail(row?.email)
@@ -5671,6 +5684,121 @@ export async function updateOrganisationUserRole(userRowId, role) {
   })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
+}
+
+export async function updateOrganisationUserProfile(userRowId, input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation members')
+
+  const membershipId = normalizeText(userRowId)
+  if (!membershipId) {
+    throw new Error('Organisation user is required before saving profile details.')
+  }
+
+  const hasField = (key) => Object.prototype.hasOwnProperty.call(input || {}, key)
+  const firstName = normalizeNullableText(input.firstName)
+  const lastName = normalizeNullableText(input.lastName)
+  const fullName = normalizeNullableText(input.fullName || [firstName, lastName].filter(Boolean).join(' '))
+  const email = normalizeEmail(input.email)
+  const phoneNumber = normalizeNullableText(input.phoneNumber || input.mobile || input.phone)
+  const avatarUrl = normalizeNullableText(input.avatarUrl)
+  const branchId = normalizeNullableText(input.branchId)
+
+  const rpcPayload = {}
+  if (hasField('firstName')) rpcPayload.firstName = firstName
+  if (hasField('lastName')) rpcPayload.lastName = lastName
+  if (hasField('fullName') || hasField('firstName') || hasField('lastName')) rpcPayload.fullName = fullName
+  if (hasField('email')) rpcPayload.email = email
+  if (hasField('phoneNumber') || hasField('phone') || hasField('mobile')) rpcPayload.phoneNumber = phoneNumber
+  if (hasField('avatarUrl')) rpcPayload.avatarUrl = avatarUrl
+  if (hasField('branchId')) rpcPayload.branchId = branchId
+
+  const rpcResult = await client.rpc('bridge_update_organisation_user_profile', {
+    p_membership_id: membershipId,
+    p_profile: rpcPayload,
+  })
+
+  if (rpcResult.error && !isMissingRpcError(rpcResult.error, 'bridge_update_organisation_user_profile')) {
+    throw rpcResult.error
+  }
+
+  if (!rpcResult.error) {
+    organisationUsersCache = null
+    clearOrganisationRuntimeCache()
+    void recordSecurityAuditEvent({
+      userId: context.profile?.id,
+      workspaceId: context.organisation.id,
+      action: 'organisation_user_profile_updated',
+      targetType: 'organisation_user',
+      targetId: membershipId,
+      metadata: { fields: Object.keys(rpcPayload) },
+    })
+    return normalizeOrganisationUserRow(rpcResult.data)
+  }
+
+  const existing = await client
+    .from('organisation_users')
+    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at')
+    .eq('id', membershipId)
+    .eq('organisation_id', context.organisation.id)
+    .maybeSingle()
+
+  if (existing.error) throw existing.error
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+
+  const membershipPatch = {}
+  if (hasField('firstName')) membershipPatch.first_name = firstName
+  if (hasField('lastName')) membershipPatch.last_name = lastName
+  if (hasField('email')) membershipPatch.email = email
+  if (hasField('branchId')) membershipPatch.branch_id = branchId
+
+  let membershipRow = existing.data
+  if (Object.keys(membershipPatch).length) {
+    const { data, error } = await client
+      .from('organisation_users')
+      .update(membershipPatch)
+      .eq('id', membershipId)
+      .eq('organisation_id', context.organisation.id)
+      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at')
+      .maybeSingle()
+
+    if (error) throw error
+    if (data?.id) membershipRow = data
+  }
+
+  if (
+    membershipRow.user_id &&
+    (hasField('firstName') || hasField('lastName') || hasField('phoneNumber') || hasField('phone') || hasField('mobile') || hasField('avatarUrl'))
+  ) {
+    try {
+      await updateUserProfile({
+        userId: membershipRow.user_id,
+        firstName: hasField('firstName') ? firstName : undefined,
+        lastName: hasField('lastName') ? lastName : undefined,
+        phoneNumber: hasField('phoneNumber') || hasField('phone') || hasField('mobile') ? phoneNumber : undefined,
+        avatarUrl: hasField('avatarUrl') ? avatarUrl : undefined,
+      })
+    } catch (profileError) {
+      if (isPermissionDeniedError(profileError)) {
+        throw new Error('Profile details need the organisation profile-management migration before principals can edit another user profile.')
+      }
+      throw profileError
+    }
+  }
+
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return normalizeOrganisationUserRow({
+    ...membershipRow,
+    profile: {
+      first_name: firstName,
+      last_name: lastName,
+      full_name: fullName,
+      phone_number: phoneNumber,
+      avatar_url: avatarUrl,
+    },
+  })
 }
 
 export async function updateOrganisationUserJobTitle(userRowId, jobTitle) {

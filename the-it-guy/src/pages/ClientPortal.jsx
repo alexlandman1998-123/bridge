@@ -254,6 +254,35 @@ function formatOnboardingFieldValue(value) {
   return String(value)
 }
 
+function formatSellerPerformanceNumber(value) {
+  const number = Number(value || 0)
+  if (!Number.isFinite(number)) return '0'
+  return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(number)
+}
+
+function normalizeSellerListingPerformancePayload(...sources) {
+  const source = sources.find((item) => item && typeof item === 'object') || {}
+  const numberFor = (key) => {
+    const number = Number(source[key] || 0)
+    return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0
+  }
+  return {
+    totalViews: numberFor('totalViews'),
+    portalViews: numberFor('portalViews'),
+    bridgeViews: numberFor('bridgeViews'),
+    leadCount: numberFor('leadCount'),
+    newThisWeek: numberFor('newThisWeek'),
+    scheduledViewings: numberFor('scheduledViewings'),
+    completedViewings: numberFor('completedViewings'),
+    offerCount: numberFor('offerCount'),
+    pendingOffers: numberFor('pendingOffers'),
+    daysOnMarket: numberFor('daysOnMarket'),
+    areaAverageDays: numberFor('areaAverageDays'),
+    hasOverrides: Boolean(source.hasOverrides),
+    updatedAt: source.updatedAt || source.updated_at || '',
+  }
+}
+
 function resolveBuyerBondOriginatorRequest(portal = {}) {
   const formData = portal?.onboardingFormData?.formData || {}
   return (
@@ -6394,6 +6423,71 @@ function SellerMarketingActivity({ channels = [] }) {
   )
 }
 
+function SellerListingPerformance({ performance = {} }) {
+  const cards = [
+    {
+      label: 'Views',
+      value: formatSellerPerformanceNumber(performance.totalViews),
+      helper: `${formatSellerPerformanceNumber(performance.portalViews)} portal / ${formatSellerPerformanceNumber(performance.bridgeViews)} Arch9`,
+      icon: BarChart3,
+    },
+    {
+      label: 'Leads',
+      value: formatSellerPerformanceNumber(performance.leadCount),
+      helper: `${formatSellerPerformanceNumber(performance.newThisWeek)} new this week`,
+      icon: Users,
+    },
+    {
+      label: 'Viewings',
+      value: formatSellerPerformanceNumber(performance.scheduledViewings),
+      helper: `${formatSellerPerformanceNumber(performance.completedViewings)} completed`,
+      icon: CalendarClock,
+    },
+    {
+      label: 'Offers',
+      value: formatSellerPerformanceNumber(performance.offerCount),
+      helper: `${formatSellerPerformanceNumber(performance.pendingOffers)} active / pending`,
+      icon: HandCoins,
+    },
+    {
+      label: 'Days Mkt',
+      value: formatSellerPerformanceNumber(performance.daysOnMarket),
+      helper: performance.areaAverageDays ? `${formatSellerPerformanceNumber(performance.areaAverageDays)} day area avg` : 'Area average pending',
+      icon: Clock3,
+    },
+  ]
+
+  return (
+    <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SellerSectionHeading title="Listing Performance" subtitle="Buyer attention, viewings, and offer movement shared by your agent." />
+        {performance.updatedAt ? (
+          <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
+            Updated {formatShortPortalDate(performance.updatedAt, 'recently')}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {cards.map((card) => {
+          const Icon = card.icon
+          return (
+            <div key={card.label} className="flex min-h-[116px] flex-col justify-between rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#718196]">{card.label}</p>
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#e8f4ff] text-[#12588e]">
+                  <Icon size={15} />
+                </span>
+              </div>
+              <p className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-[#102032]">{card.value}</p>
+              <p className="mt-1 text-xs font-medium leading-5 text-[#64748b]">{card.helper}</p>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
 function SellerAgentUpdate({ update }) {
   return (
     <article className="h-full rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
@@ -6589,6 +6683,7 @@ function SellerPortalDashboard({
   sellerHealth,
   sellerListingProgressModel,
   sellerSaleProgressModel,
+  sellerListingPerformance,
   sellerMarketingChannels,
   sellerAgentUpdate,
   sellerTimelineItems,
@@ -6628,6 +6723,7 @@ function SellerPortalDashboard({
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
+      <SellerListingPerformance performance={sellerListingPerformance} />
       <section className="grid gap-5 xl:grid-cols-3">
         <SellerMarketingActivity channels={sellerMarketingChannels} />
         <SellerAgentUpdate update={sellerAgentUpdate} />
@@ -9886,6 +9982,14 @@ function ClientPortal() {
     percent: sellerDocumentExperience.summary.assurancePercent,
     collectionPercent: sellerDocumentExperience.summary.collectionPercent,
   }
+  const sellerListingPerformance = normalizeSellerListingPerformancePayload(
+    portal?.listing?.listingPerformance,
+    portal?.listing?.listing_performance,
+    activeSellingContext?.listingPerformance,
+    activeSellingContext?.listing_performance,
+    portal?.activeSellingContext?.listingPerformance,
+    portal?.activeSellingContext?.listing_performance,
+  )
   const sellerHealth = buildSellerTransactionHealth({
     hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
     hasMandatePacket,
@@ -11117,6 +11221,7 @@ function ClientPortal() {
                       sellerHealth={sellerHealth}
                       sellerListingProgressModel={sellerListingProgressModel}
                       sellerSaleProgressModel={sellerSaleProgressModel}
+                      sellerListingPerformance={sellerListingPerformance}
                       sellerMarketingChannels={sellerMarketingChannels}
                       sellerAgentUpdate={sellerAgentUpdate}
                       sellerTimelineItems={sellerTimelineItems}

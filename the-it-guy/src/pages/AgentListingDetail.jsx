@@ -19,6 +19,7 @@ import {
   Loader2,
   MapPin,
   MoreVertical,
+  Pencil,
   Plus,
   Copy,
   Link2,
@@ -138,17 +139,12 @@ import { listListingPropertyShares } from '../services/leadPropertySharingServic
 import {
   buildDefaultLeadCommunicationPreferences,
   getLeadCommunicationPreferences,
-  getNotificationModeLabel,
   NOTIFICATION_MODE,
-  NOTIFICATION_MODE_OPTIONS,
   resolveNotificationDispatchPlan,
-  updateLeadCommunicationPreferences,
   listCommunicationDeliveries,
 } from '../services/communicationDeliveryService'
 import {
-  listNotificationOutbox,
   prepareNotificationOutbox,
-  summarizeNotificationOutbox,
   updateNotificationOutboxStatus,
 } from '../services/notificationOutboxService'
 import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
@@ -216,6 +212,101 @@ const SELLER_WORKSPACE_TABS = [
   { key: 'commission', label: 'Commission' },
   { key: 'activity', label: 'Activity' },
 ]
+
+const SELLER_PROFILE_SECTION_FIELDS = [
+  {
+    key: 'seller_details',
+    title: 'Seller Details',
+    icon: UserRound,
+    fields: [
+      { key: 'fullName', label: 'Full name' },
+      { key: 'idNumber', label: 'ID / Registration number' },
+      { key: 'sellerType', label: 'Seller type', as: 'select', options: ['individual', 'company', 'trust', 'close_corporation', 'deceased_estate'] },
+      { key: 'maritalStatus', label: 'Marital status' },
+    ],
+  },
+  {
+    key: 'contact_details',
+    title: 'Contact Details',
+    icon: Link2,
+    fields: [
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'phone', label: 'Phone', type: 'tel' },
+      { key: 'alternativeContact', label: 'Alternative contact' },
+      { key: 'preferredContactMethod', label: 'Preferred contact method', as: 'select', options: ['email', 'phone', 'whatsapp'] },
+    ],
+  },
+  {
+    key: 'property_ownership',
+    title: 'Property & Ownership',
+    icon: Home,
+    fields: [
+      { key: 'propertyAddress', label: 'Property address' },
+      { key: 'ownershipType', label: 'Ownership type' },
+      { key: 'titleDeedNumber', label: 'Title deed number' },
+      { key: 'bondHolder', label: 'Bond holder' },
+      { key: 'outstandingBond', label: 'Outstanding bond', type: 'number' },
+      { key: 'coOwnerDetails', label: 'Co-owner details', as: 'textarea' },
+    ],
+  },
+  {
+    key: 'mandate_details',
+    title: 'Mandate Details',
+    icon: FileText,
+    fields: [
+      { key: 'mandateType', label: 'Mandate type' },
+      { key: 'askingPrice', label: 'Asking price', type: 'number' },
+      { key: 'mandateStartDate', label: 'Mandate start date', type: 'date' },
+      { key: 'expiryDate', label: 'Expiry date', type: 'date' },
+      { key: 'commissionPreference', label: 'Commission preference' },
+      { key: 'mandateTerms', label: 'Mandate terms', as: 'textarea' },
+      { key: 'popiConsent', label: 'POPI consent', as: 'select', options: ['yes', 'no'] },
+    ],
+  },
+  {
+    key: 'compliance',
+    title: 'Compliance',
+    icon: ShieldCheck,
+    fields: [
+      { key: 'ficaStatus', label: 'FICA status' },
+      { key: 'taxNumber', label: 'Tax number' },
+      { key: 'popiConsent', label: 'POPI consent', as: 'select', options: ['yes', 'no'] },
+      { key: 'electricalCertificate', label: 'Electrical certificate' },
+      { key: 'plumbingCertificate', label: 'Plumbing certificate' },
+      { key: 'occupationCertificate', label: 'Occupation certificate' },
+      { key: 'buildingPlans', label: 'Building plans' },
+    ],
+  },
+  {
+    key: 'notes',
+    title: 'Notes / Special Conditions',
+    icon: Info,
+    fields: [
+      { key: 'sellingReason', label: 'Selling reason' },
+      { key: 'sellingTimeline', label: 'Selling timeline' },
+      { key: 'specialConditions', label: 'Special conditions', as: 'textarea' },
+      { key: 'notes', label: 'Notes', as: 'textarea' },
+    ],
+  },
+]
+
+const SELLER_PROFILE_SECTION_BY_KEY = new Map(SELLER_PROFILE_SECTION_FIELDS.map((section) => [section.key, section]))
+
+const LISTING_PERFORMANCE_OVERRIDE_FIELDS = [
+  { key: 'totalViews', label: 'Views', helper: 'Total buyer views across all channels.' },
+  { key: 'portalViews', label: 'Portal views', helper: 'Property portal views shown to the seller.' },
+  { key: 'bridgeViews', label: 'Arch9 views', helper: 'Arch9 / agency website views.' },
+  { key: 'leadCount', label: 'Leads', helper: 'Total buyer leads received.' },
+  { key: 'newThisWeek', label: 'New this week', helper: 'New leads received in the last seven days.' },
+  { key: 'scheduledViewings', label: 'Viewings', helper: 'Booked or requested viewings.' },
+  { key: 'completedViewings', label: 'Completed viewings', helper: 'Viewings already completed.' },
+  { key: 'offerCount', label: 'Offers', helper: 'Total offers received.' },
+  { key: 'pendingOffers', label: 'Active / pending offers', helper: 'Offers still active or pending.' },
+  { key: 'daysOnMarket', label: 'Days on market', helper: 'Current days marketed.' },
+  { key: 'areaAverageDays', label: 'Area average days', helper: 'Local benchmark shown with days on market.' },
+]
+
+const LISTING_PERFORMANCE_OVERRIDE_KEYS = new Set(LISTING_PERFORMANCE_OVERRIDE_FIELDS.map((field) => field.key))
 
 function getSellerWorkspaceTabFromSearch(search = '') {
   const requestedTab = new URLSearchParams(String(search || '')).get('tab')
@@ -635,6 +726,39 @@ function getListingSellerFormData(listing = {}) {
     : {}
 }
 
+function normalizeListingPerformanceOverrides(source = {}) {
+  if (!source || typeof source !== 'object') return {}
+  return Object.entries(source).reduce((accumulator, [key, value]) => {
+    if (!LISTING_PERFORMANCE_OVERRIDE_KEYS.has(key)) return accumulator
+    if (value === '' || value === null || value === undefined) return accumulator
+    const number = Number(value)
+    if (!Number.isFinite(number)) return accumulator
+    accumulator[key] = Math.max(0, Math.round(number))
+    return accumulator
+  }, {})
+}
+
+function getListingPerformanceOverrides(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return normalizeListingPerformanceOverrides(
+    formData.listingPerformanceOverrides ||
+      formData.listingPerformance ||
+      listing?.listingPerformanceOverrides ||
+      listing?.listingPerformance ||
+      {},
+  )
+}
+
+function applyListingPerformanceOverrides(basePerformance = {}, overrides = {}) {
+  const normalizedOverrides = normalizeListingPerformanceOverrides(overrides)
+  return {
+    ...basePerformance,
+    ...normalizedOverrides,
+    hasOverrides: Object.keys(normalizedOverrides).length > 0,
+    overrides: normalizedOverrides,
+  }
+}
+
 function getSellerDocumentSourceLabel(row = {}) {
   if (row?.source?.document === 'document_packets.final_signed_artifact') return 'Signed mandate packet'
   if (row?.source?.document === 'private_listing_documents' || row?.hasUpload) return 'Seller portal / linked document'
@@ -750,7 +874,11 @@ function groupListingDocumentsForDisplay(documents = []) {
 
 function isListingDocumentComplete(document = {}) {
   return Boolean(
-    ['complete', 'completed', 'approved', 'verified', 'signed'].includes(normalizeKey(document?.status)),
+    document?.uploaded ||
+      document?.hasUpload ||
+      document?.url ||
+      document?.filePath ||
+      ['complete', 'completed', 'approved', 'verified', 'signed', 'uploaded'].includes(normalizeKey(document?.status)),
   )
 }
 
@@ -1435,38 +1563,182 @@ function wrapPdfText(value = '', maxChars = 86) {
 }
 
 function buildSellerProfilePdf({ agencyName = 'Arch9', generatedDate = '', summary = [], sections = [] }) {
-  const pages = [[]]
-  let y = 790
-  const addLine = (text, { x = 48, size = 10, bold = false, gap = 15, maxChars = 86 } = {}) => {
-    const lines = wrapPdfText(text, maxChars)
-    for (const line of lines) {
-      if (y < 54) {
-        pages.push([])
-        y = 790
-      }
-      pages[pages.length - 1].push({ text: line, x, y, size, bold })
-      y -= gap
-    }
+  const pageWidth = 595
+  const margin = 42
+  const contentWidth = pageWidth - margin * 2
+  const footerY = 40
+  const labelColumnWidth = 172
+  const valueColumnWidth = contentWidth - labelColumnWidth
+  const generatedLabel = generatedDate || formatLongDate(new Date())
+  const colors = {
+    navy: '0.071 0.224 0.333',
+    blue: '0.184 0.439 0.643',
+    green: '0.161 0.541 0.392',
+    ink: '0.078 0.129 0.196',
+    muted: '0.373 0.447 0.533',
+    line: '0.847 0.902 0.953',
+    pale: '0.969 0.984 1',
+    white: '1 1 1',
   }
-  const addSpace = (amount = 10) => {
+  const pages = []
+  let y = 0
+
+  const pdfNumber = (value) => Number(Number(value).toFixed(2)).toString()
+  const currentPage = () => pages[pages.length - 1]
+  const push = (command) => currentPage().push(command)
+  const charsForWidth = (width, size = 10) => Math.max(12, Math.floor(width / (size * 0.52)))
+  const cleanCellValue = (value) => String(value || '').trim() || '-'
+  const upperLabel = (value) => cleanCellValue(value).toUpperCase()
+  const truncatePdfText = (value, maxLength = 22) => {
+    const text = cleanCellValue(value)
+    return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text
+  }
+
+  const textCommand = (text, x, baseline, { size = 10, bold = false, color = colors.ink } = {}) => (
+    `${color} rg BT /${bold ? 'F2' : 'F1'} ${size} Tf 1 0 0 1 ${pdfNumber(x)} ${pdfNumber(baseline)} Tm (${escapePdfText(text)}) Tj ET`
+  )
+  const rectCommand = (x, rectY, width, height, { fill = '', stroke = '', lineWidth = 0.8 } = {}) => {
+    const paint = fill && stroke ? 'B' : fill ? 'f' : 'S'
+    return [
+      'q',
+      `${pdfNumber(lineWidth)} w`,
+      fill ? `${fill} rg` : '',
+      stroke ? `${stroke} RG` : '',
+      `${pdfNumber(x)} ${pdfNumber(rectY)} ${pdfNumber(width)} ${pdfNumber(height)} re ${paint}`,
+      'Q',
+    ].filter(Boolean).join(' ')
+  }
+  const lineCommand = (x1, y1, x2, y2, { stroke = colors.line, lineWidth = 0.8 } = {}) => (
+    `q ${pdfNumber(lineWidth)} w ${stroke} RG ${pdfNumber(x1)} ${pdfNumber(y1)} m ${pdfNumber(x2)} ${pdfNumber(y2)} l S Q`
+  )
+  const drawText = (text, x, baseline, options = {}) => push(textCommand(text, x, baseline, options))
+  const drawRect = (x, rectY, width, height, options = {}) => push(rectCommand(x, rectY, width, height, options))
+  const drawWrappedText = (value, x, baseline, { maxChars, size = 10, bold = false, color = colors.ink, leading = 12 } = {}) => {
+    const lines = wrapPdfText(cleanCellValue(value), maxChars)
+    lines.forEach((line, index) => drawText(line, x, baseline - index * leading, { size, bold, color }))
+    return lines.length * leading
+  }
+
+  const drawDocumentHeader = () => {
+    drawRect(0, 760, pageWidth, 82, { fill: colors.navy, stroke: colors.navy, lineWidth: 0 })
+    drawText(truncatePdfText(agencyName, 34), margin, 815, { size: 10, bold: true, color: colors.white })
+    drawText('SELLER MANDATE WORKSPACE', margin, 738, { size: 8, bold: true, color: colors.blue })
+    drawText('Seller Profile', margin, 778, { size: 24, bold: true, color: colors.white })
+    drawText(`Generated ${generatedLabel}`, pageWidth - margin - 142, 808, { size: 9, color: colors.white })
+    drawRect(pageWidth - margin - 142, 774, 142, 22, { fill: colors.green, stroke: colors.green, lineWidth: 0 })
+    drawText('Seller onboarding record', pageWidth - margin - 130, 781, { size: 9, bold: true, color: colors.white })
+  }
+
+  const startPage = () => {
+    pages.push([])
+    drawDocumentHeader()
+    y = 724
+  }
+
+  const ensureSpace = (height) => {
+    if (y - height < 58) startPage()
+  }
+
+  const addGap = (amount = 14) => {
     y -= amount
-    if (y < 54) {
-      pages.push([])
-      y = 790
-    }
+    ensureSpace(1)
   }
 
-  addLine(agencyName, { size: 11, bold: true, gap: 18 })
-  addLine('Seller Profile', { size: 22, bold: true, gap: 28 })
-  addLine(`Generated ${generatedDate || formatLongDate(new Date())}`, { size: 9, gap: 18 })
-  addSpace(8)
-  summary.forEach((row) => addLine(`${row.label}: ${row.value}`, { size: 10, gap: 14 }))
-  addSpace(16)
+  const drawSectionBand = (title) => {
+    ensureSpace(36)
+    drawRect(margin, y - 30, contentWidth, 30, { fill: colors.pale, stroke: colors.line })
+    drawText(cleanCellValue(title), margin + 12, y - 20, { size: 12, bold: true, color: colors.ink })
+    y -= 30
+  }
 
-  sections.forEach((section) => {
-    addLine(section.title, { size: 14, bold: true, gap: 20 })
-    section.rows.forEach((row) => addLine(`${row.label}: ${row.value}`, { size: 10, gap: 14 }))
-    addSpace(12)
+  const drawTableHeaderRow = () => {
+    drawRect(margin, y - 24, labelColumnWidth, 24, { fill: colors.navy, stroke: colors.navy })
+    drawRect(margin + labelColumnWidth, y - 24, valueColumnWidth, 24, { fill: colors.navy, stroke: colors.navy })
+    drawText('FIELD', margin + 12, y - 16, { size: 7, bold: true, color: colors.white })
+    drawText('DETAILS', margin + labelColumnWidth + 12, y - 16, { size: 7, bold: true, color: colors.white })
+    y -= 24
+  }
+
+  const drawTableTitle = (title, { continued = false } = {}) => {
+    drawSectionBand(`${cleanCellValue(title)}${continued ? ' continued' : ''}`)
+    drawTableHeaderRow()
+  }
+
+  const drawSummaryGrid = (rows = []) => {
+    drawSectionBand('Profile Summary')
+    const colGap = 10
+    const colWidth = (contentWidth - colGap) / 2
+    for (let index = 0; index < rows.length; index += 2) {
+      const rowItems = rows.slice(index, index + 2)
+      const heights = rowItems.map((row) => {
+        const valueLines = wrapPdfText(cleanCellValue(row?.value), charsForWidth(colWidth - 24, 10))
+        return Math.max(48, 28 + valueLines.length * 13)
+      })
+      const rowHeight = Math.max(...heights, 48)
+      ensureSpace(rowHeight + 8)
+      rowItems.forEach((row, colIndex) => {
+        const x = margin + colIndex * (colWidth + colGap)
+        drawRect(x, y - rowHeight, colWidth, rowHeight, { fill: colors.white, stroke: colors.line })
+        drawText(upperLabel(row?.label), x + 12, y - 18, { size: 7, bold: true, color: colors.muted })
+        drawWrappedText(row?.value, x + 12, y - 36, {
+          maxChars: charsForWidth(colWidth - 24, 10),
+          size: 10,
+          bold: true,
+          color: colors.ink,
+          leading: 13,
+        })
+      })
+      y -= rowHeight + 8
+    }
+    addGap(8)
+  }
+
+  const drawTableRow = (row, sectionTitle) => {
+    const label = upperLabel(row?.label)
+    const value = cleanCellValue(row?.value)
+    const labelLines = wrapPdfText(label, charsForWidth(labelColumnWidth - 22, 7))
+    const valueLines = wrapPdfText(value, charsForWidth(valueColumnWidth - 24, 10))
+    const rowHeight = Math.max(34, 16 + Math.max(labelLines.length * 10, valueLines.length * 12))
+    if (y - rowHeight < 58) {
+      startPage()
+      drawTableTitle(sectionTitle, { continued: true })
+    }
+    drawRect(margin, y - rowHeight, labelColumnWidth, rowHeight, { fill: colors.pale, stroke: colors.line })
+    drawRect(margin + labelColumnWidth, y - rowHeight, valueColumnWidth, rowHeight, { fill: colors.white, stroke: colors.line })
+    labelLines.forEach((line, index) => drawText(line, margin + 12, y - 17 - index * 10, {
+      size: 7,
+      bold: true,
+      color: colors.muted,
+    }))
+    valueLines.forEach((line, index) => drawText(line, margin + labelColumnWidth + 12, y - 17 - index * 12, {
+      size: 10,
+      bold: false,
+      color: colors.ink,
+    }))
+    y -= rowHeight
+  }
+
+  const drawTableSection = (section) => {
+    const title = cleanCellValue(section?.title)
+    const rows = Array.isArray(section?.rows) ? section.rows : []
+    ensureSpace(74)
+    drawTableTitle(title)
+    if (!rows.length) {
+      drawTableRow({ label: 'Status', value: 'No details captured' }, title)
+    } else {
+      rows.forEach((row) => drawTableRow(row, title))
+    }
+    addGap(14)
+  }
+
+  startPage()
+  drawSummaryGrid(summary)
+  sections.forEach((section) => drawTableSection(section))
+
+  pages.forEach((pageCommands, index) => {
+    pageCommands.push(lineCommand(margin, footerY, pageWidth - margin, footerY, { stroke: colors.line }))
+    pageCommands.push(textCommand(cleanCellValue(agencyName), margin, 24, { size: 8, color: colors.muted }))
+    pageCommands.push(textCommand(`Page ${index + 1} of ${pages.length}`, pageWidth - margin - 64, 24, { size: 8, color: colors.muted }))
   })
 
   const objects = []
@@ -1478,9 +1750,7 @@ function buildSellerProfilePdf({ agencyName = 'Arch9', generatedDate = '', summa
     const pageId = 5 + index * 2
     const contentId = pageId + 1
     pageIds.push(`${pageId} 0 R`)
-    const stream = pageLines.map((line) => (
-      `BT /${line.bold ? 'F2' : 'F1'} ${line.size} Tf 1 0 0 1 ${line.x} ${line.y} Tm (${escapePdfText(line.text)}) Tj ET`
-    )).join('\n')
+    const stream = pageLines.join('\n')
     objects[pageId - 1] = `${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`
     objects[contentId - 1] = `${contentId} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`
   })
@@ -1897,6 +2167,13 @@ function AgentListingDetail() {
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
   const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
+  const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
+  const [sellerSectionDraft, setSellerSectionDraft] = useState({})
+  const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
+  const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
+  const [listingPerformanceEditorOpen, setListingPerformanceEditorOpen] = useState(false)
+  const [listingPerformanceDraft, setListingPerformanceDraft] = useState({})
+  const [listingPerformanceSaving, setListingPerformanceSaving] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
@@ -1924,10 +2201,6 @@ function AgentListingDetail() {
   const [sentPropertyRows, setSentPropertyRows] = useState([])
   const [communicationDeliveryRows, setCommunicationDeliveryRows] = useState([])
   const [sellerNotificationMode, setSellerNotificationMode] = useState(NOTIFICATION_MODE.EMAIL)
-  const [sellerNotificationModeSaving, setSellerNotificationModeSaving] = useState(false)
-  const [sellerOutboxRows, setSellerOutboxRows] = useState([])
-  const [sellerOutboxLoading, setSellerOutboxLoading] = useState(false)
-  const [sellerOutboxAction, setSellerOutboxAction] = useState('')
   const [sentPropertiesLoading, setSentPropertiesLoading] = useState(false)
   const [sentPropertiesError, setSentPropertiesError] = useState('')
   const [interestedLeadsLoading, setInterestedLeadsLoading] = useState(false)
@@ -2200,24 +2473,14 @@ function AgentListingDetail() {
 
   const refreshSellerNotificationDelivery = useCallback(async () => {
     if (!listingOrganisationId || !sellerLeadId || !listingRecord?.id || !isSupabaseConfigured) {
-      setSellerOutboxRows([])
-      setSellerOutboxLoading(false)
       return
     }
     try {
-      setSellerOutboxLoading(true)
-      const [preferences, outbox] = await Promise.all([
-        getLeadCommunicationPreferences({ organisationId: listingOrganisationId, leadId: sellerLeadId }).catch(() => null),
-        listNotificationOutbox({ organisationId: listingOrganisationId, leadId: sellerLeadId, listingId: listingRecord.id }),
-      ])
+      const preferences = await getLeadCommunicationPreferences({ organisationId: listingOrganisationId, leadId: sellerLeadId }).catch(() => null)
       const fallbackPreferences = buildDefaultLeadCommunicationPreferences({ organisationId: listingOrganisationId, leadId: sellerLeadId })
       setSellerNotificationMode(preferences?.notificationMode || fallbackPreferences.notificationMode || NOTIFICATION_MODE.EMAIL)
-      setSellerOutboxRows(Array.isArray(outbox) ? outbox : [])
     } catch (error) {
-      console.warn('[AgentListingDetail] seller notification outbox load failed', error)
-      setSellerOutboxRows([])
-    } finally {
-      setSellerOutboxLoading(false)
+      console.warn('[AgentListingDetail] seller notification preference load failed', error)
     }
   }, [listingOrganisationId, listingRecord?.id, sellerLeadId])
 
@@ -3342,36 +3605,11 @@ function AgentListingDetail() {
   function openSellerWorkspaceSection(tab, message = '') {
     setActiveTab('seller')
     setSellerWorkspaceTab(tab)
-    navigate(`${location.pathname}?tab=${encodeURIComponent(tab)}`, { replace: true })
     setDetailError('')
     if (message) setDetailMessage(message)
     if (typeof window !== 'undefined') {
+      window.history.replaceState(window.history.state, '', `${location.pathname}?tab=${encodeURIComponent(tab)}`)
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
-    }
-  }
-
-  async function handleSellerNotificationModeChange(nextMode) {
-    const mode = String(nextMode || '').trim()
-    setSellerNotificationMode(mode || NOTIFICATION_MODE.EMAIL)
-    if (!isSupabaseConfigured || !listingOrganisationId || !sellerLeadId) {
-      setDetailError('Save the seller lead before changing its notification delivery mode.')
-      return
-    }
-    try {
-      setSellerNotificationModeSaving(true)
-      setDetailError('')
-      const preferences = await updateLeadCommunicationPreferences({
-        organisationId: listingOrganisationId,
-        leadId: sellerLeadId,
-        updates: { notificationMode: mode },
-      }, { actor: profile })
-      setSellerNotificationMode(preferences.notificationMode)
-      setDetailMessage(`Seller notification mode set to ${getNotificationModeLabel(preferences.notificationMode)}.`)
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to update the seller notification mode.')
-      await refreshSellerNotificationDelivery()
-    } finally {
-      setSellerNotificationModeSaving(false)
     }
   }
 
@@ -3471,7 +3709,6 @@ function AgentListingDetail() {
       if (isSupabaseConfigured && onboardingLink) {
         let outboxItems = []
         try {
-          setSellerOutboxAction('seller_onboarding')
           const prepared = await prepareNotificationOutbox({
             organisationId: listingOrganisationId,
             branchId: listingActor.branchId,
@@ -3560,7 +3797,6 @@ function AgentListingDetail() {
           }
         }
         await refreshSellerNotificationDelivery()
-        setSellerOutboxAction('')
       }
 
       if (onboardingLink && typeof navigator !== 'undefined') {
@@ -3575,7 +3811,6 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to create the seller onboarding link.')
     } finally {
       setFollowUpActionId('')
-      setSellerOutboxAction('')
     }
   }
 
@@ -3639,105 +3874,6 @@ function AgentListingDetail() {
     params.set('returnTo', `/agent/listings/${encodeURIComponent(String(listingRecord.id))}?tab=seller`)
 
     navigate(`/agent/listings/${encodeURIComponent(String(listingRecord.id))}/legal/mandate?${params.toString()}`)
-  }
-
-  async function handleSignedMandateUpload(event) {
-    const file = event?.target?.files?.[0] || null
-    if (event?.target) event.target.value = ''
-    if (!file || !listingRecord?.id) return
-    setDetailError('')
-    setDetailMessage('')
-    try {
-      setFollowUpActionId('upload_signed_mandate')
-      const signedAt = new Date().toISOString()
-      const uploadedDocument = isSupabaseConfigured && isUuidLike(listingRecord.id)
-        ? await uploadPrivateListingDocument(listingRecord.id, file, {
-            documentType: 'manual_mandate_evidence',
-            documentCategory: 'Mandate evidence',
-            documentName: file.name || 'Manual mandate evidence',
-            visibility: 'internal',
-            status: 'uploaded',
-          })
-        : {
-            id: generateId('signed-mandate'),
-            document_name: file.name || 'Manual mandate evidence',
-            document_type: 'manual_mandate_evidence',
-            category: 'Mandate evidence',
-            status: 'uploaded',
-            uploaded_at: signedAt,
-            url: await readAsDataUrl(file),
-          }
-      const documentUrl = uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || ''
-      const documentRow = {
-        ...uploadedDocument,
-        id: uploadedDocument?.id || generateId('signed-mandate'),
-        documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Manual mandate evidence',
-        documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || 'manual_mandate_evidence',
-        category: uploadedDocument?.category || 'Mandate evidence',
-        status: uploadedDocument?.status || 'uploaded',
-        uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || signedAt,
-        url: documentUrl,
-      }
-      patchListing((row) => ({
-        ...row,
-        documents: [
-          documentRow,
-          ...(Array.isArray(row?.documents)
-            ? row.documents.filter((document) => normalizeKey(document?.document_type || document?.documentType || document?.documentName || document?.document_name || document?.name) !== 'manual_mandate_evidence')
-            : []),
-        ],
-        manualMandateEvidenceUploadedAt: signedAt,
-        manualMandateEvidenceUrl: documentUrl || row?.manualMandateEvidenceUrl || '',
-        updatedAt: signedAt,
-      }))
-      setDetailMessage('Manual mandate evidence was uploaded for internal review. It does not mark the mandate signed or activate the listing; complete the canonical legal document workflow to finalize it.')
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to upload the signed mandate.')
-    } finally {
-      setFollowUpActionId('')
-    }
-  }
-
-  function handleFollowUpAction(action) {
-    if (action.key === 'send_onboarding') {
-      void handleSendSellerOnboardingFollowUp()
-      return
-    }
-    if (action.key === 'generate_mandate') {
-      setMandateStartOpen(true)
-      return
-    }
-    if (action.key === 'add_seller_contact') {
-      openSellerWorkspaceSection('seller', 'Add the seller name, email, and phone in the seller workspace.')
-      return
-    }
-    if (action.key === 'add_seller_identity') {
-      openSellerWorkspaceSection('seller', 'Capture the seller ID, company registration, or trust registration number.')
-      return
-    }
-    if (action.key === 'add_seller_fica') {
-      openSellerWorkspaceSection('documents', 'Upload the seller ID and proof of address documents needed for FICA.')
-      return
-    }
-    if (action.key === 'complete_seller_facts') {
-      if (listingRecord?.sellerOnboarding?.link) {
-        window.open(listingRecord.sellerOnboarding.link, '_blank', 'noopener,noreferrer')
-      } else {
-        openSellerWorkspaceSection('seller', 'Capture the remaining seller facts here, or send onboarding to let the seller complete them.')
-      }
-      return
-    }
-    if (action.key === 'add_commission') {
-      openSellerWorkspaceSection('commission', 'Capture commission terms so the mandate and seller profile are complete.')
-      return
-    }
-    if (action.key === 'add_photos') {
-      openSellerWorkspaceSection('listing', 'Add listing photos so the property can be marketed cleanly.')
-      return
-    }
-    if (action.key === 'add_external_link') {
-      openSellerWorkspaceSection('listing', 'Add the Property24, Private Property, or external listing link for this property.')
-    }
   }
 
   function getCanonicalOfferActor() {
@@ -4681,17 +4817,18 @@ function AgentListingDetail() {
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
+  const activeSellerSectionEditor = SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey) || null
 
   const sellerProfile = useMemo(() => {
     const raw = (...values) => firstDraftValue(...values)
     const form = sellerFormData || {}
     const seller = listingRecord?.seller || {}
     const valueFor = (...keys) => raw(...keys.map((key) => form?.[key]))
-    const field = (label, values = [], type = 'text') => {
+    const field = (key, label, values = [], type = 'text') => {
       const rawValue = Array.isArray(values) ? raw(...values) : values
-      return { label, rawValue, value: formatSellerProfileValue(rawValue, type) }
+      return { key, label, rawValue, value: formatSellerProfileValue(rawValue, type) }
     }
-    const section = (title, icon, rows) => ({ title, icon, rows })
+    const section = (key, title, icon, rows) => ({ key, title, icon, rows })
     const sellerName = raw(
       resolveSellerNameFromListing(listingRecord),
       valueFor('sellerName', 'fullName'),
@@ -4710,32 +4847,32 @@ function AgentListingDetail() {
     const askingPrice = raw(valueFor('askingPrice', 'price'), marketingDraft.price, listingRecord?.askingPrice)
     const popiConsent = raw(valueFor('popiConsent', 'privacyConsent'), seller.popiConsent, listingRecord?.popiConsent)
     const sections = [
-      section('Seller Details', UserRound, [
-        field('Full name', [sellerName]),
-        field('ID / Registration number', [valueFor('idNumber', 'sellerIdNumber', 'companyRegistrationNumber', 'trustRegistrationNumber'), seller.idNumber, seller.companyNumber, seller.trustNumber]),
-        field('Seller type', [sellerTypeRaw]),
-        field('Marital status', [valueFor('maritalStatus'), seller.maritalStatus]),
+      section('seller_details', 'Seller Details', UserRound, [
+        field('fullName', 'Full name', [sellerName]),
+        field('idNumber', 'ID / Registration number', [valueFor('idNumber', 'sellerIdNumber', 'companyRegistrationNumber', 'trustRegistrationNumber'), seller.idNumber, seller.companyNumber, seller.trustNumber]),
+        field('sellerType', 'Seller type', [sellerTypeRaw]),
+        field('maritalStatus', 'Marital status', [valueFor('maritalStatus'), seller.maritalStatus]),
       ]),
-      section('Contact Details', Link2, [
-        field('Email', [resolveSellerEmailFromListing(listingRecord), valueFor('sellerEmail', 'email', 'contactEmail'), seller.email]),
-        field('Phone', [valueFor('sellerPhone', 'phone', 'contactNumber', 'mobile'), seller.phone]),
-        field('Alternative contact', [valueFor('alternativeContact', 'alternateContact', 'secondaryPhone', 'alternativePhone'), seller.alternativeContact]),
-        field('Preferred contact method', [valueFor('preferredContactMethod', 'contactPreference'), seller.preferredContactMethod]),
+      section('contact_details', 'Contact Details', Link2, [
+        field('email', 'Email', [resolveSellerEmailFromListing(listingRecord), valueFor('sellerEmail', 'email', 'contactEmail'), seller.email]),
+        field('phone', 'Phone', [valueFor('sellerPhone', 'phone', 'contactNumber', 'mobile'), seller.phone]),
+        field('alternativeContact', 'Alternative contact', [valueFor('alternativeContact', 'alternateContact', 'secondaryPhone', 'alternativePhone'), seller.alternativeContact]),
+        field('preferredContactMethod', 'Preferred contact method', [valueFor('preferredContactMethod', 'contactPreference'), seller.preferredContactMethod]),
       ]),
-      section('Property & Ownership', Home, [
-        field('Property address', [propertyAddress]),
-        field('Ownership type', [valueFor('ownershipType', 'ownerType'), seller.ownershipType]),
-        field('Title deed number', [valueFor('titleDeedNumber', 'deedNumber', 'titleReference'), seller.titleDeedNumber]),
-        field('Bond holder', [valueFor('bondHolder', 'bondBank', 'mortgageBank'), seller.bondHolder]),
-        field('Outstanding bond', [valueFor('outstandingBond', 'bondSettlementAmount'), seller.outstandingBond], 'currency'),
-        field('Co-owner details', [valueFor('coOwnerDetails', 'coOwners'), seller.coOwners]),
+      section('property_ownership', 'Property & Ownership', Home, [
+        field('propertyAddress', 'Property address', [propertyAddress]),
+        field('ownershipType', 'Ownership type', [valueFor('ownershipType', 'ownerType'), seller.ownershipType]),
+        field('titleDeedNumber', 'Title deed number', [valueFor('titleDeedNumber', 'deedNumber', 'titleReference'), seller.titleDeedNumber]),
+        field('bondHolder', 'Bond holder', [valueFor('bondHolder', 'bondBank', 'mortgageBank'), seller.bondHolder]),
+        field('outstandingBond', 'Outstanding bond', [valueFor('outstandingBond', 'bondSettlementAmount'), seller.outstandingBond], 'currency'),
+        field('coOwnerDetails', 'Co-owner details', [valueFor('coOwnerDetails', 'coOwners'), seller.coOwners]),
       ]),
-      section('Mandate Details', FileText, [
-        field('Mandate type', [mandateType]),
-        field('Asking price', [askingPrice], 'currency'),
-        field('Mandate start date', [valueFor('mandateStartDate', 'startDate'), marketingDraft.listingDate, listingRecord?.mandateStartDate], 'date'),
-        field('Expiry date', [valueFor('expiryDate', 'mandateEndDate'), mandateWorkspace.expiryDate], 'date'),
-        field('Commission preference', [
+      section('mandate_details', 'Mandate Details', FileText, [
+        field('mandateType', 'Mandate type', [mandateType]),
+        field('askingPrice', 'Asking price', [askingPrice], 'currency'),
+        field('mandateStartDate', 'Mandate start date', [valueFor('mandateStartDate', 'startDate'), marketingDraft.listingDate, listingRecord?.mandateStartDate], 'date'),
+        field('expiryDate', 'Expiry date', [valueFor('expiryDate', 'mandateEndDate'), mandateWorkspace.expiryDate], 'date'),
+        field('commissionPreference', 'Commission preference', [
           valueFor(
             'commissionPreference',
             'commissionType',
@@ -4754,23 +4891,23 @@ function AgentListingDetail() {
           listingRecord?.commission?.amount,
           listingRecord?.commission?.commission_amount,
         ]),
-        field('Mandate terms', [valueFor('mandateTerms', 'mandateCommissionTerms'), listingRecord?.commission?.mandateTerms, listingRecord?.commission?.mandate_terms]),
-        field('POPI consent', [popiConsent]),
+        field('mandateTerms', 'Mandate terms', [valueFor('mandateTerms', 'mandateCommissionTerms'), listingRecord?.commission?.mandateTerms, listingRecord?.commission?.mandate_terms]),
+        field('popiConsent', 'POPI consent', [popiConsent]),
       ]),
-      section('Compliance', ShieldCheck, [
-        field('FICA status', [valueFor('ficaStatus'), seller.ficaStatus]),
-        field('Tax number', [valueFor('taxNumber', 'sellerTaxNumber'), seller.taxNumber]),
-        field('POPI consent', [popiConsent]),
-        field('Electrical certificate', [valueFor('electricalCertificate', 'electricalComplianceCertificate', 'cocElectrical'), seller.electricalCertificate]),
-        field('Plumbing certificate', [valueFor('plumbingCertificate', 'cocPlumbing'), seller.plumbingCertificate]),
-        field('Occupation certificate', [valueFor('occupationCertificate', 'occupancyCertificate'), seller.occupationCertificate]),
-        field('Building plans', [valueFor('buildingPlans', 'approvedBuildingPlans'), seller.buildingPlans]),
+      section('compliance', 'Compliance', ShieldCheck, [
+        field('ficaStatus', 'FICA status', [valueFor('ficaStatus'), seller.ficaStatus]),
+        field('taxNumber', 'Tax number', [valueFor('taxNumber', 'sellerTaxNumber'), seller.taxNumber]),
+        field('popiConsent', 'POPI consent', [popiConsent]),
+        field('electricalCertificate', 'Electrical certificate', [valueFor('electricalCertificate', 'electricalComplianceCertificate', 'cocElectrical'), seller.electricalCertificate]),
+        field('plumbingCertificate', 'Plumbing certificate', [valueFor('plumbingCertificate', 'cocPlumbing'), seller.plumbingCertificate]),
+        field('occupationCertificate', 'Occupation certificate', [valueFor('occupationCertificate', 'occupancyCertificate'), seller.occupationCertificate]),
+        field('buildingPlans', 'Building plans', [valueFor('buildingPlans', 'approvedBuildingPlans'), seller.buildingPlans]),
       ]),
-      section('Notes / Special Conditions', Info, [
-        field('Selling reason', [valueFor('sellingReason'), seller.sellingReason]),
-        field('Selling timeline', [valueFor('sellingTimeline'), seller.sellingTimeline]),
-        field('Special conditions', [valueFor('specialConditions', 'conditions'), seller.specialConditions]),
-        field('Notes', [valueFor('notes', 'sellerNotes'), seller.notes]),
+      section('notes', 'Notes / Special Conditions', Info, [
+        field('sellingReason', 'Selling reason', [valueFor('sellingReason'), seller.sellingReason]),
+        field('sellingTimeline', 'Selling timeline', [valueFor('sellingTimeline'), seller.sellingTimeline]),
+        field('specialConditions', 'Special conditions', [valueFor('specialConditions', 'conditions'), seller.specialConditions]),
+        field('notes', 'Notes', [valueFor('notes', 'sellerNotes'), seller.notes]),
       ]),
     ]
     const completionRows = sections.flatMap((item) => item.rows)
@@ -4855,209 +4992,6 @@ function AgentListingDetail() {
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
 
-  const followUpActions = useMemo(() => {
-    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
-    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
-    const sellerName = resolveSellerNameFromListing(listingRecord)
-    const seller = listingRecord?.seller || {}
-    const hasSellerName = Boolean(sellerName)
-    const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
-    const onboarding = listingRecord?.sellerOnboarding || {}
-    const onboardingStatus = normalizeKey(onboarding?.status || listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status)
-    const onboardingReady = Boolean(
-      onboarding?.token ||
-        onboarding?.link ||
-        ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(onboardingStatus),
-    )
-    const mandateStatus = normalizeKey(mandateWorkspace.status)
-    const mandatePrepared = mandateWorkspace.isSigned || ['ready', 'generated', 'sent', 'viewed', 'signed_external_pending_upload'].includes(mandateStatus)
-    const sellerFactsComplete = sellerProfile.completionPercent >= 80
-    const sellerIdentityValue = firstDraftValue(
-      sellerFormData?.idNumber,
-      sellerFormData?.sellerIdNumber,
-      sellerFormData?.companyRegistrationNumber,
-      sellerFormData?.trustRegistrationNumber,
-      seller?.idNumber,
-      seller?.sellerIdNumber,
-      seller?.registrationNumber,
-      seller?.companyNumber,
-      seller?.companyRegistrationNumber,
-      seller?.trustNumber,
-      listingRecord?.sellerRegistrationNumber,
-      listingRecord?.seller_registration_number,
-    )
-    const hasSellerIdentityNumber = Boolean(toCleanText(sellerIdentityValue))
-    const isDocumentComplete = (document) => Boolean(
-      document?.uploaded ||
-        document?.url ||
-        document?.filePath ||
-        ['uploaded', 'under_review', 'approved', 'completed', 'verified'].includes(normalizeKey(document?.status)),
-    )
-    const sellerFicaRows = sellerDocumentTrackerRows.filter((document) =>
-      ['id_document', 'proof_of_address'].includes(normalizeKey(document?.key)),
-    )
-    const ficaStatus = normalizeKey(sellerFormData?.ficaStatus || seller?.ficaStatus || listingRecord?.ficaStatus)
-    const sellerFicaComplete = ['complete', 'completed', 'approved', 'verified'].includes(ficaStatus) ||
-      (sellerFicaRows.length > 0 && sellerFicaRows.every(isDocumentComplete))
-    const hasListingPhotos = Array.isArray(marketingDraft.galleryImages) && marketingDraft.galleryImages.length > 0
-    const hasExternalListingLink = normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => toCleanText(link.url))
-    return [
-      {
-        key: 'send_onboarding',
-        title: 'Send seller onboarding',
-        copy: onboardingReady
-          ? 'A seller onboarding link already exists for this listing.'
-          : hasSellerContact
-            ? 'Create the seller portal link and send it to the captured seller contact.'
-            : 'Capture an email or phone first, then send the seller portal link.',
-        complete: onboardingReady,
-        statusLabel: hasSellerContact ? 'Ready' : 'Missing contact',
-        icon: Link2,
-        buttonIcon: Link2,
-        buttonLabel: onboardingReady ? (hasSellerContact ? 'Resend Link' : 'Copy Link') : hasSellerContact ? 'Create & Send Link' : 'Add Contact',
-        loadingLabel: 'Creating link...',
-        priorityLabel: hasSellerContact ? 'Priority: normal' : 'Blocked',
-        dueLabel: onboardingReady ? 'Link ready' : 'Next',
-      },
-      {
-        key: 'add_seller_contact',
-        title: 'Add seller contact',
-        copy: hasSellerName && hasSellerContact
-          ? 'Seller name and contact details are captured.'
-          : 'Capture seller name, surname, email, or phone without forcing the full onboarding journey.',
-        complete: hasSellerName && hasSellerContact,
-        statusLabel: 'Quick capture',
-        icon: UserRound,
-        buttonIcon: UserRound,
-        buttonLabel: hasSellerName && hasSellerContact ? 'Review Seller' : 'Add Seller',
-        priorityLabel: 'Priority: high',
-        dueLabel: 'Before mandate',
-      },
-      {
-        key: 'add_seller_identity',
-        title: 'Add seller ID / registration number',
-        copy: hasSellerIdentityNumber
-          ? 'Seller identity or registration number is captured.'
-          : 'Add the seller ID, company registration, or trust registration number for compliance checks.',
-        complete: hasSellerIdentityNumber,
-        statusLabel: 'Seller detail',
-        icon: UserRound,
-        buttonIcon: UserRound,
-        buttonLabel: hasSellerIdentityNumber ? 'Review Seller' : 'Add ID',
-        priorityLabel: 'Priority: high',
-        dueLabel: 'Before FICA',
-      },
-      {
-        key: 'add_seller_fica',
-        title: 'Add seller FICA',
-        copy: sellerFicaComplete
-          ? 'Seller FICA documents are captured or verified.'
-          : 'Upload seller ID and proof of address documents so compliance is not left behind.',
-        complete: sellerFicaComplete,
-        statusLabel: 'Compliance',
-        icon: ShieldCheck,
-        buttonIcon: Upload,
-        buttonLabel: sellerFicaComplete ? 'Review Documents' : 'Add FICA',
-        priorityLabel: 'Priority: high',
-        dueLabel: 'Before active',
-      },
-      {
-        key: 'generate_mandate',
-        title: 'Generate mandate',
-        copy: mandatePrepared
-          ? 'Open the mandate workspace to review saved details or update the draft before signature.'
-          : 'Start from saved listing details, enter the missing fields manually, or send seller onboarding.',
-        complete: mandatePrepared,
-        statusLabel: mandatePrepared ? 'Draft ready' : 'Choose path',
-        icon: FileText,
-        buttonIcon: FileText,
-        buttonLabel: mandatePrepared ? 'Open Mandate' : 'Generate Mandate',
-        loadingLabel: 'Opening...',
-        priorityLabel: 'Priority: normal',
-        dueLabel: 'Before signature',
-      },
-      {
-        key: 'upload_signed_mandate',
-        title: 'Upload manual mandate evidence',
-        copy: mandateWorkspace.isSigned
-          ? 'A signed mandate is already linked to this listing.'
-          : 'Attach a paper-signed copy for internal review only. This does not mark the mandate signed or activate the listing.',
-        complete: mandateWorkspace.isSigned,
-        statusLabel: 'Supporting evidence',
-        icon: Upload,
-        buttonLabel: mandateWorkspace.isSigned ? 'Replace Evidence' : 'Upload Evidence',
-        upload: true,
-        priorityLabel: mandateStatus === 'signed_external_pending_upload' ? 'Priority: urgent' : 'Priority: high',
-        dueLabel: mandateStatus === 'signed_external_pending_upload' ? 'Signed manually' : 'Before active',
-      },
-      {
-        key: 'complete_seller_facts',
-        title: 'Complete seller facts',
-        copy: sellerFactsComplete
-          ? 'Seller facts are complete enough for mandate and readiness checks.'
-          : 'Finish ownership, compliance, and mandate facts in the seller profile or portal.',
-        complete: sellerFactsComplete,
-        statusLabel: `${sellerProfile.completionPercent}% complete`,
-        icon: ShieldCheck,
-        buttonIcon: listingRecord?.sellerOnboarding?.link ? ExternalLink : ShieldCheck,
-        buttonLabel: listingRecord?.sellerOnboarding?.link ? 'Open Portal' : 'Open Seller',
-        priorityLabel: 'Priority: normal',
-        dueLabel: 'Before publishing',
-      },
-      {
-        key: 'add_commission',
-        title: 'Confirm commission',
-        copy: commissionWorkspace.hasData
-          ? 'Commission terms are available for the mandate workspace.'
-          : 'Capture commission percentage, amount, VAT handling, and payment responsibility.',
-        complete: commissionWorkspace.hasData,
-        statusLabel: 'Commercial terms',
-        icon: HandCoins,
-        buttonIcon: HandCoins,
-        buttonLabel: commissionWorkspace.hasData ? 'Review Commission' : 'Add Commission',
-        priorityLabel: 'Priority: high',
-        dueLabel: 'Before mandate',
-      },
-      {
-        key: 'add_photos',
-        title: 'Add photos',
-        copy: hasListingPhotos
-          ? 'Listing photos are available for marketing.'
-          : 'Upload property photos so the listing can be marketed and shared confidently.',
-        complete: hasListingPhotos,
-        statusLabel: 'Marketing',
-        icon: Camera,
-        buttonIcon: Camera,
-        buttonLabel: hasListingPhotos ? 'Review Photos' : 'Add Photos',
-        priorityLabel: 'Priority: normal',
-        dueLabel: 'Before publishing',
-      },
-      {
-        key: 'add_external_link',
-        title: 'Add external listing link',
-        copy: hasExternalListingLink
-          ? 'An external listing link is connected.'
-          : 'Add the Property24, Private Property, or other external listing URL for cross-reference.',
-        complete: hasExternalListingLink,
-        statusLabel: 'Reference',
-        icon: ExternalLink,
-        buttonIcon: ExternalLink,
-        buttonLabel: hasExternalListingLink ? 'Review Link' : 'Add Link',
-        priorityLabel: 'Priority: normal',
-        dueLabel: 'When available',
-      },
-    ]
-  }, [
-    commissionWorkspace.hasData,
-    listingRecord,
-    mandateWorkspace.isSigned,
-    mandateWorkspace.status,
-    marketingDraft.externalLinks,
-    marketingDraft.galleryImages,
-    sellerDocumentTrackerRows,
-    sellerFormData,
-    sellerProfile.completionPercent,
-  ])
   const listingMandateStartSummary = useMemo(() => {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
@@ -5150,10 +5084,6 @@ function AgentListingDetail() {
         offer.financeType || offer.finance_type || offer.conditionsJson?.financeType || offer.conditions?.financeType,
     }
   }, [acceptedOfferOtpStartOffer, listingMandateLegalScenario])
-  const completedFollowUpCount = followUpActions.filter((action) => action.complete).length
-  const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
-  const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
-
   useEffect(() => {
     setCommissionDraft({
       percentage: commissionWorkspace.percentage ? String(commissionWorkspace.percentage) : '',
@@ -5313,6 +5243,7 @@ function AgentListingDetail() {
   const listingPerformance = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
     const analytics = listingRecord?.analytics || listingRecord?.listingAnalytics || {}
+    const overrides = getListingPerformanceOverrides(listingRecord)
     const portalViews = Number(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews || 0)
     const bridgeViews = Number(analytics?.bridgeViews || analytics?.websiteViews || 0)
     const explicitViews = Number(analytics?.totalViews || analytics?.views || 0)
@@ -5343,7 +5274,7 @@ function AgentListingDetail() {
     const areaAverageDays = Number(analytics?.areaAverageDaysOnMarket || listingRecord?.market?.areaAverageDaysOnMarket || listingRecord?.areaAverageDaysOnMarket || 0)
     const resolvedAreaAverage = areaAverageDays || Math.max(metrics.daysOnMarket + 15, 30)
     const daysDelta = resolvedAreaAverage ? ((resolvedAreaAverage - metrics.daysOnMarket) / resolvedAreaAverage) * 100 : 0
-    return {
+    const basePerformance = {
       totalViews,
       portalViews: resolvedPortalViews,
       bridgeViews: resolvedBridgeViews,
@@ -5363,7 +5294,9 @@ function AgentListingDetail() {
       areaAverageDays: resolvedAreaAverage,
       daysPerformance: daysDelta,
       acceptedSales: metrics.acceptedCount,
+      pendingOffers: metrics.pendingOffers,
     }
+    return applyListingPerformanceOverrides(basePerformance, overrides)
   }, [listingLeads, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
 
   const listingConversionMetrics = useMemo(() => {
@@ -5466,32 +5399,6 @@ function AgentListingDetail() {
     }
   }, [listingPerformance, listingRecord?.askingPrice, marketingDraft.price, offerRows])
 
-  const listingIntelligenceActivity = useMemo(() => {
-    const items = []
-    const add = (title, timestamp, copy, icon = FolderKanban) => {
-      if (!timestamp) return
-      items.push({ title, timestamp, copy, icon })
-    }
-    add('Seller signed mandate', mandateWorkspace.signedDate, 'Mandate completed and listing authority recorded.', CheckCircle2)
-    add('Property published', marketingDraft.listingDate || (['active', 'published', 'live'].includes(String(marketingDraft.listingStatus || listingRecord?.status || '').toLowerCase()) ? listingRecord?.updatedAt : ''), 'Listing moved into live marketing.', ExternalLink)
-    if (marketingDraft.galleryImages.length) {
-      add('Photos uploaded', marketingDraft.galleryImages[0]?.uploadedAt || marketingDraft.galleryImages[0]?.createdAt || listingRecord?.updatedAt, `${marketingDraft.galleryImages.length} photo${marketingDraft.galleryImages.length === 1 ? '' : 's'} available.`, Camera)
-    }
-    for (const viewing of viewings.slice(0, 4)) {
-      add('Viewing booked', viewing?.created_at || viewing?.updated_at || viewing?.proposed_date, `${viewing?.buyer_name || 'Buyer'} • ${formatViewingStatusLabel(viewing?.status)}`, CalendarDays)
-    }
-    for (const offer of offerRows.slice(0, 4)) {
-      add(
-        normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.ACCEPTED ? 'Offer accepted' : 'Offer received',
-        offer?.offerDate,
-        `${offer?.buyerName || 'Buyer'} • ${formatCurrency(offer?.offerPrice)}`,
-        HandCoins,
-      )
-    }
-    add('Seller portal link sent', listingRecord?.sellerOnboarding?.sentAt || listingRecord?.sellerOnboarding?.createdAt, 'Seller reporting portal is available.', ExternalLink)
-    return items.sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0)).slice(0, 8)
-  }, [listingRecord, mandateWorkspace.signedDate, marketingDraft, offerRows, viewings])
-
   const sellerCommunicationMetrics = useMemo(() => {
     const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
     const portalViewedAt = firstDraftValue(
@@ -5551,11 +5458,6 @@ function AgentListingDetail() {
   const sellerOnboardingEmailDiagnostics = useMemo(
     () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
     [communicationDeliveryRows],
-  )
-
-  const sellerOutboxSummary = useMemo(
-    () => summarizeNotificationOutbox(sellerOutboxRows),
-    [sellerOutboxRows],
   )
 
   function handleEditSellerProfile() {
@@ -5694,6 +5596,278 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to save seller contact details.')
     } finally {
       setSellerContactSaving(false)
+    }
+  }
+
+  function openSellerSectionEditor(section) {
+    const sectionConfig = SELLER_PROFILE_SECTION_BY_KEY.get(section?.key)
+    if (!sectionConfig) return
+    const draft = sectionConfig.fields.reduce((accumulator, field) => {
+      const row = section.rows.find((item) => item.key === field.key)
+      accumulator[field.key] = row?.rawValue === undefined || row?.rawValue === null ? '' : String(row.rawValue)
+      return accumulator
+    }, {})
+    setSellerSectionEditorKey(section.key)
+    setSellerSectionDraft(draft)
+    setDetailError('')
+    setDetailMessage('')
+  }
+
+  function updateSellerSectionDraft(key, value) {
+    setSellerSectionDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function buildSellerProfileFormPatch(draft = {}) {
+    const next = { ...draft }
+    const fullName = toCleanText(next.fullName)
+    if (fullName) {
+      const nameParts = fullName.split(/\s+/).filter(Boolean)
+      next.sellerName = fullName
+      next.fullName = fullName
+      next.sellerFirstName = nameParts[0] || ''
+      next.firstName = nameParts[0] || ''
+      next.sellerSurname = nameParts.slice(1).join(' ')
+      next.lastName = nameParts.slice(1).join(' ')
+    }
+    if (next.email !== undefined) {
+      next.email = toCleanText(next.email).toLowerCase()
+      next.sellerEmail = next.email
+      next.contactEmail = next.email
+    }
+    if (next.phone !== undefined) {
+      next.phone = toCleanText(next.phone)
+      next.sellerPhone = next.phone
+      next.mobile = next.phone
+      next.contactNumber = next.phone
+    }
+    if (next.idNumber !== undefined) next.sellerIdNumber = toCleanText(next.idNumber)
+    if (next.propertyAddress !== undefined) next.addressLine1 = toCleanText(next.propertyAddress)
+    if (next.ownershipType !== undefined) next.ownerType = toCleanText(next.ownershipType)
+    if (next.titleDeedNumber !== undefined) next.deedNumber = toCleanText(next.titleDeedNumber)
+    if (next.bondHolder !== undefined) next.bondBank = toCleanText(next.bondHolder)
+    if (next.outstandingBond !== undefined) next.bondSettlementAmount = toCleanText(next.outstandingBond)
+    if (next.askingPrice !== undefined) next.price = toCleanText(next.askingPrice)
+    if (next.mandateStartDate !== undefined) next.startDate = toCleanText(next.mandateStartDate)
+    if (next.expiryDate !== undefined) next.mandateEndDate = toCleanText(next.expiryDate)
+    if (next.commissionPreference !== undefined) next.commissionType = toCleanText(next.commissionPreference)
+    if (next.notes !== undefined) next.sellerNotes = toCleanText(next.notes)
+    return Object.entries(next).reduce((accumulator, [key, value]) => {
+      accumulator[key] = typeof value === 'string' ? value.trim() : value
+      return accumulator
+    }, {})
+  }
+
+  async function handleSaveSellerSection(event) {
+    event.preventDefault()
+    if (!listingRecord?.id || !sellerSectionEditorKey) return
+    const formPatch = buildSellerProfileFormPatch(sellerSectionDraft)
+    if (formPatch.email && !isValidEmail(formPatch.email)) {
+      setDetailError('Add a valid seller email address before saving.')
+      return
+    }
+
+    const now = new Date().toISOString()
+    const existingFormData = getListingSellerFormData(listingRecord)
+    const nextFormData = { ...existingFormData, ...formPatch }
+    const fullName = toCleanText(nextFormData.fullName || nextFormData.sellerName || resolveSellerNameFromListing(listingRecord))
+    const email = toCleanText(nextFormData.email || nextFormData.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
+    const phone = toCleanText(nextFormData.phone || nextFormData.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
+    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const sellerCanonicalFacts = {
+      ...currentFacts,
+      ...nextFormData,
+      sellerName: fullName,
+      fullName,
+      name: fullName,
+      email,
+      sellerEmail: email,
+      phone,
+      sellerPhone: phone,
+      mobile: phone,
+    }
+    const sellerCanonicalFactReadiness = {
+      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
+      sellerName: Boolean(fullName),
+      sellerEmail: Boolean(email),
+      sellerPhone: Boolean(phone),
+      idNumber: Boolean(nextFormData.idNumber || nextFormData.sellerIdNumber),
+      propertyAddress: Boolean(nextFormData.propertyAddress || nextFormData.addressLine1),
+    }
+    const listingPatch = {
+      sellerName: fullName,
+      sellerEmail: email,
+      sellerPhone: phone,
+      sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
+      sellerCanonicalFacts,
+      sellerCanonicalFactReadiness,
+      sellerCanonicalFactsUpdatedAt: now,
+      propertyAddress: nextFormData.propertyAddress || listingRecord?.propertyAddress,
+      addressLine1: nextFormData.propertyAddress || listingRecord?.addressLine1,
+      askingPrice: nextFormData.askingPrice || listingRecord?.askingPrice,
+      mandateType: nextFormData.mandateType || listingRecord?.mandateType,
+      mandateStartDate: nextFormData.mandateStartDate || listingRecord?.mandateStartDate,
+      expiryDate: nextFormData.expiryDate || listingRecord?.expiryDate,
+    }
+
+    setSellerSectionSaving(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
+          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
+          sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
+          ownershipStructure: nextFormData.ownershipType,
+          maritalRegime: nextFormData.maritalStatus || nextFormData.maritalRegime,
+          syncRequirements: true,
+          requirementSyncReason: 'agent_seller_profile_edit',
+        })
+      }
+
+      patchListing((row) => ({
+        ...row,
+        ...listingPatch,
+        seller: {
+          ...(row?.seller || {}),
+          ...formPatch,
+          name: fullName,
+          email,
+          phone,
+        },
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: nextFormData,
+          updatedAt: now,
+        },
+        updatedAt: now,
+      }))
+      setSellerSectionEditorKey('')
+      setSellerSectionDraft({})
+      setDetailMessage(`${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await loadListingData()
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save seller details.')
+    } finally {
+      setSellerSectionSaving(false)
+    }
+  }
+
+  async function handleSellerDocumentUpload(doc, event) {
+    const file = event.target.files?.[0]
+    if (!file || !listingRecord?.id) return
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+      setDetailError('Document upload needs the shared listing record in Supabase so it can pull through for everyone.')
+      event.target.value = ''
+      return
+    }
+
+    const uploadKey = doc.key || doc.id || doc.label || file.name
+    setSellerDocumentUploadKey(uploadKey)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
+        documentType: doc.key || doc.documentType || doc.document_type || 'seller_document',
+        documentCategory: getListingDocumentGroupingKey(doc),
+        documentName: file.name || doc.label || 'Seller document',
+        visibility: 'seller_visible',
+        status: 'uploaded',
+      })
+      patchListing((row) => ({
+        ...row,
+        documents: [
+          ...(Array.isArray(row?.documents) ? row.documents : []),
+          {
+            ...uploadedDocument,
+            id: uploadedDocument?.id || generateId('seller-document'),
+            documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name,
+            documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || doc.key || 'seller_document',
+            category: uploadedDocument?.category || getListingDocumentGroupingKey(doc),
+            status: uploadedDocument?.status || 'uploaded',
+            uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || new Date().toISOString(),
+            url: uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || '',
+          },
+        ],
+      }))
+      setDetailMessage(`${file.name || 'Document'} uploaded to the seller document centre.`)
+      await loadListingData()
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to upload seller document.')
+    } finally {
+      setSellerDocumentUploadKey('')
+      event.target.value = ''
+    }
+  }
+
+  function openListingPerformanceEditor() {
+    const draft = LISTING_PERFORMANCE_OVERRIDE_FIELDS.reduce((accumulator, field) => {
+      accumulator[field.key] = listingPerformance[field.key] === undefined || listingPerformance[field.key] === null
+        ? ''
+        : String(listingPerformance[field.key])
+      return accumulator
+    }, {})
+    setListingPerformanceDraft(draft)
+    setListingPerformanceEditorOpen(true)
+    setDetailError('')
+    setDetailMessage('')
+  }
+
+  function updateListingPerformanceDraft(key, value) {
+    setListingPerformanceDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleSaveListingPerformance(event) {
+    event.preventDefault()
+    if (!listingRecord?.id) return
+    const overrides = normalizeListingPerformanceOverrides(listingPerformanceDraft)
+    const now = new Date().toISOString()
+    const existingFormData = getListingSellerFormData(listingRecord)
+    const nextFormData = {
+      ...existingFormData,
+      listingPerformanceOverrides: overrides,
+      listingPerformance: overrides,
+      listingPerformanceUpdatedAt: now,
+    }
+
+    setListingPerformanceSaving(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
+          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
+          sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
+          syncRequirements: false,
+        })
+      }
+
+      patchListing((row) => ({
+        ...row,
+        listingPerformanceOverrides: overrides,
+        listingPerformance: overrides,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: {
+            ...(row?.sellerOnboarding?.formData || {}),
+            ...nextFormData,
+          },
+          updatedAt: now,
+        },
+        updatedAt: now,
+      }))
+      setListingPerformanceEditorOpen(false)
+      setListingPerformanceDraft({})
+      setDetailMessage('Listing performance stats saved for the seller portal.')
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await loadListingData()
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save listing performance stats.')
+    } finally {
+      setListingPerformanceSaving(false)
     }
   }
 
@@ -6358,6 +6532,81 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
+      <Modal
+        open={Boolean(activeSellerSectionEditor)}
+        onClose={sellerSectionSaving ? undefined : () => setSellerSectionEditorKey('')}
+        title={activeSellerSectionEditor ? `Edit ${activeSellerSectionEditor.title}` : 'Edit Seller Details'}
+        subtitle="Update the seller onboarding details on behalf of the seller."
+        className="max-w-2xl"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSellerSectionEditorKey('')} disabled={sellerSectionSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="seller-section-edit-form" disabled={sellerSectionSaving}>
+              {sellerSectionSaving ? 'Saving...' : 'Save Details'}
+            </Button>
+          </div>
+        }
+      >
+        {activeSellerSectionEditor ? (
+          <form id="seller-section-edit-form" className="grid gap-4 sm:grid-cols-2" onSubmit={handleSaveSellerSection}>
+            {activeSellerSectionEditor.fields.map((field) => (
+              <label key={field.key} className={`grid gap-1.5 ${field.as === 'textarea' ? 'sm:col-span-2' : ''}`}>
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">{field.label}</span>
+                <Field
+                  as={field.as || 'input'}
+                  type={field.type || 'text'}
+                  value={sellerSectionDraft[field.key] || ''}
+                  onChange={(event) => updateSellerSectionDraft(field.key, event.target.value)}
+                >
+                  {field.options ? (
+                    <>
+                      <option value="">Select</option>
+                      {field.options.map((option) => (
+                        <option key={option} value={option}>{formatStatusLabel(option)}</option>
+                      ))}
+                    </>
+                  ) : null}
+                </Field>
+              </label>
+            ))}
+          </form>
+        ) : null}
+      </Modal>
+      <Modal
+        open={listingPerformanceEditorOpen}
+        onClose={listingPerformanceSaving ? undefined : () => setListingPerformanceEditorOpen(false)}
+        title="Edit Listing Performance"
+        subtitle="Override the seller-facing listing stats shown on this overview and in the seller portal."
+        className="max-w-3xl"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setListingPerformanceEditorOpen(false)} disabled={listingPerformanceSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="listing-performance-edit-form" disabled={listingPerformanceSaving}>
+              {listingPerformanceSaving ? 'Saving...' : 'Save Stats'}
+            </Button>
+          </div>
+        }
+      >
+        <form id="listing-performance-edit-form" className="grid gap-4 sm:grid-cols-2" onSubmit={handleSaveListingPerformance}>
+          {LISTING_PERFORMANCE_OVERRIDE_FIELDS.map((field) => (
+            <label key={field.key} className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">{field.label}</span>
+              <Field
+                type="number"
+                min="0"
+                step="1"
+                value={listingPerformanceDraft[field.key] || ''}
+                onChange={(event) => updateListingPerformanceDraft(field.key, event.target.value)}
+              />
+              <span className="text-xs leading-5 text-[#74879d]">{field.helper}</span>
+            </label>
+          ))}
+        </form>
+      </Modal>
       {activeTab !== 'seller' ? (
         <>
           <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
@@ -8254,15 +8503,24 @@ function AgentListingDetail() {
                   <div>
                     <h2 className="text-base font-semibold text-[#142132]">Listing Performance</h2>
                     <p className="mt-1 text-sm text-[#607387]">A focused read on buyer attention, conversion, and market movement.</p>
+                    {listingPerformance.hasOverrides ? (
+                      <p className="mt-1 text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</p>
+                    ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/listings')}
-                    className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:text-[#1f4f78]"
-                  >
-                    <ArrowLeft size={13} />
-                    Back
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={openListingPerformanceEditor}>
+                      <Pencil size={14} />
+                      Edit Stats
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/listings')}
+                      className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:border-[#b7c8db] hover:text-[#1f4f78]"
+                    >
+                      <ArrowLeft size={13} />
+                      Back
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -8270,7 +8528,7 @@ function AgentListingDetail() {
                     { label: 'Views', value: formatCompactNumber(listingPerformance.totalViews), meta: `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`, icon: Eye },
                     { label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users },
                     { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.completedViewings)} completed`, icon: CalendarDays },
-                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(metrics.pendingOffers)} active / pending`, icon: HandCoins },
+                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active / pending`, icon: HandCoins },
                     { label: 'Days Mkt', value: formatCompactNumber(listingPerformance.daysOnMarket), meta: `${formatCompactNumber(listingPerformance.areaAverageDays)} day area avg`, icon: BarChart3 },
                   ].map((card) => {
                     const Icon = card.icon
@@ -8473,7 +8731,7 @@ function AgentListingDetail() {
                 </div>
               </article>
 
-              <section className="grid items-stretch gap-6 min-[1100px]:grid-cols-2">
+              <section>
                 <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                   <h3 className="text-base font-semibold text-[#142132]">Seller Communication</h3>
                   <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
@@ -8613,56 +8871,7 @@ function AgentListingDetail() {
                     </Button>
                   </div>
                 </article>
-
-                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Recent Activity</h3>
-                  <div className="mt-4 space-y-3">
-                    {listingIntelligenceActivity.length ? listingIntelligenceActivity.map((item) => {
-                      const Icon = item.icon || FolderKanban
-                      return (
-                        <div key={`${item.title}-${item.timestamp}`} className="flex items-center gap-3 border-b border-[#e7edf5] pb-3 last:border-b-0 last:pb-0">
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1769d1]"><Icon size={15} /></span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-[#243d56]">{item.title}</p>
-                            <p className="truncate text-xs text-[#607387]">{item.copy}</p>
-                          </div>
-                          <span className="shrink-0 text-xs font-semibold text-[#7b8ca2]">{formatDate(item.timestamp)}</span>
-                        </div>
-                      )
-                    }) : (
-                      <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#607387]">
-                        No listing activity has been recorded yet.
-                      </div>
-                    )}
-                  </div>
-                </article>
               </section>
-
-              {shouldShowListingFollowUps ? (
-                <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>
-                      <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
-                    </div>
-                    <StatusPill
-                      status={listingFollowUpsComplete ? 'done' : 'pending'}
-                      label={`${completedFollowUpCount}/${followUpActions.length} complete`}
-                    />
-                  </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {followUpActions.map((action) => (
-                      <FollowUpActionCard
-                        key={action.key}
-                        action={action}
-                        loading={followUpActionId === action.key}
-                        onAction={handleFollowUpAction}
-                        onUpload={action.key === 'upload_signed_mandate' ? handleSignedMandateUpload : undefined}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </section>
           ) : null}
 
@@ -9001,55 +9210,6 @@ function AgentListingDetail() {
                 </form>
               ) : null}
 
-              <article className="rounded-[24px] border border-[#d7e5f1] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Notification delivery</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Choose exactly how seller updates are delivered. Sending seller onboarding follows this choice and records the result in the outbox.</p>
-                  </div>
-                  <div className="min-w-[220px]">
-                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                      Seller delivery mode
-                      <Field
-                        as="select"
-                        value={sellerNotificationMode}
-                        onChange={(event) => void handleSellerNotificationModeChange(event.target.value)}
-                        disabled={sellerNotificationModeSaving || !isSupabaseConfigured || !sellerLeadId}
-                      >
-                        {NOTIFICATION_MODE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Field>
-                    </label>
-                    {!sellerLeadId ? <p className="mt-2 text-xs font-medium text-[#9a5b11]">Save the seller lead to persist a delivery preference.</p> : null}
-                  </div>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-[#cfe0ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{getNotificationModeLabel(sellerNotificationMode)}</span>
-                  <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{sellerOutboxSummary.queued} queued</span>
-                  <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">{sellerOutboxSummary.agentHandoffs} handoff{sellerOutboxSummary.agentHandoffs === 1 ? '' : 's'}</span>
-                  {sellerOutboxSummary.failed ? <span className="rounded-full border border-[#f6d7d7] bg-[#fff5f5] px-3 py-1 text-xs font-semibold text-[#b42318]">{sellerOutboxSummary.failed} failed</span> : null}
-                </div>
-                {sellerNotificationMode === NOTIFICATION_MODE.AGENT_ASSISTED ? (
-                  <p className="mt-4 rounded-[12px] border border-[#f2dfb4] bg-[#fffaf0] px-3 py-2 text-xs font-medium text-[#835c13]">Agent-assisted mode prepares a visible handoff task and does not send an external message automatically.</p>
-                ) : null}
-                <div className="mt-4 space-y-2">
-                  {sellerOutboxLoading ? <p className="text-xs text-[#607387]">Loading notification outbox…</p> : null}
-                  {!sellerOutboxLoading && sellerOutboxRows.length ? sellerOutboxRows.slice(0, 4).map((item) => (
-                    <div key={item.id} className="flex flex-col gap-2 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-[#2d445e]">{item.subject || formatStatusLabel(item.communicationType || 'Notification')}</p>
-                        <p className="mt-0.5 truncate text-xs text-[#6b7d93]">{item.handoffRequired ? 'Agent handoff' : item.recipient || 'Recipient pending'} • {formatStatusLabel(item.channel)}</p>
-                        {item.errorMessage ? <p className="mt-0.5 truncate text-xs text-[#b42318]">{item.errorMessage}</p> : null}
-                      </div>
-                      <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(item.status)}`}>{formatStatusLabel(item.status)}</span>
-                    </div>
-                  )) : null}
-                  {!sellerOutboxLoading && !sellerOutboxRows.length ? <p className="text-xs text-[#607387]">No pending seller notifications. The next seller onboarding action will make delivery explicit here.</p> : null}
-                </div>
-                {sellerOutboxAction === 'seller_onboarding' ? <p className="mt-3 text-xs font-semibold text-[#35546c]">Preparing notification outbox…</p> : null}
-              </article>
-
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex min-w-0 items-start gap-4">
@@ -9092,11 +9252,22 @@ function AgentListingDetail() {
                   const Icon = section.icon || Info
                   return (
                     <article key={section.title} className="flex h-full min-h-[280px] flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                      <div className="flex items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#1f4f78]">
-                          <Icon size={18} />
-                        </span>
-                        <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">{section.title}</h3>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#1f4f78]">
+                            <Icon size={18} />
+                          </span>
+                          <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">{section.title}</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openSellerSectionEditor(section)}
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]"
+                          aria-label={`Edit ${section.title}`}
+                          title={`Edit ${section.title}`}
+                        >
+                          <Pencil size={15} />
+                        </button>
                       </div>
                       <div className="mt-5 grid gap-0">
                         {section.rows.map((row) => (
@@ -9623,6 +9794,16 @@ function AgentListingDetail() {
                               ) : null
                             })() : null}
                             <div className="mt-4 flex flex-wrap justify-end gap-2">
+                              <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                                {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                Upload
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  disabled={Boolean(sellerDocumentUploadKey)}
+                                  onChange={(event) => void handleSellerDocumentUpload(doc, event)}
+                                />
+                              </label>
                               {doc.url || doc.filePath ? (
                                 <button
                                   type="button"

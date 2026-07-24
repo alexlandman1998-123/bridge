@@ -167,6 +167,11 @@ const AGENCY_PERMISSIONS = [
   PERMISSIONS.advanceTransactionStage,
   PERMISSIONS.manageAppointments,
   PERMISSIONS.manageBranches,
+  PERMISSIONS.partnersViewNetwork,
+  PERMISSIONS.partnersViewDirectory,
+  PERMISSIONS.partnersViewDefaultRouting,
+  PERMISSIONS.partnersManagePreferences,
+  PERMISSIONS.partnersManageOrgDefaults,
 ]
 
 const DEVELOPER_PERMISSIONS = [
@@ -511,6 +516,7 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/attorney/dashboard', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.viewAttorneyDashboard },
   { prefix: '/agency/branches', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageBranches },
   { prefix: '/agency/agents', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageUsers },
+  { prefix: '/agency/partners', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.partnersViewNetwork },
   { prefix: '/agency/analytics', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },
   { prefix: '/agents/reporting', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },
   { prefix: '/pipeline/calendar', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageAppointments },

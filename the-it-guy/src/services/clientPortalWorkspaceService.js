@@ -332,6 +332,81 @@ function sellerPortalStatusCards({ journey = null, documentCenter = null, requir
   ]
 }
 
+const SELLER_PORTAL_LISTING_PERFORMANCE_KEYS = [
+  'totalViews',
+  'portalViews',
+  'bridgeViews',
+  'leadCount',
+  'newThisWeek',
+  'scheduledViewings',
+  'completedViewings',
+  'offerCount',
+  'pendingOffers',
+  'daysOnMarket',
+  'areaAverageDays',
+]
+
+function normalizeSellerPortalPerformanceNumber(value, fallback = 0) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return Math.max(0, Math.round(Number(fallback || 0) || 0))
+  return Math.max(0, Math.round(number))
+}
+
+function normalizeSellerPortalListingPerformanceOverrides(source = {}) {
+  if (!source || typeof source !== 'object') return {}
+  return SELLER_PORTAL_LISTING_PERFORMANCE_KEYS.reduce((accumulator, key) => {
+    if (source[key] === '' || source[key] === null || source[key] === undefined) return accumulator
+    accumulator[key] = normalizeSellerPortalPerformanceNumber(source[key])
+    return accumulator
+  }, {})
+}
+
+function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offers = [], appointments = [] } = {}) {
+  const analytics = listing?.analytics || listing?.listingAnalytics || {}
+  const overrides = normalizeSellerPortalListingPerformanceOverrides(
+    formData.listingPerformanceOverrides ||
+      formData.listingPerformance ||
+      listing?.listingPerformanceOverrides ||
+      listing?.listingPerformance ||
+      {},
+  )
+  const activeOffers = (Array.isArray(offers) ? offers : []).filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
+  const visibleAppointments = (Array.isArray(appointments) ? appointments : []).filter((appointment) => {
+    const status = normalizeValue(appointment?.status)
+    return !['cancelled', 'canceled', 'declined'].includes(status)
+  })
+  const completedAppointments = visibleAppointments.filter((appointment) => normalizeValue(appointment?.status) === 'completed')
+  const createdAt = new Date(listing?.listingPublishedAt || listing?.listing_published_at || listing?.createdAt || listing?.created_at || 0).getTime()
+  const daysOnMarket = Number.isFinite(createdAt) && createdAt > 0
+    ? Math.max(0, Math.ceil((Date.now() - createdAt) / (1000 * 60 * 60 * 24)))
+    : 0
+  const totalViews = normalizeSellerPortalPerformanceNumber(analytics?.totalViews || analytics?.views)
+  const portalViews = normalizeSellerPortalPerformanceNumber(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews)
+  const bridgeViews = normalizeSellerPortalPerformanceNumber(analytics?.bridgeViews || analytics?.websiteViews)
+  const basePerformance = {
+    totalViews: totalViews || portalViews + bridgeViews,
+    portalViews,
+    bridgeViews,
+    leadCount: normalizeSellerPortalPerformanceNumber(analytics?.leadCount || analytics?.leads),
+    newThisWeek: normalizeSellerPortalPerformanceNumber(analytics?.newThisWeek),
+    scheduledViewings: visibleAppointments.length,
+    completedViewings: completedAppointments.length,
+    offerCount: activeOffers.length,
+    pendingOffers: activeOffers.length,
+    daysOnMarket,
+    areaAverageDays: normalizeSellerPortalPerformanceNumber(analytics?.areaAverageDaysOnMarket || listing?.market?.areaAverageDaysOnMarket || listing?.areaAverageDaysOnMarket, daysOnMarket ? Math.max(daysOnMarket + 15, 30) : 0),
+  }
+  const performance = {
+    ...basePerformance,
+    ...overrides,
+  }
+  return {
+    ...performance,
+    hasOverrides: Object.keys(overrides).length > 0,
+    updatedAt: formData.listingPerformanceUpdatedAt || listing?.listingPerformanceUpdatedAt || null,
+  }
+}
+
 function sellerFriendlyBlocker(blocker = {}) {
   const messages = {
     missing_seller_contact: 'Confirm seller contact details',
@@ -555,6 +630,12 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     ...(Array.isArray(context?.offers) ? context.offers : []),
     ...(Array.isArray(listing?.offers) ? listing.offers : []),
   ]
+  const listingPerformance = buildSellerPortalListingPerformance({
+    listing,
+    formData,
+    offers: rawOffers,
+    appointments,
+  })
   const sellerActivityRows = listingId
     ? await getPrivateListingActivity(listingId).catch((error) => {
         console.warn('[clientPortalWorkspaceService] seller listing activity feed skipped.', error)
@@ -647,6 +728,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     seller_onboarding_status: status,
     listingStatus: listing?.listingStatus || listing?.listing_status || listing?.status || '',
     listing_status: listing?.listingStatus || listing?.listing_status || listing?.status || '',
+    listingPerformance,
+    listing_performance: listingPerformance,
     mandatePacket,
     externalListingLinks: sellerVisibleExternalLinks,
     listingExternalLinks: sellerVisibleExternalLinks,
@@ -664,6 +747,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     },
     listing: {
       ...listing,
+      listingPerformance,
+      listing_performance: listingPerformance,
       externalLinks: sellerVisibleExternalLinks,
       listingExternalLinks: sellerVisibleExternalLinks,
     },
@@ -697,7 +782,6 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     sellerJourney,
     sellerPortalJourney,
     sellerMandateContinuity,
-    activeSellingContext,
     stage: sellerTransactionTracking.stage,
     mainStage: sellerTransactionTracking.mainStage,
     lastUpdated: sellerTransactionTracking.lastUpdated,
@@ -741,6 +825,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       transfer: null,
     },
     activeSellingContext: {
+      ...activeSellingContext,
       id: listingId || token,
       contextType: 'selling',
       status: sellerPortalStage,
@@ -759,6 +844,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       mandatePacket,
       mandateContinuity: sellerMandateContinuity,
       mandateContinuityStatus: sellerMandateContinuity.status,
+      listingPerformance,
+      listing_performance: listingPerformance,
       sellerWorkspaceToken: token,
       sellerJourney,
       sellerPortalJourney,

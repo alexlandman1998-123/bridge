@@ -2588,6 +2588,18 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agency/partners"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AppErrorBoundary scope="agency-partners-module" title="Partners module failed to load">
+                        <PartnersPage />
+                      </AppErrorBoundary>
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
                 path="/agents"
                 element={
                   <RoleRoute allowedRoles={['agent']}>

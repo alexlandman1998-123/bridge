@@ -47,18 +47,23 @@ try {
   const { isCommercialProfessionalMember } = await server.ssrLoadModule('/src/modules/commercial/utils/resolveCommercialRole.js')
 
   assert.equal(navPermissionByKey.agency_pipeline, PERMISSIONS.viewLeads)
+  assert.equal(navPermissionByKey.agency_partners, PERMISSIONS.partnersViewNetwork)
   assert.equal(navPermissionByKey.developer_pipeline, PERMISSIONS.viewSalesPipeline)
   assert.equal(navPermissionByKey.client_snags, PERMISSIONS.viewClientPortal)
   assert.equal(navPermissionByKey.developer_snags, PERMISSIONS.viewDevelopments)
 
   const agencyContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'principal' })
-  const agencyItems = filterNavigationItems(getRoleNavItems('agent'), agencyContext)
+  const agencyItems = filterNavigationItems(getRoleNavItems('agent', { membershipRole: 'principal' }), agencyContext)
   const agencyKeys = visibleKeys(agencyItems)
   const agencyPipelineChildren = agencyItems.find((item) => item.key === 'agency_pipeline')?.children || []
+  const agencyOrganisationChildren = agencyItems.find((item) => item.key === 'agency')?.children || []
   assert.equal(agencyKeys.includes('agency_pipeline'), true)
+  assert.equal(agencyKeys.includes('agency_partners'), true)
   assert.deepEqual(agencyPipelineChildren.map((item) => item.label), ['Leads', 'Canvassing', 'Calendar'])
+  assert.equal(agencyOrganisationChildren.find((item) => item.key === 'agency_partners')?.to, '/agency/partners')
   assert.equal(agencyKeys.includes('developer_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
+  assert.equal(can(PERMISSIONS.partnersViewNetwork, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
 
   const attorneyWorkspace = { id: 'attorney-workspace', type: 'attorney_firm' }
@@ -150,6 +155,7 @@ try {
   assert.equal(getRouteAccessRequirement('/pipeline'), null)
   assert.equal(getRouteAccessRequirement('/pipeline/leads')?.workspaceType, 'agency')
   assert.equal(getRouteAccessRequirement('/pipeline/canvassing')?.permission, PERMISSIONS.createLeads)
+  assert.equal(getRouteAccessRequirement('/agency/partners')?.permission, PERMISSIONS.partnersViewNetwork)
   const newTransactionRequirement = getRouteAccessRequirement('/new-transaction')
   assert.equal(evaluateAccessRequirement(newTransactionRequirement, agencyContext).ok, true)
   assert.equal(evaluateAccessRequirement(newTransactionRequirement, developerContext).ok, true)

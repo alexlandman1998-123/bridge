@@ -91,10 +91,15 @@ function getAgentKeys(agent = {}) {
   return [
     agent.id,
     agent.userId,
+    agent.user_id,
     agent.organisationUserId,
+    agent.organisation_user_id,
+    agent.profile?.id,
+    agent.profile?.user_id,
     agent.email,
     agent.name,
     agent.fullName,
+    agent.full_name,
   ].map(normalizeKey).filter(Boolean)
 }
 

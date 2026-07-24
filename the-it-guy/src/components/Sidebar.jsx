@@ -75,6 +75,7 @@ const ICON_BY_KEY = {
   agency_branches: Building2,
   agency_people: Users,
   agency_agents: Users,
+  agency_partners: Handshake,
   agency_commission: Wallet,
   agency_branding: Megaphone,
   agency_roles: ShieldUser,
@@ -427,7 +428,7 @@ function Sidebar() {
   const logoLoadFailed = currentLogoLoadStatus === 'failed'
   const logoLoaded = currentLogoLoadStatus === 'loaded'
   const showOrganisationBranding = Boolean(branding.logoUrl) && !logoLoadFailed
-  const showBrandPlaceholder = organisationLoading || (Boolean(branding.logoUrl) && logoLoadFailed)
+  const showBrandPlaceholder = organisationLoading && !logoLoadFailed
   const handleLogoLoadFailure = () => {
     setLogoLoadState({ url: branding.logoUrl, status: 'failed' })
     void trackWorkspaceBrandingMetric('workspace_branding_image_failed', {
@@ -441,6 +442,20 @@ function Sidebar() {
       severity: 'warning',
     })
   }
+
+  useEffect(() => {
+    const logoUrl = String(branding.logoUrl || '').trim()
+    if (!logoUrl) return undefined
+
+    const timeoutId = window.setTimeout(() => {
+      setLogoLoadState((previous) => {
+        if (previous.url === logoUrl && ['loaded', 'failed'].includes(previous.status)) return previous
+        return { url: logoUrl, status: 'failed' }
+      })
+    }, 8000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [branding.logoUrl])
 
   useEffect(() => {
     let active = true

@@ -223,6 +223,45 @@ function buildModel(overrides = {}) {
 }
 
 {
+  const model = getPrincipalAgentCommandCentre({
+    principalId: 'principal-a',
+    organisationId: 'agency-a',
+    branchId: 'all',
+    agents: [
+      {
+        id: 'membership-leroy',
+        user_id: 'auth-leroy',
+        organisation_user_id: 'membership-leroy',
+        name: 'Leroy Slava',
+        email: 'leroy@example.test',
+        role: 'principal',
+        status: 'active',
+        organisationId: 'agency-a',
+        branchId: 'benoni',
+      },
+    ],
+    branches,
+    listings: [
+      {
+        id: 'leroy-listing',
+        assigned_agent_id: 'auth-leroy',
+        status: 'active',
+        asking_price: 1674800,
+        updated_at: today.toISOString(),
+      },
+    ],
+    filters: {
+      dateRange: 'last_30_days',
+      rankingMetric: 'pipelineValue',
+      sortBy: 'pipeline',
+    },
+  })
+  const leroy = model.agentsTable.find((row) => row.id === 'membership-leroy')
+  assert.equal(leroy?.performance.activeListingCount, 1, 'agent performance should match private listings assigned to the auth user id alias')
+  assert.equal(leroy?.performance.pipelineValue, 1674800, 'pipeline value should include private listing value matched by auth user id alias')
+}
+
+{
   const detailNow = new Date('2026-07-15T12:00:00.000Z')
   const detailAgent = {
     id: 'detail-agent',
