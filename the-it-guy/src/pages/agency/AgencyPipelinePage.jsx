@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Eye, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -4106,10 +4106,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!selectedLead) return
-    if (selectedLeadIsSeller && ['appointments', 'offers', 'tasks'].includes(leadWorkspaceTab)) {
+    if (selectedLeadIsSeller && ['offers', 'tasks'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
     }
-    if (!selectedLeadIsSeller && ['listing_journey'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
     }
   }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
@@ -8162,6 +8162,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('activity')
       return
     }
+    if (id === 'open_journey') {
+      setLeadWorkspaceTab('overview')
+      if (typeof document !== 'undefined') {
+        window.setTimeout(() => {
+          document.querySelector('[data-testid="seller-journey-rail"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+        }, 50)
+      }
+      return
+    }
     if (id === 'open_documents') {
       setLeadWorkspaceTab('documents')
       return
@@ -10049,6 +10058,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setMessage('Lead link copied.')
   }
 
+  function handleCopySelectedSellerLink(kind = 'lead') {
+    if (!selectedLead) return
+    const listingId = normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId)
+    const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token)
+    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
+    let link = ''
+    let label = 'Lead'
+    if (kind === 'onboarding') {
+      link = onboardingToken ? buildSellerOnboardingLink(onboardingToken) : ''
+      label = 'Seller onboarding'
+    } else if (kind === 'portal') {
+      link = onboardingToken ? buildSellerClientPortalLink(onboardingToken) : ''
+      label = 'Seller portal'
+    } else if (kind === 'listing') {
+      link = listingId ? `${origin}/listings/${encodeURIComponent(listingId)}` : ''
+      label = 'Listing'
+    }
+    if (!link) {
+      setLeadActionsMenuOpen(false)
+      setMessage(`${label} link is not available yet.`)
+      return
+    }
+    if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(link)
+    setLeadActionsMenuOpen(false)
+    setMessage(`${label} link copied.`)
+  }
+
   async function handleArchiveLead() {
     if (!organisationId) return
     const leadId = normalizeText(leadArchiveModal.leadId)
@@ -11662,10 +11698,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                  ...(selectedLeadIsSeller
 	                                    ? [
 	                                        {
+	                                          label: selectedSellerJourney.listingCreated ? 'Open Listing' : 'Create Listing Draft',
+	                                          Icon: Home,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleSellerJourneyAction(selectedSellerJourney.listingCreated ? 'open_listing' : 'create_listing')
+	                                          },
+	                                        },
+	                                        {
 	                                          label: selectedLeadSellerOnboardingActionLabel,
 	                                          Icon: Mail,
 	                                          tone: 'text-[#29435d]',
-	                                          mobileOnly: true,
 	                                          disabled: isSellerOnboardingSending,
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
@@ -11673,20 +11717,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          },
 	                                        },
 	                                        {
-	                                          label: 'Schedule',
-	                                          Icon: CalendarDays,
+	                                          label: 'Open Seller Portal',
+	                                          Icon: ExternalLink,
 	                                          tone: 'text-[#29435d]',
-	                                          mobileOnly: true,
+	                                          disabled: !normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token),
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
-	                                            handleScheduleSellerAppointment()
+	                                            handleSellerJourneyAction('open_seller_portal')
 	                                          },
 	                                        },
 	                                        {
 	                                          label: selectedLeadMandatePrimaryLabel,
-	                                          Icon: CheckSquare,
+	                                          Icon: FileText,
 	                                          tone: 'text-[#29435d]',
-	                                          mobileOnly: true,
 	                                          disabled: selectedLeadMandateActionDisabled,
 	                                          title: selectedLeadMandateActionTitle,
 	                                          onClick: () => {
@@ -11694,6 +11737,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                            setLeadActionsMenuOpen(false)
 	                                            void handleSelectedLeadMandatePrimaryAction()
 	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Schedule Appointment',
+	                                          Icon: CalendarDays,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleScheduleSellerAppointment()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Edit Seller Details',
+	                                          Icon: Pencil,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            setLeadWorkspaceTab('seller')
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Copy Seller Onboarding Link',
+	                                          Icon: Copy,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => handleCopySelectedSellerLink('onboarding'),
+	                                        },
+	                                        {
+	                                          label: 'Copy Seller Portal Link',
+	                                          Icon: Copy,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => handleCopySelectedSellerLink('portal'),
+	                                        },
+	                                        {
+	                                          label: 'Copy Listing Link',
+	                                          Icon: Copy,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => handleCopySelectedSellerLink('listing'),
 	                                        },
 	                                      ]
 	                                    : [
@@ -11870,16 +11949,141 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       ))}
                     </div>
                   ) : null}
+
+                  {selectedLead && selectedLeadIsSeller ? (
+                    <div className="mt-6 space-y-5">
+                      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                        <div className="rounded-[26px] border border-[#dbe7f2] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbff_100%)] p-5 shadow-[0_16px_38px_rgba(31,54,78,0.07)] sm:p-6">
+                          <div className="flex h-full min-w-0 flex-col justify-between gap-5">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="grid h-9 w-9 place-items-center rounded-[14px] border border-[#efe0b9] bg-[#fff8e6] text-[#b17b25]">
+                                  <Tag className="h-4 w-4" />
+                                </span>
+                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7d91a8]">Next Best Action</p>
+                              </div>
+                              <h2 className="mt-4 text-[1.55rem] font-semibold tracking-[-0.045em] text-[#102033]">
+                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+                              </h2>
+                              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                                {selectedSellerReadiness.blockers?.[0]?.label
+                                  ? `Resolve ${selectedSellerReadiness.blockers[0].label.toLowerCase()} to move the seller relationship forward.`
+                                  : 'Keep the seller, mandate, listing, and document flow moving from one workspace.'}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button type="button" size="sm" className="bg-[#102033] hover:bg-[#183652]" onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}>
+                                {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                              </Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
+                                {selectedLeadSellerOnboardingActionLabel}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.07)] sm:p-6">
+                          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
+                            <div
+                              className="grid h-32 w-32 shrink-0 place-items-center rounded-full"
+                              style={{ background: `conic-gradient(#2f9b69 ${(selectedSellerReadiness.listingReadiness?.percent || 0) * 3.6}deg, #e2ebf4 0deg)` }}
+                              aria-label={`Listing readiness ${selectedSellerReadiness.listingReadiness?.percent || 0}%`}
+                            >
+                              <div className="grid h-[104px] w-[104px] place-items-center rounded-full bg-white shadow-inner">
+                                <strong className="text-3xl font-semibold tracking-[-0.05em] text-[#102033]">{selectedSellerReadiness.listingReadiness?.percent || 0}%</strong>
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7d91a8]">Listing Readiness Score</p>
+                              <h2 className="mt-3 text-[1.45rem] font-semibold tracking-[-0.04em] text-[#102033]">
+                                {(selectedSellerReadiness.listingReadiness?.percent || 0) >= 90
+                                  ? 'Ready To Publish'
+                                  : (selectedSellerReadiness.listingReadiness?.percent || 0) >= 60
+                                    ? 'Almost Ready'
+                                    : 'Needs Attention'}
+                              </h2>
+                              <div className="mt-3 grid gap-1.5">
+                                {(selectedSellerReadiness.listingReadiness?.incompleteItems || selectedSellerReadiness.blockers || []).slice(0, 4).map((item) => (
+                                  <p key={item.key || item.label} className="text-sm font-semibold text-[#4f6680]">- {item.blocker || item.label}</p>
+                                ))}
+                                {!(selectedSellerReadiness.listingReadiness?.incompleteItems || selectedSellerReadiness.blockers || []).length ? (
+                                  <p className="text-sm font-semibold text-[#237348]">No readiness blockers</p>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]" data-testid="seller-journey-overview">
+                        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-[#edf3f8] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-6 py-5 sm:px-8">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#8aa0b7]">Seller Journey</p>
+                            <h2 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.035em] text-[#102033]">
+                              {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
+                            </h2>
+                          </div>
+                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
+                            {selectedSellerJourney.stage.label}
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto px-6 py-8 sm:px-8" data-testid="seller-journey-rail">
+                          <ol
+                            className="grid min-w-[980px] gap-0"
+                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
+                          >
+                            {selectedSellerJourney.steps.map((step, index) => {
+                              const isCurrent = step.state === 'current'
+                              const isCompleted = step.state === 'completed'
+                              const dotClass = isCurrent
+                                ? 'border-[#2f9b69] bg-[#2f9b69] shadow-[0_0_0_6px_rgba(47,155,105,0.12)]'
+                                : isCompleted
+                                  ? 'border-[#2f9b69] bg-white text-[#2f9b69]'
+                                  : 'border-[#cad7e5] bg-white text-[#9aabbc]'
+                              const lineClass = isCompleted || isCurrent ? 'bg-[#bfe3cf]' : 'bg-[#dce6f1]'
+                              return (
+                                <li key={step.key} className="relative px-2 pb-1">
+                                  {index < selectedSellerJourney.steps.length - 1 ? (
+                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
+                                  ) : null}
+                                  <div className="relative flex flex-col items-center text-center">
+                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
+                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                    </span>
+                                    <span className={`mt-3 rounded-full px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.1em] ${
+                                      isCurrent
+                                        ? 'bg-[#e7f7ee] text-[#237348]'
+                                        : isCompleted
+                                          ? 'bg-[#f0fbf4] text-[#2f7d56]'
+                                          : 'bg-[#eef3f8] text-[#7b8fa5]'
+                                    }`}>
+                                      {isCurrent ? 'Current' : isCompleted ? 'Completed' : 'Upcoming'}
+                                    </span>
+                                    <p className="mt-2 min-h-[40px] max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
+                                    {step.status ? <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#60758b]" title={step.status}>{step.status}</p> : null}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ol>
+                        </div>
+                      </section>
+                    </div>
+                  ) : null}
                 </div>
 
                 {selectedLead ? (
                   <div className={`${selectedLeadIsSeller ? 'mx-5 mb-5 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8' : 'overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]'}`} role="tablist" aria-label="Lead workspace sections">
-                    <div className={`${selectedLeadIsSeller ? 'grid min-w-[640px] grid-cols-4 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
+                    <div className={`${selectedLeadIsSeller ? 'grid min-w-[860px] grid-cols-7 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
                       {(selectedLeadIsSeller ? [
                         { key: 'overview', label: 'Overview', meta: '' },
-                        { key: 'activity', label: 'Timeline', meta: selectedLeadUnifiedTimeline.length },
+                        { key: 'seller', label: 'Seller', meta: '' },
+                        { key: 'property', label: 'Property', meta: '' },
+                        { key: 'mandate', label: 'Mandate', meta: '' },
+                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'documents', label: 'Documents', meta: '' },
-                        { key: 'listing_journey', label: 'Listing Journey', meta: '' },
+                        { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ] : [
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: 'activity', label: 'Timeline', meta: selectedLeadUnifiedTimeline.length },
@@ -12166,63 +12370,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="space-y-6">
                   {leadWorkspaceTab === 'overview' ? (
                   <div className="space-y-6">
-                    {selectedLeadIsSeller ? (
-                      <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]" data-testid="seller-journey-overview">
-                        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-[#edf3f8] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-6 py-5 sm:px-8">
-                          <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#8aa0b7]">Seller Journey</p>
-                            <h2 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.035em] text-[#102033]">
-                              Acquisition Timeline
-                            </h2>
-                          </div>
-                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
-                            {selectedSellerJourney.stage.label}
-                          </span>
-                        </div>
-
-                        <div className="overflow-x-auto px-6 py-8 sm:px-8" data-testid="seller-journey-rail">
-                          <ol
-                            className="grid min-w-[980px] gap-0"
-                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
-                          >
-                            {selectedSellerJourney.steps.map((step, index) => {
-                              const isCurrent = step.state === 'current'
-                              const isCompleted = step.state === 'completed'
-                              const dotClass = isCurrent
-                                ? 'border-[#2f9b69] bg-[#2f9b69] shadow-[0_0_0_6px_rgba(47,155,105,0.12)]'
-                                : isCompleted
-                                  ? 'border-[#2f9b69] bg-white text-[#2f9b69]'
-                                  : 'border-[#cad7e5] bg-white text-[#9aabbc]'
-                              const lineClass = isCompleted || isCurrent ? 'bg-[#bfe3cf]' : 'bg-[#dce6f1]'
-                              return (
-                                <li key={step.key} className="relative px-2 pb-1">
-                                  {index < selectedSellerJourney.steps.length - 1 ? (
-                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
-                                  ) : null}
-                                  <div className="relative flex flex-col items-center text-center">
-                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
-                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                                    </span>
-                                    <span className={`mt-3 rounded-full px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.1em] ${
-                                      isCurrent
-                                        ? 'bg-[#e7f7ee] text-[#237348]'
-                                        : isCompleted
-                                          ? 'bg-[#f0fbf4] text-[#2f7d56]'
-                                          : 'bg-[#eef3f8] text-[#7b8fa5]'
-                                    }`}>
-                                      {isCurrent ? 'Current' : isCompleted ? 'Completed' : 'Upcoming'}
-                                    </span>
-                                    <p className="mt-2 min-h-[40px] max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
-                                    {step.status ? <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#60758b]" title={step.status}>{step.status}</p> : null}
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ol>
-                        </div>
-                      </section>
-                    ) : null}
-
                     <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8">
                       <div className="flex flex-wrap items-start justify-between gap-6">
                         <div>
@@ -13915,6 +14062,109 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </section>
                       </aside>
                     </div>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'seller' && selectedLeadIsSeller ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Seller Details</p>
+                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadDisplayName}</h4>
+                          <p className="mt-1 text-sm leading-6 text-[#60758b]">Seller contact, source, ownership, and onboarding status.</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
+                          {selectedLeadSellerOnboardingActionLabel}
+                        </Button>
+                      </div>
+                      <div className="mt-6 grid gap-x-10 gap-y-6 md:grid-cols-2">
+                        {[
+                          ['Name', selectedLeadDisplayName],
+                          ['Phone', selectedLeadContact?.phone || selectedLead?.phone || 'No phone'],
+                          ['Email', selectedLeadContact?.email || selectedLead?.email || 'No email'],
+                          ['Lead Source', selectedLead.leadSource || 'Not captured'],
+                          ['Assigned Agent', selectedLeadAssignedAgentLabel],
+                          ['Onboarding Status', selectedLeadOnboardingStatusKey.replace(/_/g, ' ') || 'Not started'],
+                          ['Created', formatDate(selectedLead.createdAt)],
+                          ['Last Updated', formatDateTime(selectedLead.updatedAt || selectedLead.createdAt)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="border-b border-[#eef3f7] pb-4">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
+                            <p className="mt-2 truncate text-[1rem] font-semibold text-[#20364c]" title={String(value)}>{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'property' && selectedLeadIsSeller ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Property</p>
+                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadPropertyLabel}</h4>
+                          <p className="mt-1 text-sm leading-6 text-[#60758b]">Address and listing facts used for onboarding, mandate, and listing creation.</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => handleSellerJourneyAction(selectedSellerJourney.listingCreated ? 'open_listing' : 'create_listing')}>
+                          {selectedSellerJourney.listingCreated ? 'Open Listing' : 'Create Listing Draft'}
+                        </Button>
+                      </div>
+                      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          ['Address', selectedLeadPropertyLabel],
+                          ['Property Type', selectedLead.propertyInterest || selectedLeadLinkedListing?.propertyType || 'Not captured'],
+                          ['Estimated Value', selectedLead.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : 'Not captured'],
+                          ['Listing Status', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
+                          ['Suburb', selectedLead.suburb || selectedLeadLinkedListing?.suburb || 'Not captured'],
+                          ['City', selectedLead.city || selectedLeadLinkedListing?.city || 'Not captured'],
+                          ['Province', selectedLead.province || selectedLeadLinkedListing?.province || 'Not captured'],
+                          ['Postal Code', selectedLead.postalCode || selectedLeadLinkedListing?.postalCode || 'Not captured'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'mandate' && selectedLeadIsSeller ? (
+                  <div className="space-y-4">
+                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Mandate</p>
+                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadMandatePrimaryLabel}</h4>
+                          <p className="mt-1 text-sm leading-6 text-[#60758b]">{selectedLeadMandateActionTitle || 'Prepare, generate, send, or view the mandate from the current packet state.'}</p>
+                        </div>
+                        <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
+                          {selectedLeadMandatePrimaryLabel}
+                        </Button>
+                      </div>
+                      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {selectedLeadMandateQuickStartRows.map((row) => (
+                          <div key={row.key} className={`rounded-[16px] border px-3 py-3 ${row.ready ? 'border-[#d7eadf] bg-[#fbfffd]' : row.optional ? 'border-[#e6eef7] bg-[#fbfdff]' : 'border-[#f1d6d1] bg-[#fff7f5]'}`}>
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{row.label}</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedLeadMandateQuickStartBlockers.length ? (
+                        <div className="mt-5 rounded-[16px] border border-[#f1d6d1] bg-[#fff7f5] p-4">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#9f3028]">Mandate Blockers</p>
+                          <div className="mt-3 grid gap-2">
+                            {selectedLeadMandateQuickStartBlockers.map((blocker) => (
+                              <p key={blocker} className="text-sm font-semibold text-[#8d3529]">- {blocker}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
                   </div>
                   ) : null}
 
