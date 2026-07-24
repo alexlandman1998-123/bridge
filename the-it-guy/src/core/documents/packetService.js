@@ -98,7 +98,7 @@ import {
   resolvePdfRenderablePacketType,
   resolveSignableTemplatePolicy,
 } from './documentGenerationContainment'
-import { assertLegalTemplateApproved } from './legalTemplateApproval'
+import { assertLegalTemplateApproved, assessLegalTemplateApproval } from './legalTemplateApproval'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -812,6 +812,20 @@ function templateIsPublishedForRouting(template = {}) {
   return template?.is_active !== false
 }
 
+function requiresApprovedAutomaticLegalRoutingTemplate(packetType = '', context = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  return isGenerationAction(context?.validationAction) && ['mandate', 'otp'].includes(normalizedPacketType)
+}
+
+function templateIsApprovedForAutomaticLegalRouting(template = {}, packetType = '') {
+  return assessLegalTemplateApproval(template, { expectedPacketType: packetType }).approved
+}
+
+function templateCanParticipateInAutomaticLegalRouting(template = {}, { packetType = '', context = {} } = {}) {
+  if (!requiresApprovedAutomaticLegalRoutingTemplate(packetType, context)) return true
+  return templateIsApprovedForAutomaticLegalRouting(template, packetType)
+}
+
 function resolveTemplateUpdatedAt(template = {}) {
   const parsed = Date.parse(template?.published_at || template?.updated_at || template?.created_at || '')
   return Number.isFinite(parsed) ? parsed : 0
@@ -885,6 +899,10 @@ async function resolveMandateScenarioTemplateForPacket({
   const templateById = new Map()
   for (const template of templateGroups.flat()) {
     if (!template?.id || !templateIsPublishedForRouting(template)) continue
+    if (!templateCanParticipateInAutomaticLegalRouting(template, {
+      packetType: normalizedPacketType,
+      context,
+    })) continue
     templateById.set(template.id, template)
   }
 
@@ -1016,6 +1034,10 @@ async function resolveOtpScenarioTemplateForPacket({
   const templateById = new Map()
   for (const template of templateGroups.flat()) {
     if (!template?.id || !templateIsPublishedForRouting(template)) continue
+    if (!templateCanParticipateInAutomaticLegalRouting(template, {
+      packetType: normalizedPacketType,
+      context,
+    })) continue
     templateById.set(template.id, template)
   }
 
@@ -1150,7 +1172,10 @@ function requireExplicitTemplateRouteMatch({ packetType = '', template = null, c
     matchedSpecificRoute = Boolean(candidate.metadata?.hasRoutingMetadata)
   }
 
-  if (compatible && matchedSpecificRoute) return
+  const defaultRouteFallbackAllowed = compatible &&
+    (template?.is_default === true || template?.isDefault === true) &&
+    templateIsApprovedForAutomaticLegalRouting(template, normalizedPacketType)
+  if (compatible && (matchedSpecificRoute || defaultRouteFallbackAllowed)) return
   throw createPacketError(
     'TEMPLATE_ROUTE_NOT_PUBLISHED',
     'The selected template is not published for this document’s legal route. Publish a route-specific template before generating.',
@@ -1159,6 +1184,7 @@ function requireExplicitTemplateRouteMatch({ packetType = '', template = null, c
       templateId: normalizeText(template?.id) || null,
       compatible,
       matchedSpecificRoute,
+      defaultRouteFallbackAllowed,
     },
   )
 }

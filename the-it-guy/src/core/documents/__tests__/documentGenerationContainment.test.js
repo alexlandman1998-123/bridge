@@ -13,6 +13,16 @@ const publishedMandate = {
   is_active: true,
 }
 
+const platformDefaultMandate = {
+  ...publishedMandate,
+  template_key: 'mandate_default_v1',
+  is_default: true,
+  metadata_json: {
+    template_scope: 'global_default',
+    platform_default_can_route_without_org_template: true,
+  },
+}
+
 test('rejects unknown and non-renderable packet types instead of coercing them to OTP', () => {
   assert.equal(resolvePdfRenderablePacketType('unknown').code, 'UNSUPPORTED_DOCUMENT_TYPE')
   assert.equal(resolvePdfRenderablePacketType('addendum').code, 'DOCUMENT_TYPE_NOT_RENDERABLE')
@@ -55,7 +65,7 @@ test('requires a published, matching template for a signable document', () => {
   )
 })
 
-test('rejects generic scenario fallbacks while allowing a route-specific published template', () => {
+test('allows default boilerplate fallbacks while rejecting non-default generic fallbacks', () => {
   assert.equal(
     resolveSignableTemplatePolicy({
       packetType: 'mandate',
@@ -69,6 +79,14 @@ test('rejects generic scenario fallbacks while allowing a route-specific publish
       packetType: 'mandate',
       template: publishedMandate,
       resolutionSource: 'mandate_scenario_variant',
+    }).ok,
+    true,
+  )
+  assert.equal(
+    resolveSignableTemplatePolicy({
+      packetType: 'mandate',
+      template: platformDefaultMandate,
+      resolutionSource: 'mandate_scenario_fallback',
     }).ok,
     true,
   )

@@ -157,7 +157,8 @@
   border-color: #fde68a;
 }
 
-.legal-template-readiness-list article.missing {
+.legal-template-readiness-list article.missing,
+.legal-template-readiness-list article.blocked {
   border-color: #fecdd3;
 }
 

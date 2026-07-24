@@ -23,6 +23,10 @@ function text(value = '') {
   return String(value || '').trim()
 }
 
+function record(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 export function normalizeDocumentPacketType(packetType = '') {
   return text(packetType).toLowerCase()
 }
@@ -73,10 +77,23 @@ export function isPublishedTemplateStatus(status = '') {
   return PUBLISHED_TEMPLATE_STATUSES.includes(normalizeDocumentPacketType(status))
 }
 
+function isDefaultTemplateRouteFallback(template = {}) {
+  const metadata = record(template?.metadata_json || template?.metadataJson)
+  const packetType = normalizeDocumentPacketType(template?.packet_type || template?.packetType)
+  if (!['mandate', 'otp'].includes(packetType)) return false
+  if (template?.is_default !== true && template?.isDefault !== true) return false
+  if (template?.is_active === false || template?.isActive === false) return false
+  const scope = normalizeDocumentPacketType(metadata.template_scope || metadata.templateScope)
+  return scope === 'global_default' ||
+    metadata.platform_default_can_route_without_org_template === true ||
+    text(template?.template_key || template?.templateKey) === `${packetType}_default_v1`
+}
+
 /**
  * A signable packet may only bind to an authoritative, published template.
- * Route fallbacks are deliberately not eligible: the caller must publish an
- * exact route template (or explicitly choose a published one where allowed).
+ * Ordinary route fallbacks are not eligible. A default OTP/mandate boilerplate
+ * may be used as a broad fallback, with legal approval enforced by the
+ * generation preflight and Edge runtime gates.
  */
 export function resolveSignableTemplatePolicy({
   packetType = '',
@@ -143,7 +160,17 @@ export function resolveSignableTemplatePolicy({
       : normalizedPacketType === 'otp'
         ? 'legal_scenario_variant'
         : ''
-  if (!requiredRouteSource || source !== requiredRouteSource) {
+  const fallbackRouteSource =
+    normalizedPacketType === 'mandate'
+      ? 'mandate_scenario_fallback'
+      : normalizedPacketType === 'otp'
+        ? 'legal_scenario_fallback'
+        : ''
+  const defaultFallbackAllowed = fallbackRouteSource &&
+    source === fallbackRouteSource &&
+    isDefaultTemplateRouteFallback(template)
+
+  if (!requiredRouteSource || (source !== requiredRouteSource && !defaultFallbackAllowed)) {
     return policyFailure(
       'TEMPLATE_ROUTE_NOT_PUBLISHED',
       'No published template matches this document’s legal route. Publish the route-specific template before generating it.',
@@ -152,6 +179,7 @@ export function resolveSignableTemplatePolicy({
         templateId,
         resolutionSource: source || null,
         requiredRouteSource: requiredRouteSource || null,
+        defaultFallbackAllowed,
       },
     )
   }
@@ -160,7 +188,7 @@ export function resolveSignableTemplatePolicy({
     ok: true,
     packetType: normalizedPacketType,
     templateId,
-    resolutionSource: source,
+    resolutionSource: defaultFallbackAllowed ? fallbackRouteSource : source,
   }
 }
 

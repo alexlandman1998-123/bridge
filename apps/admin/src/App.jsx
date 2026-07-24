@@ -34,6 +34,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ADMIN_LEVELS, formatAdminLevelLabel, formatRoleLabel, resolveAdminAccess } from './lib/adminAccess'
 import {
   archiveAdminLegalTemplate,
+  customisePlatformDefaultTemplate,
   loadAdminProfile,
   loadAdminLegalTemplateGovernance,
   loadDashboardSnapshot,
@@ -3525,6 +3526,14 @@ function legalTemplateToForm(template = {}) {
   }
 }
 
+function isPlatformDefaultLegalTemplate(template = {}) {
+  const packetType = String(template?.packet_type || template?.packetType || '').toLowerCase()
+  const templateKey = String(template?.template_key || template?.templateKey || '').toLowerCase()
+  return !String(template?.organisation_id || template?.organisationId || '').trim() &&
+    ['mandate', 'otp'].includes(packetType) &&
+    ['mandate_default_v1', 'otp_default_v1'].includes(templateKey)
+}
+
 function templateStatusTone(status = '') {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'published') return 'success'
@@ -3542,7 +3551,7 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
   const [filters, setFilters] = useState({ organisationId: scopedOrganisationId || '', moduleType: '', packetType: '', query: '' })
   const [registry, setRegistry] = useState({ organisations: [], templates: [], warnings: [] })
   const [governance, setGovernance] = useState({ audit: [], fileUrl: '', versions: [], warnings: [] })
-  const [readiness, setReadiness] = useState({ checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [] })
+  const [readiness, setReadiness] = useState({ checks: [], summary: { ready: 0, warning: 0, blocked: 0, total: 0 }, warnings: [] })
   const [selectedId, setSelectedId] = useState('')
   const [form, setForm] = useState(EMPTY_LEGAL_TEMPLATE_FORM)
   const [file, setFile] = useState(null)
@@ -3582,7 +3591,7 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
     } catch (loadError) {
       setReadiness({
         checks: [],
-        summary: { ready: 0, warning: 0, missing: 0, total: 0 },
+        summary: { ready: 0, warning: 0, blocked: 0, total: 0 },
         warnings: [{ label: 'Template readiness', message: loadError?.message || 'Unable to scan legal template readiness.' }],
       })
     } finally {
@@ -3604,6 +3613,7 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
   }, [scopedOrganisationId])
 
   const selectedTemplate = registry.templates.find((template) => template.id === selectedId) || null
+  const selectedTemplateIsPlatformDefault = isPlatformDefaultLegalTemplate(selectedTemplate)
 
   async function loadGovernance(templateId = selectedId) {
     if (!templateId) {
@@ -3622,7 +3632,14 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
 
   useEffect(() => {
     if (selectedTemplate) {
-      setForm(legalTemplateToForm(selectedTemplate))
+      const selectedIsPlatformDefault = isPlatformDefaultLegalTemplate(selectedTemplate)
+      setForm({
+        ...legalTemplateToForm(selectedTemplate),
+        moduleType: selectedIsPlatformDefault ? 'residential' : selectedTemplate.module_type || selectedTemplate.moduleType || 'residential',
+        organisationId: selectedIsPlatformDefault
+          ? filters.organisationId || scopedOrganisationId || ''
+          : selectedTemplate.organisation_id || selectedTemplate.organisationId || '',
+      })
       setFile(null)
     }
   }, [selectedTemplate])
@@ -3667,6 +3684,10 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
 
   async function handleSave(event) {
     event?.preventDefault()
+    if (selectedTemplateIsPlatformDefault) {
+      await handleCustomisePlatformDefault()
+      return
+    }
     setIsSaving(true)
     setMessage('')
     setError('')
@@ -3690,6 +3711,32 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
       await loadGovernance(saved?.id || selectedId)
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save legal template.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleCustomisePlatformDefault() {
+    if (!selectedTemplate?.id) return
+    setIsSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      const saved = await customisePlatformDefaultTemplate({
+        sourceTemplateId: selectedTemplate.id,
+        organisationId: form.organisationId,
+        templateLabel: form.templateLabel,
+        description: form.description,
+        changeSummary: form.changeSummary,
+      })
+      setMessage('Organisation draft created from the Ultron platform default.')
+      setFile(null)
+      await loadRegistry(filters)
+      await loadReadiness(filters)
+      setSelectedId(saved?.id || '')
+      await loadGovernance(saved?.id || selectedId)
+    } catch (cloneError) {
+      setError(cloneError?.message || 'Unable to create organisation draft.')
     } finally {
       setIsSaving(false)
     }
@@ -3790,6 +3837,12 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
       {readiness.warnings.length ? <WarningStrip warnings={readiness.warnings} /> : null}
       {error ? <div className="notice danger"><AlertTriangle size={16} /><span>{error}</span></div> : null}
       {message ? <div className="notice success"><CheckCircle2 size={16} /><span>{message}</span></div> : null}
+      {selectedTemplateIsPlatformDefault ? (
+        <div className="notice warning">
+          <ShieldCheck size={16} />
+          <span>Ultron platform defaults are locked. Choose an organisation and create a draft before customising wording.</span>
+        </div>
+      ) : null}
 
       <section className="panel legal-template-readiness">
         <div className="panel-heading">
@@ -3805,12 +3858,12 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
             <strong>{readiness.summary.ready}</strong>
           </div>
           <div className="warning">
-            <span>Fallback</span>
+            <span>Draft Override</span>
             <strong>{readiness.summary.warning}</strong>
           </div>
           <div className="danger">
-            <span>Missing</span>
-            <strong>{readiness.summary.missing}</strong>
+            <span>Blocked</span>
+            <strong>{readiness.summary.blocked}</strong>
           </div>
           <div>
             <span>Total Checks</span>
@@ -3877,19 +3930,19 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
             </label>
             <label>
               <span>Module</span>
-              <select onChange={(event) => updateForm({ moduleType: event.target.value })} value={form.moduleType}>
+              <select disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ moduleType: event.target.value })} value={form.moduleType}>
                 {LEGAL_TEMPLATE_MODULES.filter((option) => option.value).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
             <label>
               <span>Document Type</span>
-              <select onChange={(event) => updateForm({ packetType: event.target.value })} value={form.packetType}>
+              <select disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ packetType: event.target.value })} value={form.packetType}>
                 {packetOptions.filter((option) => option.value).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
             <label>
               <span>Status</span>
-              <select onChange={(event) => updateForm({ status: event.target.value })} value={form.status}>
+              <select disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ status: event.target.value })} value={form.status}>
                 <option value="draft">Draft</option>
                 <option value="published">Published</option>
                 <option value="archived">Archived</option>
@@ -3901,15 +3954,15 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
             </label>
             <label>
               <span>Template Key</span>
-              <input onChange={(event) => updateForm({ templateKey: event.target.value })} placeholder="auto from label" value={form.templateKey} />
+              <input disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ templateKey: event.target.value })} placeholder="auto from label" value={form.templateKey} />
             </label>
             <label>
               <span>Version</span>
-              <input onChange={(event) => updateForm({ versionTag: event.target.value })} value={form.versionTag} />
+              <input disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ versionTag: event.target.value })} value={form.versionTag} />
             </label>
             <label>
               <span>Format</span>
-              <select onChange={(event) => updateForm({ templateFormat: event.target.value })} value={form.templateFormat}>
+              <select disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ templateFormat: event.target.value })} value={form.templateFormat}>
                 <option value="docx">DOCX</option>
                 <option value="html">HTML</option>
                 <option value="structured">Structured</option>
@@ -3927,11 +3980,11 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
             </label>
             <label className="wide legal-template-upload">
               <span>Upload Template File</span>
-              <input accept=".doc,.docx,.pdf,.html,.json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] || null)} type="file" />
+              <input accept=".doc,.docx,.pdf,.html,.json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={selectedTemplateIsPlatformDefault} onChange={(event) => setFile(event.target.files?.[0] || null)} type="file" />
               <small>{file ? file.name : form.templateFileName || form.templateStoragePath || 'No file selected'}</small>
             </label>
             <label className="wide checkbox-row">
-              <input checked={form.isDefault} onChange={(event) => updateForm({ isDefault: event.target.checked })} type="checkbox" />
+              <input checked={form.isDefault} disabled={selectedTemplateIsPlatformDefault} onChange={(event) => updateForm({ isDefault: event.target.checked })} type="checkbox" />
               <span>Use as the active default for this organisation, module, and document type.</span>
             </label>
           </div>
@@ -4009,17 +4062,23 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
           {governance.warnings.length ? <WarningStrip warnings={governance.warnings} /> : null}
 
           <div className="legal-template-actions">
-            <button className="primary-button compact" disabled={isSaving} type="submit">
+            {selectedTemplateIsPlatformDefault ? (
+              <button className="primary-button compact" disabled={!form.organisationId || isSaving} onClick={handleCustomisePlatformDefault} type="button">
+                <Plus size={16} />
+                {isSaving ? 'Creating...' : 'Create Organisation Draft'}
+              </button>
+            ) : null}
+            <button className="primary-button compact" disabled={selectedTemplateIsPlatformDefault || isSaving} type="submit">
               <FileText size={16} />
               {isSaving ? 'Saving...' : 'Save Template'}
             </button>
-            <button className="secondary-button compact" disabled={!form.id || isSaving} onClick={() => runTemplateAction(publishAdminLegalTemplate, 'Template published and set as default.')} type="button">
+            <button className="secondary-button compact" disabled={selectedTemplateIsPlatformDefault || !form.id || isSaving} onClick={() => runTemplateAction(publishAdminLegalTemplate, 'Template published and set as default.')} type="button">
               Publish
             </button>
-            <button className="secondary-button compact" disabled={!form.id || isSaving} onClick={() => runTemplateAction(setAdminLegalTemplateDefault, 'Template set as active default.')} type="button">
+            <button className="secondary-button compact" disabled={selectedTemplateIsPlatformDefault || !form.id || isSaving} onClick={() => runTemplateAction(setAdminLegalTemplateDefault, 'Template set as active default.')} type="button">
               Set Default
             </button>
-            <button className="secondary-button compact danger" disabled={!form.id || isSaving} onClick={() => runTemplateAction(archiveAdminLegalTemplate, 'Template archived.')} type="button">
+            <button className="secondary-button compact danger" disabled={selectedTemplateIsPlatformDefault || !form.id || isSaving} onClick={() => runTemplateAction(archiveAdminLegalTemplate, 'Template archived.')} type="button">
               Archive
             </button>
           </div>

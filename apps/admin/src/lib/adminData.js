@@ -25,6 +25,9 @@ const RANGE_OPTIONS = {
 
 const TRANSACTION_FEE_ESTIMATE = 1000
 const LEGAL_TEMPLATES_BUCKET = 'legal-templates'
+const PHASE4_B3_RELEASE_CONTRACT = 'phase4-b3-integrity-v1'
+const RUNTIME_APPROVAL_PACKET_TYPES = new Set(['mandate', 'otp'])
+const RESIDENTIAL_LEGAL_TEMPLATE_MODULES = new Set(['residential', 'agency'])
 
 const LEGAL_TEMPLATE_COLUMNS =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, change_summary, content_hash, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
@@ -34,6 +37,9 @@ const LEGACY_LEGAL_TEMPLATE_COLUMNS =
 
 const LEGAL_TEMPLATE_VERSION_COLUMNS =
   'id, template_id, organisation_id, module_type, packet_type, template_key, template_label, template_format, version_tag, status, storage_bucket, storage_path, file_name, content_hash, description, change_summary, sections_snapshot_json, placeholder_keys, metadata_json, created_by, updated_by, published_by, archived_by, created_at, updated_at, published_at, archived_at'
+
+const LEGAL_TEMPLATE_SECTION_COLUMNS =
+  'id, template_id, section_key, section_label, section_type, sort_order, is_required, is_repeatable, condition_json, placeholder_keys, legal_text, metadata_json, created_at, updated_at'
 
 const LEGAL_TEMPLATE_READINESS_REQUIREMENTS = [
   { moduleType: 'residential', packetType: 'mandate', label: 'Residential mandate' },
@@ -65,6 +71,10 @@ function normalizeStorageName(value = '', fallback = 'template.docx') {
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
 function compact(items) {
@@ -457,7 +467,8 @@ async function queryLegalTemplateRows({ organisationId = '', moduleType = '', pa
       .order('updated_at', { ascending: false })
       .limit(limit)
     if (organisationId) builder = builder.eq('organisation_id', organisationId)
-    if (moduleType) builder = builder.eq('module_type', moduleType)
+    if (moduleType === 'residential') builder = builder.in('module_type', ['residential', 'agency'])
+    else if (moduleType) builder = builder.eq('module_type', moduleType)
     if (packetType) builder = builder.eq('packet_type', packetType)
     return builder
   }
@@ -474,6 +485,19 @@ async function queryLegalTemplateVersions({ templateId = '', limit = 1000 } = {}
       .from('document_packet_template_versions')
       .select(LEGAL_TEMPLATE_VERSION_COLUMNS)
       .order('created_at', { ascending: false })
+      .limit(limit)
+    if (templateId) builder = builder.eq('template_id', templateId)
+    return builder
+  })
+}
+
+async function queryLegalTemplateSections({ templateId = '', limit = 1000 } = {}) {
+  return tryOptionalQuery('document_template_sections', () => {
+    let builder = supabase
+      .from('document_template_sections')
+      .select(LEGAL_TEMPLATE_SECTION_COLUMNS)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
       .limit(limit)
     if (templateId) builder = builder.eq('template_id', templateId)
     return builder
@@ -1653,18 +1677,92 @@ function isPublishedLegalTemplate(template = {}) {
   return status === 'published' && template.is_active !== false
 }
 
-function pickReadyTemplate(templates = [], { organisationId, moduleType, packetType } = {}) {
-  const candidates = templates
-    .filter((template) => normalizeText(template.module_type) === moduleType)
-    .filter((template) => normalizeText(template.packet_type) === packetType)
-    .filter(isPublishedLegalTemplate)
+function isPlatformDefaultLegalTemplate(template = {}) {
+  const packetType = normalizeText(template.packet_type || template.packetType).toLowerCase()
+  const templateKey = normalizeText(template.template_key || template.templateKey).toLowerCase()
+  return !normalizeText(template.organisation_id || template.organisationId) &&
+    RUNTIME_APPROVAL_PACKET_TYPES.has(packetType) &&
+    ['otp_default_v1', 'mandate_default_v1'].includes(templateKey)
+}
+
+function readAdminLegalTemplateApproval(template = {}) {
+  const metadata = asRecord(template.metadata_json || template.metadataJson)
+  const nested = asRecord(metadata.legal_review || metadata.legalReview)
+  return {
+    status: normalizeText(metadata.legal_review_status || metadata.legalApprovalStatus || nested.status).toLowerCase(),
+    approvedAt: normalizeText(metadata.legal_approved_at || metadata.legalApprovedAt || nested.approvedAt),
+    reference: normalizeText(metadata.legal_approval_reference || metadata.legalApprovalReference || nested.reference),
+    contentDigest: normalizeText(metadata.legal_approval_content_digest || metadata.legalApprovalContentDigest || nested.contentDigest),
+    reviewEvidenceDigest: normalizeText(metadata.legal_counsel_review_evidence_digest || metadata.legalCounselReviewEvidenceDigest || nested.reviewEvidenceDigest),
+    revokedAt: normalizeText(metadata.legal_revoked_at || metadata.legalRevokedAt || nested.revokedAt),
+    b1ManifestDigest: normalizeText(metadata.legal_b1_manifest_digest || metadata.legalB1ManifestDigest),
+    b3AppliedAt: normalizeText(metadata.legal_b3_applied_at || metadata.legalB3AppliedAt),
+    b3AppliedBy: normalizeText(metadata.legal_b3_applied_by || metadata.legalB3AppliedBy),
+    b3ApplicationReference: normalizeText(metadata.legal_b3_application_reference || metadata.legalB3ApplicationReference),
+    phase4B3ReleaseContract: normalizeText(metadata.legal_phase4_b3_release_contract || metadata.legalPhase4B3ReleaseContract),
+  }
+}
+
+function assessAdminLegalTemplateApproval(template = {}, { expectedPacketType = '' } = {}) {
+  const approval = readAdminLegalTemplateApproval(template)
+  const packetType = normalizeText(template.packet_type || template.packetType).toLowerCase()
+  const status = normalizeText(template.status).toLowerCase()
+  const approvedTime = Date.parse(approval.approvedAt)
+  const b3AppliedTime = Date.parse(approval.b3AppliedAt)
+  const reasons = []
+
+  if (expectedPacketType && packetType !== normalizeText(expectedPacketType).toLowerCase()) reasons.push('PACKET_TYPE_MISMATCH')
+  if (status !== 'published') reasons.push('TEMPLATE_NOT_PUBLISHED')
+  if (template.is_active !== true && template.isActive !== true) reasons.push('TEMPLATE_NOT_ACTIVE')
+  if (approval.status !== 'approved') reasons.push('LEGAL_REVIEW_NOT_APPROVED')
+  if (!approval.approvedAt || !Number.isFinite(approvedTime)) reasons.push('LEGAL_APPROVAL_DATE_MISSING')
+  if (Number.isFinite(approvedTime) && approvedTime > Date.now() + 5 * 60 * 1000) reasons.push('LEGAL_APPROVAL_DATE_IN_FUTURE')
+  if (!approval.reference) reasons.push('LEGAL_APPROVAL_REFERENCE_MISSING')
+  if (!approval.contentDigest) reasons.push('LEGAL_APPROVAL_CONTENT_DIGEST_MISSING')
+  if (!approval.reviewEvidenceDigest) reasons.push('LEGAL_COUNSEL_REVIEW_EVIDENCE_MISSING')
+  if (approval.revokedAt) reasons.push('LEGAL_APPROVAL_REVOKED')
+  if (!approval.b1ManifestDigest) reasons.push('LEGAL_B1_MANIFEST_BINDING_MISSING')
+  if (!approval.b3AppliedAt || !Number.isFinite(b3AppliedTime)) reasons.push('LEGAL_B3_APPLICATION_TIME_MISSING')
+  if (Number.isFinite(b3AppliedTime) && b3AppliedTime > Date.now() + 5 * 60 * 1000) reasons.push('LEGAL_B3_APPLICATION_TIME_IN_FUTURE')
+  if (!approval.b3AppliedBy) reasons.push('LEGAL_B3_APPLIED_BY_MISSING')
+  if (!approval.b3ApplicationReference) reasons.push('LEGAL_B3_APPLICATION_REFERENCE_MISSING')
+  if (approval.phase4B3ReleaseContract !== PHASE4_B3_RELEASE_CONTRACT) reasons.push('LEGAL_B3_PHASE4_RELEASE_CONTRACT_MISSING')
+
+  return { approval, approved: reasons.length === 0, reasons }
+}
+
+function legalTemplateApprovalRequired(packetType = '') {
+  return RUNTIME_APPROVAL_PACKET_TYPES.has(normalizeText(packetType).toLowerCase())
+}
+
+function templateApprovalReady(template = {}, packetType = '') {
+  if (!isPublishedLegalTemplate(template)) return false
+  if (!legalTemplateApprovalRequired(packetType)) return true
+  return assessAdminLegalTemplateApproval(template, { expectedPacketType: packetType }).approved
+}
+
+function legalTemplateModuleMatches(template = {}, moduleType = '') {
+  const templateModule = normalizeText(template.module_type || template.moduleType).toLowerCase()
+  const requiredModule = normalizeText(moduleType).toLowerCase()
+  if (requiredModule === 'residential') return RESIDENTIAL_LEGAL_TEMPLATE_MODULES.has(templateModule)
+  return templateModule === requiredModule
+}
+
+function legalTemplateMatchesReadinessRequirement(template = {}, { moduleType = '', packetType = '' } = {}) {
+  return legalTemplateModuleMatches(template, moduleType) &&
+    normalizeText(template.packet_type || template.packetType).toLowerCase() === normalizeText(packetType).toLowerCase()
+}
+
+function sortLegalTemplateReadinessCandidates(templates = [], organisationId = '') {
+  return [...templates]
     .map((template) => {
       const isOrgTemplate = normalizeText(template.organisation_id) === normalizeText(organisationId)
       const isGlobalTemplate = !normalizeText(template.organisation_id)
       const ownerScore = isOrgTemplate ? 0 : isGlobalTemplate ? 1 : 4
       const defaultScore = template.is_default ? 0 : 1
+      const publishedScore = isPublishedLegalTemplate(template) ? 0 : 1
       const updatedScore = -(Date.parse(template.published_at || template.updated_at || template.created_at || '') || 0)
-      return { template, score: [ownerScore, defaultScore, updatedScore] }
+      return { template, score: [ownerScore, defaultScore, publishedScore, updatedScore] }
     })
     .sort((left, right) => {
       for (let index = 0; index < left.score.length; index += 1) {
@@ -1672,8 +1770,82 @@ function pickReadyTemplate(templates = [], { organisationId, moduleType, packetT
       }
       return 0
     })
+    .map(({ template }) => template)
+}
 
-  return candidates[0]?.template || null
+function approvalBlockerMessage(template = {}, packetType = '') {
+  if (!legalTemplateApprovalRequired(packetType) && !isPublishedLegalTemplate(template)) {
+    return 'Selected template is not published and active.'
+  }
+  const reasons = legalTemplateApprovalRequired(packetType)
+    ? assessAdminLegalTemplateApproval(template, { expectedPacketType: packetType }).reasons
+    : []
+  return reasons.length
+    ? `Selected template is not legally/runtime approved: ${reasons.join(', ')}.`
+    : 'Selected template is not active, published, and runtime released.'
+}
+
+function resolveLegalTemplateReadinessCandidate(templates = [], { organisationId, moduleType, packetType } = {}) {
+  const matchingTemplates = templates.filter((template) => legalTemplateMatchesReadinessRequirement(template, { moduleType, packetType }))
+  const organisationTemplates = matchingTemplates.filter((template) => normalizeText(template.organisation_id) === normalizeText(organisationId))
+  const globalTemplates = matchingTemplates.filter((template) => !normalizeText(template.organisation_id))
+  const organisationDefault = sortLegalTemplateReadinessCandidates(
+    organisationTemplates.filter((template) => template.is_default),
+    organisationId,
+  )[0] || null
+
+  if (organisationDefault && !templateApprovalReady(organisationDefault, packetType)) {
+    return {
+      message: approvalBlockerMessage(organisationDefault, packetType),
+      severity: 'blocked',
+      source: 'organisation_default',
+      status: 'selected_default_not_approved',
+      template: organisationDefault,
+    }
+  }
+
+  if (organisationDefault) {
+    return { severity: 'ready', source: 'organisation_default', template: organisationDefault }
+  }
+
+  const organisationTemplate = sortLegalTemplateReadinessCandidates(organisationTemplates, organisationId)
+    .find((template) => templateApprovalReady(template, packetType))
+  if (organisationTemplate) {
+    return { severity: 'ready', source: 'organisation_published', template: organisationTemplate }
+  }
+
+  const platformDefault = sortLegalTemplateReadinessCandidates(
+    globalTemplates.filter((template) => template.is_default),
+    organisationId,
+  ).find((template) => templateApprovalReady(template, packetType))
+  const platformTemplate = platformDefault || sortLegalTemplateReadinessCandidates(globalTemplates, organisationId)
+    .find((template) => templateApprovalReady(template, packetType))
+  if (platformTemplate) {
+    const hasDraftOverride = organisationTemplates.some((template) => !templateApprovalReady(template, packetType))
+    return {
+      message: hasDraftOverride
+        ? 'Using approved platform default while organisation custom template is still draft, inactive, or awaiting release.'
+        : 'Using approved platform default.',
+      severity: hasDraftOverride ? 'warning' : 'ready',
+      source: hasDraftOverride ? 'platform_default_with_draft_override' : 'platform_default',
+      template: platformTemplate,
+    }
+  }
+
+  const blockedTemplate = sortLegalTemplateReadinessCandidates(matchingTemplates, organisationId)[0] || null
+  return {
+    message: blockedTemplate
+      ? approvalBlockerMessage(blockedTemplate, packetType)
+      : 'No approved active platform or organisation template is available.',
+    severity: 'blocked',
+    source: blockedTemplate
+      ? normalizeText(blockedTemplate.organisation_id) === normalizeText(organisationId)
+        ? 'organisation_template_not_ready'
+        : 'platform_template_not_ready'
+      : 'missing',
+    status: blockedTemplate ? 'no_runtime_released_template' : 'missing_template',
+    template: blockedTemplate,
+  }
 }
 
 function templateNeedsStorage(template = {}) {
@@ -1758,7 +1930,7 @@ export async function loadAdminLegalTemplateGovernance(templateId = '') {
 }
 
 export async function loadLegalTemplateBridgeReadiness({ organisationId = '', moduleType = '' } = {}) {
-  if (!supabase) return { checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [{ label: 'Supabase', message: 'Not configured' }] }
+  if (!supabase) return { checks: [], summary: { ready: 0, warning: 0, blocked: 0, total: 0 }, warnings: [{ label: 'Supabase', message: 'Not configured' }] }
 
   const [organisations, templates] = await Promise.all([
     queryOrganisationsForAdmin(),
@@ -1771,24 +1943,14 @@ export async function loadLegalTemplateBridgeReadiness({ organisationId = '', mo
 
   for (const organisation of scopedOrganisations) {
     for (const requirement of requirements) {
-      const template = pickReadyTemplate(templates.data, {
+      const readinessCandidate = resolveLegalTemplateReadinessCandidate(templates.data, {
         organisationId: organisation.id,
         moduleType: requirement.moduleType,
         packetType: requirement.packetType,
       })
+      const template = readinessCandidate.template
       const probe = await probeTemplateStorage(template)
-      const source = template
-        ? normalizeText(template.organisation_id) === normalizeText(organisation.id)
-          ? template.is_default
-            ? 'organisation_default'
-            : 'organisation_published'
-          : 'global_fallback'
-        : 'missing'
-      const severity = probe.ok && source !== 'global_fallback'
-        ? 'ready'
-        : probe.ok
-          ? 'warning'
-          : 'missing'
+      const severity = readinessCandidate.severity === 'blocked' || !probe.ok ? 'blocked' : readinessCandidate.severity
       checks.push({
         id: `${organisation.id}-${requirement.moduleType}-${requirement.packetType}`,
         organisationId: organisation.id,
@@ -1797,11 +1959,13 @@ export async function loadLegalTemplateBridgeReadiness({ organisationId = '', mo
         packetType: requirement.packetType,
         label: requirement.label,
         severity,
-        source,
-        status: probe.status,
-        message: source === 'global_fallback'
-          ? 'Using global fallback. Add an organisation default before rollout.'
-          : probe.message,
+        source: readinessCandidate.source,
+        status: readinessCandidate.status || probe.status,
+        message: readinessCandidate.severity === 'blocked'
+          ? readinessCandidate.message
+          : probe.ok
+            ? readinessCandidate.message || probe.message
+            : probe.message,
         templateId: template?.id || '',
         templateLabel: template?.template_label || template?.template_key || '',
         storagePath: template?.template_storage_path || '',
@@ -1813,10 +1977,10 @@ export async function loadLegalTemplateBridgeReadiness({ organisationId = '', mo
   const summary = checks.reduce(
     (acc, check) => {
       acc.total += 1
-      acc[check.severity] += 1
+      acc[check.severity] = (acc[check.severity] || 0) + 1
       return acc
     },
-    { ready: 0, warning: 0, missing: 0, total: 0 },
+    { ready: 0, warning: 0, blocked: 0, total: 0 },
   )
 
   return {
@@ -1917,6 +2081,62 @@ function buildLegacyLegalTemplatePayload(payload = {}) {
   }
 }
 
+function withoutPlatformApprovalMetadata(metadata = {}) {
+  const next = asRecord(metadata)
+  const cleaned = { ...next }
+  for (const field of [
+    'legal_review',
+    'legalReview',
+    'legal_review_status',
+    'legalApprovalStatus',
+    'legal_approved_at',
+    'legalApprovedAt',
+    'legal_approval_reference',
+    'legalApprovalReference',
+    'legal_approval_content_digest',
+    'legalApprovalContentDigest',
+    'legal_counsel_review_evidence_digest',
+    'legalCounselReviewEvidenceDigest',
+    'legal_revoked_at',
+    'legalRevokedAt',
+    'legal_b1_manifest_digest',
+    'legalB1ManifestDigest',
+    'legal_b3_applied_at',
+    'legalB3AppliedAt',
+    'legal_b3_applied_by',
+    'legalB3AppliedBy',
+    'legal_b3_application_reference',
+    'legalB3ApplicationReference',
+    'legal_phase4_b3_release_contract',
+    'legalPhase4B3ReleaseContract',
+    'platform_default_can_route_without_org_template',
+    'platform_default_superseded_by_template_id',
+  ]) delete cleaned[field]
+  return cleaned
+}
+
+function sectionSnapshot(sections = []) {
+  return sections.map((section) => ({
+    id: section.id || null,
+    section_key: section.section_key,
+    section_label: section.section_label,
+    section_type: section.section_type,
+    sort_order: section.sort_order,
+    is_required: section.is_required,
+    is_repeatable: section.is_repeatable,
+    condition_json: section.condition_json || {},
+    placeholder_keys: Array.isArray(section.placeholder_keys) ? section.placeholder_keys : [],
+    legal_text: section.legal_text || '',
+    metadata_json: section.metadata_json || {},
+  }))
+}
+
+function uniquePlaceholderKeys(sections = []) {
+  return [...new Set(
+    sections.flatMap((section) => Array.isArray(section.placeholder_keys) ? section.placeholder_keys : []),
+  )].sort()
+}
+
 async function getCurrentUserId() {
   if (!supabase) return ''
   const { data } = await supabase.auth.getUser()
@@ -1936,8 +2156,11 @@ async function clearTemplateDefaults({ organisationId, moduleType, packetType, e
   if (error) throw new Error(error.message || 'Unable to clear existing default templates.')
 }
 
-async function upsertTemplateVersion(template = {}, userId = '') {
+async function upsertTemplateVersion(template = {}, userId = '', sectionsOverride = null) {
   if (!template?.id) return null
+  const sections = Array.isArray(sectionsOverride)
+    ? sectionsOverride
+    : (await queryLegalTemplateSections({ templateId: template.id })).data
   const row = {
     template_id: template.id,
     organisation_id: template.organisation_id,
@@ -1954,8 +2177,8 @@ async function upsertTemplateVersion(template = {}, userId = '') {
     content_hash: template.content_hash,
     description: template.description,
     change_summary: template.change_summary,
-    sections_snapshot_json: [],
-    placeholder_keys: [],
+    sections_snapshot_json: sectionSnapshot(sections),
+    placeholder_keys: uniquePlaceholderKeys(sections),
     metadata_json: template.metadata_json || {},
     updated_by: userId || null,
     published_by: template.status === 'published' ? userId || template.published_by || null : template.published_by || null,
@@ -1980,6 +2203,13 @@ async function upsertTemplateVersion(template = {}, userId = '') {
 export async function saveAdminLegalTemplate(input = {}, upload = null) {
   if (!supabase) throw new Error('Supabase is not configured.')
   const userId = await getCurrentUserId()
+  if (input.id) {
+    const existing = await queryLegalTemplateRows({ limit: 1000 })
+    const current = existing.data.find((row) => row.id === input.id)
+    if (isPlatformDefaultLegalTemplate(current)) {
+      throw new Error('Platform default templates are immutable. Create an organisation draft before editing.')
+    }
+  }
   const payload = buildLegalTemplatePayload(input, upload, userId)
   if (!payload.organisation_id) throw new Error('Choose an organisation for this legal template.')
   if (payload.is_default) {
@@ -2004,6 +2234,113 @@ export async function saveAdminLegalTemplate(input = {}, upload = null) {
   }
   if (error) throw new Error(error.message || 'Unable to save legal template.')
   await upsertTemplateVersion(data, userId)
+  return data
+}
+
+export async function customisePlatformDefaultTemplate({
+  sourceTemplateId = '',
+  organisationId = '',
+  templateLabel = '',
+  description = '',
+  changeSummary = '',
+} = {}) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!sourceTemplateId) throw new Error('Choose a platform default to customise.')
+  if (!organisationId) throw new Error('Choose an organisation before creating a custom draft.')
+
+  const userId = await getCurrentUserId()
+  const sourceResult = await queryLegalTemplateRows({ limit: 1000 })
+  if (sourceResult.error) throw new Error(sourceResult.error.message || 'Unable to load the source template.')
+  const source = sourceResult.data.find((row) => row.id === sourceTemplateId)
+  if (!isPlatformDefaultLegalTemplate(source)) {
+    throw new Error('Only the Ultron OTP and mandate platform defaults can be customised through this workflow.')
+  }
+  if (!['structured', 'json'].includes(normalizeText(source.template_format).toLowerCase())) {
+    throw new Error('Only native structured platform defaults can be customised into organisation drafts.')
+  }
+
+  const sectionsResult = await queryLegalTemplateSections({ templateId: source.id })
+  if (sectionsResult.error) throw new Error(sectionsResult.error.message || 'Unable to copy platform default sections.')
+  if (!sectionsResult.data?.length) throw new Error('Platform default has no structured sections to copy.')
+  const sourceMetadata = withoutPlatformApprovalMetadata(source.metadata_json)
+  const now = new Date()
+  const stamp = now.toISOString().replace(/[-:T.]/g, '').slice(0, 12)
+  const packetType = normalizeKey(source.packet_type, 'mandate')
+  const moduleType = ['mandate', 'otp'].includes(packetType) ? 'residential' : normalizeKey(source.module_type, 'residential')
+  const label = normalizeText(templateLabel) || `${source.template_label || source.template_key} Custom Draft`
+  const templateKey = normalizeKey(`${source.template_key}_custom_${String(organisationId).slice(0, 8)}_${stamp}`, `${packetType}_custom_${stamp}`)
+  const payload = {
+    organisation_id: organisationId,
+    module_type: moduleType,
+    packet_type: packetType,
+    template_key: templateKey,
+    template_label: label,
+    template_format: 'structured',
+    template_storage_bucket: null,
+    template_storage_path: null,
+    template_file_name: null,
+    version_tag: 'v1',
+    description: normalizeText(description) || `Organisation-owned draft copied from ${source.template_label || source.template_key}.`,
+    status: 'draft',
+    is_default: false,
+    is_active: false,
+    change_summary: normalizeText(changeSummary) || 'Created organisation draft from Ultron platform default.',
+    metadata_json: {
+      ...sourceMetadata,
+      admin_bridge: true,
+      lifecycle_status: 'draft',
+      template_status: 'draft',
+      render_mode: 'native_structured',
+      native_template: true,
+      source_template_id: source.id,
+      base_template_id: sourceMetadata.base_template_id || source.id,
+      clone_parent_template_id: source.id,
+      source_template_key: source.template_key,
+      source_template_version: source.version_tag || 'v1',
+      customised_from_platform_default: true,
+      platform_default_customisation_phase: 'phase5',
+      cloned_at: now.toISOString(),
+      last_admin_bridge_update_at: now.toISOString(),
+    },
+    created_by: userId || null,
+    updated_by: userId || null,
+  }
+
+  const { data, error } = await supabase
+    .from('document_packet_templates')
+    .insert(payload)
+    .select(LEGAL_TEMPLATE_COLUMNS)
+    .maybeSingle()
+  if (error) throw new Error(error.message || 'Unable to create organisation draft.')
+
+  const sectionRows = (sectionsResult.data || []).map((section) => ({
+    template_id: data.id,
+    section_key: section.section_key,
+    section_label: section.section_label,
+    section_type: section.section_type,
+    sort_order: section.sort_order,
+    is_required: section.is_required,
+    is_repeatable: section.is_repeatable,
+    condition_json: section.condition_json || {},
+    placeholder_keys: Array.isArray(section.placeholder_keys) ? section.placeholder_keys : [],
+    legal_text: section.legal_text || '',
+    metadata_json: {
+      ...asRecord(section.metadata_json),
+      company_owned_copy: true,
+      copied_from_section_id: section.id || null,
+      copied_from_platform_default: true,
+    },
+  }))
+  let copiedSections = []
+  if (sectionRows.length) {
+    const sectionInsert = await supabase
+      .from('document_template_sections')
+      .insert(sectionRows)
+      .select(LEGAL_TEMPLATE_SECTION_COLUMNS)
+    if (sectionInsert.error) throw new Error(sectionInsert.error.message || 'Unable to copy platform default sections.')
+    copiedSections = sectionInsert.data || []
+  }
+  await upsertTemplateVersion(data, userId, copiedSections)
   return data
 }
 
