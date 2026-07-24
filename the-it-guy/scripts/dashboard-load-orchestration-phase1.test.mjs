@@ -8,6 +8,7 @@ import { createServer } from 'vite'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dashboardSource = fs.readFileSync(path.join(projectRoot, 'src', 'pages', 'Dashboard.jsx'), 'utf8')
 const principalDashboardSource = fs.readFileSync(path.join(projectRoot, 'src', 'pages', 'PrincipalDashboard.jsx'), 'utf8')
+const headerBarSource = fs.readFileSync(path.join(projectRoot, 'src', 'components', 'HeaderBar.jsx'), 'utf8')
 
 assert.match(
   dashboardSource,
@@ -23,6 +24,16 @@ assert.match(
   principalDashboardSource,
   /useState\(\(\) => String\(workspaceId \|\| 'all'\)\.trim\(\) \|\| 'all'\)/,
   'Principal dashboard should default its initial scope to All Branches.',
+)
+assert.match(
+  headerBarSource,
+  /canAccessPrincipalExperience\(\{\s*appRole: role,\s*membershipRole: workspaceContext\.organisationMembershipRole \|\| workspaceContext\.workspaceRole,\s*\}\)/,
+  'Agent app-role users with principal membership must be eligible for principal dashboard header controls.',
+)
+assert.match(
+  headerBarSource,
+  /const showPrincipalDashboardHeaderControls =\s*canUsePrincipalDashboardControls &&/,
+  'Principal dashboard header controls should use resolved principal-access eligibility.',
 )
 
 const server = await createServer({

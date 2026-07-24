@@ -45,11 +45,11 @@ function resolveOrganisationBranding(snapshot) {
   const branding = onboarding?.branding || {}
   const agencyInformation = onboarding?.agencyInformation || {}
 
-  const logoLightUrl = normalizeText(branding.logoLight)
-  const logoDarkUrl = normalizeText(branding.logoDark)
-  const logoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || organisation.logoIconUrl)
+  const logoLightUrl = normalizeText(branding.logoLight || branding.logoLightUrl || branding.logo_light_url)
+  const logoDarkUrl = normalizeText(branding.logoDark || branding.logoDarkUrl || branding.logo_dark_url)
+  const logoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || branding.logo_icon_url || organisation.logoIconUrl)
   const organisationLogoUrl = normalizeText(organisation.logoUrl)
-  const logoUrl = logoLightUrl || organisationLogoUrl || logoDarkUrl
+  const logoUrl = normalizeText(branding.logoUrl || branding.logo_url) || logoLightUrl || organisationLogoUrl || logoDarkUrl
   const organisationLabel =
     normalizeText(agencyInformation.tradingName) ||
     normalizeText(agencyInformation.agencyName) ||

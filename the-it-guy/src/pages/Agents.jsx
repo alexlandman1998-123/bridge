@@ -41,6 +41,7 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { createProfileAvatarFile, getProfileAvatarErrorMessage } from '../lib/profileAvatarImage'
 import {
   deactivateOrganisationUser,
   fetchOrganisationSettings,
@@ -590,9 +591,51 @@ function buildAgentInviteForm({ profile, directory }) {
 }
 
 function normalizeAgentIdentity(row) {
-  const email = String(row?.transaction?.assigned_agent_email || '').trim().toLowerCase()
-  const name = String(row?.transaction?.assigned_agent || '').trim()
-  const identifier = email || name.toLowerCase()
+  const transaction = row?.transaction || {}
+  const id = normalizeAgentRecordId(
+    row?.assignedAgentId ||
+      row?.assigned_agent_id ||
+      row?.assignedUserId ||
+      row?.assigned_user_id ||
+      row?.agentId ||
+      row?.agent_id ||
+      row?.createdBy ||
+      row?.created_by ||
+      transaction.assignedAgentId ||
+      transaction.assigned_agent_id ||
+      transaction.assignedUserId ||
+      transaction.assigned_user_id ||
+      transaction.agentId ||
+      transaction.agent_id ||
+      transaction.createdBy ||
+      transaction.created_by,
+  )
+  const email = normalizeIdentityEmail(
+    row?.assignedAgentEmail ||
+      row?.assigned_agent_email ||
+      row?.agentEmail ||
+      row?.agent_email ||
+      transaction.assignedAgentEmail ||
+      transaction.assigned_agent_email ||
+      transaction.agentEmail ||
+      transaction.agent_email,
+  )
+  const name = String(
+    row?.assignedAgentName ||
+      row?.assigned_agent_name ||
+      row?.assignedAgent ||
+      row?.assigned_agent ||
+      row?.agentName ||
+      row?.agent_name ||
+      transaction.assignedAgentName ||
+      transaction.assigned_agent_name ||
+      transaction.assignedAgent ||
+      transaction.assigned_agent ||
+      transaction.agentName ||
+      transaction.agent_name ||
+      '',
+  ).trim()
+  const identifier = id || email || name.toLowerCase()
 
   if (!identifier) {
     return null
@@ -727,6 +770,30 @@ function createAgentAssignmentLookup(groupedByAgent) {
     if (normalizedName) agentIdByName.set(normalizedName, agentId)
   }
   return { agentIdByAssignmentId, agentIdByEmail, agentIdByName }
+}
+
+function resolveAgentAssignmentId(identity = null, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId = new Map()) {
+  if (!identity) return ''
+  const id = normalizeAgentRecordId(identity.id)
+  if (id) {
+    if (groupedByAgent.has(id)) return id
+    const resolvedId = agentIdByAssignmentId.get(id)
+    if (resolvedId) return resolvedId
+  }
+
+  const email = normalizeIdentityEmail(identity.email)
+  if (email) {
+    const resolvedId = agentIdByEmail.get(email)
+    if (resolvedId) return resolvedId
+  }
+
+  const name = String(identity.name || '').trim().toLowerCase()
+  if (name) {
+    const resolvedId = agentIdByName.get(name)
+    if (resolvedId) return resolvedId
+  }
+
+  return id || email || name
 }
 
 function resolveListingAgentId(listing = {}, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId = new Map()) {
@@ -1307,14 +1374,31 @@ function normalizeDealStatus(row) {
 function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], privateListings, pipelineRows, appointments = [], agentDirectory = null, organisationUsers = [], organisation = null }) {
   const groupedByAgent = new Map()
 
+  const organisationAgentRows = (Array.isArray(organisationUsers) ? organisationUsers : [])
+    .map((user) => normalizeOrganisationUserAgent(user, {
+      organisationId: organisation?.id || agentDirectory?.agency?.id,
+      organisationName: organisation?.name || agentDirectory?.agency?.name,
+    }))
+    .filter(Boolean)
+  addAgentWorkspaceDirectoryRows(groupedByAgent, [
+    ...getDirectoryWorkspaceAgents(agentDirectory || {}),
+    ...organisationAgentRows,
+  ])
+
+  let { agentIdByAssignmentId, agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
+
   for (const row of transactions) {
     const identity = normalizeAgentIdentity(row)
     if (!identity) {
       continue
     }
-    if (!groupedByAgent.has(identity.id)) {
-      groupedByAgent.set(identity.id, {
-        id: identity.id,
+    const agentId = resolveAgentAssignmentId(identity, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
+    if (!agentId) {
+      continue
+    }
+    if (!groupedByAgent.has(agentId)) {
+      groupedByAgent.set(agentId, {
+        id: agentId,
         name: identity.name,
         email: identity.email,
         phone: '',
@@ -1323,9 +1407,12 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
         deals: [],
         developmentListings: [],
       })
+      ;({ agentIdByAssignmentId, agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent))
     }
 
-    const item = groupedByAgent.get(identity.id)
+    const item = groupedByAgent.get(agentId)
+    item.name = item.name || identity.name
+    item.email = item.email || identity.email
     item.deals.push(row)
 
     const developmentListingId = row?.unit?.id || row?.transaction?.unit_id || null
@@ -1354,8 +1441,9 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
       continue
     }
     const identity = normalizeAgentIdentity(row)
-    if (identity?.id && !developmentAgentMap.has(developmentId)) {
-      developmentAgentMap.set(developmentId, identity.id)
+    const agentId = resolveAgentAssignmentId(identity, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
+    if (agentId && !developmentAgentMap.has(developmentId)) {
+      developmentAgentMap.set(developmentId, agentId)
     }
   }
 
@@ -1363,7 +1451,12 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
   const pipelineByAgent = pipelineRows.reduce((accumulator, item) => {
     const developmentId = String(item?.developmentId || item?.development_id || '').trim()
     const inferredByDevelopment = developmentId ? developmentAgentMap.get(developmentId) : ''
-    const agentId = String(item?.agent_id || item?.assigned_agent_id || inferredByDevelopment || defaultAgentId || '').trim().toLowerCase()
+    const identity = {
+      id: item?.agentId || item?.agent_id || item?.assignedAgentId || item?.assigned_agent_id || item?.assignedUserId || item?.assigned_user_id || inferredByDevelopment || defaultAgentId,
+      email: item?.agentEmail || item?.agent_email || item?.assignedAgentEmail || item?.assigned_agent_email,
+      name: item?.agentName || item?.agent_name || item?.assignedAgentName || item?.assigned_agent_name || item?.assignedAgent || item?.assigned_agent,
+    }
+    const agentId = resolveAgentAssignmentId(identity, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
     if (!agentId) {
       return accumulator
     }
@@ -1373,19 +1466,6 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     accumulator.get(agentId).push(item)
     return accumulator
   }, new Map())
-
-  const organisationAgentRows = (Array.isArray(organisationUsers) ? organisationUsers : [])
-    .map((user) => normalizeOrganisationUserAgent(user, {
-      organisationId: organisation?.id || agentDirectory?.agency?.id,
-      organisationName: organisation?.name || agentDirectory?.agency?.name,
-    }))
-    .filter(Boolean)
-  addAgentWorkspaceDirectoryRows(groupedByAgent, [
-    ...getDirectoryWorkspaceAgents(agentDirectory || {}),
-    ...organisationAgentRows,
-  ])
-
-  const { agentIdByAssignmentId, agentIdByEmail, agentIdByName } = createAgentAssignmentLookup(groupedByAgent)
 
   const listingsByAgent = privateListings.reduce((accumulator, listing) => {
     const agentId = resolveListingAgentId(listing, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
@@ -1397,12 +1477,11 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
 
   const appointmentsByAgent = new Map()
   for (const appointment of appointments) {
-    const assignedAgentId = String(appointment?.assignedAgentId || '').trim().toLowerCase()
-    const assignedAgentEmail = normalizeIdentityEmail(appointment?.assignedAgentEmail)
-    const assignedAgentName = String(appointment?.assignedAgentName || '').trim().toLowerCase()
-    const resolvedAgentId = groupedByAgent.has(assignedAgentId)
-      ? assignedAgentId
-      : agentIdByEmail.get(assignedAgentEmail) || agentIdByName.get(assignedAgentName) || ''
+    const resolvedAgentId = resolveAgentAssignmentId({
+      id: appointment?.assignedAgentId || appointment?.assigned_agent_id || appointment?.assignedUserId || appointment?.assigned_user_id,
+      email: appointment?.assignedAgentEmail || appointment?.assigned_agent_email,
+      name: appointment?.assignedAgentName || appointment?.assigned_agent_name || appointment?.assignedAgent || appointment?.assigned_agent,
+    }, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
 
     if (!resolvedAgentId) continue
     if (!appointmentsByAgent.has(resolvedAgentId)) {
@@ -4374,13 +4453,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     try {
       setProfileUploading(true)
       setProfileError('')
-      const uploaded = await uploadAccountAvatar({ file })
+      const avatarFile = await createProfileAvatarFile(file)
+      const uploaded = await uploadAccountAvatar({ file: avatarFile })
       setProfileForm((previous) => ({
         ...previous,
         avatarUrl: uploaded.resolvedUrl || uploaded.publicUrl || previous.avatarUrl,
       }))
     } catch (uploadError) {
-      setProfileError(uploadError?.message || 'Unable to upload profile picture.')
+      setProfileError(getProfileAvatarErrorMessage(uploadError))
     } finally {
       setProfileUploading(false)
       if (event.target) event.target.value = ''

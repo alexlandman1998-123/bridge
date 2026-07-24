@@ -4,6 +4,7 @@ import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { changePassword, fetchAccountSettings, updateAccountSettings, uploadAccountAvatar } from '../../lib/settingsApi'
 import { getOrganisationJobTitleLabel } from '../../lib/organisationJobTitles'
+import { createProfileAvatarFile, getProfileAvatarErrorMessage } from '../../lib/profileAvatarImage'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -12,10 +13,6 @@ import {
   settingsPageClass,
 } from './settingsUi'
 
-const AVATAR_MAX_SOURCE_BYTES = 12 * 1024 * 1024
-const AVATAR_TARGET_SIZE = 512
-const AVATAR_MAX_FILE_BYTES = 650 * 1024
-const AVATAR_QUALITIES = [0.86, 0.76, 0.66, 0.56, 0.46]
 const PROFILE_INPUT_CLASS = 'h-11 rounded-[12px] border-[#d8e3ee] bg-white text-sm text-[#17233a] shadow-[0_1px_0_rgba(15,23,42,0.02)] placeholder:text-[#9aa8b8] focus:border-[#0f7f4f] focus:ring-[#dff2e8]'
 const PROFILE_LABEL_CLASS = 'text-[0.78rem] font-semibold text-[#43566d]'
 const PROFILE_FIELD_CLASS = 'grid gap-1.5'
@@ -85,64 +82,6 @@ function ProfileTextField({ label, id, className = '', children }) {
   )
 }
 
-function readImageFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Unable to read the selected image.'))
-    reader.readAsDataURL(file)
-  })
-}
-
-function loadImageFromDataUrl(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Arch9 could not read that image. Try a JPG or PNG file.'))
-    image.src = dataUrl
-  })
-}
-
-async function createProfileAvatarCanvas(file) {
-  if (file.size > AVATAR_MAX_SOURCE_BYTES) {
-    throw new Error('Choose an image smaller than 12MB. Arch9 will resize it before saving.')
-  }
-
-  const originalDataUrl = await readImageFileAsDataUrl(file)
-  const image = await loadImageFromDataUrl(originalDataUrl)
-  const sourceSize = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height)
-  if (!sourceSize) throw new Error('Arch9 could not read that image. Try a different profile picture.')
-
-  const outputSize = Math.min(AVATAR_TARGET_SIZE, sourceSize)
-  const sourceX = Math.max(0, ((image.naturalWidth || image.width) - sourceSize) / 2)
-  const sourceY = Math.max(0, ((image.naturalHeight || image.height) - sourceSize) / 2)
-  const canvas = document.createElement('canvas')
-  canvas.width = outputSize
-  canvas.height = outputSize
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Arch9 could not resize that image in this browser. Try a smaller JPG or PNG file.')
-
-  context.fillStyle = '#ffffff'
-  context.fillRect(0, 0, outputSize, outputSize)
-  context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, outputSize, outputSize)
-  return canvas
-}
-
-function canvasToBlob(canvas, quality) {
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-}
-
-async function createProfileAvatarFile(file) {
-  const canvas = await createProfileAvatarCanvas(file)
-  for (const quality of AVATAR_QUALITIES) {
-    const blob = await canvasToBlob(canvas, quality)
-    if (blob && blob.size <= AVATAR_MAX_FILE_BYTES) {
-      return new File([blob], 'profile-avatar.jpg', { type: 'image/jpeg' })
-    }
-  }
-  throw new Error('Arch9 resized the image, but it is still too large. Try a simpler JPG or PNG file.')
-}
-
 export default function SettingsAccountPage({ section = 'profile' }) {
   const { currentWorkspace, organisationMembership, organisationMembershipRole, refreshProfile, role, updateLocalProfile } = useWorkspace()
   const firstNameRef = useRef(null)
@@ -209,7 +148,7 @@ export default function SettingsAccountPage({ section = 'profile' }) {
       updateLocalProfile({ avatarUrl: nextForm.avatarUrl, avatar_url: nextForm.avatarUrl })
       setMessage('Profile picture saved.')
     } catch (uploadError) {
-      setAvatarError(uploadError.message)
+      setAvatarError(getProfileAvatarErrorMessage(uploadError))
     } finally {
       setAvatarProcessing(false)
       event.target.value = ''

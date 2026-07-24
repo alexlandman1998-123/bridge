@@ -98,8 +98,12 @@ function getAgentKeys(agent = {}) {
     agent.profile?.user_id,
     agent.email,
     agent.name,
+    agent.displayName,
     agent.fullName,
     agent.full_name,
+    agent.profile?.full_name,
+    agent.userMetadata?.full_name,
+    agent.user_metadata?.full_name,
   ].map(normalizeKey).filter(Boolean)
 }
 
@@ -116,6 +120,9 @@ function buildAgentLookup(agents = []) {
 function resolveRowAgent(row = {}, agentLookup = new Map()) {
   const transaction = row.transaction || row
   const candidates = [
+    row.id,
+    row.userId,
+    row.user_id,
     row.assignedAgentId,
     row.assignedAgentEmail,
     row.assignedAgentName,
@@ -123,13 +130,29 @@ function resolveRowAgent(row = {}, agentLookup = new Map()) {
     row.agentEmail,
     row.agentName,
     row.createdBy,
+    row.created_by,
     row.assigned_agent_id,
     row.assigned_agent_email,
+    row.assigned_agent_name,
     row.assigned_agent,
+    row.assigned_user_id,
+    row.listingAgentId,
+    row.listing_agent_id,
+    row.ownerAgentId,
+    row.owner_agent_id,
+    transaction.assignedAgentId,
+    transaction.assignedAgentEmail,
+    transaction.assignedAgentName,
     transaction.assigned_agent_id,
     transaction.assigned_agent_email,
+    transaction.assigned_agent_name,
     transaction.assigned_agent,
+    transaction.agent_id,
+    transaction.agent_email,
+    transaction.agent_name,
+    transaction.created_by,
     row.commission?.agent_id,
+    row.commission?.agentId,
   ].map(normalizeKey).filter(Boolean)
   for (const candidate of candidates) {
     if (agentLookup.has(candidate)) return agentLookup.get(candidate)

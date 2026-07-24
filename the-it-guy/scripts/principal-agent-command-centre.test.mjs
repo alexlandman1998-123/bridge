@@ -6,6 +6,7 @@ import {
 } from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
 
 const agentsPageSource = fs.readFileSync(new URL('../src/pages/Agents.jsx', import.meta.url), 'utf8')
+const organisationContextSource = fs.readFileSync(new URL('../src/context/OrganisationContext.jsx', import.meta.url), 'utf8')
 
 assert.match(
   agentsPageSource,
@@ -41,6 +42,21 @@ assert.match(
   agentsPageSource,
   /computeAgentWorkspaceData\(\{[\s\S]*organisationUsers: performanceSources\.organisationUsers/,
   'Agent workspace data should include live organisation user identities before listing assignment bucketing.',
+)
+assert.match(
+  agentsPageSource,
+  /const agentId = resolveAgentAssignmentId\(identity, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId\)[\s\S]*item\.deals\.push\(row\)/,
+  'Agent workspaces should attach transaction rows through membership/auth/email aliases before rendering profile sales data.',
+)
+assert.match(
+  agentsPageSource,
+  /pipelineRows\.reduce\([\s\S]*resolveAgentAssignmentId\(identity, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId\)/,
+  'Agent workspaces should bucket pipeline rows through membership/auth/email aliases.',
+)
+assert.match(
+  organisationContextSource,
+  /branding\.logoLight \|\| branding\.logoLightUrl \|\| branding\.logo_light_url[\s\S]*branding\.logoUrl \|\| branding\.logo_url/,
+  'Organisation branding should resolve legacy and canonical logo field names.',
 )
 
 const today = new Date()
@@ -259,6 +275,60 @@ function buildModel(overrides = {}) {
   const leroy = model.agentsTable.find((row) => row.id === 'membership-leroy')
   assert.equal(leroy?.performance.activeListingCount, 1, 'agent performance should match private listings assigned to the auth user id alias')
   assert.equal(leroy?.performance.pipelineValue, 1674800, 'pipeline value should include private listing value matched by auth user id alias')
+}
+
+{
+  const detailNow = new Date('2026-07-15T12:00:00.000Z')
+  const leroyDetail = getPrincipalAgentDetailCommandCentre({
+    agent: {
+      id: 'membership-leroy',
+      user_id: 'auth-leroy',
+      organisation_user_id: 'membership-leroy',
+      name: 'Leroy Slava',
+      email: 'leroy@example.test',
+      role: 'principal',
+      status: 'active',
+      organisationId: 'agency-a',
+      branchId: 'benoni',
+    },
+    branches,
+    now: detailNow,
+    leads: [
+      {
+        id: 'leroy-lead',
+        assignedAgentId: 'auth-leroy',
+        status: 'Mandate signed',
+        budget: 250000,
+        createdAt: '2026-07-05T08:00:00.000Z',
+      },
+    ],
+    transactions: [
+      {
+        id: 'leroy-tx',
+        assigned_agent_id: 'auth-leroy',
+        status: 'finance',
+        purchase_price: 2000000,
+        created_at: '2026-07-03T08:00:00.000Z',
+        updated_at: '2026-07-10T08:00:00.000Z',
+      },
+    ],
+    listings: [
+      {
+        id: 'leroy-listing-detail',
+        assigned_agent_id: 'auth-leroy',
+        status: 'active',
+        asking_price: 1674800,
+        created_at: '2026-07-06T08:00:00.000Z',
+      },
+    ],
+  })
+  assert.equal(leroyDetail?.pipelineHealth.activeDeals, 1, 'agent detail should match active transactions assigned to the auth user id alias')
+  assert.equal(leroyDetail?.pipelineHealth.pipelineValue, 3924800, 'agent detail should include lead, transaction, and listing pipeline matched by alias')
+  assert.equal(
+    leroyDetail?.monthlyPerformance.metrics.find((metric) => metric.key === 'mandatesWon')?.value,
+    1,
+    'agent detail should count mandate wins matched by the auth user id alias',
+  )
 }
 
 {

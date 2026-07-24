@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
+import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
 function getPageTitle(pathname, stateTitle, role) {
@@ -532,8 +533,15 @@ function HeaderBar({ onLogout, user }) {
     )
   const isPremiumAttorneyOperations = role === 'attorney' && location.pathname === '/attorney/operations'
   const isPremiumWorkspace = isPremiumAgentWorkspace || isPremiumAttorneyOperations
+  const canUsePrincipalDashboardControls =
+    role === 'principal' ||
+    role === 'headquarters' ||
+    canAccessPrincipalExperience({
+      appRole: role,
+      membershipRole: workspaceContext.organisationMembershipRole || workspaceContext.workspaceRole,
+    })
   const showPrincipalDashboardHeaderControls =
-    (role === 'principal' || role === 'headquarters') &&
+    canUsePrincipalDashboardControls &&
     (location.pathname === '/dashboard' || location.pathname === '/') &&
     dashboardHeaderControls?.visible !== false
   const premiumHeaderTitle = isPremiumAttorneyOperations
