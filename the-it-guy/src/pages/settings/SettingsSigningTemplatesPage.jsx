@@ -1593,7 +1593,6 @@ This Sales Mandate Agreement is entered into between the Seller and the Agency f
 
 Seller:
 {{seller_full_name}}
-Identity / Registration Number: {{seller_id_number}}
 Entity Type: {{seller_entity_type}}
 Domicilium Address: {{seller_domicilium_address}}
 
@@ -1617,11 +1616,9 @@ The parties agree that this document constitutes a legally binding estate agency
   parties: `SELLER DETAILS
 
 Seller Full Name: {{seller_full_name}}
-ID / Registration Number: {{seller_id_number}}
 Email: {{seller_email}}
 Phone: {{seller_phone}}
 Entity Type: {{seller_entity_type}}
-Marital Status: {{seller_marital_status}}
 Domicilium Address: {{seller_domicilium_address}}
 
 The Seller confirms that the information supplied to the Agency is true and correct to the best of the Seller's knowledge.`,
@@ -1631,6 +1628,9 @@ Where the Seller is an individual, the Seller warrants that the Seller has full 
 
 Seller Marital Status
 {{seller_marital_status}}
+
+Seller Identity Number
+{{seller_id_number}}
 
 Spouse Consent Required
 {{seller_spouse_consent_required}}`,
@@ -1693,7 +1693,7 @@ Title Type: {{property_title_type}}
 
 The Seller warrants that the Seller is duly authorised to mandate the marketing of the Property.
 
-The Seller shall disclose to the Agency any material facts, defects, restrictions, servitudes, disputes, rules, or other matters which may reasonably affect the marketing, sale, transfer, or value of the Property.`,
+The Seller shall disclose to the Agency any known material facts, defects, restrictions, disputes, or other matters which may reasonably affect the marketing, sale, transfer, or value of the Property.`,
   property_full_title_pack: `FULL TITLE PROPERTY DETAILS
 
 Where the Property is a full title property, the Seller confirms the registered land particulars recorded below and will provide any title deed, rates, servitude, estate, HOA, or municipal information reasonably required for marketing and transfer.
@@ -2181,7 +2181,7 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Introduction and Purpose',
         sectionType: 'legal_text',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.introduction_purpose,
-        placeholderKeysText: 'seller_full_name, seller_id_number, seller_entity_type, seller_domicilium_address, agency_legal_name, organisation_name, agency_registration_number, agency_vat_number, agency_fsp_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number',
+        placeholderKeysText: 'seller_full_name, seller_entity_type, seller_domicilium_address, agency_legal_name, organisation_name, agency_registration_number, agency_vat_number, agency_fsp_number, agency_address, agent_full_name, agent_email, agent_phone, agent_ffc_number',
         isRequired: true,
         sortOrder: 0,
       },
@@ -2190,7 +2190,7 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Parties',
         sectionType: 'dynamic_fields',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.parties,
-        placeholderKeysText: 'seller_full_name, seller_id_number, seller_email, seller_phone, seller_entity_type, seller_marital_status, seller_domicilium_address',
+        placeholderKeysText: 'seller_full_name, seller_email, seller_phone, seller_entity_type, seller_domicilium_address',
         isRequired: true,
         sortOrder: 1,
       },
@@ -2199,7 +2199,7 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Individual Seller Capacity Pack',
         sectionType: 'legal_text',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
-        placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_spouse_consent_required',
+        placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_id_number, seller_spouse_consent_required',
         conditionJson: createConditionalPackCondition({
           field: 'seller_entity_type',
           operator: 'equals',
@@ -3322,10 +3322,128 @@ function detectTemplateTokenIssues(text = '') {
   }
 }
 
+const MANDATE_DEFAULT_CONDITIONAL_PACK_SECTION_KEYS = [
+  'seller_individual_capacity_pack',
+  'seller_company_authority_pack',
+  'seller_trust_authority_pack',
+  'seller_spouse_consent_pack',
+  'property_full_title_pack',
+  'property_sectional_title_pack',
+]
+
+function withPlaceholderKeys(section = {}, {
+  add = [],
+  remove = [],
+} = {}) {
+  const removals = new Set(remove.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean))
+  const additions = add.map((item) => normalizeTemplateTokenKey(item)).filter(Boolean)
+  const existing = Array.isArray(section.placeholderKeys)
+    ? section.placeholderKeys
+    : String(section.placeholderKeysText || '')
+      .split(',')
+      .map((item) => normalizeTemplateTokenKey(item))
+      .filter(Boolean)
+  const placeholderKeys = Array.from(new Set([
+    ...existing.filter((item) => !removals.has(item)),
+    ...additions,
+  ]))
+
+  return {
+    ...section,
+    placeholderKeys,
+    placeholderKeysText: placeholderKeys.join(', '),
+  }
+}
+
+function normalizeDefaultMandateStarterSections(template = null, sections = []) {
+  const packetType = normalizeText(template?.packet_type || template?.packetType || template?.metadata_json?.packet_type || template?.metadata_json?.packetType || 'otp').toLowerCase()
+  if (packetType !== 'mandate' || normalizeMandateTemplateRoute(getMandateTemplateRouteFromTemplate(template)) !== 'default') return sections
+
+  const starterSections = createStarterSections('mandate')
+  const starterByKey = new Map(starterSections.map((section) => [section.sectionKey, section]))
+  const existingKeys = new Set(sections.map((section) => normalizeText(section.sectionKey)))
+  let maxSortOrder = sections.reduce((max, section, index) => Math.max(max, Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index), -1)
+
+  const normalizedSections = sections.map((section) => {
+    const sectionKey = normalizeText(section.sectionKey)
+    const starterSection = starterByKey.get(sectionKey)
+    const starterCondition = starterSection?.conditionJson && typeof starterSection.conditionJson === 'object'
+      ? starterSection.conditionJson
+      : null
+    const conditionJson = Object.keys(section.conditionJson || {}).length || !starterCondition
+      ? section.conditionJson
+      : starterCondition
+
+    if (sectionKey === 'introduction_purpose') {
+      return withPlaceholderKeys({
+        ...section,
+        legalText: String(section.legalText || '').replace(/\n?Identity \/ Registration Number:\s*{{seller_id_number}}\n?/g, '\n'),
+        conditionJson,
+      }, { remove: ['seller_id_number'] })
+    }
+
+    if (sectionKey === 'parties') {
+      return withPlaceholderKeys({
+        ...section,
+        legalText: String(section.legalText || '')
+          .replace(/\n?ID \/ Registration Number:\s*{{seller_id_number}}\n?/g, '\n')
+          .replace(/\n?Marital Status:\s*{{seller_marital_status}}\n?/g, '\n'),
+        conditionJson,
+      }, { remove: ['seller_id_number', 'seller_marital_status'] })
+    }
+
+    if (sectionKey === 'property_details') {
+      return {
+        ...section,
+        legalText: String(section.legalText || '').replace(
+          'material facts, defects, restrictions, servitudes, disputes, rules, or other matters',
+          'known material facts, defects, restrictions, disputes, or other matters',
+        ),
+        conditionJson,
+      }
+    }
+
+    if (sectionKey === 'seller_individual_capacity_pack') {
+      const legalText = String(section.legalText || '')
+      const withSellerId = legalText.includes('{{seller_id_number}}')
+        ? legalText
+        : legalText.replace(
+          '{{seller_marital_status}}',
+          '{{seller_marital_status}}\n\nSeller Identity Number\n{{seller_id_number}}',
+        )
+      return withPlaceholderKeys({
+        ...section,
+        legalText: withSellerId,
+        conditionJson,
+      }, { add: ['seller_id_number'] })
+    }
+
+    if (MANDATE_DEFAULT_CONDITIONAL_PACK_SECTION_KEYS.includes(sectionKey)) {
+      return {
+        ...section,
+        conditionJson,
+      }
+    }
+
+    return section
+  })
+
+  for (const starterSection of starterSections) {
+    if (!MANDATE_DEFAULT_CONDITIONAL_PACK_SECTION_KEYS.includes(starterSection.sectionKey) || existingKeys.has(starterSection.sectionKey)) continue
+    maxSortOrder += 1
+    normalizedSections.push({
+      ...starterSection,
+      sortOrder: maxSortOrder,
+    })
+  }
+
+  return normalizedSections
+}
+
 function sectionsFromTemplate(template = null) {
   const sections = Array.isArray(template?.sections) ? template.sections : []
   const packetType = normalizeText(template?.packet_type || template?.packetType || template?.metadata_json?.packet_type || template?.metadata_json?.packetType || 'otp')
-  return sections.map((section, index) => {
+  const normalizedSections = sections.map((section, index) => {
     const savedLegalText = normalizeTemplateLegalText(section.legal_text || section.legalText || '')
     const legalText = savedLegalText || normalizeTemplateLegalText(getDefaultSectionLegalText(packetType, section))
     const metadata = section?.metadata_json && typeof section.metadata_json === 'object'
@@ -3381,6 +3499,7 @@ function sectionsFromTemplate(template = null) {
       sortOrder: Number.isFinite(Number(section.sort_order)) ? Number(section.sort_order) : index,
     }
   })
+  return normalizeDefaultMandateStarterSections(template, normalizedSections)
 }
 
 function toTemplateForm(template = null) {
@@ -6550,13 +6669,16 @@ export default function SettingsSigningTemplatesPage({
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
     const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
     const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
-    const blockers = [
+    const standardBlockers = [
       ...validationSummary.blockers,
-      ...contentScanBlockers,
       ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
       ...(!canPublishTemplate ? [`Only ${administratorLabel} can publish templates.`] : []),
       ...(hasUnsavedChanges ? ['Save the latest edits before publishing.'] : []),
       ...(normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED && !validationSummary.renderable ? ['Native structured template is not renderable yet.'] : []),
+    ]
+    const blockers = [
+      ...standardBlockers,
+      ...contentScanBlockers,
     ]
 
     return {
@@ -6573,6 +6695,7 @@ export default function SettingsSigningTemplatesPage({
       contentScan: mandatePublishGateReport,
       contentScanBlockers,
       contentScanWarnings,
+      standardBlockers,
       blockers,
       warnings: [...validationSummary.warnings, ...contentScanWarnings],
       liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
@@ -12435,27 +12558,28 @@ export default function SettingsSigningTemplatesPage({
       ) : null}
 
       {showPublishConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-8">
-          <div className="w-full max-w-3xl rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(16,32,51,0.28)] px-4 py-6">
+          <div className="flex max-h-[calc(100vh-3rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[30px] border border-[#dbe7f3] bg-white p-6 shadow-[0_28px_60px_rgba(15,23,42,0.24)]">
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7a8da6]">Publishing</p>
             <h2 className="mt-3 text-[1.35rem] font-semibold text-[#102033]">Review before publishing</h2>
             <p className="mt-3 text-sm leading-7 text-[#6b7c93]">
               New documents of this type will use this version going forward. Existing transactions will not be changed.
             </p>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-4">
-              {[
-                { label: 'Changed sections', value: publishReview.changedSectionCount },
-                { label: 'Locked sections', value: publishReview.lockedSectionCount },
-                { label: 'Signing fields', value: publishReview.signingFieldCount },
-                { label: 'Warnings', value: publishReview.warnings.length },
-              ].map((item) => (
-                <div key={`publish-review-${item.label}`} className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3">
-                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-[#102033]">{item.value}</p>
-                </div>
-              ))}
-            </div>
+            <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  { label: 'Changed sections', value: publishReview.changedSectionCount },
+                  { label: 'Locked sections', value: publishReview.lockedSectionCount },
+                  { label: 'Signing fields', value: publishReview.signingFieldCount },
+                  { label: 'Warnings', value: publishReview.warnings.length },
+                ].map((item) => (
+                  <div key={`publish-review-${item.label}`} className="rounded-[16px] border border-[#dbe7f3] bg-[#fbfdff] px-4 py-3">
+                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-[#102033]">{item.value}</p>
+                  </div>
+                ))}
+              </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div className="rounded-[18px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
@@ -12502,8 +12626,8 @@ export default function SettingsSigningTemplatesPage({
                   </span>
                 </div>
                 {publishReview.contentScanBlockers.length ? (
-                  <div className="mt-3 space-y-2">
-                    {publishReview.contentScanBlockers.slice(0, 4).map((item) => (
+                  <div className="mt-3 max-h-[240px] space-y-2 overflow-y-auto pr-1">
+                    {publishReview.contentScanBlockers.map((item) => (
                       <ValidationIssueCard key={`publish-content-scan-blocker-${item}`} issue={item} tone="error" label="Mandate Scan" />
                     ))}
                   </div>
@@ -12535,12 +12659,12 @@ export default function SettingsSigningTemplatesPage({
             ) : null}
 
             <div className="mt-5 space-y-2">
-              {publishReview.blockers.length ? publishReview.blockers.map((item) => (
+              {publishReview.standardBlockers.length ? publishReview.standardBlockers.map((item) => (
                 <ValidationIssueCard key={`publish-blocker-${item}`} issue={item} tone="error" label="Publish" />
               )) : (
                 <p className="flex items-center gap-2 rounded-[16px] border border-[#cdebd8] bg-[#eef9f1] px-4 py-3 text-sm font-semibold text-[#128642]">
                   <CheckCircle2 size={16} />
-                  No blockers detected.
+                  {publishReview.contentScanBlockers.length ? 'No other publish blockers detected.' : 'No blockers detected.'}
                 </p>
               )}
               {publishReview.warnings.slice(0, 4).map((item) => (
@@ -12558,6 +12682,7 @@ export default function SettingsSigningTemplatesPage({
               />
               <span>I have reviewed the changes, locks, warnings, and live-template replacement.</span>
             </label>
+            </div>
 
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" className={studioSecondaryButtonClass} onClick={() => setShowPublishConfirm(false)}>
