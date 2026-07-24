@@ -828,6 +828,16 @@ function normalizeLeadCategory(row = {}) {
   const raw = normalizeText(safeRow.leadCategory || safeRow.lead_category || safeRow.leadDirection || safeRow.lead_direction || safeRow.type).toLowerCase()
   if (raw.includes('seller') || raw.includes('vendor') || raw.includes('landlord')) return 'seller'
   if (raw.includes('buyer') || raw.includes('purchaser')) return 'buyer'
+  const lifecycle = normalizeText([
+    safeRow.stage,
+    safeRow.status,
+    safeRow.lifecycleStatus,
+    safeRow.lifecycle_status,
+    safeRow.sellerOnboardingStatus,
+    safeRow.seller_onboarding_status,
+  ].filter(Boolean).join(' ')).toLowerCase()
+  if (lifecycle.includes('seller') || lifecycle.includes('vendor') || lifecycle.includes('landlord')) return 'seller'
+  if (safeRow.sellerOnboarding || safeRow.seller_onboarding || safeRow.sellerPropertyAddress || safeRow.seller_property_address || safeRow.sellerEmail || safeRow.seller_email) return 'seller'
   return 'other'
 }
 
@@ -1084,14 +1094,6 @@ function toIsoInputDate(value) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toISOString().slice(0, 10)
-}
-
-function addMonthsToIsoDate(months = 6, baseDate = new Date()) {
-  const source = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date(baseDate)
-  if (Number.isNaN(source.getTime())) return ''
-  source.setHours(0, 0, 0, 0)
-  source.setMonth(source.getMonth() + Number(months || 0))
-  return source.toISOString().slice(0, 10)
 }
 
 function getMandateDurationDays(startDate = '', endDate = '') {

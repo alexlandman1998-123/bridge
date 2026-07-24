@@ -118,6 +118,7 @@ const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage
 const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransactionDetail'))
 const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
 const BridgeAboutPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAboutPage')
@@ -2930,6 +2931,7 @@ function AppRoutes() {
           </Route>
 
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/auth/reset-password" element={<ResetPassword />} />
           <Route
             path="/auth"
             element={

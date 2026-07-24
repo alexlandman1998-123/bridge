@@ -41,6 +41,16 @@ const leads = [
     listingId: 'listing-two',
     createdAt: '2026-05-04T08:00:00.000Z',
   },
+  {
+    leadId: 'seller-submitted-placeholder',
+    leadSource: 'Manual Entry',
+    leadCategory: 'seller',
+    stage: 'Seller Onboarding Submitted',
+    status: 'Submitted',
+    name: 'Unnamed Lead',
+    listingId: 'listing-submitted',
+    createdAt: '2026-05-05T08:00:00.000Z',
+  },
 ]
 
 const contacts = [
@@ -81,6 +91,23 @@ const transactions = [
 const listings = [
   { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', suburb: 'Sandton' },
   { id: 'listing-two', listing_status: 'seller_lead', suburb: 'Claremont', assigned_agent_id: 'agent-seller-id', assigned_agent_email: 'seller.agent@example.test' },
+  {
+    id: 'listing-submitted',
+    seller_lead_id: 'seller-submitted-placeholder',
+    listing_status: 'seller_lead',
+    seller_onboarding_status: 'completed',
+    seller_onboarding: {
+      status: 'completed',
+      form_data: {
+        fullName: 'Adrian Lansberg',
+        email: 'adrian@example.test',
+        phone: '+27823334444',
+        propertyAddress: '39 Dromedaris Avenue, Reigerpark',
+        suburb: 'Reigerpark',
+        city: 'Boksburg',
+      },
+    },
+  },
 ]
 
 const listingInterests = [
@@ -119,7 +146,7 @@ try {
 
   const rows = buildAgentLeadRows({ leads, contacts, leadActivities, tasks, appointments, offers, transactions, listings, listingInterests, requirements })
 
-  assert.equal(rows.length, 4, 'all leads should remain visible')
+  assert.equal(rows.length, 5, 'all leads should remain visible')
 
   const contactOnly = rows.find((row) => row.leadId === 'lead-contact-only')
   assert.equal(contactOnly.name, 'Missing Details')
@@ -152,6 +179,12 @@ try {
   assert.equal(sellerLinkedByListingId.listings.length, 1, 'seller leads should keep listings linked by listing id')
   assert.equal(sellerLinkedByListingId.listings[0].id, 'listing-two')
   assert.equal(sellerLinkedByListingId.listings[0].listingId, 'listing-two')
+
+  const submittedSeller = rows.find((row) => row.leadId === 'seller-submitted-placeholder')
+  assert.equal(submittedSeller.name, 'Adrian Lansberg', 'submitted seller onboarding should replace placeholder lead names')
+  assert.equal(submittedSeller.email, 'adrian@example.test', 'submitted seller onboarding should supply seller email when contact row is sparse')
+  assert.equal(submittedSeller.sellerPropertyAddress, '39 Dromedaris Avenue, Reigerpark, Boksburg', 'submitted seller onboarding should supply property address')
+  assert.equal(submittedSeller.listings[0].title, '39 Dromedaris Avenue, Reigerpark', 'submitted seller onboarding should title the linked listing')
 
   const options = getLeadFilterOptions(rows)
   assert.ok(options.stages.includes('Offer Submitted'))

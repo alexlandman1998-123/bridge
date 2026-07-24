@@ -38,6 +38,10 @@ function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -190,11 +194,56 @@ function getContactName(contact = {}) {
     [contact?.firstName || contact?.first_name, contact?.lastName || contact?.last_name].map(normalizeText).filter(Boolean).join(' ')
 }
 
-function getLeadName(lead = {}, contact = null) {
-  return getContactName(contact) ||
-    [lead?.firstName || lead?.sellerName, lead?.lastName || lead?.sellerSurname].map(normalizeText).filter(Boolean).join(' ') ||
-    normalizeText(lead?.name) ||
-    'Unnamed lead'
+function isPlaceholderLeadName(value = '') {
+  const normalized = normalizeLower(value).replace(/[^a-z0-9]+/g, ' ').trim()
+  return !normalized || normalized === 'unnamed lead' || normalized === 'unnamed seller' || normalized === 'seller lead'
+}
+
+function getSellerOnboardingFormData(source = {}) {
+  if (!isPlainObject(source)) return {}
+  const onboarding = isPlainObject(source.sellerOnboarding)
+    ? source.sellerOnboarding
+    : isPlainObject(source.seller_onboarding)
+      ? source.seller_onboarding
+      : isPlainObject(source.sellerOnboardingRecord)
+        ? source.sellerOnboardingRecord
+        : isPlainObject(source.seller_onboarding_record)
+          ? source.seller_onboarding_record
+          : {}
+  if (isPlainObject(onboarding.formData)) return onboarding.formData
+  if (isPlainObject(onboarding.form_data)) return onboarding.form_data
+  if (isPlainObject(source.sellerOnboardingFormData)) return source.sellerOnboardingFormData
+  if (isPlainObject(source.seller_onboarding_form_data)) return source.seller_onboarding_form_data
+  return {}
+}
+
+function getSellerNameFromFormData(formData = {}) {
+  if (!isPlainObject(formData)) return ''
+  const firstName = normalizeText(formData.firstName || formData.first_name || formData.sellerFirstName || formData.seller_first_name)
+  const lastName = normalizeText(formData.lastName || formData.last_name || formData.surname || formData.sellerSurname || formData.seller_surname)
+  return normalizeText(
+    formData.fullName ||
+      formData.full_name ||
+      formData.displayName ||
+      formData.display_name ||
+      formData.sellerName ||
+      formData.seller_name ||
+      [firstName, lastName].filter(Boolean).join(' '),
+  )
+}
+
+function getLeadName(lead = {}, contact = null, listing = null) {
+  const rowFormData = getSellerOnboardingFormData(lead)
+  const listingFormData = getSellerOnboardingFormData(listing || {})
+  const candidates = [
+    getContactName(contact),
+    [lead?.firstName || lead?.first_name || lead?.sellerName || lead?.seller_name, lead?.lastName || lead?.last_name || lead?.sellerSurname || lead?.seller_surname].map(normalizeText).filter(Boolean).join(' '),
+    normalizeText(lead?.name),
+    getSellerNameFromFormData(rowFormData),
+    getSellerNameFromFormData(listingFormData),
+    normalizeText(rowFormData.email || rowFormData.sellerEmail || rowFormData.seller_email || lead?.email || lead?.sellerEmail || lead?.seller_email),
+  ]
+  return candidates.find((value) => value && !isPlaceholderLeadName(value)) || 'Unnamed lead'
 }
 
 function getLeadContact(lead = {}, contactsById = new Map()) {
@@ -290,8 +339,26 @@ function normalizeTransaction(row = {}) {
 
 function normalizeListing(row = {}) {
   const listingId = getListingId(row) || readId(row, ['id'])
-  const propertyAddress = normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.address || row?.addressLine1 || row?.address_line_1)
   const sellerOnboarding = row?.sellerOnboarding || row?.seller_onboarding || null
+  const onboardingFormData = getSellerOnboardingFormData(row)
+  const propertyAddress = normalizeText(
+    row?.title ||
+      row?.listingTitle ||
+      row?.listing_title ||
+      row?.propertyTitle ||
+      row?.property_title ||
+      row?.property_address ||
+      row?.propertyAddress ||
+      row?.address ||
+      row?.addressLine1 ||
+      row?.address_line_1 ||
+      onboardingFormData.propertyAddress ||
+      onboardingFormData.property_address ||
+      onboardingFormData.propertyAddressLine1 ||
+      onboardingFormData.property_address_line_1 ||
+      onboardingFormData.propertyAddressSearch ||
+      onboardingFormData.property_address_search,
+  )
   const sellerOnboardingStatus = normalizeText(
     row?.sellerOnboardingStatus ||
       row?.seller_onboarding_status ||
@@ -312,10 +379,10 @@ function normalizeListing(row = {}) {
     status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     title: propertyAddress || normalizeText(row?.suburb),
     propertyAddress,
-    addressLine1: normalizeText(row?.addressLine1 || row?.address_line_1 || row?.property_address),
-    suburb: normalizeText(row?.suburb || row?.area),
-    city: normalizeText(row?.city),
-    askingPrice: row?.asking_price ?? row?.askingPrice ?? row?.price ?? null,
+    addressLine1: normalizeText(row?.addressLine1 || row?.address_line_1 || row?.property_address || onboardingFormData.propertyAddressLine1 || onboardingFormData.propertyAddress || onboardingFormData.propertyAddressSearch),
+    suburb: normalizeText(row?.suburb || row?.area || onboardingFormData.suburb),
+    city: normalizeText(row?.city || onboardingFormData.city),
+    askingPrice: row?.asking_price ?? row?.askingPrice ?? row?.price ?? onboardingFormData.askingPrice ?? null,
   }
 }
 
@@ -503,6 +570,10 @@ export function buildAgentLeadRows({
     const enquiryListing = enquiryListingId ? relatedListings.find((listing) => getListingId(listing) === enquiryListingId) || null : null
     const sellerListing = relatedListings[0] || null
     const sellerOnboarding = lead?.sellerOnboarding || lead?.seller_onboarding || sellerListing?.sellerOnboarding || sellerListing?.seller_onboarding || null
+    const sellerFormData = {
+      ...getSellerOnboardingFormData(sellerListing || {}),
+      ...getSellerOnboardingFormData(lead || {}),
+    }
     const sellerOnboardingStatus = normalizeText(
       lead?.sellerOnboardingStatus ||
         lead?.seller_onboarding_status ||
@@ -510,10 +581,14 @@ export function buildAgentLeadRows({
         sellerListing?.sellerOnboardingStatus ||
         sellerListing?.seller_onboarding_status,
     )
+    const sellerAddress = normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address || sellerListing?.propertyAddress)
+    const sellerAddressLower = normalizeLower(sellerAddress)
+    const sellerSuburb = normalizeText(sellerListing?.suburb || lead?.areaInterest || lead?.area_interest)
+    const sellerCity = normalizeText(sellerListing?.city)
     const sellerAddressParts = [
-      normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address || sellerListing?.propertyAddress),
-      normalizeText(lead?.sellerPropertyAddress || sellerListing?.suburb || sellerListing?.suburb || lead?.areaInterest || lead?.area_interest),
-      normalizeText(sellerListing?.city),
+      sellerAddress,
+      sellerSuburb && !sellerAddressLower.includes(normalizeLower(sellerSuburb)) ? sellerSuburb : '',
+      sellerCity && !sellerAddressLower.includes(normalizeLower(sellerCity)) ? sellerCity : '',
     ].filter(Boolean)
 
     return {
@@ -524,9 +599,9 @@ export function buildAgentLeadRows({
       createdBy: readId(lead, ['createdBy', 'created_by']),
       contact,
       contactId,
-      name: getLeadName(lead, contact),
-      phone: normalizeText(contact?.phone || contact?.phone_number || lead?.phone || lead?.sellerPhone),
-      email: normalizeText(contact?.email || lead?.email || lead?.sellerEmail).toLowerCase(),
+      name: getLeadName(lead, contact, sellerListing),
+      phone: normalizeText(contact?.phone || contact?.phone_number || lead?.phone || lead?.sellerPhone || lead?.seller_phone || sellerFormData.phone || sellerFormData.sellerPhone || sellerFormData.seller_phone),
+      email: normalizeText(contact?.email || lead?.email || lead?.sellerEmail || lead?.seller_email || sellerFormData.email || sellerFormData.sellerEmail || sellerFormData.seller_email).toLowerCase(),
       source: normalizeLeadSourceLabel(lead),
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',

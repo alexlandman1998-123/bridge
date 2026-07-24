@@ -50,6 +50,19 @@ function resolveCallbackInvitePath(search = '') {
   return isPublicInviteReturnPath(nextPath) ? nextPath : ''
 }
 
+function resolveCallbackType({ search = '', hash = '' } = {}) {
+  const searchType = new URLSearchParams(search).get('type')
+  if (searchType) return searchType
+
+  const hashText = String(hash || '').replace(/^#/, '')
+  if (!hashText) return ''
+  return new URLSearchParams(hashText).get('type') || ''
+}
+
+function isPasswordRecoveryCallback({ search = '', hash = '' } = {}) {
+  return resolveCallbackType({ search, hash }).toLowerCase() === 'recovery'
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -116,6 +129,16 @@ export default function AuthCallback() {
 
         if (!session) {
           throw new Error('Session could not be restored from the verification callback.')
+        }
+
+        if (isPasswordRecoveryCallback({ search: location.search, hash: location.hash })) {
+          const target = '/auth/reset-password'
+          clearPostLoginRedirect()
+          recordAuditEvent('password_recovery_callback_restored', { target })
+          console.debug('[REDIRECT] callback:password-recovery', { target })
+          if (!active) return
+          navigate(target, { replace: true })
+          return
         }
 
         const { data: userData, error: userError } = await withTimeout(supabase.auth.getUser())

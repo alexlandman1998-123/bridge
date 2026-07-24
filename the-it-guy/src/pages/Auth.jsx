@@ -85,6 +85,30 @@ function resolveEmailVerificationRedirectTo(nextPath = '/setup') {
   return undefined
 }
 
+function resolvePasswordRecoveryRedirectTo() {
+  const candidates = [
+    import.meta?.env?.VITE_PUBLIC_APP_URL,
+    import.meta?.env?.VITE_APP_BASE_URL,
+    import.meta?.env?.VITE_SITE_URL,
+    typeof window !== 'undefined' ? window.location.origin : '',
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    try {
+      const baseUrl = new URL(value)
+      const redirectUrl = new URL('/auth/callback', baseUrl.origin)
+      redirectUrl.searchParams.set('type', 'recovery')
+      return redirectUrl.toString()
+    } catch {
+      // Ignore malformed URL candidates and continue.
+    }
+  }
+
+  return undefined
+}
+
 function getInviteTokenFromNextPath(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
   const match = String(nextPath || '').match(/^\/(?:agent\/)?invite\/([^/?#]+)/)
@@ -493,6 +517,43 @@ function Auth({ onDevBypass = null }) {
       return
     }
 
+    if (mode === 'forgot_password') {
+      try {
+        setLoading(true)
+        setError('')
+        setMessage('')
+        const redirectTo = resolvePasswordRecoveryRedirectTo()
+        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo,
+        })
+
+        if (recoveryError) {
+          if (isAuthRateLimitError(recoveryError)) {
+            throw new Error('Too many password reset emails have been requested. Please wait a few minutes and try again.')
+          }
+          const recoveryMessage = normalizeErrorMessage(recoveryError).toLowerCase()
+          if (recoveryMessage.includes('redirect') && recoveryMessage.includes('not allowed')) {
+            throw new Error('Password reset redirect URL is not allowed by Supabase Auth. Add your app callback URL to Auth redirect settings and retry.')
+          }
+          console.warn('[AUTH] password recovery request returned a non-public error', {
+            name: recoveryError?.name || '',
+            message: recoveryError?.message || '',
+            status: recoveryError?.status || '',
+          })
+        }
+
+        setPendingVerificationEmail('')
+        setPassword('')
+        setConfirmPassword('')
+        setMessage('If an Arch9 account exists for that email, a password reset link has been sent.')
+      } catch (recoveryRequestError) {
+        setError(recoveryRequestError?.message || 'Unable to request a password reset right now.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     if (inviteDrivenSignup && invitedEmail && normalizeAuthEmail(email) !== invitedEmail) {
       setError(`This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.`)
       return
@@ -698,6 +759,7 @@ function Auth({ onDevBypass = null }) {
   const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
   const orderedBusinessTypeOptions = getOrderedBusinessTypeOptions()
   const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading && !inviteDrivenSignup
+  const showingAuthFields = mode === 'login' || mode === 'forgot_password' || signupStep === 2
 
   return (
     <div className={`auth-page auth-page-${mode}`}>
@@ -732,7 +794,7 @@ function Auth({ onDevBypass = null }) {
           </div>
         </section>
 
-        <section className={`auth-card ${mode === 'login' ? 'auth-card-login' : 'auth-card-signup'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
+        <section className={`auth-card ${mode === 'signup' ? 'auth-card-signup' : 'auth-card-login'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
             <div className="auth-security-notice" role="status">
               <span><ShieldCheck size={18} /></span>
@@ -886,12 +948,19 @@ function Auth({ onDevBypass = null }) {
               </>
             ) : null}
 
-            {mode === 'login' || signupStep === 2 ? (
+            {showingAuthFields ? (
               <>
                 {mode === 'login' ? (
                   <div className="auth-card-head compact">
                     <h2>Welcome back</h2>
                     <p>Sign in to continue to your Arch9 workspace.</p>
+                  </div>
+                ) : null}
+
+                {mode === 'forgot_password' ? (
+                  <div className="auth-card-head compact">
+                    <h2>Reset your password</h2>
+                    <p>Enter your account email and we&apos;ll send a secure reset link.</p>
                   </div>
                 ) : null}
 
@@ -979,6 +1048,7 @@ function Auth({ onDevBypass = null }) {
                     ) : null}
                   </label>
 
+                  {mode !== 'forgot_password' ? (
                   <div className="auth-password-field">
                     <label htmlFor="auth-password">Password</label>
                     <div className="auth-password-input">
@@ -1000,7 +1070,23 @@ function Auth({ onDevBypass = null }) {
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
+                    {mode === 'login' ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-sm font-semibold text-[#2f5478] underline-offset-4 hover:underline"
+                        onClick={() => {
+                          setMode('forgot_password')
+                          setError('')
+                          setMessage('')
+                          setPassword('')
+                          setConfirmPassword('')
+                        }}
+                      >
+                        Forgot your password?
+                      </button>
+                    ) : null}
                   </div>
+                  ) : null}
                 </div>
                   </>
                 ) : null}
@@ -1046,9 +1132,9 @@ function Auth({ onDevBypass = null }) {
             {message ? <p className="auth-feedback success">{message}</p> : null}
           </form>
 
-          {mode === 'login' || signupStep === 2 ? (
+          {showingAuthFields ? (
             <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
-              {loading ? 'Processing...' : mode === 'login' ? 'Sign in' : 'Create Account'}
+              {loading ? 'Processing...' : mode === 'forgot_password' ? 'Send reset link' : mode === 'login' ? 'Sign in' : 'Create Account'}
               {!loading ? <ArrowRight size={15} /> : null}
             </button>
           ) : null}
@@ -1069,11 +1155,17 @@ function Auth({ onDevBypass = null }) {
           {!inviteDrivenSignup ? (
             <div className="auth-footer">
             <span>
-              {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+              {mode === 'login' ? "Don't have an account?" : mode === 'forgot_password' ? 'Remembered your password?' : 'Already have an account?'}
             </span>
             <button
               type="button"
-              onClick={() => setMode((previous) => (previous === 'login' ? 'signup' : 'login'))}
+              onClick={() => {
+                setMode((previous) => (previous === 'login' ? 'signup' : 'login'))
+                setError('')
+                setMessage('')
+                setPassword('')
+                setConfirmPassword('')
+              }}
             >
               {mode === 'login' ? 'Create one' : 'Sign in'}
             </button>

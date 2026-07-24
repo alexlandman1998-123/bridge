@@ -1019,8 +1019,18 @@ function resolveProgressionPropertyAddress(listing = {}, form = {}) {
   }
 }
 
+function getPropertyAddressTextForSellerResidential(listing = {}, form = {}) {
+  const address = resolveProgressionPropertyAddress(listing, form)
+  return formatPropertyAddress(address) ||
+    String(address.formatted || form?.propertyAddress || listing?.propertyAddress || listing?.addressLine1 || listing?.address_line_1 || '').trim()
+}
+
 function normalizeSellerFormForProgression(form = {}, listing = {}) {
-  return buildFormWithPropertyAddress(form, resolveProgressionPropertyAddress(listing, form))
+  const normalized = buildFormWithPropertyAddress(form, resolveProgressionPropertyAddress(listing, form))
+  if (normalized.sellerResidentialSameAsProperty) {
+    normalized.residentialAddress = getPropertyAddressTextForSellerResidential(listing, normalized)
+  }
+  return normalized
 }
 
 function getPropertyAddressMissingItems(address = {}) {
@@ -1463,6 +1473,8 @@ function normalizeFormData(listing) {
       source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
     },
   )
+  const resolvedResidentialAddress = resolveAddress()
+  const propertyAddressTextForResidential = formatPropertyAddress(propertyAddressDetails) || propertyAddressDetails.formatted || ''
   const propertyBranch = String(flow?.property_branch || '').trim()
   const disclosureKind = propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'
   const propertyDisclosure = normalizePropertyDisclosure(
@@ -1511,7 +1523,14 @@ function normalizeFormData(listing) {
     idNumber: resolveIdNumber(),
     email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
-    residentialAddress: resolveAddress(),
+    residentialAddress: existing.sellerResidentialSameAsProperty || existing.seller_residential_same_as_property
+      ? propertyAddressTextForResidential
+      : resolvedResidentialAddress,
+    sellerResidentialSameAsProperty: Boolean(
+      existing.sellerResidentialSameAsProperty ||
+        existing.seller_residential_same_as_property ||
+        (resolvedResidentialAddress && propertyAddressTextForResidential && resolvedResidentialAddress === propertyAddressTextForResidential),
+    ),
     residentialAddressDetails: existing.residentialAddressDetails || existing.sellerResidentialAddressDetails || {},
 
     ownershipType,
@@ -2926,6 +2945,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handleFormUpdate(key, value) {
     setForm((previous) => {
       const next = { ...(previous || {}), [key]: value }
+      if (key === 'residentialAddress') {
+        next.sellerResidentialSameAsProperty = false
+      }
       if (key === 'propertyCategory') {
         const propertyOptions = getPropertyTypeOptionsByCategory(value)
         if (!propertyOptions.some((option) => option.value === next.propertyType)) {
@@ -2984,7 +3006,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         ...partial,
       }
       nextAddress.formatted = formatPropertyAddress(nextAddress)
-      return buildFormWithPropertyAddress(previous || {}, nextAddress)
+      const next = buildFormWithPropertyAddress(previous || {}, nextAddress)
+      if (next.sellerResidentialSameAsProperty) {
+        next.residentialAddress = getPropertyAddressTextForSellerResidential(listing || {}, next)
+      }
+      return next
     })
   }
 
@@ -3009,7 +3035,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           query: value,
         }
       nextAddress.formatted = formatPropertyAddress(nextAddress)
-      return buildFormWithPropertyAddress(previous || {}, nextAddress)
+      const next = buildFormWithPropertyAddress(previous || {}, nextAddress)
+      if (next.sellerResidentialSameAsProperty) {
+        next.residentialAddress = getPropertyAddressTextForSellerResidential(listing || {}, next)
+      }
+      return next
+    })
+  }
+
+  function handleSellerResidentialSameAsPropertyChange(checked) {
+    setForm((previous) => {
+      const next = { ...(previous || {}), sellerResidentialSameAsProperty: checked }
+      if (checked) {
+        next.residentialAddress = getPropertyAddressTextForSellerResidential(listing || {}, next)
+      }
+      return next
     })
   }
 
@@ -3544,6 +3584,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!form.idNumber) {
           return 'Please provide ID number / passport details.'
         }
+        if (!resolveSellerResidentialAddress(form)) {
+          return 'Please provide your residential address.'
+        }
       }
 
       if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
@@ -3712,6 +3755,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
         if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !form.idNumber) {
           return 'Please provide ID number / passport details.'
+        }
+        if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !resolveSellerResidentialAddress(form)) {
+          return 'Please provide your residential address before continuing.'
         }
         if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
           return 'Spouse name and spouse ID number are required for married ownership.'
@@ -3888,12 +3934,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
     const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
     const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
+    const submissionOwnershipBranch = getOwnershipBranch(submissionForm.ownershipType)
     const finalRequiredMissing = [
       ...[
         !submissionForm.sellerFirstName && 'Seller name',
         !submissionForm.sellerSurname && 'Seller surname',
         !submissionForm.email && 'Email',
         !submissionForm.phone && 'Phone',
+        (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(submissionForm) && 'Residential address',
       ].filter(Boolean).map((item) => `Seller: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(submissionForm.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
@@ -4075,6 +4123,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
   const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
   const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const requiresSellerResidentialAddress = ownershipBranch === 'individual' || ownershipBranch === 'married'
+  const sellerResidentialAddress = resolveSellerResidentialAddress(form)
+  const propertyAddressTextForSellerResidential = getPropertyAddressTextForSellerResidential(listing || {}, form || {})
+  const canCopyPropertyAddressToSeller = Boolean(propertyAddressTextForSellerResidential)
   const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
   const isMultipleOwnerInviteMode = isMultipleOwners && multipleOwnerCaptureMode === 'send_onboarding'
   const showVatFields = ['company', 'trust'].includes(ownershipBranch)
@@ -4181,6 +4233,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.sellerSurname && 'Seller surname',
     !form.email && 'Email',
     !form.phone && 'Phone',
+    requiresSellerResidentialAddress && !sellerResidentialAddress && 'Residential address',
   ].filter(Boolean)
   const mandateMissing = [
     !form.mandateType && 'Mandate type',
@@ -4225,6 +4278,81 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   ]
 
   const shouldShowWelcome = !embedded && !isCompleted && showWelcome
+  const onboardingActions = !embedded && !isCompleted ? (
+    <div className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+      <div className="grid gap-2 md:hidden">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <DraftSaveStatus
+            status={saving ? 'saving' : draftSyncStatus}
+            savedAt={lastDraftSavedAt}
+            fallback="Secure seller onboarding"
+          />
+          <div className="flex shrink-0 items-center gap-1.5">
+            {currentStep > 0 || activeMobilePaneIndex > 0 ? (
+              <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
+                <ChevronLeft size={14} />
+                Back
+              </Button>
+            ) : null}
+            {currentStep < FINAL_STEP_INDEX ? (
+              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5 text-xs">
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+            ) : null}
+            <span className="rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
+              {mobilePaneCount > 1 ? `${activeMobilePaneIndex + 1}/${mobilePaneCount}` : `${currentStep + 1}/${STEPS.length}`}
+            </span>
+          </div>
+        </div>
+        {currentStep < FINAL_STEP_INDEX ? (
+          <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
+            {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
+            <ChevronRight size={14} />
+          </Button>
+        ) : null}
+        {currentStep === FINAL_STEP_INDEX ? (
+          <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
+            {submitting ? 'Submitting...' : 'Submit Seller Information'}
+            <CheckCircle2 size={14} />
+          </Button>
+        ) : null}
+      </div>
+      <div className="hidden min-h-[68px] items-center justify-between gap-4 md:flex">
+        <div className="flex min-w-0">
+          <DraftSaveStatus
+            status={saving ? 'saving' : draftSyncStatus}
+            savedAt={lastDraftSavedAt}
+            fallback="Secure seller onboarding powered by arch9"
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {currentStep > 0 ? (
+            <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px]">
+              <ChevronLeft size={14} />
+              Back
+            </Button>
+          ) : null}
+          {currentStep < FINAL_STEP_INDEX ? (
+            <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px]">
+              {saving ? 'Saving...' : 'Save Draft'}
+            </Button>
+          ) : null}
+          {currentStep < FINAL_STEP_INDEX ? (
+            <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+              Save & Continue
+              <ChevronRight size={14} />
+            </Button>
+          ) : null}
+          {currentStep === FINAL_STEP_INDEX ? (
+            <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+              {submitting ? 'Submitting...' : 'Submit Seller Information'}
+              <CheckCircle2 size={14} />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  ) : null
 
   const formContent = (
     <div className={PAGE_STACK_CLASS}>
@@ -4370,6 +4498,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       {ownershipFieldLabels.idNumber}
                       <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
                     </label>
+                  ) : null}
+
+                  {requiresSellerResidentialAddress ? (
+                    <div className="grid gap-2 md:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="text-sm font-medium text-[#2a4057]">{ownershipFieldLabels.address}</span>
+                        <label className={`flex min-h-[42px] items-center gap-2 rounded-[12px] border px-3 py-2 text-sm font-medium ${
+                          canCopyPropertyAddressToSeller || form.sellerResidentialSameAsProperty
+                            ? 'cursor-pointer border-[#d9e2ee] bg-white text-[#2a4057]'
+                            : 'cursor-not-allowed border-[#e4eaf1] bg-[#f5f8fb] text-[#8a9ab0]'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form.sellerResidentialSameAsProperty)}
+                            disabled={!canCopyPropertyAddressToSeller && !form.sellerResidentialSameAsProperty}
+                            onChange={(event) => handleSellerResidentialSameAsPropertyChange(event.target.checked)}
+                          />
+                          Same as property address
+                        </label>
+                      </div>
+                      <input
+                        className={DETAIL_INPUT_CLASS}
+                        autoComplete="street-address"
+                        value={form.residentialAddress}
+                        readOnly={Boolean(form.sellerResidentialSameAsProperty)}
+                        onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)}
+                      />
+                    </div>
                   ) : null}
 
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -5509,6 +5665,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Seller', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
                     { label: 'Email', value: form.email },
                     { label: 'Phone', value: form.phone },
+                    ...(requiresSellerResidentialAddress ? [{ label: 'Residential Address', value: sellerResidentialAddress }] : []),
                     { label: 'Ownership', value: getOwnershipSummaryLabel(form) },
                   ]}
                 />
@@ -5622,6 +5779,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       </section>
       )}
 
+      {onboardingActions}
+
       <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
         <span>Secure seller onboarding powered by arch9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
@@ -5646,7 +5805,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const sellerMainClass = shouldShowWelcome
     ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] font-sans antialiased text-white'
-    : 'seller-onboarding-main relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 sm:pb-36 md:px-6 md:py-6 md:pb-32 lg:px-8 lg:py-8 lg:pb-32'
+    : 'seller-onboarding-main relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8'
 
   return (
     <main className={sellerMainClass} style={sellerBrandTheme.cssVars}>
@@ -5660,83 +5819,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       <div className={shouldShowWelcome ? 'relative z-10 w-full' : PAGE_CONTAINER_CLASS}>
         {content}
       </div>
-      {!shouldShowWelcome && !isCompleted ? (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-        <div className={PAGE_CONTAINER_CLASS}>
-          <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))] md:hidden">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <DraftSaveStatus
-                status={saving ? 'saving' : draftSyncStatus}
-                savedAt={lastDraftSavedAt}
-                fallback="Secure seller onboarding"
-              />
-              <div className="flex shrink-0 items-center gap-1.5">
-                {currentStep > 0 || activeMobilePaneIndex > 0 ? (
-                  <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
-                    <ChevronLeft size={14} />
-                    Back
-                  </Button>
-                ) : null}
-                {currentStep < FINAL_STEP_INDEX ? (
-                  <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5 text-xs">
-                    {saving ? 'Saving...' : 'Save'}
-                  </Button>
-                ) : null}
-                <span className="rounded-full bg-[#f2f6fb] px-2.5 py-1 text-[11px] font-semibold text-[#5f738a]">
-                  {mobilePaneCount > 1 ? `${activeMobilePaneIndex + 1}/${mobilePaneCount}` : `${currentStep + 1}/${STEPS.length}`}
-                </span>
-              </div>
-            </div>
-            {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
-                {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
-                <ChevronRight size={14} />
-              </Button>
-            ) : null}
-            {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
-                {submitting ? 'Submitting...' : 'Submit Seller Information'}
-                <CheckCircle2 size={14} />
-              </Button>
-            ) : null}
-          </div>
-          <div className="hidden min-h-[68px] items-center justify-between gap-4 pb-[max(4px,env(safe-area-inset-bottom))] md:flex">
-            <div className="flex min-w-0">
-              <DraftSaveStatus
-                status={saving ? 'saving' : draftSyncStatus}
-                savedAt={lastDraftSavedAt}
-                fallback="Secure seller onboarding powered by arch9"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {currentStep > 0 ? (
-                <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px]">
-                  <ChevronLeft size={14} />
-                  Back
-                </Button>
-              ) : null}
-              {currentStep < FINAL_STEP_INDEX ? (
-                <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px]">
-                  {saving ? 'Saving...' : 'Save Draft'}
-                </Button>
-              ) : null}
-              {currentStep < FINAL_STEP_INDEX ? (
-                <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
-                  Save & Continue
-                  <ChevronRight size={14} />
-                </Button>
-              ) : null}
-              {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-                <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
-                  {submitting ? 'Submitting...' : 'Submit Seller Information'}
-                  <CheckCircle2 size={14} />
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-      ) : null}
     </main>
   )
 }
