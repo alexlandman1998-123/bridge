@@ -270,7 +270,8 @@ async function runLeadSmoke(page, baseUrl) {
   await fillByPlaceholder(page, 'Name', 'Phase Four')
   await fillByPlaceholder(page, 'Surname', 'Seller')
   await fillByPlaceholder(page, 'Phone', '+27820000000')
-  await fillByPlaceholder(page, 'Property Area', '12 Smoke Test Road')
+  assert.equal(await page.getByPlaceholder('Property Area', { exact: false }).first().isVisible().catch(() => false), false, 'Seller lead modal should not show property area quick fields')
+  assert.equal(await page.getByPlaceholder('Next follow-up note', { exact: false }).first().isVisible().catch(() => false), false, 'Seller lead modal should not show follow-up note quick fields')
   await closeDialog(page)
 
   await chooseLeadType(page, 'Buyer Leads')
@@ -279,8 +280,10 @@ async function runLeadSmoke(page, baseUrl) {
   await fillByPlaceholder(page, 'Name', 'Phase Four')
   await fillByPlaceholder(page, 'Surname', 'Buyer')
   await fillByPlaceholder(page, 'Email', 'buyer.phase4@example.test')
-  await fillByPlaceholder(page, 'Budget', '2500000')
-  await fillByPlaceholder(page, 'Area Interest', 'Sandton')
+  await page.getByRole('button', { name: /No listing selected/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
+  assert.equal(await page.getByPlaceholder('Budget', { exact: false }).first().isVisible().catch(() => false), false, 'Buyer lead modal should not show budget quick fields')
+  assert.equal(await page.getByPlaceholder('Area Interest', { exact: false }).first().isVisible().catch(() => false), false, 'Buyer lead modal should not show area interest quick fields')
+  assert.equal(await page.getByPlaceholder('Next follow-up note', { exact: false }).first().isVisible().catch(() => false), false, 'Buyer lead modal should not show follow-up note quick fields')
   await closeDialog(page)
 
   await page.getByRole('button', { name: /^Add Buyer Lead$/ }).first().waitFor({ state: 'visible', timeout: 10_000 })

@@ -1448,6 +1448,277 @@ function getLeadSourceChipTone(value = '') {
   return 'border-[#dbe6f1] bg-[#f8fbff] text-[#4f6b86]'
 }
 
+const LEAD_SOURCE_LOGOS = {
+  property24: {
+    src: '/lead-sources/property24.png',
+    alt: 'Property24',
+    imageClassName: 'h-5 max-w-[88px]',
+  },
+  privateProperty: {
+    src: '/lead-sources/private-property.jpeg',
+    alt: 'Private Property',
+    imageClassName: 'h-6 max-w-[106px]',
+  },
+}
+
+function normalizeLeadSourceForBadge(value = '') {
+  const source = normalizeText(value).toLowerCase()
+  if (!source) return 'unknown'
+  if (source.includes('property24')) return 'property24'
+  if (source.includes('private') && source.includes('property')) return 'privateProperty'
+  if (source.includes('whatsapp')) return 'whatsapp'
+  if (source.includes('website')) return 'website'
+  if (source.includes('facebook') || source.includes('instagram')) return 'social'
+  if (source.includes('google')) return 'google'
+  if (source.includes('referral')) return 'referral'
+  if (source.includes('show day') || source.includes('showday') || source.includes('open house')) return 'showDay'
+  if (source.includes('walk in') || source.includes('walk-in')) return 'walkIn'
+  if (source.includes('call') || source.includes('phone')) return 'call'
+  if (source.includes('manual')) return 'manual'
+  return 'unknown'
+}
+
+function getLeadSourceBadgeLabel(source = '', key = normalizeLeadSourceForBadge(source)) {
+  const explicitSource = normalizeText(source)
+  if (explicitSource && key === 'unknown') return explicitSource
+  if (key === 'whatsapp') return 'WhatsApp'
+  if (key === 'website') return 'Website'
+  if (key === 'social') return explicitSource || 'Social'
+  if (key === 'google') return 'Google'
+  if (key === 'referral') return explicitSource || 'Referral'
+  if (key === 'showDay') return 'Show Day'
+  if (key === 'walkIn') return 'Walk-in'
+  if (key === 'call') return 'Call'
+  if (key === 'manual') return explicitSource || 'Manual'
+  return explicitSource || 'Unknown source'
+}
+
+function LeadSourceBadge({ source = '', compact = false } = {}) {
+  const sourceKey = normalizeLeadSourceForBadge(source)
+  const sourceLogo = LEAD_SOURCE_LOGOS[sourceKey]
+  if (sourceLogo) {
+    return (
+      <span
+        className={`inline-flex ${compact ? 'h-7 min-w-[92px] max-w-[112px]' : 'h-9 min-w-[112px] max-w-[136px]'} items-center justify-center rounded-full border border-[#dbe6f1] bg-white px-3 shadow-sm`}
+        title={sourceLogo.alt}
+      >
+        <img
+          src={sourceLogo.src}
+          alt={sourceLogo.alt}
+          className={`${sourceLogo.imageClassName} w-auto object-contain`}
+          loading="lazy"
+        />
+      </span>
+    )
+  }
+  return (
+    <span className={`inline-flex max-w-full items-center rounded-full border px-2.5 ${compact ? 'py-1 text-[0.7rem]' : 'py-1.5 text-[0.78rem]'} font-semibold ${getLeadSourceChipTone(source || 'Unknown source')}`}>
+      <span className="truncate">{getLeadSourceBadgeLabel(source, sourceKey)}</span>
+    </span>
+  )
+}
+
+function AgentPicker({ agents = [], value = '', onChange, label = 'Assigned Agent', className = '' }) {
+  const [open, setOpen] = useState(false)
+  const pickerRef = useRef(null)
+  const selectedAgent = useMemo(() => {
+    const selectedKey = normalizeKey(value)
+    return agents.find((agent) => normalizeKey(agent.id) === selectedKey || normalizeKey(agent.email) === selectedKey) || agents[0] || null
+  }, [agents, value])
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (pickerRef.current?.contains(event.target)) return
+      setOpen(false)
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const selectedColor = getAgentKanbanColor(selectedAgent?.id || selectedAgent?.email || selectedAgent?.name || label)
+
+  return (
+    <div ref={pickerRef} className={`relative ${className}`.trim()}>
+      <p className="mb-1.5 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c8da1]">{label}</p>
+      <button
+        type="button"
+        className="flex min-h-[52px] w-full items-center justify-between gap-3 rounded-[14px] border border-[#dbe4ee] bg-white px-3 text-left shadow-[0_8px_18px_rgba(24,45,68,0.04)] transition hover:border-[#bfd0e1] hover:bg-[#fbfdff] focus:border-[#1f6f4a] focus:outline-none focus:ring-4 focus:ring-[#1f6f4a]/10"
+        onClick={() => setOpen((previous) => !previous)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.78rem] font-bold text-white shadow-sm"
+            style={{ backgroundImage: `linear-gradient(135deg, ${selectedColor}, #173e63)` }}
+          >
+            {getInitials(selectedAgent?.name || selectedAgent?.email || 'Agent')}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-[#142132]">{selectedAgent?.name || 'Select agent'}</span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-[#6f8399]">{selectedAgent?.email || 'Choose who owns this lead'}</span>
+          </span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-[#7890a8] transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 z-40 mt-2 max-h-72 overflow-y-auto rounded-[16px] border border-[#d6e3ef] bg-white p-2 shadow-[0_22px_48px_rgba(18,44,68,0.18)]" role="listbox">
+          {agents.map((agent) => {
+            const agentValue = agent.id || agent.email
+            const isSelected =
+              normalizeKey(agent.id) === normalizeKey(selectedAgent?.id) ||
+              normalizeKey(agent.email) === normalizeKey(selectedAgent?.email)
+            const agentColor = getAgentKanbanColor(agent.id || agent.email || agent.name)
+            return (
+              <button
+                key={`${agent.id}:${agent.email}`}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition ${
+                  isSelected ? 'bg-[#edf7f2] text-[#133627]' : 'text-[#20364c] hover:bg-[#f6f9fc]'
+                }`}
+                onClick={() => {
+                  onChange?.(agentValue)
+                  setOpen(false)
+                }}
+              >
+                <span
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.76rem] font-bold text-white shadow-sm"
+                  style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #173e63)` }}
+                >
+                  {getInitials(agent.name || agent.email || 'Agent')}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{agent.name || 'Agent'}</span>
+                  <span className="mt-0.5 block truncate text-xs font-medium text-[#6f8399]">{agent.email || 'No email captured'}</span>
+                </span>
+                {isSelected ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1f7a4d]" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ListingPicker({ listings = [], value = '', onChange, label = 'Linked Listing', className = '' }) {
+  const [open, setOpen] = useState(false)
+  const pickerRef = useRef(null)
+  const selectedListing = useMemo(() => {
+    const selectedKey = normalizeKey(value)
+    return listings.find((listing) => normalizeKey(listing.id) === selectedKey) || null
+  }, [listings, value])
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (pickerRef.current?.contains(event.target)) return
+      setOpen(false)
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const selectedTitle = normalizeText(selectedListing?.label || selectedListing?.title || selectedListing?.address) || 'No listing selected'
+  const selectedDetail = selectedListing
+    ? [normalizeText(selectedListing?.suburb), Number(selectedListing?.askingPrice || 0) > 0 ? formatCurrency(selectedListing.askingPrice) : ''].filter(Boolean).join(' · ') || 'Listing linked to this lead'
+    : 'Choose a listing if this buyer enquiry is property-specific'
+
+  return (
+    <div ref={pickerRef} className={`relative ${className}`.trim()}>
+      <p className="mb-1.5 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c8da1]">{label}</p>
+      <button
+        type="button"
+        className="flex min-h-[52px] w-full items-center justify-between gap-3 rounded-[14px] border border-[#dbe4ee] bg-white px-3 text-left shadow-[0_8px_18px_rgba(24,45,68,0.04)] transition hover:border-[#bfd0e1] hover:bg-[#fbfdff] focus:border-[#1f6f4a] focus:outline-none focus:ring-4 focus:ring-[#1f6f4a]/10"
+        onClick={() => setOpen((previous) => !previous)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[#dbe6f1] bg-[#f4f8fc] text-[#56718d]">
+            <Home size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-[#142132]">{selectedTitle}</span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-[#6f8399]">{selectedDetail}</span>
+          </span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-[#7890a8] transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 z-40 mt-2 max-h-72 overflow-y-auto rounded-[16px] border border-[#d6e3ef] bg-white p-2 shadow-[0_22px_48px_rgba(18,44,68,0.18)]" role="listbox">
+          <button
+            type="button"
+            role="option"
+            aria-selected={!selectedListing}
+            className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition ${!selectedListing ? 'bg-[#edf7f2] text-[#133627]' : 'text-[#20364c] hover:bg-[#f6f9fc]'}`}
+            onClick={() => {
+              onChange?.('')
+              setOpen(false)
+            }}
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[#dbe6f1] bg-[#f4f8fc] text-[#7890a8]">
+              <Home size={15} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">No listing selected</span>
+              <span className="mt-0.5 block truncate text-xs font-medium text-[#6f8399]">Create this buyer lead without linking a property</span>
+            </span>
+            {!selectedListing ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1f7a4d]" /> : null}
+          </button>
+          {listings.map((listing) => {
+            const listingValue = normalizeText(listing.id)
+            const isSelected = normalizeKey(listingValue) === normalizeKey(selectedListing?.id)
+            const title = normalizeText(listing.label || listing.title || listing.address) || 'Listing'
+            const detail = [normalizeText(listing.suburb), Number(listing.askingPrice || 0) > 0 ? formatCurrency(listing.askingPrice) : ''].filter(Boolean).join(' · ') || 'Listing details'
+            return (
+              <button
+                key={listingValue}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition ${
+                  isSelected ? 'bg-[#edf7f2] text-[#133627]' : 'text-[#20364c] hover:bg-[#f6f9fc]'
+                }`}
+                onClick={() => {
+                  onChange?.(listingValue)
+                  setOpen(false)
+                }}
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[#dbe6f1] bg-[#f4f8fc] text-[#56718d]">
+                  <Home size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{title}</span>
+                  <span className="mt-0.5 block truncate text-xs font-medium text-[#6f8399]">{detail}</span>
+                </span>
+                {isSelected ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1f7a4d]" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function getLeadStagePresentation(value = '') {
   const stage = normalizeText(value).toLowerCase()
   if (stage.includes('appointment') || stage.includes('valuation') || stage.includes('viewing')) {
@@ -11003,16 +11274,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden min-h-0 max-w-full flex-1 overflow-auto overscroll-contain lg:block">
-                <div className="min-w-[1120px] px-4 py-4">
-                  <div
-                    className="grid items-center gap-6 px-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
-                    style={{ gridTemplateColumns: 'minmax(300px,1.5fr) minmax(260px,1.1fr) minmax(220px,0.9fr) minmax(200px,0.8fr) auto' }}
-                  >
-                    <span>Lead</span>
-                    <span>Property</span>
-                    <span>Stage</span>
-                    <span>Last Activity</span>
-                    <span className="sr-only">Actions</span>
+	                <div className="min-w-[1260px] px-4 py-4">
+	                  <div
+	                    className="grid items-center gap-6 px-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
+	                    style={{ gridTemplateColumns: 'minmax(290px,1.35fr) minmax(150px,0.55fr) minmax(240px,1fr) minmax(220px,0.85fr) minmax(190px,0.7fr) auto' }}
+	                  >
+	                    <span>Lead</span>
+	                    <span>Source</span>
+	                    <span>Property</span>
+	                    <span>Stage</span>
+	                    <span>Last Activity</span>
+	                    <span className="sr-only">Actions</span>
                   </div>
                   <div className="mt-3 space-y-3">
                     {leadTableRows.length ? (
@@ -11083,10 +11355,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-                            <div
-                              className="grid items-center gap-6"
-                              style={{ gridTemplateColumns: 'minmax(300px,1.5fr) minmax(260px,1.1fr) minmax(220px,0.9fr) minmax(200px,0.8fr) auto' }}
-                            >
+	                            <div
+	                              className="grid items-center gap-6"
+	                              style={{ gridTemplateColumns: 'minmax(290px,1.35fr) minmax(150px,0.55fr) minmax(240px,1fr) minmax(220px,0.85fr) minmax(190px,0.7fr) auto' }}
+	                            >
                               <div className="min-w-0">
                                 <div className="flex min-w-0 items-start gap-4">
                                   <span
@@ -11106,19 +11378,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <Mail size={13} className="shrink-0 text-[#8ba0b4]" />
                                         <span className="min-w-0 truncate">{leadEmail || 'No email address'}</span>
                                       </span>
-                                    </div>
-                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getLeadSourceChipTone(lead.leadSource || 'Unknown source')}`}>
-                                        {lead.leadSource || 'Unknown source'}
-                                      </span>
-                                      <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#4d6782]">
-                                        {assignedAgent === 'Unassigned' ? 'Unassigned' : `Assigned to ${assignedAgent}`}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="min-w-0">
+	                                    </div>
+	                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+	                                      <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#4d6782]">
+	                                        {assignedAgent === 'Unassigned' ? 'Unassigned' : `Assigned to ${assignedAgent}`}
+	                                      </span>
+	                                    </div>
+	                                  </div>
+	                                </div>
+	                              </div>
+	                              <div className="min-w-0">
+	                                <LeadSourceBadge source={lead.leadSource || 'Unknown source'} />
+	                              </div>
+	                              <div className="min-w-0">
                                 <div className="flex min-w-0 items-start gap-3">
                                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] border border-[#e1e8f0] bg-[#f8fbff] text-[#5c7894]">
                                     <Home size={17} />
@@ -11325,14 +11597,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <span className="mt-0.5 block truncate text-[0.78rem]">{propertyLines.subtitle || 'Property details pending'}</span>
                               </span>
                             </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getLeadSourceChipTone(lead.leadSource || 'Unknown source')}`}>
-                              {lead.leadSource || 'Unknown source'}
-                            </span>
-                            <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">
-                              {assignedAgent === 'Unassigned' ? 'Unassigned' : assignedAgent}
-                            </span>
+	                          </div>
+	                          <div className="flex flex-wrap items-center gap-2">
+	                            <LeadSourceBadge source={lead.leadSource || 'Unknown source'} compact />
+	                            <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">
+	                              {assignedAgent === 'Unassigned' ? 'Unassigned' : assignedAgent}
+	                            </span>
                           </div>
                           <div className="flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
                             <div className="min-w-0">
@@ -14783,41 +15053,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ))}
             </Field>
             {isPrincipal ? (
-              <Field as="select" value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>
-                {agentOptions.map((agent) => (
-                  <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
-                    {agent.name}
-                  </option>
-                ))}
-              </Field>
+              <AgentPicker
+                agents={agentOptions}
+                value={selectedAgentId}
+                onChange={setSelectedAgentId}
+                className="md:col-span-2"
+              />
             ) : null}
           </div>
 
-          {normalizeLeadCategory(leadForm.leadCategory, 'other') === 'seller' ? (
-            <div className="grid gap-2 md:grid-cols-2">
-              <Field placeholder="Property Area (optional)" value={leadForm.propertyArea} onChange={(event) => updateLeadFormField('propertyArea', event.target.value)} />
-              <Field placeholder="Property Type (optional)" value={leadForm.propertyType} onChange={(event) => updateLeadFormField('propertyType', event.target.value)} />
-              <Field placeholder="Estimated Property Value (optional)" value={leadForm.estimatedValue} onChange={(event) => updateLeadFormField('estimatedValue', event.target.value)} />
-            </div>
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2">
-              <Field as="select" value={leadForm.linkedListing} onChange={(event) => updateLeadFormField('linkedListing', event.target.value)}>
-                <option value="">No listing selected</option>
-                {appointmentListingOptions.map((listing) => (
-                  <option key={listing.id} value={listing.id}>
-                    {listing.label}
-                  </option>
-                ))}
-              </Field>
-              <Field placeholder="Budget (optional)" value={leadForm.budget} onChange={(event) => updateLeadFormField('budget', event.target.value)} />
-              <Field placeholder="Area Interest (optional)" value={leadForm.areaInterest} onChange={(event) => updateLeadFormField('areaInterest', event.target.value)} />
-            </div>
-          )}
-
-          <div className="grid gap-2 md:grid-cols-2">
-            <Field type="date" value={leadForm.nextFollowUpDate} onChange={(event) => updateLeadFormField('nextFollowUpDate', event.target.value)} />
-            <Field placeholder="Next follow-up note (optional)" value={leadForm.nextFollowUpNote} onChange={(event) => updateLeadFormField('nextFollowUpNote', event.target.value)} />
-          </div>
+          {normalizeLeadCategory(leadForm.leadCategory, 'other') !== 'seller' ? (
+            <ListingPicker
+              listings={appointmentListingOptions}
+              value={leadForm.linkedListing}
+              onChange={(nextListingId) => updateLeadFormField('linkedListing', nextListingId)}
+            />
+          ) : null}
 
           <Field as="textarea" rows={3} placeholder="Notes (optional)" value={leadForm.notes} onChange={(event) => updateLeadFormField('notes', event.target.value)} />
 
