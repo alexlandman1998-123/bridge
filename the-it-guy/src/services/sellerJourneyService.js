@@ -186,7 +186,6 @@ export function resolveSellerJourneyStageFromToken(value = '') {
 }
 const SELLER_ONBOARDING_SUBMITTED_STATUSES = new Set(['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'])
 const SELLER_ONBOARDING_SENT_STATUSES = new Set(['sent', 'in_progress', ...SELLER_ONBOARDING_SUBMITTED_STATUSES])
-const LISTING_CREATED_STATUS_KEYS = new Set(['converted_to_listing', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'])
 const SELLER_ONBOARDING_SENT_STAGE_SIGNALS = new Set([
   'seller_onboarding_sent',
   'onboarding_sent',
@@ -369,11 +368,6 @@ function isListingLive(listing = {}) {
   )
 }
 
-function listingHasCreationLifecycle(listing = {}) {
-  const status = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
-  return isListingLive(listing) || LISTING_CREATED_STATUS_KEYS.has(status)
-}
-
 function hasListingShell({ lead = {}, listing = {} } = {}) {
   if (listing && readListingId(listing)) return listingBelongsToLead(listing, lead) || Boolean(firstPresent(lead?.listingId, lead?.listing_id))
   return Boolean(firstPresent(lead?.listingId, lead?.listing_id, lead?.privateListingId, lead?.private_listing_id))
@@ -381,7 +375,7 @@ function hasListingShell({ lead = {}, listing = {} } = {}) {
 
 function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {}) {
   if (!hasListingShell({ lead, listing })) return false
-  return listingHasCreationLifecycle(listing || lead) || mandateStatus === 'signed'
+  return mandateStatus === 'signed'
 }
 
 function laterSellerJourneyStage(left = null, right = null) {
@@ -606,7 +600,7 @@ export function buildListingJourney(listing = {}) {
 export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null } = {}) {
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus })
-  const listingCreated = hasListingCreated({ lead, listing })
+  const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const live = listingCreated && isListingLive(listing || lead)
   const sellerPortalToken = firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token)
   const canContact = Boolean(firstPresent(contact?.phone, lead?.phone, contact?.email, lead?.email, lead?.sellerPhone, lead?.sellerEmail))

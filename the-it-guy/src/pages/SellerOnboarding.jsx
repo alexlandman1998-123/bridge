@@ -841,6 +841,41 @@ function getPropertyDisclosureMissingItems(disclosure = {}) {
 }
 
 function getPropertyAddressDetails(listing = {}, form = {}) {
+  const formAddressDetails = form?.propertyAddressDetails || form?.property_address_details || {}
+  const hasFormAddressDetails = Boolean(
+    formAddressDetails &&
+      typeof formAddressDetails === 'object' &&
+      !Array.isArray(formAddressDetails) &&
+      Object.keys(formAddressDetails).length,
+  )
+  const hasFlatFormAddress = [
+    'propertyAddress',
+    'propertyAddressSearch',
+    'propertyAddressLine1',
+    'propertyAddressLine2',
+    'addressQuery',
+    'suburb',
+    'city',
+    'province',
+    'postalCode',
+    'municipality',
+    'country',
+  ].some((key) => Object.prototype.hasOwnProperty.call(form || {}, key))
+  const fallbackListing = hasFormAddressDetails || hasFlatFormAddress ? {} : listing
+  const fallbackAddress = hasFormAddressDetails || hasFlatFormAddress
+    ? {}
+    : {
+      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line2: listing?.addressLine2 || listing?.address_line_2 || '',
+      suburb: listing?.suburb || '',
+      city: listing?.city || '',
+      province: listing?.province || '',
+      postalCode: listing?.postalCode || listing?.postal_code || '',
+      municipality: listing?.municipality || listing?.city || '',
+      country: listing?.country || 'South Africa',
+      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+    }
+
   return normalizePropertyAddress(
     {
       propertyAddressDetails: form?.propertyAddressDetails || {},
@@ -856,18 +891,8 @@ function getPropertyAddressDetails(listing = {}, form = {}) {
       municipality: form?.municipality || '',
       country: form?.country || '',
     },
-    listing,
-    {
-      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
-      line2: listing?.addressLine2 || listing?.address_line_2 || '',
-      suburb: listing?.suburb || '',
-      city: listing?.city || '',
-      province: listing?.province || '',
-      postalCode: listing?.postalCode || listing?.postal_code || '',
-      municipality: listing?.municipality || listing?.city || '',
-      country: listing?.country || 'South Africa',
-      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
-    },
+    fallbackListing,
+    fallbackAddress,
   )
 }
 
@@ -946,6 +971,65 @@ function mapGoogleAddressToPropertyAddress(value = null, fallback = {}) {
   }
   nextAddress.formatted = formatPropertyAddress(nextAddress) || String(value.formattedAddress || '').trim()
   return nextAddress
+}
+
+function buildFormWithPropertyAddress(form = {}, address = {}) {
+  const nextAddress = {
+    ...createBlankPropertyAddress(),
+    ...address,
+    country: String(address.country || 'South Africa').trim() || 'South Africa',
+  }
+  nextAddress.formatted = formatPropertyAddress(nextAddress)
+
+  return {
+    ...(form || {}),
+    propertyAddressDetails: nextAddress,
+    propertyAddressSearch: nextAddress.query || '',
+    propertyAddress: nextAddress.formatted || nextAddress.line1 || '',
+    propertyAddressLine1: nextAddress.line1 || '',
+    propertyAddressLine2: nextAddress.line2 || '',
+    suburb: nextAddress.suburb || '',
+    city: nextAddress.city || '',
+    province: nextAddress.province || '',
+    postalCode: nextAddress.postalCode || '',
+    municipality: nextAddress.municipality || '',
+    country: nextAddress.country,
+  }
+}
+
+function resolveProgressionPropertyAddress(listing = {}, form = {}) {
+  const current = getPropertyAddressDetails(listing || {}, form || {})
+  if (current.line1 || !current.query) return current
+
+  const parsed = parsePropertyAddressQuery(current.query, current)
+  const typedLineAddress = parsed || {
+    ...current,
+    line1: current.query,
+    source: 'typed_search',
+  }
+
+  return {
+    ...current,
+    ...typedLineAddress,
+    query: current.query,
+    line1: typedLineAddress.line1 || current.query,
+    country: typedLineAddress.country || current.country || 'South Africa',
+    source: typedLineAddress.source || 'typed_search',
+    formatted: formatPropertyAddress(typedLineAddress),
+  }
+}
+
+function normalizeSellerFormForProgression(form = {}, listing = {}) {
+  return buildFormWithPropertyAddress(form, resolveProgressionPropertyAddress(listing, form))
+}
+
+function getPropertyAddressMissingItems(address = {}) {
+  return [
+    !address.line1 && 'Address line 1',
+    !address.suburb && 'Suburb',
+    !address.city && 'City',
+    !address.province && 'Province',
+  ].filter(Boolean)
 }
 
 function buildBondComplianceSummary(form = {}) {
@@ -2900,25 +2984,33 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         ...partial,
       }
       nextAddress.formatted = formatPropertyAddress(nextAddress)
-      return {
-        ...(previous || {}),
-        propertyAddressDetails: nextAddress,
-        propertyAddressSearch: nextAddress.query || '',
-        propertyAddress: nextAddress.formatted || nextAddress.line1 || '',
-        propertyAddressLine1: nextAddress.line1 || '',
-        propertyAddressLine2: nextAddress.line2 || '',
-        suburb: nextAddress.suburb || '',
-        city: nextAddress.city || '',
-        province: nextAddress.province || '',
-        postalCode: nextAddress.postalCode || '',
-        municipality: nextAddress.municipality || '',
-        country: nextAddress.country || 'South Africa',
-      }
+      return buildFormWithPropertyAddress(previous || {}, nextAddress)
     })
   }
 
   function handlePropertyAddressQueryChange(value) {
-    handlePropertyAddressUpdate({ query: value })
+    setForm((previous) => {
+      const current = getPropertyAddressDetails(listing || {}, previous || {})
+      const parsed = parsePropertyAddressQuery(value, current)
+      const shouldPromoteTypedAddress =
+        !current.line1 ||
+        current.line1 === current.query ||
+        current.source === 'typed_search'
+      const nextAddress = shouldPromoteTypedAddress
+        ? {
+          ...current,
+          ...(parsed || {}),
+          query: value,
+          line1: parsed?.line1 || value,
+          source: 'typed_search',
+        }
+        : {
+          ...current,
+          query: value,
+        }
+      nextAddress.formatted = formatPropertyAddress(nextAddress)
+      return buildFormWithPropertyAddress(previous || {}, nextAddress)
+    })
   }
 
   function handlePropertyAddressSuggestionSelect(suggestion = {}) {
@@ -3256,7 +3348,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   async function saveDraft(nextStep = currentStep, options = {}) {
     if (!form) return false
     const silent = Boolean(options.silent)
-    const signature = options.signature || buildSellerDraftSignature(form, nextStep)
+    const formForDraft = normalizeSellerFormForProgression(form || {}, listing || {})
+    const signature = buildSellerDraftSignature(formForDraft, nextStep)
     const savedAt = new Date().toISOString()
     const offlineBlocksRemoteSave = useDbFirstSellerOnboarding && (
       isOffline ||
@@ -3279,11 +3372,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setDraftSyncStatus('saving')
 
     try {
-      const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: nextStep }, {
+      const canonicalPayload = buildCanonicalPayload({ ...formForDraft, currentStep: nextStep }, {
         draft: true,
         source: 'seller_onboarding_draft',
       })
-      const draftFormData = { ...(form || {}), currentStep: nextStep, ...canonicalPayload }
+      const draftFormData = { ...formForDraft, currentStep: nextStep, ...canonicalPayload }
       const updated = await persistListingUpdate((row) => ({
         ...row,
         sellerOnboarding: {
@@ -3300,6 +3393,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
 
       lastDraftSignatureRef.current = signature
+      setForm((previous) => buildSellerDraftSignature(previous || {}, nextStep) === signature ? previous : formForDraft)
       setLastDraftSavedAt(savedAt)
       setDraftSyncStatus('saved')
 
@@ -3538,13 +3632,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 1) {
-      const address = getPropertyAddressDetails(listing || {}, form || {})
+      const address = resolveProgressionPropertyAddress(listing || {}, form || {})
+      const missingAddressItems = getPropertyAddressMissingItems(address)
 
       if (!form.propertyCategory || !form.propertyType || !form.propertyStructureType) {
         return 'Property category, property type, and structure type are required.'
       }
-      if (!address.line1 || !address.suburb || !address.city || !address.province) {
-        return 'Please complete the property address, suburb, city, and province.'
+      if (missingAddressItems.length) {
+        return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
       }
       const sectionalIdentifier = form.sectionNumber || form.unitNumber
       if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
@@ -3583,6 +3678,151 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const missingDisclosureItems = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
       if (missingDisclosureItems.length) {
         return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
+      }
+    }
+
+    return ''
+  }
+
+  function validateCurrentMobilePane() {
+    if (!form) return 'Form state unavailable.'
+
+    if (currentStep === 0) {
+      const ownershipType = String(form.ownershipType || '')
+      const ownershipBranch = getOwnershipBranch(ownershipType)
+      const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
+      const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
+      const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
+      const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
+      const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
+
+      if (activeMobilePaneIndex === sellerPaneIndexes.ownership) {
+        if (!ownershipType) return 'Please select ownership structure.'
+        if (!form.ownerEntityType) return 'Please select the owner type.'
+        if (!form.ownerStructureType) return 'Please define the owner structure.'
+        if (isForeignOwner && !form.foreignOwnerCountry) return 'Please provide the foreign country or jurisdiction.'
+      }
+
+      if (activeMobilePaneIndex === sellerPaneIndexes.identity) {
+        if (!form.sellerFirstName || !form.sellerSurname || !form.email || !form.phone) {
+          return 'Please complete name, surname, email, and phone before continuing.'
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
+          return 'Please provide a valid email address.'
+        }
+        if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !form.idNumber) {
+          return 'Please provide ID number / passport details.'
+        }
+        if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
+          return 'Spouse name and spouse ID number are required for married ownership.'
+        }
+        if (ownershipBranch === 'company') {
+          if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
+            return 'Company name, registration number, and registered address are required.'
+          }
+          if (!companyDirectors.length || companyDirectors.some((director) => !director.name || !director.surname)) {
+            return 'Please add at least one company director with a name and surname.'
+          }
+          if (!form.authorisedSignatoryName) return 'Primary authorised signatory details are required for a company seller.'
+        }
+        if (ownershipBranch === 'trust') {
+          if (!form.trustName || !form.trustRegistrationNumber || !form.trustRegisteredAddress) {
+            return 'Trust name, registration number, and registered address are required.'
+          }
+          if (!trustTrustees.length || trustTrustees.some((trustee) => !trustee.name || !trustee.surname)) {
+            return 'Please add at least one trustee with a name and surname.'
+          }
+          if (!form.authorisedTrusteeName) return 'Primary trustee details are required for a trust seller.'
+        }
+        if (ownershipBranch === 'deceased_estate' && (!form.executorName || !form.estateReference || !form.executorAuthorityDetails)) {
+          return 'Executor, estate reference, and authority details are required for a deceased estate seller.'
+        }
+        if (ownershipBranch === 'power_of_attorney' && (!form.powerOfAttorneyName || !form.powerOfAttorneyPrincipalName || !form.powerOfAttorneyPrincipalIdNumber || !form.powerOfAttorneyAuthorityDetails)) {
+          return 'Representative, principal, and authority details are required for a power of attorney seller.'
+        }
+        if (ownershipBranch === 'multiple_owners') {
+          if (multipleOwners.length < 2) return 'Please add at least two owners.'
+          const incompleteOwner = multipleOwnerCaptureMode === 'send_onboarding'
+            ? multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.email)
+            : multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+          if (incompleteOwner) {
+            return multipleOwnerCaptureMode === 'send_onboarding'
+              ? 'Each owner needs a name, surname, and email address before onboarding links can be sent.'
+              : 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
+          }
+        }
+      }
+
+      if (activeMobilePaneIndex === sellerPaneIndexes.mandatePreferences) {
+        if (!form.mandateType) return 'Please select the mandate type for this sale.'
+        if (!form.mandateStartDate) return 'Please select the mandate start date.'
+        if (!form.mandateEndDate) return 'Please select the mandate end date.'
+        const mandateStart = new Date(`${form.mandateStartDate}T00:00:00`)
+        const mandateEnd = new Date(`${form.mandateEndDate}T00:00:00`)
+        if (Number.isNaN(mandateStart.getTime()) || Number.isNaN(mandateEnd.getTime()) || mandateEnd <= mandateStart) {
+          return 'Mandate end date must be after the start date.'
+        }
+      }
+    }
+
+    if (currentStep === 1) {
+      if (activeMobilePaneIndex === propertyPaneIndexes.category && !form.propertyCategory) {
+        return 'Please select a property category.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.type && (!form.propertyType || !form.propertyStructureType)) {
+        return 'Please select the property type and legal structure.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.address) {
+        const address = resolveProgressionPropertyAddress(listing || {}, form || {})
+        const missingAddressItems = getPropertyAddressMissingItems(address)
+        if (missingAddressItems.length) {
+          return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
+        }
+      }
+      const sectionalIdentifier = form.sectionNumber || form.unitNumber
+      if (activeMobilePaneIndex === propertyPaneIndexes.sectional && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
+        return 'Scheme name, unit / section number, and managing agent details are required for sectional title properties.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.estate && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
+        return 'Estate / HOA name and managing agent details are required for estate properties.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.commercial) {
+        if (!form.commercialUseDescription) return 'Please describe the commercial or mixed-use operating context.'
+        if (!form.floorSize) return 'Floor size is required for commercial and mixed-use properties.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.land && !form.erfSize) {
+        return 'Land size is required for vacant land and agricultural properties.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.valuation) {
+        if (!form.ratesTaxes) return 'Rates and taxes are required for the property.'
+        if (!form.leviesNotApplicable && !form.levies) return 'Please enter the levy amount, or tick that levies are not applicable.'
+        if (!form.waterBillingType) return 'Please select the water billing type.'
+      }
+      if (activeMobilePaneIndex === propertyPaneIndexes.occupancy) {
+        if (form.existingBond && !form.bondBank) return 'Bond bank is required when there is an existing bond.'
+        if (form.occupancyStatus === 'tenant_occupied' && form.leaseExists && !form.leaseExpiryDate) {
+          return 'Lease expiry date is required when a lease exists.'
+        }
+      }
+    }
+
+    if (currentStep === 2) {
+      const disclosureQuestionGroups = getDisclosureQuestionGroups()
+      if (activeMobilePaneIndex > 0 && activeMobilePaneIndex <= disclosureQuestionGroups.length) {
+        const normalized = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
+          kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+        })
+        const unanswered = disclosureQuestionGroups[activeMobilePaneIndex - 1]
+          .filter((question) => !normalized.responses?.[question.key]?.answer)
+        if (unanswered.length) {
+          return `Please answer all questions in this section before continuing (${unanswered.length} remaining).`
+        }
+      }
+      if (activeMobilePaneIndex === disclosureQuestionGroups.length + 2) {
+        const missingDisclosureItems = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+        if (missingDisclosureItems.length) {
+          return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
+        }
       }
     }
 
@@ -3628,6 +3868,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handleMobilePaneNext() {
     setError('')
     if (hasNextMobilePane) {
+      const validationError = validateCurrentMobilePane()
+      if (validationError) {
+        setError(validationError)
+        scrollSellerOnboardingToTop({ focusAlert: true })
+        return
+      }
       setMobilePaneIndex(activeMobilePaneIndex + 1)
       scrollSellerOnboardingToTop()
       return
@@ -3639,13 +3885,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (!form || submitting) return
     setError('')
     setSuccess('')
+    const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
+    const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
+    const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
     const finalRequiredMissing = [
-      ...sellerMissing.map((item) => `Seller: ${item}`),
-      ...propertyMissing.map((item) => `Property: ${item}`),
-      ...getPropertyDisclosureMissingItems(form.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
-      ...(!form.preferredTransferAttorney?.preferredPartnerId
+      ...[
+        !submissionForm.sellerFirstName && 'Seller name',
+        !submissionForm.sellerSurname && 'Seller surname',
+        !submissionForm.email && 'Email',
+        !submissionForm.phone && 'Phone',
+      ].filter(Boolean).map((item) => `Seller: ${item}`),
+      ...submissionPropertyMissing.map((item) => `Property: ${item}`),
+      ...getPropertyDisclosureMissingItems(submissionForm.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
+      ...(!submissionForm.preferredTransferAttorney?.preferredPartnerId
         ? ['Attorney: Preferred transferring attorney is not configured']
-        : form.preferredTransferAttorneyAccepted
+        : submissionForm.preferredTransferAttorneyAccepted
           ? []
           : ['Attorney: Accept the preferred transferring attorney']),
     ]
@@ -3659,26 +3913,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setSubmitting(true)
 
     try {
-      const disclosureDocument = buildPropertyDisclosureDocument(form.propertyDisclosure || {}, {
+      setForm(submissionForm)
+      const disclosureDocument = buildPropertyDisclosureDocument(submissionForm.propertyDisclosure || {}, {
         sellerId: String(listing?.seller?.id || listing?.sellerId || '').trim(),
         propertyId: String(listing?.propertyId || listing?.property_id || '').trim(),
         listingId: String(listing?.id || '').trim(),
         transactionId: String(listing?.transactionId || listing?.transaction_id || '').trim(),
       })
       const finalForm = {
-        ...(form || {}),
+        ...(submissionForm || {}),
         preferredTransferAttorneyAcceptance: {
-          preferredPartnerId: form.preferredTransferAttorney.preferredPartnerId,
-          companyName: form.preferredTransferAttorney.companyName,
+          preferredPartnerId: submissionForm.preferredTransferAttorney.preferredPartnerId,
+          companyName: submissionForm.preferredTransferAttorney.companyName,
           acceptedAt: new Date().toISOString(),
-          acceptedByName: getSellerDisplayName(listing, form),
+          acceptedByName: getSellerDisplayName(listing, submissionForm),
           source: 'seller_onboarding',
         },
         propertyDisclosure: {
-          ...(form.propertyDisclosure || {}),
+          ...(submissionForm.propertyDisclosure || {}),
           generatedDocument: disclosureDocument,
         },
-        propertyDisclosureStatus: getPropertyDisclosureStatus(form.propertyDisclosure || {}),
+        propertyDisclosureStatus: getPropertyDisclosureStatus(submissionForm.propertyDisclosure || {}),
         currentStep: FINAL_STEP_INDEX,
       }
       const canonicalPayload = buildCanonicalPayload(finalForm, {
@@ -3697,10 +3952,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         const submitted = await submitSellerOnboarding(token, {
           status: 'completed',
           formData: submitFormData,
-          sellerType: String(form?.ownerEntityType || form?.ownershipType || '').trim().toLowerCase() || null,
-          ownershipStructure: String(form?.ownerStructureType || form?.ownershipType || '').trim().toLowerCase() || null,
-          maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
-            ? String(form?.ownershipType || '').trim().toLowerCase()
+          sellerType: String(submissionForm?.ownerEntityType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
+          ownershipStructure: String(submissionForm?.ownerStructureType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
+          maritalRegime: String(submissionForm?.ownershipType || '').trim().toLowerCase().includes('married')
+            ? String(submissionForm?.ownershipType || '').trim().toLowerCase()
             : null,
           skipPortalNotification: true,
         })
@@ -3759,7 +4014,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           console.error('[Seller Onboarding] submitted callback failed', callbackError)
         }
       }
-      void notifySellerOnboardingSubmitted(updated, form)
+      void notifySellerOnboardingSubmitted(updated, submissionForm)
       console.debug('[Seller Onboarding] submit completed', {
         durationMs: Math.round(getRuntimeTimestampMs() - startedAt),
         mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',
@@ -3937,12 +4192,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.preferredTransferAttorney?.preferredPartnerId && 'Preferred transferring attorney is not configured',
     form.preferredTransferAttorney?.preferredPartnerId && !form.preferredTransferAttorneyAccepted && 'Seller acceptance',
   ].filter(Boolean)
-  const propertyMissing = [
-    !propertyAddressDetails.line1 && 'Property address',
-    !propertyAddressDetails.suburb && 'Suburb',
-    !propertyAddressDetails.city && 'City',
-    !propertyAddressDetails.province && 'Province',
-  ].filter(Boolean)
+  const propertyMissing = getPropertyAddressMissingItems(resolveProgressionPropertyAddress(listing || {}, form || {}))
   const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
   const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
   const propertySummaryLabel = showSectionalTitleDetails && showEstateDetails
@@ -5369,40 +5619,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         </div>
         </MobileQuestionFlow>
 
-        <div className="mt-6 hidden flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-7 lg:flex lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 justify-center lg:justify-start">
-            <DraftSaveStatus
-              status={saving ? 'saving' : draftSyncStatus}
-              savedAt={lastDraftSavedAt}
-              fallback="Secure seller onboarding powered by arch9"
-            />
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-            {currentStep > 0 ? (
-              <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
-                <ChevronLeft size={14} />
-                Back
-              </Button>
-            ) : null}
-            {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
-                {saving ? 'Saving...' : 'Save Draft'}
-              </Button>
-            ) : null}
-            {currentStep < FINAL_STEP_INDEX ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105 sm:w-auto">
-                Save & Continue
-                <ChevronRight size={14} />
-              </Button>
-            ) : null}
-            {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105 sm:w-auto">
-                {submitting ? 'Submitting...' : 'Submit Seller Information'}
-                <CheckCircle2 size={14} />
-              </Button>
-            ) : null}
-          </div>
-        </div>
       </section>
       )}
 
@@ -5430,7 +5646,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const sellerMainClass = shouldShowWelcome
     ? 'relative min-h-screen overflow-x-hidden bg-[#02070b] font-sans antialiased text-white'
-    : 'relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10'
+    : 'seller-onboarding-main relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-3 py-3 pb-40 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 sm:pb-36 md:px-6 md:py-6 md:pb-32 lg:px-8 lg:py-8 lg:pb-32'
 
   return (
     <main className={sellerMainClass} style={sellerBrandTheme.cssVars}>
@@ -5445,9 +5661,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {content}
       </div>
       {!shouldShowWelcome && !isCompleted ? (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/95 px-3 py-2 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
         <div className={PAGE_CONTAINER_CLASS}>
-          <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))]">
+          <div className="grid gap-2 pb-[max(4px,env(safe-area-inset-bottom))] md:hidden">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <DraftSaveStatus
                 status={saving ? 'saving' : draftSyncStatus}
@@ -5483,6 +5699,40 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <CheckCircle2 size={14} />
               </Button>
             ) : null}
+          </div>
+          <div className="hidden min-h-[68px] items-center justify-between gap-4 pb-[max(4px,env(safe-area-inset-bottom))] md:flex">
+            <div className="flex min-w-0">
+              <DraftSaveStatus
+                status={saving ? 'saving' : draftSyncStatus}
+                savedAt={lastDraftSavedAt}
+                fallback="Secure seller onboarding powered by arch9"
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {currentStep > 0 ? (
+                <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px]">
+                  <ChevronLeft size={14} />
+                  Back
+                </Button>
+              ) : null}
+              {currentStep < FINAL_STEP_INDEX ? (
+                <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px]">
+                  {saving ? 'Saving...' : 'Save Draft'}
+                </Button>
+              ) : null}
+              {currentStep < FINAL_STEP_INDEX ? (
+                <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+                  Save & Continue
+                  <ChevronRight size={14} />
+                </Button>
+              ) : null}
+              {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
+                <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+                  {submitting ? 'Submitting...' : 'Submit Seller Information'}
+                  <CheckCircle2 size={14} />
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

@@ -6217,6 +6217,17 @@ body.sidebar-compact .ui-main-region {
   margin-inline-start: 0.25rem;
 }
 
+.seller-onboarding-main {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.seller-onboarding-main input,
+.seller-onboarding-main select,
+.seller-onboarding-main textarea {
+  font-size: 16px;
+}
+
 .auth-shell {
   width: min(1160px, 100%);
   height: min(760px, calc(100dvh - clamp(1.44rem, 4vw, 2.4rem)));

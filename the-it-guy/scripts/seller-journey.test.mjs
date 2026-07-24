@@ -137,6 +137,37 @@ const baseLead = {
   const journey = buildSellerJourney({
     lead: {
       ...baseLead,
+      listingId: 'listing-onboarding-active',
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
+      sellerOnboardingToken: 'seller-token-active',
+      sellerOnboardingStatus: 'submitted',
+    },
+    listing: {
+      id: 'listing-onboarding-active',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'active',
+      listingVisibility: 'active_market',
+      mandateStatus: 'not_started',
+      sellerOnboarding: { token: 'seller-token-active', status: 'submitted' },
+    },
+  })
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+  assert.equal(journey.listingCreated, false)
+  assert.equal(journey.listingLive, false)
+  assert.equal(journey.mandateStatus, 'not_started')
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_live').state, 'upcoming')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
       listingId: 'listing-onboarding-sent-polluted',
       stage: 'Onboarding Sent',
       status: 'Onboarding Sent',
