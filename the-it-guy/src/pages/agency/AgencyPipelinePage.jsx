@@ -2446,6 +2446,11 @@ function leadCategoryLabelForView(value = '') {
   return leadCategoryLabel(resolveLeadCategoryView(value))
 }
 
+const LEAD_CATEGORY_VIEW_TABS = [
+  { key: 'buyer', label: 'Buyer Leads', Icon: UserRound },
+  { key: 'seller', label: 'Seller Leads', Icon: Home },
+]
+
 const LEAD_DETAIL_DEFAULTS = {
   firstName: '',
   lastName: '',
@@ -2590,7 +2595,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const routeLeadHydrationRef = useRef('')
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
-  const [leadTypeView, setLeadTypeView] = useState('all')
+  const [leadTypeView, setLeadTypeView] = useState('buyer')
   const [pipelineViewMode, setPipelineViewMode] = useState('table')
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
@@ -6036,7 +6041,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }, { all: 0, buyer: 0, seller: 0, other: 0 })
   }, [records.leads])
 
-  const leadTypeViewTitle = leadTypeView === 'all' ? 'All Leads' : `${leadCategoryLabel(leadTypeView)} Leads`
+  const activeLeadCategoryView = leadTypeView === 'seller' ? 'seller' : 'buyer'
+  const activeLeadCategoryLabel = leadCategoryLabel(activeLeadCategoryView)
+  const leadTypeViewTitle = `${activeLeadCategoryLabel} Leads`
 
   const sellerJourneyMetrics = useMemo(() => getSellerJourneyMetrics({
     leads: records.leads,
@@ -10773,24 +10780,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <Filter size={15} />
                       Filter
                     </button>
-                    <select
-                      className="min-h-[42px] rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#20364c] outline-none transition hover:border-[#c7d6e5]"
-                      value={leadTypeView}
-                      onChange={(event) => setLeadTypeView(event.target.value)}
-                    >
-                      <option value="all">All Leads ({leadCategoryCounts.all})</option>
-                      <option value="buyer">Buyer Leads ({leadCategoryCounts.buyer})</option>
-                      <option value="seller">Seller Leads ({leadCategoryCounts.seller})</option>
-                    </select>
                     <button
                       type="button"
                       className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.18)] transition hover:bg-[#0b223b]"
-                      onClick={() => openLeadForm(leadTypeView)}
+                      onClick={() => openLeadForm(activeLeadCategoryView)}
                     >
                       <Plus size={16} />
-                      Add Lead
+                      Add {activeLeadCategoryLabel} Lead
                     </button>
                   </div>
+                </div>
+                <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-2" role="tablist" aria-label="Lead categories">
+                  {LEAD_CATEGORY_VIEW_TABS.map(({ key, label, Icon }) => {
+                    const isActive = activeLeadCategoryView === key
+                    const count = leadCategoryCounts[key] || 0
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setLeadTypeView(key)}
+                        role="tab"
+                        className={`flex min-h-[48px] items-center justify-between gap-3 rounded-[12px] px-3 text-left transition ${
+                          isActive
+                            ? 'bg-white text-[#102236] shadow-[0_10px_22px_rgba(24,45,68,0.12)]'
+                            : 'text-[#51667f] hover:bg-white/70 hover:text-[#1f4f78]'
+                        }`}
+                        aria-selected={isActive}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[10px] ${
+                            isActive ? 'bg-[#eaf3fb] text-[#1f4f78]' : 'bg-white text-[#7890a8]'
+                          }`}>
+                            <Icon size={15} />
+                          </span>
+                          <span className="truncate text-sm font-semibold">{label}</span>
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                          isActive ? 'bg-[#edf5ff] text-[#1f4f78]' : 'bg-white text-[#60758b]'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
               {!isLeadWorkspaceRoute ? (
@@ -11197,10 +11229,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <button
                           type="button"
                           className="mt-5 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(22,50,71,0.16)]"
-                          onClick={() => openLeadForm(leadTypeView)}
+                          onClick={() => openLeadForm(activeLeadCategoryView)}
                         >
                           <Plus size={15} />
-                          Create Lead
+                          Create {activeLeadCategoryLabel} Lead
                         </button>
                       </div>
                     )}
@@ -14726,39 +14758,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setShowLeadForm(false)
           clearLeadForm()
         }}
-        title="Create Lead"
-        subtitle="Capture a buyer or seller lead and move it straight into your CRM workspace."
+        title={`Create ${leadCategoryLabelForView(leadForm.leadCategory)} Lead`}
+        subtitle={`Capture a ${leadCategoryLabelForView(leadForm.leadCategory).toLowerCase()} lead and move it straight into your CRM workspace.`}
         className="max-w-3xl"
       >
         <form className="grid gap-3" onSubmit={handleCreateLead}>
-          <div className="rounded-[14px] border border-[#dbe4ee] bg-[#f8fbff] p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Lead Type</p>
-            <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
-              <button
-                type="button"
-                onClick={() => updateLeadFormField('leadCategory', 'buyer')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  normalizeLeadCategory(leadForm.leadCategory, 'other') === 'buyer'
-                    ? 'bg-[#1f4f78] text-white'
-                    : 'text-[#51667f] hover:text-[#1f4f78]'
-                }`}
-              >
-                Buyer Lead
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeadForm((previous) => ({ ...previous, leadCategory: 'seller', linkedListing: '' }))}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  normalizeLeadCategory(leadForm.leadCategory, 'other') === 'seller'
-                    ? 'bg-[#1f4f78] text-white'
-                    : 'text-[#51667f] hover:text-[#1f4f78]'
-                }`}
-              >
-                Seller Lead
-              </button>
-            </div>
-          </div>
-
           <div className="grid gap-2 md:grid-cols-2">
             <Field placeholder="Name *" value={leadForm.firstName} onChange={(event) => updateLeadFormField('firstName', event.target.value)} />
             <Field placeholder="Surname *" value={leadForm.lastName} onChange={(event) => updateLeadFormField('lastName', event.target.value)} />
@@ -14830,7 +14834,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               Cancel
             </Button>
             <Button type="submit" disabled={isLeadCreating || !organisationId}>
-              {isLeadCreating ? 'Creating...' : 'Create Lead'}
+              {isLeadCreating ? 'Creating...' : `Create ${leadCategoryLabelForView(leadForm.leadCategory)} Lead`}
             </Button>
           </div>
         </form>

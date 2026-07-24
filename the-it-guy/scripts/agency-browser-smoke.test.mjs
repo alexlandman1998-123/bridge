@@ -242,11 +242,16 @@ async function closeDialog(page) {
 
 async function openCreateLeadModal(page, categoryLabel) {
   const title = `Create ${categoryLabel} Lead`
-  const createButton = page.getByRole('button', { name: /^Create Lead$/ }).first()
-  if (await createButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await createButton.click()
+  const contextualCreateButton = page.getByRole('button', { name: new RegExp(`^(Create|Add) ${categoryLabel} Lead$`) }).first()
+  if (await contextualCreateButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await contextualCreateButton.click()
   } else {
-    await clickByRole(page, 'button', /^Add Lead$/)
+    const createButton = page.getByRole('button', { name: /^Create Lead$/ }).first()
+    if (await createButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await createButton.click()
+    } else {
+      await clickByRole(page, 'button', /^Add Lead$/)
+    }
   }
   if (await page.getByText(title).first().isVisible({ timeout: 1000 }).catch(() => false)) {
     return
@@ -278,7 +283,7 @@ async function runLeadSmoke(page, baseUrl) {
   await fillByPlaceholder(page, 'Area Interest', 'Sandton')
   await closeDialog(page)
 
-  await page.getByRole('button', { name: /^Add Lead$/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
+  await page.getByRole('button', { name: /^Add Buyer Lead$/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
 }
 
 async function runListingSmoke(page, baseUrl) {
