@@ -5831,21 +5831,48 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
   const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
+  const transferAttorneyChoice = normalizeText(formData.transferAttorneyChoice || formData.transfer_attorney_choice || 'preferred').toLowerCase()
   const preferredAttorneyId = getPreferredTransferAttorneyId(formData.preferredTransferAttorney)
-  const acceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(formData.preferredTransferAttorneyAcceptance)
-  if (!preferredAttorneyId) {
-    throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
-  }
-  if (formData.preferredTransferAttorneyAccepted !== true || acceptedAttorneyId !== preferredAttorneyId) {
-    throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
-  }
-  formData.preferredTransferAttorney = {
-    ...(formData.preferredTransferAttorney || {}),
-    preferredPartnerId: preferredAttorneyId,
-  }
-  formData.preferredTransferAttorneyAcceptance = {
-    ...(formData.preferredTransferAttorneyAcceptance || {}),
-    preferredPartnerId: preferredAttorneyId,
+  const nominatedAttorneyName = normalizeText(formData.nominatedTransferAttorneyName || formData.nominated_transfer_attorney_name || formData.nominatedTransferAttorney?.name)
+  const nominatedAttorneyContact = normalizeText(
+    formData.nominatedTransferAttorneyEmail ||
+      formData.nominated_transfer_attorney_email ||
+      formData.nominatedTransferAttorney?.email ||
+      formData.nominatedTransferAttorneyPhone ||
+      formData.nominated_transfer_attorney_phone ||
+      formData.nominatedTransferAttorney?.phone,
+  )
+
+  if (transferAttorneyChoice === 'nominate_other') {
+    if (!nominatedAttorneyName || !nominatedAttorneyContact) {
+      throw new Error('Nominate another transferring attorney before submitting seller onboarding.')
+    }
+    formData.preferredTransferAttorneyAccepted = false
+    formData.preferredTransferAttorneyAcceptance = null
+  } else {
+    if (!preferredAttorneyId) {
+      throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
+    }
+    if (formData.preferredTransferAttorneyAccepted !== true) {
+      throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+    }
+    const acceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(formData.preferredTransferAttorneyAcceptance)
+    if (acceptedAttorneyId && acceptedAttorneyId !== preferredAttorneyId) {
+      throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+    }
+    const acceptedAt = formData.preferredTransferAttorneyAcceptance?.acceptedAt || formData.preferredTransferAttorneyAcceptance?.accepted_at || new Date().toISOString()
+    formData.preferredTransferAttorney = {
+      ...(formData.preferredTransferAttorney || {}),
+      preferredPartnerId: preferredAttorneyId,
+      preferred_partner_id: preferredAttorneyId,
+    }
+    formData.preferredTransferAttorneyAcceptance = {
+      ...(formData.preferredTransferAttorneyAcceptance || {}),
+      preferredPartnerId: preferredAttorneyId,
+      preferred_partner_id: preferredAttorneyId,
+      acceptedAt,
+      accepted_at: acceptedAt,
+    }
   }
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {

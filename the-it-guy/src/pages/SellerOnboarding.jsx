@@ -1207,6 +1207,25 @@ function hasTransferAttorneyAcceptance(form = {}) {
   return Boolean(form.preferredTransferAttorneyAccepted || form.preferredTransferAttorneyAcceptance?.acceptedAt || form.preferredTransferAttorneyAcceptance?.accepted_at)
 }
 
+function buildPreferredTransferAttorneyAcceptance(form = {}, listing = {}) {
+  const preferredPartnerId = getPreferredTransferAttorneyId(form.preferredTransferAttorney)
+  if (!preferredPartnerId) return null
+  const acceptedAt = form.preferredTransferAttorneyAcceptance?.acceptedAt || form.preferredTransferAttorneyAcceptance?.accepted_at || new Date().toISOString()
+  const companyName = getPreferredTransferAttorneyName(form.preferredTransferAttorney)
+  return {
+    ...(form.preferredTransferAttorneyAcceptance || {}),
+    preferredPartnerId,
+    preferred_partner_id: preferredPartnerId,
+    companyName,
+    company_name: companyName,
+    acceptedAt,
+    accepted_at: acceptedAt,
+    acceptedByName: getSellerDisplayName(listing, form),
+    accepted_by_name: getSellerDisplayName(listing, form),
+    source: 'seller_onboarding',
+  }
+}
+
 function getTransferAttorneyMissingItems(form = {}) {
   const choice = getTransferAttorneyChoice(form)
   if (choice === 'nominate_other') {
@@ -3062,11 +3081,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handlePreferredTransferAttorneyAcceptance(checked) {
-    setForm((previous) => ({
-      ...(previous || {}),
-      transferAttorneyChoice: 'preferred',
-      preferredTransferAttorneyAccepted: checked,
-    }))
+    setForm((previous) => {
+      const next = {
+        ...(previous || {}),
+        transferAttorneyChoice: 'preferred',
+        preferredTransferAttorneyAccepted: checked,
+      }
+      return {
+        ...next,
+        preferredTransferAttorneyAcceptance: checked
+          ? buildPreferredTransferAttorneyAcceptance(next, listing || {})
+          : null,
+      }
+    })
   }
 
   function handlePropertyAddressSuggestionSelect(suggestion = {}) {
@@ -3994,13 +4021,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         ...(submissionForm || {}),
         transferAttorneyChoice: getTransferAttorneyChoice(submissionForm),
         preferredTransferAttorneyAcceptance: getTransferAttorneyChoice(submissionForm) === 'preferred'
-          ? {
-            preferredPartnerId: getPreferredTransferAttorneyId(submissionForm.preferredTransferAttorney),
-            companyName: getPreferredTransferAttorneyName(submissionForm.preferredTransferAttorney),
-            acceptedAt: new Date().toISOString(),
-            acceptedByName: getSellerDisplayName(listing, submissionForm),
-            source: 'seller_onboarding',
-          }
+          ? buildPreferredTransferAttorneyAcceptance(submissionForm, listing || {})
           : null,
         nominatedTransferAttorney: getTransferAttorneyChoice(submissionForm) === 'nominate_other'
           ? {
