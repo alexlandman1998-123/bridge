@@ -6499,7 +6499,7 @@ function AgentListingDetail() {
         contextSummary={listingMandateStartSummary}
         initialLegalScenario={listingMandateLegalScenario}
         title="Create Mandate"
-        subtitle="Choose the quickest way to prepare this listing mandate. You can still edit the document before sending it for signature."
+        subtitle="Start from saved listing details, enter the missing fields manually, or send seller onboarding."
         busy={followUpActionId === 'generate_mandate' || followUpActionId === 'send_onboarding'}
         onContinue={(selection) => void handleStartListingMandateDocument(selection)}
       />
@@ -9141,6 +9141,10 @@ function AgentListingDetail() {
                   <Button size="sm" variant="secondary" onClick={handleDownloadSellerProfilePdf}>
                     <FileText size={15} />
                     Download PDF
+                  </Button>
+                  <Button size="sm" onClick={() => setMandateStartOpen(true)}>
+                    <FileText size={15} />
+                    Create Mandate
                   </Button>
                   <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />

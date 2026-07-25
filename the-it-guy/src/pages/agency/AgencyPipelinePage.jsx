@@ -78,6 +78,7 @@ import { activatePrivateListing, createPrivateListing, createPrivateListingActiv
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
+import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
 import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
@@ -91,6 +92,7 @@ import {
   hasMandateSellerOnboardingSubmitted,
   resolveMandateReadiness,
 } from '../../core/documents/mandateReadiness'
+import { resolveOtpReadiness } from '../../core/documents/otpReadiness'
 import {
   documentPacketBelongsToLead,
   formatPacketStatusMeta,
@@ -1973,6 +1975,68 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
 }
 
+function getTemplateDisplayName(template = {}) {
+  return normalizeText(
+    template?.label ||
+      template?.name ||
+      template?.template_label ||
+      template?.templateLabel ||
+      template?.template_key ||
+      template?.templateKey ||
+      template?.id,
+  )
+}
+
+function describeMandateTemplateReadiness(templateResolution = {}, policy = {}) {
+  const template = templateResolution?.template || {}
+  const templateName = getTemplateDisplayName(template) || 'published mandate template'
+  const source = normalizeText(templateResolution?.source).toLowerCase()
+  if (policy?.ok) {
+    const isDefaultFallback = source === 'mandate_scenario_fallback'
+    return {
+      ready: true,
+      status: 'ready',
+      source,
+      templateId: normalizeText(template?.id),
+      value: isDefaultFallback
+        ? `Global/default mandate template ready: ${templateName}`
+        : `Published mandate route ready: ${templateName}`,
+    }
+  }
+  return {
+    ready: false,
+    status: normalizeText(policy?.code) || 'missing',
+    source,
+    templateId: normalizeText(template?.id),
+    value: policy?.message || 'No published mandate template matches this legal route.',
+  }
+}
+
+function describeOtpTemplateReadiness(templateResolution = {}, policy = {}) {
+  const template = templateResolution?.template || {}
+  const templateName = getTemplateDisplayName(template) || 'published OTP template'
+  const source = normalizeText(templateResolution?.source).toLowerCase()
+  if (policy?.ok) {
+    const isDefaultFallback = source === 'legal_scenario_fallback'
+    return {
+      ready: true,
+      status: 'ready',
+      source,
+      templateId: normalizeText(template?.id),
+      value: isDefaultFallback
+        ? `Global/default OTP template ready: ${templateName}`
+        : `Published OTP route ready: ${templateName}`,
+    }
+  }
+  return {
+    ready: false,
+    status: normalizeText(policy?.code) || 'missing',
+    source,
+    templateId: normalizeText(template?.id),
+    value: policy?.message || 'No published OTP template matches this legal route.',
+  }
+}
+
 function getListingSellerFormData(listing = {}) {
   const onboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
     ? listing.sellerOnboarding.formData
@@ -2965,6 +3029,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)
   const [otpQuickStartProgress, setOtpQuickStartProgress] = useState('')
   const [otpQuickStartError, setOtpQuickStartError] = useState('')
+  const [selectedLeadOtpTemplateReadiness, setSelectedLeadOtpTemplateReadiness] = useState(null)
   const [selectedLeadOffers, setSelectedLeadOffers] = useState([])
   const [selectedLeadOfferPortalSessions, setSelectedLeadOfferPortalSessions] = useState([])
   const [selectedLeadOffersLoading, setSelectedLeadOffersLoading] = useState(false)
@@ -2995,6 +3060,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)
   const [mandateQuickStartProgress, setMandateQuickStartProgress] = useState('')
   const [mandateQuickStartError, setMandateQuickStartError] = useState('')
+  const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
   const routeLeadRecord = useMemo(() => {
     if (!routeLeadId) return null
@@ -3559,7 +3625,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!organisationId) return
-    const handler = (event) => {
+    const handler = async (event) => {
       const eventDetail = event?.detail || {}
       const lead = findLeadBySellerOnboardingEvent(records.leads, eventDetail)
       if (!lead?.leadId) {
@@ -3571,32 +3637,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const onboardingStatus = normalizeText(eventDetail?.sellerOnboardingStatus)
       const resolvedOnboardingStatus = onboardingStatus ? onboardingStatus.toLowerCase() : 'completed'
 
-      void updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
-        stage: 'Seller Onboarding Submitted',
-        status: 'Submitted',
-        sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
-        sellerOnboardingToken: submittedToken,
-        listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
-        sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
-        sellerOnboarding: {
-          ...(lead?.sellerOnboarding || {}),
-          status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
-          token: submittedToken || lead?.sellerOnboarding?.token || null,
-          submittedAt,
-        },
-      }).catch((syncError) => {
-        console.warn('[PIPELINE] non-blocking seller onboarding submission sync failed', syncError)
-      })
-      void createAgencyCrmLeadActivity(organisationId, lead.leadId, {
-        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Seller Onboarding Submitted',
-        activityNote: 'Seller onboarding was completed.',
-        outcome: 'Seller onboarding submitted',
-      }, { actor: currentAgent }).catch((syncError) => {
-        console.warn('[PIPELINE] non-blocking seller onboarding activity sync failed', syncError)
-      })
-      setMessage('Seller onboarding submitted. Seller journey updated.')
-      scheduleRecordsReload(organisationId)
+      try {
+        await updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
+          stage: 'Seller Onboarding Submitted',
+          status: 'Submitted',
+          sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+          sellerOnboardingToken: submittedToken,
+          listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
+          sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
+          sellerOnboarding: {
+            ...(lead?.sellerOnboarding || {}),
+            status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+            token: submittedToken || lead?.sellerOnboarding?.token || null,
+            submittedAt,
+          },
+        })
+        await createAgencyCrmLeadActivity(organisationId, lead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Seller Onboarding Submitted',
+          activityNote: 'Seller onboarding was completed.',
+          outcome: 'Seller onboarding submitted',
+        }, { actor: currentAgent })
+        setMessage('Seller onboarding submitted. Seller journey updated.')
+      } catch (syncError) {
+        console.warn('[PIPELINE] seller onboarding submission sync failed', syncError)
+        setError('Seller onboarding was received, but the submitted status could not be saved yet. Refresh and retry if it still shows in progress.')
+      } finally {
+        scheduleRecordsReload(organisationId)
+      }
     }
 
     window.addEventListener('itg:seller-onboarding-submitted', handler)
@@ -4328,7 +4396,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
-  const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
   const selectedLeadOnboardingStatusKey = normalizeSellerOnboardingStatus(
@@ -4352,8 +4419,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           id: organisationId,
           name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
         },
+        templateReadiness: selectedLeadMandateTemplateReadiness,
       }),
-    [currentAgent, organisationId, organisationName, profile, selectedLead, selectedLeadContact],
+    [currentAgent, organisationId, organisationName, profile, selectedLead, selectedLeadContact, selectedLeadMandateTemplateReadiness],
   )
   const selectedLeadHasMandateData = Boolean(
     selectedLeadMandateReadiness.facts.sellerName &&
@@ -4361,8 +4429,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       (selectedLeadMandateReadiness.facts.propertyAddress || selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
   )
   const selectedLeadOnboardingCompleted =
-    selectedLeadStageKey.includes('onboarding completed') ||
-    selectedLeadStageKey.includes('onboarding submitted') ||
     selectedLeadMandateReadiness.facts.sellerOnboardingSubmitted ||
     hasMandateSellerOnboardingSubmitted(selectedLead, selectedLeadOnboardingStatusKey)
   const selectedLeadBuyerOnboardingStatusKey = normalizeText(
@@ -4695,6 +4761,89 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadMandatePrimaryLabel = ['generate', 'edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
     ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey)
     : selectedLeadMandateActionState.label
+  const selectedLeadMandateTemplateBlocking =
+    isSupabaseConfigured &&
+    selectedLeadMandateQuickStartActionKey === 'generate' &&
+    selectedLeadMandateTemplateReadiness?.ready !== true
+  useEffect(() => {
+    if (
+      !selectedLead ||
+      !selectedLeadIsSeller ||
+      !organisationId ||
+      selectedLeadMandateQuickStartActionKey !== 'generate' ||
+      !isSupabaseConfigured
+    ) {
+      setSelectedLeadMandateTemplateReadiness(null)
+      return undefined
+    }
+
+    let cancelled = false
+    setSelectedLeadMandateTemplateReadiness({
+      ready: false,
+      status: 'checking',
+      value: 'Checking published mandate template route...',
+    })
+
+    async function checkMandateTemplateRoute() {
+      try {
+        const templateContextReadiness = resolveMandateReadiness({
+          lead: selectedLead,
+          contact: selectedLeadContact,
+          agent: currentAgent,
+          agency: {
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          organisation: {
+            id: organisationId,
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+        })
+        const mandateData = templateContextReadiness.mandateData
+        const templateResolution = await resolveActiveTemplate({
+          packetType: 'mandate',
+          moduleType: 'residential',
+          organisationId,
+          includeSections: false,
+          context: {
+            organisationId,
+            validationAction: 'generate',
+            mandateData,
+            sourceContext: mandateData?.sourceContext || {},
+          },
+        })
+        const policy = resolveSignableTemplatePolicy({
+          packetType: 'mandate',
+          template: templateResolution?.template || null,
+          resolutionSource: templateResolution?.source || '',
+        })
+        if (cancelled) return
+        setSelectedLeadMandateTemplateReadiness(describeMandateTemplateReadiness(templateResolution, policy))
+      } catch (templateError) {
+        if (cancelled) return
+        console.warn('[MANDATE] template route readiness check failed', templateError)
+        setSelectedLeadMandateTemplateReadiness({
+          ready: false,
+          status: normalizeText(templateError?.code) || 'unavailable',
+          value: templateError?.message || 'The mandate template route could not be checked. Refresh and try again.',
+        })
+      }
+    }
+
+    void checkMandateTemplateRoute()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentAgent,
+    organisationId,
+    organisationName,
+    profile,
+    selectedLead,
+    selectedLeadContact,
+    selectedLeadIsSeller,
+    selectedLeadMandateQuickStartActionKey,
+  ])
   const selectedLeadMandateQuickStartRows = useMemo(
     () => selectedLeadMandateReadiness.rows,
     [selectedLeadMandateReadiness],
@@ -5707,67 +5856,175 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadViewingAppointments,
   ])
 
-  const selectedLeadOtpQuickStartRows = useMemo(() => {
-    const buyerName = normalizeText(offerLinkForm.buyerName || selectedLeadContactName)
-    const buyerEmail = normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email).toLowerCase()
-    const buyerPhone = normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone)
-    const propertyTitle = normalizeText(selectedLeadOfferCentreProperty?.title || selectedLeadPropertyLabel)
-    const propertyPrice = normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel)
+  const selectedLeadOtpReadiness = useMemo(() => {
     const deliveryMode = normalizeClientIntakePreference(offerLinkForm.clientIntakePreference)
     const requiresDigitalContact = deliveryMode === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
-    const agentEmail = normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase()
-    const agentName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
-    return [
-      { key: 'buyer', label: 'Buyer', value: buyerName || 'Missing buyer name', ready: Boolean(buyerName) },
-      {
-        key: 'buyer_contact',
-        label: 'Buyer contact',
-        value: [buyerEmail, buyerPhone].filter(Boolean).join(' / ') || 'Missing buyer email or phone',
-        ready: requiresDigitalContact ? Boolean(isValidEmail(buyerEmail) || buyerPhone) : Boolean(buyerEmail || buyerPhone),
-        optional: !requiresDigitalContact,
+    return resolveOtpReadiness({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      agent: currentAgent,
+      agency: {
+        name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+        legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
       },
-      { key: 'property', label: 'Property', value: propertyTitle || 'Missing property', ready: Boolean(selectedLeadOfferCentreProperty?.id || propertyTitle) },
-      { key: 'price', label: 'Price context', value: propertyPrice || 'Not captured', ready: Boolean(propertyPrice), optional: true },
-      {
-        key: 'viewing',
-        label: 'Viewing context',
-        value: selectedLeadOfferCentreProperty?.viewingStatusLabel || (selectedLeadActiveViewing ? 'Viewing linked' : 'No completed viewing linked'),
-        ready: Boolean(selectedLeadOfferCentreProperty?.viewing || selectedLeadActiveViewing),
-        optional: true,
+      organisation: {
+        id: organisationId,
+        name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
       },
-      { key: 'delivery', label: 'Delivery', value: getClientIntakePreferenceLabel(deliveryMode), ready: Boolean(deliveryMode) },
-      { key: 'agent', label: 'Signing agent', value: agentName || 'Missing agent name', ready: Boolean(agentName) },
-      { key: 'agent_email', label: 'Agent email', value: agentEmail || 'Missing agent email', ready: isValidEmail(agentEmail) },
-    ]
+      property: selectedLeadOfferCentreProperty,
+      transaction: selectedLeadLinkedTransaction,
+      offer: {
+        buyerName: normalizeText(offerLinkForm.buyerName || selectedLeadContactName),
+        buyerEmail: normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email),
+        buyerPhone: normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone),
+        financeType: normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
+        purchasePrice: normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
+      },
+      deliveryMode,
+      deliveryLabel: getClientIntakePreferenceLabel(deliveryMode),
+      requiresDigitalContact,
+      viewingLabel: selectedLeadOfferCentreProperty?.viewingStatusLabel || (selectedLeadActiveViewing ? 'Viewing linked' : 'No completed viewing linked'),
+      hasViewingContext: Boolean(selectedLeadOfferCentreProperty?.viewing || selectedLeadActiveViewing),
+      templateReadiness: selectedLeadOtpTemplateReadiness,
+    })
   }, [
     currentAgent.email,
     currentAgent.fullName,
+    currentAgent.id,
     offerLinkForm.buyerEmail,
     offerLinkForm.buyerName,
     offerLinkForm.buyerPhone,
     offerLinkForm.clientIntakePreference,
+    organisationId,
+    organisationName,
+    profile,
     selectedLead,
     selectedLeadActiveViewing,
     selectedLeadBuyerBudgetLabel,
     selectedLeadContact,
     selectedLeadContactName,
+    selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
-    selectedLeadPropertyLabel,
+    selectedLeadOtpTemplateReadiness,
   ])
+  const selectedLeadOtpQuickStartRows = useMemo(
+    () => selectedLeadOtpReadiness.rows,
+    [selectedLeadOtpReadiness],
+  )
   const selectedLeadOtpQuickStartBlockers = useMemo(
-    () =>
-      selectedLeadOtpQuickStartRows
-        .filter((row) => !row.ready && !row.optional)
-        .map((row) => row.value || `${row.label} is required.`),
-    [selectedLeadOtpQuickStartRows],
+    () => selectedLeadOtpReadiness.blockers,
+    [selectedLeadOtpReadiness],
   )
   const selectedLeadOtpQuickStartWarnings = useMemo(
-    () =>
-      selectedLeadOtpQuickStartRows
-        .filter((row) => !row.ready && row.optional)
-        .map((row) => row.value || `${row.label} is not complete.`),
-    [selectedLeadOtpQuickStartRows],
+    () => selectedLeadOtpReadiness.warnings,
+    [selectedLeadOtpReadiness],
   )
+  const selectedLeadOtpTemplateBlocking =
+    isSupabaseConfigured &&
+    otpQuickStartOpen &&
+    !selectedLeadIsSeller &&
+    selectedLeadOtpTemplateReadiness?.ready !== true
+  useEffect(() => {
+    if (
+      !otpQuickStartOpen ||
+      !selectedLead ||
+      selectedLeadIsSeller ||
+      !organisationId ||
+      !isSupabaseConfigured
+    ) {
+      setSelectedLeadOtpTemplateReadiness(null)
+      return undefined
+    }
+
+    let cancelled = false
+    setSelectedLeadOtpTemplateReadiness({
+      ready: false,
+      status: 'checking',
+      value: 'Checking published OTP template route...',
+    })
+
+    async function checkOtpTemplateRoute() {
+      try {
+        const deliveryMode = normalizeClientIntakePreference(offerLinkForm.clientIntakePreference)
+        const templateContextReadiness = resolveOtpReadiness({
+          lead: selectedLead,
+          contact: selectedLeadContact,
+          agent: currentAgent,
+          agency: {
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          organisation: {
+            id: organisationId,
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          property: selectedLeadOfferCentreProperty,
+          transaction: selectedLeadLinkedTransaction,
+          offer: {
+            buyerName: normalizeText(offerLinkForm.buyerName || selectedLeadContactName),
+            buyerEmail: normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email),
+            buyerPhone: normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone),
+            financeType: normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
+            purchasePrice: normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
+          },
+          deliveryMode,
+          deliveryLabel: getClientIntakePreferenceLabel(deliveryMode),
+          requiresDigitalContact: deliveryMode === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+          viewingLabel: selectedLeadOfferCentreProperty?.viewingStatusLabel || (selectedLeadActiveViewing ? 'Viewing linked' : 'No completed viewing linked'),
+          hasViewingContext: Boolean(selectedLeadOfferCentreProperty?.viewing || selectedLeadActiveViewing),
+        })
+        const templateResolution = await resolveActiveTemplate({
+          packetType: 'otp',
+          moduleType: 'residential',
+          organisationId,
+          includeSections: false,
+          context: {
+            ...templateContextReadiness.templateContext,
+            organisationId,
+            validationAction: 'generate',
+          },
+        })
+        const policy = resolveSignableTemplatePolicy({
+          packetType: 'otp',
+          template: templateResolution?.template || null,
+          resolutionSource: templateResolution?.source || '',
+        })
+        if (cancelled) return
+        setSelectedLeadOtpTemplateReadiness(describeOtpTemplateReadiness(templateResolution, policy))
+      } catch (templateError) {
+        if (cancelled) return
+        console.warn('[OTP] template route readiness check failed', templateError)
+        setSelectedLeadOtpTemplateReadiness({
+          ready: false,
+          status: normalizeText(templateError?.code) || 'unavailable',
+          value: templateError?.message || 'The OTP template route could not be checked. Refresh and try again.',
+        })
+      }
+    }
+
+    void checkOtpTemplateRoute()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentAgent,
+    offerLinkForm.buyerEmail,
+    offerLinkForm.buyerName,
+    offerLinkForm.buyerPhone,
+    offerLinkForm.clientIntakePreference,
+    organisationId,
+    organisationName,
+    otpQuickStartOpen,
+    profile,
+    selectedLead,
+    selectedLeadActiveViewing,
+    selectedLeadBuyerBudgetLabel,
+    selectedLeadContact,
+    selectedLeadContactName,
+    selectedLeadIsSeller,
+    selectedLeadLinkedTransaction,
+    selectedLeadOfferCentreProperty,
+  ])
 
   const selectedLeadOfferReasons = useMemo(() => {
     if (!selectedLeadOfferCentreProperty) return []
@@ -7902,16 +8159,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     onProgress?.('Preparing template…')
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
-      const templateResolution = await resolveActiveTemplate({
-        packetType: 'mandate',
-        moduleType: 'residential',
-        organisationId,
-        context: { organisationId },
-      }).catch((templateError) => {
-        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
-        return null
-      })
-      const template = templateResolution?.template || null
+      let templateResolution = null
+      let template = null
       const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
       const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
@@ -7992,6 +8241,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           warnings: mandatePreflight.warnings,
         })
       }
+      templateResolution = await resolveActiveTemplate({
+        packetType: 'mandate',
+        moduleType: 'residential',
+        organisationId,
+        includeSections: true,
+        context: {
+          organisationId,
+          validationAction: 'generate',
+          mandateData,
+          sourceContext: mandateData?.sourceContext || {},
+        },
+      }).catch((templateError) => {
+        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
+        return null
+      })
+      template = templateResolution?.template || null
 
       const loadExistingPacket = async () => {
         if (mandatePacketId && isUuidLike(mandatePacketId)) {
@@ -8999,6 +9264,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleMandateQuickStartGenerateAndSend() {
     if (!selectedLead || !selectedLeadIsSeller) return
+    if (selectedLeadMandateTemplateBlocking) {
+      setMandateQuickStartError(selectedLeadMandateTemplateReadiness?.value || 'Checking the published mandate template route. Try again in a moment.')
+      return
+    }
     if (selectedLeadMandateQuickStartBlockers.length) {
       setMandateQuickStartError(selectedLeadMandateQuickStartBlockers[0])
       return
@@ -9745,6 +10014,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleOtpQuickStartGenerateAndSend() {
     if (!selectedLead || selectedLeadIsSeller || !organisationId) return
+    if (selectedLeadOtpTemplateBlocking) {
+      setOtpQuickStartError(selectedLeadOtpTemplateReadiness?.value || 'Checking the published OTP template route. Try again in a moment.')
+      return
+    }
     if (selectedLeadOtpQuickStartBlockers.length) {
       setOtpQuickStartError(selectedLeadOtpQuickStartBlockers[0])
       return
@@ -15702,7 +15975,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <Button
                 type="button"
                 onClick={() => void handleOtpQuickStartGenerateAndSend()}
-                disabled={otpQuickStartBusy || selectedLeadOtpQuickStartBlockers.length > 0}
+                disabled={otpQuickStartBusy || selectedLeadOtpTemplateBlocking || selectedLeadOtpQuickStartBlockers.length > 0}
               >
                 {otpQuickStartBusy
                   ? (otpQuickStartProgress || 'Working…')
@@ -15827,7 +16100,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <Button
                 type="button"
                 onClick={() => void handleMandateQuickStartGenerateAndSend()}
-                disabled={mandateQuickStartBusy || selectedLeadMandateQuickStartBlockers.length > 0}
+                disabled={mandateQuickStartBusy || selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length > 0}
               >
                 {mandateQuickStartBusy
                   ? (mandateQuickStartProgress || 'Working…')

@@ -4,6 +4,27 @@ import {
   validateMandateGenerationData,
 } from './mandateDataMapper.js'
 
+const SELLER_CLAUSE_PROFILE_LABELS = Object.freeze({
+  company: 'Company seller',
+  trust: 'Trust seller',
+  individual: 'Individual seller',
+  individual_spouse_consent: 'Individual seller with spouse consent',
+  close_corporation: 'Close corporation seller',
+  party_unknown: 'Seller type not confirmed',
+})
+
+const PROPERTY_CLAUSE_PROFILE_LABELS = Object.freeze({
+  full_title: 'Full-title property',
+  sectional_title: 'Sectional-title property',
+  property_unknown: 'Property title type not confirmed',
+})
+
+const ROUTING_FACT_LABELS = Object.freeze({
+  seller_entity_type: 'seller type',
+  seller_marital_regime: 'seller marital regime',
+  property_title_type: 'property title type',
+})
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -26,6 +47,43 @@ function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
+}
+
+function labelFromKey(value = '') {
+  return normalizeText(value)
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function labelMissingRoutingFact(value = '') {
+  const key = normalizeText(value)
+  return ROUTING_FACT_LABELS[key] || labelFromKey(key).toLowerCase()
+}
+
+function getMandateLegalRouteReadiness(mandateData = {}) {
+  const profile = asPlainObject(mandateData?.scenarioProfile || mandateData?.mandateScenarioProfile)
+  const missingRoutingFacts = Array.isArray(profile.missingRoutingFacts)
+    ? profile.missingRoutingFacts.map(normalizeText).filter(Boolean)
+    : []
+  const sellerProfile = normalizeText(profile.sellerClauseProfile)
+  const propertyProfile = normalizeText(profile.propertyClauseProfile)
+  const routeParts = [
+    SELLER_CLAUSE_PROFILE_LABELS[sellerProfile] || labelFromKey(sellerProfile),
+    PROPERTY_CLAUSE_PROFILE_LABELS[propertyProfile] || labelFromKey(propertyProfile),
+  ].filter(Boolean)
+  const complete = profile.complete === true && missingRoutingFacts.length === 0
+
+  return {
+    complete,
+    scenarioKey: normalizeText(profile.scenarioKey || profile.templateVariant || profile.clauseProfile),
+    sellerClauseProfile: sellerProfile,
+    propertyClauseProfile: propertyProfile,
+    missingRoutingFacts,
+    value: complete
+      ? `Smart route: ${routeParts.join(' + ') || 'Mandate route confirmed'}`
+      : `Smart route needs review: ${missingRoutingFacts.map(labelMissingRoutingFact).join(', ') || 'routing facts missing'}`,
+  }
 }
 
 export function resolveMandateSellerOnboarding(lead = {}) {
@@ -115,10 +173,21 @@ export function resolveMandatePropertyLabel(lead = {}) {
 export function hasMandateSellerOnboardingSubmitted(lead = {}, normalizedStatus = '') {
   const onboarding = resolveMandateSellerOnboarding(lead)
   const status = normalizeText(normalizedStatus || lead?.sellerOnboardingStatus || lead?.seller_onboarding_status || onboarding.status).toLowerCase()
-  return Boolean(
-    ['completed', 'complete', 'submitted', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(status) ||
-      normalizeText(lead?.sellerOnboardingSubmittedAt || lead?.seller_onboarding_submitted_at || lead?.sellerOnboardingCompletedAt || lead?.seller_onboarding_completed_at || onboarding.submittedAt || onboarding.submitted_at || onboarding.completedAt),
+  const onboardingStatus = normalizeText(onboarding.status || onboarding.status_raw || onboarding.onboardingStatus).toLowerCase()
+  const submittedAt = normalizeText(
+    lead?.sellerOnboardingSubmittedAt ||
+      lead?.seller_onboarding_submitted_at ||
+      lead?.sellerOnboardingCompletedAt ||
+      lead?.seller_onboarding_completed_at ||
+      onboarding.submittedAt ||
+      onboarding.submitted_at ||
+      onboarding.completedAt ||
+      onboarding.completed_at,
   )
+  const submittedStatuses = ['completed', 'complete', 'submitted', 'under_review', 'onboarding_completed', 'seller_onboarding_completed']
+  if (submittedAt) return true
+  if (onboardingStatus && !submittedStatuses.includes(onboardingStatus)) return false
+  return submittedStatuses.includes(status) || submittedStatuses.includes(onboardingStatus)
 }
 
 function buildReadinessRow(key, label, value, ready, options = {}) {
@@ -140,6 +209,7 @@ export function resolveMandateReadiness({
   organisation = null,
   privateListing = null,
   transaction = null,
+  templateReadiness = null,
 } = {}) {
   const leadRecord = asPlainObject(lead)
   const contactRecord = asPlainObject(contact)
@@ -193,6 +263,21 @@ export function resolveMandateReadiness({
     transaction: transaction || {},
   })
   const validation = validateMandateGenerationData(mandateData, { action: 'generate' })
+  const legalRouteReadiness = getMandateLegalRouteReadiness(mandateData)
+
+  const templateReadinessRecord = asPlainObject(templateReadiness)
+  const templateRow = templateReadinessRecord.value || templateReadinessRecord.label || templateReadinessRecord.status
+    ? buildReadinessRow(
+        'template_route',
+        'Template route',
+        templateReadinessRecord.value || templateReadinessRecord.label || 'Checking published mandate template',
+        templateReadinessRecord.ready === true,
+        {
+          optional: templateReadinessRecord.optional === true,
+          source: templateReadinessRecord.source,
+        },
+      )
+    : null
 
   const rows = [
     buildReadinessRow('seller', 'Seller', sellerName || 'Missing seller name', Boolean(sellerName)),
@@ -200,6 +285,11 @@ export function resolveMandateReadiness({
     buildReadinessRow('seller_phone', 'Seller phone', sellerPhone || 'Not captured', Boolean(sellerPhone), { optional: true }),
     buildReadinessRow('property', 'Property', propertyLabel || 'Missing property details', Boolean(propertyLabel)),
     buildReadinessRow('asking_price', 'Asking price', askingPrice ? formatCurrency(askingPrice) : 'Not captured', askingPrice > 0, { optional: true }),
+    buildReadinessRow('legal_route', 'Legal route', legalRouteReadiness.value, legalRouteReadiness.complete, {
+      optional: true,
+      source: legalRouteReadiness.scenarioKey,
+    }),
+    templateRow,
     buildReadinessRow('agent', 'Signing agent', agentName || 'Missing agent name', Boolean(agentName)),
     buildReadinessRow('agent_email', 'Agent email', agentEmail || 'Missing agent email', isValidEmail(agentEmail)),
     buildReadinessRow(
@@ -209,7 +299,7 @@ export function resolveMandateReadiness({
       onboardingSubmitted,
       { optional: hasMinimumMandateData },
     ),
-  ]
+  ].filter(Boolean)
   const blockers = rows.filter((row) => !row.ready && !row.optional).map((row) => row.value || `${row.label} is required.`)
   const warnings = rows.filter((row) => !row.ready && row.optional).map((row) => row.value || `${row.label} is not complete.`)
 
@@ -230,6 +320,14 @@ export function resolveMandateReadiness({
       agentEmail,
       sellerOnboardingStatus: onboardingStatusKey,
       sellerOnboardingSubmitted: onboardingSubmitted,
+      legalRouteReady: legalRouteReadiness.complete,
+      legalScenarioKey: legalRouteReadiness.scenarioKey,
+      sellerClauseProfile: legalRouteReadiness.sellerClauseProfile,
+      propertyClauseProfile: legalRouteReadiness.propertyClauseProfile,
+      missingRoutingFacts: legalRouteReadiness.missingRoutingFacts,
+      templateRouteReady: templateReadinessRecord.ready === true,
+      templateRouteStatus: normalizeText(templateReadinessRecord.status),
+      templateRouteSource: normalizeText(templateReadinessRecord.source),
     },
     mandateData,
     validation,

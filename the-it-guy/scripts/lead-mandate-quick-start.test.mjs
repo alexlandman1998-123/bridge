@@ -6,6 +6,8 @@ const readinessSource = await readFile(new URL('../src/core/documents/mandateRea
 const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const { resolveMandateReadiness } = await import('../src/core/documents/mandateReadiness.js')
+const { resolveOtpReadiness } = await import('../src/core/documents/otpReadiness.js')
+const { getSellerJourneyStage } = await import('../src/services/sellerJourneyService.js')
 
 function getFunctionBlock(name) {
   const declarationMatch = source.match(new RegExp(`(?:async\\s+function|function)\\s+${name}\\s*\\(`))
@@ -51,8 +53,16 @@ for (const reference of [
   'function resolveMandateQuickStartIntro',
   'resolveMandateReadiness',
   'hasMandateSellerOnboardingSubmitted',
+  'selectedLeadMandateTemplateReadiness',
+  'selectedLeadMandateTemplateBlocking',
+  'resolveSignableTemplatePolicy',
+  'describeMandateTemplateReadiness',
   'function resolveOtpQuickStartPrimaryLabel',
   'function resolveOtpQuickStartIntro',
+  'resolveOtpReadiness',
+  'selectedLeadOtpTemplateReadiness',
+  'selectedLeadOtpTemplateBlocking',
+  'describeOtpTemplateReadiness',
   'const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)',
   'const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)',
   'const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)',
@@ -119,17 +129,31 @@ assert.ok(
   source.includes('selectedLeadMandateReadiness.warnings'),
   'Mandate confirmation warnings should come from the shared mandate readiness resolver.',
 )
+assert.ok(
+  !source.includes("selectedLeadStageKey.includes('onboarding submitted')"),
+  'Mandate confirmation should not treat lead stage text as submitted onboarding evidence.',
+)
+assert.ok(
+  source.includes('await updateAgencyCrmLeadRecord(organisationId, lead.leadId'),
+  'Seller onboarding submitted events should persist before announcing submitted status.',
+)
 
 for (const reference of [
   'export function resolveMandateReadiness',
   'export function resolveMandatePropertyLabel',
   'export function hasMandateSellerOnboardingSubmitted',
+  'templateReadiness = null',
   'sellerOnboardingSubmittedAt',
   'seller_canonical_facts_json',
   'propertyAddressDetails',
   'mapSellerOnboardingToMandateData',
   'validateMandateGenerationData',
   "buildReadinessRow('property', 'Property'",
+  "buildReadinessRow('legal_route', 'Legal route'",
+  'legalRouteReady',
+  'missingRoutingFacts',
+  'Smart route',
+  "'template_route'",
   "'Seller onboarding'",
 ]) {
   assert.ok(readinessSource.includes(reference), `mandateReadiness should keep ${reference}.`)
@@ -182,6 +206,340 @@ assert.ok(
   'In-progress onboarding should remain visible as a warning.',
 )
 
+const companyRouteReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-company-route',
+    sellerOnboarding: {
+      status: 'completed',
+      submittedAt: '2026-07-25T08:00:00.000Z',
+      formData: {
+        companyName: 'Acme Property Holdings Pty Ltd',
+        propertyAddress: '12 Oak Avenue',
+        propertyType: 'House',
+        askingPrice: 2500000,
+        entityType: 'company',
+        representativeName: 'Jane Director',
+        representativeIdNumber: '8001015009087',
+      },
+    },
+  },
+  contact: {
+    firstName: 'Jane',
+    lastName: 'Director',
+    email: 'jane@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+})
+assert.equal(
+  companyRouteReadiness.rows.find((row) => row.key === 'legal_route')?.ready,
+  true,
+  'Mandate readiness should expose a ready smart legal route when company seller facts are complete.',
+)
+assert.equal(
+  companyRouteReadiness.facts.sellerClauseProfile,
+  'company',
+  'Mandate readiness facts should identify company seller routing.',
+)
+assert.equal(
+  companyRouteReadiness.facts.propertyClauseProfile,
+  'full_title',
+  'Mandate readiness facts should identify full-title property routing.',
+)
+
+const trustRouteReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-trust-route',
+    sellerOnboarding: {
+      status: 'completed',
+      submittedAt: '2026-07-25T08:00:00.000Z',
+      formData: {
+        trustName: 'The Oak Family Trust',
+        propertyAddress: 'Unit 4, Oak Estate',
+        propertyType: 'Apartment',
+        askingPrice: 1750000,
+        entityType: 'trust',
+        trusteeName: 'John Trustee',
+        trusteeIdNumber: '7901015009087',
+      },
+    },
+  },
+  contact: {
+    firstName: 'John',
+    lastName: 'Trustee',
+    email: 'john@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+})
+assert.ok(
+  trustRouteReadiness.rows.find((row) => row.key === 'legal_route')?.value.includes('Trust seller'),
+  'Mandate readiness should explain trust seller routing in the modal row.',
+)
+assert.equal(
+  trustRouteReadiness.facts.sellerClauseProfile,
+  'trust',
+  'Mandate readiness facts should identify trust seller routing.',
+)
+assert.equal(
+  trustRouteReadiness.facts.propertyClauseProfile,
+  'sectional_title',
+  'Mandate readiness facts should identify sectional-title routing.',
+)
+
+const templateReadyReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-template-ready',
+    sellerOnboarding: {
+      status: 'completed',
+      submittedAt: '2026-07-25T08:00:00.000Z',
+      formData: {
+        propertyAddress: '409 Queens Cres',
+        suburb: 'Lynnwood',
+        city: 'Pretoria',
+        askingPrice: 1250000,
+        entityType: 'individual',
+      },
+    },
+  },
+  contact: {
+    firstName: 'Alex',
+    lastName: 'Landman',
+    email: 'alex@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+  templateReadiness: {
+    ready: true,
+    value: 'Published mandate route ready: Standard mandate',
+    source: 'mandate_scenario_variant',
+  },
+})
+assert.equal(
+  templateReadyReadiness.rows.find((row) => row.key === 'template_route')?.ready,
+  true,
+  'Mandate readiness should expose a ready template-route row when the published route exists.',
+)
+assert.equal(
+  templateReadyReadiness.facts.templateRouteReady,
+  true,
+  'Mandate readiness facts should expose template route readiness.',
+)
+
+const templateBlockedReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-template-missing',
+    sellerOnboarding: {
+      status: 'completed',
+      submittedAt: '2026-07-25T08:00:00.000Z',
+      formData: {
+        propertyAddress: '409 Queens Cres',
+        suburb: 'Lynnwood',
+        city: 'Pretoria',
+      },
+    },
+  },
+  contact: {
+    firstName: 'Alex',
+    lastName: 'Landman',
+    email: 'alex@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+  templateReadiness: {
+    ready: false,
+    value: 'No published template matches this document’s legal route.',
+    status: 'TEMPLATE_ROUTE_NOT_PUBLISHED',
+  },
+})
+assert.ok(
+  templateBlockedReadiness.blockers.includes('No published template matches this document’s legal route.'),
+  'Mandate readiness should block generation when the template route is not published.',
+)
+
+const staleSubmittedStageReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-stale-stage',
+    stage: 'Seller Onboarding Submitted',
+    status: 'Submitted',
+    sellerOnboardingStatus: 'completed',
+    sellerOnboardingToken: 'seller-stale-token',
+    sellerOnboarding: {
+      status: 'in_progress',
+      formData: {
+        propertyAddress: '409 Queens Cres',
+        suburb: 'Lynnwood',
+        city: 'Pretoria',
+      },
+    },
+  },
+  contact: {
+    firstName: 'Alex',
+    lastName: 'Landman',
+    email: 'alex@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+})
+assert.equal(
+  staleSubmittedStageReadiness.facts.sellerOnboardingSubmitted,
+  false,
+  'Nested in-progress onboarding should override stale submitted lead status.',
+)
+assert.equal(
+  staleSubmittedStageReadiness.rows.find((row) => row.key === 'onboarding')?.value,
+  'Link sent, not submitted',
+  'Stale submitted lead status should still display the durable in-progress onboarding state.',
+)
+
+const staleSubmittedJourney = getSellerJourneyStage({
+  lead: {
+    leadCategory: 'seller',
+    stage: 'Seller Onboarding Submitted',
+    status: 'Submitted',
+    sellerOnboardingStatus: 'completed',
+    sellerOnboardingToken: 'seller-stale-token',
+    sellerOnboarding: {
+      status: 'in_progress',
+    },
+  },
+  listing: {
+    sellerOnboarding: {
+      status: 'in_progress',
+    },
+  },
+})
+assert.equal(
+  staleSubmittedJourney?.key,
+  'seller_onboarding_sent',
+  'Seller journey should not advance to submitted while the durable onboarding record is in progress.',
+)
+
+assert.match(
+  source,
+  /resolveActiveTemplate\(\{[\s\S]*validationAction: 'generate'[\s\S]*mandateData[\s\S]*resolveSignableTemplatePolicy/,
+  'Mandate quick-start should preflight the published template route with mapped mandate data.',
+)
+assert.match(
+  source,
+  /templateResolution = await resolveActiveTemplate\(\{[\s\S]*validationAction: 'generate'[\s\S]*mandateData/,
+  'Mandate generation should resolve the template route after mandate data is mapped.',
+)
+assert.ok(
+  quickStartBlock.includes('selectedLeadMandateTemplateBlocking'),
+  'Quick start flow should block generation while the template route check is missing or failed.',
+)
+
+const otpIndividualReadiness = resolveOtpReadiness({
+  lead: {
+    leadId: 'lead-otp-ready',
+    buyerName: 'Buyer One',
+    buyerEntityType: 'individual',
+    buyerMaritalStatus: 'single',
+    financeType: 'bond',
+  },
+  contact: {
+    firstName: 'Buyer',
+    lastName: 'One',
+    email: 'buyer@example.test',
+    phone: '0676125009',
+  },
+  property: {
+    id: 'listing-1',
+    title: '12 Oak Avenue',
+    propertyType: 'House',
+    price: 'R 1 500 000',
+    sellerEntityType: 'company',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+  deliveryMode: 'digital_portal',
+  deliveryLabel: 'Digital portal',
+  requiresDigitalContact: true,
+  templateReadiness: {
+    ready: true,
+    value: 'Published OTP route ready: Standard OTP',
+    source: 'legal_scenario_variant',
+  },
+})
+assert.equal(
+  otpIndividualReadiness.rows.find((row) => row.key === 'legal_route')?.ready,
+  true,
+  'OTP readiness should expose a ready legal route when buyer, seller, property, and finance facts are complete.',
+)
+assert.equal(
+  otpIndividualReadiness.rows.find((row) => row.key === 'template_route')?.ready,
+  true,
+  'OTP readiness should expose a ready template-route row when the published route exists.',
+)
+assert.equal(
+  otpIndividualReadiness.facts.buyerClauseProfile,
+  'individual',
+  'OTP readiness facts should identify individual buyer routing.',
+)
+assert.equal(
+  otpIndividualReadiness.facts.sellerClauseProfile,
+  'company',
+  'OTP readiness facts should identify company seller routing.',
+)
+assert.equal(
+  otpIndividualReadiness.facts.financeClauseProfile,
+  'bond',
+  'OTP readiness facts should identify bond finance routing.',
+)
+
+const otpTemplateBlockedReadiness = resolveOtpReadiness({
+  lead: {
+    leadId: 'lead-otp-missing-template',
+    buyerName: 'Buyer Two',
+  },
+  contact: {
+    firstName: 'Buyer',
+    lastName: 'Two',
+    email: 'buyer2@example.test',
+    phone: '0676125009',
+  },
+  property: {
+    id: 'listing-2',
+    title: 'Unit 4, Oak Estate',
+    propertyType: 'Apartment',
+    price: 'R 950 000',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+  deliveryMode: 'digital_portal',
+  deliveryLabel: 'Digital portal',
+  requiresDigitalContact: true,
+  templateReadiness: {
+    ready: false,
+    value: 'No published OTP template matches this legal route.',
+    status: 'TEMPLATE_ROUTE_NOT_PUBLISHED',
+  },
+})
+assert.ok(
+  otpTemplateBlockedReadiness.blockers.includes('No published OTP template matches this legal route.'),
+  'OTP readiness should block generation when the template route is not published.',
+)
+
 const otpActionBlock = getFunctionBlock('handleSelectedLeadOtpPrimaryAction')
 assert.ok(
   otpActionBlock.includes('setOtpQuickStartOpen(true)'),
@@ -191,6 +549,7 @@ assert.ok(
 const otpQuickStartBlock = getFunctionBlock('handleOtpQuickStartGenerateAndSend')
 for (const reference of [
   'selectedLeadOtpQuickStartBlockers.length',
+  'selectedLeadOtpTemplateBlocking',
   'createAndSendOfferLinkForLead',
   "successPrefix: 'OTP '",
   'setOtpQuickStartOpen(false)',

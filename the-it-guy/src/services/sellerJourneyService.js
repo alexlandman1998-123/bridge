@@ -213,6 +213,37 @@ function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function hasSellerOnboardingDurableSubmissionEvidence({ lead = {}, listing = {} } = {}) {
+  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+      ? lead.sellerOnboarding
+      : {}
+  const leadStatus = normalizeKey(lead?.sellerOnboardingStatus || lead?.seller_onboarding_status)
+  const onboardingStatus = normalizeKey(onboarding?.status || onboarding?.onboardingStatus || onboarding?.onboarding_status)
+  const listingStatus = normalizeKey(listing?.seller_onboarding_status || listing?.sellerOnboardingStatus)
+  const submittedAt = firstPresent(
+    lead?.sellerOnboardingSubmittedAt,
+    lead?.seller_onboarding_submitted_at,
+    lead?.sellerOnboardingCompletedAt,
+    lead?.seller_onboarding_completed_at,
+    onboarding?.submittedAt,
+    onboarding?.submitted_at,
+    onboarding?.completedAt,
+    onboarding?.completed_at,
+    listing?.seller_onboarding_submitted_at,
+    listing?.sellerOnboardingSubmittedAt,
+  )
+  if (submittedAt) return true
+  if (onboardingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus)) return false
+  if (listingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(listingStatus)) return false
+  return Boolean(
+    SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus) ||
+      SELLER_ONBOARDING_SUBMITTED_STATUSES.has(listingStatus) ||
+      SELLER_ONBOARDING_SUBMITTED_STATUSES.has(leadStatus),
+  )
+}
+
 function readListingId(listing = {}) {
   return firstPresent(listing?.id, listing?.listingId, listing?.listing_id, listing?.privateListingId, listing?.private_listing_id)
 }
@@ -263,7 +294,8 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       listing?.lifecycle_status,
   )
   const explicitPendingOnboardingStatus = Boolean(status && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status))
-  const listingLifecycleImpliesSubmitted = ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle)
+  const durableSubmitted = hasSellerOnboardingDurableSubmissionEvidence({ lead, listing })
+  const listingLifecycleImpliesSubmitted = durableSubmitted && ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle)
   const sent = Boolean(
     token ||
       SELLER_ONBOARDING_SENT_STATUSES.has(status) ||
@@ -272,8 +304,7 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       ['onboarding_sent', 'onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle),
   )
   const submitted = Boolean(
-    SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status) ||
-      (!explicitPendingOnboardingStatus && leadJourneySignals.some((signal) => SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS.has(signal) || signal === 'submitted' || signal === 'completed')) ||
+    durableSubmitted ||
       listingLifecycleImpliesSubmitted,
   )
   return {
