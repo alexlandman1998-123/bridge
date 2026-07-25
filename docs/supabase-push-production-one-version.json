@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-07-25T19:39:14.090Z",
+  "sourceReport": "docs/supabase-push-phase-5-production-promotion.json",
+  "status": "PROMOTION_MUTATION_SUCCEEDED",
+  "mode": "record_applied",
+  "selected": {
+    "version": "202607250001",
+    "stream": "other",
+    "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+    "productionRoute": "production_no_sql_record_after_smoke",
+    "stagingEvidenceFile": "docs/staging-evidence/202607250001-other.json",
+    "productionEvidenceFile": "docs/production-evidence/202607250001-other.json",
+    "readyForProduction": true
+  },
+  "blockers": [],
+  "commands": [
+    "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250001 --staging-evidence docs/staging-evidence/202607250001-other.json --production-evidence docs/production-evidence/202607250001-other.json --confirm APPLY_TO_PRODUCTION"
+  ],
+  "execution": {
+    "attempted": true,
+    "command": "/usr/local/bin/node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250001 --staging-evidence docs/staging-evidence/202607250001-other.json --production-evidence docs/production-evidence/202607250001-other.json --confirm APPLY_TO_PRODUCTION",
+    "ok": true,
+    "status": 0,
+    "stdout": "Recorded 202607250001 as applied on production project isdowlnollckzvltkasn.\n",
+    "stderr": "",
+    "error": ""
+  }
+}

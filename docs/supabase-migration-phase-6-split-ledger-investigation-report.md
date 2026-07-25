@@ -1,6 +1,6 @@
 # Supabase Migration Phase 6 Split Ledger Investigation Report
 
-Generated: 2026-07-18T21:55:05.002Z
+Generated: 2026-07-25T17:11:40.662Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,30 +12,30 @@ Phase 6 is read-only. It investigates split local/remote migration versions from
 | Field | Value |
 | --- | --- |
 | Status | SPLIT_BASELINE_READY |
-| Local migration files | 487 |
+| Local migration files | 531 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 407 |
-| Split versions investigated | 17 |
-| All static objects live | 15 |
+| Matched rows | 479 |
+| Split versions investigated | 27 |
+| All static objects live | 24 |
 | Partial static objects live | 1 |
-| No static objects extracted | 1 |
-| Remote migration names matched | 17 |
+| No static objects extracted | 2 |
+| Remote migration names matched | 27 |
 | Remote migration names unavailable | 0 |
-| Reviewed split exceptions | 2 |
-| Static objects checked | 228 |
+| Reviewed split exceptions | 3 |
+| Static objects checked | 299 |
 
 ## Module Summary
 
 | Module | Split Rows | All Live | Partial Live | None Live | No Static Objects | Name Matches | Name Unavailable | Reviewed Exceptions | Review Required |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| lead_capture_crm | 7 | 6 | 0 | 0 | 1 | 7 | 0 | 1 | 0 |
+| workspace_platform | 6 | 6 | 0 | 0 | 0 | 6 | 0 | 0 | 0 |
 | commercial | 5 | 5 | 0 | 0 | 0 | 5 | 0 | 0 | 0 |
-| lead_capture_crm | 4 | 4 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
-| workspace_platform | 4 | 4 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
-| bond_finance | 1 | 0 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |
+| bond_finance | 3 | 2 | 0 | 0 | 1 | 3 | 0 | 1 | 0 |
+| transaction_network | 3 | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
+| other | 2 | 1 | 1 | 0 | 0 | 2 | 0 | 1 | 0 |
 | notification_automation | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
-| other | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 1 | 0 |
-| transaction_network | 1 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
 
 ## Object Review Required
 
@@ -51,6 +51,7 @@ No split rows required manual SQL review because of empty static object extracti
 | --- | --- | --- | --- |
 | 202606050001 | bond_finance | confirmed_live_manual_sql | All five bond_banks relationship columns added by the single ALTER TABLE statement are live. |
 | 202606090010 | other | confirmed_superseded_split | The three absent private_listings policies were superseded by the applied scoped policies in 202607090006 and 202607130005. |
+| 202607230009 | lead_capture_crm | confirmed_live_manual_sql | Live function definition for bridge_convert_attorney_lead_to_matter contains the cancellation_attorney role gate, bridge_attorney_member_assignment_eligible check, and cancellation-matters function comment. |
 
 ## Metadata Name Drift
 
@@ -77,13 +78,23 @@ No split row exposed a remote migration name that differed from the local file n
 | 202606110005 | commercial | 202606110005_commercial_crm_foundation_phase3.sql | commercial_crm_foundation_phase3 | remote_name_matches | all_live | 32/32 | 53 | confirmed_live_split |
 | 202606110006 | commercial | 202606110006_commercial_supply_side_phase4.sql | commercial_supply_side_phase4 | remote_name_matches | all_live | 3/3 | 12 | confirmed_live_split |
 | 202606110007 | commercial | 202606110007_commercial_brokerage_os_phase5.sql | commercial_brokerage_os_phase5 | remote_name_matches | all_live | 9/9 | 17 | confirmed_live_split |
+| 202607220015 | bond_finance | 202607220015_bond_bank_outcomes_and_registration_handoff.sql | bond_bank_outcomes_and_registration_handoff | remote_name_matches | all_live | 5/5 | 13 | confirmed_live_split |
+| 202607230002 | lead_capture_crm | 202607230002_seller_transaction_tracking_continuity.sql | seller_transaction_tracking_continuity | remote_name_matches | all_live | 6/6 | 17 | confirmed_live_split |
+| 202607230003 | lead_capture_crm | 202607230003_seller_transaction_tracking_phase4_compatibility.sql | seller_transaction_tracking_phase4_compatibility | remote_name_matches | all_live | 5/5 | 10 | confirmed_live_split |
+| 202607230006 | workspace_platform | 202607230006_buyer_onboarding_portal_token_handoff.sql | buyer_onboarding_portal_token_handoff | remote_name_matches | all_live | 4/4 | 14 | confirmed_live_split |
+| 202607230007 | workspace_platform | 202607230007_buyer_onboarding_snapshot_token_fence.sql | buyer_onboarding_snapshot_token_fence | remote_name_matches | all_live | 1/1 | 8 | confirmed_live_split |
+| 202607230008 | transaction_network | 202607230008_attorney_three_lane_transaction_spine.sql | attorney_three_lane_transaction_spine | remote_name_matches | all_live | 15/15 | 39 | confirmed_live_split |
+| 202607230009 | lead_capture_crm | 202607230009_attorney_lead_cancellation_qualification.sql | attorney_lead_cancellation_qualification | remote_name_matches | no_static_objects | n/a | 5 | confirmed_live_manual_sql |
+| 202607230010 | transaction_network | 202607230010_transaction_progress_scheduler_proof_phase8.sql | transaction_progress_scheduler_proof_phase8 | remote_name_matches | all_live | 6/6 | 20 | confirmed_live_split |
+| 202607230011 | bond_finance | 202607230011_bond_bank_outcome_originator_rls_repair.sql | bond_bank_outcome_originator_rls_repair | remote_name_matches | all_live | 3/3 | 11 | confirmed_live_split |
+| 202607230012 | other | 202607230012_portal_storage_policy_spine.sql | portal_storage_policy_spine | remote_name_matches | all_live | 26/26 | 76 | confirmed_live_split |
 
 ## Object Extraction
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 228 |
-| Catalog rows returned | 228 |
+| Static objects extracted | 299 |
+| Catalog rows returned | 299 |
 | Object check command | ok |
 | History metadata command | ok |
 
@@ -92,8 +103,8 @@ No split row exposed a remote migration name that differed from the local file n
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-history-77623.sql --output-format json | ok | Initialising login role... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-object-checks-77623.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-history-73820.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase6-object-checks-73820.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

@@ -1,0 +1,638 @@
+{
+  "generatedAt": "2026-07-25T19:10:00.590Z",
+  "sourcePlan": "docs/supabase-push-phase-2-stream-plans.json",
+  "inputRows": 25,
+  "dedupedRows": 4,
+  "rows": [
+    {
+      "version": "202607220001",
+      "stream": "legal_document_runtime",
+      "dependsOn": "stream preflight",
+      "module": "canonical_documents",
+      "file": "202607220001_document_workspace_status_phase2.sql",
+      "objectStatus": "all_live",
+      "liveCount": 1,
+      "objectCount": 1,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied.",
+      "route": "repair_only",
+      "stage": "staging_ledger_only",
+      "blocked": false,
+      "sqlAllowed": false,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220001 --evidence docs/staging-evidence/202607220001-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220001-legal_document_runtime.json",
+      "notes": [
+        "Do not apply SQL; expected objects are already live.",
+        "Run module smoke tests first.",
+        "Evidence must use sqlApplied=false."
+      ]
+    },
+    {
+      "version": "202607220002",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220001",
+      "module": "commercial",
+      "file": "202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 15,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220002 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220002 --evidence docs/staging-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220002-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220003",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220002",
+      "module": "canonical_documents",
+      "file": "202607220003_signable_packet_sent_phase1.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 2,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220003 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220003 --evidence docs/staging-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220003-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607250002",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220003",
+      "module": "canonical_documents",
+      "file": "202607250002_corrective_canonical_otp_signing_phase2.sql",
+      "objectStatus": "partial_live",
+      "liveCount": 3,
+      "objectCount": 11,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+      "originalVersion": "202607220004",
+      "originalFile": "202607220004_canonical_otp_signing_phase2.sql",
+      "originalAction": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202607220004-legal_document_runtime.json",
+      "correctiveMigrationFile": "supabase/migrations/202607250002_corrective_canonical_otp_signing_phase2.sql",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250002 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250002 --evidence docs/staging-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250002-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220005",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220004",
+      "module": "canonical_documents",
+      "file": "202607220005_canonical_otp_seal_atomic_recovery.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220005 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220005 --evidence docs/staging-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220005-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607250003",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220005",
+      "module": "other",
+      "file": "202607250003_corrective_visual_signature_evidence.sql",
+      "objectStatus": "partial_live",
+      "liveCount": 2,
+      "objectCount": 5,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+      "originalVersion": "202607220006",
+      "originalFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "originalAction": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202607220006-legal_document_runtime.json",
+      "correctiveMigrationFile": "supabase/migrations/202607250003_corrective_visual_signature_evidence.sql",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250003 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250003 --evidence docs/staging-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250003-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607250004",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220006",
+      "module": "other",
+      "file": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+      "objectStatus": "partial_live",
+      "liveCount": 3,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+      "originalVersion": "202607220007",
+      "originalFile": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "originalAction": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202607220007-legal_document_runtime.json",
+      "correctiveMigrationFile": "supabase/migrations/202607250004_corrective_legal_runtime_metadata_immutability.sql",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250004 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250004 --evidence docs/staging-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250004-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220008",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220007",
+      "module": "canonical_documents",
+      "file": "202607220008_phase4_legal_template_release_integrity.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 6,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220008 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220008 --evidence docs/staging-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220008-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220009",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220008",
+      "module": "other",
+      "file": "202607220009_phase4_legal_release_provenance.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220009 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220009 --evidence docs/staging-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220009-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220010",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220009",
+      "module": "lead_capture_crm",
+      "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+      "objectStatus": "all_live",
+      "liveCount": 5,
+      "objectCount": 5,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied.",
+      "route": "repair_only",
+      "stage": "staging_ledger_only",
+      "blocked": false,
+      "sqlAllowed": false,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220010 --evidence docs/staging-evidence/202607220010-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220010-legal_document_runtime.json",
+      "notes": [
+        "Do not apply SQL; expected objects are already live.",
+        "Run module smoke tests first.",
+        "Evidence must use sqlApplied=false."
+      ]
+    },
+    {
+      "version": "202607220011",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220010",
+      "module": "other",
+      "file": "202607220011_phase4_legal_release_persistence_fence.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 5,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220011 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220011 --evidence docs/staging-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220011-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220012",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220011",
+      "module": "canonical_documents",
+      "file": "202607220012_phase5_legal_document_health_incident_integrity.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 7,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220012 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220012 --evidence docs/staging-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220012-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607230004",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607220012",
+      "module": "other",
+      "file": "202607230004_phase5_pilot_release_trace_integrity.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 10,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607230004 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230004 --evidence docs/staging-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607230004-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607230005",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607230004",
+      "module": "other",
+      "file": "202607230005_phase6_successor_release_epoch_integrity.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 26,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607230005 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230005 --evidence docs/staging-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607230005-legal_document_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607250006",
+      "stream": "legal_document_runtime",
+      "dependsOn": "202607230005",
+      "module": "commercial",
+      "file": "202607250006_corrective_global_mandate_platform_default_revision.sql",
+      "objectStatus": "no_static_objects",
+      "liveCount": 0,
+      "objectCount": 0,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+      "originalAction": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202607240002-legal_document_runtime.json",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250006 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250006 --evidence docs/staging-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250006-legal_document_runtime.json",
+      "notes": [
+        "Corrective migration approved in docs/non-runnable-clearance/202607240002-legal_document_runtime.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/202607250006_corrective_global_mandate_platform_default_revision.sql."
+      ],
+      "originalVersion": "202607240002",
+      "originalFile": "202607240002_global_mandate_platform_default_phase2.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "correctiveMigrationFile": "supabase/migrations/202607250006_corrective_global_mandate_platform_default_revision.sql"
+    },
+    {
+      "version": "202607250005",
+      "stream": "seller_transaction_continuity",
+      "dependsOn": "stream preflight",
+      "module": "lead_capture_crm",
+      "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+      "objectStatus": "partial_live",
+      "liveCount": 3,
+      "objectCount": 17,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+      "originalVersion": "202607230001",
+      "originalFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "originalAction": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202607230001-seller_transaction_continuity.json",
+      "correctiveMigrationFile": "supabase/migrations/202607250005_corrective_seller_document_transaction_continuity.sql",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250005 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250005 --evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250005-seller_transaction_continuity.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220013",
+      "stream": "bond_finance_runtime",
+      "dependsOn": "stream preflight",
+      "module": "bond_finance",
+      "file": "202607220013_bond_application_consent_and_finance_document_audit.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 4,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220013 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220013 --evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220013-bond_finance_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607220014",
+      "stream": "bond_finance_runtime",
+      "dependsOn": "202607220013",
+      "module": "bond_finance",
+      "file": "202607220014_bond_partner_referral_terms_and_ledger.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 8,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220014 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220014 --evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607220014-bond_finance_runtime.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607230013",
+      "stream": "attorney_workflow_runtime",
+      "dependsOn": "stream preflight",
+      "module": "attorney",
+      "file": "202607230013_attorney_workflow_step_completion_advance.sql",
+      "objectStatus": "all_live",
+      "liveCount": 2,
+      "objectCount": 2,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied.",
+      "route": "repair_only",
+      "stage": "staging_ledger_only",
+      "blocked": false,
+      "sqlAllowed": false,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230013 --evidence docs/staging-evidence/202607230013-attorney_workflow_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607230013-attorney_workflow_runtime.json",
+      "notes": [
+        "Do not apply SQL; expected objects are already live.",
+        "Run module smoke tests first.",
+        "Evidence must use sqlApplied=false."
+      ]
+    },
+    {
+      "version": "202607240001",
+      "stream": "workspace_profile_management",
+      "dependsOn": "stream preflight",
+      "module": "workspace_platform",
+      "file": "202607240001_agent_profile_management_rpc.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607240001 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607240001 --evidence docs/staging-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607240001-workspace_profile_management.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202607250001",
+      "stream": "other",
+      "dependsOn": "stream preflight",
+      "module": "lead_capture_crm",
+      "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+      "objectStatus": "all_live",
+      "liveCount": 1,
+      "objectCount": 1,
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied.",
+      "route": "repair_only",
+      "stage": "staging_ledger_only",
+      "blocked": false,
+      "sqlAllowed": false,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250001 --evidence docs/staging-evidence/202607250001-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607250001-other.json",
+      "notes": [
+        "Do not apply SQL; expected objects are already live.",
+        "Run module smoke tests first.",
+        "Evidence must use sqlApplied=false."
+      ]
+    }
+  ],
+  "actionCounts": {
+    "repair_only_after_smoke": 4,
+    "apply_original_after_dependency_check": 17
+  },
+  "routeCounts": {
+    "repair_only": 4,
+    "apply_original": 17
+  },
+  "streamCounts": {
+    "legal_document_runtime": 15,
+    "seller_transaction_continuity": 1,
+    "bond_finance_runtime": 2,
+    "attorney_workflow_runtime": 1,
+    "workspace_profile_management": 1,
+    "other": 1
+  }
+}

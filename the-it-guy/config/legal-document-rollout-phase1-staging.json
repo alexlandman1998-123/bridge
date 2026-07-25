@@ -4,50 +4,254 @@
   "contract": "legal-document-staging-release-v2",
   "status": "pending_staging",
   "environment": {
-    "productionProjectRef": null,
-    "stagingProjectRef": null,
-    "stagingOrigin": null
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+    "stagingOrigin": "https://vaszuxjeoajeuhlcnzzf.supabase.co"
   },
   "source": {
-    "phase0ManifestDigest": null,
-    "commitSha": null,
-    "packageLockSha256": null,
-    "b1ManifestDigest": null,
-    "b1EvidenceProjectRef": null,
+    "phase0ManifestDigest": "sha256:0cdefc7502003c7c1a3b4484194c521d14ef4f5246171780c6bbdf267134c984",
+    "commitSha": "ade2531ac3055dd49b1b3ad8bf04cd163a98e196",
+    "packageLockSha256": "sha256:7e58f147a8ff1020602b10143cc88d682ac81fd9edd9dd9e3f2452ed0619228d",
+    "b1ManifestDigest": "sha256:1b5f6a0dc6cfbd2cf3f42643fbe84c7f8580dd928970eb432e1035893391c1da",
+    "b1EvidenceProjectRef": "vaszuxjeoajeuhlcnzzf",
     "pendingReceiptManifestDigest": null
   },
   "artifacts": {
-    "migrations": [],
-    "migrationSetDigest": null,
-    "applicationManifestSha256": null,
-    "applicationManifestCoverageDigest": null,
-    "applicationManifestLinkedProjectRef": null,
-    "edgeFunctions": [],
-    "edgeFunctionSetDigest": null,
-    "edgeFunctionDeployUnitSha256": null,
-    "sharedRuntimeSha256": null,
-    "sharedRuntimeFileCount": null,
-    "sharedRuntimeRequiredFileSha256": null,
-    "configTomlSha256": null,
-    "databaseRunnerSourceSha256": null,
-    "databaseRunnerProtectedProjectRef": null,
-    "databaseRunnerTargetContract": null,
-    "databaseRunnerCliVersion": null,
+    "migrations": [
+      {
+        "version": "202607220002",
+        "file": "202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+        "dependsOn": "reviewed_legal_runtime_preflight",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+        "sha256": "sha256:b15b7da63cb1eeb4a7fd4825d5a1dfe0a218532a05bdb8b601782efadc8dfafc",
+        "bytes": 25387
+      },
+      {
+        "version": "202607220003",
+        "file": "202607220003_signable_packet_sent_phase1.sql",
+        "dependsOn": "202607220002",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220003_signable_packet_sent_phase1.sql",
+        "sha256": "sha256:24e9e25c10938a4751098fa0214692629c0e529741946545f75767c4139866a4",
+        "bytes": 1878
+      },
+      {
+        "version": "202607220004",
+        "file": "202607220004_canonical_otp_signing_phase2.sql",
+        "dependsOn": "202607220003",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220004_canonical_otp_signing_phase2.sql",
+        "sha256": "sha256:a4f8d82fc007d56a29c8a55f16004aa1826c3fbca9220f403f526dbb5077b72b",
+        "bytes": 41939
+      },
+      {
+        "version": "202607220005",
+        "file": "202607220005_canonical_otp_seal_atomic_recovery.sql",
+        "dependsOn": "202607220004",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220005_canonical_otp_seal_atomic_recovery.sql",
+        "sha256": "sha256:c19cb22096671fc0289abed7bc97cbebd0034f15cb70c4c39bbe4cfe40ec5110",
+        "bytes": 3684
+      },
+      {
+        "version": "202607220006",
+        "file": "202607220006_phase3_visual_signature_evidence.sql",
+        "dependsOn": "202607220005",
+        "deployCanonicalFinaliserBefore": true,
+        "path": "supabase/migrations/202607220006_phase3_visual_signature_evidence.sql",
+        "sha256": "sha256:16bed991515793f8199ff839d23f83311fead6426a501a1c6bb94bb2135f3e08",
+        "bytes": 21403
+      },
+      {
+        "version": "202607220007",
+        "file": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+        "dependsOn": "202607220006",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220007_phase4_legal_runtime_metadata_immutability.sql",
+        "sha256": "sha256:f2a85f8a62622816f37121e109f5c5a89b040f9678be8bd6fb67c14adc8f19f5",
+        "bytes": 17710
+      },
+      {
+        "version": "202607220008",
+        "file": "202607220008_phase4_legal_template_release_integrity.sql",
+        "dependsOn": "202607220007",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220008_phase4_legal_template_release_integrity.sql",
+        "sha256": "sha256:3e5ead0c4a6249606fe198127006b7a77f4c945e19808c449e59d92fabc4b91e",
+        "bytes": 7704
+      },
+      {
+        "version": "202607220009",
+        "file": "202607220009_phase4_legal_release_provenance.sql",
+        "dependsOn": "202607220008",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220009_phase4_legal_release_provenance.sql",
+        "sha256": "sha256:f9749097f2c10d39de8f931b23ea1c7feb74b8f38562fb728e96f0e055543fb0",
+        "bytes": 6083
+      },
+      {
+        "version": "202607220010",
+        "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+        "dependsOn": "202607220009",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220010_phase4_seller_portal_final_artifact_fence.sql",
+        "sha256": "sha256:7a74a6661084c79455024cbb2122c47a8f07f927c3c6c96d0b34fbf648f5645b",
+        "bytes": 21842
+      },
+      {
+        "version": "202607220011",
+        "file": "202607220011_phase4_legal_release_persistence_fence.sql",
+        "dependsOn": "202607220010",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220011_phase4_legal_release_persistence_fence.sql",
+        "sha256": "sha256:8192403c79fc3e7f9959a15306b23c473020a604eb0dea42e46b2a3d816223b5",
+        "bytes": 14178
+      },
+      {
+        "version": "202607220012",
+        "file": "202607220012_phase5_legal_document_health_incident_integrity.sql",
+        "dependsOn": "202607220011",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607220012_phase5_legal_document_health_incident_integrity.sql",
+        "sha256": "sha256:bcba312a4f98d473061bb9d655477bee7d9515f6fca0dc76eee716cea855da9c",
+        "bytes": 12068
+      },
+      {
+        "version": "202607230004",
+        "file": "202607230004_phase5_pilot_release_trace_integrity.sql",
+        "dependsOn": "202607220012",
+        "deployCanonicalFinaliserBefore": false,
+        "path": "supabase/migrations/202607230004_phase5_pilot_release_trace_integrity.sql",
+        "sha256": "sha256:9cd035f05e3c87fd92340dc4ae20abcb4d765dc3586902fbf4a2b4b2ccdf1772",
+        "bytes": 20716
+      }
+    ],
+    "migrationSetDigest": "sha256:851928a665f981ae38568e722534e149b64e8a88b6abd091c17d1fc15e81e5d2",
+    "applicationManifestSha256": "sha256:03bf29015021a1b37643b79eec0ee5b28b58313b09b120653068fec3e2bc8555",
+    "applicationManifestCoverageDigest": "sha256:9935ad8ac9fbdcaa5c247ac243c16fe08cfe65019ecf06a99cf6399f71e9b0a9",
+    "applicationManifestLinkedProjectRef": "isdowlnollckzvltkasn",
+    "edgeFunctions": [
+      {
+        "name": "generate-mandate",
+        "sourceTreeSha256": "sha256:e92185894162c1d24d7e6679f3c2485ecf2fac4a97f70d73054c5e8930219f8a",
+        "sourceFileCount": 4,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "generate-otp",
+        "sourceTreeSha256": "sha256:5a3652b928c8de93b2e057f93578632309c322ec564c8719f8f66dc5be01552d",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "generate-final-signed-document",
+        "sourceTreeSha256": "sha256:c06fcd99197933f5f0c8f146118beae5d4391147fa2f02cd2138a5817da6ee09",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "generate-final-signed-otp",
+        "sourceTreeSha256": "sha256:a44d8c76da8c9bbd5d2d44e43f22005936d38e973621c538a32748b29f2043fc",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": false
+      },
+      {
+        "name": "resolve-signer-token",
+        "sourceTreeSha256": "sha256:ee4ec525a1604d13500b7db2dc1f61375d91f245aca46ac01d7417dd2fd4bf44",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "signer-signing-action",
+        "sourceTreeSha256": "sha256:284231639ab329dbfed24bf59e627f9664c64fb1f0ce5fe9c26d21c92ca4a22a",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "send-mandate-signing-email",
+        "sourceTreeSha256": "sha256:d4c05547f651c39ed7a3ea86c215bca3152a04e2bf62be3a6f8a1d1520a17924",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "send-email",
+        "sourceTreeSha256": "sha256:3aa9b471c82d2ea8ad01bf82d7254ece081debfc948915519fa2d031e42998e4",
+        "sourceFileCount": 61,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "dispatch-final-signed-document",
+        "sourceTreeSha256": "sha256:8103f81cf622952f27924d7728ac1ce3fd511a1cbbc303c59e94f37b43f7da45",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": false
+      },
+      {
+        "name": "retry-final-document-completion",
+        "sourceTreeSha256": "sha256:a9edc3a9471b9114935ba966dd28a7050665ad6f9d42d66888172a8baefaf118",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "resolve-final-signed-document-access",
+        "sourceTreeSha256": "sha256:dd77d847d94ebcbd3227d49697a7ebc2754db4652036b6a2574548abf5ffdbcb",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "legal-document-watchdog",
+        "sourceTreeSha256": "sha256:32a3494258898551ce162af41f272f558a9d9c8c05fd523715e69a3dd3f6fe7a",
+        "sourceFileCount": 3,
+        "configStanzaDeclared": true
+      },
+      {
+        "name": "document-conversion-health",
+        "sourceTreeSha256": "sha256:75bef1443bb8bde6996c8aafd2bac92f0d240827972f6e862cafb806fac3a4ff",
+        "sourceFileCount": 2,
+        "configStanzaDeclared": true
+      }
+    ],
+    "edgeFunctionSetDigest": "sha256:f6905d618e4bf2bce9ef975c70263774cda9db09399883267188bb7ec2fcdc66",
+    "edgeFunctionDeployUnitSha256": "sha256:d439bc4db66ce33d49d5874168e58990021c6f1c2917d3bfd596c75b8aa45a20",
+    "sharedRuntimeSha256": "sha256:7f7a7d29cf0dbe620e1cd728c5540b17ba14fed7c1a5cca785ab059ac4b73ace",
+    "sharedRuntimeFileCount": 6,
+    "sharedRuntimeRequiredFileSha256": "sha256:cb9fad569b32ec851c63b9bf20c5779cd15fad6a203de6cdb354ab1d9b543153",
+    "configTomlSha256": "sha256:d723903da683286db1cea2d95cdecdb8b2a54c1e3e0597cebf3189d346c1ec3a",
+    "databaseRunnerSourceSha256": "sha256:7dac67145eedb113890c3e965b47c9ba5141b8ffe689b2440506b018b6a1f1e3",
+    "databaseRunnerProtectedProjectRef": "isdowlnollckzvltkasn",
+    "databaseRunnerTargetContract": "unverified",
+    "databaseRunnerCliVersion": "2.109.1",
     "frontend": {
-      "root": null,
-      "buildCommand": null,
-      "vercelBuildCommand": null,
-      "vercelConfigSha256": null,
-      "packageJsonSha256": null,
-      "packageLockSha256": null,
-      "viteConfigSha256": null,
-      "sourceTreeSha256": null,
-      "sourceFileCount": null
+      "root": "the-it-guy",
+      "buildCommand": "npm run build:guarded",
+      "vercelBuildCommand": "npm run build:guarded",
+      "vercelConfigSha256": "sha256:a7e2bb0b1e119d176d8ce0f1d6e12512539d07fbad2ccce1df2c012618c57ec2",
+      "packageJsonSha256": "sha256:c3406783a7b88e01caa6b07af013f89f7ac0c576d1e91a29894932d5cd7100be",
+      "packageLockSha256": "sha256:7e58f147a8ff1020602b10143cc88d682ac81fd9edd9dd9e3f2452ed0619228d",
+      "viteConfigSha256": "sha256:a9cf59023cb54cb984c08ab70e4e9d6083974caf6c9d02bd5a366ba8d67bdf23",
+      "sourceTreeSha256": "sha256:89b8786ff81c964086e00148df348798fdb859952093b75069cc3220c915fb30",
+      "sourceFileCount": 1404
     },
     "releaseOrder": {
-      "edgeFunctionsBeforeMigration": null,
-      "migrations": [],
-      "constrainedFunctions": []
+      "edgeFunctionsBeforeMigration": "202607220006",
+      "migrations": [
+        "202607220002",
+        "202607220003",
+        "202607220004",
+        "202607220005",
+        "202607220006",
+        "202607220007",
+        "202607220008",
+        "202607220009",
+        "202607220010",
+        "202607220011",
+        "202607220012",
+        "202607230004"
+      ],
+      "constrainedFunctions": [
+        "generate-final-signed-otp",
+        "dispatch-final-signed-document"
+      ]
     }
   },
   "safety": {
@@ -82,13 +286,13 @@
     "postDeployContractEvidenceDigest": null
   },
   "evidence": {
-    "preparedBy": null,
-    "preparedAt": null,
+    "preparedBy": "codex",
+    "preparedAt": "2026-07-25T16:41:23.573Z",
     "evidenceRecordedBy": null,
     "reviewedBy": null,
     "evidenceRecordedAt": null,
-    "changeReference": null,
+    "changeReference": "supabase-push-phase1-bind",
     "fixtureWrites": 0
   },
-  "manifestDigest": null
+  "manifestDigest": "sha256:08917a8cd139538cdf40f4f2eafd60acf351ba6efd6d0ea7c14fc21206581303"
 }

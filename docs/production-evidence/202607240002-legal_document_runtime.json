@@ -1,0 +1,19 @@
+{
+  "version": "202607240002",
+  "stream": "legal_document_runtime",
+  "file": "202607240002_global_mandate_platform_default_phase2.sql",
+  "productionRoute": "blocked_manual_review",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": null,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Upstream row is blocked; keep this pending until the route is replaced by an executable production path."
+  ]
+}

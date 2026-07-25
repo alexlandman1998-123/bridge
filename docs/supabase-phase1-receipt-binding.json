@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-07-25T19:13:45.548Z",
+  "status": "PHASE1_RECEIPT_BOUND_FOR_PUSH_GATE",
+  "write": true,
+  "receiptPath": "the-it-guy/config/legal-document-rollout-phase1-staging.json",
+  "manifestDigest": "sha256:08917a8cd139538cdf40f4f2eafd60acf351ba6efd6d0ea7c14fc21206581303",
+  "migrationCount": 12,
+  "evidenceBindingCount": 9,
+  "evidenceBindings": [
+    {
+      "version": "202607220002",
+      "evidenceFile": "docs/staging-evidence/202607220002-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220003",
+      "evidenceFile": "docs/staging-evidence/202607220003-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220004",
+      "evidenceFile": "docs/staging-evidence/202607220004-legal_document_runtime.json",
+      "status": "missing",
+      "changed": false
+    },
+    {
+      "version": "202607220005",
+      "evidenceFile": "docs/staging-evidence/202607220005-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220006",
+      "evidenceFile": "docs/staging-evidence/202607220006-legal_document_runtime.json",
+      "status": "missing",
+      "changed": false
+    },
+    {
+      "version": "202607220007",
+      "evidenceFile": "docs/staging-evidence/202607220007-legal_document_runtime.json",
+      "status": "missing",
+      "changed": false
+    },
+    {
+      "version": "202607220008",
+      "evidenceFile": "docs/staging-evidence/202607220008-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220009",
+      "evidenceFile": "docs/staging-evidence/202607220009-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220010",
+      "evidenceFile": "docs/staging-evidence/202607220010-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220011",
+      "evidenceFile": "docs/staging-evidence/202607220011-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607220012",
+      "evidenceFile": "docs/staging-evidence/202607220012-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    },
+    {
+      "version": "202607230004",
+      "evidenceFile": "docs/staging-evidence/202607230004-legal_document_runtime.json",
+      "status": "bound",
+      "changed": true
+    }
+  ],
+  "pushGateReady": true,
+  "officialPolicy": {
+    "status": "HOLD",
+    "blockerCount": 3,
+    "pendingCount": 1,
+    "blockers": [
+      {
+        "code": "P1_PHASE0_NOT_FROZEN",
+        "detail": "A current, clean Phase 0 FROZEN report is required before staging work is planned or evidenced."
+      },
+      {
+        "code": "P1_LEGAL_MIGRATION_MANIFEST_COVERAGE_MISSING",
+        "detail": "The existing migration ledger has not classified every legal rollout migration."
+      },
+      {
+        "code": "P1_DATABASE_RUNNER_TARGET_GUARD_INVALID",
+        "detail": "The staging runner must parse and exactly bind a direct Supabase database host before any mutation is considered."
+      },
+      {
+        "code": "P1_STAGING_EXECUTION_PENDING",
+        "detail": "Controlled deployment and evidence capture have not yet been recorded.",
+        "pending": true
+      }
+    ]
+  }
+}

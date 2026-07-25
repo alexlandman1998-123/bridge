@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-07-25T17:01:36.100Z",
+  "verifyLive": true,
+  "sourceManifest": "docs/supabase-phase-5-application-manifest.json",
+  "rows": [
+    {
+      "version": "202607220004",
+      "stream": "legal_document_runtime",
+      "file": "202607220004_canonical_otp_signing_phase2.sql",
+      "action": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "objectCount": 11,
+      "liveCount": 3,
+      "missingCount": 8,
+      "blockers": [],
+      "packetFile": "docs/corrective-migration-packets/202607220004-legal_document_runtime.md",
+      "clearanceFile": "docs/non-runnable-clearance/202607220004-legal_document_runtime.json"
+    },
+    {
+      "version": "202607220006",
+      "stream": "legal_document_runtime",
+      "file": "202607220006_phase3_visual_signature_evidence.sql",
+      "action": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "objectCount": 5,
+      "liveCount": 2,
+      "missingCount": 3,
+      "blockers": [],
+      "packetFile": "docs/corrective-migration-packets/202607220006-legal_document_runtime.md",
+      "clearanceFile": "docs/non-runnable-clearance/202607220006-legal_document_runtime.json"
+    },
+    {
+      "version": "202607220007",
+      "stream": "legal_document_runtime",
+      "file": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "action": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "objectCount": 4,
+      "liveCount": 3,
+      "missingCount": 1,
+      "blockers": [],
+      "packetFile": "docs/corrective-migration-packets/202607220007-legal_document_runtime.md",
+      "clearanceFile": "docs/non-runnable-clearance/202607220007-legal_document_runtime.json"
+    },
+    {
+      "version": "202607240002",
+      "stream": "legal_document_runtime",
+      "file": "202607240002_global_mandate_platform_default_phase2.sql",
+      "action": "manual_data_review",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "objectCount": 0,
+      "liveCount": 0,
+      "missingCount": 0,
+      "blockers": [],
+      "packetFile": "docs/manual-review/202607240002-legal_document_runtime.md",
+      "clearanceFile": "docs/non-runnable-clearance/202607240002-legal_document_runtime.json"
+    },
+    {
+      "version": "202607230001",
+      "stream": "seller_transaction_continuity",
+      "file": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "action": "corrective_migration_required",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "objectCount": 17,
+      "liveCount": 2,
+      "missingCount": 15,
+      "blockers": [],
+      "packetFile": "docs/corrective-migration-packets/202607230001-seller_transaction_continuity.md",
+      "clearanceFile": "docs/non-runnable-clearance/202607230001-seller_transaction_continuity.json"
+    }
+  ],
+  "correctiveCount": 4,
+  "manualCount": 1,
+  "runnableDecisionCount": 5,
+  "runnerReadyCount": 5,
+  "correctivePendingCount": 0
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const migration = await readFile(new URL('../../supabase/migrations/202607240001_global_mandate_platform_default_phase2.sql', import.meta.url), 'utf8')
+const migration = await readFile(new URL('../../supabase/migrations/202607240002_global_mandate_platform_default_phase2.sql', import.meta.url), 'utf8')
 const verifier = await readFile(new URL('./verify-legal-template-platform-defaults-phase2.mjs', import.meta.url), 'utf8')
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 

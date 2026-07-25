@@ -1,0 +1,30 @@
+{
+  "version": "202607240001",
+  "stream": "workspace_profile_management",
+  "file": "202607240001_agent_profile_management_rpc.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T16:52:33.021Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607240001 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607240001 --evidence docs/staging-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Confirmed public.bridge_update_organisation_user_profile(uuid, jsonb) exists on staging.",
+    "behavior": "Migration applied with pg through the one-version staging runner; RPC definition compiled successfully.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only apply; ledger recording follows after evidence validation."
+  },
+  "ledgerRecordedAt": "2026-07-25T16:53:00.539Z"
+}

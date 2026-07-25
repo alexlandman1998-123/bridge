@@ -1,0 +1,27 @@
+{
+  "version": "202607250005",
+  "stream": "seller_transaction_continuity",
+  "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:36:48.704Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607250005 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass after one-version SQL apply for 202607250005.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:37:05.501Z"
+}

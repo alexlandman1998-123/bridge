@@ -1044,7 +1044,7 @@ begin
       or v_event.plan_digest <> v_epoch.plan_digest
       or v_event.membership_digest <> v_membership.membership_digest
       or v_event.access_context is distinct from nullif(v_access_context, '')
-      or v_event.artifact_sha256 is distinct from case when v_stage = 'signing_invite_delivered' then null else v_evidence.sha256 end
+      or v_event.artifact_sha256 is distinct from (case when v_stage = 'signing_invite_delivered' then null else v_evidence.sha256 end)
       or v_event.lifecycle_contract <> 'legal-document-successor-release-lifecycle-v1' then
       raise exception 'Phase 6 successor lifecycle evidence conflicts with immutable prior evidence.'
         using errcode = '55000', detail = 'PHASE6_LIFECYCLE_CONFLICT';

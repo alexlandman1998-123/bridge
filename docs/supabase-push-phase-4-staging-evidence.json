@@ -1,0 +1,354 @@
+{
+  "generatedAt": "2026-07-25T17:04:11.799Z",
+  "sourceRouting": "docs/supabase-push-phase-3-action-routing.json",
+  "evidenceDir": "docs/staging-evidence",
+  "rows": [
+    {
+      "version": "202607220001",
+      "stream": "legal_document_runtime",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607220001_document_workspace_status_phase2.sql",
+      "evidenceFile": "docs/staging-evidence/202607220001-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220002",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+      "evidenceFile": "docs/staging-evidence/202607220002-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220003",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220003_signable_packet_sent_phase1.sql",
+      "evidenceFile": "docs/staging-evidence/202607220003-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607250002",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607250002_corrective_canonical_otp_signing_phase2.sql",
+      "evidenceFile": "docs/staging-evidence/202607250002-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220005",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220005_canonical_otp_seal_atomic_recovery.sql",
+      "evidenceFile": "docs/staging-evidence/202607220005-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607250003",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607250003_corrective_visual_signature_evidence.sql",
+      "evidenceFile": "docs/staging-evidence/202607250003-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607250004",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+      "evidenceFile": "docs/staging-evidence/202607250004-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220008",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220008_phase4_legal_template_release_integrity.sql",
+      "evidenceFile": "docs/staging-evidence/202607220008-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220009",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220009_phase4_legal_release_provenance.sql",
+      "evidenceFile": "docs/staging-evidence/202607220009-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220010",
+      "stream": "legal_document_runtime",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+      "evidenceFile": "docs/staging-evidence/202607220010-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220011",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220011_phase4_legal_release_persistence_fence.sql",
+      "evidenceFile": "docs/staging-evidence/202607220011-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220012",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220012_phase5_legal_document_health_incident_integrity.sql",
+      "evidenceFile": "docs/staging-evidence/202607220012-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607230004",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607230004_phase5_pilot_release_trace_integrity.sql",
+      "evidenceFile": "docs/staging-evidence/202607230004-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607230005",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607230005_phase6_successor_release_epoch_integrity.sql",
+      "evidenceFile": "docs/staging-evidence/202607230005-legal_document_runtime.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
+    },
+    {
+      "version": "202607240002",
+      "stream": "legal_document_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607240002_global_mandate_platform_default_phase2.sql",
+      "evidenceFile": "docs/staging-evidence/202607240002-legal_document_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607250005",
+      "stream": "seller_transaction_continuity",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+      "evidenceFile": "docs/staging-evidence/202607250005-seller_transaction_continuity.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220013",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220013_bond_application_consent_and_finance_document_audit.sql",
+      "evidenceFile": "docs/staging-evidence/202607220013-bond_finance_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607220014",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607220014_bond_partner_referral_terms_and_ledger.sql",
+      "evidenceFile": "docs/staging-evidence/202607220014-bond_finance_runtime.json",
+      "created": false,
+      "complete": false,
+      "blockers": [
+        "staging_ledger_not_recorded",
+        "catalog_checks_pending",
+        "behavior_checks_pending",
+        "rollback_or_no_residue_pending",
+        "reviewer_pending",
+        "approver_pending"
+      ]
+    },
+    {
+      "version": "202607230013",
+      "stream": "attorney_workflow_runtime",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607230013_attorney_workflow_step_completion_advance.sql",
+      "evidenceFile": "docs/staging-evidence/202607230013-attorney_workflow_runtime.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
+    },
+    {
+      "version": "202607240001",
+      "stream": "workspace_profile_management",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607240001_agent_profile_management_rpc.sql",
+      "evidenceFile": "docs/staging-evidence/202607240001-workspace_profile_management.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
+    }
+  ],
+  "routeCounts": {
+    "repair_only": 3,
+    "apply_original": 17
+  },
+  "createdCount": 0,
+  "existingCount": 20,
+  "completeCount": 3,
+  "pendingCount": 17
+}

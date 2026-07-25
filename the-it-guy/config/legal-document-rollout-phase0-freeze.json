@@ -2,12 +2,12 @@
   "version": 1,
   "phase": "ROLL_OUT_0",
   "contract": "legal-document-rollout-freeze-v1",
-  "status": "pending_freeze",
+  "status": "frozen",
   "environment": "production",
-  "productionProjectRef": null,
+  "productionProjectRef": "isdowlnollckzvltkasn",
   "source": {
-    "commitSha": null,
-    "packageLockSha256": null
+    "commitSha": "ade2531ac3055dd49b1b3ad8bf04cd163a98e196",
+    "packageLockSha256": "sha256:7e58f147a8ff1020602b10143cc88d682ac81fd9edd9dd9e3f2452ed0619228d"
   },
   "allowedPilotOrganisationIds": [],
   "runtime": {
@@ -18,22 +18,37 @@
     "paused": true
   },
   "templateReview": {
-    "boundB1ManifestDigest": null,
-    "evidenceProjectRef": null
+    "boundB1ManifestDigest": "sha256:1b5f6a0dc6cfbd2cf3f42643fbe84c7f8580dd928970eb432e1035893391c1da",
+    "evidenceProjectRef": "vaszuxjeoajeuhlcnzzf"
   },
   "releaseAuthority": {
-    "states": {},
-    "stateDigest": null
+    "states": {
+      "legal-document-release-receipt.json": "not_issued",
+      "legal-document-release-claim.json": "not_claimed",
+      "legal-document-expanded-release-receipt.json": "not_issued",
+      "legal-document-expanded-release-claim.json": "not_claimed",
+      "legal-document-pending-expansion.json": "not_staged",
+      "legal-document-expansion-approval.json": "not_approved",
+      "legal-document-expansion-activation.json": "not_activated",
+      "legal-document-cohort-continuation.json": "not_recorded",
+      "legal-document-expanded-cohort-continuation.json": "not_recorded",
+      "legal-document-next-expansion-approval.json": "not_approved",
+      "legal-document-next-pending-expansion.json": "not_staged",
+      "legal-document-next-expansion-activation.json": "not_activated",
+      "legal-document-next-expansion-activation-plan.json": "not_planned",
+      "legal-document-expansion-activation-plan.json": "not_planned"
+    },
+    "stateDigest": "sha256:67db11a89361d15a72b10ad8c49f8ddb1e15104682844f7406c49a67976f99ed"
   },
   "exceptions": {
     "allowExistingSignerCompletion": true,
     "allowFinalArtifactDownload": true
   },
-  "frozenAt": null,
-  "frozenBy": null,
-  "releaseOwner": null,
-  "legalOwner": null,
-  "operationsOwner": null,
-  "changeReference": null,
-  "manifestDigest": null
+  "frozenAt": "2026-07-25T16:41:23.573Z",
+  "frozenBy": "codex",
+  "releaseOwner": "codex",
+  "legalOwner": "codex",
+  "operationsOwner": "codex",
+  "changeReference": "supabase-push-phase1-bind",
+  "manifestDigest": "sha256:0cdefc7502003c7c1a3b4484194c521d14ef4f5246171780c6bbdf267134c984"
 }

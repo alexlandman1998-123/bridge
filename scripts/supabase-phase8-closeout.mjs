@@ -7,8 +7,13 @@ import { fileURLToPath } from 'node:url'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
+const PROMOTION_PATH = path.join('docs', 'supabase-push-phase-5-production-promotion.json')
 const EVIDENCE_PATH = path.join('docs', 'supabase-phase-8-closeout-evidence.json')
+const RECOVERY_EVIDENCE_PATH = path.join('docs', 'supabase-production-recovery-evidence.json')
+const LEDGER_DRIFT_RESOLUTION_PATH = path.join('docs', 'supabase-ledger-drift-resolution.json')
+const CLEARANCE_DIR = path.join('docs', 'non-runnable-clearance')
 const REPORT_PATH = path.join('docs', 'supabase-phase-8-closeout-report.md')
+const RECOVERY_METHODS = new Set(['pitr', 'physical_backup', 'equivalent_managed_backup'])
 const REVIEWED_SPLIT_BASELINE = new Set([
   '202606010001', '202606030007', '202606030008', '202606030009', '202606030010',
   '202606030011', '202606040001', '202606040002', '202606040004', '202606040005',
@@ -87,7 +92,7 @@ function parseMigrationRows(stdout) {
   })).filter((row) => row.local || row.remote)
 }
 
-function ledgerBuckets(rows) {
+function ledgerBuckets(rows, reviewedSplitVersions = REVIEWED_SPLIT_BASELINE) {
   const matched = []
   const localOnly = []
   const remoteOnly = []
@@ -106,9 +111,19 @@ function ledgerBuckets(rows) {
     matched,
     divergent,
     splitVersions,
-    unreviewedSplitVersions: splitVersions.filter((item) => !REVIEWED_SPLIT_BASELINE.has(item)),
+    unreviewedSplitVersions: splitVersions.filter((item) => !reviewedSplitVersions.has(item)),
     pureLocalOnly: localOnly.filter((row) => !splitSet.has(row.local)),
     pureRemoteOnly: remoteOnly.filter((row) => !splitSet.has(row.remote)),
+  }
+}
+
+function closeoutLedgerBuckets(rows, reviewedSplitVersions, supersededOriginalVersions = []) {
+  const buckets = ledgerBuckets(rows, reviewedSplitVersions)
+  const superseded = new Set(supersededOriginalVersions)
+  return {
+    ...buckets,
+    supersededPureLocalOnly: buckets.pureLocalOnly.filter((row) => superseded.has(row.local)),
+    pureLocalOnly: buckets.pureLocalOnly.filter((row) => !superseded.has(row.local)),
   }
 }
 
@@ -117,6 +132,55 @@ function localMigrations(repoRoot) {
     .filter((file) => file.endsWith('.sql'))
     .sort()
     .map((file) => ({ file, version: file.split('_')[0] }))
+}
+
+function approvedCorrectiveClearances(repoRoot) {
+  const absoluteDir = path.join(repoRoot, CLEARANCE_DIR)
+  if (!existsSync(absoluteDir)) return []
+  return readdirSync(absoluteDir)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => {
+      try {
+        const clearance = JSON.parse(readFileSync(path.join(absoluteDir, file), 'utf8'))
+        const approved = String(clearance.approvedBy || '').trim() && String(clearance.approvedAt || '').trim()
+        const blockers = Array.isArray(clearance.blockers) ? clearance.blockers : []
+        if (clearance.clearanceDecision !== 'apply_corrective_after_dependency_check' || !approved || blockers.length > 0) return null
+        const correctiveMigrationFile = String(clearance.correctiveMigrationFile || '').trim()
+        const correctiveVersion = String(clearance.correctiveVersion || path.basename(correctiveMigrationFile).match(/^(\d{12,})_/)?.[1] || '').trim()
+        const originalVersion = String(clearance.version || '').trim()
+        if (!originalVersion || !correctiveVersion) return null
+        return {
+          originalVersion,
+          correctiveVersion,
+          clearanceFile: path.join(CLEARANCE_DIR, file),
+        }
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+}
+
+function executableCloseoutScope(repoRoot, manifest) {
+  const absolutePromotionPath = path.join(repoRoot, PROMOTION_PATH)
+  if (!existsSync(absolutePromotionPath)) {
+    return {
+      source: MANIFEST_PATH,
+      rows: manifest.rows,
+      supersededOriginalVersions: [],
+      correctiveMappings: [],
+    }
+  }
+  const promotion = JSON.parse(readFileSync(absolutePromotionPath, 'utf8'))
+  const rows = Array.isArray(promotion.rows) ? promotion.rows.filter((row) => row.readyForProduction === true) : []
+  const correctiveMappings = approvedCorrectiveClearances(repoRoot)
+    .filter((item) => rows.some((row) => row.version === item.correctiveVersion))
+  return {
+    source: PROMOTION_PATH,
+    rows,
+    supersededOriginalVersions: correctiveMappings.map((item) => item.originalVersion),
+    correctiveMappings,
+  }
 }
 
 function duplicateVersions(migrations) {
@@ -152,6 +216,52 @@ function validateEvidence(manifest, evidence) {
   return { complete, incomplete, unknown, duplicates }
 }
 
+function validateRecoveryEvidence(repoRoot) {
+  const absolutePath = path.join(repoRoot, RECOVERY_EVIDENCE_PATH)
+  const blockers = []
+  if (!existsSync(absolutePath)) {
+    return { locked: false, blockers: ['production_recovery_evidence_missing'], evidence: null }
+  }
+  const evidence = JSON.parse(readFileSync(absolutePath, 'utf8'))
+  if (evidence.productionProjectRef !== PRODUCTION_PROJECT_REF) blockers.push('production_recovery_project_ref_mismatch')
+  if (!RECOVERY_METHODS.has(evidence.recoveryMethod)) blockers.push('production_recovery_method_invalid')
+  if (evidence.pitrEnabled !== true && !(Number(evidence.physicalBackupCount) > 0) && evidence.equivalentManagedBackupAccepted !== true) {
+    blockers.push('production_recovery_mechanism_pending')
+  }
+  if (evidence.recoveryTested !== true) blockers.push('production_recovery_test_pending')
+  if (!String(evidence.testedAt || '').trim()) blockers.push('production_recovery_tested_at_pending')
+  if (!String(evidence.testedBy || '').trim()) blockers.push('production_recovery_tester_pending')
+  if (!String(evidence.acceptedBy || '').trim()) blockers.push('production_recovery_approver_pending')
+  if (!String(evidence.restoreTarget || '').trim()) blockers.push('production_recovery_restore_target_pending')
+  if (!String(evidence.evidenceUrlOrTicket || '').trim()) blockers.push('production_recovery_reference_pending')
+  return { locked: blockers.length === 0, blockers, evidence }
+}
+
+function ledgerDriftResolution(repoRoot) {
+  const absolutePath = path.join(repoRoot, LEDGER_DRIFT_RESOLUTION_PATH)
+  if (!existsSync(absolutePath)) {
+    return {
+      path: LEDGER_DRIFT_RESOLUTION_PATH,
+      loaded: false,
+      status: 'LEDGER_DRIFT_RESOLUTION_MISSING',
+      reviewedSplitVersions: [...REVIEWED_SPLIT_BASELINE].sort(),
+      blockers: ['ledger_drift_resolution_missing'],
+    }
+  }
+  const resolution = JSON.parse(readFileSync(absolutePath, 'utf8'))
+  const reviewedSplitVersions = Array.isArray(resolution.reviewedSplitVersions)
+    ? resolution.reviewedSplitVersions.map(String)
+    : []
+  return {
+    path: LEDGER_DRIFT_RESOLUTION_PATH,
+    loaded: true,
+    status: resolution.status || 'UNKNOWN',
+    reviewedSplitVersions,
+    blockers: Array.isArray(resolution.blockers) ? resolution.blockers : [],
+    counts: resolution.counts || null,
+  }
+}
+
 function runSupabase(repoRoot, args) {
   const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
     cwd: repoRoot,
@@ -162,7 +272,7 @@ function runSupabase(repoRoot, args) {
   return { ok: result.status === 0 && !result.error, stdout: result.stdout || '', stderr: result.stderr || '', error: result.error?.message || '' }
 }
 
-function liveState(repoRoot) {
+function liveState(repoRoot, driftResolution, closeoutScope) {
   const linkedRefPath = path.join(repoRoot, 'supabase', '.temp', 'project-ref')
   const linkedRef = existsSync(linkedRefPath) ? readFileSync(linkedRefPath, 'utf8').trim() : ''
   if (linkedRef !== PRODUCTION_PROJECT_REF) {
@@ -179,7 +289,7 @@ function liveState(repoRoot) {
   if (!backupStatus) throw new Error('The production backup response was not valid JSON.')
   const physicalBackups = Array.isArray(backupStatus.backups) ? backupStatus.backups : []
   return {
-    ledger: ledgerBuckets(rows),
+    ledger: closeoutLedgerBuckets(rows, new Set(driftResolution.reviewedSplitVersions), closeoutScope.supersededOriginalVersions),
     recovery: {
       pitrEnabled: backupStatus.pitr_enabled === true,
       physicalBackupCount: physicalBackups.length,
@@ -191,15 +301,45 @@ function liveState(repoRoot) {
 function buildResult(repoRoot, options) {
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, MANIFEST_PATH), 'utf8'))
   const evidence = JSON.parse(readFileSync(path.join(repoRoot, EVIDENCE_PATH), 'utf8'))
+  const closeoutScope = executableCloseoutScope(repoRoot, manifest)
+  const recoveryEvidence = validateRecoveryEvidence(repoRoot)
+  const driftResolution = ledgerDriftResolution(repoRoot)
   if (manifest.linkedProjectRef !== PRODUCTION_PROJECT_REF || evidence.productionProjectRef !== PRODUCTION_PROJECT_REF) {
     throw new Error('Manifest or closeout evidence has an unexpected production identity.')
   }
+  const effectiveManifest = { ...manifest, rows: closeoutScope.rows }
   const migrations = localMigrations(repoRoot)
   const duplicates = duplicateVersions(migrations)
   const filenames = new Set(migrations.map((migration) => migration.file))
-  const missingManifestFiles = manifest.rows.filter((row) => !filenames.has(row.file)).map((row) => row.file)
-  const evidenceState = validateEvidence(manifest, evidence)
-  const live = options.verifyLive ? liveState(repoRoot) : null
+  const missingManifestFiles = effectiveManifest.rows.filter((row) => !filenames.has(row.file)).map((row) => row.file)
+  const evidenceState = validateEvidence(effectiveManifest, evidence)
+  const completeEvidenceSet = new Set(evidenceState.complete)
+  const manifestEvidenceRows = effectiveManifest.rows.map((row) => ({
+    version: row.version,
+    stream: row.stream,
+    file: row.file,
+    action: row.action,
+    objectStatus: row.objectStatus,
+    evidenceStatus: completeEvidenceSet.has(row.version) ? 'complete' : 'incomplete',
+  }))
+  const streamSummaries = [...manifestEvidenceRows.reduce((summaries, row) => {
+    const summary = summaries.get(row.stream) || {
+      stream: row.stream,
+      rows: 0,
+      complete: 0,
+      incomplete: 0,
+      actions: new Set(),
+    }
+    summary.rows += 1
+    summary[row.evidenceStatus] += 1
+    summary.actions.add(row.action)
+    summaries.set(row.stream, summary)
+    return summaries
+  }, new Map()).values()].map((summary) => ({
+    ...summary,
+    actions: [...summary.actions].sort(),
+  }))
+  const live = options.verifyLive ? liveState(repoRoot, driftResolution, closeoutScope) : null
 
   const localReady = duplicates.length === 0
     && missingManifestFiles.length === 0
@@ -212,24 +352,75 @@ function buildResult(repoRoot, options) {
     && live.ledger.divergent.length === 0
     && live.ledger.unreviewedSplitVersions.length === 0
     && live.recovery.recoverable
-  const ready = Boolean(localReady && liveReady)
+  const ready = Boolean(localReady && liveReady && recoveryEvidence.locked)
   return {
     generatedAt: new Date().toISOString(),
     status: ready ? 'READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT' : (options.verifyLive ? 'CLOSEOUT_BLOCKED' : 'LOCAL_CLOSEOUT_NOT_READY'),
     readyForFreezeRetirement: ready,
     productionProjectRef: PRODUCTION_PROJECT_REF,
     localMigrationCount: migrations.length,
-    manifestRowCount: manifest.rows.length,
+    rawManifestRowCount: manifest.rows.length,
+    manifestRowCount: effectiveManifest.rows.length,
+    closeoutScope: {
+      source: closeoutScope.source,
+      supersededOriginalVersions: closeoutScope.supersededOriginalVersions,
+      correctiveMappings: closeoutScope.correctiveMappings,
+    },
     duplicateVersions: duplicates,
     missingManifestFiles,
     evidence: evidenceState,
+    recoveryEvidence: {
+      path: RECOVERY_EVIDENCE_PATH,
+      locked: recoveryEvidence.locked,
+      blockers: recoveryEvidence.blockers,
+      method: recoveryEvidence.evidence?.recoveryMethod || null,
+      testedAt: recoveryEvidence.evidence?.testedAt || null,
+      testedBy: recoveryEvidence.evidence?.testedBy || null,
+      acceptedBy: recoveryEvidence.evidence?.acceptedBy || null,
+    },
+    ledgerDriftResolution: driftResolution,
+    manifestEvidenceRows,
+    streamSummaries,
     live,
   }
+}
+
+function markdownTable(headers, rows) {
+  if (!rows.length) return 'No rows.'
+  const line = (cells) => `| ${cells.join(' | ')} |`
+  return [
+    line(headers),
+    line(headers.map(() => '---')),
+    ...rows.map(line),
+  ].join('\n')
 }
 
 function report(result) {
   const live = result.live
   const list = (items) => items.length ? items.map((item) => `- \`${typeof item === 'string' ? item : item.version}\``).join('\n') : '- None'
+  const streamMatrix = markdownTable(
+    ['Stream', 'Rows', 'Complete Evidence', 'Incomplete Evidence', 'Actions'],
+    result.streamSummaries.map((summary) => [
+      `\`${summary.stream}\``,
+      String(summary.rows),
+      String(summary.complete),
+      String(summary.incomplete),
+      summary.actions.map((action) => `\`${action}\``).join('<br>'),
+    ]),
+  )
+  const workQueue = markdownTable(
+    ['Version', 'Stream', 'Evidence', 'Action', 'Object Status', 'File'],
+    result.manifestEvidenceRows
+      .filter((row) => row.evidenceStatus !== 'complete')
+      .map((row) => [
+        `\`${row.version}\``,
+        `\`${row.stream}\``,
+        `\`${row.evidenceStatus}\``,
+        `\`${row.action}\``,
+        `\`${row.objectStatus}\``,
+        `\`${row.file}\``,
+      ]),
+  )
   return `# Supabase Phase 8 Closeout Report
 
 Generated: ${result.generatedAt}
@@ -251,8 +442,13 @@ The Phase 0 broad-push freeze remains active unless this report says \`READY_FOR
 | Missing manifest files | ${result.missingManifestFiles.length} |
 | Complete production evidence rows | ${result.evidence.complete.length} |
 | Incomplete production evidence rows | ${result.evidence.incomplete.length} |
+| Production recovery evidence locked | ${result.recoveryEvidence.locked ? 'Yes' : 'No'} |
+| Production recovery evidence blockers | ${result.recoveryEvidence.blockers.length} |
 | Unknown evidence rows | ${result.evidence.unknown.length} |
 | Duplicate evidence versions | ${result.evidence.duplicates.length} |
+| Ledger drift resolution loaded | ${result.ledgerDriftResolution.loaded ? 'Yes' : 'No'} |
+| Ledger drift resolution status | ${result.ledgerDriftResolution.status} |
+| Ledger drift resolution blockers | ${result.ledgerDriftResolution.blockers.length} |
 | Live verification performed | ${live ? 'Yes' : 'No'} |
 | Pure local-only versions | ${live ? live.ledger.pureLocalOnly.length : 'Not checked'} |
 | Pure remote-only versions | ${live ? live.ledger.pureRemoteOnly.length : 'Not checked'} |
@@ -266,9 +462,21 @@ The Phase 0 broad-push freeze remains active unless this report says \`READY_FOR
 
 ${list(result.evidence.incomplete)}
 
+## Recovery Evidence Blockers
+
+${list(result.recoveryEvidence.blockers)}
+
+## Evidence By Stream
+
+${streamMatrix}
+
+## Closeout Work Queue
+
+${workQueue}
+
 ## Closeout Rule
 
-Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 63 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove \`scripts/supabase-phase0-guard.mjs\`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all ${result.manifestRowCount} manifest versions have reviewed closeout evidence, and production recovery is available and tested.
 `
 }
 

@@ -1,0 +1,76 @@
+{
+  "version": "202607220006",
+  "stream": "legal_document_runtime",
+  "dependsOn": "202607220005",
+  "module": "other",
+  "file": "202607220006_phase3_visual_signature_evidence.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 2,
+  "objectCount": 5,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 3,
+  "objects": [
+    {
+      "migrationVersion": "202607220006",
+      "migrationFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "legal_final_artifact_evidence_phase3_signature_evidence_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607220006",
+      "migrationFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_enforce_final_artifact_evidence_f2",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607220006",
+      "migrationFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_enforce_phase3_final_event_evidence",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607220006",
+      "migrationFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_record_final_artifact_f2",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607220006",
+      "migrationFile": "202607220006_phase3_visual_signature_evidence.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_phase3_final_event_evidence",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "Alexander Landman Codex instruction",
+  "approvedAt": "2026-07-25T17:15:00.000Z",
+  "correctiveMigrationFile": "supabase/migrations/202607250003_corrective_visual_signature_evidence.sql",
+  "correctiveVersion": "202607250003",
+  "definitionDiffReviewedBy": "Codex non-runnable clearance",
+  "correctiveMigrationReviewedBy": "Codex non-runnable clearance",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/202607220006-legal_document_runtime.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607220006-legal_document_runtime.json"
+}

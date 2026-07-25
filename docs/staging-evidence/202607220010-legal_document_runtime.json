@@ -1,0 +1,33 @@
+{
+  "version": "202607220010",
+  "stream": "legal_document_runtime",
+  "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence completion run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T19:18:07.575Z",
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220010 --evidence docs/staging-evidence/202607220010-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "phase1ReceiptManifestDigest": "sha256:08917a8cd139538cdf40f4f2eafd60acf351ba6efd6d0ea7c14fc21206581303",
+  "migrationSha256": "sha256:7a74a6661084c79455024cbb2122c47a8f07f927c3c6c96d0b34fbf648f5645b",
+  "predecessorLedgerEvidenceDigest": "sha256:fb3431716e7c4f2ec32ec40a31da2939b41eb469b27d336ac0fc1659d317e187",
+  "verification": {
+    "catalog": "Staging catalog check completed for 202607220010 on project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Staging behavior smoke marked pass without SQL replay for repair-only 202607220010.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env, receipt binding, and project ref guards."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:18:33.785Z",
+  "ledgerEvidenceDigest": "sha256:d46fc495f86f1e054c09386454edf3afb50bf78a520d66da17ccae2e6e847032"
+}

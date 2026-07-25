@@ -1,0 +1,19 @@
+{
+  "version": "202607220007",
+  "stream": "legal_document_runtime",
+  "file": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+  "productionRoute": "blocked_corrective_required",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": null,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Upstream row is blocked; keep this pending until the route is replaced by an executable production path."
+  ]
+}

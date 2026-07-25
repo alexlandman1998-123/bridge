@@ -1,0 +1,30 @@
+{
+  "version": "202607220014",
+  "stream": "bond_finance_runtime",
+  "file": "202607220014_bond_partner_referral_terms_and_ledger.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence completion run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T19:08:40.488Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220014 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220014 --evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Staging catalog check completed for 202607220014 on project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Staging behavior smoke marked pass after SQL apply for 202607220014.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env and project ref guards."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:08:58.509Z"
+}

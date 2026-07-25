@@ -1,0 +1,27 @@
+{
+  "version": "202607250004",
+  "stream": "legal_document_runtime",
+  "file": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:30:38.404Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607250004 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass after one-version SQL apply for 202607250004.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:31:03.092Z"
+}

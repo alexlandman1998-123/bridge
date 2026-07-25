@@ -1,6 +1,6 @@
 # Supabase Migration Phase 4 Duplicate Timestamp Report
 
-Generated: 2026-07-18T21:46:06.210Z
+Generated: 2026-07-25T13:23:28.572Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,9 +12,9 @@ Phase 4 is local migration-file hygiene. It resolves duplicate local migration t
 | Field | Value |
 | --- | --- |
 | Status | DEDUPED |
-| Local migration files | 487 |
+| Local migration files | 526 |
 | Duplicate local timestamps | 0 |
-| Expected renames complete | 12/12 |
+| Expected renames complete | 13/13 |
 
 ## Rename Map
 
@@ -32,6 +32,7 @@ Phase 4 is local migration-file hygiene. It resolves duplicate local migration t
 | supabase/migrations/202607180027_document_generator_public_signer_surface_h4.sql | supabase/migrations/202607180050_document_generator_public_signer_surface_h4.sql | yes | Kept attorney accounting Phase 3.1 at 202607180027 and preserved document-generator order after H2. |
 | supabase/migrations/202607180028_document_generator_concurrency_i1.sql | supabase/migrations/202607180051_document_generator_concurrency_i1.sql | yes | Kept attorney accounting Phase 3.2 at 202607180028 and preserved document-generator order after H4. |
 | supabase/migrations/202607180032_document_generator_backpressure_i3.sql | supabase/migrations/202607180052_document_generator_backpressure_i3.sql | yes | Kept the remotely recorded attorney calendar Phase 5 migration at 202607180032 and preserved document-generator order after I1. |
+| supabase/migrations/202607240001_global_mandate_platform_default_phase2.sql | supabase/migrations/202607240002_global_mandate_platform_default_phase2.sql | yes | Kept the earlier agent profile RPC migration stable at 202607240001 and moved the later global mandate platform default migration to the next unused slot. |
 
 ## Duplicate Scan
 

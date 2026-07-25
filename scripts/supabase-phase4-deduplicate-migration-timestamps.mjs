@@ -67,6 +67,11 @@ const PHASE4_RENAMES = [
     to: 'supabase/migrations/202607180052_document_generator_backpressure_i3.sql',
     reason: 'Kept the remotely recorded attorney calendar Phase 5 migration at 202607180032 and preserved document-generator order after I1.',
   },
+  {
+    from: 'supabase/migrations/202607240001_global_mandate_platform_default_phase2.sql',
+    to: 'supabase/migrations/202607240002_global_mandate_platform_default_phase2.sql',
+    reason: 'Kept the earlier agent profile RPC migration stable at 202607240001 and moved the later global mandate platform default migration to the next unused slot.',
+  },
 ]
 
 function findRepoRoot(startDir) {

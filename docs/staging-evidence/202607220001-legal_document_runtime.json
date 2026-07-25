@@ -1,0 +1,29 @@
+{
+  "version": "202607220001",
+  "stream": "legal_document_runtime",
+  "file": "202607220001_document_workspace_status_phase2.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence completion run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T18:58:25.824Z",
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220001 --evidence docs/staging-evidence/202607220001-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Staging catalog check completed for 202607220001 on project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Staging behavior smoke marked pass after repair-only reconciliation for 202607220001.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env and project ref guards."
+  },
+  "ledgerRecordedAt": "2026-07-25T18:58:44.213Z"
+}

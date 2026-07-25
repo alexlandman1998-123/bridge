@@ -40,14 +40,7 @@ drop policy if exists "organisation members can read bond application consent" o
 create policy "organisation members can read bond application consent"
   on public.bond_application_consents
   for select
-  using (
-    exists (
-      select 1 from public.organisation_memberships membership
-      where membership.organisation_id = bond_application_consents.organisation_id
-        and membership.user_id = auth.uid()
-        and membership.status = 'active'
-    )
-  );
+  using (public.bridge_is_active_member(bond_application_consents.organisation_id));
 
 create table if not exists public.bond_finance_document_access_audit (
   id uuid primary key default gen_random_uuid(),
@@ -71,7 +64,7 @@ create policy "organisation members can read bond finance document audit"
   using (
     exists (
       select 1 from public.transactions t
-      join public.organisation_memberships membership on membership.organisation_id = t.organisation_id
-      where t.id = transaction_id and membership.user_id = auth.uid() and membership.status = 'active'
+      where t.id = transaction_id
+        and public.bridge_is_active_member(t.organisation_id)
     )
   );

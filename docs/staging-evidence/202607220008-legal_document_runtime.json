@@ -1,0 +1,34 @@
+{
+  "version": "202607220008",
+  "stream": "legal_document_runtime",
+  "file": "202607220008_phase4_legal_template_release_integrity.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence completion run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T19:17:02.031Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220008 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220008 --evidence docs/staging-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "phase1ReceiptManifestDigest": "sha256:08917a8cd139538cdf40f4f2eafd60acf351ba6efd6d0ea7c14fc21206581303",
+  "migrationSha256": "sha256:3e5ead0c4a6249606fe198127006b7a77f4c945e19808c449e59d92fabc4b91e",
+  "predecessorLedgerEvidenceDigest": "sha256:4688e86ff26f40df76906b51671c3c5049baa58bc4a7900d803e76ca60c840b1",
+  "verification": {
+    "catalog": "Staging catalog check completed for 202607220008 on project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Staging behavior smoke marked pass after SQL apply for 202607220008.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env, receipt binding, and project ref guards."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:17:29.677Z",
+  "ledgerEvidenceDigest": "sha256:a32946fe8a3d1e9de31ebae8bd79c2217115f0cf359086f353f934da88e78bd9"
+}

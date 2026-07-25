@@ -1,0 +1,196 @@
+{
+  "version": "202607230001",
+  "stream": "seller_transaction_continuity",
+  "dependsOn": "stream preflight",
+  "module": "lead_capture_crm",
+  "file": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 2,
+  "objectCount": 17,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 15,
+  "objects": [
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "private_listing_documents_promotion_status_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_apply_seller_document_transaction_continuity_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_normalize_seller_document_key_p0_4",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_promote_listing_documents_from_transaction_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_promote_private_listing_document_row",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_recalculate_transaction_readiness_from_required_documents",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_satisfy_new_transaction_required_document_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_satisfy_new_transaction_seller_request_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_sync_seller_document_transaction_continuity_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_upload_private_listing_seller_document",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "documents_seller_continuity_source_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "private_listing_documents_promotion_health_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_promote_listing_documents_from_transaction_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_satisfy_new_transaction_required_document_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_satisfy_new_transaction_seller_request_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_sync_seller_document_transaction_continuity_p0_6",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607230001",
+      "migrationFile": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+      "stream": "seller_transaction_continuity",
+      "action": "corrective_migration_required",
+      "objectType": "view",
+      "objectName": "seller_document_transaction_continuity_v2",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "Alexander Landman Codex instruction",
+  "approvedAt": "2026-07-25T17:15:00.000Z",
+  "correctiveMigrationFile": "supabase/migrations/202607250005_corrective_seller_document_transaction_continuity.sql",
+  "correctiveVersion": "202607250005",
+  "definitionDiffReviewedBy": "Codex non-runnable clearance",
+  "correctiveMigrationReviewedBy": "Codex non-runnable clearance",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/202607230001-seller_transaction_continuity.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607230001-seller_transaction_continuity.json"
+}

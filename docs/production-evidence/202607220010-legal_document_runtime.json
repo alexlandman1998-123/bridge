@@ -1,0 +1,27 @@
+{
+  "version": "202607220010",
+  "stream": "legal_document_runtime",
+  "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:32:37.781Z",
+  "notes": [
+    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
+  ],
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607220010 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass before ledger repair for no-SQL row 202607220010.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:32:59.808Z"
+}

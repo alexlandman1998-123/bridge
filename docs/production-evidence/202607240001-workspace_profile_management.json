@@ -1,0 +1,27 @@
+{
+  "version": "202607240001",
+  "stream": "workspace_profile_management",
+  "file": "202607240001_agent_profile_management_rpc.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:38:42.848Z",
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ],
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607240001 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass after one-version SQL apply for 202607240001.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:38:57.939Z"
+}

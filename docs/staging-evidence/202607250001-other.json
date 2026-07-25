@@ -1,0 +1,34 @@
+{
+  "version": "202607250001",
+  "stream": "other",
+  "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T18:30:29Z",
+  "notes": [
+    "Repair-only staging evidence: the Phase 5 live catalog audit showed the single seller portal payload function already live on staging.",
+    "No SQL was applied for this row.",
+    "Local smoke checks passed from the nested frontend app: pipeline-seller-portal-stability.test.mjs, seller-portal-ui-regression.test.mjs, and seller-document-propagation.test.mjs."
+  ],
+  "commands": [
+    "node scripts/pipeline-seller-portal-stability.test.mjs",
+    "node scripts/seller-portal-ui-regression.test.mjs",
+    "node scripts/seller-document-propagation.test.mjs",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250001 --evidence docs/staging-evidence/202607250001-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Phase 5 staging-target audit reported 1/1 expected static objects live for 202607250001_seller_portal_payload_optional_enrichment_guard.sql.",
+    "behavior": "Seller portal stability, UI regression, and seller document propagation smoke checks passed.",
+    "rollbackOrNoResidue": "Repair-only path; no SQL was applied during this evidence capture."
+  },
+  "ledgerRecordedAt": "2026-07-25T18:31:07.921Z"
+}

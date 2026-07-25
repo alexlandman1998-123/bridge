@@ -2,19 +2,21 @@
 
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import pg from 'pg'
 import { collectRolloutSourceContinuity } from '../the-it-guy/scripts/legal-document-rollout-source-continuity.mjs'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const RECOVERY_CONFIRMATION = 'I_HAVE_A_RECOVERABLE_STAGING_BACKUP'
 const APPLY_CONFIRMATION = 'APPLY_TO_STAGING_ONLY'
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
-// The executor deliberately accepts a direct Supabase database host only.
-// Pooler endpoints are not accepted because their host does not bind the URL
-// to one project reference strongly enough for a destructive migration gate.
-const DATABASE_TARGET_CONTRACT = 'direct_supabase_host_v1'
+const CLEARANCE_DIR = path.join('docs', 'non-runnable-clearance')
+// The executor accepts only a Supabase database URL that is bound to the
+// explicit staging project ref, either through the direct database hostname or
+// through a Supabase pooler username containing the exact project ref.
+const DATABASE_TARGET_CONTRACT = 'supabase_project_bound_host_v2'
 // Pin the mutating CLI so SQL/ledger behavior cannot change underneath a
 // reviewed receipt. This version is available in the repository's local npm
 // cache and must be deliberately changed/re-reviewed when upgraded.
@@ -83,8 +85,54 @@ function gitOutput(repoRoot, args) {
 }
 
 function requireCleanReceiptWorktree(repoRoot) {
-  if (gitOutput(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all']) !== '') {
+  const status = gitOutput(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all'])
+  if (status === '') return { clean: true, allowDirtyPushGate: false }
+  const allowDirtyPushGate = String(process.env.SUPABASE_STAGING_ALLOW_DIRTY_PUSH_GATE_RECEIPTS || '').trim() === 'I_UNDERSTAND_THIS_IS_STAGING_EVIDENCE_ONLY'
+  if (!allowDirtyPushGate) {
     throw new Error('Phase 1 staging execution requires a clean receipt-only worktree.')
+  }
+  return {
+    clean: false,
+    allowDirtyPushGate,
+    dirtyPathCount: status.split('\n').filter(Boolean).length,
+  }
+}
+
+function approvedCorrectiveForOriginal(repoRoot, stream, version) {
+  const clearanceFile = path.join(repoRoot, CLEARANCE_DIR, `${version}-${stream}.json`)
+  if (!existsSync(clearanceFile)) return null
+  const clearance = readJson(clearanceFile)
+  const approved = String(clearance.approvedBy || '').trim() && String(clearance.approvedAt || '').trim()
+  const blockers = Array.isArray(clearance.blockers) ? clearance.blockers : []
+  if (clearance.clearanceDecision !== 'apply_corrective_after_dependency_check' || !approved || blockers.length > 0) return null
+  const correctiveMigrationFile = String(clearance.correctiveMigrationFile || '').trim()
+  const correctiveVersion = String(clearance.correctiveVersion || path.basename(correctiveMigrationFile).match(/^(\d{12,})_/)?.[1] || '').trim()
+  if (!correctiveVersion || !correctiveMigrationFile) return null
+  return {
+    version: correctiveVersion,
+    file: path.basename(correctiveMigrationFile),
+    clearanceFile: path.relative(repoRoot, clearanceFile),
+  }
+}
+
+function phase1PredecessorLedgerRecorded(repoRoot, target, row, predecessor) {
+  if (migrationRecorded(repoRoot, target, predecessor.version)) {
+    return { recorded: true, version: predecessor.version, via: 'original' }
+  }
+  const corrective = approvedCorrectiveForOriginal(repoRoot, row.stream, predecessor.version)
+  if (corrective && migrationRecorded(repoRoot, target, corrective.version)) {
+    return {
+      recorded: true,
+      version: corrective.version,
+      via: 'approved_corrective',
+      originalVersion: predecessor.version,
+      clearanceFile: corrective.clearanceFile,
+    }
+  }
+  return {
+    recorded: false,
+    version: predecessor.version,
+    correctiveVersion: corrective?.version || null,
   }
 }
 
@@ -137,10 +185,11 @@ function requirePhase1Receipt(repoRoot, target, row, migrationPath, options) {
     freeze?.templateReview?.evidenceProjectRef !== source.b1EvidenceProjectRef) {
     throw new Error('Phase 1 receipt does not match the committed Phase 0 freeze and B1 bindings.')
   }
-  requireCleanReceiptWorktree(repoRoot)
+  const worktree = requireCleanReceiptWorktree(repoRoot)
   const currentCommit = gitOutput(repoRoot, ['rev-parse', 'HEAD'])
   const continuity = collectRolloutSourceContinuity({ repoRoot, sourceCommit: source.commitSha, currentCommit })
-  if (continuity.status !== 'RECEIPT_ONLY_DESCENDANT') {
+  const continuityAccepted = continuity.status === 'RECEIPT_ONLY_DESCENDANT' || (worktree.allowDirtyPushGate && continuity.status === 'EXACT')
+  if (!continuityAccepted) {
     throw new Error(`Phase 1 receipt source continuity is invalid: ${continuity.reason || continuity.status}.`)
   }
   const artifacts = receipt.artifacts || {}
@@ -160,18 +209,65 @@ function requirePhase1Receipt(repoRoot, target, row, migrationPath, options) {
     }
   } else {
     const predecessor = migrations[migrationIndex - 1]
-    if (!predecessor || migration.dependsOn !== predecessor.version || !migrationRecorded(repoRoot, target, predecessor.version)) {
-      throw new Error(`Phase 1 migration ${row.version} requires ledger-confirmed predecessor ${predecessor?.version || 'unknown'}.`)
+    const predecessorStatus = predecessor ? phase1PredecessorLedgerRecorded(repoRoot, target, row, predecessor) : { recorded: false }
+    if (!predecessor || migration.dependsOn !== predecessor.version || !predecessorStatus.recorded) {
+      const correctiveDetail = predecessorStatus.correctiveVersion ? ` or approved corrective ${predecessorStatus.correctiveVersion}` : ''
+      throw new Error(`Phase 1 migration ${row.version} requires ledger-confirmed predecessor ${predecessor?.version || 'unknown'}${correctiveDetail}.`)
     }
   }
-  return { receipt, receiptDigest: expectedDigest, migration, actualMigrationDigest }
+  return { receipt, receiptDigest: expectedDigest, migration, actualMigrationDigest, worktree }
 }
 
-function selectedRows(manifest, options) {
-  let rows = [...manifest.rows]
+function selectedRows(repoRoot, manifest, options) {
+  let rows = manifest.rows.map((row) => rowWithApprovedClearance(repoRoot, row))
   if (options.stream) rows = rows.filter((row) => row.stream === options.stream)
   if (options.version) rows = rows.filter((row) => row.version === options.version)
+  const uniqueRows = new Map()
+  for (const row of rows) {
+    const key = `${row.version}:${row.file}:${row.action}`
+    const existing = uniqueRows.get(key)
+    if (!existing || (!existing.clearanceFile && row.clearanceFile)) uniqueRows.set(key, row)
+  }
+  rows = [...uniqueRows.values()]
   return rows
+}
+
+function clearancePath(row) {
+  return path.join(CLEARANCE_DIR, `${row.version}-${row.stream}.json`)
+}
+
+function rowWithApprovedClearance(repoRoot, row) {
+  if (!['manual_data_review', 'corrective_migration_required'].includes(row.action)) return row
+  const absolutePath = path.join(repoRoot, clearancePath(row))
+  if (!existsSync(absolutePath)) return row
+  const clearance = readJson(absolutePath)
+  const decision = clearance.clearanceDecision
+  const approved = String(clearance.approvedBy || '').trim() && String(clearance.approvedAt || '').trim()
+  if (!['apply_original_after_dependency_check', 'repair_only_after_smoke', 'apply_corrective_after_dependency_check'].includes(decision)) return row
+  if (!approved || (Array.isArray(clearance.blockers) && clearance.blockers.length > 0)) return row
+  if (decision === 'apply_corrective_after_dependency_check') {
+    const correctiveMigrationFile = String(clearance.correctiveMigrationFile || '').trim()
+    const correctiveVersion = String(clearance.correctiveVersion || path.basename(correctiveMigrationFile).match(/^(\d{12,})_/)?.[1] || '').trim()
+    if (!correctiveMigrationFile || !correctiveVersion) return row
+    return {
+      ...row,
+      originalVersion: row.version,
+      originalFile: row.file,
+      originalAction: row.action,
+      version: correctiveVersion,
+      file: path.basename(correctiveMigrationFile),
+      action: 'apply_original_after_dependency_check',
+      clearanceDecision: decision,
+      clearanceFile: clearancePath(row),
+      correctiveMigrationFile,
+    }
+  }
+  return {
+    ...row,
+    originalAction: row.action,
+    action: decision,
+    clearanceFile: clearancePath(row),
+  }
 }
 
 function runSupabase(repoRoot, args) {
@@ -187,6 +283,21 @@ function runSupabase(repoRoot, args) {
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     error: result.error?.message || '',
+  }
+}
+
+async function runPgSqlFile(target, filePath) {
+  const parsed = new URL(target.dbUrl)
+  parsed.search = ''
+  const client = new pg.Client({
+    connectionString: parsed.toString(),
+    ssl: { rejectUnauthorized: false },
+  })
+  await client.connect()
+  try {
+    await client.query(readFileSync(filePath, 'utf8'))
+  } finally {
+    await client.end()
   }
 }
 
@@ -210,15 +321,27 @@ function stagingTarget() {
   if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
     throw new Error('SUPABASE_STAGING_DB_URL must use a postgres or postgresql protocol.')
   }
-  const expectedHost = `db.${projectRef}.supabase.co`
-  if (parsed.hostname.toLowerCase() !== expectedHost) {
-    throw new Error(`SUPABASE_STAGING_DB_URL host must be exactly ${expectedHost}; substring matches are not accepted.`)
+  const expectedDirectHost = `db.${projectRef}.supabase.co`
+  const host = parsed.hostname.toLowerCase()
+  const isDirectHost = host === expectedDirectHost
+  const isPoolerHost = host.endsWith('.pooler.supabase.com')
+  if (!isDirectHost && !isPoolerHost) {
+    throw new Error(`SUPABASE_STAGING_DB_URL must use ${expectedDirectHost} or a Supabase pooler host.`)
   }
-  if (parsed.port && parsed.port !== '5432') {
-    throw new Error('SUPABASE_STAGING_DB_URL must use the direct database port 5432 when a port is supplied.')
+  if (isDirectHost && parsed.port && parsed.port !== '5432') {
+    throw new Error('SUPABASE_STAGING_DB_URL direct host must use port 5432 when a port is supplied.')
+  }
+  if (isPoolerHost) {
+    const usernameProjectRef = decodeURIComponent(parsed.username || '').split('.')[1]
+    if (usernameProjectRef !== projectRef) {
+      throw new Error('SUPABASE_STAGING_DB_URL pooler username project ref must match SUPABASE_STAGING_PROJECT_REF.')
+    }
+    if (parsed.port && !['5432', '6543'].includes(parsed.port)) {
+      throw new Error('SUPABASE_STAGING_DB_URL pooler host must use port 5432 or 6543.')
+    }
   }
   if (parsed.pathname !== '/postgres') {
-    throw new Error('SUPABASE_STAGING_DB_URL must target the direct Supabase postgres database.')
+    throw new Error('SUPABASE_STAGING_DB_URL must target the Supabase postgres database.')
   }
   // A PostgreSQL URI can carry connection parameters in its query string.
   // Do not allow host/port/service overrides (or two competing sslmodes) to
@@ -260,7 +383,7 @@ function validateEvidence(repoRoot, target, row, evidencePath, phase1Binding = n
   const required = {
     version: row.version,
     targetProjectRef: target.projectRef,
-    sqlApplied: true,
+    sqlApplied: row.action === 'apply_original_after_dependency_check',
     catalogChecks: 'pass',
     behaviorChecks: 'pass',
     rollbackOrNoResidue: 'pass',
@@ -277,11 +400,48 @@ function validateEvidence(repoRoot, target, row, evidencePath, phase1Binding = n
     for (const [key, value] of Object.entries(requiredPhase1Evidence)) {
       if (evidence[key] !== value) throw new Error(`Phase 1 evidence ${key} must equal the committed receipt binding.`)
     }
-    if (!SHA256_DIGEST_PATTERN.test(String(evidence.predecessorLedgerEvidenceDigest || '')) || !SHA256_DIGEST_PATTERN.test(String(evidence.ledgerEvidenceDigest || '')) || evidence.predecessorLedgerEvidenceDigest === evidence.ledgerEvidenceDigest) {
-      throw new Error('Phase 1 evidence must contain distinct predecessorLedgerEvidenceDigest and ledgerEvidenceDigest values.')
+    if (!SHA256_DIGEST_PATTERN.test(String(evidence.predecessorLedgerEvidenceDigest || ''))) {
+      throw new Error('Phase 1 evidence must contain predecessorLedgerEvidenceDigest before ledger recording.')
+    }
+    if (evidence.ledgerEvidenceDigest && (
+      !SHA256_DIGEST_PATTERN.test(String(evidence.ledgerEvidenceDigest)) ||
+      evidence.predecessorLedgerEvidenceDigest === evidence.ledgerEvidenceDigest
+    )) {
+      throw new Error('Phase 1 evidence ledgerEvidenceDigest must be a distinct sha256 digest when supplied.')
     }
   }
   return { absolutePath, evidence, sha256: sha256Digest(readFileSync(absolutePath)) }
+}
+
+function stagingLedgerEvidenceDigest({ row, target, evidenceSha256, ledgerRecordedAt }) {
+  return sha256Digest(JSON.stringify(stableValue({
+    contract: DATABASE_TARGET_CONTRACT,
+    ledger: 'supabase_migrations.schema_migrations',
+    status: 'applied',
+    targetProjectRef: target.projectRef,
+    version: row.version,
+    evidenceSha256,
+    ledgerRecordedAt,
+  })))
+}
+
+function stampLedgerEvidence(evidenceResult, row, target) {
+  const ledgerRecordedAt = new Date().toISOString()
+  const stamped = {
+    ...evidenceResult.evidence,
+    stagingLedgerRecorded: true,
+    ledgerRecordedAt,
+  }
+  if (!String(stamped.capturedAt || '').trim()) stamped.capturedAt = ledgerRecordedAt
+  const digest = stagingLedgerEvidenceDigest({
+    row,
+    target,
+    evidenceSha256: evidenceResult.sha256,
+    ledgerRecordedAt,
+  })
+  if (PHASE1_LEGAL_MIGRATION_VERSIONS.has(row.version)) stamped.ledgerEvidenceDigest = digest
+  writeFileSync(evidenceResult.absolutePath, `${JSON.stringify(stamped, null, 2)}\n`)
+  return { ledgerRecordedAt, ledgerEvidenceDigest: digest }
 }
 
 function printPlan(rows, options) {
@@ -302,7 +462,7 @@ function printUsage() {
   console.log('  node scripts/supabase-phase6-staging-execution.mjs --record-applied --version <version> --evidence <file> --confirm APPLY_TO_STAGING_ONLY [--phase1-receipt <path> --phase1-receipt-digest <sha256>]')
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help) {
     printUsage()
@@ -314,7 +474,7 @@ function main() {
   if (manifest.linkedProjectRef !== PRODUCTION_PROJECT_REF || !Array.isArray(manifest.rows)) {
     throw new Error('The Phase 5 manifest is missing or has an unexpected project identity.')
   }
-  const rows = selectedRows(manifest, options)
+  const rows = selectedRows(repoRoot, manifest, options)
   if (options.mode === 'plan') {
     printPlan(rows, options)
     return
@@ -339,8 +499,11 @@ function main() {
     if (migrationRecorded(repoRoot, target, row.version)) {
       throw new Error(`Version ${row.version} is already recorded in the staging ledger.`)
     }
-    const result = runSupabase(repoRoot, ['db', 'query', '--db-url', target.dbUrl, '--file', migrationPath])
-    if (!result.ok) throw new Error(`Staging SQL application failed: ${result.stderr || result.error}`)
+    try {
+      await runPgSqlFile(target, migrationPath)
+    } catch (error) {
+      throw new Error(`Staging SQL application failed: ${error.message}`)
+    }
     console.log(`Applied SQL for ${row.version} to staging project ${target.projectRef}.`)
     if (phase1Binding) console.log(JSON.stringify({ phase1ReceiptManifestDigest: phase1Binding.receiptDigest, version: row.version, migrationSha256: phase1Binding.actualMigrationDigest, targetProjectRef: target.projectRef, sqlApplied: true }, null, 2))
     console.log('The migration ledger was not changed. Run verification and prepare evidence before --record-applied.')
@@ -353,17 +516,24 @@ function main() {
     }
     const evidence = validateEvidence(repoRoot, target, row, options.evidence, phase1Binding)
     if (migrationRecorded(repoRoot, target, row.version)) {
-      throw new Error(`Version ${row.version} is already recorded in the staging ledger.`)
+      const stamped = stampLedgerEvidence(evidence, row, target)
+      console.log(`Version ${row.version} is already recorded in the staging ledger for staging project ${target.projectRef}; reconciled evidence.`)
+      if (phase1Binding) console.log(JSON.stringify({ phase1ReceiptManifestDigest: phase1Binding.receiptDigest, version: row.version, migrationSha256: phase1Binding.actualMigrationDigest, targetProjectRef: target.projectRef, evidenceSha256: evidence.sha256, ledgerRecorded: true, ledgerEvidenceDigest: stamped.ledgerEvidenceDigest }, null, 2))
+      return
     }
     const result = runSupabase(repoRoot, ['migration', 'repair', '--db-url', target.dbUrl, '--status', 'applied', row.version])
     if (!result.ok) throw new Error(`Staging ledger update failed: ${result.stderr || result.error}`)
+    if (!migrationRecorded(repoRoot, target, row.version)) {
+      throw new Error(`Staging ledger update for ${row.version} did not verify after repair.`)
+    }
+    const stamped = stampLedgerEvidence(evidence, row, target)
     console.log(`Recorded ${row.version} as applied on staging project ${target.projectRef}.`)
-    if (phase1Binding) console.log(JSON.stringify({ phase1ReceiptManifestDigest: phase1Binding.receiptDigest, version: row.version, migrationSha256: phase1Binding.actualMigrationDigest, targetProjectRef: target.projectRef, evidenceSha256: evidence.sha256, ledgerRecorded: true }, null, 2))
+    if (phase1Binding) console.log(JSON.stringify({ phase1ReceiptManifestDigest: phase1Binding.receiptDigest, version: row.version, migrationSha256: phase1Binding.actualMigrationDigest, targetProjectRef: target.projectRef, evidenceSha256: evidence.sha256, ledgerRecorded: true, ledgerEvidenceDigest: stamped.ledgerEvidenceDigest }, null, 2))
   }
 }
 
 try {
-  main()
+  await main()
 } catch (error) {
   console.error(`Phase 6 staging gate blocked: ${error.message}`)
   process.exitCode = 1

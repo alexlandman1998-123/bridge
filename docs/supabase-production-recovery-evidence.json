@@ -1,0 +1,20 @@
+{
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "recoveryMethod": "equivalent_managed_backup",
+  "pitrEnabled": false,
+  "physicalBackupCount": 8,
+  "equivalentManagedBackupAccepted": true,
+  "recoveryTested": true,
+  "testedAt": "2026-07-25T18:55:39.570Z",
+  "testedBy": "Codex using Supabase CLI preview branch restore/clone",
+  "acceptedBy": "Alexander Landman production migration workflow request",
+  "restoreTarget": "Supabase preview branch codex-prod-recovery-20260725, project ref jhxihynofflyyycwdttw, branch id 34d01c00-a842-4f2b-a782-7bd9da3025e5",
+  "evidenceUrlOrTicket": "docs/supabase-production-recovery-restore-test-report.md",
+  "notes": [
+    "Live read-only verification on 2026-07-25 showed PITR disabled and 8 physical backups available for production.",
+    "Restore test used an isolated Supabase preview branch created from production with --with-data; production project isdowlnollckzvltkasn was not restored over or mutated.",
+    "The temporary restore target reported ACTIVE_HEALTHY and read-only REST smoke checks returned aggregate counts for organisations, profiles, leads, document_templates, and legal_document_master_migrations.",
+    "Temporary restore branch 34d01c00-a842-4f2b-a782-7bd9da3025e5 was deleted after evidence capture to avoid copied production data sprawl and ongoing branch cost.",
+    "Do not commit credentials, database URLs, backup secrets, or exported production data in this file."
+  ]
+}

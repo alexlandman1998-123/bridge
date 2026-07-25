@@ -226,7 +226,7 @@ function ledgerBuckets(rows) {
 }
 
 function runSupabase(repoRoot, args) {
-  const result = spawnSync('npx', ['supabase', ...args], {
+  const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -287,7 +287,7 @@ function extractObjectsFromSql(migration, repoRoot) {
   matchAll(source, /\bcreate\s+(?:unique\s+)?index\s+(?:if\s+not\s+exists\s+)?([a-zA-Z_][\w]*)/gi, ([, name]) => add('index', name))
   matchAll(source, /\badd\s+constraint\s+([a-zA-Z_][\w]*)/gi, ([, name]) => add('constraint', name))
   matchAll(source, /\bcreate\s+trigger\s+([a-zA-Z_][\w]*)/gi, ([, name]) => add('trigger', name))
-  matchAll(source, /\bcreate\s+policy\s+([a-zA-Z_][\w]*)\s+on\s+(?:public\.)?([a-zA-Z_][\w]*)/gi, ([, name, table]) => add('policy', name, table))
+  matchAll(source, /\bcreate\s+policy\s+([a-zA-Z_][\w]*)\s+on\s+(?:(public|storage)\.)?([a-zA-Z_][\w]*)/gi, ([, name, schema, table]) => add('policy', name, schema ? `${schema}.${table}` : table))
   matchAll(source, /\bcreate\s+type\s+(?:public\.)?([a-zA-Z_][\w]*)/gi, ([, name]) => add('type', name))
 
   const unique = new Map()
@@ -324,6 +324,20 @@ function buildObjectCheckSql(objects) {
   return `with expected(migration_version, migration_file, module, object_type, object_name, relation_name) as (
   values
 ${rows.join(',\n')}
+),
+normalized as (
+  select
+    *,
+    left(object_name, 63) as pg_object_name,
+    case
+      when position('.' in relation_name) > 0 then split_part(relation_name, '.', 1)
+      else 'public'
+    end as relation_schema,
+    case
+      when position('.' in relation_name) > 0 then split_part(relation_name, '.', 2)
+      else relation_name
+    end as relation_table
+  from expected
 )
 select
   migration_version,
@@ -333,44 +347,44 @@ select
   object_name,
   relation_name,
   case object_type
-    when 'table' then to_regclass('public.' || object_name) is not null
-    when 'view' then to_regclass('public.' || object_name) is not null
-    when 'index' then to_regclass('public.' || object_name) is not null
+    when 'table' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
+    when 'view' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
+    when 'index' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
     when 'type' then exists (
       select 1
       from pg_type t
       join pg_namespace n on n.oid = t.typnamespace
-      where n.nspname = 'public'
-        and t.typname = object_name
+      where n.nspname = relation_schema
+        and t.typname = pg_object_name
     )
     when 'function' then exists (
       select 1
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public'
-        and p.proname = object_name
+      where n.nspname = relation_schema
+        and p.proname = pg_object_name
     )
     when 'policy' then exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'public'
-        and p.policyname = object_name
-        and (relation_name = '' or p.tablename = relation_name)
+      where p.schemaname = relation_schema
+        and p.policyname = pg_object_name
+        and (relation_table = '' or p.tablename = relation_table)
     )
     when 'constraint' then exists (
       select 1
       from pg_constraint c
-      where c.conname = object_name
+      where c.conname = pg_object_name
     )
     when 'trigger' then exists (
       select 1
       from pg_trigger t
-      where t.tgname = object_name
+      where t.tgname = pg_object_name
         and not t.tgisinternal
     )
     else false
   end as live_exists
-from expected
+from normalized
 order by migration_version, migration_file, object_type, object_name;
 `
 }
@@ -465,6 +479,11 @@ const REVIEWED_SPLIT_EXCEPTIONS = new Map([
     objectCount: 30,
     decision: 'confirmed_superseded_split',
     evidence: 'The three absent private_listings policies were superseded by the applied scoped policies in 202607090006 and 202607130005.',
+  }],
+  ['202607230009', {
+    objectStatus: 'no_static_objects',
+    decision: 'confirmed_live_manual_sql',
+    evidence: 'Live function definition for bridge_convert_attorney_lead_to_matter contains the cancellation_attorney role gate, bridge_attorney_member_assignment_eligible check, and cancellation-matters function comment.',
   }],
 ])
 

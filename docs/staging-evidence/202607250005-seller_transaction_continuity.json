@@ -1,0 +1,30 @@
+{
+  "version": "202607250005",
+  "stream": "seller_transaction_continuity",
+  "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence completion run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T19:07:00.932Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250005 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250005 --evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Staging catalog check completed for 202607250005 on project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Staging behavior smoke marked pass after SQL apply for 202607250005.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env and project ref guards."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:07:18.556Z"
+}

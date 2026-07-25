@@ -1,0 +1,711 @@
+{
+  "generatedAt": "2026-07-25T17:19:39.016Z",
+  "status": "LEDGER_DRIFT_BLOCKED",
+  "closeoutSource": "scripts/supabase-phase8-closeout.mjs",
+  "splitInvestigationSource": "scripts/supabase-phase6-split-ledger-investigation.mjs",
+  "closeoutCommandStatus": 1,
+  "splitCommandStatus": 0,
+  "resolved": false,
+  "reviewedSplitVersions": [
+    "202606010001",
+    "202606030007",
+    "202606030008",
+    "202606030009",
+    "202606030010",
+    "202606030011",
+    "202606040001",
+    "202606040002",
+    "202606040004",
+    "202606040005",
+    "202606050001",
+    "202606080002",
+    "202606090010",
+    "202606110004",
+    "202606110005",
+    "202606110006",
+    "202606110007"
+  ],
+  "unresolvedSplitVersions": [],
+  "counts": {
+    "pureLocalOnly": 25,
+    "pureRemoteOnly": 0,
+    "divergent": 0,
+    "splitRows": 17,
+    "reviewedSplitRows": 17,
+    "unresolvedSplitRows": 0,
+    "blockers": 128
+  },
+  "rows": {
+    "pureLocalOnly": [
+      {
+        "version": "202607220001",
+        "stream": "legal_document_runtime",
+        "file": "202607220001_document_workspace_status_phase2.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220001 --plan"
+      },
+      {
+        "version": "202607220002",
+        "stream": "legal_document_runtime",
+        "file": "202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220002 --plan"
+      },
+      {
+        "version": "202607220003",
+        "stream": "legal_document_runtime",
+        "file": "202607220003_signable_packet_sent_phase1.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220003 --plan"
+      },
+      {
+        "version": "202607220004",
+        "stream": "legal_document_runtime",
+        "file": "202607220004_canonical_otp_signing_phase2.sql",
+        "resolution": "superseded_by_corrective_promotion_plan",
+        "resolved": true,
+        "blockers": [],
+        "correctiveVersion": "202607250002",
+        "correctiveFile": "202607250002_corrective_canonical_otp_signing_phase2.sql",
+        "command": "npm run supabase:push:promote-one -- --version 202607250002 --plan"
+      },
+      {
+        "version": "202607220005",
+        "stream": "legal_document_runtime",
+        "file": "202607220005_canonical_otp_seal_atomic_recovery.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220005 --plan"
+      },
+      {
+        "version": "202607220006",
+        "stream": "legal_document_runtime",
+        "file": "202607220006_phase3_visual_signature_evidence.sql",
+        "resolution": "superseded_by_corrective_promotion_plan",
+        "resolved": true,
+        "blockers": [],
+        "correctiveVersion": "202607250003",
+        "correctiveFile": "202607250003_corrective_visual_signature_evidence.sql",
+        "command": "npm run supabase:push:promote-one -- --version 202607250003 --plan"
+      },
+      {
+        "version": "202607220007",
+        "stream": "legal_document_runtime",
+        "file": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+        "resolution": "superseded_by_corrective_promotion_plan",
+        "resolved": true,
+        "blockers": [],
+        "correctiveVersion": "202607250004",
+        "correctiveFile": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+        "command": "npm run supabase:push:promote-one -- --version 202607250004 --plan"
+      },
+      {
+        "version": "202607220008",
+        "stream": "legal_document_runtime",
+        "file": "202607220008_phase4_legal_template_release_integrity.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220008 --plan"
+      },
+      {
+        "version": "202607220009",
+        "stream": "legal_document_runtime",
+        "file": "202607220009_phase4_legal_release_provenance.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220009 --plan"
+      },
+      {
+        "version": "202607220010",
+        "stream": "legal_document_runtime",
+        "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220010 --plan"
+      },
+      {
+        "version": "202607220011",
+        "stream": "legal_document_runtime",
+        "file": "202607220011_phase4_legal_release_persistence_fence.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220011 --plan"
+      },
+      {
+        "version": "202607220012",
+        "stream": "legal_document_runtime",
+        "file": "202607220012_phase5_legal_document_health_incident_integrity.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220012 --plan"
+      },
+      {
+        "version": "202607220013",
+        "stream": "bond_finance_runtime",
+        "file": "202607220013_bond_application_consent_and_finance_document_audit.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220013 --plan"
+      },
+      {
+        "version": "202607220014",
+        "stream": "bond_finance_runtime",
+        "file": "202607220014_bond_partner_referral_terms_and_ledger.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607220014 --plan"
+      },
+      {
+        "version": "202607230001",
+        "stream": "seller_transaction_continuity",
+        "file": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+        "resolution": "superseded_by_corrective_promotion_plan",
+        "resolved": true,
+        "blockers": [],
+        "correctiveVersion": "202607250005",
+        "correctiveFile": "202607250005_corrective_seller_document_transaction_continuity.sql",
+        "command": "npm run supabase:push:promote-one -- --version 202607250005 --plan"
+      },
+      {
+        "version": "202607230004",
+        "stream": "legal_document_runtime",
+        "file": "202607230004_phase5_pilot_release_trace_integrity.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607230004 --plan"
+      },
+      {
+        "version": "202607230005",
+        "stream": "legal_document_runtime",
+        "file": "202607230005_phase6_successor_release_epoch_integrity.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607230005 --plan"
+      },
+      {
+        "version": "202607230013",
+        "stream": "attorney_workflow_runtime",
+        "file": "202607230013_attorney_workflow_step_completion_advance.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607230013 --plan"
+      },
+      {
+        "version": "202607240001",
+        "stream": "workspace_profile_management",
+        "file": "202607240001_agent_profile_management_rpc.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607240001 --plan"
+      },
+      {
+        "version": "202607240002",
+        "stream": "legal_document_runtime",
+        "file": "202607240002_global_mandate_platform_default_phase2.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607240002 --plan"
+      },
+      {
+        "version": "202607250001",
+        "stream": "other",
+        "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_evidence_missing",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607250001 --plan"
+      },
+      {
+        "version": "202607250002",
+        "stream": "legal_document_runtime",
+        "file": "202607250002_corrective_canonical_otp_signing_phase2.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607250002 --plan"
+      },
+      {
+        "version": "202607250003",
+        "stream": "legal_document_runtime",
+        "file": "202607250003_corrective_visual_signature_evidence.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607250003 --plan"
+      },
+      {
+        "version": "202607250004",
+        "stream": "legal_document_runtime",
+        "file": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607250004 --plan"
+      },
+      {
+        "version": "202607250005",
+        "stream": "seller_transaction_continuity",
+        "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+        "resolution": "promotion_blocked_by_phase5",
+        "resolved": false,
+        "blockers": [
+          "production_promotion_not_ready",
+          "phase5_staging_ledger_not_recorded",
+          "phase5_catalog_checks_pending",
+          "phase5_behavior_checks_pending",
+          "phase5_rollback_or_no_residue_pending",
+          "phase5_approver_pending",
+          "phase5_production_recovery_not_locked"
+        ],
+        "command": "npm run supabase:push:promote-one -- --version 202607250005 --plan"
+      }
+    ],
+    "pureRemoteOnly": [],
+    "divergent": [],
+    "splitRows": [
+      {
+        "version": "202606010001",
+        "module": "transaction_network",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606030007",
+        "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606030008",
+        "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606030009",
+        "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606030010",
+        "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606030011",
+        "module": "notification_automation",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606040001",
+        "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606040002",
+        "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606040004",
+        "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606040005",
+        "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606050001",
+        "module": "bond_finance",
+        "objectStatus": "no_static_objects",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_manual_sql",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606080002",
+        "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606090010",
+        "module": "other",
+        "objectStatus": "partial_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_superseded_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606110004",
+        "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606110005",
+        "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606110006",
+        "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      },
+      {
+        "version": "202606110007",
+        "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
+        "resolved": true,
+        "blockers": []
+      }
+    ]
+  },
+  "blockers": [
+    "202607220001:production_promotion_not_ready",
+    "202607220001:phase5_staging_ledger_not_recorded",
+    "202607220001:phase5_catalog_checks_pending",
+    "202607220001:phase5_behavior_checks_pending",
+    "202607220001:phase5_rollback_or_no_residue_pending",
+    "202607220001:phase5_approver_pending",
+    "202607220001:phase5_production_recovery_not_locked",
+    "202607220002:production_promotion_not_ready",
+    "202607220002:phase5_staging_ledger_not_recorded",
+    "202607220002:phase5_catalog_checks_pending",
+    "202607220002:phase5_behavior_checks_pending",
+    "202607220002:phase5_rollback_or_no_residue_pending",
+    "202607220002:phase5_approver_pending",
+    "202607220002:phase5_production_recovery_not_locked",
+    "202607220003:production_promotion_not_ready",
+    "202607220003:phase5_staging_ledger_not_recorded",
+    "202607220003:phase5_catalog_checks_pending",
+    "202607220003:phase5_behavior_checks_pending",
+    "202607220003:phase5_rollback_or_no_residue_pending",
+    "202607220003:phase5_approver_pending",
+    "202607220003:phase5_production_recovery_not_locked",
+    "202607220005:production_promotion_not_ready",
+    "202607220005:phase5_staging_ledger_not_recorded",
+    "202607220005:phase5_catalog_checks_pending",
+    "202607220005:phase5_behavior_checks_pending",
+    "202607220005:phase5_rollback_or_no_residue_pending",
+    "202607220005:phase5_approver_pending",
+    "202607220005:phase5_production_recovery_not_locked",
+    "202607220008:production_promotion_not_ready",
+    "202607220008:phase5_staging_ledger_not_recorded",
+    "202607220008:phase5_catalog_checks_pending",
+    "202607220008:phase5_behavior_checks_pending",
+    "202607220008:phase5_rollback_or_no_residue_pending",
+    "202607220008:phase5_approver_pending",
+    "202607220008:phase5_production_recovery_not_locked",
+    "202607220009:production_promotion_not_ready",
+    "202607220009:phase5_staging_ledger_not_recorded",
+    "202607220009:phase5_catalog_checks_pending",
+    "202607220009:phase5_behavior_checks_pending",
+    "202607220009:phase5_rollback_or_no_residue_pending",
+    "202607220009:phase5_approver_pending",
+    "202607220009:phase5_production_recovery_not_locked",
+    "202607220010:production_promotion_not_ready",
+    "202607220010:phase5_staging_ledger_not_recorded",
+    "202607220010:phase5_catalog_checks_pending",
+    "202607220010:phase5_behavior_checks_pending",
+    "202607220010:phase5_rollback_or_no_residue_pending",
+    "202607220010:phase5_approver_pending",
+    "202607220010:phase5_production_recovery_not_locked",
+    "202607220011:production_promotion_not_ready",
+    "202607220011:phase5_staging_ledger_not_recorded",
+    "202607220011:phase5_catalog_checks_pending",
+    "202607220011:phase5_behavior_checks_pending",
+    "202607220011:phase5_rollback_or_no_residue_pending",
+    "202607220011:phase5_approver_pending",
+    "202607220011:phase5_production_recovery_not_locked",
+    "202607220012:production_promotion_not_ready",
+    "202607220012:phase5_staging_ledger_not_recorded",
+    "202607220012:phase5_catalog_checks_pending",
+    "202607220012:phase5_behavior_checks_pending",
+    "202607220012:phase5_rollback_or_no_residue_pending",
+    "202607220012:phase5_approver_pending",
+    "202607220012:phase5_production_recovery_not_locked",
+    "202607220013:production_promotion_not_ready",
+    "202607220013:phase5_staging_ledger_not_recorded",
+    "202607220013:phase5_catalog_checks_pending",
+    "202607220013:phase5_behavior_checks_pending",
+    "202607220013:phase5_rollback_or_no_residue_pending",
+    "202607220013:phase5_approver_pending",
+    "202607220013:phase5_production_recovery_not_locked",
+    "202607220014:production_promotion_not_ready",
+    "202607220014:phase5_staging_ledger_not_recorded",
+    "202607220014:phase5_catalog_checks_pending",
+    "202607220014:phase5_behavior_checks_pending",
+    "202607220014:phase5_rollback_or_no_residue_pending",
+    "202607220014:phase5_approver_pending",
+    "202607220014:phase5_production_recovery_not_locked",
+    "202607230004:production_promotion_not_ready",
+    "202607230004:phase5_staging_ledger_not_recorded",
+    "202607230004:phase5_catalog_checks_pending",
+    "202607230004:phase5_behavior_checks_pending",
+    "202607230004:phase5_rollback_or_no_residue_pending",
+    "202607230004:phase5_approver_pending",
+    "202607230004:phase5_production_recovery_not_locked",
+    "202607230005:production_promotion_not_ready",
+    "202607230005:phase5_production_recovery_not_locked",
+    "202607230013:production_promotion_not_ready",
+    "202607230013:phase5_production_recovery_not_locked",
+    "202607240001:production_promotion_not_ready",
+    "202607240001:phase5_production_recovery_not_locked",
+    "202607240002:production_promotion_not_ready",
+    "202607240002:phase5_staging_ledger_not_recorded",
+    "202607240002:phase5_catalog_checks_pending",
+    "202607240002:phase5_behavior_checks_pending",
+    "202607240002:phase5_rollback_or_no_residue_pending",
+    "202607240002:phase5_approver_pending",
+    "202607240002:phase5_production_recovery_not_locked",
+    "202607250001:production_promotion_not_ready",
+    "202607250001:phase5_staging_evidence_missing",
+    "202607250001:phase5_production_recovery_not_locked",
+    "202607250002:production_promotion_not_ready",
+    "202607250002:phase5_staging_ledger_not_recorded",
+    "202607250002:phase5_catalog_checks_pending",
+    "202607250002:phase5_behavior_checks_pending",
+    "202607250002:phase5_rollback_or_no_residue_pending",
+    "202607250002:phase5_approver_pending",
+    "202607250002:phase5_production_recovery_not_locked",
+    "202607250003:production_promotion_not_ready",
+    "202607250003:phase5_staging_ledger_not_recorded",
+    "202607250003:phase5_catalog_checks_pending",
+    "202607250003:phase5_behavior_checks_pending",
+    "202607250003:phase5_rollback_or_no_residue_pending",
+    "202607250003:phase5_approver_pending",
+    "202607250003:phase5_production_recovery_not_locked",
+    "202607250004:production_promotion_not_ready",
+    "202607250004:phase5_staging_ledger_not_recorded",
+    "202607250004:phase5_catalog_checks_pending",
+    "202607250004:phase5_behavior_checks_pending",
+    "202607250004:phase5_rollback_or_no_residue_pending",
+    "202607250004:phase5_approver_pending",
+    "202607250004:phase5_production_recovery_not_locked",
+    "202607250005:production_promotion_not_ready",
+    "202607250005:phase5_staging_ledger_not_recorded",
+    "202607250005:phase5_catalog_checks_pending",
+    "202607250005:phase5_behavior_checks_pending",
+    "202607250005:phase5_rollback_or_no_residue_pending",
+    "202607250005:phase5_approver_pending",
+    "202607250005:phase5_production_recovery_not_locked"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "version": "202607250006",
+  "stream": "legal_document_runtime",
+  "file": "202607250006_corrective_global_mandate_platform_default_revision.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:36:12.434Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607250006 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass after one-version SQL apply for 202607250006.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:36:36.378Z"
+}

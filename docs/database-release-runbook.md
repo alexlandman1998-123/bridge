@@ -63,6 +63,14 @@ Use `scripts/supabase-phase6-staging-execution.mjs` for manifest-driven staging 
 
 ### Production promotion gate
 
+Before production promotion, run:
+
+```bash
+npm run supabase:push:lock-recovery
+```
+
+Complete `docs/supabase-production-recovery-evidence.json` only after PITR is enabled or an equivalent physical/managed backup restore has been tested, reviewed, and accepted. The evidence file must not contain credentials, database URLs, backup secrets, or exported production data. Production promotion remains blocked until the recovery lock reports `RECOVERY_LOCKED`.
+
 Use `scripts/supabase-phase7-production-execution.mjs` only after the exact version has passed staging and its staging ledger is recorded. Production mutations require the fixed production project identity, an identity-matching database URL, explicit recovery confirmation, and a live CLI check proving PITR or at least one physical backup exists. The runner handles one exact version per invocation, enforces recorded stream dependencies, and separates SQL application from ledger recording.
 
 Every production invocation requires reviewed staging evidence. Ledger recording additionally requires production evidence proving the target state and catalog, behavior, and rollback/no-residue checks. Corrective and manual-review rows remain outside this runner; `repair_only_after_smoke` can be ledger-recorded with evidence but can never replay SQL.

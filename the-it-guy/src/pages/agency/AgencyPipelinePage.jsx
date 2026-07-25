@@ -143,14 +143,14 @@ import {
   FINANCE_INTELLIGENCE_DISCLAIMER,
 } from '../../services/financeIntelligenceService'
 
-const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
-const PIPELINE_RECORDS_TIMEOUT_MS = 3500
+const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
+const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
-const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 2500
-const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 900
+const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
+const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 1500
 const LEAD_WORKSPACE_HYDRATION_MAX_RETRIES = 4
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const BUYER_LIFECYCLE_REFRESH_STORAGE_KEY = 'bridge:buyer-lifecycle-refresh:v1'
@@ -237,6 +237,21 @@ function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT
   ]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId)
   })
+}
+
+function createEmptyPipelineSnapshot(organisationId = '') {
+  return {
+    organisationId: normalizeText(organisationId) || null,
+    contacts: [],
+    leads: [],
+    leadActivities: [],
+    tasks: [],
+    appointments: [],
+    appointmentParticipants: [],
+    transactions: [],
+    deals: [],
+    inboundLeadEmails: [],
+  }
 }
 
 const LEAD_LOST_REASON_OPTIONS = [
@@ -3240,11 +3255,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       const requestId = reloadRequestRef.current + 1
       reloadRequestRef.current = requestId
-      const snapshot = getAgencyPipelineSnapshot(orgId)
+      const localFallbackAvailable = isUnsafeFallbackAllowed()
+      const snapshot = localFallbackAvailable ? getAgencyPipelineSnapshot(orgId) : createEmptyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
       let listingOptionsForAppointments = dedupeListingOptions([
         ...buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : []),
-        ...(isUnsafeFallbackAllowed()
+        ...(localFallbackAvailable
           ? readAgentPrivateListings().map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean)
           : []),
       ])
@@ -3285,7 +3301,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      if (applyLocalSnapshot && requestId === reloadRequestRef.current) {
+      if (applyLocalSnapshot && localFallbackAvailable && requestId === reloadRequestRef.current) {
         applySnapshotRecords(snapshot)
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {

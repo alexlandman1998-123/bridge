@@ -1,0 +1,27 @@
+{
+  "version": "202607220009",
+  "stream": "legal_document_runtime",
+  "file": "202607220009_phase4_legal_release_provenance.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion run",
+  "capturedAt": "2026-07-25T19:32:14.477Z",
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ],
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "verification": {
+    "catalog": "Production catalog check marked pass for 202607220009 on project isdowlnollckzvltkasn.",
+    "behavior": "Production behavior smoke marked pass after one-version SQL apply for 202607220009.",
+    "rollbackOrNoResidue": "Production recovery lock was verified before promotion; no broad db push was used."
+  },
+  "ledgerRecordedAt": "2026-07-25T19:32:37.780Z"
+}

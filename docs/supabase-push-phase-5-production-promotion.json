@@ -1,0 +1,350 @@
+{
+  "generatedAt": "2026-07-25T19:22:27.238Z",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "productionEnvConfigured": false,
+  "recoveryLock": {
+    "evidencePath": "docs/supabase-production-recovery-evidence.json",
+    "locked": true,
+    "blockers": []
+  },
+  "rows": [
+    {
+      "version": "202607220001",
+      "stream": "legal_document_runtime",
+      "file": "202607220001_document_workspace_status_phase2.sql",
+      "action": "repair_only_after_smoke",
+      "route": "repair_only",
+      "productionRoute": "production_no_sql_record_after_smoke",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220001-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220001-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220001 --staging-evidence docs/staging-evidence/202607220001-legal_document_runtime.json --production-evidence docs/production-evidence/202607220001-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220002",
+      "stream": "legal_document_runtime",
+      "file": "202607220002_authoritative_mandate_signing_delivery_phase0.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220002-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220002-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220002 --staging-evidence docs/staging-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220002 --staging-evidence docs/staging-evidence/202607220002-legal_document_runtime.json --production-evidence docs/production-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220003",
+      "stream": "legal_document_runtime",
+      "file": "202607220003_signable_packet_sent_phase1.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220003-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220003-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220003 --staging-evidence docs/staging-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220003 --staging-evidence docs/staging-evidence/202607220003-legal_document_runtime.json --production-evidence docs/production-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250002",
+      "stream": "legal_document_runtime",
+      "file": "202607250002_corrective_canonical_otp_signing_phase2.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250002-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250002-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250002 --staging-evidence docs/staging-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250002 --staging-evidence docs/staging-evidence/202607250002-legal_document_runtime.json --production-evidence docs/production-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220005",
+      "stream": "legal_document_runtime",
+      "file": "202607220005_canonical_otp_seal_atomic_recovery.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220005-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220005-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220005 --staging-evidence docs/staging-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220005 --staging-evidence docs/staging-evidence/202607220005-legal_document_runtime.json --production-evidence docs/production-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250003",
+      "stream": "legal_document_runtime",
+      "file": "202607250003_corrective_visual_signature_evidence.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250003-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250003-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250003 --staging-evidence docs/staging-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250003 --staging-evidence docs/staging-evidence/202607250003-legal_document_runtime.json --production-evidence docs/production-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250004",
+      "stream": "legal_document_runtime",
+      "file": "202607250004_corrective_legal_runtime_metadata_immutability.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250004-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250004-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250004 --staging-evidence docs/staging-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250004 --staging-evidence docs/staging-evidence/202607250004-legal_document_runtime.json --production-evidence docs/production-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220008",
+      "stream": "legal_document_runtime",
+      "file": "202607220008_phase4_legal_template_release_integrity.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220008-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220008-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220008 --staging-evidence docs/staging-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220008 --staging-evidence docs/staging-evidence/202607220008-legal_document_runtime.json --production-evidence docs/production-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220009",
+      "stream": "legal_document_runtime",
+      "file": "202607220009_phase4_legal_release_provenance.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220009-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220009-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220009 --staging-evidence docs/staging-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220009 --staging-evidence docs/staging-evidence/202607220009-legal_document_runtime.json --production-evidence docs/production-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220010",
+      "stream": "legal_document_runtime",
+      "file": "202607220010_phase4_seller_portal_final_artifact_fence.sql",
+      "action": "repair_only_after_smoke",
+      "route": "repair_only",
+      "productionRoute": "production_no_sql_record_after_smoke",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220010-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220010-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220010 --staging-evidence docs/staging-evidence/202607220010-legal_document_runtime.json --production-evidence docs/production-evidence/202607220010-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220011",
+      "stream": "legal_document_runtime",
+      "file": "202607220011_phase4_legal_release_persistence_fence.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220011-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220011-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220011 --staging-evidence docs/staging-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220011 --staging-evidence docs/staging-evidence/202607220011-legal_document_runtime.json --production-evidence docs/production-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220012",
+      "stream": "legal_document_runtime",
+      "file": "202607220012_phase5_legal_document_health_incident_integrity.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220012-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220012-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220012 --staging-evidence docs/staging-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220012 --staging-evidence docs/staging-evidence/202607220012-legal_document_runtime.json --production-evidence docs/production-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607230004",
+      "stream": "legal_document_runtime",
+      "file": "202607230004_phase5_pilot_release_trace_integrity.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607230004-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607230004-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607230004 --staging-evidence docs/staging-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230004 --staging-evidence docs/staging-evidence/202607230004-legal_document_runtime.json --production-evidence docs/production-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607230005",
+      "stream": "legal_document_runtime",
+      "file": "202607230005_phase6_successor_release_epoch_integrity.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607230005-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607230005-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607230005 --staging-evidence docs/staging-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230005 --staging-evidence docs/staging-evidence/202607230005-legal_document_runtime.json --production-evidence docs/production-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250006",
+      "stream": "legal_document_runtime",
+      "file": "202607250006_corrective_global_mandate_platform_default_revision.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250006-legal_document_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250006-legal_document_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250006 --staging-evidence docs/staging-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250006 --staging-evidence docs/staging-evidence/202607250006-legal_document_runtime.json --production-evidence docs/production-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250005",
+      "stream": "seller_transaction_continuity",
+      "file": "202607250005_corrective_seller_document_transaction_continuity.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250005-seller_transaction_continuity.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250005-seller_transaction_continuity.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250005 --staging-evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250005 --staging-evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --production-evidence docs/production-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220013",
+      "stream": "bond_finance_runtime",
+      "file": "202607220013_bond_application_consent_and_finance_document_audit.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220013-bond_finance_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220013-bond_finance_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220013 --staging-evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220013 --staging-evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --production-evidence docs/production-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607220014",
+      "stream": "bond_finance_runtime",
+      "file": "202607220014_bond_partner_referral_terms_and_ledger.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607220014-bond_finance_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607220014-bond_finance_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220014 --staging-evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220014 --staging-evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --production-evidence docs/production-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607230013",
+      "stream": "attorney_workflow_runtime",
+      "file": "202607230013_attorney_workflow_step_completion_advance.sql",
+      "action": "repair_only_after_smoke",
+      "route": "repair_only",
+      "productionRoute": "production_no_sql_record_after_smoke",
+      "stagingEvidenceFile": "docs/staging-evidence/202607230013-attorney_workflow_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/202607230013-attorney_workflow_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230013 --staging-evidence docs/staging-evidence/202607230013-attorney_workflow_runtime.json --production-evidence docs/production-evidence/202607230013-attorney_workflow_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607240001",
+      "stream": "workspace_profile_management",
+      "file": "202607240001_agent_profile_management_rpc.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607240001-workspace_profile_management.json",
+      "productionEvidenceFile": "docs/production-evidence/202607240001-workspace_profile_management.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607240001 --staging-evidence docs/staging-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607240001 --staging-evidence docs/staging-evidence/202607240001-workspace_profile_management.json --production-evidence docs/production-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "202607250001",
+      "stream": "other",
+      "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+      "action": "repair_only_after_smoke",
+      "route": "repair_only",
+      "productionRoute": "production_no_sql_record_after_smoke",
+      "stagingEvidenceFile": "docs/staging-evidence/202607250001-other.json",
+      "productionEvidenceFile": "docs/production-evidence/202607250001-other.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250001 --staging-evidence docs/staging-evidence/202607250001-other.json --production-evidence docs/production-evidence/202607250001-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    }
+  ],
+  "routeCounts": {
+    "production_no_sql_record_after_smoke": 4,
+    "production_apply_sql": 17
+  },
+  "readyCount": 21,
+  "blockedCount": 0
+}

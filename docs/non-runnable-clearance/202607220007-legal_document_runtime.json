@@ -1,0 +1,66 @@
+{
+  "version": "202607220007",
+  "stream": "legal_document_runtime",
+  "dependsOn": "202607220006",
+  "module": "other",
+  "file": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 3,
+  "objectCount": 4,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 1,
+  "objects": [
+    {
+      "migrationVersion": "202607220007",
+      "migrationFile": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_apply_legal_document_counsel_approvals",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607220007",
+      "migrationFile": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_guard_published_template_revision_b4",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202607220007",
+      "migrationFile": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_legal_runtime_metadata_transition_phase4",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202607220007",
+      "migrationFile": "202607220007_phase4_legal_runtime_metadata_immutability.sql",
+      "stream": "legal_document_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_restart_legal_document_review_cycle",
+      "relationName": "",
+      "liveExists": true
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "Alexander Landman Codex instruction",
+  "approvedAt": "2026-07-25T17:15:00.000Z",
+  "correctiveMigrationFile": "supabase/migrations/202607250004_corrective_legal_runtime_metadata_immutability.sql",
+  "correctiveVersion": "202607250004",
+  "definitionDiffReviewedBy": "Codex non-runnable clearance",
+  "correctiveMigrationReviewedBy": "Codex non-runnable clearance",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/202607220007-legal_document_runtime.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607220007-legal_document_runtime.json"
+}

@@ -1,0 +1,19 @@
+{
+  "version": "202607230001",
+  "stream": "seller_transaction_continuity",
+  "file": "202607230001_reconcile_seller_document_transaction_continuity.sql",
+  "productionRoute": "blocked_corrective_required",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": null,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "notes": [
+    "Upstream row is blocked; keep this pending until the route is replaced by an executable production path."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "version": "202607230005",
+  "stream": "legal_document_runtime",
+  "file": "202607230005_phase6_successor_release_epoch_integrity.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T16:55:57.878Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607230005 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230005 --evidence docs/staging-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Confirmed 5 successor release control tables and 6 service RPCs exist on staging.",
+    "behavior": "Migration applied with pg through the one-version staging runner after local CASE expression syntax fix; definitions compiled successfully.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only apply; ledger recording follows after evidence validation."
+  },
+  "ledgerRecordedAt": "2026-07-25T16:56:21.713Z"
+}

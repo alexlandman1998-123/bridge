@@ -1,0 +1,56 @@
+{
+  "generatedAt": "2026-07-25T19:42:52.628Z",
+  "status": "READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT",
+  "closeoutReady": true,
+  "phase6EvidenceSync": {
+    "ok": true,
+    "status": 0
+  },
+  "localCloseout": {
+    "ok": true,
+    "status": 0,
+    "decision": "LOCAL_CLOSEOUT_NOT_READY",
+    "counts": {
+      "manifestRows": 21,
+      "completeEvidenceRows": 21,
+      "incompleteEvidenceRows": 0,
+      "recoveryLocked": true,
+      "recoveryBlockers": 0,
+      "duplicateVersions": 0,
+      "missingManifestFiles": 0,
+      "unknownEvidenceRows": 0,
+      "duplicateEvidenceVersions": 0
+    }
+  },
+  "liveCloseout": {
+    "attempted": true,
+    "ok": true,
+    "status": 0,
+    "decision": "READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT",
+    "parsed": true,
+    "error": "",
+    "counts": {
+      "manifestRows": 21,
+      "completeEvidenceRows": 21,
+      "incompleteEvidenceRows": 0,
+      "recoveryLocked": true,
+      "recoveryBlockers": 0,
+      "duplicateVersions": 0,
+      "missingManifestFiles": 0,
+      "unknownEvidenceRows": 0,
+      "duplicateEvidenceVersions": 0
+    },
+    "ledger": {
+      "pureLocalOnly": 0,
+      "pureRemoteOnly": 0,
+      "divergent": 0,
+      "unreviewedSplitVersions": 0
+    },
+    "recovery": {
+      "pitrEnabled": false,
+      "physicalBackupCount": 8,
+      "recoverable": true
+    }
+  },
+  "closeoutReport": "docs/supabase-phase-8-closeout-report.md"
+}

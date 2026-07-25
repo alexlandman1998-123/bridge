@@ -211,7 +211,7 @@ function parseMigrationRows(stdout) {
 }
 
 function runSupabase(repoRoot, args) {
-  const result = spawnSync('npx', ['supabase', ...args], {
+  const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -288,7 +288,7 @@ function extractObjectsFromSql(migration, repoRoot) {
   matchAll(source, /\bcreate\s+(?:unique\s+)?index\s+(?:if\s+not\s+exists\s+)?([a-zA-Z_][\w]*)/gi, ([, name]) => add('index', name))
   matchAll(source, /\badd\s+constraint\s+([a-zA-Z_][\w]*)/gi, ([, name]) => add('constraint', name))
   matchAll(source, /\bcreate\s+trigger\s+([a-zA-Z_][\w]*)/gi, ([, name]) => add('trigger', name))
-  matchAll(source, /\bcreate\s+policy\s+([a-zA-Z_][\w]*)\s+on\s+(?:public\.)?([a-zA-Z_][\w]*)/gi, ([, name, table]) => add('policy', name, table))
+  matchAll(source, /\bcreate\s+policy\s+([a-zA-Z_][\w]*)\s+on\s+(?:(public|storage)\.)?([a-zA-Z_][\w]*)/gi, ([, name, schema, table]) => add('policy', name, schema ? `${schema}.${table}` : table))
   matchAll(source, /\bcreate\s+type\s+(?:public\.)?([a-zA-Z_][\w]*)/gi, ([, name]) => add('type', name))
 
   const unique = new Map()
@@ -337,6 +337,20 @@ function buildObjectCheckSql(objects) {
   return `with expected(migration_version, migration_file, module, object_type, object_name, relation_name) as (
   values
 ${rows.join(',\n')}
+),
+normalized as (
+  select
+    *,
+    left(object_name, 63) as pg_object_name,
+    case
+      when position('.' in relation_name) > 0 then split_part(relation_name, '.', 1)
+      else 'public'
+    end as relation_schema,
+    case
+      when position('.' in relation_name) > 0 then split_part(relation_name, '.', 2)
+      else relation_name
+    end as relation_table
+  from expected
 )
 select
   migration_version,
@@ -346,44 +360,44 @@ select
   object_name,
   relation_name,
   case object_type
-    when 'table' then to_regclass('public.' || object_name) is not null
-    when 'view' then to_regclass('public.' || object_name) is not null
-    when 'index' then to_regclass('public.' || object_name) is not null
+    when 'table' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
+    when 'view' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
+    when 'index' then to_regclass(quote_ident(relation_schema) || '.' || quote_ident(pg_object_name)) is not null
     when 'type' then exists (
       select 1
       from pg_type t
       join pg_namespace n on n.oid = t.typnamespace
-      where n.nspname = 'public'
-        and t.typname = object_name
+      where n.nspname = relation_schema
+        and t.typname = pg_object_name
     )
     when 'function' then exists (
       select 1
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public'
-        and p.proname = object_name
+      where n.nspname = relation_schema
+        and p.proname = pg_object_name
     )
     when 'policy' then exists (
       select 1
       from pg_policies p
-      where p.schemaname = 'public'
-        and p.policyname = object_name
-        and (relation_name = '' or p.tablename = relation_name)
+      where p.schemaname = relation_schema
+        and p.policyname = pg_object_name
+        and (relation_table = '' or p.tablename = relation_table)
     )
     when 'constraint' then exists (
       select 1
       from pg_constraint c
-      where c.conname = object_name
+      where c.conname = pg_object_name
     )
     when 'trigger' then exists (
       select 1
       from pg_trigger t
-      where t.tgname = object_name
+      where t.tgname = pg_object_name
         and not t.tgisinternal
     )
     else false
   end as live_exists
-from expected
+from normalized
 order by migration_version, migration_file, object_type, object_name;
 `
 }
@@ -445,9 +459,13 @@ const DEPLOYMENT_STREAM_ORDER = [
   'legal_review_assurance',
   'legal_document_runtime',
   'document_generation',
+  'seller_transaction_continuity',
+  'bond_finance_runtime',
   'attorney_accounting',
   'attorney_calendar',
   'attorney_identity_access',
+  'attorney_workflow_runtime',
+  'workspace_profile_management',
   'transaction_creation',
   'other',
 ]
@@ -457,15 +475,24 @@ function deploymentStream(row) {
   if (name.includes('settings_')) return 'settings_governance'
   if (/legal_(document_counsel|document_review|draft_review|draft_immutable|signing_envelope|signer_session|final_signed|final_delivery)/.test(name)) return 'legal_review_assurance'
   if (name.includes('document_generator') || name.includes('legal_generation')) return 'document_generation'
+  if (name.includes('reconcile_seller_document_transaction_continuity')) return 'seller_transaction_continuity'
+  if (/bond_(application|partner|bank|finance|originator)/.test(name)) return 'bond_finance_runtime'
   if (name.includes('attorney_accounting')) return 'attorney_accounting'
   if (name.includes('attorney_calendar')) return 'attorney_calendar'
   if (/attorney_(professional|signup|assignment|role)/.test(name)) return 'attorney_identity_access'
+  if (name.includes('attorney_workflow')) return 'attorney_workflow_runtime'
+  if (name.includes('agent_profile_management')) return 'workspace_profile_management'
   if (name.includes('mvp_atomic_transaction_creation')) return 'transaction_creation'
-  if (/(canonical_document|legal_document_runtime|immutable_template|editable_|frozen_pdf|pdf_|signature_field|signing_layout|signing_dispatch|signer_surface|applied_envelope|controlled_applied|cross_surface|document_experience|final_|legal_packet|native_legal)/.test(name)) return 'legal_document_runtime'
+  if (/(canonical_document|legal_document|legal_runtime|document_workspace_status|immutable_template|editable_|frozen_pdf|pdf_|signature_field|signing_layout|signing_dispatch|signer_surface|applied_envelope|controlled_applied|cross_surface|document_experience|final_|legal_packet|native_legal|authoritative_mandate|mandate_signing|signable_packet|canonical_otp|otp_signing|visual_signature|runtime_metadata|health_incident|legal_template_release|legal_release|pilot_release|successor_release|seller_portal_final_artifact|global_mandate_platform_default)/.test(name)) return 'legal_document_runtime'
   return 'other'
 }
 
+function isCorrectiveMigration(row) {
+  return /(?:^|_)corrective(?:_|$)/.test(row.file.toLowerCase())
+}
+
 function applicationAction(row) {
+  if (isCorrectiveMigration(row) && ['partial_live', 'none_live'].includes(row.objectStatus)) return 'apply_original_after_dependency_check'
   if (row.objectStatus === 'all_live') return 'repair_only_after_smoke'
   if (row.objectStatus === 'partial_live') return 'corrective_migration_required'
   if (row.objectStatus === 'none_live') return 'apply_original_after_dependency_check'

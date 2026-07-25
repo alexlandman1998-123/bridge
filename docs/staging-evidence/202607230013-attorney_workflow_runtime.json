@@ -1,0 +1,29 @@
+{
+  "version": "202607230013",
+  "stream": "attorney_workflow_runtime",
+  "file": "202607230013_attorney_workflow_step_completion_advance.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence run",
+  "approvedBy": "Alexander Landman Codex instruction",
+  "capturedAt": "2026-07-25T16:53:56.824Z",
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230013 --evidence docs/staging-evidence/202607230013-attorney_workflow_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Confirmed public.bridge_update_attorney_workflow_step(uuid, text, uuid, text, text, text, jsonb) exists on staging.",
+    "behavior": "Repair-only route: live compiled RPC definition is present; no SQL replay was performed.",
+    "rollbackOrNoResidue": "No SQL replay. Ledger-only staging repair after live-object smoke/catalog check."
+  },
+  "ledgerRecordedAt": "2026-07-25T16:54:27.187Z"
+}
