@@ -88,6 +88,10 @@ import {
   validateMandateGenerationData,
 } from '../../core/documents/mandateDataMapper'
 import {
+  hasMandateSellerOnboardingSubmitted,
+  resolveMandateReadiness,
+} from '../../core/documents/mandateReadiness'
+import {
   documentPacketBelongsToLead,
   formatPacketStatusMeta,
   resolveDocumentPacketActionState,
@@ -2887,6 +2891,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isLeadCreating, setIsLeadCreating] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
+  const [routeLeadHydrationNotice, setRouteLeadHydrationNotice] = useState('')
   const [leadActionsMenuOpen, setLeadActionsMenuOpen] = useState(false)
   const leadActionsMenuRef = useRef(null)
   const [leadListActionsMenuId, setLeadListActionsMenuId] = useState('')
@@ -3235,6 +3240,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }),
           ])
 
+          const crmContacts = Array.isArray(crmSnapshot.contacts) ? crmSnapshot.contacts : []
+          const crmLeads = filterDeletedAgencyLeadRows(
+            orgId,
+            crmSnapshot.leads || [],
+            crmContacts,
+          )
+          mergedSnapshot = {
+            ...crmSnapshot,
+            contacts: crmContacts,
+            leads: crmLeads,
+            leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
+            tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
+            inboundLeadEmails: Array.isArray(inboundLeadEmails) ? inboundLeadEmails : [],
+          }
+          if (requestId === reloadRequestRef.current) {
+            applySnapshotRecords(mergedSnapshot)
+          }
+
           let privateListingFallbackContacts = []
           let privateListingFallbackLeads = []
           try {
@@ -3280,6 +3303,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
             tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
             inboundLeadEmails: Array.isArray(inboundLeadEmails) ? inboundLeadEmails : [],
+          }
+          if (requestId === reloadRequestRef.current) {
+            applySnapshotRecords(mergedSnapshot)
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; no local CRM fallback will be loaded.', dbLoadError)
@@ -3650,7 +3676,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!routeLeadId) return
     setSelectedLeadId(routeLeadId)
     setLeadWorkspaceTab('overview')
+    setRouteLeadHydrationNotice('')
   }, [routeLeadId])
+
+  useEffect(() => {
+    if (routeLeadRecord) setRouteLeadHydrationNotice('')
+  }, [routeLeadRecord])
 
   useEffect(() => {
     if (leadWorkspaceTab === 'tasks') {
@@ -3737,6 +3768,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       if (!cancelled && attempt < LEAD_WORKSPACE_HYDRATION_MAX_RETRIES && typeof window !== 'undefined') {
         retryTimer = window.setTimeout(hydrateLeadWorkspace, LEAD_WORKSPACE_HYDRATION_RETRY_MS)
+      } else if (!cancelled && attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) {
+        setRouteLeadHydrationNotice('This lead is taking longer than expected to open. We are still refreshing pipeline records in the background.')
       }
     }
 
@@ -4305,16 +4338,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       hasFormData: Boolean(selectedLead?.sellerOnboarding?.formData && Object.keys(selectedLead.sellerOnboarding.formData).length),
     },
   )
+  const selectedLeadMandateReadiness = useMemo(
+    () =>
+      resolveMandateReadiness({
+        lead: selectedLead,
+        contact: selectedLeadContact,
+        agent: currentAgent,
+        agency: {
+          name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+        },
+        organisation: {
+          id: organisationId,
+          name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+        },
+      }),
+    [currentAgent, organisationId, organisationName, profile, selectedLead, selectedLeadContact],
+  )
   const selectedLeadHasMandateData = Boolean(
-    selectedLead &&
-      selectedLeadContact &&
-      normalizeText(selectedLeadContact?.firstName || selectedLeadContact?.lastName) &&
-      normalizeText(selectedLeadContact?.phone) &&
-      (selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
+    selectedLeadMandateReadiness.facts.sellerName &&
+      selectedLeadMandateReadiness.facts.sellerPhone &&
+      (selectedLeadMandateReadiness.facts.propertyAddress || selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
   )
   const selectedLeadOnboardingCompleted =
     selectedLeadStageKey.includes('onboarding completed') ||
-    selectedLeadOnboardingStatusKey === 'completed'
+    selectedLeadStageKey.includes('onboarding submitted') ||
+    selectedLeadMandateReadiness.facts.sellerOnboardingSubmitted ||
+    hasMandateSellerOnboardingSubmitted(selectedLead, selectedLeadOnboardingStatusKey)
   const selectedLeadBuyerOnboardingStatusKey = normalizeText(
     selectedLeadLifecycleDiagnostic?.onboarding?.status ||
       selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status ||
@@ -4645,52 +4695,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadMandatePrimaryLabel = ['generate', 'edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
     ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey)
     : selectedLeadMandateActionState.label
-  const selectedLeadMandateQuickStartRows = useMemo(() => {
-    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].map(normalizeText).filter(Boolean).join(' ')
-    const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase()
-    const sellerPhone = normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone)
-    const property = normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea || selectedLead?.propertyInterest)
-    const askingPrice = Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0
-    const agentEmail = normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase()
-    const agentName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
-    return [
-      { key: 'seller', label: 'Seller', value: sellerName || 'Missing seller name', ready: Boolean(sellerName) },
-      { key: 'seller_email', label: 'Seller email', value: sellerEmail || 'Missing seller email', ready: isValidEmail(sellerEmail) },
-      { key: 'seller_phone', label: 'Seller phone', value: sellerPhone || 'Not captured', ready: Boolean(sellerPhone), optional: true },
-      { key: 'property', label: 'Property', value: property || 'Missing property details', ready: Boolean(property) },
-      { key: 'asking_price', label: 'Asking price', value: askingPrice ? formatCurrency(askingPrice) : 'Not captured', ready: askingPrice > 0, optional: true },
-      { key: 'agent', label: 'Signing agent', value: agentName || 'Missing agent name', ready: Boolean(agentName) },
-      { key: 'agent_email', label: 'Agent email', value: agentEmail || 'Missing agent email', ready: isValidEmail(agentEmail) },
-      {
-        key: 'onboarding',
-        label: 'Seller onboarding',
-        value: selectedLeadOnboardingCompleted ? 'Submitted' : selectedLead?.sellerOnboardingToken ? 'Link sent, not submitted' : 'Not sent',
-        ready: selectedLeadOnboardingCompleted,
-        optional: selectedLeadHasMandateData,
-      },
-    ]
-  }, [
-    currentAgent.email,
-    currentAgent.fullName,
-    selectedLead,
-    selectedLeadContact,
-    selectedLeadHasMandateData,
-    selectedLeadOnboardingCompleted,
-    selectedLeadPropertyArea,
-  ])
+  const selectedLeadMandateQuickStartRows = useMemo(
+    () => selectedLeadMandateReadiness.rows,
+    [selectedLeadMandateReadiness],
+  )
   const selectedLeadMandateQuickStartBlockers = useMemo(
-    () =>
-      selectedLeadMandateQuickStartRows
-        .filter((row) => !row.ready && !row.optional)
-        .map((row) => row.value || `${row.label} is required.`),
-    [selectedLeadMandateQuickStartRows],
+    () => selectedLeadMandateReadiness.blockers,
+    [selectedLeadMandateReadiness],
   )
   const selectedLeadMandateQuickStartWarnings = useMemo(
-    () =>
-      selectedLeadMandateQuickStartRows
-        .filter((row) => !row.ready && row.optional)
-        .map((row) => row.value || `${row.label} is not complete.`),
-    [selectedLeadMandateQuickStartRows],
+    () => selectedLeadMandateReadiness.warnings,
+    [selectedLeadMandateReadiness],
   )
 
   const selectedLeadMandateSignedEvidence = useMemo(() => {
@@ -11284,10 +11299,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden min-h-0 max-w-full flex-1 overflow-auto overscroll-contain lg:block">
-	                <div className="min-w-[1260px] px-4 py-4">
+	                <div className="min-w-[1120px] px-4 py-4">
 	                  <div
-	                    className="grid items-center gap-6 px-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
-	                    style={{ gridTemplateColumns: 'minmax(290px,1.35fr) minmax(150px,0.55fr) minmax(240px,1fr) minmax(220px,0.85fr) minmax(190px,0.7fr) auto' }}
+	                    className="grid items-center gap-4 px-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
+	                    style={{ gridTemplateColumns: 'minmax(240px,1.18fr) minmax(108px,0.44fr) minmax(200px,0.9fr) minmax(190px,0.82fr) minmax(130px,0.54fr) minmax(128px,128px)' }}
 	                  >
 	                    <span>Lead</span>
 	                    <span>Source</span>
@@ -11357,7 +11372,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         return (
                           <article
                             key={lead.leadId}
-                            className={`cursor-pointer rounded-[20px] border px-6 py-5 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] ${
+                            className={`min-w-0 cursor-pointer rounded-[20px] border px-4 py-4 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] ${
                               isActive ? 'border-[#bfd5ea] bg-[#f7fbff]' : 'border-[#e2e8f0] bg-white'
                             }`}
                             onClick={() => {
@@ -11366,13 +11381,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             }}
                           >
 	                            <div
-	                              className="grid items-center gap-6"
-	                              style={{ gridTemplateColumns: 'minmax(290px,1.35fr) minmax(150px,0.55fr) minmax(240px,1fr) minmax(220px,0.85fr) minmax(190px,0.7fr) auto' }}
+	                              className="grid min-w-0 items-center gap-4"
+	                              style={{ gridTemplateColumns: 'minmax(240px,1.18fr) minmax(108px,0.44fr) minmax(200px,0.9fr) minmax(190px,0.82fr) minmax(130px,0.54fr) minmax(128px,128px)' }}
 	                            >
                               <div className="min-w-0">
-                                <div className="flex min-w-0 items-start gap-4">
+                                <div className="flex min-w-0 items-start gap-3">
                                   <span
-                                    className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-[0.95rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.12)]"
+                                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.9rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.12)]"
                                     style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #173e63)` }}
                                   >
                                     {getInitials(leadName)}
@@ -11401,8 +11416,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                <LeadSourceBadge source={lead.leadSource || 'Unknown source'} />
 	                              </div>
 	                              <div className="min-w-0">
-                                <div className="flex min-w-0 items-start gap-3">
-                                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] border border-[#e1e8f0] bg-[#f8fbff] text-[#5c7894]">
+                                <div className="flex min-w-0 items-start gap-2.5">
+                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-[#e1e8f0] bg-[#f8fbff] text-[#5c7894]">
                                     <Home size={17} />
                                   </span>
                                   <div className="min-w-0">
@@ -11432,10 +11447,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   {activitySummary}
                                 </p>
                               </div>
-                              <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                              <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end" onClick={(event) => event.stopPropagation()}>
                                 <button
                                   type="button"
-                                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.16)] transition hover:bg-[#0b223b]"
+                                  className="inline-flex min-h-[40px] min-w-[78px] items-center justify-center gap-1.5 rounded-[13px] bg-[#0f2743] px-3 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.16)] transition hover:bg-[#0b223b]"
                                   onClick={() => {
                                     setSelectedLeadId(lead.leadId)
                                     navigate(`/pipeline/leads/${lead.leadId}`)
@@ -11447,7 +11462,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <div className="relative">
                                   <button
                                     type="button"
-                                    className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
+                                    className="inline-flex h-[40px] w-[40px] items-center justify-center rounded-[13px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
                                     aria-label={`More actions for ${leadName}`}
                                     aria-haspopup="menu"
                                     aria-expanded={leadListActionsMenuId === leadId}
@@ -11614,14 +11629,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              {assignedAgent === 'Unassigned' ? 'Unassigned' : assignedAgent}
 	                            </span>
                           </div>
-                          <div className="flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
                             <div className="min-w-0">
                               <p className="text-[0.9rem] font-semibold text-[#142132]">{formatRelativeTime(activityReference)}</p>
                               <p className="mt-0.5 line-clamp-2 text-[0.78rem] font-medium text-[#60758b]">
                                 {latestActivityTitle || nextStep || 'No recent activity'}
                               </p>
                             </div>
-                            <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                            <div className="ml-auto flex shrink-0 items-center gap-2" onClick={(event) => event.stopPropagation()}>
                               <button
                                 type="button"
                                 className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white"
@@ -14954,7 +14969,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
                 <p className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
-                  {routeLeadId ? 'Opening this lead workspace. We are fetching the lead record and latest activity.' : 'Select a lead from the pipeline board to open the CRM workspace.'}
+                  {routeLeadId ? (routeLeadHydrationNotice || 'Opening this lead workspace. We are fetching the lead record and latest activity.') : 'Select a lead from the pipeline board to open the CRM workspace.'}
                 </p>
               )}
             </article>

@@ -3495,10 +3495,6 @@ function AgentListings({ initialTab = null } = {}) {
 
           {listingsTab !== 'developments' ? (
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <Button type="button" onClick={openMandateFirstWorkspace} disabled={pilotCreationFreeze.paused}>
-                <FileText size={16} />
-                Generate Mandate
-              </Button>
               <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused}>
                 <Plus size={16} />
                 Quick Add Listing

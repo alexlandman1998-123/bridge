@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const readinessSource = await readFile(new URL('../src/core/documents/mandateReadiness.js', import.meta.url), 'utf8')
 const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+const { resolveMandateReadiness } = await import('../src/core/documents/mandateReadiness.js')
 
 function getFunctionBlock(name) {
   const declarationMatch = source.match(new RegExp(`(?:async\\s+function|function)\\s+${name}\\s*\\(`))
@@ -47,12 +49,15 @@ assert.match(
 for (const reference of [
   'function resolveMandateQuickStartPrimaryLabel',
   'function resolveMandateQuickStartIntro',
+  'resolveMandateReadiness',
+  'hasMandateSellerOnboardingSubmitted',
   'function resolveOtpQuickStartPrimaryLabel',
   'function resolveOtpQuickStartIntro',
   'const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)',
   'const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)',
   'const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)',
   'const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)',
+  'const selectedLeadMandateReadiness = useMemo',
   'const selectedLeadMandateQuickStartRows = useMemo',
   'const selectedLeadMandateQuickStartBlockers = useMemo',
   'const selectedLeadMandateQuickStartWarnings = useMemo',
@@ -101,6 +106,81 @@ for (const reference of [
 ]) {
   assert.ok(quickStartBlock.includes(reference), `Quick start flow should keep ${reference}.`)
 }
+
+assert.ok(
+  source.includes('() => selectedLeadMandateReadiness.rows'),
+  'Mandate confirmation rows should come from the shared mandate readiness resolver.',
+)
+assert.ok(
+  source.includes('selectedLeadMandateReadiness.blockers'),
+  'Mandate confirmation blockers should come from the shared mandate readiness resolver.',
+)
+assert.ok(
+  source.includes('selectedLeadMandateReadiness.warnings'),
+  'Mandate confirmation warnings should come from the shared mandate readiness resolver.',
+)
+
+for (const reference of [
+  'export function resolveMandateReadiness',
+  'export function resolveMandatePropertyLabel',
+  'export function hasMandateSellerOnboardingSubmitted',
+  'sellerOnboardingSubmittedAt',
+  'seller_canonical_facts_json',
+  'propertyAddressDetails',
+  'mapSellerOnboardingToMandateData',
+  'validateMandateGenerationData',
+  "buildReadinessRow('property', 'Property'",
+  "'Seller onboarding'",
+]) {
+  assert.ok(readinessSource.includes(reference), `mandateReadiness should keep ${reference}.`)
+}
+
+const onboardingBackedReadiness = resolveMandateReadiness({
+  lead: {
+    leadId: 'lead-test',
+    sellerOnboardingToken: 'seller-test-token',
+    sellerOnboardingStatus: 'sent',
+    sellerOnboarding: {
+      status: 'in_progress',
+      formData: {
+        propertyAddress: '409 Queens Cres',
+        suburb: 'Lynnwood',
+        city: 'Pretoria',
+        askingPrice: 1250000,
+        entityType: 'individual',
+      },
+    },
+  },
+  contact: {
+    firstName: 'Alex',
+    lastName: 'Landman',
+    email: 'alex@example.test',
+    phone: '0676125009',
+  },
+  agent: {
+    fullName: 'Agent Smith',
+    email: 'agent@example.test',
+  },
+})
+assert.equal(
+  onboardingBackedReadiness.rows.find((row) => row.key === 'property')?.ready,
+  true,
+  'Mandate readiness should accept property evidence from seller onboarding form data.',
+)
+assert.equal(
+  onboardingBackedReadiness.rows.find((row) => row.key === 'onboarding')?.value,
+  'Link sent, not submitted',
+  'Mandate readiness should distinguish in-progress onboarding from submitted onboarding.',
+)
+assert.deepEqual(
+  onboardingBackedReadiness.blockers,
+  [],
+  'A lead with seller, property, agent, and email evidence should not have hard quick-start blockers.',
+)
+assert.ok(
+  onboardingBackedReadiness.warnings.includes('Link sent, not submitted'),
+  'In-progress onboarding should remain visible as a warning.',
+)
 
 const otpActionBlock = getFunctionBlock('handleSelectedLeadOtpPrimaryAction')
 assert.ok(
