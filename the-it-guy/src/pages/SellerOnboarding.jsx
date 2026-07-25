@@ -3448,7 +3448,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
 
       lastDraftSignatureRef.current = signature
-      setForm((previous) => buildSellerDraftSignature(previous || {}, nextStep) === signature ? previous : formForDraft)
+      setForm((previous) => {
+        const normalizedPrevious = normalizeSellerFormForProgression(previous || {}, listing || {})
+        return buildSellerDraftSignature(normalizedPrevious, nextStep) === signature ? formForDraft : previous
+      })
       setLastDraftSavedAt(savedAt)
       setDraftSyncStatus('saved')
 
