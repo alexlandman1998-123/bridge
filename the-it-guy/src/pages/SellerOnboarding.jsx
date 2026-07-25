@@ -101,6 +101,7 @@ const PROPERTY_FEATURES = [
   { key: 'fibre', label: 'Fibre' },
   { key: 'aircon', label: 'Aircon' },
   { key: 'fireplace', label: 'Fireplace' },
+  { key: 'pool', label: 'Pool' },
   { key: 'flatlet', label: 'Flatlet / Second Dwelling' },
   { key: 'staff_quarters', label: 'Staff Quarters' },
 ]
@@ -277,6 +278,9 @@ const INNER_PANEL_CLASS =
   'rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-[22px] sm:border sm:border-[#dce6ef] sm:bg-white/95 sm:p-5 sm:shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:backdrop-blur-xl lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
   'w-full min-w-0 min-h-[52px] rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-3 text-base font-medium text-[#142334] shadow-[0_8px_18px_rgba(15,23,42,0.035)] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[var(--seller-brand-action-border)] focus:ring-2 focus:ring-[var(--seller-brand-action-soft)] sm:rounded-[18px]'
+const DATE_INPUT_CLASS = `${DETAIL_INPUT_CLASS} seller-date-input text-sm sm:text-base`
+const BRAND_ACTION_BUTTON_CLASS =
+  'bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:bg-[var(--seller-brand-action)] hover:text-[var(--seller-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--seller-brand-action-border)]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
@@ -2453,7 +2457,7 @@ function PropertyDisclosureSection({
               </div>
               <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                 Date
-                <input className={`${DETAIL_INPUT_CLASS} text-sm sm:text-base`} type="date" value={normalized.signedAt} onChange={(event) => onDisclosureChange('signedAt', event.target.value)} />
+                <input className={DATE_INPUT_CLASS} type="date" value={normalized.signedAt} onChange={(event) => onDisclosureChange('signedAt', event.target.value)} />
               </label>
               <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                 Signed at
@@ -3174,11 +3178,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const prev = previous || {}
       const current = Array.isArray(prev.features) ? prev.features : []
       const feature = PROPERTY_FEATURES.find((item) => item.key === featureKey)
-      const active = current.includes(featureKey) || Boolean(feature?.formKey && prev[feature.formKey])
+      const active = current.includes(featureKey) || Boolean(feature?.formKey && prev[feature.formKey]) || Boolean(featureKey === 'pool' && prev.pool)
       const nextFeatures = active ? current.filter((item) => item !== featureKey) : [...current, featureKey]
       const next = { ...prev, features: nextFeatures }
       if (feature?.formKey) {
         next[feature.formKey] = !active
+      }
+      if (featureKey === 'pool') {
+        next.pool = !active
       }
       if (featureKey === 'gas_geyser') {
         next.gasInstallation = !active
@@ -4330,13 +4337,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           </div>
         </div>
         {currentStep < FINAL_STEP_INDEX ? (
-          <Button type="button" onClick={handleMobilePaneNext} disabled={saving || submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
+          <Button type="button" variant="ghost" onClick={handleMobilePaneNext} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
             {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
             <ChevronRight size={14} />
           </Button>
         ) : null}
         {currentStep === FINAL_STEP_INDEX ? (
-          <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[52px] w-full rounded-[18px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:brightness-105">
+          <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
             {submitting ? 'Submitting...' : 'Submit Seller Information'}
             <CheckCircle2 size={14} />
           </Button>
@@ -4363,13 +4370,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             </Button>
           ) : null}
           {currentStep < FINAL_STEP_INDEX ? (
-            <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+            <Button type="button" variant="ghost" onClick={handleNext} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
               Save & Continue
               <ChevronRight size={14} />
             </Button>
           ) : null}
           {currentStep === FINAL_STEP_INDEX ? (
-            <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] hover:brightness-105">
+            <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
               {submitting ? 'Submitting...' : 'Submit Seller Information'}
               <CheckCircle2 size={14} />
             </Button>
@@ -4982,11 +4989,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                     <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate start date
-                      <input className={`${DETAIL_INPUT_CLASS} text-sm sm:text-base`} type="date" value={form.mandateStartDate || ''} onChange={(event) => handleFormUpdate('mandateStartDate', event.target.value)} />
+                      <input className={DATE_INPUT_CLASS} type="date" value={form.mandateStartDate || ''} onChange={(event) => handleFormUpdate('mandateStartDate', event.target.value)} />
                     </label>
                     <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                       Mandate end date
-                      <input className={`${DETAIL_INPUT_CLASS} text-sm sm:text-base`} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
+                      <input className={DATE_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
                     </label>
                   </div>
                   <div>
@@ -5262,7 +5269,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 >
                   <div className="flex flex-wrap gap-2">
                     {PROPERTY_FEATURES.map((feature) => {
-                      const active = (form.features || []).includes(feature.key) || Boolean(feature.formKey && form[feature.formKey])
+                      const active = (form.features || []).includes(feature.key) || Boolean(feature.formKey && form[feature.formKey]) || Boolean(feature.key === 'pool' && form.pool)
                       return (
                         <button
                           key={feature.key}
@@ -5449,10 +5456,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Open Parking
                         <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.parkingOpen} onChange={(event) => handleFormUpdate('parkingOpen', event.target.value)} />
-                      </label>
-                      <label className="flex items-center gap-2 rounded-[10px] border border-[#d6e1ee] px-3 py-2 text-sm font-medium text-[#2a4057]">
-                        <input type="checkbox" checked={Boolean(form.pool)} onChange={(event) => handleFormUpdate('pool', event.target.checked)} />
-                        Pool
                       </label>
                     </div>
                   </FormSection>

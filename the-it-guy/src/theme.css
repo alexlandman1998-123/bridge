@@ -14570,3 +14570,29 @@ body.sidebar-compact .legacy-shell .legacy-shell .sidebar-divider {
     max-width: none;
   }
 }
+
+.seller-onboarding-main .seller-date-input {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.seller-onboarding-main .seller-date-input::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+.seller-onboarding-main .seller-date-input::-webkit-calendar-picker-indicator {
+  flex-shrink: 0;
+  margin-left: 0.25rem;
+}
+
+@media (max-width: 639px) {
+  .seller-onboarding-main .seller-date-input {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}

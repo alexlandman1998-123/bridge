@@ -128,6 +128,28 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function getPreferredTransferAttorneyId(attorney = {}) {
+  return normalizeText(
+    attorney?.preferredPartnerId ||
+      attorney?.preferred_partner_id ||
+      attorney?.partnerId ||
+      attorney?.partner_id ||
+      attorney?.id ||
+      '',
+  )
+}
+
+function getPreferredTransferAttorneyAcceptanceId(acceptance = {}) {
+  return normalizeText(
+    acceptance?.preferredPartnerId ||
+      acceptance?.preferred_partner_id ||
+      acceptance?.partnerId ||
+      acceptance?.partner_id ||
+      acceptance?.id ||
+      '',
+  )
+}
+
 function getSellerPortalAccessStorageKey(token = '') {
   const normalizedToken = normalizeText(token)
   return normalizedToken ? `${SELLER_PORTAL_ACCESS_STORAGE_PREFIX}${normalizedToken}` : ''
@@ -5521,12 +5543,10 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
-  const existingAcceptedAttorneyId = normalizeText(
-    existingFormData.preferredTransferAttorneyAcceptance?.preferredPartnerId,
-  )
+  const existingAcceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(existingFormData.preferredTransferAttorneyAcceptance)
   const preserveAttorneyAcceptance =
     existingFormData.preferredTransferAttorneyAccepted === true &&
-    existingAcceptedAttorneyId === preferredTransferAttorney.preferredPartnerId
+    existingAcceptedAttorneyId === getPreferredTransferAttorneyId(preferredTransferAttorney)
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -5811,13 +5831,21 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
   const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
-  const preferredAttorneyId = normalizeText(formData.preferredTransferAttorney?.preferredPartnerId)
-  const acceptedAttorneyId = normalizeText(formData.preferredTransferAttorneyAcceptance?.preferredPartnerId)
+  const preferredAttorneyId = getPreferredTransferAttorneyId(formData.preferredTransferAttorney)
+  const acceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(formData.preferredTransferAttorneyAcceptance)
   if (!preferredAttorneyId) {
     throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
   }
   if (formData.preferredTransferAttorneyAccepted !== true || acceptedAttorneyId !== preferredAttorneyId) {
     throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
+  }
+  formData.preferredTransferAttorney = {
+    ...(formData.preferredTransferAttorney || {}),
+    preferredPartnerId: preferredAttorneyId,
+  }
+  formData.preferredTransferAttorneyAcceptance = {
+    ...(formData.preferredTransferAttorneyAcceptance || {}),
+    preferredPartnerId: preferredAttorneyId,
   }
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
