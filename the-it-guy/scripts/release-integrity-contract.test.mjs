@@ -10,6 +10,8 @@ const [viteConfig, vercelConfig, appSource, packageJson, containmentGuard] = awa
   readFile(new URL('./verify-release-containment.mjs', import.meta.url), 'utf8'),
 ])
 const packageDefinition = JSON.parse(packageJson)
+const vercelDefinition = JSON.parse(vercelConfig)
+const headerSources = new Set((Array.isArray(vercelDefinition.headers) ? vercelDefinition.headers : []).map((header) => header?.source))
 
 assert.match(viteConfig, /arch9-release-integrity/, 'Vite must emit the Arch9 release manifest.')
 assert.match(viteConfig, /release-manifest\.json/, 'Vite must publish a release manifest.')
@@ -23,9 +25,9 @@ assert.throws(
   /must match VERCEL_GIT_COMMIT_SHA/i,
   'A Vercel build must not allow its public release marker to be relabelled.',
 )
-assert.match(vercelConfig, /"source": "\/index\.html"/, 'The app shell needs explicit cache control.')
-assert.match(vercelConfig, /"source": "\/release-manifest\.json"/, 'The release manifest needs explicit cache control.')
-assert.match(vercelConfig, /"source": "\/assets\/:path\*"/, 'Hashed assets need immutable cache control.')
+assert.ok(headerSources.has('/index.html'), 'The app shell needs explicit cache control.')
+assert.ok(headerSources.has('/release-manifest.json'), 'The release manifest needs explicit cache control.')
+assert.ok(headerSources.has('/assets/:path*'), 'Hashed assets need immutable cache control.')
 assert.match(appSource, /scope="agent-listing-detail"/, 'Listing detail must remain isolated from the app-shell error boundary.')
 assert.match(packageDefinition.scripts['build:guarded'], /verify:release-containment/, 'Release builds must reject a non-contained source tree.')
 assert.match(containmentGuard, /\['status', '--porcelain=v1', '--untracked-files=all'\]/, 'Release verifier must reject changed and untracked files.')
