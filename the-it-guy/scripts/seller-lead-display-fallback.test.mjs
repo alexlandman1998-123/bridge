@@ -100,6 +100,31 @@ try {
 
   assert.equal(canonicalFactsRows[0].name, 'Canonical Seller')
 
+  const sentOnlyRows = buildAgentLeadRows({
+    leads: [{
+      leadId: 'seller-sent-placeholder',
+      leadSource: 'Manual Entry',
+      leadCategory: 'seller',
+      stage: 'Seller Onboarding Sent',
+      status: 'Seller Onboarding Sent',
+      name: 'Unnamed Lead',
+      sellerPropertyAddress: '409 Queens Cres, Menlo Park',
+      listingId: 'listing-sent-only',
+      createdAt: '2026-07-26T18:00:00.000Z',
+    }],
+    contacts: [],
+    listings: [{
+      id: 'listing-sent-only',
+      seller_lead_id: 'seller-sent-placeholder',
+      listing_status: 'seller_lead',
+      title: 'Untitled listing',
+      seller_onboarding_status: 'sent',
+    }],
+  })
+
+  assert.equal(sentOnlyRows[0].name, 'Seller lead - 409 Queens Cres, Menlo Park')
+  assert.notEqual(sentOnlyRows[0].name, 'Unnamed Lead')
+
   const serviceSource = await readFile(new URL('../src/services/agentLeadWorkspaceService.js', import.meta.url), 'utf8')
   assert.match(serviceSource, /resolvedWorkspaceListingId = normalizeText\(workspace\?\.listingId/, 'lead workspace fetch should retain repository-resolved listing ids')
   assert.match(serviceSource, /listingId: getListingId\(lead\) \|\| resolvedWorkspaceListingId/, 'lead workspace context should use repository-resolved listing ids')
@@ -107,6 +132,7 @@ try {
   const pageSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
   assert.match(pageSource, /lifecycle\.includes\('seller'\)/, 'seller lifecycle stages should force seller workspace rendering')
   assert.match(pageSource, /safeRow\.sellerOnboarding \|\| safeRow\.seller_onboarding/, 'seller onboarding payloads should force seller workspace rendering')
+  assert.match(pageSource, /sellerDisplayName/, 'seller workspace header should render a sanitized display name')
 
   console.log('Seller lead display fallback verified.')
 } finally {

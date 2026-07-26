@@ -16124,14 +16124,24 @@ function SellerLeadHeader({
   onArchiveLead,
   onStatusAction,
 }) {
+  const rawSellerName = normalizeText(row?.name)
+  const normalizedSellerName = rawSellerName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const contextSummary = normalizeText(getLeadContextSummary(row))
+  const normalizedContextSummary = contextSummary.toLowerCase()
+  const sellerDisplayName = rawSellerName && !['unnamed lead', 'unnamed seller', 'seller lead', 'lead'].includes(normalizedSellerName)
+    ? rawSellerName
+    : contextSummary && !['property not linked', 'untitled listing'].includes(normalizedContextSummary)
+      ? `Seller lead - ${contextSummary}`
+      : 'Seller lead'
+
   return (
     <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] sm:p-6`}>
       <div className="grid gap-5 xl:grid-cols-[minmax(320px,1fr)_auto] xl:items-start">
         <div className="flex min-w-0 gap-4">
-          <SellerAvatar name={row.name} />
+          <SellerAvatar name={sellerDisplayName} />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Seller Lead</p>
-            <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name || 'Unnamed seller'}</h1>
+            <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{sellerDisplayName}</h1>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
               <span className="inline-flex min-w-0 items-center gap-1.5"><Phone size={14} />{row.phone || 'No phone'}</span>
               <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={14} /><span className="max-w-[280px] truncate">{row.email || 'No email'}</span></span>

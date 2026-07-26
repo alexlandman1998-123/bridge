@@ -196,7 +196,18 @@ function getContactName(contact = {}) {
 
 function isPlaceholderLeadName(value = '') {
   const normalized = normalizeLower(value).replace(/[^a-z0-9]+/g, ' ').trim()
-  return !normalized || normalized === 'unnamed lead' || normalized === 'unnamed seller' || normalized === 'seller lead'
+  return !normalized ||
+    normalized === 'lead' ||
+    normalized === 'unnamed' ||
+    normalized === 'unnamed lead' ||
+    normalized === 'unnamed seller' ||
+    normalized === 'unnamed buyer' ||
+    normalized === 'unnamed contact' ||
+    normalized === 'seller lead' ||
+    normalized === 'buyer lead' ||
+    normalized === 'seller listing' ||
+    normalized === 'untitled listing' ||
+    normalized === 'property not linked'
 }
 
 function getSellerOnboardingFormData(source = {}) {
@@ -256,6 +267,31 @@ function getSellerNameFromCanonicalFacts(source = {}) {
   )
 }
 
+function getSellerPropertyDisplayName(lead = {}, listing = null, rowFormData = {}, listingFormData = {}) {
+  const value = normalizeText(
+    lead?.sellerPropertyAddress ||
+      lead?.seller_property_address ||
+      lead?.propertyAddress ||
+      lead?.property_address ||
+      lead?.formattedAddress ||
+      lead?.formatted_address ||
+      rowFormData.propertyAddress ||
+      rowFormData.property_address ||
+      listingFormData.propertyAddress ||
+      listingFormData.property_address ||
+      listing?.propertyAddress ||
+      listing?.property_address ||
+      listing?.formattedAddress ||
+      listing?.formatted_address ||
+      listing?.address ||
+      listing?.title ||
+      lead?.propertyInterest ||
+      lead?.property_interest,
+  )
+  if (!value || isPlaceholderLeadName(value)) return ''
+  return `Seller lead - ${value}`
+}
+
 function getLeadName(lead = {}, contact = null, listing = null) {
   const rowFormData = getSellerOnboardingFormData(lead)
   const listingFormData = getSellerOnboardingFormData(listing || {})
@@ -268,6 +304,7 @@ function getLeadName(lead = {}, contact = null, listing = null) {
     normalizeText(listing?.sellerName || listing?.seller_name || listing?.seller?.name),
     getSellerNameFromCanonicalFacts(listing || {}),
     getSellerNameFromCanonicalFacts(lead || {}),
+    getSellerPropertyDisplayName(lead, listing, rowFormData, listingFormData),
     normalizeText(
       rowFormData.email ||
         rowFormData.sellerEmail ||
@@ -283,7 +320,7 @@ function getLeadName(lead = {}, contact = null, listing = null) {
         listing?.seller?.email,
     ),
   ]
-  return candidates.find((value) => value && !isPlaceholderLeadName(value)) || 'Unnamed lead'
+  return candidates.find((value) => value && !isPlaceholderLeadName(value)) || 'Seller lead'
 }
 
 function getLeadContact(lead = {}, contactsById = new Map()) {
