@@ -3301,6 +3301,7 @@ export default function LegalDocumentWorkspace({
   const centerTabInitializedRef = useRef(false)
   const centerTabPreferenceRef = useRef(null)
   const autosavePromiseRef = useRef(null)
+  const mandateOverridePregenerationRef = useRef({ key: '', promise: null })
   const lastWorkspaceJourneyTelemetryRef = useRef('')
   const lastWorkspaceOutcomeTelemetryRef = useRef('')
 
@@ -4365,14 +4366,49 @@ export default function LegalDocumentWorkspace({
         sourceContextJson,
       })
       setLocalMandateManualOverride(null)
-      setActionFeedback('Mandate details override saved.')
+      setActionFeedback('Mandate details override saved. Preparing the PDF in the background.')
+      if (typeof onEdit === 'function') {
+        const pregenerationKey = [
+          resolvedPacketId,
+          nextOverride.updatedAt,
+          JSON.stringify(cleanFields),
+        ].join(':')
+        const currentRun = mandateOverridePregenerationRef.current || {}
+        if (currentRun.key !== pregenerationKey || !currentRun.promise) {
+          const promise = Promise.resolve()
+            .then(() =>
+              onEdit({
+                mandateManualOverride: nextOverride,
+                onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+              }),
+            )
+            .then((generationResult) => {
+              if (generationResult?.status) {
+                statusStateRef.current = generationResult.status
+                setStatusState(generationResult.status)
+              }
+              setActionFeedback('Mandate details saved and PDF preparation is underway.')
+            })
+            .catch((generationError) => {
+              console.warn('[LegalDocumentWorkspace] background mandate PDF generation after override save failed.', generationError)
+              setLoadError(toFriendlyWorkspaceError(generationError, 'Mandate details saved, but PDF preparation needs attention.'))
+            })
+            .finally(() => {
+              setActionProgressMessage('')
+              if (mandateOverridePregenerationRef.current?.promise === promise) {
+                mandateOverridePregenerationRef.current = { key: '', promise: null }
+              }
+            })
+          mandateOverridePregenerationRef.current = { key: pregenerationKey, promise }
+        }
+      }
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to save mandate detail overrides.'))
       throw error
     } finally {
       setMandateOverrideSaving(false)
     }
-  }, [mandateDataSnapshot, packetId, sourceContext, statusState?.packet?.id, updateWorkspacePacket, workspaceRole])
+  }, [mandateDataSnapshot, onEdit, packetId, sourceContext, statusState?.packet?.id, updateWorkspacePacket, workspaceRole])
 
   useEffect(() => {
     let active = true

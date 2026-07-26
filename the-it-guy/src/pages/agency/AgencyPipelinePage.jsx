@@ -165,6 +165,7 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS = 1800
 const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
@@ -580,6 +581,211 @@ function applyMandateManualOverrideToData(mandateData = null, sourceContext = {}
   next.transfer_attorney = next.transferAttorney
   next.sourceContext.mandateManualOverride = override
   return next
+}
+
+const MANDATE_SOURCE_FINGERPRINT_VOLATILE_KEYS = new Set([
+  'actionHint',
+  'archivedAt',
+  'archived_at',
+  'completedAt',
+  'completed_at',
+  'createdAt',
+  'created_at',
+  'generatedAt',
+  'generated_at',
+  'generationAttemptId',
+  'lastSigningRequest',
+  'last_signing_request',
+  'lifecycleUpdatedAt',
+  'lifecycle_updated_at',
+  'requestedAt',
+  'sentAt',
+  'sent_at',
+  'signingRequest',
+  'signingRequestQueuedAt',
+  'signing_request',
+  'signing_request_queued_at',
+  'updatedAt',
+  'updated_at',
+])
+
+function normalizeMandateSourceFingerprintValue(value, seen = new WeakSet()) {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') return normalizeText(value)
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeMandateSourceFingerprintValue(item, seen))
+  }
+  if (typeof value === 'object') {
+    if (seen.has(value)) return null
+    seen.add(value)
+    return Object.keys(value)
+      .filter((key) => !MANDATE_SOURCE_FINGERPRINT_VOLATILE_KEYS.has(key))
+      .sort()
+      .reduce((acc, key) => {
+        const normalized = normalizeMandateSourceFingerprintValue(value[key], seen)
+        if (normalized === null || normalized === '') return acc
+        if (Array.isArray(normalized) && normalized.length === 0) return acc
+        if (typeof normalized === 'object' && !Array.isArray(normalized) && Object.keys(normalized).length === 0) return acc
+        acc[key] = normalized
+        return acc
+      }, {})
+  }
+  return null
+}
+
+function hashMandateSourceFingerprintPayload(payload = '') {
+  let hash = 2166136261
+  const input = String(payload || '')
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+function buildMandateSourceFingerprintPayload({
+  mandateData = null,
+  lead = null,
+  contact = null,
+  manualOverride = null,
+  templateReadiness = null,
+} = {}) {
+  const data = mandateData && typeof mandateData === 'object' ? mandateData : {}
+  const override = getMandateManualOverrideFromSource({ mandateManualOverride: manualOverride })
+  return {
+    contract: 'mandate_source_fingerprint_v1',
+    seller: data.seller || {},
+    property: data.property || {},
+    mandate: data.mandate || {},
+    agency: data.agency || {},
+    agent: data.agent || {},
+    transferAttorney: data.transferAttorney || data.transfer_attorney || {},
+    placeholders: data.placeholders || {},
+    sourceContext: data.sourceContext || data.source_context || {},
+    manualOverride: override.fields || {},
+    lead: {
+      id: normalizeText(lead?.leadId || lead?.id),
+      listingId: normalizeText(lead?.listingId || lead?.listing_id),
+      sellerOnboardingStatus: normalizeText(lead?.sellerOnboardingStatus || lead?.sellerOnboarding?.status),
+    },
+    contact: {
+      id: normalizeText(contact?.id || contact?.contactId || contact?.contact_id),
+      firstName: normalizeText(contact?.firstName || contact?.first_name),
+      lastName: normalizeText(contact?.lastName || contact?.last_name),
+      email: normalizeText(contact?.email).toLowerCase(),
+      phone: normalizeText(contact?.phone || contact?.mobile),
+    },
+    template: {
+      status: normalizeText(templateReadiness?.status),
+      value: normalizeText(templateReadiness?.value),
+    },
+  }
+}
+
+function createMandateSourceFingerprint(source = {}) {
+  const normalized = normalizeMandateSourceFingerprintValue(source)
+  const serialized = JSON.stringify(normalized || {})
+  if (!serialized || serialized === '{}') return ''
+  return `mandate-source-v1:${hashMandateSourceFingerprintPayload(serialized)}`
+}
+
+function getMandateGeneratedSourceFingerprint(sourceContext = {}, version = null) {
+  const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {}
+  const validation = version?.validation_summary_json && typeof version.validation_summary_json === 'object'
+    ? version.validation_summary_json
+    : {}
+  return normalizeText(
+    context.lastGeneratedMandateSourceFingerprint ||
+      context.last_generated_mandate_source_fingerprint ||
+      context.generatedMandateSourceFingerprint ||
+      context.generated_mandate_source_fingerprint ||
+      validation.mandateSourceFingerprint ||
+      validation.mandate_source_fingerprint ||
+      validation.lastGeneratedMandateSourceFingerprint ||
+      validation.generatedMandateSourceFingerprint ||
+      context.mandateSourceFingerprint ||
+      context.mandate_source_fingerprint,
+  )
+}
+
+function getMandateRequestedSourceFingerprint(sourceContext = {}) {
+  const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {}
+  return normalizeText(
+    context.requestedMandateSourceFingerprint ||
+      context.requested_mandate_source_fingerprint ||
+      context.mandateSourceFingerprint ||
+      context.mandate_source_fingerprint,
+  )
+}
+
+const LEGAL_DOCUMENT_PHASE_TIMINGS_CONTRACT = 'legal_document_phase_timings_v1'
+
+function createLegalDocumentPhaseTimer({ workflow = 'legal_document_workflow', packetId = '', packetVersionId = '' } = {}) {
+  const workflowStartedAt = Date.now()
+  const phases = []
+  const recordPhase = (phase, startedAt, error = null, metadata = {}) => {
+    const completedAt = Date.now()
+    phases.push({
+      phase,
+      status: error ? 'failed' : 'completed',
+      durationMs: Math.max(completedAt - startedAt, 0),
+      startedAt: new Date(startedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      ...(error
+        ? {
+            errorCode: normalizeText(error?.code) || null,
+            errorMessage: normalizeText(error?.message || String(error)) || null,
+          }
+        : {}),
+    })
+  }
+
+  return {
+    async time(phase, fn, metadata = {}) {
+      const startedAt = Date.now()
+      try {
+        const result = await fn()
+        recordPhase(phase, startedAt, null, metadata)
+        return result
+      } catch (error) {
+        recordPhase(phase, startedAt, error, metadata)
+        throw error
+      }
+    },
+    snapshot(extra = {}) {
+      return {
+        contract: LEGAL_DOCUMENT_PHASE_TIMINGS_CONTRACT,
+        workflow,
+        packetId: normalizeText(packetId) || null,
+        packetVersionId: normalizeText(packetVersionId) || null,
+        startedAt: new Date(workflowStartedAt).toISOString(),
+        capturedAt: new Date().toISOString(),
+        durationMs: Math.max(Date.now() - workflowStartedAt, 0),
+        phases: phases.map((phase) => ({ ...phase })),
+        ...(extra && typeof extra === 'object' ? extra : {}),
+      }
+    },
+  }
+}
+
+function combineLegalDocumentPhaseTimings({ workflow = 'legal_document_workflow', packetId = '', packetVersionId = '' } = {}, ...timings) {
+  const phases = timings
+    .filter((timing) => timing && typeof timing === 'object')
+    .flatMap((timing) => Array.isArray(timing.phases) ? timing.phases : [])
+  const startedAt = phases[0]?.startedAt || new Date().toISOString()
+  return {
+    contract: LEGAL_DOCUMENT_PHASE_TIMINGS_CONTRACT,
+    workflow,
+    packetId: normalizeText(packetId) || null,
+    packetVersionId: normalizeText(packetVersionId) || null,
+    startedAt,
+    capturedAt: new Date().toISOString(),
+    durationMs: phases.reduce((total, phase) => total + (Number(phase?.durationMs) || 0), 0),
+    phases: phases.map((phase) => ({ ...phase })),
+  }
 }
 
 function getPreferredAttorneyInitials(attorney = {}) {
@@ -3360,6 +3566,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
   const [mandateQuickStartPacketVersionId, setMandateQuickStartPacketVersionId] = useState('')
   const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
+  const mandateQuickStartPregenerationRef = useRef({ key: '', promise: null })
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
   const routeLeadRecord = useMemo(() => {
@@ -8692,6 +8899,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     setIsMandateGenerating(true)
     onProgress?.('Preparing template…')
+    const mandateGenerationPhaseTimer = createLegalDocumentPhaseTimer({
+      workflow: 'mandate_generation',
+    })
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
       let templateResolution = null
@@ -8816,6 +9026,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       mandateData = applyMandateManualOverrideToData(mandateData, sourceContextForGeneration)
+      const existingManualOverride = getMandateManualOverrideFromSource(sourceContextForGeneration)
+      const mandateSourceFingerprint = createMandateSourceFingerprint(buildMandateSourceFingerprintPayload({
+        mandateData,
+        lead: leadForMapping,
+        contact: selectedLeadContact || {},
+        manualOverride: existingManualOverride,
+        templateReadiness: selectedLeadMandateTemplateReadiness,
+      }))
       const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
       if (!mandatePreflight.canProceed) {
         console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
@@ -8848,12 +9066,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         leadCategory: selectedLead.leadCategory,
         leadSource: selectedLead.leadSource,
         contactId: selectedLead.contactId,
+        mandateSourceFingerprint,
+        mandate_source_fingerprint: mandateSourceFingerprint,
+        lastGeneratedMandateSourceFingerprint: mandateSourceFingerprint,
+        last_generated_mandate_source_fingerprint: mandateSourceFingerprint,
         generatedDataSnapshot: mandateData,
         missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
         warningsSnapshot: mandatePreflight.warnings,
         sourceContext: mandateData.sourceContext,
       }
-      const existingManualOverride = getMandateManualOverrideFromSource(sourceContextForGeneration)
       if (Object.keys(existingManualOverride.fields || {}).length) {
         packetSourceContextJson.mandateManualOverride = existingManualOverride
         packetSourceContextJson.mandate_manual_override = existingManualOverride
@@ -8894,6 +9115,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         if (!packet?.id) {
           packet = await createEditableMandatePacket()
+        }
+        if (packet?.id && isSupabaseConfigured && supabase && mandateSourceFingerprint) {
+          const mergedPacketSourceContext = {
+            ...((packet?.source_context_json && typeof packet.source_context_json === 'object') ? packet.source_context_json : {}),
+            ...packetSourceContextJson,
+          }
+          const existingFingerprint = getMandateGeneratedSourceFingerprint(packet?.source_context_json)
+          if (existingFingerprint !== mandateSourceFingerprint) {
+            const existingVersions = Array.isArray(packet?.versions) ? packet.versions : []
+            const { data: updatedPacket, error: packetSourceUpdateError } = await supabase
+              .from('document_packets')
+              .update({ source_context_json: mergedPacketSourceContext })
+              .eq('id', packet.id)
+              .select('id, organisation_id, packet_type, title, status, template_id, transaction_id, lead_id, assigned_agent_id, created_by, current_version_number, source_context_json, branding_snapshot_json, sent_at, completed_at, archived_at, created_at, updated_at')
+              .maybeSingle()
+            if (packetSourceUpdateError) {
+              console.warn('[MANDATE] source fingerprint update skipped before generation', packetSourceUpdateError)
+            } else if (updatedPacket?.id) {
+              packet = { ...packet, ...updatedPacket, versions: existingVersions }
+            }
+          }
         }
       } catch (packetError) {
         if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) {
@@ -8948,6 +9190,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
             editableRenderFreeze: renderFreeze,
             editableSections: renderEditableSections,
+            mandateSourceFingerprint,
+            mandate_source_fingerprint: mandateSourceFingerprint,
             mandateData,
             mandateValidation: mandatePreflight,
             sourceContext: mandateData.sourceContext,
@@ -8983,20 +9227,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (!renderFreeze?.freezeId || !generatedVersionId) return generationResult
           try {
             onProgress?.('Certifying mandate PDF…')
-            await verifyFrozenEditableRenderOutput({
-              packetId: packet.id,
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId,
-            })
-            await verifyServerAttestedNativePdfRender({
-              packetId: packet.id,
-              freezeId: renderFreeze.freezeId,
-              generatedVersionId,
-            })
-            await persistGeneratedPdfToTransaction({
-              packetId: packet.id,
-              generatedVersionId,
-            })
+            await mandateGenerationPhaseTimer.time('certify_pdf', async () => {
+              await verifyFrozenEditableRenderOutput({
+                packetId: packet.id,
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId,
+              })
+              await verifyServerAttestedNativePdfRender({
+                packetId: packet.id,
+                freezeId: renderFreeze.freezeId,
+                generatedVersionId,
+              })
+            }, { packetId: packet.id, packetVersionId: generatedVersionId })
+            await mandateGenerationPhaseTimer.time('persist_transaction_pdf', () =>
+              persistGeneratedPdfToTransaction({
+                packetId: packet.id,
+                generatedVersionId,
+              }),
+            { packetId: packet.id, packetVersionId: generatedVersionId })
             await completeEditableDocumentRenderFreeze({
               packetId: packet.id,
               freezeId: renderFreeze.freezeId,
@@ -9107,12 +9355,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
       onProgress?.('Draft ready.')
+      const generatedVersionForTimings = generatedVersionResult?.version || null
+      const renderPhaseTimings =
+        generatedVersionResult?.phaseTimings ||
+        generatedVersionForTimings?.validation_summary_json?.phaseTimings ||
+        generatedVersionForTimings?.validation_summary_json?.phase_timings ||
+        null
+      const appGenerationPhaseTimings = mandateGenerationPhaseTimer.snapshot({
+        packetId: normalizeText(packet?.id) || fallbackPacketId || null,
+        packetVersionId: normalizeText(generatedVersionForTimings?.id) || null,
+      })
+      const combinedGenerationPhaseTimings = combineLegalDocumentPhaseTimings({
+        workflow: 'mandate_generation',
+        packetId: normalizeText(packet?.id) || fallbackPacketId,
+        packetVersionId: normalizeText(generatedVersionForTimings?.id),
+      }, renderPhaseTimings, appGenerationPhaseTimings)
       let generatedStatus = null
       if (isUuidLike(packet?.id)) {
+        const generatedStatusPacket = generatedVersionResult?.packet || packet
+        const generatedStatusSourceContext =
+          generatedStatusPacket?.source_context_json && typeof generatedStatusPacket.source_context_json === 'object'
+            ? generatedStatusPacket.source_context_json
+            : {}
         generatedStatus = {
           packetType: 'mandate',
           state: 'generated',
-          packet: generatedVersionResult?.packet || packet,
+          packet: {
+            ...generatedStatusPacket,
+            source_context_json: {
+              ...generatedStatusSourceContext,
+              phaseTimings: combinedGenerationPhaseTimings,
+              phase_timings: combinedGenerationPhaseTimings,
+              renderPhaseTimings,
+              render_phase_timings: renderPhaseTimings,
+              appGenerationPhaseTimings,
+              app_generation_phase_timings: appGenerationPhaseTimings,
+            },
+          },
           versions: [generatedVersionResult?.version].filter(Boolean),
           signingSummary: null,
           warnings: generatedVersionResult?.validation?.warnings || [],
@@ -9149,6 +9428,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             source_context_json: {
               uiLeadId: normalizeText(selectedLead.leadId),
               leadId: normalizeLeadUuid(selectedLead.leadId) || null,
+              mandateSourceFingerprint,
+              mandate_source_fingerprint: mandateSourceFingerprint,
+              lastGeneratedMandateSourceFingerprint: mandateSourceFingerprint,
+              last_generated_mandate_source_fingerprint: mandateSourceFingerprint,
+              phaseTimings: combinedGenerationPhaseTimings,
+              phase_timings: combinedGenerationPhaseTimings,
+              renderPhaseTimings,
+              render_phase_timings: renderPhaseTimings,
+              appGenerationPhaseTimings,
+              app_generation_phase_timings: appGenerationPhaseTimings,
               generatedDataSnapshot: mandateData,
               sourceContext: mandateData.sourceContext,
             },
@@ -9159,12 +9448,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actionHint: 'Draft generated in fallback mode.',
         }
       }
-      if (generatedStatus) {
-        setMandatePacketStatus(generatedStatus)
-      }
-      void reloadRecords(organisationId).catch((reloadError) => {
-        console.warn('[MANDATE] post-generation lead refresh failed; keeping generated packet available in workspace.', reloadError)
-      })
+	      if (generatedStatus) {
+	        setMandatePacketStatus(generatedStatus)
+	      }
+	      if (isSupabaseConfigured && supabase && isUuidLike(packet?.id) && combinedGenerationPhaseTimings?.phases?.length) {
+	        const persistedPhaseSourceContext =
+	          generatedStatus?.packet?.source_context_json && typeof generatedStatus.packet.source_context_json === 'object'
+	            ? generatedStatus.packet.source_context_json
+	            : {}
+	        void Promise.all([
+	          supabase
+	            .from('document_packets')
+	            .update({ source_context_json: persistedPhaseSourceContext })
+	            .eq('id', packet.id),
+	          supabase
+	            .from('document_packet_events')
+	            .insert({
+	              packet_id: packet.id,
+	              organisation_id: organisationId,
+	              version_id: isUuidLike(generatedVersionForTimings?.id) ? generatedVersionForTimings.id : null,
+	              event_type: 'mandate_generation_phase_timings',
+	              event_payload_json: {
+	                activity_type: 'mandate_generation_phase_timings',
+	                phaseTimings: combinedGenerationPhaseTimings,
+	                phase_timings: combinedGenerationPhaseTimings,
+	                renderPhaseTimings,
+	                render_phase_timings: renderPhaseTimings,
+	                appGenerationPhaseTimings,
+	                app_generation_phase_timings: appGenerationPhaseTimings,
+	              },
+	              created_by: normalizeText(currentAgent.id) || null,
+	            }),
+	        ]).catch((phaseTimingError) => {
+	          console.warn('[MANDATE] generation phase timings persistence skipped.', phaseTimingError)
+	        })
+	      }
+	      void reloadRecords(organisationId).catch((reloadError) => {
+	        console.warn('[MANDATE] post-generation lead refresh failed; keeping generated packet available in workspace.', reloadError)
+	      })
       return {
         packet,
         version: generatedVersionResult?.version || null,
@@ -9617,8 +9938,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return { ok: false, errorMessage }
     }
 
-    setIsMandateSending(true)
-    try {
+	    setIsMandateSending(true)
+	    const signingPhaseTimer = createLegalDocumentPhaseTimer({
+	      workflow: 'mandate_signing_send',
+	      packetId: mandatePacketId,
+	      packetVersionId: normalizeText(options.packetVersionId),
+	    })
+	    let measuredSigningVersionId = normalizeText(options.packetVersionId)
+	    const persistSigningPhaseTimings = (status = 'completed', extra = {}) => {
+	      if (!isSupabaseConfigured || !supabase || !isUuidLike(mandatePacketId)) return
+	      const phaseTimings = signingPhaseTimer.snapshot({
+	        packetId: mandatePacketId,
+	        packetVersionId: measuredSigningVersionId || null,
+	        status,
+	        ...(extra && typeof extra === 'object' ? extra : {}),
+	      })
+	      void supabase
+	        .from('document_packet_events')
+	        .insert({
+	          packet_id: mandatePacketId,
+	          organisation_id: organisationId,
+	          version_id: isUuidLike(measuredSigningVersionId) ? measuredSigningVersionId : null,
+	          event_type: 'mandate_signing_phase_timings',
+	          event_payload_json: {
+	            activity_type: 'mandate_signing_phase_timings',
+	            phaseTimings,
+	            phase_timings: phaseTimings,
+	            status,
+	            ...(extra && typeof extra === 'object' ? extra : {}),
+	          },
+	          created_by: normalizeText(currentAgent.id) || null,
+	        })
+	        .catch((phaseTimingError) => {
+	          console.warn('[MANDATE] signing phase timings persistence skipped.', phaseTimingError)
+	        })
+	    }
+	    try {
       if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
         const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
         if (!documentPacketBelongsToLead(packet, selectedLead.leadId)) {
@@ -9658,54 +10013,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let signingEmailFailed = false
       let signingLinkFailureMessage = ''
 
-      if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
-        try {
-          const signingPreparation = await prepareSigningFields({
-            packetId: mandatePacketId,
-            packetVersionId: options.packetVersionId || null,
-            packetType: 'mandate',
-            organisationId,
-            placeholders: {
-              'seller.display_name': sellerName,
-              'seller.email': sellerEmail,
-              'agent.display_name': agentRecipientName,
-              'agent.email': agentRecipientEmail,
-              'property.address': propertyTitle,
-              'property.listing_title': propertyTitle,
-              'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-            },
-            context: {
-              lead: {
-                sellerName: normalizeText(selectedLeadContact?.firstName),
-                sellerSurname: normalizeText(selectedLeadContact?.lastName),
-                sellerEmail,
-              },
-              mandateDraft: {
-                sellerEmail,
-              },
-              generatedByName: agentRecipientName,
-              generatedByUserEmail: agentRecipientEmail,
-              agentEmail: agentRecipientEmail,
-            },
-          })
-          const signingVersionId = normalizeText(signingPreparation?.version?.id)
-          await applyPreparedSigningLayoutForQuickFlow({
-            packetId: mandatePacketId,
-            versionId: signingVersionId,
-            preparedFields: signingPreparation?.seed?.fields || [],
-          })
+	      if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
+	        try {
+	          const signingPreparation = await signingPhaseTimer.time('prepare_signing_fields', () =>
+	            prepareSigningFields({
+	              packetId: mandatePacketId,
+	              packetVersionId: options.packetVersionId || null,
+	              packetType: 'mandate',
+	              organisationId,
+	              placeholders: {
+	                'seller.display_name': sellerName,
+	                'seller.email': sellerEmail,
+	                'agent.display_name': agentRecipientName,
+	                'agent.email': agentRecipientEmail,
+	                'property.address': propertyTitle,
+	                'property.listing_title': propertyTitle,
+	                'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+	              },
+	              context: {
+	                lead: {
+	                  sellerName: normalizeText(selectedLeadContact?.firstName),
+	                  sellerSurname: normalizeText(selectedLeadContact?.lastName),
+	                  sellerEmail,
+	                },
+	                mandateDraft: {
+	                  sellerEmail,
+	                },
+	                generatedByName: agentRecipientName,
+	                generatedByUserEmail: agentRecipientEmail,
+	                agentEmail: agentRecipientEmail,
+	              },
+	            }),
+	          )
+	          const signingVersionId = normalizeText(signingPreparation?.version?.id)
+	          measuredSigningVersionId = signingVersionId || measuredSigningVersionId
+	          await signingPhaseTimer.time('apply_layout', () =>
+	            applyPreparedSigningLayoutForQuickFlow({
+	              packetId: mandatePacketId,
+	              versionId: signingVersionId,
+	              preparedFields: signingPreparation?.seed?.fields || [],
+	            }),
+	          { packetVersionId: signingVersionId || null })
 
-          const linkResult = await generateSigningLinks({
-            packetId: mandatePacketId,
-            packetVersionId: signingVersionId || null,
-            organisationId,
-            expiresInHours: 168,
-            baseUrl:
-              (typeof window !== 'undefined' && window.location?.origin)
-                ? window.location.origin
-              : 'https://app.arch9.co.za',
-            targetSignerRole,
-          })
+	          const linkResult = await signingPhaseTimer.time('generate_links', () =>
+	            generateSigningLinks({
+	              packetId: mandatePacketId,
+	              packetVersionId: signingVersionId || null,
+	              organisationId,
+	              expiresInHours: 168,
+	              baseUrl:
+	                (typeof window !== 'undefined' && window.location?.origin)
+	                  ? window.location.origin
+	                : 'https://app.arch9.co.za',
+	              targetSignerRole,
+	            }),
+	          { packetVersionId: signingVersionId || null })
           dispatchId = normalizeText(linkResult?.dispatchId) || dispatchId
           agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', agentRecipientEmail)
           sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
@@ -9777,62 +10139,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
       const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
       const requiredSigningLink = recipientRole === 'seller' ? sellerSigningLink : agentSigningLink
-      if (!requiredSigningLink) {
-        const errorMessage =
-          [
+	      if (!requiredSigningLink) {
+	        const errorMessage =
+	          [
             recipientRole === 'seller'
               ? 'Seller signing link could not be generated yet. Confirm the seller email address in the digital signing step, then send again.'
               : 'Agent signing link could not be generated yet. Confirm the assigned agent email address in the digital signing step, then send again.',
             signingLinkFailureMessage ? `Signing service said: ${signingLinkFailureMessage}` : '',
-          ].filter(Boolean).join(' ')
-        setError(errorMessage)
-        return { ok: false, errorMessage }
-      }
+	          ].filter(Boolean).join(' ')
+	        setError(errorMessage)
+	        persistSigningPhaseTimings('failed', {
+	          failureReason: 'missing_required_signing_link',
+	          recipientRole,
+	        })
+	        return { ok: false, errorMessage }
+	      }
 
       if (!isSupabaseConfigured) {
         throw new Error('Mandate signing email delivery is not configured. No sent status was recorded.')
       }
-      let emailDelivery = null
-      try {
-        const emailResponse = await withPipelineTimeout(
-          invokeEdgeFunction('send-mandate-signing-email', {
-            body: {
-              type: 'seller_mandate_sent',
-              to: recipientEmail,
-              organisationId,
-              packetId: mandatePacketId,
-              recipientRole,
-              recipientName,
-              sellerName,
-              propertyTitle,
-              mandateType: 'Mandate',
-              mandateStartDate: '',
-              mandateEndDate: '',
-              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-              portalLink: outboundMandateLink,
-              agentName: agentRecipientName,
-              resend: options.resend === true,
-              reminder: options.reminder === true,
-              dispatchId,
-            },
-          }),
-          'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
-          PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
-        )
-        assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
-        const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
-        const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
-        if (!emailConfirmed) {
-          const error = new Error('Mandate signing email was prepared, but provider delivery was not confirmed. No sent status was recorded.')
-          error.code = 'SIGNING_EMAIL_UNCONFIRMED'
-          throw error
-        }
-        emailDelivery = { emailDeliveryId, emailConfirmed, delivery: emailResponse?.data?.delivery || null }
-      } catch (emailError) {
-        signingEmailFailed = true
-        console.warn('[MANDATE] signing email failed after link preparation', emailError)
-        throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
-      }
+	      let emailDelivery = null
+	      try {
+	        const emailResponse = await signingPhaseTimer.time('queue_email', () =>
+	          withPipelineTimeout(
+	            invokeEdgeFunction('send-mandate-signing-email', {
+	              body: {
+	                type: 'seller_mandate_sent',
+	                to: recipientEmail,
+	                organisationId,
+	                packetId: mandatePacketId,
+	                recipientRole,
+	                recipientName,
+	                sellerName,
+	                propertyTitle,
+	                mandateType: 'Mandate',
+	                mandateStartDate: '',
+	                mandateEndDate: '',
+	                askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+	                portalLink: outboundMandateLink,
+	                agentName: agentRecipientName,
+	                resend: options.resend === true,
+	                reminder: options.reminder === true,
+	                dispatchId,
+	              },
+	            }),
+	            'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
+	            PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
+	          ),
+	        { recipientRole, recipientEmail })
+	        emailDelivery = await signingPhaseTimer.time('email_sent', async () => {
+	          assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
+	          const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
+	          const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+	          if (!emailConfirmed) {
+	            const error = new Error('Mandate signing email was prepared, but provider delivery was not confirmed. No sent status was recorded.')
+	            error.code = 'SIGNING_EMAIL_UNCONFIRMED'
+	            throw error
+	          }
+	          return { emailDeliveryId, emailConfirmed, delivery: emailResponse?.data?.delivery || null }
+	        }, { recipientRole, recipientEmail })
+	      } catch (emailError) {
+	        signingEmailFailed = true
+	        console.warn('[MANDATE] signing email failed after link preparation', emailError)
+	        persistSigningPhaseTimings('failed', {
+	          failureReason: 'email_failed',
+	          recipientRole,
+	          recipientEmail,
+	        })
+	        throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
+	      }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Mandate Sent',
@@ -9932,10 +10307,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: signingEmailFailed ? 'Email failed' : 'Sent for digital signing',
       }, { actor: currentAgent })
       setError('')
-      setMessage(signingEmailFailed
-        ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
-        : 'Mandate sent to seller.')
-      await reloadRecords(organisationId)
+	      setMessage(signingEmailFailed
+	        ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
+	        : 'Mandate sent to seller.')
+	      persistSigningPhaseTimings('completed', {
+	        recipientRole,
+	        recipientEmail,
+	        emailDeliveryId: emailDelivery?.emailDeliveryId || null,
+	        dispatchId,
+	      })
+	      await reloadRecords(organisationId)
       return {
         ok: true,
         emailDeliveryId: emailDelivery?.emailDeliveryId || null,
@@ -9947,6 +10328,339 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setIsMandateSending(false)
     }
+  }
+
+  function resolveCurrentMandateSourceFingerprint() {
+    const sourceContext =
+      mandatePacketStatus?.packet?.source_context_json && typeof mandatePacketStatus.packet.source_context_json === 'object'
+        ? mandatePacketStatus.packet.source_context_json
+        : {}
+    const manualOverride = getMandateManualOverrideFromSource(sourceContext)
+    const readinessData = selectedLeadMandateReadiness?.mandateData || null
+    const effectiveMandateData = applyMandateManualOverrideToData(readinessData, { mandateManualOverride: manualOverride })
+    return createMandateSourceFingerprint(buildMandateSourceFingerprintPayload({
+      mandateData: effectiveMandateData,
+      lead: selectedLead,
+      contact: selectedLeadContact || {},
+      manualOverride,
+      templateReadiness: selectedLeadMandateTemplateReadiness,
+    }))
+  }
+
+  function resolveMandateSourceFingerprintStatus({ packet = null, version = null } = {}) {
+    const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+      ? packet.source_context_json
+      : {}
+    const requestedSourceFingerprint =
+      resolveCurrentMandateSourceFingerprint() ||
+      getMandateRequestedSourceFingerprint(sourceContext)
+    const generatedSourceFingerprint = getMandateGeneratedSourceFingerprint(sourceContext, version)
+    const status = requestedSourceFingerprint && generatedSourceFingerprint
+      ? requestedSourceFingerprint === generatedSourceFingerprint
+        ? 'unchanged'
+        : 'changed'
+      : 'unknown'
+    return {
+      status,
+      requestedSourceFingerprint,
+      generatedSourceFingerprint,
+      changed: status === 'changed',
+    }
+  }
+
+  async function handleQueueMandateSigningRequest(sendOptions = {}) {
+    if (!selectedLead || !organisationId) {
+      return { ok: false, errorMessage: 'Lead or organisation context is not ready yet. Refresh and try again.' }
+    }
+    if (!selectedLeadIsSeller) {
+      return { ok: false, errorMessage: 'Mandates can only be sent from a seller lead.' }
+    }
+    if (!isSupabaseConfigured || !supabase) {
+      return { ok: false, errorMessage: 'Mandate signing queue is not configured.' }
+    }
+
+    const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
+    const statusPacket =
+      mandatePacketStatus?.packet &&
+      documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
+        ? mandatePacketStatus.packet
+        : null
+    const mandatePacketId = normalizeText(
+      options.packetId ||
+      mandateQuickStartPacketId ||
+      selectedLead?.mandatePacketId ||
+      selectedLead?.mandatePacket?.id ||
+      statusPacket?.id,
+    )
+    if (!mandatePacketId || !isUuidLike(mandatePacketId)) {
+      const errorMessage = 'The mandate packet was not saved yet. Generate the mandate once, then send it for signature.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
+    }
+
+    const sellerEmail = normalizeText(options.sellerEmail || selectedLeadContact?.email).toLowerCase()
+    if (!isValidEmail(sellerEmail)) {
+      const errorMessage = 'Seller email is required to send the mandate.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
+    }
+    const assignedAgentEmail = normalizeText(options.agentEmail || selectedLead?.assignedAgentEmail).toLowerCase()
+    const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
+    const agentRecipientEmail = isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
+    if (!isValidEmail(agentRecipientEmail)) {
+      const errorMessage = 'Agent email is required to send the mandate.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
+    }
+
+    setIsMandateSending(true)
+    try {
+      const packet =
+        statusPacket ||
+        await withPipelineTimeout(
+          fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false }),
+          'Mandate packet is taking too long to confirm. Try again in a moment.',
+          PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS,
+        )
+      if (!documentPacketBelongsToLead(packet, selectedLead.leadId)) {
+        const errorMessage = 'This mandate packet is linked to another lead. Open the mandate workspace and regenerate it for this seller.'
+        setError(errorMessage)
+        return { ok: false, errorMessage }
+      }
+
+      const requestedAt = new Date().toISOString()
+      const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+      const agentRecipientName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
+      const packetVersionId = normalizeText(options.packetVersionId || mandateQuickStartPacketVersionId)
+      const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+        ? packet.source_context_json
+        : {}
+      const sourceFingerprintStatus = normalizeText(options.sourceFingerprintStatus).toLowerCase()
+      const requestedSourceFingerprint = normalizeText(options.requestedSourceFingerprint)
+      const generatedSourceFingerprint = normalizeText(options.generatedSourceFingerprint)
+      const sourceChangedBeforeSigning =
+        options.sourceChangedBeforeSigning === true ||
+        sourceFingerprintStatus === 'changed' ||
+        Boolean(requestedSourceFingerprint && generatedSourceFingerprint && requestedSourceFingerprint !== generatedSourceFingerprint)
+      const packetStatus = normalizeText(packet?.status).toLowerCase()
+      const nextPacketStatus = packetStatus === 'generated' ? 'signing_prep' : packetStatus || 'signing_prep'
+      const targetSignerRole = normalizeText(options.targetSignerRole || sourceContext?.targetSignerRole || '').toLowerCase() || 'agent'
+      const signingRequest = {
+        contract: 'mandate_signing_request_v1',
+        status: 'queued',
+        queueState: 'finalising',
+        requestedAt,
+        requestedBy: normalizeText(currentAgent.id) || null,
+        leadId: normalizeText(selectedLead?.leadId) || null,
+        packetId: mandatePacketId,
+        packetVersionId: packetVersionId || null,
+        requestedSourceFingerprint: requestedSourceFingerprint || getMandateRequestedSourceFingerprint(sourceContext) || null,
+        generatedSourceFingerprint: generatedSourceFingerprint || getMandateGeneratedSourceFingerprint(sourceContext) || null,
+        sourceFingerprintStatus: sourceChangedBeforeSigning ? 'changed' : sourceFingerprintStatus || 'unknown',
+        requiresMandateRegeneration: sourceChangedBeforeSigning,
+        requiresPersistedVersionLookup: !isUuidLike(packetVersionId),
+        targetSignerRole,
+        agent: {
+          name: agentRecipientName,
+          email: agentRecipientEmail,
+        },
+        seller: {
+          name: sellerName,
+          email: sellerEmail,
+        },
+        origin: typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za',
+      }
+      const nextSourceContext = {
+        ...sourceContext,
+        mandateStatus: 'signing_requested',
+        signingStatus: 'signing_requested',
+        signingRequestStatus: 'finalising',
+        signingRequestQueuedAt: requestedAt,
+        requestedMandateSourceFingerprint: signingRequest.requestedSourceFingerprint,
+        requested_mandate_source_fingerprint: signingRequest.requestedSourceFingerprint,
+        lastGeneratedMandateSourceFingerprint: signingRequest.generatedSourceFingerprint || sourceContext.lastGeneratedMandateSourceFingerprint || sourceContext.last_generated_mandate_source_fingerprint || null,
+        last_generated_mandate_source_fingerprint: signingRequest.generatedSourceFingerprint || sourceContext.lastGeneratedMandateSourceFingerprint || sourceContext.last_generated_mandate_source_fingerprint || null,
+        mandateSourceFingerprintStatus: signingRequest.sourceFingerprintStatus,
+        mandate_source_fingerprint_status: signingRequest.sourceFingerprintStatus,
+        mandateSourceChangedBeforeSigning: sourceChangedBeforeSigning,
+        mandate_source_changed_before_signing: sourceChangedBeforeSigning,
+        requiresMandateRegeneration: sourceChangedBeforeSigning,
+        requires_mandate_regeneration: sourceChangedBeforeSigning,
+        requiresPersistedVersionLookup: signingRequest.requiresPersistedVersionLookup,
+        requires_persisted_version_lookup: signingRequest.requiresPersistedVersionLookup,
+        signingRequest,
+        lastSigningRequest: signingRequest,
+      }
+
+      const updateTask = supabase
+        .from('document_packets')
+        .update({
+          status: nextPacketStatus,
+          source_context_json: nextSourceContext,
+        })
+        .eq('id', mandatePacketId)
+        .select('id, organisation_id, packet_type, title, status, template_id, transaction_id, lead_id, assigned_agent_id, created_by, current_version_number, source_context_json, branding_snapshot_json, sent_at, completed_at, archived_at, created_at, updated_at')
+        .maybeSingle()
+      const { data: updatedPacket, error: updateError } = await withPipelineTimeout(
+        updateTask,
+        'Signing request save is taking too long. Try again in a moment.',
+        PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS,
+      )
+      if (updateError) throw updateError
+      if (!updatedPacket?.id) throw new Error('Mandate packet could not be marked for signing.')
+
+      const eventTask = supabase
+        .from('document_packet_events')
+        .insert({
+          packet_id: mandatePacketId,
+          organisation_id: updatedPacket.organisation_id || organisationId,
+          version_id: isUuidLike(packetVersionId) ? packetVersionId : null,
+          event_type: 'mandate_signing_requested',
+          event_payload_json: {
+            activity_type: 'mandate_signing_requested',
+            contract: signingRequest.contract,
+            queueState: signingRequest.queueState,
+            requestedAt,
+            leadId: normalizeText(selectedLead?.leadId) || null,
+            packetVersionId: packetVersionId || null,
+            requestedSourceFingerprint: signingRequest.requestedSourceFingerprint,
+            generatedSourceFingerprint: signingRequest.generatedSourceFingerprint,
+            sourceFingerprintStatus: signingRequest.sourceFingerprintStatus,
+            requiresMandateRegeneration: signingRequest.requiresMandateRegeneration,
+            requiresPersistedVersionLookup: signingRequest.requiresPersistedVersionLookup,
+            targetSignerRole,
+            agentEmail: agentRecipientEmail,
+            sellerEmail,
+            message: 'Mandate signing request queued from the quick-start flow.',
+          },
+          created_by: normalizeText(currentAgent.id) || null,
+        })
+      const { error: eventError } = await withPipelineTimeout(
+        eventTask,
+        'Signing request event is taking too long. Try again in a moment.',
+        PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS,
+      )
+      if (eventError) throw eventError
+
+      setMandatePacketStatus((previous) => ({
+        ...(previous || {}),
+        packetType: 'mandate',
+        state: 'signing_requested',
+        packet: {
+          ...((previous && previous.packet) || {}),
+          ...updatedPacket,
+        },
+        actionHint: 'Signing request queued.',
+      }))
+      setRecords((previous) => ({
+        ...previous,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
+            ? {
+                ...lead,
+                mandatePacketId,
+                mandateStatus: 'signing_requested',
+                updatedAt: requestedAt,
+              }
+            : lead,
+        ),
+      }))
+      setError('')
+      setMessage('Signing request queued. Arch9 is finalising the signing packet in the background.')
+      return {
+        ok: true,
+        queued: true,
+        packetId: mandatePacketId,
+        packetVersionId: packetVersionId || null,
+        targetSignerRole,
+      }
+    } catch (queueError) {
+      const errorMessage = queueError?.message || 'Unable to queue mandate signing right now.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
+    } finally {
+      setIsMandateSending(false)
+    }
+  }
+
+  function startMandateQuickStartPregeneration(options = {}) {
+    if (!selectedLead || !selectedLeadIsSeller || !organisationId) return false
+    if (selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length) return false
+
+    const pregenerationOptions = options && typeof options === 'object' ? options : {}
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
+    const statusPacket = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
+      ? mandatePacketStatus.packet
+      : null
+    const statusGeneratedVersion = findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])
+    const statusPacketId = statusPacket
+      ? normalizeText(statusPacket.id)
+      : ''
+    const statusGeneratedVersionId = normalizeText(statusGeneratedVersion?.id)
+    const currentPacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
+    const currentVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
+    const sourceFingerprintInfo = resolveMandateSourceFingerprintStatus({
+      packet: statusPacket,
+      version: statusGeneratedVersion,
+    })
+    const sourceChanged = sourceFingerprintInfo.changed || pregenerationOptions.force === true
+    if (!sourceChanged && isUuidLike(currentPacketId) && isUuidLike(currentVersionId)) {
+      setMandateQuickStartPacketId(currentPacketId)
+      setMandateQuickStartPacketVersionId(currentVersionId)
+      return false
+    }
+
+    const pregenerationKey = [
+      leadKey,
+      currentPacketId || 'new',
+      currentVersionId || 'pending',
+      sourceFingerprintInfo.requestedSourceFingerprint || 'unknown-source',
+      sourceChanged ? 'changed' : 'missing-version',
+    ].join(':')
+    const currentRun = mandateQuickStartPregenerationRef.current || {}
+    if (currentRun.key === pregenerationKey && currentRun.promise) return true
+
+    setMandateQuickStartProgress('Preparing mandate PDF in the background…')
+    const promise = Promise.resolve()
+      .then(() =>
+        handleGenerateMandateFromSellerLead({
+          onProgress: (message) => {
+            const progress = normalizeText(message)
+            if (progress) setMandateQuickStartProgress(progress)
+          },
+        }),
+      )
+      .then((generated) => {
+        const generatedPacketId = normalizeText(
+          generated?.packet?.id ||
+          generated?.status?.packet?.id ||
+          generated?.status?.packetId ||
+          currentPacketId,
+        )
+        const generatedVersionId = normalizeText(
+          generated?.version?.id ||
+          findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
+          currentVersionId,
+        )
+        if (isUuidLike(generatedPacketId)) setMandateQuickStartPacketId(generatedPacketId)
+        if (isUuidLike(generatedVersionId)) setMandateQuickStartPacketVersionId(generatedVersionId)
+        setMandateQuickStartProgress('')
+      })
+      .catch((generationError) => {
+        console.warn('[MANDATE] quick-start background PDF generation failed', generationError)
+        const recoveryMessage = generationError?.code || generationError?.details || generationError?.validation
+          ? formatLegalDocumentGenerationRecovery(generationError, { packetType: 'mandate' })
+          : ''
+        setMandateQuickStartError(recoveryMessage || generationError?.message || 'Mandate PDF could not be prepared yet. Open Review Mandate / Signing to resolve it.')
+      })
+      .finally(() => {
+        if (mandateQuickStartPregenerationRef.current?.promise === promise) {
+          mandateQuickStartPregenerationRef.current = { key: '', promise: null }
+        }
+      })
+
+    mandateQuickStartPregenerationRef.current = { key: pregenerationKey, promise }
+    return true
   }
 
   function openSelectedLeadMandateWorkspace(actionKey = selectedLeadMandateQuickStartActionKey) {
@@ -10033,40 +10747,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
+    if (currentStep === 'details') {
+      setMandateQuickStartError('')
+      setMandateQuickStartStep('method')
+      startMandateQuickStartPregeneration()
+      return
+    }
+
     setMandateQuickStartBusy(true)
     setMandateQuickStartError('')
     setMandateQuickStartProgress('')
     try {
-      const actionKey = selectedLeadMandateQuickStartActionKey
-      const statusPacketId = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
-        ? normalizeText(mandatePacketStatus.packet.id)
-        : ''
-      const statusGeneratedVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
+      const statusPacket = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
+        ? mandatePacketStatus.packet
+        : null
+      const statusGeneratedVersion = findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])
+      const sourceFingerprintInfo = resolveMandateSourceFingerprintStatus({
+        packet: statusPacket,
+        version: statusGeneratedVersion,
+      })
+      const statusPacketId = statusPacket ? normalizeText(statusPacket.id) : ''
+      const statusGeneratedVersionId = normalizeText(statusGeneratedVersion?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
-      let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
-      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
-
-      if ((currentStep === 'details' || currentStep === 'send') && needsGeneration) {
-        const generated = await handleGenerateMandateFromSellerLead({
-          onProgress: (message) => setMandateQuickStartProgress(normalizeText(message)),
-        })
-        mandatePacketId = normalizeText(
-          generated?.packet?.id ||
-          generated?.status?.packet?.id ||
-          generated?.status?.packetId ||
-          mandatePacketId,
-        )
-        mandatePacketVersionId = normalizeText(
-          generated?.version?.id ||
-          findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
-          mandatePacketVersionId,
-        )
-      }
+      const mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
 
       if (!isUuidLike(mandatePacketId)) {
+        if (currentStep === 'send' && mandateQuickStartPregenerationRef.current?.promise) {
+          throw new Error('The mandate PDF is still being prepared in the background. Give it a few seconds, then send again.')
+        }
         throw new Error('The mandate was prepared, but no saved packet is available for signing. Open the editor to resolve packet setup.')
       }
-      if (!isUuidLike(mandatePacketVersionId)) {
+      if (currentStep !== 'send' && !isUuidLike(mandatePacketVersionId)) {
         throw new Error('The mandate PDF was not saved as a generated packet version yet. Click Generate again before sending for signature.')
       }
 
@@ -10079,15 +10790,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         return
       }
 
-      setMandateQuickStartProgress('Starting signing…')
-      const sendResult = await handleSendMandateToSeller({
+      setMandateQuickStartProgress('Queuing signing…')
+      const sendResult = await handleQueueMandateSigningRequest({
         packetId: mandatePacketId,
-        packetVersionId: mandatePacketVersionId,
+        packetVersionId: isUuidLike(mandatePacketVersionId) ? mandatePacketVersionId : null,
         agentEmail: mandateQuickStartEmailDraft.agent,
         sellerEmail: mandateQuickStartEmailDraft.seller,
+        sourceFingerprintStatus: sourceFingerprintInfo.status,
+        requestedSourceFingerprint: sourceFingerprintInfo.requestedSourceFingerprint,
+        generatedSourceFingerprint: sourceFingerprintInfo.generatedSourceFingerprint,
+        sourceChangedBeforeSigning: sourceFingerprintInfo.changed,
       })
       if (!sendResult?.ok) {
-        throw new Error(sendResult?.errorMessage || 'Mandate signing could not be started yet. Check the signer emails and try again.')
+        throw new Error(sendResult?.errorMessage || 'Mandate signing could not be queued yet. Check the signer emails and try again.')
       }
 
       setMandateQuickStartOpen(false)
@@ -17151,9 +17866,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           ) : null}
 
-          {mandateQuickStartProgress && mandateQuickStartBusy ? (
+          {mandateQuickStartProgress ? (
             <div className="flex items-center gap-2 rounded-[14px] border border-[#d6e7f5] bg-[#f4f9ff] px-3 py-3 text-sm font-semibold text-[#315f8c]">
-              <RefreshCw className="h-4 w-4 animate-spin" />
+              <Clock3 className="h-4 w-4" />
               {mandateQuickStartProgress}
             </div>
           ) : null}

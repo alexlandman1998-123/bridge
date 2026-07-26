@@ -105,6 +105,57 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+const LEGAL_DOCUMENT_PHASE_TIMINGS_CONTRACT = 'legal_document_phase_timings_v1'
+
+function createLegalDocumentPhaseTimer({ workflow = 'legal_document_generation', generationAttemptId = '' } = {}) {
+  const workflowStartedAt = Date.now()
+  const phases = []
+
+  const recordPhase = (phase, startedAt, error = null, metadata = {}) => {
+    const completedAt = Date.now()
+    phases.push({
+      phase,
+      status: error ? 'failed' : 'completed',
+      durationMs: Math.max(completedAt - startedAt, 0),
+      startedAt: new Date(startedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      ...(error
+        ? {
+            errorCode: normalizeText(error?.code) || null,
+            errorMessage: normalizeText(error?.message || String(error)) || null,
+          }
+        : {}),
+    })
+  }
+
+  return {
+    async time(phase, fn, metadata = {}) {
+      const startedAt = Date.now()
+      try {
+        const result = await fn()
+        recordPhase(phase, startedAt, null, metadata)
+        return result
+      } catch (error) {
+        recordPhase(phase, startedAt, error, metadata)
+        throw error
+      }
+    },
+    snapshot(extra = {}) {
+      return {
+        contract: LEGAL_DOCUMENT_PHASE_TIMINGS_CONTRACT,
+        workflow,
+        generationAttemptId: normalizeText(generationAttemptId) || null,
+        startedAt: new Date(workflowStartedAt).toISOString(),
+        capturedAt: new Date().toISOString(),
+        durationMs: Math.max(Date.now() - workflowStartedAt, 0),
+        phases: phases.map((phase) => ({ ...phase })),
+        ...(extra && typeof extra === 'object' ? extra : {}),
+      }
+    },
+  }
+}
+
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
@@ -3283,6 +3334,10 @@ export async function generatePacketVersion({
     await requireDocumentConversionHealth()
   }
   const generationAttemptId = createGenerationAttemptId()
+  const phaseTimer = createLegalDocumentPhaseTimer({
+    workflow: 'legal_document_generation',
+    generationAttemptId,
+  })
   let generationLeasePacketId = normalizeNullableUuid(packetId)
   let generationLeaseClaimed = false
   let deferGenerationLeaseRelease = false
@@ -3316,16 +3371,18 @@ export async function generatePacketVersion({
   }
   if (generationLeasePacketId) await claimGenerationLease(generationLeasePacketId)
   try {
-    const prepared = await savePacketDraft({
-      packetId,
-      packetType: normalizedPacketType,
-      context: {
-        ...context,
+    const prepared = await phaseTimer.time('save_draft', () =>
+      savePacketDraft({
+        packetId,
+        packetType: normalizedPacketType,
+        context: {
+          ...context,
+          validationAction: 'generate',
+        },
+        template: preflightTemplate,
         validationAction: 'generate',
-      },
-      template: preflightTemplate,
-      validationAction: 'generate',
-    })
+      }),
+    )
 
     const { packet, validation } = prepared
     if (!generationLeaseClaimed) await claimGenerationLease(packet.id)
@@ -3506,34 +3563,39 @@ export async function generatePacketVersion({
             { issues: rendererPreflight.issues },
           )
         }
-        const mandateResult = await withPacketTimeout(
-          withPacketRetries(
-            () =>
-              generateMandateDocumentFromTemplate({
-                packetId: packet.id,
-                transactionId: normalizeNullableUuid(context?.transaction?.id || context?.transactionId),
-                leadId: normalizeNullableUuid(context?.lead?.lead_id || context?.lead?.id || context?.leadId),
-                templatePath: templateConfig.templatePath,
-                templateBucket: templateConfig.templateBucket,
-                templateFilename: templateConfig.templateFilename,
-                outputBucket: templateConfig.outputBucket,
-                outputPath,
-                renderMode,
-                placeholders: pdfPlaceholders,
-                sectionManifest: validation.sectionManifest || [],
-                generationPayload,
-                sourceContext: sourceContextSnapshot,
-                branding: validation.branding || {},
-                templateVersion,
-                generatedByRole: context?.generatedByRole || 'agent',
-                generatedByUserId: context?.generatedByUserId || '',
-                clientVisible: false,
-              }),
-            {
-              attempts: 1,
-            },
-          ),
-          'Mandate document rendering is taking too long.',
+        const mandateResult = await phaseTimer.time(
+          'render_pdf',
+          () =>
+            withPacketTimeout(
+              withPacketRetries(
+                () =>
+                  generateMandateDocumentFromTemplate({
+                    packetId: packet.id,
+                    transactionId: normalizeNullableUuid(context?.transaction?.id || context?.transactionId),
+                    leadId: normalizeNullableUuid(context?.lead?.lead_id || context?.lead?.id || context?.leadId),
+                    templatePath: templateConfig.templatePath,
+                    templateBucket: templateConfig.templateBucket,
+                    templateFilename: templateConfig.templateFilename,
+                    outputBucket: templateConfig.outputBucket,
+                    outputPath,
+                    renderMode,
+                    placeholders: pdfPlaceholders,
+                    sectionManifest: validation.sectionManifest || [],
+                    generationPayload,
+                    sourceContext: sourceContextSnapshot,
+                    branding: validation.branding || {},
+                    templateVersion,
+                    generatedByRole: context?.generatedByRole || 'agent',
+                    generatedByUserId: context?.generatedByUserId || '',
+                    clientVisible: false,
+                  }),
+                {
+                  attempts: 1,
+                },
+              ),
+              'Mandate document rendering is taking too long.',
+            ),
+          { renderMode },
         )
         artifact = extractGeneratedArtifact(mandateResult)
         assertGenerationOutput(artifact, validation.packetType)
@@ -3754,6 +3816,10 @@ export async function generatePacketVersion({
       validation.sectionManifest,
       artifact.nativePdfLayout,
     )
+    const phaseTimingsForVersion = phaseTimer.snapshot({
+      packetId: packet.id,
+      packetType: validation.packetType,
+    })
 
     let version = null
     try {
@@ -3774,6 +3840,8 @@ export async function generatePacketVersion({
           previewOnlyReason: null,
           pilotFallback,
           generationPayload,
+          phaseTimings: phaseTimingsForVersion,
+          phase_timings: phaseTimingsForVersion,
           templateVersion,
           templateResolution: prepared.templateResolution || null,
           generatedAt,
@@ -3826,6 +3894,16 @@ export async function generatePacketVersion({
       ...(packet?.source_context_json || {}),
       lastGeneratedVersion: version.version_number,
       generationPayload,
+      phaseTimings: {
+        ...phaseTimingsForVersion,
+        versionId: version.id,
+        versionNumber: version.version_number,
+      },
+      phase_timings: {
+        ...phaseTimingsForVersion,
+        versionId: version.id,
+        versionNumber: version.version_number,
+      },
       templateVersion,
       generatedAt,
       renderProvenance,
@@ -3882,6 +3960,16 @@ export async function generatePacketVersion({
         transactionId: context?.transaction?.id || context?.transactionId || null,
         versionNumber: version.version_number,
         generationAttemptId,
+        phaseTimings: {
+          ...phaseTimingsForVersion,
+          versionId: version.id,
+          versionNumber: version.version_number,
+        },
+        phase_timings: {
+          ...phaseTimingsForVersion,
+          versionId: version.id,
+          versionNumber: version.version_number,
+        },
         renderStatus: version.render_status,
         renderedDocumentId: version.rendered_document_id,
         renderedFilePath: version.rendered_file_path,
@@ -3943,6 +4031,11 @@ export async function generatePacketVersion({
       packet: updatedPacket,
       version,
       validation,
+      phaseTimings: {
+        ...phaseTimingsForVersion,
+        versionId: version.id,
+        versionNumber: version.version_number,
+      },
       previewHtml: prepared.previewHtml,
       template: effectiveTemplate,
       templateResolution: prepared.templateResolution || null,
