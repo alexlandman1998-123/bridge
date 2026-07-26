@@ -33,6 +33,7 @@ function argValue(name, fallback = '') {
 
 const shouldWrite = process.argv.includes('--write')
 const reportPath = argValue('--report', DEFAULT_REPORT_PATH)
+const allowLocalReleaseDrift = process.argv.includes('--allow-local-release-drift')
 
 function envText(...names) {
   for (const name of names) {
@@ -253,7 +254,7 @@ const liveReleaseId = releaseManifest?.releaseId || null
 const expectedReleaseId = EXPECTED_RELEASE_ID
 const gitReleaseId = localReleaseId()
 if (liveReleaseId && liveReleaseId !== expectedReleaseId) addBlocker(blockers, 'PHASE7_LIVE_RELEASE_MISMATCH', liveReleaseId)
-if (gitReleaseId && gitReleaseId !== expectedReleaseId) addBlocker(blockers, 'PHASE7_LOCAL_RELEASE_MISMATCH', gitReleaseId)
+if (!allowLocalReleaseDrift && gitReleaseId && gitReleaseId !== expectedReleaseId) addBlocker(blockers, 'PHASE7_LOCAL_RELEASE_MISMATCH', gitReleaseId)
 
 let packets = []
 if (!blockers.length) {
@@ -284,6 +285,7 @@ const report = {
     expectedReleaseId,
     liveReleaseId,
     localReleaseId: gitReleaseId || null,
+    localReleaseDriftAllowed: allowLocalReleaseDrift,
     manifestAssetCount: releaseManifest?.criticalAssets?.length ?? null,
     manifestSupabaseOrigin: releaseManifest?.supabaseOrigin || null,
   },

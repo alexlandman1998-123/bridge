@@ -1,0 +1,37 @@
+{
+  "phase": "document-generator-final-mile-phase-8",
+  "status": "operational_handover_ready",
+  "production": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co",
+    "appUrl": "https://app.arch9.co.za",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  },
+  "release": {
+    "expectedReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "productionDeploymentId": "dpl_6GPW5vCM3iexzGQ66u9HRA9zv6tL",
+    "productionAlias": "https://app.arch9.co.za"
+  },
+  "inputs": {
+    "phase7Observation": "docs/audits/document-generator-final-mile-phase-7-observation.json",
+    "maxObservationAgeMinutes": 1440
+  },
+  "controls": {
+    "noDispatcherInvocationRequired": true,
+    "noEmailSendRequired": true,
+    "noCustomerDataMutationRequired": true,
+    "signedDownloadUrlsRedacted": true,
+    "recipientEmailsRedacted": true
+  },
+  "passingDecision": "keep_live",
+  "failingDecision": "pause_final_mile_and_investigate",
+  "requiredChecks": [
+    "Phase 7 observation status is healthy",
+    "production release manifest still points at the promoted release",
+    "both pinned packets remain completed_everywhere",
+    "both final signed PDFs are available through workspace access",
+    "final delivery lifecycle traces remain present",
+    "delivery evidence has no missing provider evidence",
+    "no dispatch or email send is required for the decision"
+  ]
+}

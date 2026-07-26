@@ -1,7 +1,7 @@
 {
   "phase": "document-generator-final-mile-phase-7",
   "status": "healthy",
-  "observedAt": "2026-07-26T09:40:54.062Z",
+  "observedAt": "2026-07-26T09:43:18.768Z",
   "mutatedData": false,
   "production": {
     "appUrl": "https://app.arch9.co.za",
@@ -12,7 +12,8 @@
   "release": {
     "expectedReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
     "liveReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
-    "localReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "localReleaseId": "bb073ede9a8b1e854697a68d5d602d0ee5387c12",
+    "localReleaseDriftAllowed": true,
     "manifestAssetCount": 421,
     "manifestSupabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co"
   },

@@ -1,0 +1,78 @@
+{
+  "phase": "document-generator-final-mile-phase-8",
+  "status": "GO",
+  "decision": "keep_live",
+  "generatedAt": "2026-07-26T09:43:18.823Z",
+  "input": {
+    "path": "docs/audits/document-generator-final-mile-phase-7-observation.json",
+    "phase": "document-generator-final-mile-phase-7",
+    "status": "healthy",
+    "observedAt": "2026-07-26T09:43:18.768Z",
+    "observedAgeMinutes": 0,
+    "maxAgeMinutes": 1440,
+    "refreshedLiveObservation": false
+  },
+  "production": {
+    "appUrl": "https://app.arch9.co.za",
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  },
+  "release": {
+    "expectedReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "liveReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "localReleaseId": "bb073ede9a8b1e854697a68d5d602d0ee5387c12",
+    "localReleaseDriftAllowed": true,
+    "manifestAssetCount": 421,
+    "manifestSupabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co"
+  },
+  "operationalState": {
+    "customerUseBlocked": false,
+    "documentGeneratorProblemDetected": false,
+    "smokeTestDeliveryControlled": true,
+    "recoveredPacketCount": 2,
+    "healthyPacketCount": 2
+  },
+  "controls": {
+    "noDispatcherInvocationRequired": true,
+    "noEmailSendRequired": true,
+    "noCustomerDataMutationRequired": true,
+    "signedDownloadUrlsRedacted": true,
+    "recipientEmailsRedacted": true
+  },
+  "packetSummary": [
+    {
+      "label": "otp",
+      "status": "healthy",
+      "stage": "completed_everywhere",
+      "recipientDelivery": "2/2",
+      "finalAccess": true,
+      "fileName": "otp-v2-final-signed.pdf",
+      "suppressedDeliveries": 2,
+      "providerAcceptedDeliveries": 0
+    },
+    {
+      "label": "mandate",
+      "status": "healthy",
+      "stage": "completed_everywhere",
+      "recipientDelivery": "2/2",
+      "finalAccess": true,
+      "fileName": "mandate-v2-final-signed.pdf",
+      "suppressedDeliveries": 1,
+      "providerAcceptedDeliveries": 1
+    }
+  ],
+  "runbook": {
+    "ifGo": [
+      "Keep app.arch9.co.za live for the repaired final-mile flow.",
+      "Run the Phase 7 observation monitor after any document-generator, finaliser, delivery, storage, or access-control change.",
+      "Use the Phase 8 decision report as the handover evidence for operations."
+    ],
+    "ifNoGo": [
+      "Pause final-mile use for affected packets and preserve the Phase 7 observation report.",
+      "Do not retry final delivery until the named blocker is understood.",
+      "If any blocker involves real provider evidence, confirm whether an actual provider send was attempted before rerunning recovery."
+    ]
+  },
+  "blockers": []
+}

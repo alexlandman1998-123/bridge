@@ -14,6 +14,8 @@ Run the non-dispatching production monitor from the app package:
 node --env-file=.env.production.local scripts/document-generator-final-mile-phase7-production-observation.mjs --write
 ```
 
+After the observation tooling itself has been committed, use `--allow-local-release-drift` for repeated operational checks. The production release manifest remains pinned to the promoted app release; this flag only prevents documentation/tooling commits from blocking the monitor.
+
 The monitor checks the live release manifest, final completion truth, G1 launch-chain evidence, final-artifact delivery rows, Phase 5 lifecycle traces, and final signed access for the recovered OTP and mandate packets.
 
 ## Safety Notes
