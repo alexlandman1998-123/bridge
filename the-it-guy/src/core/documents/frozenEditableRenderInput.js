@@ -20,6 +20,19 @@ export function resolveFrozenEditableRenderInput(context = {}) {
 
   const contentSections = Array.isArray(freeze?.editableContent?.sections) ? freeze.editableContent.sections : []
   const manifest = Array.isArray(freeze?.sectionManifest) ? freeze.sectionManifest : []
+  if (!contentSections.length && !manifest.length) {
+    return {
+      contract: 'd1-v1',
+      freezeId: text(freeze.freezeId),
+      sourceVersionId: text(freeze.sourceVersionId),
+      sourceVersionNumber: Number(freeze.sourceVersionNumber || 0) || null,
+      editSequence: Number(freeze.editSequence || 0),
+      contentFingerprint: text(freeze.contentFingerprint),
+      frozenAt: text(freeze.frozenAt) || null,
+      editableSections: Array.isArray(context?.editableSections) ? context.editableSections : [],
+      placeholders: freeze.placeholders && typeof freeze.placeholders === 'object' ? freeze.placeholders : {},
+    }
+  }
   if (!contentSections.length || !manifest.length) {
     throw failure('Frozen editable render input contains no document sections.')
   }
@@ -73,7 +86,7 @@ export function applyFrozenEditableRenderInput(context = {}) {
   if (!frozen) return context
   return {
     ...context,
-    editableSections: frozen.editableSections,
+    editableSections: frozen.editableSections.length ? frozen.editableSections : context.editableSections,
     frozenEditableRenderInput: frozen,
   }
 }

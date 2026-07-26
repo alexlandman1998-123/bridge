@@ -88,11 +88,16 @@ import { formatLegalDocumentGenerationRecovery } from '../../core/documents/lega
 import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
 import {
   applySigningFieldLayout,
-  createDocumentPacket,
+  completeEditableDocumentRenderFreeze,
+  createEditableDocumentDraftFromTemplate,
   fetchDocumentPacket,
   fetchSigningFieldLayout,
+  freezeEditableDocumentRevisionForRender,
   listDocumentPackets,
+  persistGeneratedPdfToTransaction,
   saveSigningFieldPlacement,
+  verifyFrozenEditableRenderOutput,
+  verifyServerAttestedNativePdfRender,
 } from '../../lib/documentPacketsApi'
 import { listInboundLeadEmails } from '../../services/leadEmailCaptureService'
 import {
@@ -2072,6 +2077,44 @@ function resolveSignerLinkByRole(signers = [], role = '', email = '') {
 const QUICK_SIGNING_FIELD_ROLES = new Set(['purchaser_1', 'purchaser_2', 'buyer_spouse', 'seller', 'seller_spouse', 'agent', 'contractor', 'witness_1', 'witness_2', 'other'])
 const QUICK_SIGNING_FIELD_ROWS_PER_PAGE = 12
 
+function hasEditableMandateSections(version = null) {
+  return Array.isArray(version?.editable_content_json?.sections) && version.editable_content_json.sections.length > 0
+}
+
+function findEditableMandateSourceVersion(versions = []) {
+  return (Array.isArray(versions) ? versions : []).find(hasEditableMandateSections) || null
+}
+
+function isD3PersistedSigningVersion(version = null) {
+  if (!normalizeText(version?.id)) return false
+  if (normalizeText(version?.render_status || version?.renderStatus).toLowerCase() !== 'generated') return false
+  if (version?.transaction_pdf_persisted !== true && version?.transactionPdfPersisted !== true) return false
+  if (normalizeText(version?.rendered_media_type || version?.renderedMediaType).toLowerCase() !== 'application/pdf') return false
+  return Boolean(normalizeText(version?.rendered_document_id || version?.renderedDocumentId))
+}
+
+function findLatestD3PersistedGeneratedVersion(versions = []) {
+  return (Array.isArray(versions) ? versions : []).find(isD3PersistedSigningVersion) || null
+}
+
+async function waitForD3PersistedSigningVersion({ packetId, versionId, attempts = 5 } = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  const resolvedVersionId = normalizeText(versionId)
+  if (!resolvedPacketId || !resolvedVersionId) return null
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const packet = await fetchDocumentPacket(resolvedPacketId, {
+      includeVersions: true,
+      includeEvents: false,
+    }).catch(() => null)
+    const version = (packet?.versions || []).find((row) => normalizeText(row?.id) === resolvedVersionId) || null
+    if (isD3PersistedSigningVersion(version)) return version
+    if (attempt < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt))
+    }
+  }
+  return null
+}
+
 function normalizeQuickFlowSigningLayoutFields(fields = []) {
   const usedIds = new Set()
   return (Array.isArray(fields) ? fields : []).map((field, index) => {
@@ -2140,6 +2183,15 @@ async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, pre
     layoutError.code = 'QUICK_SIGNING_FIELD_LAYOUT_INVALID'
     layoutError.details = assessment
     throw layoutError
+  }
+  const signingReadyVersion = await waitForD3PersistedSigningVersion({
+    packetId: resolvedPacketId,
+    versionId: resolvedVersionId,
+  })
+  if (!signingReadyVersion?.id) {
+    const readinessError = new Error('The mandate PDF is still being certified for signing. Wait a few seconds, then send again.')
+    readinessError.code = 'MANDATE_SIGNING_PDF_NOT_READY'
+    throw readinessError
   }
 
   const existingLayout = await fetchSigningFieldLayout({
@@ -8318,7 +8370,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleGenerateMandateFromSellerLead({ onProgress } = {}) {
+  async function handleGenerateMandateFromSellerLead({ onProgress, renderFreeze: providedRenderFreeze = null, editableSections: providedEditableSections = [] } = {}) {
     if (!selectedLead || !organisationId) {
       throw new Error('Select a seller lead with an active organisation before generating a mandate.')
     }
@@ -8428,10 +8480,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       template = templateResolution?.template || null
 
+      const packetSourceContextJson = {
+        leadId: dbLeadId || null,
+        uiLeadId: normalizeText(selectedLead.leadId) || null,
+        leadCategory: selectedLead.leadCategory,
+        leadSource: selectedLead.leadSource,
+        contactId: selectedLead.contactId,
+        generatedDataSnapshot: mandateData,
+        missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
+        warningsSnapshot: mandatePreflight.warnings,
+        sourceContext: mandateData.sourceContext,
+      }
+      const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
       const loadExistingPacket = async () => {
         if (mandatePacketId && isUuidLike(mandatePacketId)) {
           try {
-            const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
+            const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: true, includeEvents: false })
             if (documentPacketBelongsToLead(packet, selectedLead.leadId)) return packet
             console.warn('[MANDATE] existing packet ignored because it belongs to another lead', {
               packetId: mandatePacketId,
@@ -8462,6 +8526,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         return null
       }
+      const createEditableMandatePacket = async () => {
+        if (!normalizeText(template?.id)) {
+          throw new Error('The published mandate template could not be loaded for certified generation.')
+        }
+        onProgress?.('Preparing certified mandate source…')
+        return createEditableDocumentDraftFromTemplate({
+          organisationId,
+          packetType: 'mandate',
+          title: packetTitle,
+          templateId: normalizeText(template.id),
+          leadId: dbLeadId || null,
+          assignedAgentId: scopedAssignedAgentId || null,
+          sourceContextJson: packetSourceContextJson,
+          placeholders: mandateData?.placeholders || {},
+        })
+      }
 
       const existingPacket = await loadExistingPacket()
       if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingPacket?.status).toLowerCase())) {
@@ -8473,32 +8553,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let packet = existingPacket
       let fallbackPacketId = ''
       try {
-        const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
+        if (packet?.id && !providedRenderFreeze && !findEditableMandateSourceVersion(packet?.versions || [])) {
+          packet = await createEditableMandatePacket()
+        }
         if (!packet?.id) {
-          packet = await createDocumentPacket({
-            organisationId,
-            packetType: 'mandate',
-            title: packetTitle,
-            leadId: dbLeadId || null,
-            // Always anchor packet ownership to the signed-in user for this flow.
-            // This avoids stale historical assignment ids tripping stricter RLS checks.
-            assignedAgentId: scopedAssignedAgentId || null,
-            status: 'ready_for_generation',
-            templateId: normalizeText(template?.id || ''),
-            templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
-            templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
-            sourceContextJson: {
-              leadId: dbLeadId || null,
-              uiLeadId: normalizeText(selectedLead.leadId) || null,
-              leadCategory: selectedLead.leadCategory,
-              leadSource: selectedLead.leadSource,
-              contactId: selectedLead.contactId,
-              generatedDataSnapshot: mandateData,
-              missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
-              warningsSnapshot: mandatePreflight.warnings,
-              sourceContext: mandateData.sourceContext,
-            },
-          })
+          packet = await createEditableMandatePacket()
         }
       } catch (packetError) {
         if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) {
@@ -8511,6 +8570,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let generatedVersionResult = null
       if (packet?.id) {
         onProgress?.('Merging seller and property details…')
+        let renderFreeze = providedRenderFreeze && typeof providedRenderFreeze === 'object' ? providedRenderFreeze : null
+        let renderSourceVersion = null
+        if (!renderFreeze?.freezeId) {
+          renderSourceVersion = findEditableMandateSourceVersion(packet?.versions || [])
+          if (!renderSourceVersion?.id) {
+            const packetWithVersions = await fetchDocumentPacket(packet.id, {
+              includeVersions: true,
+              includeEvents: false,
+            }).catch(() => null)
+            renderSourceVersion = findEditableMandateSourceVersion(packetWithVersions?.versions || [])
+            if (packetWithVersions?.id) packet = packetWithVersions
+          }
+          if (!renderSourceVersion?.id) {
+            throw new Error('The mandate template draft could not be prepared for certified PDF generation.')
+          }
+          onProgress?.('Freezing mandate wording…')
+          renderFreeze = await freezeEditableDocumentRevisionForRender({
+            packetId: packet.id,
+            versionId: renderSourceVersion.id,
+            expectedEditSequence: renderSourceVersion.edit_sequence || 0,
+          })
+        }
+        const renderEditableSections = Array.isArray(providedEditableSections) && providedEditableSections.length
+          ? providedEditableSections
+          : Array.isArray(renderSourceVersion?.editable_content_json?.sections)
+            ? renderSourceVersion.editable_content_json.sections
+            : []
         const generationRequest = {
           packetId: packet.id,
           packetType: 'mandate',
@@ -8524,6 +8610,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             generatedByName: normalizeText(currentAgent.fullName),
             generatedByUserEmail: normalizeText(currentAgent.email),
             agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+            editableRenderFreeze: renderFreeze,
+            editableSections: renderEditableSections,
             mandateData,
             mandateValidation: mandatePreflight,
             sourceContext: mandateData.sourceContext,
@@ -8554,9 +8642,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           },
         }
+        const certifyGeneratedMandateVersion = async (generationResult = null) => {
+          const generatedVersionId = normalizeText(generationResult?.version?.id)
+          if (!renderFreeze?.freezeId || !generatedVersionId) return generationResult
+          try {
+            onProgress?.('Certifying mandate PDF…')
+            await verifyFrozenEditableRenderOutput({
+              packetId: packet.id,
+              freezeId: renderFreeze.freezeId,
+              generatedVersionId,
+            })
+            await verifyServerAttestedNativePdfRender({
+              packetId: packet.id,
+              freezeId: renderFreeze.freezeId,
+              generatedVersionId,
+            })
+            await persistGeneratedPdfToTransaction({
+              packetId: packet.id,
+              generatedVersionId,
+            })
+            await completeEditableDocumentRenderFreeze({
+              packetId: packet.id,
+              freezeId: renderFreeze.freezeId,
+              generatedVersionId,
+              success: true,
+            })
+            const certifiedPacket = await fetchDocumentPacket(packet.id, {
+              includeVersions: true,
+              includeEvents: false,
+            }).catch(() => null)
+            const certifiedVersion = (certifiedPacket?.versions || []).find((version) => normalizeText(version?.id) === generatedVersionId)
+            if (certifiedPacket?.id) packet = certifiedPacket
+            if (!certifiedVersion?.id) return generationResult
+            return {
+              ...generationResult,
+              packet: certifiedPacket || generationResult?.packet,
+              version: certifiedVersion,
+            }
+          } catch (certificationError) {
+            await completeEditableDocumentRenderFreeze({
+              packetId: packet.id,
+              freezeId: renderFreeze.freezeId,
+              generatedVersionId,
+              success: false,
+              failureMessage: certificationError?.message || 'Mandate PDF certification failed.',
+            }).catch(() => null)
+            throw certificationError
+          }
+        }
         try {
           onProgress?.('Generating mandate PDF…')
           generatedVersionResult = await generatePacketVersion(generationRequest)
+          generatedVersionResult = await certifyGeneratedMandateVersion(generatedVersionResult)
           onProgress?.('Preparing preview…')
         } catch (generationError) {
           let recoveredGeneration = false
@@ -8578,6 +8715,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               })
               onProgress?.('Regenerating mandate PDF…')
               generatedVersionResult = await generatePacketVersion(generationRequest)
+              generatedVersionResult = await certifyGeneratedMandateVersion(generatedVersionResult)
               onProgress?.('Preparing preview…')
               recoveredGeneration = true
             }
@@ -9560,7 +9698,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusPacketId = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
         ? normalizeText(mandatePacketStatus.packet.id)
         : ''
-      const statusGeneratedVersionId = normalizeText(findLatestSignableGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
+      const statusGeneratedVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
       const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
@@ -9577,7 +9715,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )
         mandatePacketVersionId = normalizeText(
           generated?.version?.id ||
-          findLatestSignableGeneratedVersion(generated?.status?.versions || [])?.id ||
+          findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
           mandatePacketVersionId,
         )
       }
