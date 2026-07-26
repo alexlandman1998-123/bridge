@@ -1,0 +1,29 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-2",
+  "status": "shell_ready",
+  "inputContract": "arch9-simple-signing-experience-model-v1",
+  "components": [
+    "SimpleSigningShell",
+    "SimpleSigningProgressStepper",
+    "SimpleSigningDocumentCard",
+    "SimpleSigningActionCard",
+    "SimpleSigningHelpCard",
+    "SimpleSigningSecureFooter",
+    "SimpleSigningCompleteState"
+  ],
+  "coveredStates": ["review", "sign", "finish", "completed", "blocked"],
+  "backendBoundaries": {
+    "changesEmailDispatch": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "acceptance": [
+    "shell renders from the Phase 1 model contract",
+    "shell exposes a document preview slot for existing PDF/HTML preview rendering",
+    "shell includes progress, document, action, help, and secure footer sections",
+    "shell is not wired into SignerPortal until Phase 3",
+    "shell has no backend side effects"
+  ]
+}
