@@ -77,6 +77,22 @@ test('keeps the mandate compatibility wrapper on the shared resolver', () => {
   assert.equal(placeholders.seller_clause_profile, 'individual_spouse_consent')
 })
 
+test('treats onboarding not-applicable marital regime as individual no-spouse route', () => {
+  const profile = resolveMandateScenarioProfile({
+    placeholders: {
+      seller_entity_type: 'individual',
+      seller_marital_regime: 'not_applicable',
+      property_title_type: 'full_title',
+    },
+  })
+
+  assert.equal(profile.complete, true)
+  assert.equal(profile.sellerMaritalRegime, 'single')
+  assert.equal(profile.sellerClauseProfile, 'individual')
+  assert.equal(profile.templateVariant, 'individual_full_title')
+  assert.deepEqual(profile.missingRoutingFacts, [])
+})
+
 test('covers the legal party and property routing matrix', () => {
   const scenarios = [
     {
