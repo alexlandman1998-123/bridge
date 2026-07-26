@@ -46,7 +46,7 @@ function bindingResult(activationPlanDigest = activeDigest) {
   };
 }
 
-Deno.test("lifecycle binding accepts only the exact active release-plan digest", async () => {
+Deno.test("lifecycle binding accepts the exact packet version", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const result = await assertLegalDocumentPilotLifecycleBinding({
     supabase: {
@@ -60,26 +60,20 @@ Deno.test("lifecycle binding accepts only the exact active release-plan digest",
     activeRelease: activeRelease(),
   });
 
-  expect(result.activationPlanDigest === activeDigest, "The matching immutable binding should be returned.");
+  expect(result.activationPlanDigest === activeDigest, "The immutable binding should be returned.");
   expect(calls.length === 1, "The assertion must use exactly one service-only binding RPC.");
   expect(calls[0]?.name === "bridge_assert_legal_document_pilot_release_binding_phase5", "The assertion must use the immutable Phase 5 binding RPC.");
   expect(calls[0]?.args.p_packet_id === packetId && calls[0]?.args.p_packet_version_id === packetVersionId, "The assertion must bind the exact packet version.");
 });
 
-Deno.test("lifecycle binding fails closed when an earlier plan digest differs from the active release", async () => {
-  let failure: { code?: string; status?: number } | null = null;
-  try {
-    await assertLegalDocumentPilotLifecycleBinding({
-      supabase: { rpc: async () => bindingResult(staleDigest) },
-      packetId,
-      packetVersionId,
-      activeRelease: activeRelease(),
-    });
-  } catch (error) {
-    failure = error as { code?: string; status?: number };
-  }
-  expect(failure?.code === "PHASE5_RELEASE_TRACE_ACTIVE_RELEASE_MISMATCH", "A stale immutable binding must not authorize current customer-facing work.");
-  expect(failure?.status === 409, "A plan identity mismatch must be a deterministic conflict.");
+Deno.test("lifecycle binding accepts an older release-plan digest for the same packet version", async () => {
+  const result = await assertLegalDocumentPilotLifecycleBinding({
+    supabase: { rpc: async () => bindingResult(staleDigest) },
+    packetId,
+    packetVersionId,
+    activeRelease: activeRelease(),
+  });
+  expect(result.activationPlanDigest === staleDigest, "Old generated documents should remain usable after the org pilot gate is removed.");
 });
 
 Deno.test("lifecycle binding fails closed when the RPC response names a different packet version", async () => {

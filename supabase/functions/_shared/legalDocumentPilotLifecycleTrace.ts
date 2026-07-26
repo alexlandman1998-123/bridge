@@ -44,21 +44,16 @@ function releaseIdentityError(message: string) {
   });
 }
 
-function normalisedDigest(value: unknown) {
-  return text(value).toLowerCase();
-}
-
 function sameIdentifier(left: unknown, right: unknown) {
   return text(left).toLowerCase() === text(right).toLowerCase();
 }
 
 /**
- * A release binding is evidence for one immutable generated artifact, while
- * the runtime release decision is the authority for the request happening
- * now. Customer-facing writes need both, and their plan identities must be
- * identical. The RPC already verifies the stored release contract; this
- * helper verifies that its returned binding belongs to the active runtime
- * contract and plan rather than merely to some earlier pilot activation.
+ * A release binding is evidence for one immutable generated artifact. The
+ * previous single-organisation pilot also required the stored activation plan
+ * digest to match the current runtime secret. The org pilot gate has been
+ * removed, so old generated documents remain valid as long as the binding
+ * belongs to this exact packet version.
  */
 function assertBindingMatchesActiveRelease({
   binding,
@@ -71,18 +66,14 @@ function assertBindingMatchesActiveRelease({
   packetId: string;
   packetVersionId: string;
 }) {
-  const activePlanDigest = normalisedDigest(activeRelease?.planDigest);
-  const bindingPlanDigest = normalisedDigest(binding.activationPlanDigest);
   if (
     activeRelease?.allowed !== true ||
     activeRelease?.contract !== LEGAL_DOCUMENT_PILOT_RELEASE_CONTRACT ||
-    !/^sha256:[a-f0-9]{64}$/.test(activePlanDigest) ||
-    bindingPlanDigest !== activePlanDigest ||
     !sameIdentifier(binding.packetId, packetId) ||
     !sameIdentifier(binding.packetVersionId, packetVersionId)
   ) {
     throw releaseIdentityError(
-      "The packet's immutable pilot release binding does not match the active customer-release plan.",
+      "The packet's immutable release binding does not match the requested packet version.",
     );
   }
 }
