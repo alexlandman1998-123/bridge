@@ -19,7 +19,7 @@ begin
 
   update public.organisations
      set status = 'archived',
-         discovery_visibility = 'private',
+         discovery_visibility = 'hidden',
          updated_at = now(),
          settings_json = coalesce(settings_json, '{}'::jsonb) || jsonb_build_object(
            'retiredDuplicateOf', v_canonical_org_id,
