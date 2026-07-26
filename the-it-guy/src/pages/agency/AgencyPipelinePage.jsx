@@ -8977,8 +8977,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleSendMandateToSeller(sendOptions = {}) {
-    if (!selectedLead || !organisationId) return
-    if (!selectedLeadIsSeller) return
+    if (!selectedLead || !organisationId) {
+      return { ok: false, errorMessage: 'Lead or organisation context is not ready yet. Refresh and try again.' }
+    }
+    if (!selectedLeadIsSeller) {
+      return { ok: false, errorMessage: 'Mandates can only be sent from a seller lead.' }
+    }
     const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
     let dispatchId = normalizeText(options.dispatchId)
     const statusPacket =
@@ -8993,14 +8997,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       statusPacket?.id,
     )
     if (!mandatePacketId || !isUuidLike(mandatePacketId)) {
-      setError('The mandate packet was not saved yet. Click Generate Mandate again, then send it once the packet is ready.')
-      return
+      const errorMessage = 'The mandate packet was not saved yet. Click Generate Mandate again, then send it once the packet is ready.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
     }
 
     const sellerEmail = normalizeText(options.sellerEmail || selectedLeadContact?.email).toLowerCase()
     if (!isValidEmail(sellerEmail)) {
-      setError('Seller email is required to send the mandate.')
-      return
+      const errorMessage = 'Seller email is required to send the mandate.'
+      setError(errorMessage)
+      return { ok: false, errorMessage }
     }
 
     setIsMandateSending(true)
@@ -9012,9 +9018,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             mandatePacketId: '',
             mandateStatus: '',
           })
-          setError('This lead was linked to a mandate packet for another lead. I cleared the stale link; generate a fresh mandate for this seller.')
+          const errorMessage = 'This lead was linked to a mandate packet for another lead. I cleared the stale link; generate a fresh mandate for this seller.'
+          setError(errorMessage)
           await reloadRecords(organisationId)
-          return
+          return { ok: false, errorMessage }
         }
       }
 
@@ -9041,6 +9048,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const finalMandateStatus = normalizeText(options.signingStatus) || (agentAlreadySigned ? 'sent_to_seller' : 'sent_to_agent')
       const targetSignerRole = finalMandateStatus === 'sent_to_seller' ? 'seller' : 'agent'
       let signingEmailFailed = false
+      let signingLinkFailureMessage = ''
 
       if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
         try {
@@ -9089,6 +9097,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
           console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
+          signingLinkFailureMessage = normalizeText(linkError?.message)
         }
 
         if ((!sellerSigningLink || !agentSigningLink) && supabase) {
@@ -9149,12 +9158,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
       const requiredSigningLink = recipientRole === 'seller' ? sellerSigningLink : agentSigningLink
       if (!requiredSigningLink) {
-        setError(
-          recipientRole === 'seller'
-            ? 'Seller signing link could not be generated yet. Confirm the seller email address in the digital signing step, then send again.'
-            : 'Agent signing link could not be generated yet. Confirm the assigned agent email address in the digital signing step, then send again.',
-        )
-        return
+        const errorMessage =
+          [
+            recipientRole === 'seller'
+              ? 'Seller signing link could not be generated yet. Confirm the seller email address in the digital signing step, then send again.'
+              : 'Agent signing link could not be generated yet. Confirm the assigned agent email address in the digital signing step, then send again.',
+            signingLinkFailureMessage ? `Signing service said: ${signingLinkFailureMessage}` : '',
+          ].filter(Boolean).join(' ')
+        setError(errorMessage)
+        return { ok: false, errorMessage }
       }
 
       if (!isSupabaseConfigured) {
@@ -9305,6 +9317,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : 'Mandate sent to seller.')
       await reloadRecords(organisationId)
       return {
+        ok: true,
         emailDeliveryId: emailDelivery?.emailDeliveryId || null,
         emailConfirmed: emailDelivery?.emailConfirmed === true,
         recipientRole,
@@ -9439,8 +9452,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         agentEmail: mandateQuickStartEmailDraft.agent,
         sellerEmail: mandateQuickStartEmailDraft.seller,
       })
-      if (!sendResult) {
-        throw new Error('Signing could not be started from the quick flow. Open the editor to resolve packet setup or signer details.')
+      if (!sendResult?.ok) {
+        throw new Error(sendResult?.errorMessage || 'Mandate signing could not be started yet. Check the signer emails and try again.')
       }
 
       setMandateQuickStartOpen(false)
