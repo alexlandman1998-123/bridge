@@ -36,8 +36,16 @@ begin
       listing.created_at,
       listing.updated_at,
       coalesce(
-        listing.seller_lead_id,
-        listing.originating_crm_lead_id,
+        case
+          when nullif(trim(listing.seller_lead_id), '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then nullif(trim(listing.seller_lead_id), '')::uuid
+          else null::uuid
+        end,
+        case
+          when nullif(trim(listing.originating_crm_lead_id), '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then nullif(trim(listing.originating_crm_lead_id), '')::uuid
+          else null::uuid
+        end,
         (
           substr(md5('produktive-seller-lead:' || listing.id::text), 1, 8) || '-' ||
           substr(md5('produktive-seller-lead:' || listing.id::text), 9, 4) || '-' ||
@@ -295,15 +303,15 @@ begin
   get diagnostics v_upserted_leads = row_count;
 
   update public.private_listings listing
-     set seller_lead_id = backfill.lead_id,
-         originating_crm_lead_id = backfill.lead_id,
+     set seller_lead_id = backfill.lead_id::text,
+         originating_crm_lead_id = backfill.lead_id::text,
          updated_at = now()
     from tmp_produktive_listing_lead_backfill backfill
    where listing.id = backfill.listing_id
      and listing.organisation_id = v_canonical_org_id
      and (
-       listing.seller_lead_id is distinct from backfill.lead_id
-       or listing.originating_crm_lead_id is distinct from backfill.lead_id
+       listing.seller_lead_id is distinct from backfill.lead_id::text
+       or listing.originating_crm_lead_id is distinct from backfill.lead_id::text
      );
 
   get diagnostics v_linked_listings = row_count;
