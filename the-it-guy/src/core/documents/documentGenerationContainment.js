@@ -77,7 +77,7 @@ export function isPublishedTemplateStatus(status = '') {
   return PUBLISHED_TEMPLATE_STATUSES.includes(normalizeDocumentPacketType(status))
 }
 
-function isDefaultTemplateRouteFallback(template = {}) {
+export function isDefaultTemplateRouteFallback(template = {}) {
   const metadata = record(template?.metadata_json || template?.metadataJson)
   const packetType = normalizeDocumentPacketType(template?.packet_type || template?.packetType)
   if (!['mandate', 'otp'].includes(packetType)) return false

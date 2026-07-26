@@ -16,10 +16,21 @@ for (const token of [
   'requiresApprovedAutomaticLegalRoutingTemplate',
   'templateCanParticipateInAutomaticLegalRouting',
   'templateIsApprovedForAutomaticLegalRouting',
+  'isDefaultTemplateRouteFallback',
   "validationAction) && ['mandate', 'otp'].includes(normalizedPacketType)",
 ]) {
   assert.ok(packetService.includes(token), `packetService should enforce approved automatic routing: ${token}`)
 }
+
+const explicitRouteGuardIndex = packetService.indexOf('function requireExplicitTemplateRouteMatch')
+const explicitRouteGuard = explicitRouteGuardIndex > -1
+  ? packetService.slice(explicitRouteGuardIndex, packetService.indexOf('async function resolveAuthoritativeExplicitTemplate', explicitRouteGuardIndex))
+  : ''
+assert.ok(
+  explicitRouteGuard.includes('isDefaultTemplateRouteFallback(template)') &&
+    explicitRouteGuard.includes('if (defaultRouteFallbackAllowed) return'),
+  'Explicit generation templates should allow approved platform defaults even when they are broad fallbacks.',
+)
 
 assert.ok(
   packetService.match(/if \(!templateCanParticipateInAutomaticLegalRouting\(template,[\s\S]*?continue/g)?.length >= 2,

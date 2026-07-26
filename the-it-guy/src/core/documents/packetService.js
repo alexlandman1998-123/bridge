@@ -92,6 +92,7 @@ import {
 } from './legalDocumentScenarioRequirements'
 import { resolveLegalDocumentSignerProfile } from './legalDocumentSignerProfile'
 import {
+  isDefaultTemplateRouteFallback,
   isPublishedTemplateStatus,
   isSignableDocumentPacketType,
   resolveDocumentConversionHealthPolicy,
@@ -1172,10 +1173,11 @@ function requireExplicitTemplateRouteMatch({ packetType = '', template = null, c
     matchedSpecificRoute = Boolean(candidate.metadata?.hasRoutingMetadata)
   }
 
-  const defaultRouteFallbackAllowed = compatible &&
-    (template?.is_default === true || template?.isDefault === true) &&
+  const defaultRouteFallbackAllowed =
+    isDefaultTemplateRouteFallback(template) &&
     templateIsApprovedForAutomaticLegalRouting(template, normalizedPacketType)
   if (compatible && (matchedSpecificRoute || defaultRouteFallbackAllowed)) return
+  if (defaultRouteFallbackAllowed) return
   throw createPacketError(
     'TEMPLATE_ROUTE_NOT_PUBLISHED',
     'The selected template is not published for this document’s legal route. Publish a route-specific template before generating.',

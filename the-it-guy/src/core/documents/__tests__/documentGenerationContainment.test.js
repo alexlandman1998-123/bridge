@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  isDefaultTemplateRouteFallback,
   resolveDocumentConversionHealthPolicy,
   resolvePdfRenderablePacketType,
   resolveSignableTemplatePolicy,
@@ -66,6 +67,8 @@ test('requires a published, matching template for a signable document', () => {
 })
 
 test('allows default boilerplate fallbacks while rejecting non-default generic fallbacks', () => {
+  assert.equal(isDefaultTemplateRouteFallback(platformDefaultMandate), true)
+  assert.equal(isDefaultTemplateRouteFallback(publishedMandate), false)
   assert.equal(
     resolveSignableTemplatePolicy({
       packetType: 'mandate',
