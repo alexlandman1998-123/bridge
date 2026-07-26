@@ -1,3 +1,5 @@
+import { readLegalTemplateApproval } from './legalTemplateApproval.js'
+
 function text(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -7,12 +9,12 @@ function record(value) {
 }
 
 export function buildDraftLegalProvenance(template = {}) {
-  const metadata = record(template.metadata_json || template.metadataJson)
+  const approval = readLegalTemplateApproval(template)
   return {
-    legalApprovalContentDigest: text(metadata.legal_approval_content_digest),
-    legalCounselReviewEvidenceDigest: text(metadata.legal_counsel_review_evidence_digest),
-    legalB1ManifestDigest: text(metadata.legal_b1_manifest_digest),
-    legalApprovedAt: text(metadata.legal_approved_at),
+    legalApprovalContentDigest: text(approval.contentDigest),
+    legalCounselReviewEvidenceDigest: text(approval.reviewEvidenceDigest),
+    legalB1ManifestDigest: text(approval.b1ManifestDigest),
+    legalApprovedAt: text(approval.approvedAt),
   }
 }
 
@@ -61,7 +63,8 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
 export function assertGeneratedDraftVersion(input = {}) {
   const assessment = assessGeneratedDraftVersion(input)
   if (assessment.ready) return assessment
-  const error = new Error('The generated legal draft is missing required template, legal-approval, or render provenance.')
+  const reasonSuffix = assessment.reasons.length ? ` (${assessment.reasons.slice(0, 6).join(', ')})` : ''
+  const error = new Error(`The generated legal draft is missing required template, legal-approval, or render provenance.${reasonSuffix}`)
   error.code = 'DRAFT_GENERATION_PROVENANCE_INCOMPLETE'
   error.details = assessment
   throw error
