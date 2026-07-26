@@ -3025,6 +3025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartStep, setMandateQuickStartStep] = useState('details')
   const [mandateQuickStartSigningMethod, setMandateQuickStartSigningMethod] = useState('')
   const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
+  const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
   const routeLeadRecord = useMemo(() => {
@@ -4900,23 +4901,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         key: 'agent',
         label: 'Agent signer',
         name: mandateQuickStartAgentName,
-        email: mandateQuickStartAgentEmail,
-        ready: isValidEmail(mandateQuickStartAgentEmail),
+        email: normalizeText(mandateQuickStartEmailDraft.agent),
+        ready: isValidEmail(mandateQuickStartEmailDraft.agent),
         issue: 'Add an email address for the assigned agent before sending digital signing.',
       },
       {
         key: 'seller',
         label: 'Seller signer',
         name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
-        email: mandateQuickStartSellerEmail,
-        ready: isValidEmail(mandateQuickStartSellerEmail),
+        email: normalizeText(mandateQuickStartEmailDraft.seller),
+        ready: isValidEmail(mandateQuickStartEmailDraft.seller),
         issue: 'Add the seller email address before sending digital signing.',
       },
     ],
     [
-      mandateQuickStartAgentEmail,
       mandateQuickStartAgentName,
-      mandateQuickStartSellerEmail,
+      mandateQuickStartEmailDraft.agent,
+      mandateQuickStartEmailDraft.seller,
       selectedLeadContact?.firstName,
       selectedLeadContact?.lastName,
     ],
@@ -8996,7 +8997,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
-    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    const sellerEmail = normalizeText(options.sellerEmail || selectedLeadContact?.email).toLowerCase()
     if (!isValidEmail(sellerEmail)) {
       setError('Seller email is required to send the mandate.')
       return
@@ -9024,7 +9025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerMandatePortalLink = sellerClientPortalBaseLink ? `${sellerClientPortalBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
       const providedSignerLinks = Array.isArray(options.signerLinks) ? options.signerLinks : []
-      const assignedAgentEmail = normalizeText(selectedLead?.assignedAgentEmail).toLowerCase()
+      const assignedAgentEmail = normalizeText(options.agentEmail || selectedLead?.assignedAgentEmail).toLowerCase()
       const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
       const agentRecipientEmail = isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
       const agentRecipientName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
@@ -9336,6 +9337,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setMandateQuickStartStep('details')
     setMandateQuickStartSigningMethod('')
     setMandateQuickStartPacketId('')
+    setMandateQuickStartEmailDraft({
+      agent: mandateQuickStartAgentEmail,
+      seller: mandateQuickStartSellerEmail,
+    })
     setMandateQuickStartOpen(true)
   }
 
@@ -9353,6 +9358,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setMandateQuickStartOpen(false)
         setMandateQuickStartStep('details')
         setMandateQuickStartSigningMethod('')
+        setMandateQuickStartEmailDraft({ agent: '', seller: '' })
         setMandateQuickStartError('')
         setMandateQuickStartProgress('')
         openSelectedLeadMandateWorkspace('send')
@@ -9428,7 +9434,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setMandateQuickStartProgress('Starting signing…')
-      const sendResult = await handleSendMandateToSeller({ packetId: mandatePacketId })
+      const sendResult = await handleSendMandateToSeller({
+        packetId: mandatePacketId,
+        agentEmail: mandateQuickStartEmailDraft.agent,
+        sellerEmail: mandateQuickStartEmailDraft.seller,
+      })
       if (!sendResult) {
         throw new Error('Signing could not be started from the quick flow. Open the editor to resolve packet setup or signer details.')
       }
@@ -9437,6 +9447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartStep('details')
       setMandateQuickStartSigningMethod('')
       setMandateQuickStartPacketId('')
+      setMandateQuickStartEmailDraft({ agent: '', seller: '' })
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
       setMandateQuickStartError(quickStartError?.message || 'Unable to generate and start signing right now.')
@@ -16223,6 +16234,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setMandateQuickStartStep('details')
           setMandateQuickStartSigningMethod('')
           setMandateQuickStartPacketId('')
+          setMandateQuickStartEmailDraft({ agent: '', seller: '' })
         }}
         title={resolveMandateQuickStartTitle(mandateQuickStartStep)}
         subtitle={resolveMandateQuickStartIntro(selectedLeadMandateQuickStartActionKey, mandateQuickStartStep, mandateQuickStartSigningMethod)}
@@ -16266,6 +16278,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   setMandateQuickStartStep('details')
                   setMandateQuickStartSigningMethod('')
                   setMandateQuickStartPacketId('')
+                  setMandateQuickStartEmailDraft({ agent: '', seller: '' })
                 }}
                 disabled={mandateQuickStartBusy}
               >
@@ -16421,7 +16434,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </span>
                           </div>
                           <p className="mt-1 text-sm text-[#5d7288]">{row.name}</p>
-                          <p className="mt-1 break-words text-sm font-medium text-[#314a63]">{row.email || row.issue}</p>
+                          <label className="sr-only" htmlFor={`mandate-quick-start-${row.key}-email`}>
+                            {row.label} email
+                          </label>
+                          <input
+                            id={`mandate-quick-start-${row.key}-email`}
+                            type="email"
+                            value={row.email}
+                            onChange={(event) => {
+                              const nextEmail = event.target.value
+                              setMandateQuickStartEmailDraft((previous) => ({
+                                ...previous,
+                                [row.key]: nextEmail,
+                              }))
+                              setMandateQuickStartError('')
+                            }}
+                            placeholder={row.issue}
+                            disabled={mandateQuickStartBusy}
+                            className={`mt-2 w-full rounded-[10px] border bg-white px-3 py-2 text-sm font-medium text-[#233f58] outline-none transition focus:border-[#1f7a53] focus:ring-2 focus:ring-[#bfe7d0] ${
+                              ready ? 'border-[#cfe5d8]' : 'border-[#efb9b2]'
+                            }`}
+                          />
+                          {!ready ? (
+                            <p className="mt-1 text-xs font-medium text-[#a63830]">{row.issue}</p>
+                          ) : null}
                         </div>
                       </div>
                     </div>
