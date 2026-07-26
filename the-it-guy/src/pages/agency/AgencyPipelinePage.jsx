@@ -165,7 +165,8 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
-const PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS = 1800
+const PIPELINE_MANDATE_SIGNING_REQUEST_TARGET_MS = 1800
+const PIPELINE_MANDATE_SIGNING_REQUEST_TIMEOUT_MS = 8000
 const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
@@ -10499,8 +10500,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           source_context_json: nextSourceContext,
         })
         .eq('id', mandatePacketId)
-        .select('id, organisation_id, packet_type, title, status, template_id, transaction_id, lead_id, assigned_agent_id, created_by, current_version_number, source_context_json, branding_snapshot_json, sent_at, completed_at, archived_at, created_at, updated_at')
+        .select('id, organisation_id, status')
         .maybeSingle()
+      const signingRequestSaveStartedAt = Date.now()
       const { data: updatedPacket, error: updateError } = await withPipelineTimeout(
         updateTask,
         'Signing request save is taking too long. Try again in a moment.',
@@ -10508,6 +10510,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
       if (updateError) throw updateError
       if (!updatedPacket?.id) throw new Error('Mandate packet could not be marked for signing.')
+      const signingRequestSaveMs = Date.now() - signingRequestSaveStartedAt
+      if (signingRequestSaveMs > PIPELINE_MANDATE_SIGNING_REQUEST_TARGET_MS) {
+        console.info('[MANDATE] signing request save exceeded UX target.', {
+          packetId: mandatePacketId,
+          durationMs: signingRequestSaveMs,
+          targetMs: PIPELINE_MANDATE_SIGNING_REQUEST_TARGET_MS,
+        })
+      }
 
       const eventTask = supabase
         .from('document_packet_events')
@@ -10548,6 +10558,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         state: 'signing_requested',
         packet: {
           ...((previous && previous.packet) || {}),
+          source_context_json: nextSourceContext,
           ...updatedPacket,
         },
         actionHint: 'Signing request queued.',
