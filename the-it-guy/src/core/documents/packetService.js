@@ -1429,7 +1429,78 @@ function extractGeneratedArtifact(result = {}) {
     renderedSha256: normalizeNullableText(result?.output?.sha256),
     renderAttestation:
       result?.renderAttestation && typeof result.renderAttestation === 'object' ? result.renderAttestation : null,
+    nativePdfLayout:
+      result?.nativePdfLayout && typeof result.nativePdfLayout === 'object'
+        ? result.nativePdfLayout
+        : result?.renderAttestation?.nativePdfLayout && typeof result.renderAttestation.nativePdfLayout === 'object'
+          ? result.renderAttestation.nativePdfLayout
+          : null,
   }
+}
+
+function normalizeNativePdfPlannedSigningFields(nativePdfLayout = null) {
+  const fields = Array.isArray(nativePdfLayout?.plannedSigningFields)
+    ? nativePdfLayout.plannedSigningFields
+    : Array.isArray(nativePdfLayout?.planned_signing_fields)
+      ? nativePdfLayout.planned_signing_fields
+      : []
+  return fields
+    .map((field) => {
+      const signerRole = normalizeText(field?.signerRole || field?.signer_role).toLowerCase()
+      const fieldType = normalizeText(field?.fieldType || field?.field_type || 'signature').toLowerCase()
+      const pageNumber = Number(field?.pageNumber ?? field?.page_number)
+      const xPosition = Number(field?.xPosition ?? field?.x_position)
+      const yPosition = Number(field?.yPosition ?? field?.y_position)
+      const width = Number(field?.width)
+      const height = Number(field?.height)
+      if (!signerRole || fieldType !== 'signature') return null
+      if (![pageNumber, xPosition, yPosition, width, height].every((value) => Number.isFinite(value) && value >= 0)) {
+        return null
+      }
+      return {
+        signerRole,
+        fieldType: 'signature',
+        pageNumber: Math.max(1, Math.round(pageNumber)),
+        xPosition,
+        yPosition,
+        width,
+        height,
+        required: field?.required !== false,
+        label: normalizeText(field?.label) || `${createFallbackSignerName(signerRole)} signature`,
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildSectionManifestWithNativePdfLayout(sectionManifest = [], nativePdfLayout = null) {
+  const plannedSigningFields = normalizeNativePdfPlannedSigningFields(nativePdfLayout)
+  if (!plannedSigningFields.length) return sectionManifest
+  const baseSections = Array.isArray(sectionManifest) ? sectionManifest : []
+  const filteredSections = baseSections.filter((section) => {
+    const key = normalizeText(section?.key || section?.section_key).toLowerCase()
+    return key !== 'native_pdf_signature_layout'
+  })
+  return [
+    ...filteredSections,
+    {
+      key: 'native_pdf_signature_layout',
+      label: 'Native PDF Signature Layout',
+      required: true,
+      sectionType: 'signature_layout',
+      sortOrder: 9999,
+      content: '',
+      metadata: {
+        native_pdf_layout_contract:
+          normalizeText(nativePdfLayout?.contract || nativePdfLayout?.layoutContract || nativePdfLayout?.layout_contract) ||
+          'arch9-mandate-branded-signature-layout-v1',
+        native_pdf_page_count: Number(nativePdfLayout?.pageCount || nativePdfLayout?.page_count || 0) || null,
+        planned_signing_fields: plannedSigningFields,
+        signing: {
+          signing_fields: plannedSigningFields,
+        },
+      },
+    },
+  ]
 }
 
 function assertGenerationOutput(artifact = {}, packetType = 'packet') {
@@ -1688,7 +1759,7 @@ const DEFAULT_SIGNING_LAYOUT = {
     signatureRoles: ['purchaser_1', 'seller', 'agent', 'contractor'],
   },
   mandate: {
-    pageCount: 3,
+    pageCount: 4,
     initialsRoles: [],
     conditionalInitialRoles: [],
     signatureRoles: ['agent', 'seller', 'purchaser_2'],
@@ -1707,6 +1778,13 @@ const ROLE_FIELD_POSITION = {
   witness_1: { initialX: 300, signatureX: 300 },
   witness_2: { initialX: 620, signatureX: 620 },
   other: { initialX: 140, signatureX: 120 },
+}
+
+const MANDATE_SIGNATURE_FIELD_POSITION = {
+  agent: { xPosition: 54, yPosition: 269, width: 186, height: 44 },
+  seller: { xPosition: 355, yPosition: 269, width: 186, height: 44 },
+  purchaser_2: { xPosition: 54, yPosition: 416, width: 186, height: 44 },
+  seller_spouse: { xPosition: 54, yPosition: 416, width: 186, height: 44 },
 }
 
 function createFallbackSignerName(role = 'other') {
@@ -2029,16 +2107,17 @@ function buildDefaultSigningSeeds({ packetType, placeholders = {}, context = {},
     for (const role of [...configuredSignatureRoles, ...optionalOtpRoles]) {
       if (!signerByRole[role]) continue
       const position = ROLE_FIELD_POSITION[role] || ROLE_FIELD_POSITION.other
+      const mandatePosition = normalizedPacketType === 'mandate' ? MANDATE_SIGNATURE_FIELD_POSITION[role] : null
       fields.push({
         signerRole: role,
         signerName: signerByRole[role].signerName,
         signerEmail: signerByRole[role].signerEmail,
         fieldType: 'signature',
         pageNumber: signaturePage,
-        xPosition: position.signatureX,
-        yPosition: signatureY,
-        width: signatureWidth,
-        height: signatureHeight,
+        xPosition: mandatePosition?.xPosition ?? position.signatureX,
+        yPosition: mandatePosition?.yPosition ?? signatureY,
+        width: mandatePosition?.width ?? signatureWidth,
+        height: mandatePosition?.height ?? signatureHeight,
         required: true,
         status: 'pending',
       })
@@ -3671,6 +3750,11 @@ export async function generatePacketVersion({
       },
     })
 
+    const sectionManifestForVersion = buildSectionManifestWithNativePdfLayout(
+      validation.sectionManifest,
+      artifact.nativePdfLayout,
+    )
+
     let version = null
     try {
       version = await createDocumentPacketVersionSafely({
@@ -3682,7 +3766,7 @@ export async function generatePacketVersion({
         renderedFileUrl: artifact.renderedFileUrl,
         placeholdersResolvedJson: pdfPlaceholders,
         placeholdersMissingJson: validation.missingPlaceholders,
-        sectionManifestJson: validation.sectionManifest,
+        sectionManifestJson: sectionManifestForVersion,
         validationSummaryJson: {
           ...buildValidationSummary(validation),
           generationStatus: 'generated',
@@ -3697,6 +3781,7 @@ export async function generatePacketVersion({
           render_provenance: renderProvenance,
           artifact_provenance: artifactProvenance,
           native_render_attestation: artifact.renderAttestation,
+          native_pdf_layout: artifact.nativePdfLayout,
           generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
           missingFieldsSnapshot:
             context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],

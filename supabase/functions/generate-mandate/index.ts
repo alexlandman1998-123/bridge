@@ -24,6 +24,27 @@ type MandateSection = {
   legal_text?: string;
   required?: boolean;
   placeholders?: Array<[string, string]> | string[];
+  metadata?: Record<string, unknown>;
+  metadata_json?: Record<string, unknown>;
+};
+
+type PlannedSigningField = {
+  signerRole: string;
+  fieldType: "signature";
+  pageNumber: number;
+  xPosition: number;
+  yPosition: number;
+  width: number;
+  height: number;
+  required: boolean;
+  label: string;
+};
+
+type StructuredPdfRenderResult = {
+  bytes: Uint8Array;
+  pageCount: number;
+  plannedSigningFields: PlannedSigningField[];
+  layoutContract: string;
 };
 
 type GenerateMandateRequest = {
@@ -765,35 +786,201 @@ function wrapPdfLine(text: string, font: any, fontSize: number, maxWidth: number
   return lines;
 }
 
+function getPdfPlaceholder(placeholders: Record<string, string>, ...keys: string[]) {
+  for (const key of keys) {
+    const normalizedKey = normalizeText(key);
+    const variants = [
+      normalizedKey,
+      normalizedKey.replace(/[.\s-]+/g, "_"),
+      normalizedKey.replace(/[_\s-]+/g, "."),
+    ];
+    for (const variant of variants) {
+      const value = normalizePdfText(placeholders[variant]);
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+function firstPdfValue(...values: unknown[]) {
+  return values.map((value) => normalizePdfText(value)).find(Boolean) || "";
+}
+
+function isMissingPdfValue(value: string) {
+  const normalized = normalizePdfText(value).trim().toLowerCase().replace(/[\s._-]+/g, "_");
+  return !normalized || ["missing", "na", "n_a", "n/a", "none", "unknown", "tbc", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
+}
+
+function sectionMatchesMandateRoute(section: MandateSection, placeholders: Record<string, string>) {
+  const labelKey = normalizeText(`${section?.key || ""} ${section?.label || ""}`).toLowerCase();
+  const sellerType = getPdfPlaceholder(
+    placeholders,
+    "seller_entity_type",
+    "seller.entity_type",
+    "seller_type",
+    "seller.capacity",
+    "entity_type",
+  ).toLowerCase();
+  const propertyType = getPdfPlaceholder(
+    placeholders,
+    "property_type",
+    "property.property_type",
+    "title_type",
+    "property_title_type",
+    "mandate_property_route",
+    "legal_route",
+  ).toLowerCase();
+  const maritalStatus = getPdfPlaceholder(
+    placeholders,
+    "seller_marital_status",
+    "seller.marital_status",
+    "seller_marital_regime",
+    "seller.marital_regime",
+  ).toLowerCase();
+  const spouseSignal = firstPdfValue(
+    getPdfPlaceholder(placeholders, "seller_spouse_name", "spouse_name", "seller.spouse_name"),
+    getPdfPlaceholder(placeholders, "seller_spouse_email", "spouse_email", "seller.spouse_email"),
+    getPdfPlaceholder(placeholders, "spouse_id_number", "seller_spouse_id_number"),
+  );
+  const isCompany = /\b(company|close corporation|cc|pty|proprietary)\b/.test(sellerType);
+  const isTrust = /\btrust\b/.test(sellerType);
+  const isSectional = /\b(sectional|section|scheme|unit)\b/.test(propertyType);
+  const isFullTitle = /\b(full[-\s]?title|freehold|house|erf)\b/.test(propertyType) || (!isSectional && propertyType);
+  const needsSpouse = !isMissingPdfValue(spouseSignal) || /\b(married|community|accrual|anc|cop)\b/.test(maritalStatus);
+
+  if (labelKey.includes("company") || labelKey.includes("close corporation")) return isCompany;
+  if (labelKey.includes("trust authority") || labelKey.includes("seller trust")) return isTrust;
+  if (labelKey.includes("individual") && (isCompany || isTrust)) return false;
+  if (labelKey.includes("spouse consent") || labelKey.includes("seller spouse")) return needsSpouse;
+  if (labelKey.includes("sectional title")) return isSectional;
+  if (labelKey.includes("full title")) return isFullTitle || !isSectional;
+  return true;
+}
+
+async function embedPdfLogo(pdf: any, logoUrl: string) {
+  const url = normalizeText(logoUrl);
+  if (!/^https?:\/\//i.test(url)) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 1200);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const contentType = normalizeText(response.headers.get("content-type")).toLowerCase();
+    if (contentType.includes("png") || /\.png($|\?)/i.test(url)) return await pdf.embedPng(bytes);
+    if (contentType.includes("jpeg") || contentType.includes("jpg") || /\.jpe?g($|\?)/i.test(url)) return await pdf.embedJpg(bytes);
+  } catch (_error) {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  return null;
+}
+
 async function renderStructuredSectionsToPdfBytes({
   sectionManifest,
   placeholders,
   title,
+  packetType,
+  branding,
+  packetId,
 }: {
   sectionManifest: MandateSection[];
   placeholders: Record<string, string>;
   title: string;
-}) {
+  packetType: string;
+  branding?: Record<string, unknown>;
+  packetId?: string;
+}): Promise<StructuredPdfRenderResult> {
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const pageWidth = 595.28;
   const pageHeight = 841.89;
-  const margin = 48;
+  const margin = 42;
   const maxWidth = pageWidth - margin * 2;
-  const headingSize = 15;
-  const bodySize = 10.5;
-  const lineHeight = 15;
+  const headerTop = pageHeight - 38;
+  const contentTop = pageHeight - 150;
+  const footerY = 34;
+  const headingSize = 13;
+  const bodySize = 9.6;
+  const lineHeight = 13.2;
+  const dark = rgb(0.07, 0.11, 0.18);
+  const muted = rgb(0.35, 0.43, 0.54);
+  const lineColor = rgb(0.82, 0.86, 0.91);
+  const fillSoft = rgb(0.97, 0.98, 1);
+  const orgName = firstPdfValue(
+    branding?.organisationName,
+    branding?.organisation_name,
+    branding?.agencyName,
+    branding?.agency_name,
+    getPdfPlaceholder(placeholders, "organisation_name", "agency_name", "organisation.name"),
+    "Organisation",
+  );
+  const logoUrl = firstPdfValue(
+    branding?.logoLightUrl,
+    branding?.organisationLogoUrl,
+    branding?.logoUrl,
+    branding?.logo_light_url,
+    branding?.organisation_logo_url,
+    branding?.logo_url,
+    getPdfPlaceholder(placeholders, "organisation_logo_url", "agency_logo_url", "organisation.logo_url"),
+  );
+  const logoImage = await embedPdfLogo(pdf, logoUrl);
+  const documentReference = getPdfPlaceholder(placeholders, "document_reference", "packet_reference", "transaction_reference", "packet_id") || packetId || title;
+  const safeTitle = normalizePdfText(title || "Mandate Agreement");
+  const normalizedPacketType = normalizeText(packetType).toLowerCase();
   let page = pdf.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - margin;
+  let y = contentTop;
+  const plannedSigningFields: PlannedSigningField[] = [];
 
   const addPage = () => {
     page = pdf.addPage([pageWidth, pageHeight]);
-    y = pageHeight - margin;
+    y = contentTop;
+    drawChrome(page);
   };
   const ensureSpace = (height: number) => {
-    if (y - height < margin) addPage();
+    if (y - height < 84) addPage();
   };
+  const drawCentered = (targetPage: any, text: string, targetY: number, font: any, size: number, color: any = dark) => {
+    const safeText = normalizePdfText(text);
+    targetPage.drawText(safeText, {
+      x: Math.max(margin, (pageWidth - font.widthOfTextAtSize(safeText, size)) / 2),
+      y: targetY,
+      size,
+      font,
+      color,
+    });
+  };
+  const drawChrome = (targetPage: any) => {
+    if (logoImage) {
+      const logoSize = logoImage.scale(1);
+      const logoScale = Math.min(150 / logoSize.width, 42 / logoSize.height, 1);
+      const logoWidth = logoSize.width * logoScale;
+      const logoHeight = logoSize.height * logoScale;
+      targetPage.drawImage(logoImage, {
+        x: (pageWidth - logoWidth) / 2,
+        y: headerTop - logoHeight,
+        width: logoWidth,
+        height: logoHeight,
+      });
+    } else {
+      drawCentered(targetPage, orgName, headerTop - 22, bold, 15, dark);
+    }
+    drawCentered(targetPage, safeTitle.toUpperCase(), pageHeight - 95, bold, 17, dark);
+    drawCentered(targetPage, documentReference, pageHeight - 114, regular, 8.5, muted);
+    targetPage.drawLine({ start: { x: margin, y: pageHeight - 128 }, end: { x: pageWidth - margin, y: pageHeight - 128 }, thickness: 0.6, color: lineColor });
+    targetPage.drawLine({ start: { x: margin, y: 58 }, end: { x: pageWidth - margin, y: 58 }, thickness: 0.6, color: lineColor });
+  };
+  const drawFooter = (targetPage: any, index: number, total: number) => {
+    const footerLeft = orgName.length > 34 ? `${orgName.slice(0, 31)}...` : orgName;
+    targetPage.drawText(footerLeft, { x: margin, y: footerY, size: 7.5, font: bold, color: muted });
+    drawCentered(targetPage, `Page ${index + 1} of ${total}`, footerY, regular, 7.5, muted);
+    const ref = documentReference.length > 30 ? `${documentReference.slice(0, 27)}...` : documentReference;
+    targetPage.drawText(ref, { x: pageWidth - margin - regular.widthOfTextAtSize(ref, 7.5), y: footerY, size: 7.5, font: regular, color: muted });
+  };
+  drawChrome(page);
+
   const drawLine = (line: string, options: { font?: any; size?: number; color?: any; indent?: number } = {}) => {
     const size = options.size || bodySize;
     ensureSpace(size + 6);
@@ -802,7 +989,7 @@ async function renderStructuredSectionsToPdfBytes({
       y,
       size,
       font: options.font || regular,
-      color: options.color || rgb(0.08, 0.13, 0.2),
+      color: options.color || dark,
     });
     y -= lineHeight;
   };
@@ -820,11 +1007,66 @@ async function renderStructuredSectionsToPdfBytes({
       y -= 5;
     }
   };
+  const drawDetailPanel = () => {
+    const panelTop = y;
+    const panelHeight = 98;
+    const columnWidth = (maxWidth - 16) / 2;
+    const leftX = margin + 12;
+    const rightX = margin + 12 + columnWidth + 16;
+    page.drawRectangle({ x: margin, y: panelTop - panelHeight, width: maxWidth, height: panelHeight, color: fillSoft, borderColor: lineColor, borderWidth: 0.8 });
+    const details = [
+      ["Seller", getPdfPlaceholder(placeholders, "seller_display_name", "seller_name", "seller.full_name")],
+      ["Property", getPdfPlaceholder(placeholders, "property_address", "property.display_address", "property_address_line")],
+      ["Agency", getPdfPlaceholder(placeholders, "agency_name", "organisation_name", "organisation.name")],
+      ["Agent", getPdfPlaceholder(placeholders, "agent_name", "agent.full_name", "signing_agent_name")],
+      ["Mandate Type", getPdfPlaceholder(placeholders, "mandate_type", "mandate.mandate_type")],
+      ["Mandate Dates", [
+        getPdfPlaceholder(placeholders, "mandate_start_date", "start_date"),
+        getPdfPlaceholder(placeholders, "mandate_end_date", "end_date"),
+      ].filter(Boolean).join(" to ")],
+    ];
+    details.forEach(([label, value], index) => {
+      const colX = index % 2 === 0 ? leftX : rightX;
+      const rowY = panelTop - 22 - Math.floor(index / 2) * 29;
+      page.drawText(label, { x: colX, y: rowY, size: 7.5, font: bold, color: muted });
+      const resolved = normalizePdfText(value) || "-";
+      const lines = wrapPdfLine(resolved, regular, 9.2, columnWidth - 8).slice(0, 2);
+      lines.forEach((line, lineIndex) => {
+        page.drawText(line, { x: colX, y: rowY - 13 - lineIndex * 11, size: 9.2, font: regular, color: dark });
+      });
+    });
+    y -= panelHeight + 18;
+  };
 
-  drawWrapped(title || "Mandate Agreement", { font: bold, size: 19 });
-  y -= 8;
+  const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
+    const panelWidth = 210;
+    const panelHeight = 112;
+    const panelY = pageHeight - options.panelTop - panelHeight;
+    const fieldTop = options.panelTop + 34;
+    targetPage.drawRectangle({ x: options.x, y: panelY, width: panelWidth, height: panelHeight, color: rgb(1, 1, 1), borderColor: lineColor, borderWidth: 0.9 });
+    targetPage.drawText(options.title, { x: options.x + 12, y: panelY + panelHeight - 22, size: 9.5, font: bold, color: dark });
+    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - 44, width: 186, height: 44, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
+    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 30, size: 7.5, font: regular, color: muted });
+    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 16, size: 8.5, font: bold, color: dark });
+    plannedSigningFields.push({
+      signerRole: options.signerRole,
+      fieldType: "signature",
+      pageNumber: pdf.getPageCount(),
+      xPosition: options.x + 12,
+      yPosition: fieldTop,
+      width: 186,
+      height: 44,
+      required: true,
+      label: `${options.title} signature`,
+    });
+  };
 
-  for (const [index, section] of (sectionManifest || []).entries()) {
+  drawDetailPanel();
+
+  const visibleSections = (sectionManifest || []).filter((section) => {
+    return normalizedPacketType !== "mandate" || sectionMatchesMandateRoute(section, placeholders);
+  });
+  for (const [index, section] of visibleSections.entries()) {
     const label = normalizeText(section?.label || section?.key) || `Section ${index + 1}`;
     const content = replacePlaceholdersForPdf(section?.content || section?.legalText || section?.legal_text, placeholders);
     if (!content.trim()) continue;
@@ -834,18 +1076,34 @@ async function renderStructuredSectionsToPdfBytes({
     y -= 8;
   }
 
+  if (normalizedPacketType === "mandate") {
+    addPage();
+    drawCentered(page, "SIGNATURES", pageHeight - 176, bold, 15, dark);
+    drawCentered(page, "The parties sign this mandate using the reserved execution blocks below.", pageHeight - 195, regular, 9.5, muted);
+    const agentName = getPdfPlaceholder(placeholders, "agent_name", "agent.full_name", "signing_agent_name") || "Agent";
+    const sellerName = getPdfPlaceholder(placeholders, "seller_display_name", "seller_name", "seller.full_name") || "Seller";
+    drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop: 235, x: margin, signerRole: "agent" });
+    drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop: 235, x: pageWidth - margin - 210, signerRole: "seller" });
+    const spouseName = firstPdfValue(
+      getPdfPlaceholder(placeholders, "seller_spouse_name", "spouse_name", "seller.spouse_name"),
+      getPdfPlaceholder(placeholders, "purchaser_2_name"),
+    );
+    if (!isMissingPdfValue(spouseName)) {
+      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: 382, x: margin, signerRole: "purchaser_2" });
+    }
+  }
+
   const pages = pdf.getPages();
   pages.forEach((targetPage: any, index: number) => {
-    targetPage.drawText(`Page ${index + 1} of ${pages.length}`, {
-      x: pageWidth - margin - 80,
-      y: 24,
-      size: 8,
-      font: regular,
-      color: rgb(0.36, 0.45, 0.57),
-    });
+    drawFooter(targetPage, index, pages.length);
   });
 
-  return new Uint8Array(await pdf.save());
+  return {
+    bytes: new Uint8Array(await pdf.save()),
+    pageCount: pages.length,
+    plannedSigningFields,
+    layoutContract: "arch9-mandate-branded-signature-layout-v1",
+  };
 }
 
 function assertValidPdfBytes(bytes: Uint8Array) {
@@ -1335,6 +1593,7 @@ Deno.serve(async (req: Request) => {
     let filePath = `packet-${packetId}/${packetType}-documents/${generatedFileName}`;
     let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     let nativeRender: any = null;
+    let nativePdfLayout: JsonRecord | null = null;
 
     if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
       const generationTemplate = ((generationPayload as Record<string, unknown>).template || {}) as Record<string, unknown>;
@@ -1367,13 +1626,24 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        outputBytes = buildPdfConverterUrl()
-          ? await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"))
-          : await renderStructuredSectionsToPdfBytes({
+        if (buildPdfConverterUrl()) {
+          outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
+        } else {
+          const nativePdf = await renderStructuredSectionsToPdfBytes({
               sectionManifest,
               placeholders: placeholderMap,
               title: normalizeText(generationTemplate.label || (packetType === "otp" ? "Offer to Purchase" : "Mandate Agreement")),
+              packetType,
+              branding,
+              packetId,
             });
+          outputBytes = nativePdf.bytes;
+          nativePdfLayout = {
+            contract: nativePdf.layoutContract,
+            pageCount: nativePdf.pageCount,
+            plannedSigningFields: nativePdf.plannedSigningFields,
+          };
+        }
         assertValidPdfBytes(outputBytes);
         contentType = "application/pdf";
         generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");
@@ -1539,6 +1809,7 @@ Deno.serve(async (req: Request) => {
           mediaType: contentType,
           byteLength: outputBytes.length,
           sha256: `sha256:${outputSha256}`,
+          nativePdfLayout,
         }
       : null;
     let canonicalOtp = null;
@@ -1611,6 +1882,7 @@ Deno.serve(async (req: Request) => {
         prePersist: prePersistFence?.fenced === true,
       },
       renderAttestation,
+      nativePdfLayout,
       canonicalOtp: canonicalOtp
         ? {
             contract: "phase2-canonical-otp-pdf-v1",
