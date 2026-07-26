@@ -128,7 +128,6 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
     packKey: MANDATE_TEMPLATE_CONTENT_PACK_KEYS.sellerIndividualCapacity,
     fieldKeys: [
       'seller_marital_status',
-      'seller_id_number',
     ],
     phrases: [
       'individual seller',

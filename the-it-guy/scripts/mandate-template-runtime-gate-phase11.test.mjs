@@ -55,6 +55,16 @@ const fallbackRouteIndex = packetServiceSource.indexOf("resolutionSource === 'ma
 const defaultRouteIndex = packetServiceSource.indexOf("return 'default'", fallbackRouteIndex)
 assert.ok(fallbackRouteIndex > -1 && defaultRouteIndex > fallbackRouteIndex, 'Fallback default templates should be scanned as default templates.')
 
+const platformDefaultHelperIndex = packetServiceSource.indexOf('function templateIsPlatformDefaultMandateTemplate')
+const platformDefaultRouteIndex = packetServiceSource.indexOf(
+  "if (templateUsesConditionalMaster(template) && templateIsPlatformDefaultMandateTemplate(template)) return 'default'",
+)
+assert.ok(platformDefaultHelperIndex > -1, 'Runtime content gate should recognise platform default mandate templates.')
+assert.ok(
+  platformDefaultRouteIndex > platformDefaultHelperIndex,
+  'Global/default conditional masters should be scanned with the default all-routes content rule.',
+)
+
 for (const token of [
   'mandateTemplateContentGate: validation?.mandateTemplateContentGate || null',
   'mandateTemplateContentGate: rendered.mandateTemplateContentGate || null',

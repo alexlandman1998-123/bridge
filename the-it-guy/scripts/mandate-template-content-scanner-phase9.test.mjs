@@ -94,6 +94,20 @@ const defaultWithSectionalLeak = scanMandateTemplateSections([
 assert.equal(defaultWithSectionalLeak.isValidForPublish, false)
 assert.ok(defaultWithSectionalLeak.blockers.some((issue) => issue.code === 'FORBIDDEN_UNCONDITIONAL_SIGNAL' && issue.signalGroupKey === 'sectional_title'))
 
+const defaultWithGenericSellerIdentity = scanMandateTemplateSections([
+  universalSection({
+    sectionKey: 'parties',
+    sectionLabel: 'Parties',
+    legalText: 'Seller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEmail: {{seller_email}}',
+    placeholderKeysText: 'seller_full_name, seller_id_number, seller_email',
+  }),
+], { routeKey: 'default' })
+assert.equal(defaultWithGenericSellerIdentity.blockingCount, 0)
+assert.ok(
+  !defaultWithGenericSellerIdentity.presentSignalGroupKeys.includes('individual_capacity'),
+  'Generic ID / registration fields in Parties should not be treated as individual capacity wording.',
+)
+
 const defaultWithUnconditionedPack = scanMandateTemplateSections([
   universalSection(),
   {

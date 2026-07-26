@@ -1381,6 +1381,25 @@ function templateUsesConditionalMaster(template = null) {
     (Boolean(masterVersion) && masterFlag !== false && String(masterFlag || '').toLowerCase() !== 'false')
 }
 
+function templateIsPlatformDefaultMandateTemplate(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object'
+    ? template.metadata_json
+    : template?.metadataJson && typeof template.metadataJson === 'object'
+      ? template.metadataJson
+      : {}
+  const templateKey = normalizeText(template?.template_key || template?.templateKey || template?.key).toLowerCase()
+  const templateScope = normalizeText(metadata.template_scope || metadata.templateScope).toLowerCase()
+  return templateScope === 'global_default' ||
+    metadata.platform_default_can_route_without_org_template === true ||
+    (
+      templateKey === 'mandate_default_v1' &&
+      template?.is_default !== false &&
+      template?.isDefault !== false &&
+      template?.is_active !== false &&
+      template?.isActive !== false
+    )
+}
+
 function extractGeneratedArtifact(result = {}) {
   return {
     renderedDocumentId: normalizeNullableText(
@@ -2428,6 +2447,7 @@ function resolveMandateTemplateRuntimeRouteKey(validation = {}, templateResoluti
   )
   const resolutionSource = normalizeText(templateResolution?.source)
 
+  if (templateUsesConditionalMaster(template) && templateIsPlatformDefaultMandateTemplate(template)) return 'default'
   if (resolutionSource === 'mandate_scenario_variant') {
     return scenarioRoute || templateRoute || 'default'
   }

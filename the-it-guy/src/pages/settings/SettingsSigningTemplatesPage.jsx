@@ -1630,10 +1630,7 @@ Seller Marital Status
 {{seller_marital_status}}
 
 Seller Identity Number
-{{seller_id_number}}
-
-Spouse Consent Required
-{{seller_spouse_consent_required}}`,
+{{seller_id_number}}`,
   seller_company_authority_pack: `SELLER COMPANY AUTHORITY
 
 Where the Seller is a company or close corporation, the signatory warrants that they are duly authorised to appoint the Agency and bind the Seller to this mandate.
@@ -2199,7 +2196,7 @@ function createStarterSections(packetType = 'otp') {
         sectionLabel: 'Individual Seller Capacity Pack',
         sectionType: 'legal_text',
         legalText: SALES_MANDATE_DEFAULT_LEGAL_TEXT.seller_individual_capacity_pack,
-        placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_id_number, seller_spouse_consent_required',
+        placeholderKeysText: 'seller_entity_type, seller_marital_status, seller_id_number',
         conditionJson: createConditionalPackCondition({
           field: 'seller_entity_type',
           operator: 'equals',
