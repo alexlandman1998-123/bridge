@@ -44,74 +44,7 @@ begin
       using errcode = '23514';
   end if;
 
-  update public.document_packet_templates template
-  set
-    status = case
-      when template.id = v_template_id then 'published'
-      else 'archived'
-    end,
-    is_active = template.id = v_template_id,
-    is_default = template.id = v_template_id,
-    template_format = case
-      when template.id = v_template_id then 'structured'
-      else template.template_format
-    end,
-    template_storage_bucket = case
-      when template.id = v_template_id then null
-      else template.template_storage_bucket
-    end,
-    template_storage_path = case
-      when template.id = v_template_id then null
-      else template.template_storage_path
-    end,
-    template_file_name = case
-      when template.id = v_template_id then null
-      else template.template_file_name
-    end,
-    metadata_json = case
-      when template.id = v_template_id then
-        (
-          coalesce(template.metadata_json, '{}'::jsonb)
-            - 'template_storage_bucket' - 'template_bucket' - 'templateBucket'
-            - 'template_storage_path' - 'templatePath'
-            - 'template_file_name' - 'template_filename' - 'templateFilename'
-        ) || jsonb_build_object(
-          'template_scope', 'global_default',
-          'platform_default_phase', 'phase2',
-          'platform_default_document', true,
-          'platform_default_can_route_without_org_template', true,
-          'starter_template', coalesce(nullif(template.metadata_json->>'starter_template', ''), 'arch9_native_b2'),
-          'starter_content_version', coalesce(nullif(template.metadata_json->>'starter_content_version', ''), 'b2-v1'),
-          'render_mode', 'native_structured',
-          'native_template', true,
-          'inherit_organisation_branding', true,
-          'legal_runtime_release_required', true,
-          'default_signer_roles', jsonb_build_array(
-            jsonb_build_object('role', 'seller', 'label', 'Seller', 'required', true, 'order', 0),
-            jsonb_build_object('role', 'agent', 'label', 'Estate Agent', 'required', true, 'order', 1),
-            jsonb_build_object('role', 'seller_spouse', 'label', 'Seller spouse / co-signer', 'required', false, 'order', 2),
-            jsonb_build_object('role', 'witness', 'label', 'Witness', 'required', false, 'order', 3)
-          ),
-          'branding', jsonb_build_object('inheritOrganisationBranding', true)
-        )
-      else coalesce(template.metadata_json, '{}'::jsonb) || jsonb_build_object(
-        'platform_default_superseded_by_template_id', v_template_id,
-        'platform_default_superseded_at', now()
-      )
-    end,
-    published_at = case
-      when template.id = v_template_id then coalesce(template.published_at, now())
-      else template.published_at
-    end,
-    archived_at = case
-      when template.id = v_template_id then null
-      else coalesce(template.archived_at, now())
-    end,
-    updated_at = now()
-  where template.organisation_id is null
-    and lower(coalesce(template.module_type, '')) = 'agency'
-    and lower(coalesce(template.packet_type, '')) = 'mandate'
-    and template.template_key = 'mandate_default_v1';
+  raise notice 'Skipping legacy in-place global mandate promotion; immutable published-template revisions are handled by corrective migration 202607250006.';
 
   select
     count(*),
