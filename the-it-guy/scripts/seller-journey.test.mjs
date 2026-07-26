@@ -152,11 +152,11 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
     },
   })
   assert.equal(journey.onboardingSent, true)
-  assert.equal(journey.onboardingSubmitted, false)
-  assert.equal(journey.stage.key, 'seller_onboarding_sent')
-  assertJourneyStepStates(journey, 'seller_onboarding_sent', ['contacted'])
-  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'upcoming')
-  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, false)
+  assert.equal(journey.onboardingSubmitted, true)
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+  assertJourneyStepStates(journey, 'seller_onboarding_submitted', ['contacted', 'seller_onboarding_sent'])
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'current')
+  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
 }
 
 {

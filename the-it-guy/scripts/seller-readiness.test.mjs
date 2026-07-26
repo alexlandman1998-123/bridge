@@ -81,6 +81,21 @@ const baseLead = {
 }
 
 {
+  const lead = {
+    ...baseLead,
+    stage: 'mandate_sent',
+    status: 'Mandate Sent',
+    sellerOnboardingToken: 'seller-token-stale',
+    sellerOnboardingStatus: 'sent',
+  }
+  const journey = buildSellerJourney({ lead })
+  const readiness = getSellerReadiness({ lead, journey })
+  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(readiness.blockers.some((item) => item.id === 'seller_onboarding_not_submitted'), false)
+  assert.equal(readiness.nextAction.id, 'generate_mandate')
+}
+
+{
   const args = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],

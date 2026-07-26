@@ -60,6 +60,35 @@ function onboardingSubmitted(journey = {}) {
   return journey?.onboardingSubmitted === true
 }
 
+const SELLER_JOURNEY_STAGE_ORDER = new Map([
+  ['contacted', 0],
+  ['seller_onboarding_sent', 1],
+  ['seller_onboarding_submitted', 2],
+  ['mandate_sent', 3],
+  ['mandate_signed', 4],
+  ['listing_created', 5],
+  ['listing_live', 6],
+  ['documents_submitted', 7],
+])
+
+function sellerStageIndex(journey = {}) {
+  return SELLER_JOURNEY_STAGE_ORDER.get(normalizeKey(journey?.stage?.key || journey?.stageKey || journey?.stage)) ?? 0
+}
+
+function hasProgressedPastOnboarding(journey = {}) {
+  const mandateStatus = normalizeKey(journey?.mandateStatus)
+  return Boolean(
+    sellerStageIndex(journey) >= (SELLER_JOURNEY_STAGE_ORDER.get('seller_onboarding_submitted') ?? 2) ||
+      ['draft', 'generated', 'sent', 'signed', 'completed'].includes(mandateStatus) ||
+      journey?.listingCreated ||
+      journey?.listingLive
+  )
+}
+
+function onboardingSubmissionStillBlocking(journey = {}) {
+  return onboardingSent(journey) && !onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)
+}
+
 function documentComplete(document = {}) {
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
   return Boolean(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.storage_path || document?.file_path) ||
@@ -227,7 +256,7 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
   if (!contactReady) blockers.push(blocker('missing_seller_contact', 'Missing Seller Contact', 'seller', 'contact_seller', 'blocked', 'Your agent needs seller contact details.'))
   if (!addressReady) blockers.push(blocker('missing_property_address', 'Missing Property Address', 'seller', 'capture_property_address', 'blocked', 'Your agent needs the property address.'))
 
-  if (onboardingSent(resolvedJourney) && !onboardingSubmitted(resolvedJourney) && resolvedJourney.mandateStatus === 'not_started') {
+  if (onboardingSubmissionStillBlocking(resolvedJourney) && resolvedJourney.mandateStatus === 'not_started') {
     blockers.push(blocker('seller_onboarding_not_submitted', 'Seller Onboarding Not Submitted', 'onboarding', 'open_seller_portal', 'action_required', 'Seller onboarding is still waiting to be submitted.'))
   }
 
@@ -293,6 +322,7 @@ export function getNextSellerAction(args = {}) {
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
   if (blocking?.id === 'missing_property_address') return action('capture_property_address', 'Capture Property Address', true, '', { blocker: blocking })
   if (blocking?.id === 'seller_onboarding_not_submitted') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: blocking })
+  if (blocking?.id === 'mandate_not_generated') return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
   if (blocking?.id === 'required_documents_missing') return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
   if (blocking?.category === 'listing_live') return action(blocking.actionId || 'complete_listing', blocking.actionId === 'activate_listing' ? 'Activate Listing' : 'Complete Listing', true, '', { blocker: blocking })
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
@@ -300,9 +330,10 @@ export function getNextSellerAction(args = {}) {
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (journey.mandateStatus === 'sent') return action('check_signature_status', 'Track Signature', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
   if (!onboardingSent(journey)) return action('open_seller_portal', 'Send Seller Onboarding')
-  if (!onboardingSubmitted(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
+  if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
   if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (onboardingSubmitted(journey)) return action('generate_mandate', 'Generate Mandate')
+  if (hasProgressedPastOnboarding(journey)) return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
   return action('open_seller_portal', 'Send Seller Onboarding', true, blocking?.label || '', { blocker: blocking })
 }
 

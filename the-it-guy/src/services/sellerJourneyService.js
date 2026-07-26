@@ -444,13 +444,7 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   const evidenceStage = derivedStage || sellerJourneyStageSnapshot('contacted', 'Active')
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
-  const onboardingSentIndex = STAGE_INDEX.get('seller_onboarding_sent') ?? 1
-  const leadStageContradictedByPendingOnboarding =
-    onboardingSignals.pending &&
-    leadStageIndex > onboardingSentIndex &&
-    (STAGE_INDEX.get(evidenceStage?.key) ?? 0) <= onboardingSentIndex
   const canUseLeadStageAsProgressFloor =
-    !leadStageContradictedByPendingOnboarding &&
     (leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing }))
   return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
 }
@@ -641,6 +635,10 @@ export function buildListingJourney(listing = {}) {
 export function getSellerJourneyActions({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null } = {}) {
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus })
+  const leadStage = getSellerJourneyStageFromLead(lead)
+  const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
+  const onboardingSubmittedForProgress = onboardingSignals.submitted ||
+    leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2)
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const live = listingCreated && isListingLive(listing || lead)
   const sellerPortalToken = firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token)
@@ -648,8 +646,8 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
   return [
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
-    { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSignals.submitted && (mandateStatus === 'not_started' || mandateStatus === 'draft') },
-    { id: 'send_mandate', label: 'Send Mandate', enabled: onboardingSignals.submitted && mandateStatus === 'draft' },
+    { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && (mandateStatus === 'not_started' || mandateStatus === 'draft') },
+    { id: 'send_mandate', label: 'Send Mandate', enabled: onboardingSubmittedForProgress && mandateStatus === 'draft' },
     { id: 'view_signing_status', label: 'View Signing Status', enabled: mandateStatus !== 'not_started' },
     { id: 'create_listing', label: 'Create Listing', enabled: !listingCreated },
     { id: 'open_listing', label: 'Open Listing', enabled: listingCreated },
@@ -682,13 +680,17 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const sellerDocuments = buildSellerDocuments({ listing, documents })
   const documentsOutstanding = sellerDocuments.filter(isDocumentOutstanding).length
   const documentsSubmitted = sellerDocuments.length > 0 && documentsOutstanding === 0
+  const leadStage = getSellerJourneyStageFromLead(lead)
+  const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
+  const onboardingSubmittedForProgress = onboardingSignals.submitted ||
+    leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2)
   const evidence = {
     contacted: isSellerLead(lead),
     contactedStatus: 'Active',
     seller_onboarding_sent: onboardingSignals.sent,
     seller_onboarding_sentStatus: onboardingSignals.status === 'in_progress' ? 'In Progress' : onboardingSignals.sent ? 'Sent' : '',
-    seller_onboarding_submitted: onboardingSignals.submitted,
-    seller_onboarding_submittedStatus: onboardingSignals.submitted ? 'Submitted' : '',
+    seller_onboarding_submitted: onboardingSubmittedForProgress,
+    seller_onboarding_submittedStatus: onboardingSubmittedForProgress ? 'Submitted' : '',
     mandate_sent: ['sent', 'signed'].includes(mandateStatus),
     mandate_sentStatus: labelMandate(mandateStatus),
     mandate_signed: mandateStatus === 'signed',
@@ -749,7 +751,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
     steps,
     mandateStatus,
     onboardingSent: onboardingSignals.sent,
-    onboardingSubmitted: onboardingSignals.submitted,
+    onboardingSubmitted: onboardingSubmittedForProgress,
     listing,
     listingCreated,
     listingLive,
