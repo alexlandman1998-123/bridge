@@ -369,10 +369,13 @@ assert.equal(
   'npm run test:document-generator-simple-signing-phase3 && node scripts/document-generator-simple-signing-phase4-browser-smoke.mjs',
 )
 
-console.log(JSON.stringify({
+const report = {
   phase: 'document-generator-simple-signing-ui-phase-4',
   status: 'browser_smoke_passed',
   mutatedData: false,
   sentRealEmails: false,
   evidence,
-}, null, 2))
+}
+
+fs.writeFileSync(path.join(outputDirectory, 'report.json'), JSON.stringify(report, null, 2))
+console.log(JSON.stringify(report, null, 2))

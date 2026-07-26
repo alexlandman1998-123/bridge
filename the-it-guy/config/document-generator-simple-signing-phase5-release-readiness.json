@@ -1,0 +1,43 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-5",
+  "status": "release_readiness_ready",
+  "decision": "ready_for_controlled_release",
+  "entryPoint": "/sign/:token",
+  "requiredPriorPhases": [
+    "document-generator-simple-signing-ui-phase-0",
+    "document-generator-simple-signing-ui-phase-1",
+    "document-generator-simple-signing-ui-phase-2",
+    "document-generator-simple-signing-ui-phase-3",
+    "document-generator-simple-signing-ui-phase-4"
+  ],
+  "requiredEvidence": {
+    "phase4Report": "test-results/document-generator-simple-signing-phase4/report.json",
+    "phase4Screenshots": [
+      "test-results/document-generator-simple-signing-phase4/mandate-seller-mobile.png",
+      "test-results/document-generator-simple-signing-phase4/otp-purchaser-desktop.png"
+    ],
+    "productionBuild": "npm run build"
+  },
+  "releaseScope": {
+    "packetTypes": ["mandate", "otp"],
+    "surface": "signer_portal",
+    "route": "/sign/:token",
+    "appliesToAllGeneratedDocumentsInScope": true
+  },
+  "backendBoundaries": {
+    "changesEmailDispatch": false,
+    "sendsRealCustomerEmails": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false,
+    "performsDeployment": false
+  },
+  "acceptance": [
+    "Phase 0-4 contracts are present and coherent",
+    "Phase 4 browser evidence covers mandate and OTP signer portal routes",
+    "Phase 4 evidence shows no data mutation outside mocked signer actions and no real email sends",
+    "the old signer multi-card surface is not rendered",
+    "the release script runs the Phase 4 browser smoke and a production build before the Phase 5 gate"
+  ]
+}

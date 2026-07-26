@@ -418,6 +418,7 @@
     "test:document-generator-simple-signing-phase2": "node --test src/core/documents/__tests__/simpleSigningExperienceScope.test.js src/core/documents/__tests__/simpleSigningExperienceModel.test.js && node scripts/document-generator-simple-signing-phase2-shell.test.mjs",
     "test:document-generator-simple-signing-phase3": "node --test src/core/documents/__tests__/simpleSigningExperienceScope.test.js src/core/documents/__tests__/simpleSigningExperienceModel.test.js && node scripts/document-generator-simple-signing-phase2-shell.test.mjs && node scripts/document-generator-simple-signing-phase3-portal-wiring.test.mjs",
     "test:document-generator-simple-signing-phase4": "npm run test:document-generator-simple-signing-phase3 && node scripts/document-generator-simple-signing-phase4-browser-smoke.mjs",
+    "test:document-generator-simple-signing-phase5": "npm run test:document-generator-simple-signing-phase4 && npm run build && node scripts/document-generator-simple-signing-phase5-release-readiness.test.mjs",
     "test:document-generator-phase1": "node scripts/document-generator-phase1-entrypoint-consolidation.test.mjs",
     "test:document-generator-phase-a2": "node scripts/document-generator-phase-a2-runtime.test.mjs",
     "test:document-generator-phase-a3": "node scripts/document-generator-phase-a3-lifecycle.test.mjs",
