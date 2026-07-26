@@ -24,6 +24,13 @@ const platformDefaultMandate = {
   },
 }
 
+const platformDefaultMandateSnapshot = {
+  templateId: 'template-mandate',
+  templateKey: 'mandate_default_v1',
+  documentType: 'mandate',
+  status: 'active',
+}
+
 test('rejects unknown and non-renderable packet types instead of coercing them to OTP', () => {
   assert.equal(resolvePdfRenderablePacketType('unknown').code, 'UNSUPPORTED_DOCUMENT_TYPE')
   assert.equal(resolvePdfRenderablePacketType('addendum').code, 'DOCUMENT_TYPE_NOT_RENDERABLE')
@@ -68,6 +75,7 @@ test('requires a published, matching template for a signable document', () => {
 
 test('allows default boilerplate fallbacks while rejecting non-default generic fallbacks', () => {
   assert.equal(isDefaultTemplateRouteFallback(platformDefaultMandate), true)
+  assert.equal(isDefaultTemplateRouteFallback(platformDefaultMandateSnapshot), true)
   assert.equal(isDefaultTemplateRouteFallback(publishedMandate), false)
   assert.equal(
     resolveSignableTemplatePolicy({

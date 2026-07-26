@@ -79,14 +79,26 @@ export function isPublishedTemplateStatus(status = '') {
 
 export function isDefaultTemplateRouteFallback(template = {}) {
   const metadata = record(template?.metadata_json || template?.metadataJson)
-  const packetType = normalizeDocumentPacketType(template?.packet_type || template?.packetType)
+  const templateKey = text(template?.template_key || template?.templateKey || template?.key).toLowerCase()
+  const inferredPacketType = templateKey.endsWith('_default_v1')
+    ? templateKey.slice(0, -'_default_v1'.length)
+    : ''
+  const packetType = normalizeDocumentPacketType(
+    template?.packet_type || template?.packetType || template?.documentType || inferredPacketType,
+  )
   if (!['mandate', 'otp'].includes(packetType)) return false
-  if (template?.is_default !== true && template?.isDefault !== true) return false
   if (template?.is_active === false || template?.isActive === false) return false
+  const status = normalizeDocumentPacketType(template?.status || template?.template_status || template?.templateStatus)
+  if (status && !PUBLISHED_TEMPLATE_STATUSES.includes(status)) return false
   const scope = normalizeDocumentPacketType(metadata.template_scope || metadata.templateScope)
+  const hasDefaultIdentity =
+    template?.is_default === true ||
+    template?.isDefault === true ||
+    templateKey === `${packetType}_default_v1`
+  if (!hasDefaultIdentity) return false
   return scope === 'global_default' ||
     metadata.platform_default_can_route_without_org_template === true ||
-    text(template?.template_key || template?.templateKey) === `${packetType}_default_v1`
+    templateKey === `${packetType}_default_v1`
 }
 
 /**

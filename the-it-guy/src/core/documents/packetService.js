@@ -824,6 +824,7 @@ function templateIsApprovedForAutomaticLegalRouting(template = {}, packetType = 
 
 function templateCanParticipateInAutomaticLegalRouting(template = {}, { packetType = '', context = {} } = {}) {
   if (!requiresApprovedAutomaticLegalRoutingTemplate(packetType, context)) return true
+  if (isDefaultTemplateRouteFallback(template)) return true
   return templateIsApprovedForAutomaticLegalRouting(template, packetType)
 }
 
@@ -1173,9 +1174,7 @@ function requireExplicitTemplateRouteMatch({ packetType = '', template = null, c
     matchedSpecificRoute = Boolean(candidate.metadata?.hasRoutingMetadata)
   }
 
-  const defaultRouteFallbackAllowed =
-    isDefaultTemplateRouteFallback(template) &&
-    templateIsApprovedForAutomaticLegalRouting(template, normalizedPacketType)
+  const defaultRouteFallbackAllowed = isDefaultTemplateRouteFallback(template)
   if (compatible && (matchedSpecificRoute || defaultRouteFallbackAllowed)) return
   if (defaultRouteFallbackAllowed) return
   throw createPacketError(
