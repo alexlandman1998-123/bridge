@@ -402,6 +402,10 @@ function parseBucketCandidates(value) {
     .filter(Boolean)
 }
 
+function delay(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)))
+}
+
 const FINAL_SIGNED_BUCKET_CANDIDATES = Array.from(
   new Set([
     ...parseBucketCandidates(import.meta.env.VITE_SIGNED_DOCUMENTS_BUCKET),
@@ -411,23 +415,42 @@ const FINAL_SIGNED_BUCKET_CANDIDATES = Array.from(
   ]),
 )
 
-async function createSignedUrlAcrossBuckets(client, filePath, bucketCandidates = [], expiresInSeconds = 60 * 60) {
+async function createSignedUrlAcrossBuckets(
+  client,
+  filePath,
+  bucketCandidates = [],
+  expiresInSeconds = 60 * 60,
+  { retryDelaysMs = [] } = {},
+) {
   const path = normalizeText(filePath)
   if (!path) return null
 
-  for (const bucket of [...new Set((bucketCandidates || []).map((item) => normalizeText(item)).filter(Boolean))]) {
-    const result = await client.storage.from(bucket).createSignedUrl(path, expiresInSeconds)
-    if (!result.error && result.data?.signedUrl) {
-      return {
-        bucket,
-        signedUrl: result.data.signedUrl,
+  const buckets = [...new Set((bucketCandidates || []).map((item) => normalizeText(item)).filter(Boolean))]
+  const attempts = [0, ...(Array.isArray(retryDelaysMs) ? retryDelaysMs : [])]
+  for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+    if (attemptIndex > 0) await delay(attempts[attemptIndex])
+    for (const bucket of buckets) {
+      const result = await client.storage.from(bucket).createSignedUrl(path, expiresInSeconds)
+      if (!result.error && result.data?.signedUrl) {
+        return {
+          bucket,
+          signedUrl: result.data.signedUrl,
+        }
       }
     }
   }
   return null
 }
 
-async function hydratePacketVersionAccessUrls(client, version = {}) {
+function packetVersionWasJustGenerated(version = {}) {
+  const candidates = [version?.generated_at, version?.created_at, version?.updated_at]
+  return candidates.some((value) => {
+    const timestamp = Date.parse(value || '')
+    return Number.isFinite(timestamp) && Date.now() - timestamp < 2 * 60 * 1000
+  })
+}
+
+async function hydratePacketVersionAccessUrls(client, version = {}, options = {}) {
   const hydrated = { ...version }
   const renderedPath = normalizeText(version?.rendered_file_path)
   const finalPath = normalizeText(version?.final_signed_file_path)
@@ -437,7 +460,16 @@ async function hydratePacketVersionAccessUrls(client, version = {}) {
     const renderedCandidates = renderedBucketHint
       ? [renderedBucketHint, ...DOCUMENTS_BUCKET_CANDIDATES]
       : DOCUMENTS_BUCKET_CANDIDATES
-    const renderedSignedUrl = await createSignedUrlAcrossBuckets(client, renderedPath, renderedCandidates)
+    const shouldRetryAccess =
+      options.retrySignedUrl === true ||
+      (options.retrySignedUrl !== false && packetVersionWasJustGenerated(version))
+    const renderedSignedUrl = await createSignedUrlAcrossBuckets(
+      client,
+      renderedPath,
+      renderedCandidates,
+      60 * 60,
+      { retryDelaysMs: shouldRetryAccess ? [300, 700, 1400] : [] },
+    )
     hydrated.rendered_file_access_url = renderedSignedUrl?.signedUrl || normalizeNullableText(version?.rendered_file_url)
     hydrated.rendered_file_bucket = renderedSignedUrl?.bucket || renderedBucketHint || null
   } else {
@@ -3001,13 +3033,20 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
 
   let orgResult = await client
     .from('organisations')
-    .select('id, name, display_name, logo_url, website, email, phone, phone_number, telephone, physical_address, address_line_1, address_line_2, city, province, postal_code')
+    .select('id, name, display_name, logo_url')
     .eq('id', context.organisationId)
     .maybeSingle()
   if (orgResult.error && isMissingColumnError(orgResult.error)) {
     orgResult = await client
       .from('organisations')
-      .select('id, name, display_name, logo_url')
+      .select('id, name, display_name')
+      .eq('id', context.organisationId)
+      .maybeSingle()
+  }
+  if (orgResult.error && isMissingColumnError(orgResult.error)) {
+    orgResult = await client
+      .from('organisations')
+      .select('id, name')
       .eq('id', context.organisationId)
       .maybeSingle()
   }
@@ -3094,31 +3133,22 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
     normalizeNullableText(brandingData?.logo_dark_url) ||
     logoLightUrl
   const physicalAddress =
-    normalizeNullableText(orgResult.data?.physical_address) ||
     normalizeNullableText(agencyInfo.physicalAddress) ||
     normalizeNullableText(agencyInfo.physical_address) ||
-    [orgResult.data?.address_line_1, orgResult.data?.address_line_2, orgResult.data?.city, orgResult.data?.province, orgResult.data?.postal_code]
-      .map((value) => normalizeText(value))
-      .filter(Boolean)
-      .join(', ')
+    ''
   const phoneNumber =
-    normalizeNullableText(orgResult.data?.telephone) ||
-    normalizeNullableText(orgResult.data?.phone_number) ||
-    normalizeNullableText(orgResult.data?.phone) ||
     normalizeNullableText(agencyInfo.mainOfficeNumber) ||
     normalizeNullableText(agencyInfo.main_office_number) ||
     normalizeNullableText(agencyInfo.telephone) ||
     normalizeNullableText(agencyInfo.phoneNumber) ||
     normalizeNullableText(agencyInfo.phone_number)
   const email =
-    normalizeNullableText(orgResult.data?.email) ||
     normalizeNullableText(agencyInfo.mainEmailAddress) ||
     normalizeNullableText(agencyInfo.main_email_address) ||
     normalizeNullableText(agencyInfo.email) ||
     normalizeNullableText(agencyInfo.emailAddress) ||
     normalizeNullableText(agencyInfo.email_address)
   const website =
-    normalizeNullableText(orgResult.data?.website) ||
     normalizeNullableText(agencyInfo.website)
 
   return {
