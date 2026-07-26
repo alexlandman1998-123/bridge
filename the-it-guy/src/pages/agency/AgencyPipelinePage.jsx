@@ -80,7 +80,7 @@ import { buildSellerReadinessSummary } from '../../services/sellerReadinessServi
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
-import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
+import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resetSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDocumentFallback'
 import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
@@ -2068,10 +2068,68 @@ function resolveSignerLinkByRole(signers = [], role = '', email = '') {
   return normalizeText(roleRows[0]?.signing_link)
 }
 
+const QUICK_SIGNING_FIELD_ROLE_ORDER = ['agent', 'seller', 'purchaser_2', 'seller_spouse', 'witness_1', 'witness_2']
+
+function normalizeQuickFlowSigningLayoutFields(fields = []) {
+  const roleRows = new Map()
+  return (Array.isArray(fields) ? fields : []).map((field, index) => {
+    const signerRole = normalizeText(field?.signerRole || field?.signer_role).toLowerCase() || 'other'
+    if (!roleRows.has(signerRole)) {
+      const orderedIndex = QUICK_SIGNING_FIELD_ROLE_ORDER.includes(signerRole)
+        ? QUICK_SIGNING_FIELD_ROLE_ORDER.indexOf(signerRole)
+        : roleRows.size
+      roleRows.set(signerRole, orderedIndex)
+    }
+    const fieldType = normalizeText(field?.fieldType || field?.field_type).toLowerCase() === 'initial'
+      ? 'initial'
+      : 'signature'
+    const width = Math.min(
+      fieldType === 'initial' ? 72 : 168,
+      Math.max(24, Number(field?.width || (fieldType === 'initial' ? 72 : 168))),
+    )
+    const height = Math.min(
+      fieldType === 'initial' ? 32 : 44,
+      Math.max(18, Number(field?.height || (fieldType === 'initial' ? 32 : 44))),
+    )
+    const roleRow = Number(roleRows.get(signerRole) || 0)
+    const yPosition = Math.min(790 - height, 650 + (roleRow * 58))
+    return {
+      ...field,
+      id: normalizeText(field?.id) || `quick_${signerRole}_${fieldType}_${index + 1}`,
+      fieldType,
+      signerRole,
+      pageNumber: Math.max(1, Number(field?.pageNumber || field?.page_number || 1)),
+      xPosition: fieldType === 'initial' ? 72 : 320,
+      yPosition: Math.max(36, yPosition),
+      width,
+      height,
+      required: field?.required !== false,
+      label: normalizeText(field?.label) || `${signerRole.replace(/_/g, ' ')} ${fieldType}`,
+    }
+  })
+}
+
+async function resetUnsentMandateSigningSetup({ packetId, packetVersionId, organisationId = null } = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  const resolvedVersionId = normalizeText(packetVersionId)
+  if (!resolvedPacketId || !resolvedVersionId) return null
+  try {
+    return await resetSigningFields({
+      packetId: resolvedPacketId,
+      packetVersionId: resolvedVersionId,
+      organisationId,
+    })
+  } catch (error) {
+    const message = normalizeText(error?.message)
+    if (/no generated packet version/i.test(message) || /not found/i.test(message)) return null
+    throw error
+  }
+}
+
 async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, preparedFields = [] } = {}) {
   const resolvedPacketId = normalizeText(packetId)
   const resolvedVersionId = normalizeText(versionId)
-  const fields = Array.isArray(preparedFields) ? preparedFields : []
+  const fields = normalizeQuickFlowSigningLayoutFields(preparedFields)
   if (!resolvedPacketId || !resolvedVersionId || !fields.length) return null
 
   const existingLayout = await fetchSigningFieldLayout({
@@ -8443,60 +8501,86 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let generatedVersionResult = null
       if (packet?.id) {
         onProgress?.('Merging seller and property details…')
+        const generationRequest = {
+          packetId: packet.id,
+          packetType: 'mandate',
+          template,
+          allowWarnings: true,
+          forceGenerate: false,
+          context: {
+            organisationId,
+            generatedByRole: 'agent',
+            generatedByUserId: normalizeText(currentAgent.id),
+            generatedByName: normalizeText(currentAgent.fullName),
+            generatedByUserEmail: normalizeText(currentAgent.email),
+            agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+            mandateData,
+            mandateValidation: mandatePreflight,
+            sourceContext: mandateData.sourceContext,
+            privateListing: hydratedPrivateListing || null,
+            contact: selectedLeadContact || null,
+            organisation: {
+              id: organisationId,
+              name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            },
+            lead: {
+              id: normalizeLeadUuid(selectedLead.leadId) || null,
+              lead_id: normalizeLeadUuid(selectedLead.leadId) || null,
+              ...leadForMapping,
+            },
+            agency: mandateData.agency,
+            agent: mandateData.agent,
+            generatedDataSnapshot: mandateData,
+            mandateDraft: {
+              ...mandateData.mandate,
+              mandateType: mandateData.mandate.type,
+              askingPrice: mandateData.mandate.askingPrice,
+              commissionStructure: mandateData.mandate.commissionStructure,
+              commissionPercent: mandateData.mandate.commissionPercent,
+              commissionAmount: mandateData.mandate.commissionAmount,
+              mandateStartDate: mandateData.mandate.startDate,
+              mandateEndDate: mandateData.mandate.endDate,
+            },
+          },
+        }
         try {
           onProgress?.('Generating mandate PDF…')
-          generatedVersionResult = await generatePacketVersion({
-            packetId: packet.id,
-            packetType: 'mandate',
-            template,
-            allowWarnings: true,
-            forceGenerate: false,
-            context: {
-              organisationId,
-              generatedByRole: 'agent',
-              generatedByUserId: normalizeText(currentAgent.id),
-              generatedByName: normalizeText(currentAgent.fullName),
-              generatedByUserEmail: normalizeText(currentAgent.email),
-              agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-              mandateData,
-              mandateValidation: mandatePreflight,
-              sourceContext: mandateData.sourceContext,
-              privateListing: hydratedPrivateListing || null,
-              contact: selectedLeadContact || null,
-              organisation: {
-                id: organisationId,
-                name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-                displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-              },
-              lead: {
-                id: normalizeLeadUuid(selectedLead.leadId) || null,
-                lead_id: normalizeLeadUuid(selectedLead.leadId) || null,
-                ...leadForMapping,
-              },
-              agency: mandateData.agency,
-              agent: mandateData.agent,
-              generatedDataSnapshot: mandateData,
-              mandateDraft: {
-                ...mandateData.mandate,
-                mandateType: mandateData.mandate.type,
-                askingPrice: mandateData.mandate.askingPrice,
-                commissionStructure: mandateData.mandate.commissionStructure,
-                commissionPercent: mandateData.mandate.commissionPercent,
-                commissionAmount: mandateData.mandate.commissionAmount,
-                mandateStartDate: mandateData.mandate.startDate,
-                mandateEndDate: mandateData.mandate.endDate,
-              },
-            },
-          })
+          generatedVersionResult = await generatePacketVersion(generationRequest)
           onProgress?.('Preparing preview…')
         } catch (generationError) {
-          const details = normalizeText(generationError?.message || String(generationError))
-          const blocker = new Error(
-            details || 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.',
-          )
-          blocker.code = generationError?.code || 'MANDATE_PACKET_VERSION_FAILED'
-          blocker.packetId = packet.id
-          throw blocker
+          let recoveredGeneration = false
+          const generationMessage = normalizeText(generationError?.message || String(generationError))
+          if (/signing fields already exist for this packet/i.test(generationMessage)) {
+            const packetWithVersions = await fetchDocumentPacket(packet.id, {
+              includeVersions: true,
+              includeEvents: false,
+            }).catch(() => null)
+            const latestGeneratedVersionId = normalizeText(
+              findLatestSignableGeneratedVersion(packetWithVersions?.versions || [])?.id,
+            )
+            if (latestGeneratedVersionId) {
+              onProgress?.('Clearing previous signing setup…')
+              await resetUnsentMandateSigningSetup({
+                packetId: packet.id,
+                packetVersionId: latestGeneratedVersionId,
+                organisationId,
+              })
+              onProgress?.('Regenerating mandate PDF…')
+              generatedVersionResult = await generatePacketVersion(generationRequest)
+              onProgress?.('Preparing preview…')
+              recoveredGeneration = true
+            }
+          }
+          if (!recoveredGeneration) {
+            const details = normalizeText(generationError?.message || String(generationError))
+            const blocker = new Error(
+              details || 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.',
+            )
+            blocker.code = generationError?.code || 'MANDATE_PACKET_VERSION_FAILED'
+            blocker.packetId = packet.id
+            throw blocker
+          }
         }
       }
 
