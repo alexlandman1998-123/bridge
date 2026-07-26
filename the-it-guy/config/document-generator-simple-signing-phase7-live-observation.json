@@ -1,0 +1,66 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-7",
+  "status": "live_observation_ready",
+  "decision": "ready_for_post_promotion_observation",
+  "production": {
+    "appUrl": "https://app.arch9.co.za",
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "vercelProject": "bridge",
+    "route": "/sign/:token"
+  },
+  "requiredPriorPhase": "document-generator-simple-signing-ui-phase-6",
+  "requiredCommandBeforeObservation": "npm run test:document-generator-simple-signing-phase6",
+  "observation": {
+    "mode": "read_only_controlled_signer_route_smoke",
+    "liveCommand": "node --env-file-if-exists=.env.production.local scripts/document-generator-simple-signing-phase7-live-observation.mjs --live --write",
+    "controlledTokenEnvironmentVariable": "SIMPLE_SIGNING_PHASE7_CONTROLLED_TOKEN",
+    "defaultReport": "test-results/document-generator-simple-signing-phase7/live-observation-report.json",
+    "requiredRouteEvidence": [
+      "production release manifest is reachable",
+      "simple signing shell renders on the production signer route",
+      "progress, document, action, help, and secure footer regions are visible",
+      "old multi-card signer UI regions are absent",
+      "horizontal overflow is zero or negligible",
+      "only read-only signer-token resolution occurs during observation"
+    ]
+  },
+  "releaseScope": {
+    "surface": "signer_portal",
+    "packetTypes": ["mandate", "otp"],
+    "appliesToAllGeneratedDocumentsInScope": true,
+    "documentGeneratorChanges": false
+  },
+  "runtimeControls": {
+    "requiresDatabaseMigration": false,
+    "requiresEdgeFunctionDeployment": false,
+    "invokesSigningAction": false,
+    "appliesSignatureFields": false,
+    "completesSigning": false,
+    "sendsRealCustomerEmails": false,
+    "generatesFinalArtifacts": false,
+    "resolvesFinalArtifactAccess": false,
+    "changesCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "storesSigningTokenInReport": false,
+    "redactsControlledToken": true
+  },
+  "allowedProductionCalls": [
+    "GET https://app.arch9.co.za/sign/[redacted-token]",
+    "GET https://app.arch9.co.za/release-manifest.json",
+    "POST resolve-signer-token"
+  ],
+  "forbiddenProductionCalls": [
+    "signer-signing-action",
+    "dispatch-final-signed-document",
+    "resolve-final-signed-document-access",
+    "generate-final-signed-document",
+    "send-email"
+  ],
+  "acceptance": [
+    "Phase 6 remains the required pre-observation gate",
+    "production route smoke uses a controlled token only",
+    "live observation does not sign, save fields, complete signing, send email, or generate final artifacts",
+    "the observation report redacts the signing token",
+    "rollback remains redeploying the previous production frontend artifact if the signer route regresses"
+  ]
+}
