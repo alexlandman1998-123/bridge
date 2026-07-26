@@ -648,7 +648,7 @@ export default function SignerPortal() {
       completedByEmail: signer?.signer_email || '',
     })
     const nextSession = await refreshSession()
-    const nextRemaining = (Array.isArray(nextSession?.fields) ? nextSession.fields : []).find((item) => item?.required && !isCompleted(item))
+    const nextRemaining = (Array.isArray(nextSession?.fields) ? nextSession.fields : []).find((item) => item?.required !== false && !isCompleted(item))
     setStatusMessage(`${fieldTypeLabel(fieldType)} applied to ${fieldLocationLabel(field, { includeType: false })}.`)
     setCaptureField(null)
     if (nextRemaining) scrollToField(nextRemaining)

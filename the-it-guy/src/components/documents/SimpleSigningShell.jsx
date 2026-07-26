@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Download, FileText, Headphones, HelpCircle, LockKeyhole, Minus, PenLine, Plus, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Check, Download, FileText, Headphones, HelpCircle, LockKeyhole, Minus, PenLine, Plus, RefreshCw, ShieldCheck } from 'lucide-react'
 
 function cx(...classes) {
   return classes.filter(Boolean).join(' ')
@@ -9,6 +9,8 @@ function actionIcon(actionId = '') {
   if (actionId === 'finish_signing') return <LockKeyhole className="h-4 w-4" aria-hidden="true" />
   if (actionId === 'open_completed_pdf') return <Download className="h-4 w-4" aria-hidden="true" />
   if (actionId === 'contact_support') return <Headphones className="h-4 w-4" aria-hidden="true" />
+  if (actionId === 'next_field') return <PenLine className="h-4 w-4" aria-hidden="true" />
+  if (actionId === 'refresh_completion') return <RefreshCw className="h-4 w-4" aria-hidden="true" />
   return <ArrowRight className="h-4 w-4" aria-hidden="true" />
 }
 
@@ -135,7 +137,7 @@ export function SimpleSigningActionCard({ model = null, busy = false, onAction =
             >
               {actionIcon(action.id)}
               {busy ? 'Working...' : action.label}
-              {!busy && !['view_document', 'open_completed_pdf', 'contact_support'].includes(action.id) ? <ArrowRight className="h-4 w-4" aria-hidden="true" /> : null}
+              {!busy && !['view_document', 'open_completed_pdf', 'contact_support', 'refresh_completion'].includes(action.id) ? <ArrowRight className="h-4 w-4" aria-hidden="true" /> : null}
             </button>
           ) : null}
         </div>

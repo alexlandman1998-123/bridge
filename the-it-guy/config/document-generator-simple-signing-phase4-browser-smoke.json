@@ -1,0 +1,35 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-4",
+  "status": "browser_smoke_ready",
+  "inputContract": "arch9-simple-signing-experience-model-v1",
+  "entryPoint": "/sign/:token",
+  "coverage": {
+    "packetTypes": ["mandate", "otp"],
+    "viewports": ["mobile", "desktop"],
+    "states": ["sign", "finish", "completed"],
+    "interactions": [
+      "load signer route",
+      "render simple shell",
+      "open signature capture",
+      "save typed signature",
+      "apply field through signing action",
+      "open completion confirmation",
+      "complete signer submission"
+    ]
+  },
+  "backendBoundaries": {
+    "usesMockedEdgeFunctions": true,
+    "sendsRealEmails": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "acceptance": [
+    "local browser smoke verifies the routed signer portal with mocked signing sessions",
+    "mandate and OTP generated document types render in the simple signing shell",
+    "mobile and desktop viewports avoid horizontal overflow",
+    "the signature capture and finish actions use existing signer action handlers",
+    "the smoke does not call production Supabase, email, or final-artifact services"
+  ]
+}
