@@ -36,6 +36,52 @@ function asRecord(value: unknown): JsonRecord {
     : {};
 }
 
+function decodeJwtPayload(token: string): JsonRecord {
+  const payload = normalizeFinalArtifactText(token).split(".")[1];
+  if (!payload) return {};
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + (4 - normalized.length % 4) % 4,
+      "=",
+    );
+    const decoded = JSON.parse(atob(padded));
+    return asRecord(decoded);
+  } catch {
+    return {};
+  }
+}
+
+function projectRefFromSupabaseUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname.endsWith(".supabase.co") ? hostname.split(".")[0] : "";
+  } catch {
+    return "";
+  }
+}
+
+function isServiceRoleProjectJwt(
+  { bearer, serviceKey, supabaseUrl }: {
+    bearer: string;
+    serviceKey: string;
+    supabaseUrl: string;
+  },
+) {
+  const token = normalizeFinalArtifactText(bearer);
+  if (!token) return false;
+  if (token === serviceKey) return true;
+  const claims = decodeJwtPayload(token);
+  const expectedRef = projectRefFromSupabaseUrl(supabaseUrl);
+  const expiresAt = Number(claims.exp);
+  return normalizeFinalArtifactText(claims.role) === "service_role" &&
+    normalizeFinalArtifactText(claims.iss) === "supabase" &&
+    (!expectedRef ||
+      normalizeFinalArtifactText(claims.ref) === expectedRef) &&
+    (!Number.isFinite(expiresAt) ||
+      expiresAt > Math.floor(Date.now() / 1000));
+}
+
 async function authorizeClientPortal({ admin, portalToken, packet }: {
   admin: any;
   portalToken: string;
@@ -96,9 +142,10 @@ async function authorizeSellerPortal(
     resolvedPacketId === normalizeFinalArtifactText(packet.id);
 }
 
-async function authorizeWorkspace({ url, anonKey, authorization, packetId }: {
+async function authorizeWorkspace({ url, anonKey, serviceKey, authorization, packetId }: {
   url: string;
   anonKey: string;
+  serviceKey: string;
   authorization: string;
   packetId: string;
 }) {
@@ -107,6 +154,9 @@ async function authorizeWorkspace({ url, anonKey, authorization, packetId }: {
     "",
   );
   if (!bearer || bearer === anonKey) return false;
+  if (isServiceRoleProjectJwt({ bearer, serviceKey, supabaseUrl: url })) {
+    return true;
+  }
   const userClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${bearer}` } },
@@ -284,6 +334,7 @@ Deno.serve(async (req: Request) => {
       : await authorizeWorkspace({
         url,
         anonKey,
+        serviceKey,
         authorization: req.headers.get("authorization") || "",
         packetId,
       });

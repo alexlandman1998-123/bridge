@@ -15,6 +15,38 @@ type JsonRecord = Record<string, unknown>;
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function response(status: number, body: JsonRecord) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
+function decodeJwtPayload(token: string): JsonRecord {
+  const payload = text(token).split(".")[1];
+  if (!payload) return {};
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, "=");
+    const decoded = JSON.parse(atob(padded));
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded) ? decoded as JsonRecord : {};
+  } catch {
+    return {};
+  }
+}
+function projectRefFromSupabaseUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname.endsWith(".supabase.co") ? hostname.split(".")[0] : "";
+  } catch {
+    return "";
+  }
+}
+function isServiceRoleProjectJwt({ bearer, serviceKey, supabaseUrl }: { bearer: string; serviceKey: string; supabaseUrl: string }) {
+  const token = text(bearer);
+  if (!token) return false;
+  if (token === serviceKey) return true;
+  const claims = decodeJwtPayload(token);
+  const expectedRef = projectRefFromSupabaseUrl(supabaseUrl);
+  const expiresAt = Number(claims.exp);
+  return text(claims.role) === "service_role" &&
+    text(claims.iss) === "supabase" &&
+    (!expectedRef || text(claims.ref) === expectedRef) &&
+    (!Number.isFinite(expiresAt) || expiresAt > Math.floor(Date.now() / 1000));
+}
 function resolveAppBaseUrl() {
   return text(
     Deno.env.get("PUBLIC_APP_URL") ||
@@ -31,7 +63,8 @@ Deno.serve(async (req: Request) => {
     const url = Deno.env.get("SUPABASE_URL") || "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     if (!url || !serviceKey) return response(500, { success: false, error: "Missing Supabase configuration." });
-    if (text(req.headers.get("authorization")) !== `Bearer ${serviceKey}`) return response(403, { success: false, error: "Service-role delivery authority is required.", errorCode: "FINAL_DELIVERY_FORBIDDEN" });
+    const bearer = text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+    if (!isServiceRoleProjectJwt({ bearer, serviceKey, supabaseUrl: url })) return response(403, { success: false, error: "Service-role delivery authority is required.", errorCode: "FINAL_DELIVERY_FORBIDDEN" });
     const payload = await req.json() as JsonRecord;
     const packetId = text(payload.packetId || payload.packet_id);
     const packetVersionId = text(payload.packetVersionId || payload.packet_version_id);
@@ -185,7 +218,9 @@ Deno.serve(async (req: Request) => {
           recipientName: text(signer.signer_name),
         });
         if (recipientSafety.suppressed) {
-          errorCode = "FINAL_EMAIL_RECIPIENT_SUPPRESSED";
+          status = "sent";
+          providerMessageId = `suppressed:${recipientSafety.reason}:${signerId}`;
+          errorCode = "";
           console.log("[final-delivery] controlled test recipient suppressed", {
             packetId,
             packetVersionId,
@@ -229,7 +264,7 @@ Deno.serve(async (req: Request) => {
       }
       const recorded = await supabase.rpc("bridge_record_final_delivery_f3", { p_packet_version_id: packetVersionId, p_signer_id: signerId, p_status: status, p_provider_message_id: providerMessageId || null, p_error_code: errorCode || null, p_attempted_at: new Date().toISOString() });
       if (recorded.error) throw recorded.error;
-      outcomes.push({ signerId, status, providerMessageId: providerMessageId || null, reused: false });
+      outcomes.push({ signerId, status, providerMessageId: providerMessageId || null, suppressed: providerMessageId.startsWith("suppressed:"), reused: false });
     }
     const allDelivered = outcomes.length === signers.length && outcomes.every((outcome) => outcome.status === "sent");
     if (allDelivered) {

@@ -1,0 +1,87 @@
+{
+  "phase": "document-generator-final-mile-phase-0",
+  "status": "scope_frozen",
+  "decision": "repair_existing_final_mile",
+  "rebuildPolicy": "do_not_rebuild_generator_today",
+  "reason": "Staging has final signed artifact paths and transaction publications. The release blocker is the contradictory final completion, recipient delivery, access, and UI state after generation.",
+  "allowedFixAreas": [
+    "final_signed_completion_status",
+    "recipient_delivery_evidence",
+    "controlled_test_recipient_delivery",
+    "final_signed_access_resolution",
+    "workspace_final_completion_ui",
+    "document_generator_smoke_harness",
+    "affected_staging_packet_recovery"
+  ],
+  "outOfScope": [
+    "new_document_generator_architecture",
+    "new_template_engine",
+    "new_signing_provider",
+    "unrelated_document_workspace_refactor",
+    "unrelated_email_workflows",
+    "unrelated_migration_repair"
+  ],
+  "affectedStagingPackets": [
+    {
+      "packetType": "otp",
+      "packetId": "9ea0cf58-0e0f-47f4-b120-c4cde8d70c7c",
+      "packetVersionId": "5f3dc0d7-7e6d-428e-8404-90bdc9bc3051",
+      "observedStage": "completed_everywhere_with_recipient_delivery_pending"
+    },
+    {
+      "packetType": "mandate",
+      "packetId": "92d1a77a-26a6-4373-87d4-ec1871851f39",
+      "packetVersionId": "e06150db-596c-476d-a99d-d3f1cac442c9",
+      "observedStage": "completed_everywhere_with_recipient_delivery_pending"
+    }
+  ],
+  "decisionPaths": {
+    "completed": {
+      "owner": "bridge_get_final_completion_status_f5",
+      "file": "../supabase/migrations/202607180022_final_completion_status_recovery_f5.sql",
+      "requiredTruth": "ready=true and stage=completed_everywhere must require final artifact, transaction publication, surface completion, and complete recipient delivery or a formal controlled-test delivery outcome."
+    },
+    "delivered": {
+      "owner": "dispatch-final-signed-document",
+      "file": "../supabase/functions/dispatch-final-signed-document/index.ts",
+      "requiredTruth": "each signer must have append-only final delivery evidence recorded through bridge_record_final_delivery_f3; controlled test recipients must not call the real provider."
+    },
+    "controlledTestRecipient": {
+      "owner": "assessControlledTestRecipient",
+      "file": "../supabase/functions/send-email/utils/controlledTestRecipient.ts",
+      "requiredTruth": "test recipient domains and explicit test metadata must produce staging-safe suppression evidence."
+    },
+    "downloadable": {
+      "owner": "resolve-final-signed-document-access",
+      "file": "../supabase/functions/resolve-final-signed-document-access/index.ts",
+      "requiredTruth": "authorized workspace, portal, and signer contexts must resolve a published final artifact to a short-lived signed PDF URL."
+    },
+    "accessFence": {
+      "owner": "resolvePublishedFinalSignedArtifact",
+      "file": "../supabase/functions/_shared/finalSignedArtifactAccess.ts",
+      "requiredTruth": "artifact evidence, publication, storage integrity, and visibility must match before any download URL is minted."
+    },
+    "retryable": {
+      "owner": "retry-final-document-completion",
+      "file": "../supabase/functions/retry-final-document-completion/index.ts",
+      "requiredTruth": "retry must reuse immutable final artifacts and re-run delivery/publication without duplicating unsafe state."
+    },
+    "workspaceUi": {
+      "owner": "LegalDocumentWorkspace",
+      "file": "src/components/documents/LegalDocumentWorkspace.jsx",
+      "requiredTruth": "the workspace must not show Completed everywhere while recipient delivery is pending."
+    },
+    "smokeHarness": {
+      "owner": "document-generator-phase-g2-browser-usability",
+      "file": "scripts/document-generator-phase-g2-browser-usability.mjs",
+      "requiredTruth": "browser smoke must verify actual final signed download links without sending real email."
+    }
+  },
+  "phase0ExitCriteria": [
+    "scope manifest exists and is validated by test:document-generator-phase0",
+    "all final-mile decision owner files exist",
+    "affected staging packet IDs are pinned for recovery",
+    "rebuild is explicitly out of scope for today's repair",
+    "next phases can modify only allowed final-mile areas unless this manifest is deliberately updated"
+  ]
+}

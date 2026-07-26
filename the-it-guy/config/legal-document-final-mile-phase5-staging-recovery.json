@@ -1,0 +1,36 @@
+{
+  "status": "staging_recovery_authorized",
+  "recoveryPlanDigest": "sha256:d92e2eeb820127d6e53865f5dfa225050dfce9365da9dd56096210e6d1a61502",
+  "environment": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co"
+  },
+  "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+  "packets": [
+    {
+      "label": "otp",
+      "packetId": "9ea0cf58-0e0f-47f4-b120-c4cde8d70c7c",
+      "packetVersionId": "5f3dc0d7-7e6d-428e-8404-90bdc9bc3051",
+      "renderedDocumentId": "0f4c8717-2179-4d64-9143-d9caac73bbc3",
+      "renderedSha256": "sha256:bf562b980ac47f47c0faf692044f8120ea924dd50505b98f855e15bad5a9a3e4"
+    },
+    {
+      "label": "mandate",
+      "packetId": "92d1a77a-26a6-4373-87d4-ec1871851f39",
+      "packetVersionId": "e06150db-596c-476d-a99d-d3f1cac442c9",
+      "renderedDocumentId": "8437b47c-9bf5-4c80-bf60-b4618ac4cc91",
+      "renderedSha256": "sha256:20621b6c47d6bdbabb2ab9e69f9c5309c628b6170049bb97d6be6d00b2fdd486"
+    }
+  ],
+  "runtime": {
+    "LEGAL_DOCUMENT_PILOT_ENABLED": "true",
+    "LEGAL_DOCUMENT_PILOT_ORGANISATION_IDS": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "LEGAL_DOCUMENT_PILOT_PLAN_DIGEST": "sha256:d92e2eeb820127d6e53865f5dfa225050dfce9365da9dd56096210e6d1a61502"
+  },
+  "controls": [
+    "single corrective migration only; no broad db push",
+    "single pilot organisation only",
+    "controlled test recipients remain suppressed",
+    "existing generated artifacts are bound before final delivery retry"
+  ]
+}

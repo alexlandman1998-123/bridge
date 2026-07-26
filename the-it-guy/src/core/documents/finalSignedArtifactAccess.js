@@ -8,7 +8,7 @@ function normalizeText(value) {
 
 function normalizeContext(value = '') {
   const normalized = normalizeText(value).toLowerCase()
-  if (['client_portal', 'seller_portal', 'workspace'].includes(normalized)) {
+  if (['client_portal', 'seller_portal', 'workspace', 'signer'].includes(normalized)) {
     return normalized
   }
   return ''
@@ -62,6 +62,7 @@ export async function resolveFinalSignedArtifactAccess({
   documentId = '',
   portalToken = '',
   sellerAccessToken = '',
+  signingToken = '',
   download = false,
 } = {}) {
   const accessContext = normalizeContext(context)
@@ -83,6 +84,7 @@ export async function resolveFinalSignedArtifactAccess({
         documentId: normalizedDocumentId || null,
         portalToken: normalizeText(portalToken) || null,
         sellerAccessToken: normalizeText(sellerAccessToken) || null,
+        signingToken: normalizeText(signingToken) || null,
         action: download ? 'download' : 'status',
       },
     })
@@ -117,6 +119,13 @@ export function resolveSellerPortalFinalSignedArtifactAccess(options = {}) {
   return resolveFinalSignedArtifactAccess({
     ...options,
     context: 'seller_portal',
+  })
+}
+
+export function resolveSignerFinalSignedArtifactAccess(options = {}) {
+  return resolveFinalSignedArtifactAccess({
+    ...options,
+    context: 'signer',
   })
 }
 

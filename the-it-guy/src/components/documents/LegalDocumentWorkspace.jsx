@@ -78,6 +78,7 @@ import {
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 import { resolveLegalDocumentSignerProfile } from '../../core/documents/legalDocumentSignerProfile'
 import { resolveSigningOperationalStatus } from '../../core/documents/signingOperationalStatus'
+import { normalizeFinalCompletionState } from '../../core/documents/finalCompletionTruth'
 import { findLatestPilotDocumentFallback, findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from '../../core/documents/pilotDocumentFallback'
 import { buildDocumentRoleGuidance } from '../../core/documents/documentRoleGuidance'
 import { buildDocumentRoleActions } from '../../core/documents/documentRoleActions'
@@ -3207,14 +3208,18 @@ export default function LegalDocumentWorkspace({
   const isFullySignedLifecycle = normalizedLifecycleState === 'completed'
   const hasFinalArtifact = Boolean(signedPreviewPath)
   const finalSignedAvailable = finalSignedAccess?.available === true
+  const safeFinalCompletionState = useMemo(
+    () => normalizeFinalCompletionState(finalCompletionState || statusState?.finalCompletion || null),
+    [finalCompletionState, statusState?.finalCompletion],
+  )
   const signingOperationalStatus = useMemo(() => resolveSigningOperationalStatus({
     packetType,
     packet: statusState?.packet || {},
     versions: statusState?.versions || [],
     signingSummary: statusState?.signingSummary || {},
-    finalCompletion: finalCompletionState || statusState?.finalCompletion || null,
+    finalCompletion: safeFinalCompletionState,
     viewerRole: workspaceRole,
-  }), [finalCompletionState, packetType, statusState?.finalCompletion, statusState?.packet, statusState?.signingSummary, statusState?.versions, workspaceRole])
+  }), [packetType, safeFinalCompletionState, statusState?.packet, statusState?.signingSummary, statusState?.versions, workspaceRole])
   const documentJourney = useMemo(() => buildDocumentJourneyProgress({
     surface: 'workspace',
     state: signingOperationalStatus.state,
@@ -6670,13 +6675,13 @@ export default function LegalDocumentWorkspace({
                     </Button>
                   ) : null}
                 </div>
-                {finalCompletionState ? (
-                  <div data-testid="final-completion-state" className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${finalCompletionState.ready ? 'border-[#c8e5d4] bg-white text-[#1d5b3c]' : 'border-[#f1dfb9] bg-[#fff9ec] text-[#7d520d]'}`}>
-                    <p className="font-semibold">{finalCompletionState.ready ? 'Completed everywhere' : 'Signed PDF safe — completion pending'}</p>
+                {safeFinalCompletionState ? (
+                  <div data-testid="final-completion-state" className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${safeFinalCompletionState.ready ? 'border-[#c8e5d4] bg-white text-[#1d5b3c]' : 'border-[#f1dfb9] bg-[#fff9ec] text-[#7d520d]'}`}>
+                    <p className="font-semibold">{safeFinalCompletionState.ready ? 'Completed everywhere' : 'Signed PDF safe — completion pending'}</p>
                     <p className="mt-1">
-                      Transaction: {finalCompletionState.transactionDocumentId ? 'saved' : 'pending'} · Recipient delivery: {finalCompletionState.deliveredRecipientCount || 0}/{finalCompletionState.recipientCount || 0}
+                      Transaction: {safeFinalCompletionState.transactionDocumentId ? 'saved' : 'pending'} · Recipient delivery: {safeFinalCompletionState.deliveredRecipientCount || 0}/{safeFinalCompletionState.recipientCount || 0}
                     </p>
-                    {!finalCompletionState.ready && finalCompletionState.retryable && legalPermissions.canFinalize ? (
+                    {!safeFinalCompletionState.ready && safeFinalCompletionState.retryable && legalPermissions.canFinalize ? (
                       <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void handleRetryFinalCompletion()} disabled={finalCompletionBusy || actionBusy}>
                         {finalCompletionBusy ? 'Retrying completion…' : 'Retry completion'}
                       </Button>

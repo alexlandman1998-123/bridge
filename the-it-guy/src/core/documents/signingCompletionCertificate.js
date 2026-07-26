@@ -1,3 +1,5 @@
+import { normalizeFinalCompletionState } from './finalCompletionTruth.js'
+
 function text(value) {
   return String(value || '').trim()
 }
@@ -34,6 +36,7 @@ export function buildSigningCompletionCertificate({
   launchChain = null,
   signingActivity = null,
 } = {}) {
+  const safeFinalCompletion = normalizeFinalCompletionState(finalCompletion)
   const signerRows = (Array.isArray(signers) ? signers : []).map((signer) => ({
     role: key(signer?.signer_role || signer?.role) || 'signer',
     roleLabel: roleLabel(signer?.signer_role || signer?.role),
@@ -45,9 +48,9 @@ export function buildSigningCompletionCertificate({
   }))
   const artifactSha256 = text(launchChain?.finalArtifact?.sha256).toLowerCase()
   const artifactByteLength = Number(launchChain?.finalArtifact?.byteLength || 0)
-  const completedAt = iso(finalCompletion?.completedAt || version?.finalised_at || packet?.completed_at)
+  const completedAt = iso(safeFinalCompletion?.completedAt || version?.finalised_at || packet?.completed_at)
   const reasons = []
-  if (finalCompletion?.ready !== true || key(finalCompletion?.stage) !== 'completed_everywhere') reasons.push('COMPLETION_NOT_VERIFIED')
+  if (safeFinalCompletion?.ready !== true || key(safeFinalCompletion?.stage) !== 'completed_everywhere') reasons.push('COMPLETION_NOT_VERIFIED')
   if (!signerRows.length || signerRows.some((signer) => signer.status !== 'signed' || !signer.signedAt)) reasons.push('SIGNERS_INCOMPLETE')
   if (!/^[a-f0-9]{64}$/.test(artifactSha256) || artifactByteLength < 100) reasons.push('FINAL_ARTIFACT_EVIDENCE_INVALID')
   if (!completedAt) reasons.push('COMPLETION_TIMESTAMP_MISSING')
@@ -71,9 +74,9 @@ export function buildSigningCompletionCertificate({
       fileName: text(version?.final_signed_file_name) || null,
     } : null,
     delivery: ready ? {
-      recipientCount: Number(finalCompletion?.recipientCount || 0),
-      deliveredRecipientCount: Number(finalCompletion?.deliveredRecipientCount || 0),
-      transactionSaved: Boolean(finalCompletion?.transactionDocumentId),
+      recipientCount: Number(safeFinalCompletion?.recipientCount || 0),
+      deliveredRecipientCount: Number(safeFinalCompletion?.deliveredRecipientCount || 0),
+      transactionSaved: Boolean(safeFinalCompletion?.transactionDocumentId),
     } : null,
     evidenceEventCount: Number(signingActivity?.totalCount || 0),
     statement: 'This system-generated record identifies the final signed PDF and the completion evidence recorded by Arch9. It is not an independent legal opinion.',

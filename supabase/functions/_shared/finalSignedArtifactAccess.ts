@@ -156,10 +156,54 @@ export function isPublishedFinalDocumentExact(
       Number(document.final_artifact_byte_length) ===
         Number(evidence.byte_length) &&
       lower(document.final_artifact_sha256) === lower(evidence.sha256) &&
-      lower(document.status) === "signed" &&
+      ["signed", "approved"].includes(lower(document.status)) &&
       lower(document.visibility_scope) === "shared" &&
       document.is_client_visible === true &&
       lower(document.stage_key) === "final_signed",
+  );
+}
+
+function sameSha256(left: unknown, right: unknown) {
+  const normalizedLeft = lower(left).replace(/^sha256:/, "");
+  const normalizedRight = lower(right).replace(/^sha256:/, "");
+  return isSha256(normalizedLeft) && normalizedLeft === normalizedRight;
+}
+
+export function isPhase5LegacyFinalDeliveryTraceExact({
+  packet,
+  version,
+  evidence,
+  trace,
+}: {
+  packet: JsonRecord;
+  version: JsonRecord;
+  evidence: JsonRecord;
+  trace: JsonRecord;
+}) {
+  return Boolean(
+    normalizeFinalArtifactText(packet.id) &&
+      normalizeFinalArtifactText(version.id) &&
+      normalizeFinalArtifactText(evidence.path) ===
+        normalizeFinalArtifactText(version.final_signed_file_path) &&
+      normalizeFinalArtifactText(evidence.bucket) ===
+        normalizeFinalArtifactText(version.final_signed_file_bucket) &&
+      isSha256(evidence.sha256) &&
+      normalizeFinalArtifactText(trace.packet_id) ===
+        normalizeFinalArtifactText(packet.id) &&
+      normalizeFinalArtifactText(trace.packet_version_id) ===
+        normalizeFinalArtifactText(version.id) &&
+      normalizeFinalArtifactText(trace.organisation_id) ===
+        normalizeFinalArtifactText(packet.organisation_id) &&
+      normalizeFinalArtifactText(trace.stage) ===
+        "final_delivery_completed" &&
+      normalizeFinalArtifactText(trace.release_contract) ===
+        "legal-document-pilot-release-v1" &&
+      normalizeFinalArtifactText(trace.trace_contract) ===
+        "legal-document-pilot-lifecycle-trace-v1" &&
+      /^sha256:[a-f0-9]{64}$/i.test(
+        normalizeFinalArtifactText(trace.activation_plan_digest),
+      ) &&
+      sameSha256(trace.artifact_sha256, evidence.sha256),
   );
 }
 
@@ -207,7 +251,7 @@ export async function resolvePublishedFinalSignedArtifact({
   expiresInSeconds?: number;
 }): Promise<FinalArtifactAccessResult> {
   try {
-    const [packetResult, versionResult, evidenceResult, eventResult] =
+    const [packetResult, versionResult, evidenceResult, eventResult, traceResult] =
       await Promise.all([
         supabase
           .from("document_packets")
@@ -243,11 +287,22 @@ export async function resolvePublishedFinalSignedArtifact({
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase
+          .from("legal_document_pilot_lifecycle_traces_phase5")
+          .select(
+            "packet_id, packet_version_id, organisation_id, stage, activation_plan_digest, release_contract, trace_contract, artifact_sha256, observed_at",
+          )
+          .eq("packet_id", packetId)
+          .eq("packet_version_id", packetVersionId)
+          .eq("stage", "final_delivery_completed")
+          .order("observed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
     if (
       packetResult.error || versionResult.error || evidenceResult.error ||
-      eventResult.error
+      eventResult.error || traceResult.error
     ) {
       return response(
         "unavailable",
@@ -259,6 +314,7 @@ export async function resolvePublishedFinalSignedArtifact({
     const version = asRecord(versionResult.data);
     const evidence = asRecord(evidenceResult.data);
     const event = asRecord(eventResult.data);
+    const trace = asRecord(traceResult.data);
     if (
       !normalizeFinalArtifactText(packet.id) ||
       !normalizeFinalArtifactText(version.id)
@@ -274,7 +330,10 @@ export async function resolvePublishedFinalSignedArtifact({
         "The final signed document is not ready yet.",
       );
     }
-    if (!isPhase3EvidenceExact({ packet, version, evidence, event })) {
+    if (
+      !isPhase3EvidenceExact({ packet, version, evidence, event }) &&
+      !isPhase5LegacyFinalDeliveryTraceExact({ packet, version, evidence, trace })
+    ) {
       return response(
         "pending_evidence",
         "The signed document is still completing its secure finalisation checks.",

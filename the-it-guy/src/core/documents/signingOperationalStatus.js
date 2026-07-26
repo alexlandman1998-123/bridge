@@ -1,4 +1,5 @@
 import { isPilotDocumentFallbackVersion } from './pilotDocumentFallback.js'
+import { normalizeFinalCompletionState } from './finalCompletionTruth.js'
 
 function text(value) {
   return String(value || '').trim()
@@ -37,6 +38,7 @@ export function resolveSigningOperationalStatus({
   finalCompletion = null,
   viewerRole = 'agent',
 } = {}) {
+  const safeFinalCompletion = normalizeFinalCompletionState(finalCompletion)
   const type = key(packetType || packet?.packet_type) || 'document'
   const label = type === 'otp' ? 'OTP' : type === 'mandate' ? 'mandate' : 'document'
   const status = key(packet?.status)
@@ -48,8 +50,8 @@ export function resolveSigningOperationalStatus({
   const latestIsPilotFallback = isPilotDocumentFallbackVersion(latestVersion)
   const hasFinalArtifact = rows.some((version) => text(version?.final_signed_file_path || version?.final_signed_file_url))
   const allSigned = counts.total > 0 && counts.signed === counts.total
-  const completionReady = finalCompletion?.ready === true
-  const completionStage = key(finalCompletion?.stage)
+  const completionReady = safeFinalCompletion?.ready === true
+  const completionStage = key(safeFinalCompletion?.stage)
   const progress = counts.total ? Math.round((counts.signed / counts.total) * 100) : 0
 
   let state = 'draft'
@@ -73,7 +75,7 @@ export function resolveSigningOperationalStatus({
     state = 'completed'
     tone = 'success'
     title = 'Completed everywhere'
-    summary = `The final signed ${label} is saved to the transaction, visible in the portal, and delivered to ${finalCompletion.deliveredRecipientCount || counts.total} of ${finalCompletion.recipientCount || counts.total} recipients.`
+    summary = `The final signed ${label} is saved to the transaction, visible in the portal, and delivered to ${safeFinalCompletion.deliveredRecipientCount || counts.total} of ${safeFinalCompletion.recipientCount || counts.total} recipients.`
     nextAction = `Open or download the final signed ${label}.`
   } else if (hasFinalArtifact) {
     state = 'publishing'
@@ -82,7 +84,7 @@ export function resolveSigningOperationalStatus({
     const stageCopy = {
       awaiting_transaction_publication: 'The final PDF is being saved against the transaction.',
       awaiting_surface_completion: 'The final PDF is being published to the required transaction and portal surfaces.',
-      awaiting_recipient_delivery: `The final PDF is available; secure delivery is complete for ${finalCompletion?.deliveredRecipientCount || 0} of ${finalCompletion?.recipientCount || counts.total} recipients.`,
+      awaiting_recipient_delivery: `The final PDF is available; secure delivery is complete for ${safeFinalCompletion?.deliveredRecipientCount || 0} of ${safeFinalCompletion?.recipientCount || counts.total} recipients.`,
     }
     summary = stageCopy[completionStage] || `The signed ${label} exists and completion checks are still running.`
     nextAction = role === 'principal' || role === 'agent' ? 'Retry completion if this status does not clear.' : 'No signature action is required; publication is still processing.'
@@ -135,6 +137,6 @@ export function resolveSigningOperationalStatus({
     progress: { ...counts, percent: progress },
     finalCopyAvailable: hasFinalArtifact,
     completionReady,
-    retryable: finalCompletion?.retryable === true,
+    retryable: safeFinalCompletion?.retryable === true,
   }
 }

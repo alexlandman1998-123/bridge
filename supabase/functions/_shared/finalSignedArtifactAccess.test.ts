@@ -1,5 +1,6 @@
 import {
   isPhase3EvidenceExact,
+  isPhase5LegacyFinalDeliveryTraceExact,
   isPublishedFinalDocumentExact,
 } from "./finalSignedArtifactAccess.ts";
 
@@ -80,6 +81,16 @@ const document = {
   final_artifact_byte_length: 1234,
   final_artifact_sha256: "a".repeat(64),
 };
+const phase5Trace = {
+  packet_id: "packet-1",
+  packet_version_id: "version-1",
+  organisation_id: "organisation-1",
+  stage: "final_delivery_completed",
+  activation_plan_digest: `sha256:${"1".repeat(64)}`,
+  release_contract: "legal-document-pilot-release-v1",
+  trace_contract: "legal-document-pilot-lifecycle-trace-v1",
+  artifact_sha256: "a".repeat(64),
+};
 
 Deno.test("canonical final artifact requires the exact F2 event/evidence tuple", () => {
   expect(
@@ -152,5 +163,52 @@ Deno.test("published final document must remain bound to the exact artifact and 
       document: { ...document, transaction_id: "other-transaction" },
     }),
     "a transaction mismatch must be rejected",
+  );
+  expect(
+    isPublishedFinalDocumentExact({
+      packet,
+      version,
+      evidence,
+      document: { ...document, status: "approved" },
+    }),
+    "legacy approved final-signed documents should remain publishable when every artifact field matches",
+  );
+});
+
+Deno.test("legacy final artifact access requires the exact Phase 5 delivery trace", () => {
+  const legacyEvidence = {
+    ...evidence,
+    signature_evidence_contract: null,
+    signature_evidence_mode: null,
+    embedded_signature_count: null,
+    signature_asset_evidence_sha256: null,
+    signature_asset_fingerprints_json: null,
+  };
+  expect(
+    isPhase5LegacyFinalDeliveryTraceExact({
+      packet,
+      version,
+      evidence: legacyEvidence,
+      trace: phase5Trace,
+    }),
+    "an exact final-delivery trace should recover legacy final artifact access",
+  );
+  expect(
+    !isPhase5LegacyFinalDeliveryTraceExact({
+      packet,
+      version,
+      evidence: legacyEvidence,
+      trace: { ...phase5Trace, stage: "final_access_authorized" },
+    }),
+    "the legacy recovery path must require final delivery completion",
+  );
+  expect(
+    !isPhase5LegacyFinalDeliveryTraceExact({
+      packet,
+      version,
+      evidence: legacyEvidence,
+      trace: { ...phase5Trace, artifact_sha256: "b".repeat(64) },
+    }),
+    "the legacy recovery path must stay artifact-bound",
   );
 });

@@ -1,0 +1,36 @@
+{
+  "phase": "document-generator-final-mile-phase-6",
+  "status": "production_deployed",
+  "production": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co",
+    "appUrl": "https://app.arch9.co.za",
+    "vercelProject": "bridge"
+  },
+  "source": {
+    "requiresCleanGitTree": true,
+    "buildCommand": "npm run build:guarded",
+    "deploymentCommand": "vercel build --prod && vercel deploy --prebuilt --prod"
+  },
+  "deployment": {
+    "firstProductionDeploymentId": "dpl_Da7mx1RfrSuExg8fYzpXhRfESD8h",
+    "firstProductionDeploymentUrl": "https://bridge-9mwnua9v2-alexs-projects-f5496a21.vercel.app",
+    "productionAlias": "https://app.arch9.co.za",
+    "readyState": "READY"
+  },
+  "databasePatches": [
+    "supabase/migrations/202607260001_corrective_final_completion_status_truth.sql",
+    "supabase/migrations/202607260002_corrective_phase5_lifecycle_trace_hash_format.sql"
+  ],
+  "edgeFunctions": [
+    "dispatch-final-signed-document",
+    "resolve-final-signed-document-access"
+  ],
+  "liveAcceptance": [
+    "bridge_get_final_completion_status_f5 returns ready=true only when recipient delivery is complete",
+    "controlled smoke recipients are suppressed before provider delivery",
+    "workspace final signed access returns a signed download URL for recovered final artifacts",
+    "legacy final artifacts require an exact final_delivery_completed Phase 5 lifecycle trace",
+    "G1 launch chain has no blockers for the recovered OTP and mandate packets"
+  ]
+}

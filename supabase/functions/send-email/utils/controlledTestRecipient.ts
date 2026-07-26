@@ -9,6 +9,11 @@ function toRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function readEmailDomain(email: string) {
+  const [, domain = ""] = email.split("@");
+  return domain.trim().toLowerCase();
+}
+
 /** Never hand controlled pilot contacts to an external email provider. */
 export function assessControlledTestRecipient({
   email = "",
@@ -20,6 +25,7 @@ export function assessControlledTestRecipient({
   metadata?: unknown;
 } = {}) {
   const normalizedEmail = normalizeText(email).toLowerCase();
+  const domain = readEmailDomain(normalizedEmail);
   const normalizedName = normalizeText(recipientName).toLowerCase();
   const metadataRecord = toRecord(metadata);
   const controlledTestRoleSet = normalizeText(
@@ -29,6 +35,15 @@ export function assessControlledTestRecipient({
     metadataRecord.testDataProtection ?? metadataRecord.test_data_protection,
   );
   const suppressed = normalizedEmail.endsWith(".invalid") ||
+    domain === "example.com" ||
+    domain === "example.net" ||
+    domain === "example.org" ||
+    domain.endsWith(".example.com") ||
+    domain.endsWith(".example.net") ||
+    domain.endsWith(".example.org") ||
+    domain === "example.test" ||
+    domain.endsWith(".example.test") ||
+    domain.endsWith(".test") ||
     normalizedName.includes("test — do not action") ||
     normalizedName.includes("test - do not action") ||
     Boolean(controlledTestRoleSet) ||
