@@ -1,0 +1,49 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-6",
+  "status": "production_promotion_plan_ready",
+  "decision": "ready_for_production_promotion_after_phase5",
+  "production": {
+    "appUrl": "https://app.arch9.co.za",
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "vercelProject": "bridge",
+    "route": "/sign/:token"
+  },
+  "requiredPriorPhase": "document-generator-simple-signing-ui-phase-5",
+  "requiredCommandBeforePromotion": "npm run test:document-generator-simple-signing-phase5",
+  "releaseScope": {
+    "surface": "signer_portal",
+    "packetTypes": ["mandate", "otp"],
+    "appliesToAllGeneratedDocumentsInScope": true,
+    "documentGeneratorChanges": false
+  },
+  "source": {
+    "requiresCleanGitTree": true,
+    "requiresCommittedPhase6Manifest": true,
+    "deploymentIsSeparateOperatorAction": true
+  },
+  "runtimeBoundaries": {
+    "requiresDatabaseMigration": false,
+    "requiresEdgeFunctionDeployment": false,
+    "changesEmailDispatch": false,
+    "sendsRealCustomerEmails": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "promotionChecklist": [
+    "run npm run test:document-generator-simple-signing-phase5",
+    "confirm Phase 4 report.json contains mandate and OTP signer evidence",
+    "confirm production deployment artifact is built from the committed Phase 6 source",
+    "deploy the app frontend only",
+    "run a live read-only signer route smoke against a controlled signing token",
+    "rollback by redeploying the previous production frontend artifact if the signer route regresses"
+  ],
+  "acceptance": [
+    "production target is app.arch9.co.za on the canonical Supabase project",
+    "Phase 5 remains the required pre-promotion gate",
+    "no database migrations or Edge Function deployments are required",
+    "promotion is a separate operator action, not performed by this test",
+    "rollback path is explicit"
+  ]
+}
