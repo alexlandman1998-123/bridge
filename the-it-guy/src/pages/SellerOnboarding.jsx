@@ -4157,6 +4157,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               organisationId: String(updated?.organisationId || '').trim(),
               sellerOnboardingStatus: String(updated?.sellerOnboarding?.status || 'completed').trim(),
               submittedAt: new Date().toISOString(),
+              formData:
+                updated?.sellerOnboarding?.formData && typeof updated.sellerOnboarding.formData === 'object'
+                  ? updated.sellerOnboarding.formData
+                  : {},
             },
           }),
         )

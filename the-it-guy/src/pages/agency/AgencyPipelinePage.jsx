@@ -2417,6 +2417,7 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
     const baseRow = isRemoteRowAuthoritative
       ? { ...localRow, ...remoteRow }
       : remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
+    const mergedSellerOnboarding = mergeSellerOnboardingSnapshot(baseRow, localRow, remoteRow)
 
     mergedById.set(key, {
       ...baseRow,
@@ -2425,6 +2426,7 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       sellerOnboardingToken: normalizeText(baseRow.sellerOnboardingToken || localRow.sellerOnboardingToken),
       sellerOnboardingLink: normalizeText(baseRow.sellerOnboardingLink || localRow.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(baseRow.sellerOnboardingStatus || localRow.sellerOnboardingStatus),
+      ...(mergedSellerOnboarding ? { sellerOnboarding: mergedSellerOnboarding } : {}),
       sellerWorkflowLeadId: normalizeText(baseRow.sellerWorkflowLeadId || localRow.sellerWorkflowLeadId),
       sellerName: normalizeText(baseRow.sellerName || localRow.sellerName),
       sellerSurname: normalizeText(baseRow.sellerSurname || localRow.sellerSurname),
@@ -2441,6 +2443,55 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   }
 
   return [...mergedById.values()]
+}
+
+function mergeSellerOnboardingSnapshot(baseRow = {}, localRow = {}, remoteRow = {}) {
+  const baseOnboarding = baseRow?.sellerOnboarding && typeof baseRow.sellerOnboarding === 'object'
+    ? baseRow.sellerOnboarding
+    : baseRow?.seller_onboarding && typeof baseRow.seller_onboarding === 'object'
+      ? baseRow.seller_onboarding
+      : {}
+  const localOnboarding = localRow?.sellerOnboarding && typeof localRow.sellerOnboarding === 'object'
+    ? localRow.sellerOnboarding
+    : localRow?.seller_onboarding && typeof localRow.seller_onboarding === 'object'
+      ? localRow.seller_onboarding
+      : {}
+  const remoteOnboarding = remoteRow?.sellerOnboarding && typeof remoteRow.sellerOnboarding === 'object'
+    ? remoteRow.sellerOnboarding
+    : remoteRow?.seller_onboarding && typeof remoteRow.seller_onboarding === 'object'
+      ? remoteRow.seller_onboarding
+      : {}
+  const formData = {
+    ...getLeadSellerOnboardingFormData(localRow),
+    ...getLeadSellerOnboardingFormData(remoteRow),
+    ...getLeadSellerOnboardingFormData(baseRow),
+  }
+  const hasOnboarding = [baseOnboarding, localOnboarding, remoteOnboarding].some((row) => row && Object.keys(row).length)
+  const hasFormData = Object.keys(formData).length > 0
+  if (!hasOnboarding && !hasFormData) return null
+
+  return {
+    ...localOnboarding,
+    ...remoteOnboarding,
+    ...baseOnboarding,
+    token: normalizeText(
+      baseOnboarding.token ||
+        remoteOnboarding.token ||
+        localOnboarding.token ||
+        baseRow.sellerOnboardingToken ||
+        remoteRow.sellerOnboardingToken ||
+        localRow.sellerOnboardingToken,
+    ) || null,
+    status: normalizeText(
+      baseOnboarding.status ||
+        remoteOnboarding.status ||
+        localOnboarding.status ||
+        baseRow.sellerOnboardingStatus ||
+        remoteRow.sellerOnboardingStatus ||
+        localRow.sellerOnboardingStatus,
+    ),
+    ...(hasFormData ? { formData } : {}),
+  }
 }
 
 function mapPrivateListingToLeadFallback(listing = {}) {
@@ -2549,6 +2600,22 @@ function findLeadBySellerOnboardingEvent(leads = [], event = {}) {
       })
       : null
   ) || null
+}
+
+function getLeadSellerOnboardingFormData(lead = {}) {
+  const onboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+    ? lead.sellerOnboarding
+    : lead?.seller_onboarding && typeof lead.seller_onboarding === 'object'
+      ? lead.seller_onboarding
+      : {}
+  return {
+    ...(onboarding.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}),
+    ...(onboarding.formData && typeof onboarding.formData === 'object' ? onboarding.formData : {}),
+  }
+}
+
+function hasLeadSellerOnboardingFormData(lead = {}) {
+  return Object.keys(getLeadSellerOnboardingFormData(lead)).length > 0
 }
 
 function getTodayIsoDate() {
@@ -3318,9 +3385,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       userId: normalizeText(profile?.id || profile?.email),
       email: normalizeText(profile?.email).toLowerCase(),
       fullName: normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
+      phone: normalizeText(profile?.phone || profile?.mobile || profile?.mobileNumber || profile?.contactNumber || profile?.contact_number),
       branchId: '',
     }),
-    [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName],
+    [profile?.contact_number, profile?.contactNumber, profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName, profile?.mobile, profile?.mobileNumber, profile?.phone],
   )
 
   const isPrincipal = useMemo(
@@ -3886,6 +3954,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const submittedAt = normalizeText(eventDetail?.submittedAt) || new Date().toISOString()
       const onboardingStatus = normalizeText(eventDetail?.sellerOnboardingStatus)
       const resolvedOnboardingStatus = onboardingStatus ? onboardingStatus.toLowerCase() : 'completed'
+      const submittedFormData =
+        eventDetail?.formData && typeof eventDetail.formData === 'object'
+          ? eventDetail.formData
+          : eventDetail?.form_data && typeof eventDetail.form_data === 'object'
+            ? eventDetail.form_data
+            : null
 
       try {
         await updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
@@ -3900,6 +3974,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
             token: submittedToken || lead?.sellerOnboarding?.token || null,
             submittedAt,
+            ...(submittedFormData ? {
+              formData: {
+                ...getLeadSellerOnboardingFormData(lead),
+                ...submittedFormData,
+              },
+            } : {}),
           },
         })
         await createAgencyCrmLeadActivity(organisationId, lead.leadId, {
@@ -4866,8 +4946,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setFinanceReadinessForm(financeFormFromSummary(selectedLeadFinanceReadinessSummary))
   }, [selectedLead, selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
 
+  const selectedLeadHasSellerOnboardingFormData = hasLeadSellerOnboardingFormData(selectedLead)
+
   useEffect(() => {
-    if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
+    if (!selectedLead || !selectedLeadIsSeller || !organisationId) return
+    if (selectedLeadOnboardingCompleted && selectedLeadHasSellerOnboardingFormData) return
     const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
     const linkedListingId = normalizeText(selectedLead?.listingId)
     if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
@@ -5010,6 +5093,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     currentAgent,
     organisationId,
     selectedLead,
+    selectedLeadHasSellerOnboardingFormData,
     selectedLeadIsSeller,
     selectedLeadOnboardingCompleted,
     reloadRecords,
@@ -8594,7 +8678,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleGenerateMandateFromSellerLead({ onProgress, renderFreeze: providedRenderFreeze = null, editableSections: providedEditableSections = [] } = {}) {
+  async function handleGenerateMandateFromSellerLead({
+    onProgress,
+    renderFreeze: providedRenderFreeze = null,
+    editableSections: providedEditableSections = [],
+    mandateManualOverride: providedMandateManualOverride = null,
+  } = {}) {
     if (!selectedLead || !organisationId) {
       throw new Error('Select a seller lead with an active organisation before generating a mandate.')
     }
@@ -8612,9 +8701,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
       let hydratedLead = selectedLead
       let hydratedPrivateListing = null
-      const hasLeadFormData = Boolean(
-        selectedLead?.sellerOnboarding?.formData && typeof selectedLead.sellerOnboarding.formData === 'object',
-      )
+      const hasLeadFormData = hasLeadSellerOnboardingFormData(selectedLead)
       const shouldFetchOnboardingContext = isSupabaseConfigured && onboardingToken && (!selectedLeadOnboardingCompleted || !hasLeadFormData)
       if (shouldFetchOnboardingContext) {
         onProgress?.('Checking seller onboarding…')
@@ -8677,6 +8764,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         existingPacketForGeneration?.source_context_json && typeof existingPacketForGeneration.source_context_json === 'object'
           ? existingPacketForGeneration.source_context_json
           : {}
+      const providedManualOverride = getMandateManualOverrideFromSource({
+        mandateManualOverride: providedMandateManualOverride,
+      })
+      const sourceContextForGeneration = {
+        ...existingPacketSourceContext,
+        ...(Object.keys(providedManualOverride.fields || {}).length ? {
+          mandateManualOverride: providedManualOverride,
+          mandate_manual_override: providedManualOverride,
+        } : {}),
+      }
       const leadForMapping = {
         ...hydratedLead,
         name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
@@ -8718,7 +8815,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           transaction: {},
         },
       )
-      mandateData = applyMandateManualOverrideToData(mandateData, existingPacketSourceContext)
+      mandateData = applyMandateManualOverrideToData(mandateData, sourceContextForGeneration)
       const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
       if (!mandatePreflight.canProceed) {
         console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
@@ -8745,7 +8842,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       template = templateResolution?.template || null
 
       const packetSourceContextJson = {
-        ...existingPacketSourceContext,
+        ...sourceContextForGeneration,
         leadId: dbLeadId || null,
         uiLeadId: normalizeText(selectedLead.leadId) || null,
         leadCategory: selectedLead.leadCategory,
@@ -8756,7 +8853,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         warningsSnapshot: mandatePreflight.warnings,
         sourceContext: mandateData.sourceContext,
       }
-      const existingManualOverride = getMandateManualOverrideFromSource(existingPacketSourceContext)
+      const existingManualOverride = getMandateManualOverrideFromSource(sourceContextForGeneration)
       if (Object.keys(existingManualOverride.fields || {}).length) {
         packetSourceContextJson.mandateManualOverride = existingManualOverride
         packetSourceContextJson.mandate_manual_override = existingManualOverride
@@ -17087,6 +17184,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         mode={legalWorkspaceMode}
         initialStatus={mandatePacketStatus}
+        initialMandateData={selectedLeadMandateReadiness?.mandateData || null}
         organisationId={organisationId}
         onGenerate={handleGenerateMandateFromSellerLead}
         onSend={handleSendMandateToSeller}

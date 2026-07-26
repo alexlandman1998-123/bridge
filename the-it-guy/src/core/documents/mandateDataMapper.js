@@ -269,7 +269,12 @@ function normalizeEntityType(value = '') {
   const key = normalizeKey(value)
   if (key.includes('company')) return 'company'
   if (key.includes('trust')) return 'trust'
-  if (key.includes('individual') || key.includes('married') || key.includes('single')) return 'individual'
+  if (
+    key.includes('individual') ||
+    key.includes('married') ||
+    key.includes('single') ||
+    ['natural_person', 'person', 'private_individual', 'sole_owner'].includes(key)
+  ) return 'individual'
   return key || 'individual'
 }
 
@@ -323,8 +328,11 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
       mandateDraft.entityType,
       onboarding.ownershipType,
       onboarding.ownership_structure,
+      onboarding.ownerStructureType,
+      onboarding.ownerEntityType,
       onboarding.entityType,
       onboarding.sellerType,
+      onboarding.sellerLegalType,
       lead.sellerType,
     ) || 'individual',
   )
@@ -334,7 +342,9 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
   const individualName = firstText(
     mandateDraft.sellerFullName,
     mandateDraft.fullName,
+    onboarding.sellerFullName,
     onboarding.seller_full_name,
+    onboarding.sellerName,
     onboarding.fullName,
     onboarding.display_name,
     onboarding.displayName,
@@ -398,16 +408,16 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
       valueRequiresSpouseConsent(maritalStatus, maritalRegime),
     ),
     representativeName: isCompany
-      ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
+      ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedSignatoryName, onboarding.authorizedSignatoryName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
       : isTrust
-        ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.trustRepresentativeName, onboarding.trusteeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
-        : firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName),
+        ? firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.trustRepresentativeName, onboarding.trusteeName, onboarding.authorisedTrusteeName, onboarding.authorizedTrusteeName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
+        : firstText(mandateDraft.sellerRepresentativeName, onboarding.representativeName, onboarding.authorisedSignatoryName, onboarding.authorizedSignatoryName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName),
     representativeIdNumber: firstText(mandateDraft.sellerRepresentativeIdNumber, onboarding.representativeIdNumber, onboarding.companyDirectorIdNumber, onboarding.trusteeIdNumber),
     representativeCapacity: isCompany
-      ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.companyDirectorCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Director')
+      ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.companyDirectorCapacity, onboarding.authorisedSignatoryCapacity, onboarding.authorizedSignatoryCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Director')
       : isTrust
-        ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.trusteeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Trustee')
-        : firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity),
+        ? firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.trusteeCapacity, onboarding.authorisedTrusteeCapacity, onboarding.authorizedTrusteeCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity, 'Trustee')
+        : firstText(mandateDraft.sellerRepresentativeCapacity, onboarding.representativeCapacity, onboarding.authorisedSignatoryCapacity, onboarding.authorizedSignatoryCapacity, onboarding.authorisedRepresentativeCapacity, onboarding.authorizedRepresentativeCapacity),
     trustRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.trustRegistrationNumber),
     companyRegistrationNumber: firstText(mandateDraft.sellerRegistrationNumber, onboarding.companyRegistrationNumber),
     trusteeNames: firstText(
@@ -770,21 +780,27 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
       mandateDraft.transferAttorneyCompanyName,
       mandateDraft.transfer_attorney_company_name,
       onboarding.preferredTransferAttorney?.companyName,
+      onboarding.nominatedTransferAttorneyName,
+      onboarding.nominatedTransferAttorney,
     ),
     contactPerson: firstText(
       mandateDraft.transferAttorneyContactPerson,
       mandateDraft.transfer_attorney_contact_person,
       onboarding.preferredTransferAttorney?.contactPerson,
+      onboarding.nominatedTransferAttorneyContactPerson,
+      onboarding.nominatedTransferAttorneyName,
     ),
     email: firstText(
       mandateDraft.transferAttorneyEmail,
       mandateDraft.transfer_attorney_email,
       onboarding.preferredTransferAttorney?.email,
+      onboarding.nominatedTransferAttorneyEmail,
     ).toLowerCase(),
     phone: firstText(
       mandateDraft.transferAttorneyPhone,
       mandateDraft.transfer_attorney_phone,
       onboarding.preferredTransferAttorney?.phone,
+      onboarding.nominatedTransferAttorneyPhone,
     ),
     selectionSource: firstText(
       mandateDraft.transferAttorneySelectionSource,

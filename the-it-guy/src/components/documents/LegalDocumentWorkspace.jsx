@@ -3226,6 +3226,7 @@ export default function LegalDocumentWorkspace({
   packetId = '',
   mode = 'view',
   initialStatus = null,
+  initialMandateData = null,
   organisationId = null,
   branding = null,
   onGenerate = null,
@@ -3274,6 +3275,7 @@ export default function LegalDocumentWorkspace({
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [mandateOverrideSaving, setMandateOverrideSaving] = useState(false)
+  const [localMandateManualOverride, setLocalMandateManualOverride] = useState(null)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
@@ -3446,8 +3448,13 @@ export default function LegalDocumentWorkspace({
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
-      : {}
-  ), [statusState?.packet?.source_context_json])
+      : localMandateManualOverride
+        ? {
+            mandateManualOverride: localMandateManualOverride,
+            mandate_manual_override: localMandateManualOverride,
+          }
+        : {}
+  ), [localMandateManualOverride, statusState?.packet?.source_context_json])
   const mandateSecondarySignerConfig = useMemo(
     () => {
       if (!isMandatePacket) {
@@ -3766,9 +3773,11 @@ export default function LegalDocumentWorkspace({
         placeholders: latestVersion.placeholders_resolved_json,
         sourceContext: sourceContext.sourceContext || latestVersion?.validation_summary_json?.sourceContext || {},
       }
+    } else if (initialMandateData && typeof initialMandateData === 'object') {
+      snapshot = initialMandateData
     }
     return applyMandateManualOverride(snapshot, sourceContext)
-  }, [isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
+  }, [initialMandateData, isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
   const mandateManualOverride = useMemo(() => getMandateManualOverride(sourceContext), [sourceContext])
   const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
@@ -4315,16 +4324,18 @@ export default function LegalDocumentWorkspace({
 
   const handleSaveMandateManualOverride = useCallback(async (fields = {}) => {
     const resolvedPacketId = normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId)
-    if (!resolvedPacketId) {
-      setLoadError('Generate the mandate draft before saving manual overrides.')
-      return
-    }
     const cleanFields = Object.fromEntries(Object.entries(fields || {}).map(([key, value]) => [key, normalizeText(value)]))
     const nextOverride = {
       fields: cleanFields,
       source: 'agent_manual_override',
       updatedAt: new Date().toISOString(),
       updatedByRole: workspaceRole,
+    }
+    if (!resolvedPacketId) {
+      setLocalMandateManualOverride(nextOverride)
+      setLoadError('')
+      setActionFeedback('Mandate details override saved for this draft.')
+      return
     }
     const currentContext =
       statusStateRef.current?.packet?.source_context_json && typeof statusStateRef.current.packet.source_context_json === 'object'
@@ -4353,6 +4364,7 @@ export default function LegalDocumentWorkspace({
       await updateWorkspacePacket(resolvedPacketId, {
         sourceContextJson,
       })
+      setLocalMandateManualOverride(null)
       setActionFeedback('Mandate details override saved.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to save mandate detail overrides.'))
@@ -5540,6 +5552,7 @@ export default function LegalDocumentWorkspace({
     let generationResult = null
     try {
       generationResult = await onGenerate({
+        mandateManualOverride,
         persistForSend: true,
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
       })
@@ -6172,6 +6185,7 @@ export default function LegalDocumentWorkspace({
     setActionProgressMessage('Resetting failed mandate...')
     try {
       const generationResult = await onGenerate({
+        mandateManualOverride,
         persistForSend: true,
         resetExisting: true,
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
@@ -6224,6 +6238,7 @@ export default function LegalDocumentWorkspace({
       setActionProgressMessage('Generating draft…')
       try {
         const generationResult = await onGenerate({
+          mandateManualOverride,
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
         if (!isCurrentAutoGenerateRun()) return
@@ -6272,6 +6287,7 @@ export default function LegalDocumentWorkspace({
     legalPermissions.canGenerate,
     logMandateFailure,
     loading,
+    mandateManualOverride,
     onGenerate,
     open,
     packetId,
@@ -6538,6 +6554,7 @@ export default function LegalDocumentWorkspace({
 
         setActionProgressMessage('Generating downloadable mandate PDF…')
         const generationResult = await onGenerate({
+          mandateManualOverride,
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
         link = resolveVersionDownloadUrl(generationResult?.version)
@@ -6652,6 +6669,7 @@ export default function LegalDocumentWorkspace({
         }
       }
       const generationResult = await onGenerate({
+        mandateManualOverride,
         editableSections,
         renderFreeze,
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),

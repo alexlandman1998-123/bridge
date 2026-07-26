@@ -225,10 +225,36 @@ export function resolveMandateReadiness({
   )
   const onboardingSubmitted = hasMandateSellerOnboardingSubmitted(leadRecord, onboardingStatusKey)
   const propertyLabel = resolveMandatePropertyLabel(leadRecord)
-  const sellerName = [contactRecord?.firstName, contactRecord?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
+  const sellerNameFromOnboarding = firstTextValue(
+    onboardingFormData?.sellerFullName,
+    onboardingFormData?.seller_full_name,
+    onboardingFormData?.fullName,
+    onboardingFormData?.displayName,
+    onboardingFormData?.sellerName,
+    [onboardingFormData?.sellerFirstName || onboardingFormData?.firstName, onboardingFormData?.sellerSurname || onboardingFormData?.lastName || onboardingFormData?.surname].map(normalizeText).filter(Boolean).join(' '),
+  )
+  const sellerName = sellerNameFromOnboarding ||
+    [contactRecord?.firstName, contactRecord?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
     firstTextValue(leadRecord?.sellerFullName, leadRecord?.seller_full_name, leadRecord?.name)
-  const sellerEmail = firstTextValue(contactRecord?.email, leadRecord?.sellerEmail, leadRecord?.seller_email, leadRecord?.email).toLowerCase()
-  const sellerPhone = firstTextValue(contactRecord?.phone, leadRecord?.sellerPhone, leadRecord?.seller_phone, leadRecord?.phone)
+  const sellerEmail = firstTextValue(
+    onboardingFormData?.sellerEmail,
+    onboardingFormData?.seller_email,
+    onboardingFormData?.email,
+    contactRecord?.email,
+    leadRecord?.sellerEmail,
+    leadRecord?.seller_email,
+    leadRecord?.email,
+  ).toLowerCase()
+  const sellerPhone = firstTextValue(
+    onboardingFormData?.sellerPhone,
+    onboardingFormData?.seller_phone,
+    onboardingFormData?.phone,
+    onboardingFormData?.mobile,
+    contactRecord?.phone,
+    leadRecord?.sellerPhone,
+    leadRecord?.seller_phone,
+    leadRecord?.phone,
+  )
   const askingPrice = Number(leadRecord?.estimatedValue || leadRecord?.estimated_value || leadRecord?.budget || onboardingFormData?.askingPrice || onboardingFormData?.asking_price || 0) || 0
   const agentEmail = firstTextValue(leadRecord?.assignedAgentEmail, leadRecord?.assigned_agent_email, agentRecord.email).toLowerCase()
   const agentName = firstTextValue(leadRecord?.assignedAgentName, leadRecord?.assigned_agent_name, agentRecord.fullName, agentRecord.name, agentRecord.email)
