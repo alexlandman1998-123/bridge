@@ -81,6 +81,7 @@ import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
+import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDocumentFallback'
 import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
 import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
@@ -3025,6 +3026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartStep, setMandateQuickStartStep] = useState('details')
   const [mandateQuickStartSigningMethod, setMandateQuickStartSigningMethod] = useState('')
   const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
+  const [mandateQuickStartPacketVersionId, setMandateQuickStartPacketVersionId] = useState('')
   const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
@@ -9054,6 +9056,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         try {
           const signingPreparation = await prepareSigningFields({
             packetId: mandatePacketId,
+            packetVersionId: options.packetVersionId || null,
             packetType: 'mandate',
             organisationId,
             placeholders: {
@@ -9350,6 +9353,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setMandateQuickStartStep('details')
     setMandateQuickStartSigningMethod('')
     setMandateQuickStartPacketId('')
+    setMandateQuickStartPacketVersionId('')
     setMandateQuickStartEmailDraft({
       agent: mandateQuickStartAgentEmail,
       seller: mandateQuickStartSellerEmail,
@@ -9371,6 +9375,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setMandateQuickStartOpen(false)
         setMandateQuickStartStep('details')
         setMandateQuickStartSigningMethod('')
+        setMandateQuickStartPacketVersionId('')
         setMandateQuickStartEmailDraft({ agent: '', seller: '' })
         setMandateQuickStartError('')
         setMandateQuickStartProgress('')
@@ -9419,10 +9424,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusPacketId = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
         ? normalizeText(mandatePacketStatus.packet.id)
         : ''
+      const statusGeneratedVersionId = normalizeText(findLatestSignableGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
-      const needsGeneration = actionKey === 'generate' || !isUuidLike(mandatePacketId)
+      let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
+      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
 
-      if (currentStep === 'details' && needsGeneration) {
+      if ((currentStep === 'details' || currentStep === 'send') && needsGeneration) {
         const generated = await handleGenerateMandateFromSellerLead({
           onProgress: (message) => setMandateQuickStartProgress(normalizeText(message)),
         })
@@ -9432,13 +9439,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           generated?.status?.packetId ||
           mandatePacketId,
         )
+        mandatePacketVersionId = normalizeText(
+          generated?.version?.id ||
+          findLatestSignableGeneratedVersion(generated?.status?.versions || [])?.id ||
+          mandatePacketVersionId,
+        )
       }
 
       if (!isUuidLike(mandatePacketId)) {
         throw new Error('The mandate was prepared, but no saved packet is available for signing. Open the editor to resolve packet setup.')
       }
+      if (!isUuidLike(mandatePacketVersionId)) {
+        throw new Error('The mandate PDF was not saved as a generated packet version yet. Click Generate again before sending for signature.')
+      }
 
       setMandateQuickStartPacketId(mandatePacketId)
+      setMandateQuickStartPacketVersionId(mandatePacketVersionId)
 
       if (currentStep === 'details') {
         setMandateQuickStartStep('method')
@@ -9449,6 +9465,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartProgress('Starting signing…')
       const sendResult = await handleSendMandateToSeller({
         packetId: mandatePacketId,
+        packetVersionId: mandatePacketVersionId,
         agentEmail: mandateQuickStartEmailDraft.agent,
         sellerEmail: mandateQuickStartEmailDraft.seller,
       })
@@ -9460,6 +9477,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartStep('details')
       setMandateQuickStartSigningMethod('')
       setMandateQuickStartPacketId('')
+      setMandateQuickStartPacketVersionId('')
       setMandateQuickStartEmailDraft({ agent: '', seller: '' })
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
@@ -16247,6 +16265,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setMandateQuickStartStep('details')
           setMandateQuickStartSigningMethod('')
           setMandateQuickStartPacketId('')
+          setMandateQuickStartPacketVersionId('')
           setMandateQuickStartEmailDraft({ agent: '', seller: '' })
         }}
         title={resolveMandateQuickStartTitle(mandateQuickStartStep)}
@@ -16291,6 +16310,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   setMandateQuickStartStep('details')
                   setMandateQuickStartSigningMethod('')
                   setMandateQuickStartPacketId('')
+                  setMandateQuickStartPacketVersionId('')
                   setMandateQuickStartEmailDraft({ agent: '', seller: '' })
                 }}
                 disabled={mandateQuickStartBusy}

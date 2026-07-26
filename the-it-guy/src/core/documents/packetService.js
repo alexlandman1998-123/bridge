@@ -3978,6 +3978,7 @@ function getLatestGeneratedVersion(versions = []) {
 
 export async function prepareSigningFields({
   packetId,
+  packetVersionId = null,
   packetType,
   context = {},
   placeholders = {},
@@ -3985,15 +3986,32 @@ export async function prepareSigningFields({
 } = {}) {
   const resolvedPacketId = normalizeText(packetId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
+  const requestedPacketVersionId = normalizeText(packetVersionId)
 
-  const packet = await fetchDocumentPacket(resolvedPacketId, {
+  let packet = await fetchDocumentPacket(resolvedPacketId, {
     includeVersions: true,
     includeEvents: false,
   })
   if (!packet) throw new Error('Document packet not found.')
 
-  const latestGeneratedVersion = getLatestGeneratedVersion(packet.versions || [])
-  const targetVersion = latestGeneratedVersion
+  const resolveTargetVersion = (versions = []) => {
+    const rows = Array.isArray(versions) ? versions : []
+    if (!requestedPacketVersionId) return getLatestGeneratedVersion(rows)
+    const requestedVersion = rows.find((version) => normalizeText(version?.id) === requestedPacketVersionId) || null
+    return findLatestSignableGeneratedVersion([requestedVersion].filter(Boolean))
+  }
+
+  let targetVersion = resolveTargetVersion(packet.versions || [])
+  if (requestedPacketVersionId && !targetVersion?.id) {
+    for (let attempt = 1; attempt <= 3 && !targetVersion?.id; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 350 * attempt))
+      packet = await fetchDocumentPacket(resolvedPacketId, {
+        includeVersions: true,
+        includeEvents: false,
+      })
+      targetVersion = resolveTargetVersion(packet?.versions || [])
+    }
+  }
   if (!targetVersion?.id) {
     throw createPacketError('NO_GENERATED_VERSION', 'Generate a packet version before preparing signing fields.')
   }
