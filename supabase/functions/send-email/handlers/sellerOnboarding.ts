@@ -402,6 +402,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const expiryDays = normalizeText(payload.expiryDays ?? payload.expiry_days);
   const expiresAt = normalizeText(payload.expiresAt ?? payload.expires_at);
   const organisationId = normalizeText(payload.organisationId);
+  const requiredDocuments = Array.isArray(payload.requiredDocuments) ? payload.requiredDocuments : [];
+  const sellerStructure = payload.sellerStructure || null;
   let supportEmail = normalizeText(payload.supportEmail);
   let supportPhone = normalizeText(payload.supportPhone);
   if (!onboardingLink) {
@@ -493,6 +495,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     supportPhone,
     expiryDays,
     expiresAt,
+    requiredDocuments,
+    sellerStructure,
     templateOverrides: templateOverrides || undefined,
     agentEmail,
     agentPhone,
@@ -512,6 +516,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     supportPhone,
     expiryDays,
     expiresAt,
+    requiredDocuments,
+    sellerStructure,
     templateOverrides: templateOverrides || undefined,
   });
 

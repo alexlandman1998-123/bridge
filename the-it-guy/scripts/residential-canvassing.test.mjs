@@ -63,5 +63,11 @@ assert.match(canvassingPageSource, /Import \$\{audienceLabel\} Prospects/, 'canv
 assert.match(canvassingPageSource, />\s*Add Prospect\s*</, 'canvassing toolbar should label the create action as Add Prospect')
 assert.match(canvassingPageSource, />\s*Bulk Import\s*</, 'canvassing toolbar should label the import action as Bulk Import')
 assert.match(canvassingPageSource, /grid-cols-\[repeat\(auto-fit,minmax\(170px,1fr\)\)\]/, 'canvassing filters should stretch evenly across the available width')
+assert.match(canvassingPageSource, /function getCanvassingDataStatusMeta/, 'canvassing should resolve visible data-source status metadata')
+assert.match(canvassingPageSource, /setCanvassingDataStatus\(normalizeCanvassingDataStatus\(store\)\)/, 'canvassing should preserve repository persistence and schema status')
+assert.match(canvassingPageSource, /Not configured/, 'canvassing should show a not-configured status when storage or schema is unavailable')
+assert.match(canvassingPageSource, /Local only/, 'canvassing should show a local-only status when using fallback data')
+assert.match(canvassingPageSource, /Synced/, 'canvassing should show a synced status when workspace data is persisted remotely')
+assert.match(canvassingPageSource, /canvassingDataStatusMeta\.detail/, 'canvassing empty states should include data-source status detail')
 
 console.log('residential canvassing checks passed')

@@ -155,6 +155,179 @@ function getPacketEvents(record = {}) {
   return getArray(record.packetEvents || record.packet_events || record.documentPacketEvents || record.document_packet_events)
 }
 
+function getEventType(event = {}) {
+  return normalizeKey(event.eventType || event.event_type || event.type || event.activity_type)
+}
+
+function getEventPayload(event = {}) {
+  return getNestedObject(
+    event.eventPayload ||
+      event.event_payload ||
+      event.event_payload_json ||
+      event.metadata ||
+      event.eventData ||
+      event.event_data,
+  )
+}
+
+function getAuditSummaryFromPayload(payload = {}) {
+  return getNestedObject(payload.auditSummary || payload.audit_summary)
+}
+
+function getPostMandateDocumentAuditSource(event = {}) {
+  const type = getEventType(event)
+  const payload = getEventPayload(event)
+  const metadata = getNestedObject(payload.metadata)
+  const auditSummary = getAuditSummaryFromPayload(payload)
+  const source = normalizeKey(payload.source || metadata.source || auditSummary.workflowKey || auditSummary.workflow_key)
+  const hasPackEvidence = Boolean(
+    payload.documentPackFingerprint ||
+      payload.document_pack_fingerprint ||
+      payload.workflowRunDedupeKey ||
+      payload.workflow_run_dedupe_key ||
+      auditSummary.documentPackFingerprint ||
+      auditSummary.document_pack_fingerprint ||
+      auditSummary.workflowRunDedupeKey ||
+      auditSummary.workflow_run_dedupe_key,
+  )
+  const isDocumentActivity = [
+    'seller_post_mandate_documents_requested',
+    'seller_post_mandate_documents_skipped',
+    'seller_post_mandate_documents_failed',
+  ].includes(type)
+  const isDocumentWorkflowEvent = [
+    'seller_post_mandate_documents_completed',
+    'seller_post_mandate_documents_skipped',
+    'seller_post_mandate_documents_failed',
+  ].includes(type)
+  if (!isDocumentActivity && !isDocumentWorkflowEvent && source !== 'seller_post_mandate_document_request' && !hasPackEvidence) {
+    return null
+  }
+  return { event, type, payload, auditSummary }
+}
+
+function comparePostMandateDocumentAuditSources(left = {}, right = {}) {
+  const statusRank = { sent: 5, requested: 5, completed: 5, failed: 4, skipped: 3, missing: 0 }
+  const leftStatus = resolvePostMandateDocumentAuditStatus(left)
+  const rightStatus = resolvePostMandateDocumentAuditStatus(right)
+  const leftTime = Date.parse(
+    left.payload?.sentAt ||
+      left.payload?.sent_at ||
+      left.payload?.failedAt ||
+      left.payload?.failed_at ||
+      left.event?.createdAt ||
+      left.event?.created_at ||
+      '',
+  )
+  const rightTime = Date.parse(
+    right.payload?.sentAt ||
+      right.payload?.sent_at ||
+      right.payload?.failedAt ||
+      right.payload?.failed_at ||
+      right.event?.createdAt ||
+      right.event?.created_at ||
+      '',
+  )
+  const timeDelta = (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+  if (timeDelta) return timeDelta
+  return (statusRank[rightStatus] || 0) - (statusRank[leftStatus] || 0)
+}
+
+function resolvePostMandateDocumentAuditStatus(source = {}) {
+  const type = source.type || getEventType(source.event)
+  const payload = source.payload || getEventPayload(source.event)
+  const auditSummary = source.auditSummary || getAuditSummaryFromPayload(payload)
+  const payloadStatus = normalizeKey(payload.portalInviteStatus || payload.portal_invite_status || payload.status || auditSummary.status)
+  if (type === 'seller_post_mandate_documents_requested') return 'sent'
+  if (type === 'seller_post_mandate_documents_failed') return 'failed'
+  if (type === 'seller_post_mandate_documents_skipped') return 'skipped'
+  if (type === 'seller_post_mandate_documents_completed') return 'sent'
+  if (type === 'seller_portal_invite_failed_after_mandate_signed') return 'failed'
+  if (type === 'seller_portal_invite_skipped_after_mandate_signed') return 'skipped'
+  if (type === 'seller_portal_invite_sent_after_mandate_signed' && (payloadStatus === 'sent' || auditSummary.workflowKey)) return 'sent'
+  if (payloadStatus === 'completed') return 'sent'
+  if (payloadStatus === 'sent' || payloadStatus === 'requested') return 'sent'
+  if (payloadStatus === 'failed') return 'failed'
+  if (payloadStatus === 'skipped') return 'skipped'
+  return ''
+}
+
+function resolvePostMandateDocumentRequestAudit({ packetEvents = [], activityEvents = [] } = {}) {
+  const sources = [...getArray(packetEvents), ...getArray(activityEvents)]
+    .map(getPostMandateDocumentAuditSource)
+    .filter(Boolean)
+    .sort(comparePostMandateDocumentAuditSources)
+  const source = sources[0] || null
+  if (!source) {
+    return {
+      status: 'missing',
+      detail: 'No audited post-mandate seller document request is recorded for this signed mandate.',
+      actionRequired: true,
+      eventId: '',
+      activityId: '',
+      documentPackFingerprint: '',
+      workflowRunDedupeKey: '',
+      documentPackSource: '',
+      outstandingDocumentKeys: [],
+      outstandingDocumentCount: 0,
+      sellerStructure: null,
+      requestCounts: null,
+      notificationCreated: false,
+      deliveryId: '',
+      canonicalInviteId: '',
+    }
+  }
+
+  const payload = source.payload || {}
+  const auditSummary = source.auditSummary || {}
+  const status = resolvePostMandateDocumentAuditStatus(source) || 'missing'
+  const documentKeys = getArray(
+    auditSummary.outstandingDocumentKeys ||
+      auditSummary.outstanding_document_keys ||
+      payload.outstandingDocumentKeys ||
+      payload.outstanding_document_keys,
+  ).map(normalizeKey).filter(Boolean)
+  const sellerStructure = getNestedObject(auditSummary.sellerStructure || auditSummary.seller_structure || payload.sellerStructure || payload.seller_structure)
+  const reason = normalizeKey(auditSummary.reason || payload.skipReason || payload.skip_reason || payload.reason)
+  const eventId = normalizeText(source.event?.id)
+  const isActivity = source.type.startsWith('seller_post_mandate_documents_')
+  const detail = status === 'sent'
+    ? `Seller document request sent${documentKeys.length ? ` for ${documentKeys.length} document${documentKeys.length === 1 ? '' : 's'}` : ''}.`
+    : status === 'failed'
+      ? 'Seller document request failed and needs follow-up.'
+      : status === 'skipped'
+        ? `Seller document request skipped${reason ? `: ${reason.replace(/_/g, ' ')}` : '.'}`
+        : 'Post-mandate seller document request needs review.'
+
+  return {
+    status,
+    detail,
+    actionRequired: status !== 'sent' && reason !== 'already_completed',
+    eventId: isActivity ? '' : eventId,
+    activityId: isActivity ? eventId : '',
+    documentPackFingerprint: normalizeText(
+      auditSummary.documentPackFingerprint ||
+        auditSummary.document_pack_fingerprint ||
+        payload.documentPackFingerprint ||
+        payload.document_pack_fingerprint,
+    ),
+    workflowRunDedupeKey: normalizeText(
+      auditSummary.workflowRunDedupeKey ||
+        auditSummary.workflow_run_dedupe_key ||
+        payload.workflowRunDedupeKey ||
+        payload.workflow_run_dedupe_key,
+    ),
+    documentPackSource: normalizeKey(auditSummary.documentPackSource || auditSummary.document_pack_source || payload.documentPackSource || payload.document_pack_source),
+    outstandingDocumentKeys: documentKeys,
+    outstandingDocumentCount: Number(auditSummary.outstandingDocumentCount || auditSummary.outstanding_document_count || payload.outstandingDocumentCount || payload.outstanding_document_count || documentKeys.length || 0),
+    sellerStructure: Object.keys(sellerStructure).length ? sellerStructure : null,
+    requestCounts: getNestedObject(auditSummary.requestCounts || auditSummary.request_counts || payload.requestCounts || payload.request_counts),
+    notificationCreated: Boolean(auditSummary.notificationCreated || auditSummary.notification_created || payload.notificationCreated || payload.notification_created),
+    deliveryId: normalizeText(auditSummary.emailDeliveryId || auditSummary.email_delivery_id || payload.deliveryId || payload.delivery_id),
+    canonicalInviteId: normalizeText(auditSummary.canonicalInviteId || auditSummary.canonical_invite_id || payload.canonicalInviteId || payload.canonical_invite_id),
+  }
+}
+
 function buildMandatePacketSummary(packet = null, version = null) {
   if (!packet && !version) return null
   const packetId = firstText(packet?.id, version?.packet_id)
@@ -192,9 +365,18 @@ function getActionForCheck(check = {}) {
 }
 
 function buildActionItems(model = {}) {
-  return [...getArray(model.blockers), ...getArray(model.warnings)]
+  const continuityActions = [...getArray(model.blockers), ...getArray(model.warnings)]
     .map(getActionForCheck)
     .filter(Boolean)
+  const documentAudit = model.postMandateDocumentRequest || {}
+  if (documentAudit.actionRequired) {
+    continuityActions.push(
+      documentAudit.status === 'missing'
+        ? 'Run or retry the post-mandate seller document request so the seller receives the structure-specific upload pack.'
+        : documentAudit.detail || 'Review the post-mandate seller document request audit.',
+    )
+  }
+  return continuityActions
 }
 
 export function buildSellerMandateContinuityAuditRecord(record = {}) {
@@ -220,6 +402,14 @@ export function buildSellerMandateContinuityAuditRecord(record = {}) {
     portalContext,
     sellerWorkspaceToken,
   })
+  const postMandateDocumentRequest = resolvePostMandateDocumentRequestAudit({
+    packetEvents: getPacketEvents(record),
+    activityEvents: getActivityEvents(record),
+  })
+  const enrichedModel = {
+    ...model,
+    postMandateDocumentRequest,
+  }
   const listingId = firstText(listing.id, record.listingId, record.listing_id, record.privateListingId, record.private_listing_id)
   const leadId = firstText(lead.id, record.leadId, record.lead_id, record.sellerLeadId, record.seller_lead_id)
   return {
@@ -247,11 +437,26 @@ export function buildSellerMandateContinuityAuditRecord(record = {}) {
     portalInviteSkipReason: model.portalInviteSkipReason,
     portalInviteDetail: model.portalInviteDetail,
     portalInviteActionRequired: model.portalInviteActionRequired,
+    postMandateDocumentRequestStatus: postMandateDocumentRequest.status,
+    postMandateDocumentRequestActionRequired: postMandateDocumentRequest.actionRequired,
+    postMandateDocumentRequestDetail: postMandateDocumentRequest.detail,
+    postMandateDocumentRequestEventId: postMandateDocumentRequest.eventId,
+    postMandateDocumentRequestActivityId: postMandateDocumentRequest.activityId,
+    postMandateDocumentPackFingerprint: postMandateDocumentRequest.documentPackFingerprint,
+    postMandateDocumentWorkflowRunDedupeKey: postMandateDocumentRequest.workflowRunDedupeKey,
+    postMandateDocumentPackSource: postMandateDocumentRequest.documentPackSource,
+    postMandateOutstandingDocumentKeys: postMandateDocumentRequest.outstandingDocumentKeys,
+    postMandateOutstandingDocumentCount: postMandateDocumentRequest.outstandingDocumentCount,
+    postMandateSellerStructure: postMandateDocumentRequest.sellerStructure,
+    postMandateDocumentRequestCounts: postMandateDocumentRequest.requestCounts,
+    postMandateDocumentNotificationCreated: postMandateDocumentRequest.notificationCreated,
+    postMandateDocumentDeliveryId: postMandateDocumentRequest.deliveryId,
+    postMandateDocumentCanonicalInviteId: postMandateDocumentRequest.canonicalInviteId,
     summary: model.summary,
     blockers: model.blockers,
     warnings: model.warnings,
     checks: model.checks,
-    actionItems: buildActionItems(model),
+    actionItems: buildActionItems(enrichedModel),
   }
 }
 
@@ -275,6 +480,12 @@ function summarize(records = []) {
     portalInviteBlocked: 0,
     portalInviteMissing: 0,
     portalInviteNeedsAction: 0,
+    postMandateDocumentRequestSent: 0,
+    postMandateDocumentRequestSkipped: 0,
+    postMandateDocumentRequestFailed: 0,
+    postMandateDocumentRequestMissing: 0,
+    postMandateDocumentRequestNeedsAction: 0,
+    postMandateStructurePackCount: 0,
     checks: {},
   }
 
@@ -291,6 +502,12 @@ function summarize(records = []) {
     else if (record.portalInviteStatus === 'blocked') summary.portalInviteBlocked += 1
     else summary.portalInviteMissing += 1
     if (record.portalInviteActionRequired) summary.portalInviteNeedsAction += 1
+    if (record.postMandateDocumentRequestStatus === 'sent') summary.postMandateDocumentRequestSent += 1
+    else if (record.postMandateDocumentRequestStatus === 'skipped') summary.postMandateDocumentRequestSkipped += 1
+    else if (record.postMandateDocumentRequestStatus === 'failed') summary.postMandateDocumentRequestFailed += 1
+    else summary.postMandateDocumentRequestMissing += 1
+    if (record.postMandateDocumentRequestActionRequired) summary.postMandateDocumentRequestNeedsAction += 1
+    if (record.postMandateDocumentPackSource === 'seller_onboarding_structure') summary.postMandateStructurePackCount += 1
 
     getArray(record.checks).forEach((check) => {
       if (check.state === 'complete' || check.state === 'not_applicable') return
@@ -493,6 +710,9 @@ export function renderSellerMandateContinuityMarkdown(report = {}) {
     `- Seller portal invite sent: ${Number(summary.portalInviteSent || 0)}`,
     `- Seller portal invite blocked: ${Number(summary.portalInviteBlocked || 0)}`,
     `- Seller portal invite action required: ${Number(summary.portalInviteNeedsAction || 0)}`,
+    `- Post-mandate document request sent: ${Number(summary.postMandateDocumentRequestSent || 0)}`,
+    `- Post-mandate document request action required: ${Number(summary.postMandateDocumentRequestNeedsAction || 0)}`,
+    `- Structure-derived document packs: ${Number(summary.postMandateStructurePackCount || 0)}`,
     '',
     '## Records',
     '',
@@ -503,11 +723,14 @@ export function renderSellerMandateContinuityMarkdown(report = {}) {
     return lines.join('\n')
   }
 
-  lines.push('| Status | Listing | Packet | Portal invite | Action |')
-  lines.push('| --- | --- | --- | --- | --- |')
+  lines.push('| Status | Listing | Packet | Portal invite | Seller docs | Action |')
+  lines.push('| --- | --- | --- | --- | --- | --- |')
   for (const record of report.records) {
     const action = record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')
-    lines.push(`| ${record.status} | ${record.title || record.listingId || 'Unlabelled listing'} | ${record.packetId || '-'} | ${record.portalInviteStatus || 'missing'} | ${action} |`)
+    const documentRequest = record.postMandateDocumentRequestStatus
+      ? `${record.postMandateDocumentRequestStatus}${record.postMandateOutstandingDocumentCount ? ` (${record.postMandateOutstandingDocumentCount})` : ''}`
+      : 'missing'
+    lines.push(`| ${record.status} | ${record.title || record.listingId || 'Unlabelled listing'} | ${record.packetId || '-'} | ${record.portalInviteStatus || 'missing'} | ${documentRequest} | ${action} |`)
   }
   lines.push('')
   return lines.join('\n')

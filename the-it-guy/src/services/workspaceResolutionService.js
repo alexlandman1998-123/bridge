@@ -45,12 +45,31 @@ const INVALID_SERVICE_WORKSPACE_IDS = new Set([
   'local',
   'local-workspace',
 ])
+
+const INACTIVE_WORKSPACE_STATUSES = new Set([
+  'archived',
+  'deleted',
+  'disabled',
+  'inactive',
+  'removed',
+  'retired',
+  'suspended',
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeWorkspaceStatus(value) {
+  return normalizeText(value).toLowerCase() || 'active'
+}
+
+function isActiveWorkspaceStatus(value) {
+  return !INACTIVE_WORKSPACE_STATUSES.has(normalizeWorkspaceStatus(value))
 }
 
 function isMissingTableError(error, tableName = '') {
@@ -96,6 +115,7 @@ function profileRepairReason(profile = null) {
 function normalizeOrganisationRow(row = null, fallback = {}) {
   if (!row) return null
   const type = normalizeWorkspaceType(row.type || row.workspace_type, inferWorkspaceTypeFromAppRole(fallback.appRole))
+  const status = normalizeWorkspaceStatus(row.status)
   return {
     id: row.id,
     type,
@@ -104,6 +124,8 @@ function normalizeOrganisationRow(row = null, fallback = {}) {
     legalName: normalizeText(row.legal_name || row.name),
     email: normalizeEmail(row.company_email || row.support_email),
     phone: normalizeText(row.company_phone || row.support_phone),
+    status,
+    isActive: isActiveWorkspaceStatus(status),
     raw: row,
   }
 }
@@ -329,6 +351,19 @@ function buildCanonicalWorkspaceGroups(activeMemberships = [], { appRole = '' } 
       }
     })
     .filter((group) => group.workspace)
+}
+
+function isSelectableWorkspace(workspace = null) {
+  if (!workspace) return false
+  return workspace.isActive !== false && isActiveWorkspaceStatus(workspace.status || workspace.raw?.status)
+}
+
+function isSelectableMembership(membership = null) {
+  return Boolean(
+    membership &&
+      isActiveMembershipStatus(membership.status) &&
+      isSelectableWorkspace(membership.workspace),
+  )
 }
 
 function groupMatchesWorkspaceId(group = null, workspaceId = '') {
@@ -613,7 +648,12 @@ export function buildWorkspaceResolution({
   })
 
   const memberships = [...organisationMemberships, ...attorneyMemberships].sort(sortMemberships)
-  const activeMemberships = memberships.filter((membership) => isActiveMembershipStatus(membership.status))
+  const inactiveWorkspaceMemberships = memberships.filter((membership) =>
+    isActiveMembershipStatus(membership.status) &&
+      membership.workspace &&
+      !isSelectableWorkspace(membership.workspace),
+  )
+  const activeMemberships = memberships.filter((membership) => isSelectableMembership(membership))
   const pendingMemberships = memberships.filter((membership) =>
     [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending].includes(normalizeMembershipStatus(membership.status)),
   )
@@ -695,7 +735,10 @@ export function buildWorkspaceResolution({
       suspendedMemberships,
       requestedWorkspaceId,
       storedWorkspaceId,
-      warnings: suspendedMemberships.length ? ['only_blocked_memberships'] : [],
+      warnings: [
+        ...(suspendedMemberships.length ? ['only_blocked_memberships'] : []),
+        ...(inactiveWorkspaceMemberships.length ? ['active_memberships_filtered_by_inactive_workspace'] : []),
+      ],
     })
   }
 
@@ -925,8 +968,15 @@ async function fetchOrganisationRows(client, organisationIds = []) {
 
   let query = await client
     .from('organisations')
-    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
+    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, status')
     .in('id', ids)
+
+  if (query.error && isMissingColumnError(query.error, 'status')) {
+    query = await client
+      .from('organisations')
+      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
+      .in('id', ids)
+  }
 
   if (query.error && isMissingColumnError(query.error, 'workspace_kind')) {
     query = await client

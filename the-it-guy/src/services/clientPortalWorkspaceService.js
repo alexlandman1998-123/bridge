@@ -32,6 +32,11 @@ import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
 import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
 import { buildSellerMandateContinuityModel } from './sellerMandateContinuityService.js'
+import {
+  buildSellerPostMandateDocumentPackFingerprint,
+  resolveSellerPostMandateStructureRequirementPack,
+} from './sellerPostMandateDocumentOrchestrationService.js'
+import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -42,6 +47,10 @@ function normalizeWorkspace(value = 'shared') {
 
 function normalizeValue(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function isSellerVisibleExternalLinkStatus(status = '') {
@@ -622,6 +631,14 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   }
   const requiredDocuments = getSellerRequiredDocuments(listing, formData)
     .map((item) => mapSellerRequiredDocument(item))
+  const sellerDocumentPack = resolveSellerPortalRequiredDocumentPack({
+    listing,
+    formData,
+    requirements: requiredDocuments,
+    documents: listing?.documents || [],
+    mandatePacket,
+  })
+  const sellerRequiredDocuments = sellerDocumentPack.requiredDocuments
   const documents = (Array.isArray(listing?.documents) ? listing.documents : [])
     .map((item) => mapSellerUploadedDocument(item))
   const appointments = (Array.isArray(context?.appointments) ? context.appointments : [])
@@ -691,7 +708,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   })
   const sellerPortalJourney = buildSellerPortalJourneyView({
     journey: sellerJourney,
-    requiredDocuments,
+    requiredDocuments: sellerRequiredDocuments,
     documents,
     offers: rawOffers,
   })
@@ -809,10 +826,15 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     purchaserType: 'seller',
     purchaserTypeLabel: 'Seller',
     subprocesses: [],
-    requiredDocuments,
-    requiredDocumentChecklist: requiredDocuments,
+    requiredDocuments: sellerRequiredDocuments,
+    requiredDocumentChecklist: sellerRequiredDocuments,
+    sellerDocumentPack,
+    sellerStructure: sellerDocumentPack.sellerStructure || null,
+    documentPackSource: sellerDocumentPack.source,
+    documentPackRequirementKeys: sellerDocumentPack.requirementKeys,
+    documentPackFingerprint: sellerDocumentPack.documentPackFingerprint,
     requiredDocumentSummary: {
-      totalRequired: requiredDocuments.length,
+      totalRequired: sellerRequiredDocuments.length,
       uploadedCount: documents.length,
     },
     buyerRequirementProfile: null,
@@ -1645,8 +1667,138 @@ function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = '
   }
 }
 
+function resolveSellerPortalFormData(portalData = {}) {
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const onboarding = isPlainObject(portalData?.onboarding)
+    ? portalData.onboarding
+    : isPlainObject(portalData?.sellerOnboarding)
+      ? portalData.sellerOnboarding
+      : isPlainObject(listing?.sellerOnboarding)
+        ? listing.sellerOnboarding
+        : isPlainObject(listing?.seller_onboarding)
+          ? listing.seller_onboarding
+          : {}
+  return isPlainObject(portalData?.formData)
+    ? portalData.formData
+    : isPlainObject(portalData?.onboardingFormData?.formData)
+      ? portalData.onboardingFormData.formData
+      : isPlainObject(portalData?.sellerOnboardingFormData)
+        ? portalData.sellerOnboardingFormData
+        : isPlainObject(onboarding?.formData)
+          ? onboarding.formData
+          : isPlainObject(onboarding?.form_data)
+            ? onboarding.form_data
+            : {}
+}
+
+function resolveSellerPortalRawRequirements(portalData = {}) {
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  return Array.isArray(portalData?.requirements)
+    ? portalData.requirements
+    : Array.isArray(portalData?.documentRequirements)
+      ? portalData.documentRequirements
+      : Array.isArray(portalData?.requiredDocuments)
+        ? portalData.requiredDocuments
+        : Array.isArray(portalData?.requiredDocumentChecklist)
+          ? portalData.requiredDocumentChecklist
+          : Array.isArray(listing?.documentRequirements)
+            ? listing.documentRequirements
+            : Array.isArray(listing?.document_requirements)
+              ? listing.document_requirements
+              : []
+}
+
+function resolveSellerPortalRawDocuments(portalData = {}) {
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  return Array.isArray(portalData?.documents)
+    ? portalData.documents
+    : Array.isArray(portalData?.uploadedDocuments)
+      ? portalData.uploadedDocuments
+      : Array.isArray(listing?.documents)
+        ? listing.documents
+        : []
+}
+
+export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
+  const rawRequirements = resolveSellerPortalRawRequirements(portalData)
+  if (workspaceMode !== 'selling') {
+    return {
+      source: 'portal_payload',
+      sellerStructure: null,
+      requirementKeys: rawRequirements.map((requirement) => normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)).filter(Boolean),
+      documentPackFingerprint: '',
+      requiredDocuments: rawRequirements,
+    }
+  }
+
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  const formData = resolveSellerPortalFormData(portalData)
+  const mandatePacket =
+    portalData?.mandatePacket ||
+    activeSellingContext?.mandatePacket ||
+    listing?.mandatePacket ||
+    listing?.mandate_packet ||
+    portalData?.mandate?.packet ||
+    null
+  const listingForPack = {
+    ...listing,
+    documentRequirements: rawRequirements,
+    document_requirements: rawRequirements,
+    documents: resolveSellerPortalRawDocuments(portalData),
+    mandatePacket,
+    mandate_packet: mandatePacket,
+    mandatePacketId: listing?.mandatePacketId || listing?.mandate_packet_id || activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || '',
+    mandate_packet_id: listing?.mandate_packet_id || listing?.mandatePacketId || activeSellingContext?.mandate_packet_id || activeSellingContext?.mandatePacketId || '',
+    mandateStatus: listing?.mandateStatus || listing?.mandate_status || activeSellingContext?.mandateStatus || activeSellingContext?.mandate_status || '',
+    mandate_status: listing?.mandate_status || listing?.mandateStatus || activeSellingContext?.mandate_status || activeSellingContext?.mandateStatus || '',
+    sellerOnboarding: {
+      ...(isPlainObject(listing?.sellerOnboarding) ? listing.sellerOnboarding : {}),
+      status: portalData?.onboarding?.status || listing?.sellerOnboarding?.status || listing?.seller_onboarding?.status || 'completed',
+      formData,
+      form_data: formData,
+    },
+  }
+  const mandateSigned = isSellerPostMandateMandateSigned({
+    ...portalData,
+    listing: listingForPack,
+    formData,
+    mandatePacket,
+  })
+  const pack = resolveSellerPostMandateStructureRequirementPack({
+    ...portalData,
+    listing: listingForPack,
+    formData,
+    requirements: rawRequirements,
+    documents: listingForPack.documents,
+    mandatePacket,
+    mandateSigned,
+  })
+  const requiredDocuments = (Array.isArray(pack.requirements) ? pack.requirements : rawRequirements)
+    .filter((requirement) => !(mandateSigned && isSignedMandateRequirement(requirement)))
+    .map((requirement) => mapSellerRequiredDocument(requirement))
+
+  return {
+    ...pack,
+    requiredDocuments,
+    requirementKeys: requiredDocuments
+      .map((requirement) => normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key))
+      .filter(Boolean),
+    documentPackFingerprint: buildSellerPostMandateDocumentPackFingerprint({
+      sellerStructure: pack.sellerStructure,
+      outstandingDocuments: requiredDocuments,
+      documentPackSource: pack.source,
+    }),
+    mandateSigned,
+  }
+}
+
 export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
-  const requiredDocumentsRaw = Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : []
+  const sellerDocumentPack = workspaceMode === 'selling'
+    ? resolveSellerPortalRequiredDocumentPack(portalData, workspaceMode)
+    : null
+  const requiredDocumentsRaw = sellerDocumentPack?.requiredDocuments ||
+    (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
@@ -1741,6 +1893,11 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     items,
     summary,
     canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
+    sellerStructure: sellerDocumentPack?.sellerStructure || null,
+    documentPackSource: sellerDocumentPack?.source || '',
+    documentPackRequirementKeys: sellerDocumentPack?.requirementKeys || [],
+    documentPackFingerprint: sellerDocumentPack?.documentPackFingerprint || '',
+    sellerDocumentPack: sellerDocumentPack || null,
   }
 }
 
@@ -1899,7 +2056,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared') {
     ? buildSellerPortalJourneyView({
       journey: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
       documentCenter,
-      requiredDocuments: portalData?.requiredDocuments || portalData?.requiredDocumentChecklist || [],
+      requiredDocuments: documentCenter?.requiredDocuments || [],
       documents: portalData?.documents || [],
       offers: [
         ...(Array.isArray(portalData?.offers) ? portalData.offers : []),
@@ -2075,7 +2232,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     ? buildSellerPortalJourneyView({
       journey: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
       documentCenter,
-      requiredDocuments: portalData?.requiredDocuments || portalData?.requiredDocumentChecklist || [],
+      requiredDocuments: documentCenter?.requiredDocuments || [],
       documents: portalData?.documents || [],
       offers: [
         ...(Array.isArray(portalData?.offers) ? portalData.offers : []),

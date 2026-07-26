@@ -72,6 +72,13 @@ function normalizeLeadUuid(value) {
   return isUuidLike(withoutPrefix) ? withoutPrefix : ''
 }
 
+function readListingLeadCandidates(row = {}) {
+  return [
+    normalizeLeadUuid(row?.seller_lead_id || row?.sellerLeadId),
+    normalizeLeadUuid(row?.originating_crm_lead_id || row?.originatingCrmLeadId),
+  ].filter(Boolean)
+}
+
 function createUuid() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -557,6 +564,78 @@ async function selectLeadsWithCompatibility(queryBuilderFactory) {
   return leadResult
 }
 
+async function fetchLeadRowById(workspaceId, leadUuid) {
+  if (!workspaceId || !leadUuid) return { data: null, error: null }
+  return selectLeadsWithCompatibility((fields) =>
+    supabase
+      .from('leads')
+      .select(fields)
+      .eq('organisation_id', workspaceId)
+      .eq('lead_id', leadUuid)
+      .maybeSingle(),
+  )
+}
+
+async function fetchLeadRowByListingId(workspaceId, listingId) {
+  if (!workspaceId || !listingId) return { data: null, error: null }
+  const result = await selectLeadsWithCompatibility((fields) =>
+    supabase
+      .from('leads')
+      .select(fields)
+      .eq('organisation_id', workspaceId)
+      .eq('listing_id', listingId)
+      .order('updated_at', { ascending: false })
+      .limit(1),
+  )
+  if (result.error) return result
+  return { data: Array.isArray(result.data) ? result.data[0] || null : null, error: null }
+}
+
+async function resolveListingDerivedLeadRow(workspaceId, routeUuid) {
+  if (!workspaceId || !routeUuid) return { lead: null, listing: null, reason: '' }
+
+  const byListingId = await fetchLeadRowByListingId(workspaceId, routeUuid)
+  if (byListingId.error && !isMissingColumnError(byListingId.error, 'listing_id') && !isMissingSchemaOrTableError(byListingId.error)) {
+    throw byListingId.error
+  }
+  if (byListingId.data) {
+    return { lead: byListingId.data, listing: null, reason: 'lead_listing_id' }
+  }
+
+  const listingResult = await supabase
+    .from('private_listings')
+    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id')
+    .eq('organisation_id', workspaceId)
+    .or(`id.eq.${routeUuid},seller_lead_id.eq.${routeUuid},originating_crm_lead_id.eq.${routeUuid}`)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (listingResult.error) {
+    if (isMissingSchemaOrTableError(listingResult.error) || isMissingColumnError(listingResult.error)) {
+      return { lead: null, listing: null, reason: 'listing_lookup_unavailable' }
+    }
+    throw listingResult.error
+  }
+
+  const listing = Array.isArray(listingResult.data) ? listingResult.data[0] || null : null
+  if (!listing?.id) return { lead: null, listing: null, reason: 'listing_not_found' }
+
+  const candidateLeadIds = [...new Set(readListingLeadCandidates(listing))]
+  for (const candidateLeadId of candidateLeadIds) {
+    const candidateResult = await fetchLeadRowById(workspaceId, candidateLeadId)
+    if (candidateResult.error && !isMissingSchemaOrTableError(candidateResult.error)) throw candidateResult.error
+    if (candidateResult.data) {
+      return {
+        lead: candidateResult.data,
+        listing,
+        reason: candidateLeadId === routeUuid ? 'listing_stored_lead_id' : 'listing_id_to_stored_lead_id',
+      }
+    }
+  }
+
+  return { lead: null, listing, reason: 'listing_without_lead_row' }
+}
+
 export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listAgencyCrmLeadContacts')
   if (!isSupabaseConfigured || !supabase) {
@@ -646,34 +725,48 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
       leadActivities: [],
       tasks: [],
       source: 'remote',
+      leadWorkspaceStatus: 'not_found',
+      leadWorkspaceReason: 'invalid_lead_id',
     }
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before loading agency CRM lead data.')
   }
 
-  const leadResult = await selectLeadsWithCompatibility((fields) =>
-    supabase
-      .from('leads')
-      .select(fields)
-      .eq('organisation_id', workspaceId)
-      .eq('lead_id', leadUuid)
-      .maybeSingle(),
-  )
-
+  const leadResult = await fetchLeadRowById(workspaceId, leadUuid)
   const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
   if (leadResult.error && !leadBlocked) throw leadResult.error
-  if (leadBlocked || !leadResult.data) {
+
+  let leadRow = !leadBlocked ? leadResult.data : null
+  let leadWorkspaceStatus = leadRow ? 'ready' : ''
+  let leadWorkspaceReason = leadRow ? 'lead_id' : ''
+  let listingResolution = null
+
+  if (!leadBlocked && !leadRow) {
+    listingResolution = await resolveListingDerivedLeadRow(workspaceId, leadUuid)
+    if (listingResolution?.lead) {
+      leadRow = listingResolution.lead
+      leadWorkspaceStatus = 'resolved'
+      leadWorkspaceReason = listingResolution.reason || 'listing_derived_id'
+    }
+  }
+
+  if (leadBlocked || !leadRow) {
     return {
       contacts: [],
       leads: [],
       leadActivities: [],
       tasks: [],
       source: 'remote',
+      leadWorkspaceStatus: leadBlocked ? 'unavailable' : 'not_found',
+      leadWorkspaceReason: leadBlocked ? 'lead_lookup_unavailable' : (listingResolution?.reason || 'lead_not_found'),
+      requestedLeadId: leadUuid,
+      listingId: normalizeText(listingResolution?.listing?.id) || null,
     }
   }
 
-  const contactId = normalizeText(leadResult.data?.contact_id)
+  const resolvedLeadId = normalizeLeadUuid(leadRow?.lead_id) || leadUuid
+  const contactId = normalizeText(leadRow?.contact_id)
   const contactPromise = contactId
     ? supabase
       .from('contacts')
@@ -686,13 +779,13 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
     .from('lead_activities')
     .select(LEAD_ACTIVITY_SELECT_FIELDS)
     .eq('organisation_id', workspaceId)
-    .eq('lead_id', leadUuid)
+    .eq('lead_id', resolvedLeadId)
     .order('activity_date', { ascending: false })
   const taskPromise = supabase
     .from('tasks')
     .select(TASK_SELECT_FIELDS)
     .eq('organisation_id', workspaceId)
-    .eq('lead_id', leadUuid)
+    .eq('lead_id', resolvedLeadId)
     .order('updated_at', { ascending: false })
 
   const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
@@ -705,10 +798,15 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
 
   return {
     contacts: contactResult.data && !contactBlocked ? [mapSupabaseContact(contactResult.data)] : [],
-    leads: [mapSupabaseLead(leadResult.data)],
+    leads: [mapSupabaseLead(leadRow)],
     leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
     tasks: Array.isArray(taskResult.data) && !taskBlocked ? taskResult.data.map(mapSupabaseTask) : [],
     source: 'remote',
+    leadWorkspaceStatus,
+    leadWorkspaceReason,
+    requestedLeadId: leadUuid,
+    resolvedLeadId,
+    listingId: normalizeText(listingResolution?.listing?.id) || normalizeText(leadRow?.listing_id) || null,
   }
 }
 

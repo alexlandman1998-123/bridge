@@ -21,6 +21,7 @@ import { completeOnboarding } from './onboarding/onboardingEngine'
 import { recordOnboardingEvent, upsertOnboardingState } from './onboarding/onboardingPersistence'
 import { resolveCurrentWorkspace } from './workspaceResolutionService'
 import { acceptInvite, createInvite, getInviteByToken, InviteValidationError } from './inviteService'
+import { createDuplicateOrganizationError, findActiveOrganizationDuplicate } from './organizationService'
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -35,6 +36,13 @@ function normalizeText(value) {
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
+}
+
+const INACTIVE_WORKSPACE_STATUSES = new Set(['archived', 'deleted', 'disabled', 'inactive', 'removed', 'retired', 'suspended'])
+
+function isSelectableWorkspaceStatus(value) {
+  const normalized = normalizeText(value).toLowerCase() || 'active'
+  return !INACTIVE_WORKSPACE_STATUSES.has(normalized)
 }
 
 function slugify(value) {
@@ -199,7 +207,7 @@ function buildAtomicWorkspaceOnboardingPayload({ intent, user, form = {} } = {})
 async function assertCurrentUserCanInvite(client, workspaceId, actor) {
   const membership = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, role, status, app_role, workspace_type, organisations:organisation_id(id, type)')
+    .select('id, organisation_id, user_id, role, status, app_role, workspace_type, organisations:organisation_id(id, type, status)')
     .eq('organisation_id', workspaceId)
     .eq('user_id', actor.id)
     .eq('status', MEMBERSHIP_STATUSES.active)
@@ -207,6 +215,9 @@ async function assertCurrentUserCanInvite(client, workspaceId, actor) {
 
   if (membership.error) throw membership.error
   const row = membership.data
+  if (row?.organisations && !isSelectableWorkspaceStatus(row.organisations.status)) {
+    throw new Error('Workspace invites are unavailable because this workspace is archived.')
+  }
   assertPermission(PERMISSIONS.inviteUsers, {
     appRole: row?.app_role || actor.user_metadata?.app_role || actor.user_metadata?.role,
     organisationRole: row?.role,
@@ -353,6 +364,12 @@ export async function createMembership(user, workspace, role, options = {}) {
 async function createOrganisationWorkspaceFromIntent(intent, user, form = {}) {
   const client = requireClient()
   const payload = buildAtomicWorkspaceOnboardingPayload({ intent, user, form })
+  const duplicate = await findActiveOrganizationDuplicate(client, {
+    ...payload.organisation,
+    organization_type: payload.workspace_type,
+    type: payload.workspace_type,
+  })
+  if (duplicate?.id) throw createDuplicateOrganizationError(duplicate)
   const rpcResult = await client.rpc('bridge_complete_workspace_onboarding', { payload })
   if (rpcResult.error) {
     if (isMissingSchemaError(rpcResult.error, 'bridge_complete_workspace_onboarding')) {
@@ -416,13 +433,14 @@ export async function validateWorkspaceCompletion(userId, options = {}) {
 
   const membershipQuery = await client
     .from('organisation_users')
-    .select('id, organisation_id, branch_id, primary_branch_id, branch_scope, role, workspace_role, organisation_role, status, organisations:organisation_id(id, type)')
+    .select('id, organisation_id, branch_id, primary_branch_id, branch_scope, role, workspace_role, organisation_role, status, organisations:organisation_id(id, type, status)')
     .eq('user_id', userId)
     .eq('status', MEMBERSHIP_STATUSES.active)
     .limit(10)
 
   if (membershipQuery.error) return { ok: false, reason: 'membership_lookup_failed', error: membershipQuery.error }
   const activeMemberships = (membershipQuery.data || []).filter((row) => {
+    if (row.organisations && !isSelectableWorkspaceStatus(row.organisations.status)) return false
     if (!workspaceId && !workspaceType) return true
     const matchesWorkspace = workspaceId ? row.organisation_id === workspaceId : true
     const matchesType = workspaceType ? (row.organisations?.type || workspaceType) === workspaceType : true
@@ -548,16 +566,18 @@ export async function loadWorkspace(workspaceId) {
   }
 
   if (result.error) throw result.error
-  return result.data || null
+  const workspace = result.data || null
+  if (workspace && !isSelectableWorkspaceStatus(workspace.status)) return null
+  return workspace
 }
 
 export async function loadUserMemberships(userId) {
   const client = requireClient()
   if (!userId) return []
   const selectWithScopeFields =
-    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner, active_workspace_selected_at, organisations:organisation_id(id, name, display_name, type)'
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, scope_level, region_id, workspace_unit_id, scope_metadata, is_primary_owner, active_workspace_selected_at, organisations:organisation_id(id, name, display_name, type, status)'
   const selectWithoutScopeFields =
-    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type)'
+    'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, email, role, workspace_role, organisation_role, app_role, workspace_type, status, created_at, updated_at, organisations:organisation_id(id, name, display_name, type, status)'
 
   let result = await client
     .from('organisation_users')
@@ -580,7 +600,7 @@ export async function loadUserMemberships(userId) {
   }
 
   if (result.error) throw result.error
-  return result.data || []
+  return (result.data || []).filter((row) => !row.organisations || isSelectableWorkspaceStatus(row.organisations.status))
 }
 
 export async function getWorkspaceInviteByToken(token) {
@@ -625,7 +645,7 @@ export async function getWorkspaceInviteByToken(token) {
 
   const result = await client
     .from('workspace_invites')
-    .select('id, workspace_id, workspace_type, invited_email, app_role, organisation_role, branch_id, department_id, team_id, token, status, expires_at, invited_by, accepted_by, accepted_at, created_at, organisations:workspace_id(id, name, display_name, type)')
+    .select('id, workspace_id, workspace_type, invited_email, app_role, organisation_role, branch_id, department_id, team_id, token, status, expires_at, invited_by, accepted_by, accepted_at, created_at, organisations:workspace_id(id, name, display_name, type, status)')
     .eq('token', safeToken)
     .maybeSingle()
 
@@ -637,6 +657,7 @@ export async function getWorkspaceInviteByToken(token) {
   }
   const invite = result.data
   if (!invite) return { ok: false, reason: 'not_found', invite: null }
+  if (invite.organisations && !isSelectableWorkspaceStatus(invite.organisations.status)) return { ok: false, reason: 'workspace_archived', invite }
   if (invite.status === 'revoked') return { ok: false, reason: 'revoked', invite }
   if (invite.status === 'accepted') return { ok: false, reason: 'already_accepted', invite }
   const expiresAt = invite.expires_at ? new Date(invite.expires_at).getTime() : null

@@ -339,6 +339,62 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+const CANVASSING_DATA_STATUS_DEFAULT = Object.freeze({
+  persistence: 'none',
+  schemaMissing: false,
+  migratedFromLocalStorage: false,
+  error: '',
+})
+
+function normalizeCanvassingDataStatus(store = {}) {
+  return {
+    persistence: normalizeKey(store?.persistence || 'none') || 'none',
+    schemaMissing: Boolean(store?.schemaMissing),
+    migratedFromLocalStorage: Boolean(store?.migratedFromLocalStorage),
+    error: normalizeText(store?.error),
+  }
+}
+
+function getCanvassingDataStatusMeta(status = CANVASSING_DATA_STATUS_DEFAULT) {
+  const persistence = normalizeKey(status?.persistence || 'none')
+  if (status?.schemaMissing || persistence === 'none') {
+    return {
+      key: 'not_configured',
+      label: 'Not configured',
+      detail: status?.schemaMissing
+        ? 'Canvassing tables are not available yet; local fallback data may be incomplete.'
+        : 'Canvassing storage is not connected for this workspace yet.',
+      className: 'border-amber-200 bg-amber-50 text-amber-800',
+      Icon: Clock3,
+    }
+  }
+  if (persistence === 'local') {
+    return {
+      key: 'local_only',
+      label: 'Local only',
+      detail: 'Using local fallback data for this workspace; changes may not sync across devices.',
+      className: 'border-sky-200 bg-sky-50 text-sky-800',
+      Icon: ClipboardList,
+    }
+  }
+  if (persistence === 'supabase') {
+    return {
+      key: 'synced',
+      label: status?.migratedFromLocalStorage ? 'Synced after local import' : 'Synced',
+      detail: 'Canvassing prospects and activity are synced to the workspace database.',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      Icon: CheckCircle2,
+    }
+  }
+  return {
+    key: 'unknown',
+    label: 'Status unknown',
+    detail: 'Canvassing data status could not be confirmed.',
+    className: 'border-slate-200 bg-slate-50 text-slate-700',
+    Icon: ClipboardList,
+  }
+}
+
 function buildCanvassingImportTemplateCsv(audience = 'seller') {
   const key = audience === 'buyer' ? 'buyer' : 'seller'
   return [CANVASSING_IMPORT_TEMPLATE_COLUMNS, ...(CANVASSING_IMPORT_TEMPLATE_ROWS[key] || [])]
@@ -1241,6 +1297,7 @@ function PipelineCanvassingPage() {
   const [message, setMessage] = useState('')
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
+  const [canvassingDataStatus, setCanvassingDataStatus] = useState(CANVASSING_DATA_STATUS_DEFAULT)
   const [agentUsers, setAgentUsers] = useState([])
   const [listingOptions, setListingOptions] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -1479,6 +1536,7 @@ function PipelineCanvassingPage() {
       const store = await listCanvassingWorkspace(targetOrgId)
       setProspects(Array.isArray(store.prospects) ? store.prospects : [])
       setActivities(Array.isArray(store.activities) ? store.activities : [])
+      setCanvassingDataStatus(normalizeCanvassingDataStatus(store))
     },
     [organisationId],
   )
@@ -1508,6 +1566,7 @@ function PipelineCanvassingPage() {
         const store = await listCanvassingWorkspace(orgId)
         setProspects(Array.isArray(store.prospects) ? store.prospects : [])
         setActivities(Array.isArray(store.activities) ? store.activities : [])
+        setCanvassingDataStatus(normalizeCanvassingDataStatus(store))
         try {
           const users = await listOrganisationUsers()
           if (active) setAgentUsers(Array.isArray(users) ? users : [])
@@ -1547,6 +1606,10 @@ function PipelineCanvassingPage() {
         }
       } catch (contextError) {
         if (!active) return
+        setCanvassingDataStatus(normalizeCanvassingDataStatus({
+          persistence: 'none',
+          error: contextError?.message || 'Unable to load canvassing workspace.',
+        }))
         setError(contextError?.message || 'Unable to load canvassing workspace.')
       } finally {
         if (active) setLoading(false)
@@ -1826,6 +1889,9 @@ function PipelineCanvassingPage() {
     return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedSellingIntent)).filter(Boolean)))
       .sort((left, right) => left.localeCompare(right))
   }, [prospectRows])
+
+  const canvassingDataStatusMeta = getCanvassingDataStatusMeta(canvassingDataStatus)
+  const CanvassingDataStatusIcon = canvassingDataStatusMeta.Icon
 
   const prospectById = useMemo(() => {
     const map = new Map()
@@ -3509,7 +3575,13 @@ function PipelineCanvassingPage() {
       <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${canvassingDataStatusMeta.className}`}>
+                <CanvassingDataStatusIcon size={13} />
+                {canvassingDataStatusMeta.label}
+              </span>
+            </div>
             <p className="mt-1 text-sm text-slate-600">Track prospecting activity and convert interested prospects into leads.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -3543,6 +3615,17 @@ function PipelineCanvassingPage() {
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
+      {canvassingDataStatusMeta.key !== 'synced' ? (
+        <div className={`rounded-[18px] border px-4 py-3 text-sm ${canvassingDataStatusMeta.className}`}>
+          <div className="flex items-start gap-2">
+            <CanvassingDataStatusIcon size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">{canvassingDataStatusMeta.label}</p>
+              <p className="mt-1 leading-5">{canvassingDataStatusMeta.detail}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         {[
@@ -3810,9 +3893,14 @@ function PipelineCanvassingPage() {
               ) : (
                 <tr>
                   <td className="px-4 py-8 text-sm text-slate-500" colSpan={6}>
-                    {prospectView === 'seller'
-                      ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
-                      : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
+                    <div className="space-y-1">
+                      <p>
+                        {prospectView === 'seller'
+                          ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
+                          : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
+                      </p>
+                      <p className="text-xs text-slate-400">{canvassingDataStatusMeta.detail}</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -3905,11 +3993,14 @@ function PipelineCanvassingPage() {
               )
             })
           ) : (
-            <p className="px-4 py-8 text-sm text-slate-500">
-              {prospectView === 'seller'
-                ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
-                : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
-            </p>
+            <div className="space-y-1 px-4 py-8 text-sm text-slate-500">
+              <p>
+                {prospectView === 'seller'
+                  ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
+                  : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
+              </p>
+              <p className="text-xs text-slate-400">{canvassingDataStatusMeta.detail}</p>
+            </div>
           )}
         </div>
       </section>

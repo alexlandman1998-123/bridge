@@ -40,12 +40,111 @@ export const ORGANIZATION_ROLE_LABELS = Object.freeze({
   viewer: 'Member',
 })
 
+const INACTIVE_ORGANIZATION_STATUSES = new Set(['archived', 'deleted', 'disabled', 'inactive', 'removed', 'retired', 'suspended'])
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  'aol.com',
+  'gmail.com',
+  'hotmail.com',
+  'icloud.com',
+  'live.com',
+  'me.com',
+  'msn.com',
+  'outlook.com',
+  'proton.me',
+  'protonmail.com',
+  'yahoo.com',
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function isSelectableOrganizationStatus(value) {
+  return !INACTIVE_ORGANIZATION_STATUSES.has(normalizeLower(value) || 'active')
+}
+
+function normalizeOrganizationIdentity(value) {
+  return normalizeLower(value)
+    .replace(/&/g, ' and ')
+    .replace(/\brealty\b/g, 'real estate')
+    .replace(/\bproperties\b/g, 'property')
+    .replace(/\b(pty|ltd|limited|inc|incorporated|cc|company|co|sa|south africa)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function normalizeRegistrationNumber(value) {
+  return normalizeLower(value).replace(/[^a-z0-9]+/g, '')
+}
+
+function normalizeDomain(value) {
+  const raw = normalizeLower(value)
+  if (!raw) return ''
+  const domainSource = raw.includes('@') ? raw.split('@').pop() : raw
+  const withoutProtocol = domainSource.replace(/^https?:\/\//, '').replace(/^mailto:/, '')
+  const host = withoutProtocol.split('/')[0].split('?')[0].split('#')[0].replace(/^www\./, '')
+  if (!host || PUBLIC_EMAIL_DOMAINS.has(host)) return ''
+  return host
+}
+
+function getOrganizationDuplicateSignals(input = {}) {
+  return {
+    identity: normalizeOrganizationIdentity(input.legalName || input.legal_name || input.name || input.displayName || input.display_name),
+    registrationNumber: normalizeRegistrationNumber(input.registrationNumber || input.registration_number),
+    emailDomain: normalizeDomain(input.email || input.company_email || input.companyEmail || input.support_email || input.supportEmail),
+    websiteDomain: normalizeDomain(input.website),
+  }
+}
+
+function organizationsHaveDuplicateSignal(left = {}, right = {}) {
+  const leftSignals = getOrganizationDuplicateSignals(left)
+  const rightSignals = getOrganizationDuplicateSignals(right)
+  return Boolean(
+    (leftSignals.identity && leftSignals.identity === rightSignals.identity) ||
+      (leftSignals.registrationNumber && leftSignals.registrationNumber === rightSignals.registrationNumber) ||
+      (leftSignals.emailDomain && leftSignals.emailDomain === rightSignals.emailDomain) ||
+      (leftSignals.websiteDomain && leftSignals.websiteDomain === rightSignals.websiteDomain),
+  )
+}
+
+export async function findActiveOrganizationDuplicate(client, input = {}) {
+  const organizationType = normalizeOrganizationType(input.organizationType || input.organization_type || input.type)
+  const signals = getOrganizationDuplicateSignals({
+    ...input,
+    organizationType,
+  })
+  if (!signals.identity && !signals.registrationNumber && !signals.emailDomain && !signals.websiteDomain) return null
+
+  const result = await client
+    .from('organisations')
+    .select('id, name, display_name, legal_name, registration_number, type, organization_type, status, email, company_email, support_email, billing_email, website')
+    .or('status.is.null,status.in.(active,pending)')
+    .limit(200)
+
+  if (result.error) {
+    if (String(result.error.code || '').toLowerCase() === '42p01') return null
+    throw result.error
+  }
+
+  return (result.data || []).find((row) => {
+    const rowType = normalizeOrganizationType(row.organization_type || row.type)
+    return rowType === organizationType && organizationsHaveDuplicateSignal(input, row)
+  }) || null
+}
+
+export function createDuplicateOrganizationError(organization = null) {
+  const error = new Error('An active organization with this identity already exists.')
+  error.code = 'duplicate_organisation_detected'
+  error.details = {
+    organizationId: organization?.id || null,
+    organizationName: normalizeText(organization?.display_name || organization?.name),
+  }
+  return error
 }
 
 function requireClient() {
@@ -166,7 +265,9 @@ export async function listMyOrganizations() {
     if (result.error.code === '42883') return []
     throw result.error
   }
-  return (Array.isArray(result.data) ? result.data : []).map(toOrganization)
+  return (Array.isArray(result.data) ? result.data : [])
+    .map(toOrganization)
+    .filter((organization) => isSelectableOrganizationStatus(organization.status))
 }
 
 export async function searchOrganizations({ query = '', organizationType = '' } = {}) {
@@ -178,7 +279,9 @@ export async function searchOrganizations({ query = '', organizationType = '' } 
     p_organization_type: organizationType ? normalizeOrganizationType(organizationType) : null,
   })
   if (result.error) throw result.error
-  return (Array.isArray(result.data) ? result.data : []).map(toOrganization)
+  return (Array.isArray(result.data) ? result.data : [])
+    .map(toOrganization)
+    .filter((organization) => isSelectableOrganizationStatus(organization.status))
 }
 
 export async function findMatchingProspectsForOrganization({ name = '', organizationType = '' } = {}) {
@@ -208,6 +311,8 @@ export async function createOrganization(input = {}) {
     logo_url: normalizeText(input.logoUrl || input.logo_url),
   }
   if (!payload.name) throw new Error('Organization name is required.')
+  const duplicate = await findActiveOrganizationDuplicate(client, payload)
+  if (duplicate?.id) throw createDuplicateOrganizationError(duplicate)
   const result = await client.rpc('bridge_phase3_create_organization', {
     p_organization: payload,
     p_partner_prospect_id: input.partnerProspectId || input.partner_prospect_id || null,
@@ -291,6 +396,12 @@ export async function linkProspectToOrganization({ partnerProspectId, organizati
 }
 
 export const __organizationServiceTestUtils = {
+  findActiveOrganizationDuplicate,
+  getOrganizationDuplicateSignals,
+  isSelectableOrganizationStatus,
+  normalizeDomain,
+  normalizeOrganizationIdentity,
+  organizationsHaveDuplicateSignal,
   toOrganization,
   toMember,
   toEvent,

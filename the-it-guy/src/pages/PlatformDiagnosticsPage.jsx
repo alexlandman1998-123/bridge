@@ -1182,6 +1182,12 @@ export default function PlatformDiagnosticsPage() {
                 <StatCard label="Invite blocked" value={mandateContinuity.summary?.portalInviteBlocked || 0} tone={mandateContinuity.summary?.portalInviteBlocked ? 'warning' : 'success'} />
                 <StatCard label="Invite skipped" value={mandateContinuity.summary?.portalInviteSkipped || 0} tone={mandateContinuity.summary?.portalInviteSkipped ? 'warning' : 'success'} />
               </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Seller docs sent" value={mandateContinuity.summary?.postMandateDocumentRequestSent || 0} tone="success" />
+                <StatCard label="Docs action" value={mandateContinuity.summary?.postMandateDocumentRequestNeedsAction || 0} tone={mandateContinuity.summary?.postMandateDocumentRequestNeedsAction ? 'warning' : 'success'} />
+                <StatCard label="Docs failed" value={mandateContinuity.summary?.postMandateDocumentRequestFailed || 0} tone={mandateContinuity.summary?.postMandateDocumentRequestFailed ? 'critical' : 'success'} />
+                <StatCard label="Structure packs" value={mandateContinuity.summary?.postMandateStructurePackCount || 0} tone="success" />
+              </div>
 
               {mandateContinuityGate?.reason ? (
                 <p className={`rounded-[12px] border px-3 py-2 text-sm ${mandateContinuityGate.status === 'fail' ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]' : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'}`}>
@@ -1198,7 +1204,7 @@ export default function PlatformDiagnosticsPage() {
               <SellerPortalInviteBackfillResult result={mandateInviteBackfill} />
 
               <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
-                <table className="w-full min-w-[1040px] text-left text-sm">
+                <table className="w-full min-w-[1180px] text-left text-sm">
                   <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
                     <tr>
                       <th className="px-4 py-3">Status</th>
@@ -1206,6 +1212,7 @@ export default function PlatformDiagnosticsPage() {
                       <th className="px-4 py-3">Packet</th>
                       <th className="px-4 py-3">Signed evidence</th>
                       <th className="px-4 py-3">Portal invite</th>
+                      <th className="px-4 py-3">Seller docs</th>
                       <th className="px-4 py-3">Next action</th>
                     </tr>
                   </thead>
@@ -1236,11 +1243,19 @@ export default function PlatformDiagnosticsPage() {
                             {record.portalInviteSentAt || record.portalInviteFailedAt || record.portalInviteBlockedAt || record.portalInviteReadyAt || record.portalInviteSkipReason || record.portalInviteDetail || ''}
                           </span>
                         </td>
+                        <td className="px-4 py-3">
+                          <span className="block font-semibold capitalize text-[#31485e]">{String(record.postMandateDocumentRequestStatus || 'missing').replace(/_/g, ' ')}</span>
+                          <span className="block max-w-[220px] truncate text-xs text-[#60758d]">
+                            {record.postMandateDocumentPackSource === 'seller_onboarding_structure'
+                              ? `${record.postMandateOutstandingDocumentCount || 0} structure-based docs`
+                              : record.postMandateDocumentRequestDetail || ''}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-[#60758d]">{record.actionItems?.[0] || (record.ready ? 'No action required.' : 'Review continuity checks.')}</td>
                       </tr>
                     )) : (
                       <tr>
-                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={6}>No signed mandate records found for this workspace.</td>
+                        <td className="px-4 py-5 text-center text-[#60758d]" colSpan={7}>No signed mandate records found for this workspace.</td>
                       </tr>
                     )}
                   </tbody>

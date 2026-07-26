@@ -120,12 +120,17 @@ function isWorkspaceStatusFastPathUnavailable(error) {
   const details = normalizeText(error?.details).toLowerCase()
   return (
     status === 404 ||
+    status >= 500 ||
     code === '42883' ||
+    code === 'FAST_PATH_DISABLED' ||
+    code === 'XX000' ||
     code === 'PGRST202' ||
     message.includes('bridge_get_document_workspace_status_p2') ||
     details.includes('bridge_get_document_workspace_status_p2') ||
     message.includes('could not find the function') ||
-    message.includes('schema cache')
+    message.includes('schema cache') ||
+    message.includes('internal server') ||
+    message.includes('server error')
   )
 }
 

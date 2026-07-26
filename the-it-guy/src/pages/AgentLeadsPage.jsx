@@ -97,6 +97,8 @@ import {
   getLeadFilterOptions,
   listAgentLeadWorkspaceRows,
 } from '../services/agentLeadWorkspaceService'
+import { buildAppointmentSaveFeedback } from '../services/appointmentSaveFeedbackService'
+import { resolveLeadLifecyclePresentation } from '../services/leadLifecyclePresentationService'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure'
 import {
   dismissLeadListingInterest,
@@ -802,7 +804,8 @@ function StatusPill({ children, tone = 'slate', className = '' }) {
 }
 
 function getStageTone(stage = '') {
-  const normalized = stage.toLowerCase()
+  const lifecycle = resolveLeadLifecyclePresentation({ stage })
+  const normalized = `${lifecycle.key} ${lifecycle.label} ${stage}`.toLowerCase()
   if (normalized.includes('lost')) return 'red'
   if (normalized.includes('converted') || normalized.includes('accepted') || normalized.includes('registered')) return 'green'
   if (normalized.includes('offer') || normalized.includes('viewing') || normalized.includes('appointment')) return 'amber'
@@ -2382,6 +2385,7 @@ function BuyerSnapshotCard({ row, requirement, onEdit }) {
 
 function BuyerLeadStatusCard({ row, sourceInfo, lastActivity }) {
   const nextTask = row.nextTask || (Array.isArray(row.tasks) ? row.tasks.find((task) => String(task.status || '').toLowerCase() !== 'completed') : null)
+  const lifecyclePresentation = resolveLeadLifecyclePresentation(row)
   return (
     <section className={buyerWorkspaceCardClass}>
       <div>
@@ -2389,7 +2393,7 @@ function BuyerLeadStatusCard({ row, sourceInfo, lastActivity }) {
         <p className="mt-1 text-sm text-slate-500">Ownership, source, and follow-up state.</p>
       </div>
       <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-        <BuyerInfoRow label="Stage" value={formatCleanValue(row.stage || row.status)} />
+        <BuyerInfoRow label="Stage" value={lifecyclePresentation.label} />
         <BuyerInfoRow label="Source" value={formatCleanValue(sourceInfo?.leadSource || row.source)} />
         <BuyerInfoRow label="Assigned Agent" value={getOwnerName(row)} />
         <BuyerInfoRow label="Last Contact" value={lastActivity?.date ? formatDateTime(lastActivity.date) : '—'} />
@@ -3522,10 +3526,20 @@ function buildAppointmentCreateMessage(result = {}, draft = {}, isViewing = fals
       : 'Seller contacts were not available, so the viewing request was saved internally for follow-up.'
     : ''
   const inviteMessage = sellerFirstMessage || (draft.sendInviteEmails
-    ? result?.notificationsQueued
-      ? 'Buyer invite and reminders were queued.'
-      : 'Invite sending was requested, but the notification queue did not report as queued.'
-    : 'Buyer invite was skipped by agent choice.')
+    ? buildAppointmentSaveFeedback(result, {
+      includeAction: false,
+      requestedInvite: true,
+      attachCalendarInvite: draft.attachCalendarInvite !== false,
+      participants: draft.participants,
+      recipientEmail: draft.recipientEmail,
+    })
+    : buildAppointmentSaveFeedback(result, {
+      includeAction: false,
+      requestedInvite: false,
+      attachCalendarInvite: false,
+      participants: draft.participants,
+      recipientEmail: draft.recipientEmail,
+    }))
   return [calendarMessage, workflowMessage, inviteMessage].join(' ')
 }
 
@@ -8787,6 +8801,7 @@ function AgentLeadList() {
                     const latestDate = getLatestActivityDate(row.latestActivity)
                     const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
                     const sourceLabel = getReferralLeadBadgeLabel(row, referrals, organisationId) || row.source
+                    const lifecyclePresentation = resolveLeadLifecyclePresentation(row)
                     return (
                       <tr key={row.leadId} className="align-middle transition hover:bg-slate-50/70">
                         <td className="px-5 py-4">
@@ -8794,7 +8809,7 @@ function AgentLeadList() {
                         </td>
                         <td className="px-5 py-4"><LeadSourcePill source={sourceLabel} /></td>
                         <td className="px-5 py-4">
-                          <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
+                          <StatusPill tone={getStageTone(lifecyclePresentation.label)}>{lifecyclePresentation.label}</StatusPill>
                         </td>
                         <td className="px-5 py-4">
                           <span className="block truncate text-sm font-semibold text-slate-900">{getOwnerName(row)}</span>
@@ -10831,6 +10846,17 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
             rsvpStatus: 'Pending',
           }]
         : []
+      const appointmentParticipants = sellerFirstWorkflow
+        ? sellerParticipant
+        : [{
+            name: contact.name || lead.name || 'Buyer',
+            email: contact.email,
+            phone: contact.phone,
+            contactId: contact.contactId || null,
+            participantRole: 'Buyer',
+            rsvpStatus: status === 'confirmed' ? 'Confirmed' : 'Pending',
+          }]
+      const shouldSendInviteEmails = sellerFirstWorkflow ? sellerParticipant.length > 0 : Boolean(contact.email)
       const result = await createAppointmentAsync(organisationId, {
         appointmentType: draft.appointmentType,
         title: `${titlePrefix} - ${contact.name || lead.name || 'Buyer'}`,
@@ -10847,21 +10873,12 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
         relatedEntityType: 'lead',
         relatedEntityId: lead.leadId,
         assignedAgent: actor,
-        participants: sellerFirstWorkflow
-          ? sellerParticipant
-          : [{
-              name: contact.name || lead.name || 'Buyer',
-              email: contact.email,
-              phone: contact.phone,
-              contactId: contact.contactId || null,
-              participantRole: 'Buyer',
-              rsvpStatus: status === 'confirmed' ? 'Confirmed' : 'Pending',
-            }],
+        participants: appointmentParticipants,
         instructions: status === 'seller_availability_requested'
           ? 'Request seller availability first. Send buyer confirmation only once sellers accept the viewing window.'
           : '',
-        sendInviteEmails: sellerFirstWorkflow ? sellerParticipant.length > 0 : Boolean(contact.email),
-        attachCalendarInvite: sellerFirstWorkflow ? sellerParticipant.length > 0 : Boolean(contact.email),
+        sendInviteEmails: shouldSendInviteEmails,
+        attachCalendarInvite: shouldSendInviteEmails,
       }, { actor })
       const appointmentId = getAppointmentId(result)
       if (appointmentId && selectedProperty?.id && isViewing) {
@@ -10874,7 +10891,12 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
           replaceExisting: true,
         }).catch(() => [])
       }
-      setMessage(status === 'seller_availability_requested' ? 'Appointment created. Seller availability can now be managed.' : 'Appointment scheduled.')
+      setMessage(`${status === 'seller_availability_requested' ? 'Appointment created. Seller availability can now be managed.' : 'Appointment scheduled.'} ${buildAppointmentSaveFeedback(result, {
+        includeAction: false,
+        requestedInvite: shouldSendInviteEmails,
+        attachCalendarInvite: shouldSendInviteEmails,
+        participants: appointmentParticipants,
+      })}`)
       setDraft({ appointmentType: 'viewing', propertyId: propertyOptions[0]?.id || '', date: '', startTime: '' })
       void onSaved?.()
     } catch (saveError) {
@@ -11177,14 +11199,20 @@ function AppointmentList({ items = [], organisationId, lead, actor, onSaved }) {
       setWorkingId(`${appointmentId}:reschedule`)
       setError('')
       setMessage('')
-      await updateAppointmentAsync(organisationId, appointmentId, {
+      const updated = await updateAppointmentAsync(organisationId, appointmentId, {
         date: draft.rescheduleDate,
         startTime: draft.rescheduleTime,
         status: 'requested',
         nextStep: 'Await buyer confirmation',
+        sendInviteEmails: true,
         attachCalendarInvite: true,
       }, { actor })
-      setMessage('Appointment rescheduled and buyer confirmation was requested.')
+      setMessage(`Appointment rescheduled and buyer confirmation was requested. ${buildAppointmentSaveFeedback(updated, {
+        includeAction: false,
+        requestedInvite: true,
+        attachCalendarInvite: true,
+        participants: item?.participants,
+      })}`)
       await onSaved?.()
     } catch (updateError) {
       setError(updateError?.message || 'Unable to reschedule this appointment.')
@@ -11527,6 +11555,8 @@ function LeadAppointmentForm({ organisationId, lead, actor, propertyOptions: ava
         ...draft,
         listingIds: selectedListingIds,
         sellerRequestCount: shouldNotifySellerRequests ? sellerParticipants.length : 0,
+        attachCalendarInvite: sellerFirstWorkflow ? shouldNotifySellerRequests : draft.sendInviteEmails,
+        participants: participantRows,
       }, isViewing))
       setDraft({
         appointmentType: 'viewing',
@@ -12033,6 +12063,8 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       setMessage(buildAppointmentCreateMessage(result, {
         ...draft,
         appointmentStatus: draft.appointmentStatus,
+        attachCalendarInvite: draft.sendInviteEmails,
+        participants: [sellerParticipant].filter((participant) => participant.email || participant.phone || participant.name),
       }, false))
       setDraft({
         appointmentType: 'seller_consultation',
@@ -15920,6 +15952,15 @@ function SellerAssignedAgentIndicator({ row }) {
   )
 }
 
+const SELLER_STATUS_SHORTCUTS = [
+  { actionId: 'edit_seller', label: 'Seller' },
+  { actionId: 'assign_agent', label: 'Agent' },
+  { actionId: 'open_journey', label: 'Journey' },
+  { actionId: 'open_readiness', label: 'Readiness' },
+  { actionId: 'open_listing', label: 'Listing' },
+  { actionId: 'view_mandate', label: 'Mandate' },
+]
+
 function SellerLeadActions({
   row,
   journey,
@@ -16124,6 +16165,19 @@ function SellerLeadHeader({
               onArchiveLead={onArchiveLead}
               onStatusAction={onStatusAction}
             />
+          </div>
+          <div role="list" aria-label="Seller lead status shortcuts" className="flex w-full flex-wrap gap-2 xl:justify-end">
+            {SELLER_STATUS_SHORTCUTS.map((shortcut) => (
+              <button
+                key={shortcut.actionId}
+                type="button"
+                role="listitem"
+                onClick={() => onStatusAction?.(shortcut.actionId)}
+                className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              >
+                {shortcut.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -16332,9 +16386,9 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
   )
 }
 
-function SellerOverviewTab({ row, sourceInfo, journey }) {
+function SellerOverviewTab({ row, sourceInfo, journey, timeline = [], organisationId = '', actor = {}, onSaved }) {
   return (
-    <div className="grid items-stretch gap-5 xl:grid-cols-2">
+    <div className="grid items-stretch gap-5 xl:grid-cols-2 xl:auto-rows-[minmax(320px,auto)]">
       <SellerWorkspaceCard title="Lead Summary" density="compact">
         <dl className="flex flex-1 flex-col">
           <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
@@ -16346,6 +16400,16 @@ function SellerOverviewTab({ row, sourceInfo, journey }) {
         </dl>
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
+      <SellerWorkspaceCard title="Recent Activity" density="compact">
+        <div className="h-[320px] overflow-hidden">
+          <div className="h-full overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+            <SellerTimelineList timeline={timeline} limit={12} compact />
+          </div>
+        </div>
+      </SellerWorkspaceCard>
+      <div className="h-[320px]">
+        <OwnershipCard organisationId={organisationId} lead={row} actor={actor} onSaved={onSaved} />
+      </div>
     </div>
   )
 }
@@ -20533,6 +20597,10 @@ function SellerTabContent({
       row={row}
       sourceInfo={sourceInfo}
       journey={journey}
+      timeline={timeline}
+      organisationId={organisationId}
+      actor={actor}
+      onSaved={onSaved}
     />
   )
 }
@@ -20771,6 +20839,10 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('seller')
       focusSellerWorkspaceSection('seller-onboarding-editor')
     }
+    else if (key === 'assign_agent') {
+      setActiveWorkspaceTab('overview')
+      focusSellerWorkspaceSection('seller-ownership')
+    }
     else if (key === 'open_journey') {
       focusSellerWorkspaceSection('seller-journey')
     } else if (key === 'open_readiness') {
@@ -20873,7 +20945,7 @@ function OwnershipCard({ organisationId, lead, actor, onSaved }) {
   }
 
   return (
-    <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <section id="seller-ownership" className="mt-5 scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">Ownership</h3>
@@ -21061,6 +21133,8 @@ function AgentLeadWorkspace() {
   }, [loadWorkspace])
 
   const row = data?.row || null
+  const leadWorkspaceMissing = !loading && !error && !row && data?.notFound
+  const leadWorkspaceUnavailable = !loading && !error && !row && data?.unavailable
   const sourceInfo = row ? getLeadSourceInfo(row) : null
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
   const leadCategory = row ? normalizeLeadCategory(row) : 'other'
@@ -21801,7 +21875,7 @@ function AgentLeadWorkspace() {
         outcome: formPatch.commissionStructure || formPatch.commissionType,
         activityDate: new Date().toISOString(),
       }, { actor }).catch(() => {})
-      setSellerActionMessage('Commission saved.')
+      setSellerActionMessage('Mandate saved. Commission saved.')
       await loadWorkspace()
       return true
     } catch (actionError) {
@@ -22075,7 +22149,30 @@ function AgentLeadWorkspace() {
     <main className={pageShell}>
       {loading && !row ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
       {error && !loading && !row ? <EmptyState title="Lead workspace could not be loaded" copy={error} /> : null}
-      {!loading && !error && !row ? <EmptyState title="Lead not found" copy="This lead was not returned by the existing lead repository for the selected workspace." /> : null}
+      {leadWorkspaceMissing ? (
+        <EmptyState
+          title="Lead not found"
+          copy="This lead link is stale or the lead has been removed from the selected workspace."
+          actionLabel="Back to Leads"
+          onAction={() => navigate('/pipeline/leads')}
+        />
+      ) : null}
+      {leadWorkspaceUnavailable ? (
+        <EmptyState
+          title="Lead workspace unavailable"
+          copy="This lead could not be checked for the selected workspace. Refresh the page or open it again from the lead list."
+          actionLabel="Back to Leads"
+          onAction={() => navigate('/pipeline/leads')}
+        />
+      ) : null}
+      {!loading && !error && !row && !leadWorkspaceMissing && !leadWorkspaceUnavailable ? (
+        <EmptyState
+          title="Lead not found"
+          copy="This lead was not returned by the existing lead repository for the selected workspace."
+          actionLabel="Back to Leads"
+          onAction={() => navigate('/pipeline/leads')}
+        />
+      ) : null}
       {row ? (
         <>
           {isSellerLeadWorkspace ? (

@@ -689,6 +689,52 @@ export function getLeadFilterOptions(rows = []) {
   }
 }
 
+function buildAgentLeadSearchText(row = {}) {
+  const contact = row?.contact || {}
+  const nextTask = row?.nextTask || {}
+  const listingTokens = (Array.isArray(row?.listings) ? row.listings : [])
+    .flatMap((listing) => [
+      listing?.title,
+      listing?.label,
+      listing?.listingTitle,
+      listing?.propertyTitle,
+      listing?.propertyName,
+      listing?.propertyAddress,
+      listing?.address,
+      listing?.addressLine1,
+      listing?.suburb,
+      listing?.city,
+      listing?.province,
+    ])
+
+  return [
+    row?.name,
+    row?.phone,
+    row?.email,
+    contact?.firstName,
+    contact?.lastName,
+    contact?.phone,
+    contact?.email,
+    row?.source,
+    row?.leadSource,
+    row?.assignedAgent,
+    row?.assignedAgentName,
+    row?.assignedAgentEmail,
+    row?.propertyInterest,
+    row?.enquiredPropertyTitle,
+    row?.enquiredPropertyAddress,
+    row?.sellerPropertyAddress,
+    row?.formattedAddress,
+    row?.streetAddress,
+    row?.suburb,
+    row?.city,
+    row?.areaInterest,
+    nextTask?.title,
+    nextTask?.description,
+    ...listingTokens,
+  ].map(normalizeLower).join(' ')
+}
+
 export function filterAgentLeadRows(rows = [], filters = {}) {
   const search = normalizeLower(filters.search)
   const stage = normalizeLower(filters.stage)
@@ -701,7 +747,7 @@ export function filterAgentLeadRows(rows = [], filters = {}) {
 
   return rows.filter((row) => {
     if (search) {
-      const haystack = [row.name, row.phone, row.email].map(normalizeLower).join(' ')
+      const haystack = buildAgentLeadSearchText(row)
       if (!haystack.includes(search)) return false
     }
     if (stage && stage !== 'all' && normalizeLower(row.stage) !== stage && normalizeLower(row.status) !== stage) return false
@@ -802,7 +848,7 @@ async function safeReadHydratedPrivateListing(listingId = '') {
   if (!isSupabaseConfigured || !supabase) return null
   if (!isUuidLike(listingId)) return null
   try {
-    return await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
+    return await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   } catch (error) {
     if (isRecoverableReadError(error, 'private_listing_document_requirements') || isRecoverableReadError(error, 'private_listing_documents')) {
       try {
@@ -1001,7 +1047,16 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
   const workspace = await fetchAgencyCrmLeadWorkspace(organisationId, leadId)
   const lead = workspace.leads[0] || null
   if (!lead) {
-    return { ...workspace, row: null, appointments: [], offers: [], transactions: [], listings: [] }
+    return {
+      ...workspace,
+      row: null,
+      appointments: [],
+      offers: [],
+      transactions: [],
+      listings: [],
+      notFound: workspace.leadWorkspaceStatus === 'not_found',
+      unavailable: workspace.leadWorkspaceStatus === 'unavailable',
+    }
   }
 
   const contact = workspace.contacts[0] || null

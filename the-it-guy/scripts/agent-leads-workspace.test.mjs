@@ -89,8 +89,8 @@ const transactions = [
 ]
 
 const listings = [
-  { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', suburb: 'Sandton' },
-  { id: 'listing-two', listing_status: 'seller_lead', suburb: 'Claremont', assigned_agent_id: 'agent-seller-id', assigned_agent_email: 'seller.agent@example.test' },
+  { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', title: 'Sandton Sky Villa', propertyAddress: '12 Alice Lane', suburb: 'Sandton' },
+  { id: 'listing-two', listing_status: 'seller_lead', title: 'Claremont Family Home', propertyAddress: '8 Protea Road', suburb: 'Claremont', assigned_agent_id: 'agent-seller-id', assigned_agent_email: 'seller.agent@example.test' },
   {
     id: 'listing-submitted',
     seller_lead_id: 'seller-submitted-placeholder',
@@ -192,6 +192,10 @@ try {
   assert.ok(options.sources.includes('Unknown'))
 
   assert.equal(filterAgentLeadRows(rows, { search: 'buyer@example.test' }).length, 1)
+  assert.equal(filterAgentLeadRows(rows, { search: 'Sandton Sky Villa' }).length, 1)
+  assert.equal(filterAgentLeadRows(rows, { search: 'Call missing details lead' }).length, 1)
+  assert.equal(filterAgentLeadRows(rows, { search: 'Reigerpark' }).length, 1)
+  assert.equal(filterAgentLeadRows(rows, { search: 'Manual Entry' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { stage: 'Converted to Transaction' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { source: 'Unknown' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { agent: 'Alex Agent' }).length, 1)

@@ -42,8 +42,7 @@ function isDemoCanvassingRow(row = {}) {
     metadata?.isDemoData === true ||
     metadata?.is_demo_data === true ||
     metadata?.seedData === true ||
-    metadata?.seed_data === true ||
-    metadata?.migratedFromLocalStorage === true
+    metadata?.seed_data === true
   )
 }
 
@@ -63,6 +62,9 @@ export function readCanvassingFallbackStore(organisationId) {
     return {
       prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
       activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
+      persistence: normalizeText(parsed?.persistence),
+      pendingLocalChanges: parsed?.pendingLocalChanges === true,
+      syncedAt: normalizeText(parsed?.syncedAt),
     }
   } catch {
     return { prospects: [], activities: [] }
@@ -72,10 +74,16 @@ export function readCanvassingFallbackStore(organisationId) {
 function writeCanvassingFallbackStore(organisationId, store) {
   if (typeof window === 'undefined') return
   if (!isUnsafeFallbackAllowed()) return
-  window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify({
+  const nextStore = {
     prospects: Array.isArray(store?.prospects) ? store.prospects : [],
     activities: Array.isArray(store?.activities) ? store.activities : [],
-  }))
+    pendingLocalChanges: store?.pendingLocalChanges === true,
+  }
+  const persistence = normalizeText(store?.persistence)
+  const syncedAt = normalizeText(store?.syncedAt)
+  if (persistence) nextStore.persistence = persistence
+  if (syncedAt) nextStore.syncedAt = syncedAt
+  window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify(nextStore))
 }
 
 export function emitCanvassingUpdated(organisationId) {
@@ -230,43 +238,146 @@ function activityPayloadToRow(organisationId, payload = {}) {
   }
 }
 
-async function migrateFallbackStoreToSupabase(client, organisationId, fallbackStore = {}) {
+function normalizeComparable(value = '') {
+  return normalizeText(value).toLowerCase().replace(/\s+/g, ' ')
+}
+
+function getProspectIdentityKeys(prospect = {}) {
+  const firstName = normalizeComparable(prospect?.firstName || prospect?.first_name)
+  const lastName = normalizeComparable(prospect?.lastName || prospect?.last_name)
+  const fullName = [firstName, lastName].filter(Boolean).join(' ')
+  const prospectType = normalizeComparable(prospect?.prospectType || prospect?.prospect_type)
+  const email = normalizeEmail(prospect?.email)
+  const phone = normalizeComparable(prospect?.phone).replace(/[^0-9+]/g, '')
+  const address = normalizeComparable(
+    prospect?.formattedAddress ||
+      prospect?.formatted_address ||
+      prospect?.streetAddress ||
+      prospect?.street_address ||
+      prospect?.sellerPropertyAddress ||
+      prospect?.seller_property_address,
+  )
+  const area = normalizeComparable(
+    prospect?.areaSuburb ||
+      prospect?.area_suburb ||
+      prospect?.areaOfInterest ||
+      prospect?.area_of_interest ||
+      prospect?.area,
+  )
+  return [
+    email ? `email:${email}` : '',
+    phone ? `phone:${phone}` : '',
+    fullName && address ? `name-address:${fullName}:${address}` : '',
+    fullName && area ? `name-area:${prospectType}:${fullName}:${area}` : '',
+  ].filter(Boolean)
+}
+
+function getActivityIdentityKey(activity = {}, prospectId = '') {
+  return [
+    normalizeText(prospectId || activity?.prospectId || activity?.prospect_id),
+    normalizeComparable(activity?.activityType || activity?.activity_type || 'Note'),
+    normalizeComparable(activity?.activityNote || activity?.activity_note),
+    normalizeComparable(activity?.outcome),
+    normalizeText(activity?.activityDate || activity?.activity_date || '').slice(0, 19),
+  ].join('|')
+}
+
+function buildExistingProspectMigrationIndex(existingProspectRows = []) {
+  const byLocalId = new Map()
+  const byIdentity = new Map()
+  for (const row of Array.isArray(existingProspectRows) ? existingProspectRows : []) {
+    const id = normalizeText(row?.id)
+    if (!id) continue
+    byLocalId.set(id, id)
+    const metadata = row?.demo_metadata && typeof row.demo_metadata === 'object' ? row.demo_metadata : {}
+    const localId = normalizeText(metadata?.localId || metadata?.local_id)
+    if (localId) byLocalId.set(localId, id)
+    const mapped = mapProspectRow(row)
+    for (const key of getProspectIdentityKeys(mapped)) {
+      if (!byIdentity.has(key)) byIdentity.set(key, id)
+    }
+  }
+  return { byLocalId, byIdentity }
+}
+
+function buildExistingActivityMigrationIndex(existingActivityRows = []) {
+  const byLocalId = new Set()
+  const byIdentity = new Set()
+  for (const row of Array.isArray(existingActivityRows) ? existingActivityRows : []) {
+    const id = normalizeText(row?.id)
+    if (id) byLocalId.add(id)
+    const metadata = row?.demo_metadata && typeof row.demo_metadata === 'object' ? row.demo_metadata : {}
+    const localId = normalizeText(metadata?.localId || metadata?.local_id)
+    if (localId) byLocalId.add(localId)
+    byIdentity.add(getActivityIdentityKey(mapActivityRow(row), row?.prospect_id))
+  }
+  return { byLocalId, byIdentity }
+}
+
+async function migrateFallbackStoreToSupabase(client, organisationId, fallbackStore = {}, existingProspectRows = [], existingActivityRows = []) {
   const localProspects = Array.isArray(fallbackStore?.prospects) ? fallbackStore.prospects : []
-  if (!localProspects.length) return null
+  const localActivities = Array.isArray(fallbackStore?.activities) ? fallbackStore.activities : []
+  if (!localProspects.length && !localActivities.length) return null
 
-  const prospectRows = localProspects.map((prospect) => ({
-    ...prospectPayloadToRow(organisationId, prospect),
-    demo_metadata: {
-      migratedFromLocalStorage: true,
-      localId: normalizeText(prospect?.id),
-    },
-    created_at: normalizeText(prospect?.createdAt) || new Date().toISOString(),
-    updated_at: normalizeText(prospect?.updatedAt) || new Date().toISOString(),
-  }))
-
-  const prospectInsert = await client
-    .from('canvassing_prospects')
-    .insert(prospectRows)
-    .select('*')
-  if (prospectInsert.error) throw prospectInsert.error
-
-  const insertedProspects = prospectInsert.data || []
+  const existingProspectIndex = buildExistingProspectMigrationIndex(existingProspectRows)
   const idMap = new Map()
-  localProspects.forEach((prospect, index) => {
+  const prospectRows = []
+  for (const prospect of localProspects) {
+    const localId = normalizeText(prospect?.id)
+    const existingByLocalId = localId ? existingProspectIndex.byLocalId.get(localId) : ''
+    const existingByIdentity = getProspectIdentityKeys(prospect)
+      .map((key) => existingProspectIndex.byIdentity.get(key))
+      .find(Boolean)
+    const existingId = existingByLocalId || existingByIdentity
+    if (existingId) {
+      if (localId) idMap.set(localId, existingId)
+      continue
+    }
+    prospectRows.push({
+      ...prospectPayloadToRow(organisationId, prospect),
+      demo_metadata: {
+        migratedFromLocalStorage: true,
+        localId,
+      },
+      created_at: normalizeText(prospect?.createdAt) || new Date().toISOString(),
+      updated_at: normalizeText(prospect?.updatedAt) || new Date().toISOString(),
+    })
+  }
+
+  let insertedProspects = []
+  if (prospectRows.length) {
+    const prospectInsert = await client
+      .from('canvassing_prospects')
+      .insert(prospectRows)
+      .select('*')
+    if (prospectInsert.error) throw prospectInsert.error
+    insertedProspects = prospectInsert.data || []
+  }
+
+  prospectRows.forEach((prospect, index) => {
     const inserted = insertedProspects[index]
-    if (prospect?.id && inserted?.id) idMap.set(normalizeText(prospect.id), inserted.id)
+    const localId = normalizeText(prospect?.demo_metadata?.localId)
+    if (localId && inserted?.id) idMap.set(localId, inserted.id)
   })
 
-  const localActivities = Array.isArray(fallbackStore?.activities) ? fallbackStore.activities : []
+  const existingActivityIndex = buildExistingActivityMigrationIndex(existingActivityRows)
+  const existingProspectIds = new Set((Array.isArray(existingProspectRows) ? existingProspectRows : [])
+    .map((row) => normalizeText(row?.id))
+    .filter(Boolean))
   const activityRows = localActivities
     .map((activity) => {
-      const nextProspectId = idMap.get(normalizeText(activity?.prospectId))
+      const localProspectId = normalizeText(activity?.prospectId)
+      const nextProspectId = idMap.get(localProspectId) || (existingProspectIds.has(localProspectId) ? localProspectId : '')
       if (!nextProspectId) return null
+      const localId = normalizeText(activity?.id)
+      if (localId && existingActivityIndex.byLocalId.has(localId)) return null
+      const identityKey = getActivityIdentityKey(activity, nextProspectId)
+      if (existingActivityIndex.byIdentity.has(identityKey)) return null
       return {
         ...activityPayloadToRow(organisationId, { ...activity, prospectId: nextProspectId }),
         demo_metadata: {
           migratedFromLocalStorage: true,
-          localId: normalizeText(activity?.id),
+          localId,
           localProspectId: normalizeText(activity?.prospectId),
         },
         created_at: normalizeText(activity?.createdAt) || new Date().toISOString(),
@@ -284,11 +395,22 @@ async function migrateFallbackStoreToSupabase(client, organisationId, fallbackSt
     insertedActivities = activityInsert.data || []
   }
 
+  const prospectRowsForStore = [...insertedProspects, ...(Array.isArray(existingProspectRows) ? existingProspectRows : [])]
+  const prospectIds = new Set(prospectRowsForStore.map((row) => normalizeText(row?.id)).filter(Boolean))
+  const activityRowsForStore = [...insertedActivities, ...(Array.isArray(existingActivityRows) ? existingActivityRows : [])]
+    .filter((row) => prospectIds.has(normalizeText(row?.prospect_id)))
+
   const migratedStore = {
-    prospects: insertedProspects.map(mapProspectRow),
-    activities: insertedActivities.map(mapActivityRow),
+    prospects: prospectRowsForStore
+      .map(mapProspectRow)
+      .sort((left, right) => new Date(right?.createdAt || 0) - new Date(left?.createdAt || 0)),
+    activities: activityRowsForStore
+      .map(mapActivityRow)
+      .sort((left, right) => new Date(right?.activityDate || right?.createdAt || 0) - new Date(left?.activityDate || left?.createdAt || 0)),
     persistence: 'supabase',
+    pendingLocalChanges: false,
     migratedFromLocalStorage: true,
+    syncedAt: new Date().toISOString(),
   }
   writeCanvassingFallbackStore(organisationId, migratedStore)
   return migratedStore
@@ -371,14 +493,24 @@ export async function listCanvassingWorkspace(organisationId, options = {}) {
     ])
     if (prospectsResult.error) throw prospectsResult.error
     if (activitiesResult.error) throw activitiesResult.error
-    if (!(prospectsResult.data || []).length && Array.isArray(fallbackStore.prospects) && fallbackStore.prospects.length) {
-      const migrated = await migrateFallbackStoreToSupabase(client, orgId, fallbackStore)
+    const hasFallbackRows = (
+      (Array.isArray(fallbackStore.prospects) && fallbackStore.prospects.length) ||
+      (Array.isArray(fallbackStore.activities) && fallbackStore.activities.length)
+    )
+    const fallbackIsSyncedSnapshot = fallbackStore.persistence === 'supabase' && fallbackStore.pendingLocalChanges !== true
+    if (
+      hasFallbackRows &&
+      !fallbackIsSyncedSnapshot
+    ) {
+      const migrated = await migrateFallbackStoreToSupabase(client, orgId, fallbackStore, prospectsResult.data || [], activitiesResult.data || [])
       if (migrated) return migrated
     }
     const store = {
       prospects: (prospectsResult.data || []).map(mapProspectRow),
       activities: (activitiesResult.data || []).map(mapActivityRow),
       persistence: 'supabase',
+      pendingLocalChanges: false,
+      syncedAt: new Date().toISOString(),
     }
     writeCanvassingFallbackStore(orgId, store)
     return store
@@ -392,6 +524,8 @@ export async function createCanvassingProspect(organisationId, payload = {}) {
     const created = { ...payload, id: payload.id || `prospect_${Date.now().toString(36)}`, organisationId: orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     const store = readCanvassingFallbackStore(orgId)
     store.prospects = [created, ...(store.prospects || [])]
+    store.persistence = 'local'
+    store.pendingLocalChanges = true
     writeCanvassingFallbackStore(orgId, store)
     emitCanvassingUpdated(orgId)
     return created
@@ -414,6 +548,8 @@ function createCanvassingProspectLocal(orgId, payload = {}) {
   const created = { ...payload, id: payload.id || `prospect_${Date.now().toString(36)}`, organisationId: orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
   const store = readCanvassingFallbackStore(orgId)
   store.prospects = [created, ...(store.prospects || [])]
+  store.persistence = 'local'
+  store.pendingLocalChanges = true
   writeCanvassingFallbackStore(orgId, store)
   emitCanvassingUpdated(orgId)
   return created
@@ -449,6 +585,8 @@ function updateCanvassingProspectLocal(orgId, prospectId, payload = {}) {
     updated = { ...row, ...payload, id: row.id, updatedAt }
     return updated
   })
+  store.persistence = 'local'
+  store.pendingLocalChanges = true
   writeCanvassingFallbackStore(orgId, store)
   emitCanvassingUpdated(orgId)
   return updated
@@ -475,6 +613,8 @@ function deleteCanvassingProspectLocal(orgId, prospectId) {
   const store = readCanvassingFallbackStore(orgId)
   store.prospects = (store.prospects || []).filter((row) => normalizeText(row?.id) !== normalizeText(prospectId))
   store.activities = (store.activities || []).filter((row) => normalizeText(row?.prospectId) !== normalizeText(prospectId))
+  store.persistence = 'local'
+  store.pendingLocalChanges = true
   writeCanvassingFallbackStore(orgId, store)
   emitCanvassingUpdated(orgId)
 }
@@ -501,6 +641,8 @@ function createCanvassingActivityLocal(orgId, payload = {}) {
   const created = { ...payload, id: payload.id || `canvassing_activity_${Date.now().toString(36)}`, organisationId: orgId, createdAt: new Date().toISOString() }
   const store = readCanvassingFallbackStore(orgId)
   store.activities = [created, ...(store.activities || [])]
+  store.persistence = 'local'
+  store.pendingLocalChanges = true
   writeCanvassingFallbackStore(orgId, store)
   emitCanvassingUpdated(orgId)
   return created

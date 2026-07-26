@@ -347,6 +347,22 @@ export type SendSellerOnboardingPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  requiredDocuments?: Array<{
+    id?: string;
+    key?: string;
+    name?: string;
+    label?: string;
+    description?: string;
+    priority?: string;
+    dueDate?: string;
+    isReplacement?: boolean;
+  }>;
+  sellerStructure?: Record<string, unknown> | string | null;
+  documentPackSource?: string;
+  documentPackRequirementKeys?: string[];
+  documentPackFingerprint?: string;
+  workflowDedupeKey?: string;
+  outstandingDocumentCount?: number;
 };
 
 export type SendCommercialLandlordOnboardingPayload = {

@@ -33,6 +33,7 @@ import {
   isBuyerLifecycleAppointment,
 } from './buyerLifecycleService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
+import { resolveLeadLifecyclePresentation } from '../services/leadLifecyclePresentationService'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -2748,66 +2749,70 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       // Non-blocking event log.
     }
   }
+  let notificationResults = []
+  let notificationError = null
   if (!suppressNotifications) {
-    await runAppointmentNotificationTask('appointment_updated', async () => {
+    const taskResults = await runAppointmentNotificationTask('appointment_updated', async () => {
       const currentStatus = normalizeLowerText(updatedRecord?.status)
       const notificationMetadata = {
         source: 'updateAppointmentAsync',
+        attachCalendarInvite: updater?.attachCalendarInvite !== false,
         listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
         listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
       }
       if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
         await cancelAppointmentReminders(updatedRecord.appointmentId)
-        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
+        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
           visibility: updatedRecord.visibility,
           metadata: notificationMetadata,
         })
-        return
       }
       if (currentStatus.includes('complete')) {
         await cancelAppointmentReminders(updatedRecord.appointmentId)
-        return
+        return []
       }
       if (currentStatus.includes('confirm') && !previousStatus.includes('confirm')) {
-        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
+        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
           visibility: updatedRecord.visibility,
           metadata: notificationMetadata,
         })
-        return
       }
       if (currentStatus.includes('request')) {
-        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
+        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
           visibility: updatedRecord.visibility,
           metadata: {
-            source: 'updateAppointmentAsync',
-            attachCalendarInvite: updater?.attachCalendarInvite !== false,
-            listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-            listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
+            ...notificationMetadata,
           },
         })
-        return
       }
       if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
-        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
+        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
           visibility: updatedRecord.visibility,
           metadata: notificationMetadata,
         })
         await scheduleAppointmentReminders(updatedRecord.appointmentId)
-        return
+        return results
       }
       if (appointmentTimingChanged) {
-        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
+        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
           visibility: updatedRecord.visibility,
           metadata: notificationMetadata,
         })
+        await scheduleAppointmentReminders(updatedRecord.appointmentId)
+        return results
       }
       await scheduleAppointmentReminders(updatedRecord.appointmentId)
+      return []
     })
+    notificationResults = Array.isArray(taskResults) ? taskResults : []
+    notificationError = taskResults === null ? 'appointment_notification_task_failed' : null
   }
   emitAgencyCrmUpdated()
   return {
     ...updatedRecord,
     schedulingIntegrity,
+    notificationResults,
+    notificationError,
   }
 }
 
@@ -3591,23 +3596,17 @@ export function buildPrincipalReporting({
     const source = normalizeText(lead?.leadSource) || 'Other'
     leadSource.set(source, (leadSource.get(source) || 0) + 1)
 
-    const stage = normalizeLabel(lead?.stage)
-    if (
-      ['Contacted', 'Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
-    ) {
+    const lifecycle = resolveLeadLifecyclePresentation(lead)
+    if (lifecycle.reporting.contacted) {
       conversion.contacted += 1
     }
-    if (
-      ['Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
-    ) {
+    if (lifecycle.reporting.qualified) {
       conversion.qualified += 1
     }
-    if (
-      ['Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
-    ) {
+    if (lifecycle.reporting.appointmentScheduled) {
       conversion.appointmentsScheduled += 1
     }
-    if (stage === 'Deal Created' || stage === 'Converted to Transaction') {
+    if (lifecycle.reporting.dealCreated) {
       conversion.dealsCreated += 1
     }
   }

@@ -82,6 +82,7 @@ const PACKET_VERSION_SELECT =
   'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, rendered_file_bucket, rendered_media_type, rendered_byte_length, rendered_sha256, transaction_pdf_persisted, transaction_pdf_persisted_at, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, source_template_revision_id, editable_content_schema_version, editable_content_json, edit_status, edit_sequence, render_freeze_id, render_freeze_status, render_frozen_at, render_content_fingerprint, render_source_version_id, render_source_fingerprint, render_input_verified, render_input_verified_at, native_pdf_verified, native_pdf_verified_at, native_pdf_renderer_contract, generated_by, generated_at, created_at, updated_at'
 
 let organisationBrandingTableAvailable = true
+let documentWorkspaceStatusFastPathUnavailable = false
 let cachedPacketAuthUser = null
 let cachedPacketAuthUserAt = 0
 let pendingPacketAuthUserPromise = null
@@ -356,6 +357,30 @@ function isMissingSpecificTableError(error, tableName) {
   if (!isMissingTableOrSchemaError(error)) return false
   const message = normalizeText(error?.message).toLowerCase()
   return message.includes(String(tableName || '').toLowerCase())
+}
+
+function isRecoverableDocumentWorkspaceStatusRpcError(error) {
+  if (!error) return false
+  const status = Number(error.status || error.statusCode || 0)
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message || error?.details).toLowerCase()
+  return (
+    status >= 500 ||
+    code === '42883' ||
+    code === 'PGRST202' ||
+    code === 'XX000' ||
+    message.includes('bridge_get_document_workspace_status_p2') ||
+    message.includes('could not find the function') ||
+    message.includes('schema cache') ||
+    message.includes('internal server') ||
+    message.includes('server error')
+  )
+}
+
+function buildDocumentWorkspaceStatusFastPathDisabledError() {
+  const error = new Error('Document workspace status fast path is unavailable for this session.')
+  error.code = 'FAST_PATH_DISABLED'
+  return error
 }
 
 function isPermissionDeniedError(error) {
@@ -2078,6 +2103,9 @@ export async function getDocumentWorkspaceStatusFast({
   activityLimit = 25,
 } = {}) {
   const client = requireClient()
+  if (documentWorkspaceStatusFastPathUnavailable) {
+    throw buildDocumentWorkspaceStatusFastPathDisabledError()
+  }
   const cappedActivityLimit = Math.max(0, Math.min(Number(activityLimit || 25), 100))
   const { data, error } = await client.rpc('bridge_get_document_workspace_status_p2', {
     p_packet_id: normalizeNullableUuid(packetId),
@@ -2089,7 +2117,12 @@ export async function getDocumentWorkspaceStatusFast({
     p_activity_limit: cappedActivityLimit,
   })
 
-  if (error) throw error
+  if (error) {
+    if (isRecoverableDocumentWorkspaceStatusRpcError(error)) {
+      documentWorkspaceStatusFastPathUnavailable = true
+    }
+    throw error
+  }
   if (!data || data.contract !== 'p2-document-workspace-status-v1') {
     throw new Error('Document workspace status RPC returned an unsupported contract.')
   }

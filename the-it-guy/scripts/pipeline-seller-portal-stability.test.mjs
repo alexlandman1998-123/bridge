@@ -2,6 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const pipelineSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const agencyCrmRepositorySource = await readFile(new URL('../src/lib/agencyCrmRepository.js', import.meta.url), 'utf8')
+const privateListingServiceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const documentPacketsApiSource = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
+const packetStatusResolverSource = await readFile(new URL('../src/core/documents/packetStatusResolver.js', import.meta.url), 'utf8')
 const migration = await readFile(
   new URL('../../supabase/migrations/202607250007_seller_portal_payload_optional_enrichment_guard.sql', import.meta.url),
   'utf8',
@@ -20,6 +24,47 @@ assert.match(
 assert.match(pipelineSource, /const PIPELINE_CONTEXT_TIMEOUT_MS = 8000/, 'context loads should not timeout at 3.5s')
 assert.match(pipelineSource, /const PIPELINE_RECORDS_TIMEOUT_MS = 10000/, 'private listing and record enrichments should get the same 10s budget as CRM')
 assert.match(pipelineSource, /const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000/, 'lead workspace hydration should not retry on a 2.5s hair trigger')
+assert.match(pipelineSource, /snapshot\?\.leadWorkspaceStatus === 'not_found'[\s\S]*?setRouteLeadHydrationStatus\('not_found'\)/, 'stale lead workspace links should stop retrying and enter a not-found state')
+assert.ok(pipelineSource.includes('This lead link is stale or the lead has been removed from the selected workspace.'), 'stale lead workspace links should show an explicit recovery message')
+assert.ok(pipelineSource.includes('Back to Leads'), 'stale lead workspace links should offer a path back to the lead list')
+assert.match(pipelineSource, /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(resolvedRouteLeadId\)/, 'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id')
+
+assert.match(
+  agencyCrmRepositorySource,
+  /async function resolveListingDerivedLeadRow\(workspaceId, routeUuid\)[\s\S]*?\.from\('private_listings'\)[\s\S]*?seller_lead_id[\s\S]*?originating_crm_lead_id/,
+  'lead workspace repository should resolve route IDs through linked private listing seller lead columns',
+)
+assert.match(
+  agencyCrmRepositorySource,
+  /\.eq\('lead_id', resolvedLeadId\)[\s\S]*?\.from\('tasks'\)[\s\S]*?\.eq\('lead_id', resolvedLeadId\)/,
+  'lead workspace activities and tasks should load against the resolved canonical lead id',
+)
+assert.match(
+  agencyCrmRepositorySource,
+  /leadWorkspaceStatus: leadBlocked \? 'unavailable' : 'not_found'[\s\S]*?leadWorkspaceReason: leadBlocked \? 'lead_lookup_unavailable' : \(listingResolution\?\.reason \|\| 'lead_not_found'\)/,
+  'lead workspace repository should return terminal status for stale listing-derived IDs instead of retrying indefinitely',
+)
+
+assert.match(
+  privateListingServiceSource,
+  /let sellerPortalPayloadRpcUnavailable = false[\s\S]*?function isRecoverableSellerPortalPayloadRpcError\(error\)[\s\S]*?sellerPortalPayloadRpcUnavailable = true/s,
+  'seller portal payload RPC should circuit-break recoverable non-secure backend failures',
+)
+assert.match(
+  privateListingServiceSource,
+  /const securePortalLookup = requirePortalAccess \|\| Boolean\(accessToken\)[\s\S]*?if \(sellerPortalPayloadRpcUnavailable && !securePortalLookup\) return null/s,
+  'seller portal payload circuit breaker should only skip non-secure fallback lookups',
+)
+assert.match(
+  documentPacketsApiSource,
+  /let documentWorkspaceStatusFastPathUnavailable = false[\s\S]*?FAST_PATH_DISABLED[\s\S]*?documentWorkspaceStatusFastPathUnavailable = true/s,
+  'document workspace status fast path should disable itself after recoverable RPC failures',
+)
+assert.match(
+  packetStatusResolverSource,
+  /status >= 500[\s\S]*?code === 'FAST_PATH_DISABLED'/s,
+  'document packet resolver should treat disabled or failing fast path reads as fallbackable',
+)
 
 assert.match(
   migration,

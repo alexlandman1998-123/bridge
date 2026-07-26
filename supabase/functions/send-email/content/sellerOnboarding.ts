@@ -7,6 +7,17 @@ import {
   renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
 
+type SellerPortalRequiredDocument = {
+  id?: string;
+  key?: string;
+  name?: string;
+  label?: string;
+  description?: string;
+  priority?: string;
+  dueDate?: string;
+  isReplacement?: boolean;
+};
+
 function isGenericPropertyLabel(value: string) {
   const normalized = String(value || "").trim().toLowerCase();
   return [
@@ -108,6 +119,86 @@ function resolveExpiryDays(expiryDays: unknown, expiresAt: unknown) {
   }
 
   return 14;
+}
+
+function normalizeRequiredDocuments(value: unknown): SellerPortalRequiredDocument[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : null)
+    .filter(Boolean)
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      key: String(item?.key || item?.requirementKey || item?.requirement_key || "").trim(),
+      name: String(item?.name || item?.label || item?.requirementName || item?.requirement_name || item?.key || "").trim(),
+      description: String(item?.description || item?.requirementDescription || item?.requirement_description || "").trim(),
+      priority: String(item?.priority || item?.requestPriority || item?.request_priority || "").trim(),
+      dueDate: String(item?.dueDate || item?.due_date || item?.requestDueDate || item?.request_due_date || "").trim(),
+      isReplacement: item?.isReplacement === true || item?.is_replacement === true,
+    }))
+    .filter((item) => item.name || item.key);
+}
+
+function resolveSellerStructureLabel(value: unknown) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value !== "object" || Array.isArray(value)) return "";
+  const source = value as Record<string, unknown>;
+  return String(
+    source.label ||
+      source.sellerStructureLabel ||
+      source.seller_structure_label ||
+      source.sellerType ||
+      source.seller_type ||
+      source.sellerBranch ||
+      source.seller_branch ||
+      "",
+  ).trim();
+}
+
+function renderRequiredDocumentsHtml(requiredDocuments: unknown, sellerStructure: unknown) {
+  const documents = normalizeRequiredDocuments(requiredDocuments);
+  if (!documents.length) return "";
+  const sellerStructureLabel = resolveSellerStructureLabel(sellerStructure);
+  const visibleDocuments = documents.slice(0, 12);
+  const remainingCount = Math.max(0, documents.length - visibleDocuments.length);
+  const rows = visibleDocuments.map((document) => {
+    const title = escapeHtml(document.name || document.key || "Requested document");
+    const description = document.description
+      ? `<p style="margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">${escapeHtml(document.description)}</p>`
+      : "";
+    const badge = document.isReplacement
+      ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #fff4e5; color: #9a5a00; font-size: 11px; font-weight: 700;">Replacement needed</span>`
+      : "";
+    return `<li style="margin: 0 0 10px; padding: 0;">
+      <p style="margin: 0; font-size: 15px; line-height: 1.35; color: #0f2f4f; font-weight: 700;">${title}${badge}</p>
+      ${description}
+    </li>`;
+  }).join("");
+  const suffix = remainingCount
+    ? `<p style="margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">Plus ${remainingCount} more item${remainingCount === 1 ? "" : "s"} in your portal checklist.</p>`
+    : "";
+  return `<div style="margin: 0 0 16px; padding: 16px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff;">
+    <p style="margin: 0 0 6px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Documents requested</p>
+    <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.45; color: #3f5369;">${sellerStructureLabel ? `Based on your ${escapeHtml(sellerStructureLabel.toLowerCase())} onboarding profile, please upload:` : "Please upload the documents that apply to your seller and property profile:"}</p>
+    <ul style="margin: 0; padding-left: 20px;">${rows}</ul>
+    ${suffix}
+  </div>`;
+}
+
+function renderRequiredDocumentsText(requiredDocuments: unknown, sellerStructure: unknown) {
+  const documents = normalizeRequiredDocuments(requiredDocuments);
+  if (!documents.length) return [];
+  const sellerStructureLabel = resolveSellerStructureLabel(sellerStructure);
+  const header = sellerStructureLabel
+    ? `Documents requested for your ${sellerStructureLabel.toLowerCase()} profile:`
+    : "Documents requested:";
+  return [
+    header,
+    ...documents.map((document, index) => {
+      const replacement = document.isReplacement ? " - replacement needed" : "";
+      return `${index + 1}. ${document.name || document.key}${replacement}`;
+    }),
+  ];
 }
 
 function getInitial(value: string, fallback = "A") {
@@ -401,6 +492,8 @@ export function buildSellerOnboardingEmailHtml({
   expiryDays,
   expiresAt,
   emailKind,
+  requiredDocuments,
+  sellerStructure,
   templateOverrides,
 }: {
   sellerName: string;
@@ -419,6 +512,8 @@ export function buildSellerOnboardingEmailHtml({
   expiryDays?: number | string;
   expiresAt?: string;
   emailKind?: string;
+  requiredDocuments?: SellerPortalRequiredDocument[];
+  sellerStructure?: unknown;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -501,6 +596,7 @@ export function buildSellerOnboardingEmailHtml({
        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
        ${renderBridgeSteps(processSteps)}
      </div>`,
+    portalDocumentsMode ? renderRequiredDocumentsHtml(requiredDocuments, sellerStructure) : "",
     `<div style="margin: 0 0 16px; padding: 14px 16px; border: 1px solid #e3eaf1; border-radius: 12px; background: #f6f8fb;">
        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d8096; font-weight: 700;">Estimated Completion Time</p>
        <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #0f2f4f; font-weight: 700;">${portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}</p>
@@ -552,6 +648,8 @@ export function buildSellerOnboardingEmailText({
   expiryDays,
   expiresAt,
   emailKind,
+  requiredDocuments,
+  sellerStructure,
   templateOverrides,
 }: {
   sellerName: string;
@@ -568,6 +666,8 @@ export function buildSellerOnboardingEmailText({
   expiryDays?: number | string;
   expiresAt?: string;
   emailKind?: string;
+  requiredDocuments?: SellerPortalRequiredDocument[];
+  sellerStructure?: unknown;
   templateOverrides?: {
     introParagraphs?: string[];
     processSteps?: string[];
@@ -674,6 +774,8 @@ export function buildSellerOnboardingEmailText({
     "What happens next:",
     ...processSteps.map((line, index) => `${index + 1}. ${line}`),
     "",
+    ...renderRequiredDocumentsText(requiredDocuments, sellerStructure),
+    ...(portalDocumentsMode && normalizeRequiredDocuments(requiredDocuments).length ? [""] : []),
     `Estimated Completion Time: ${portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}`,
     "",
     propertyLabel ? `Property: ${propertyLabel}` : null,

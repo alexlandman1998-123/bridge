@@ -261,6 +261,76 @@ try {
   assert.equal(splitIdentityResolution.membershipContexts.organisation.workspaceId, splitIdentityFirm.id)
   assert.equal(splitIdentityResolution.diagnostics.membershipSourceOverlap, true)
 
+  const produktiveLiveWorkspace = {
+    id: 'efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a',
+    type: 'agency',
+    name: 'Produktive Realty',
+    display_name: 'Produktive Real Estate',
+    status: 'active',
+  }
+  const produktiveArchivedWorkspace = {
+    id: '719140a0-683c-4052-a687-33ce1221f5dc',
+    type: 'agency',
+    name: 'Produktive Realty (duplicate retired)',
+    display_name: 'Produktive Realty (duplicate retired)',
+    status: 'archived',
+  }
+  const produktiveProfile = {
+    ...profile,
+    role: 'agent',
+  }
+  const produktiveDuplicateResolution = buildWorkspaceResolution({
+    user,
+    profile: produktiveProfile,
+    organisationRows: [produktiveArchivedWorkspace, produktiveLiveWorkspace],
+    organisationMembershipRows: [
+      {
+        id: 'produktive-archived-membership',
+        organisation_id: produktiveArchivedWorkspace.id,
+        user_id: user.id,
+        status: 'active',
+        role: 'principal',
+        workspace_role: 'principal',
+      },
+      {
+        id: 'produktive-live-membership',
+        organisation_id: produktiveLiveWorkspace.id,
+        user_id: user.id,
+        status: 'active',
+        role: 'principal',
+        workspace_role: 'principal',
+      },
+    ],
+    storedWorkspaceId: produktiveArchivedWorkspace.id,
+  })
+
+  assert.equal(produktiveDuplicateResolution.ok, true)
+  assert.equal(produktiveDuplicateResolution.currentWorkspace.id, produktiveLiveWorkspace.id)
+  assert.equal(produktiveDuplicateResolution.currentWorkspace.status, 'active')
+  assert.equal(produktiveDuplicateResolution.currentWorkspace.raw.status, 'active')
+  assert.equal(produktiveDuplicateResolution.activeMemberships.length, 1)
+  assert.equal(produktiveDuplicateResolution.activeMemberships[0].workspaceId, produktiveLiveWorkspace.id)
+  assert.deepEqual(produktiveDuplicateResolution.diagnostics.warnings, ['stored_preference_invalid'])
+
+  const archivedOnlyResolution = buildWorkspaceResolution({
+    user,
+    profile: produktiveProfile,
+    organisationRows: [produktiveArchivedWorkspace],
+    organisationMembershipRows: [{
+      id: 'produktive-archived-only-membership',
+      organisation_id: produktiveArchivedWorkspace.id,
+      user_id: user.id,
+      status: 'active',
+      role: 'principal',
+      workspace_role: 'principal',
+    }],
+    requestedWorkspaceId: produktiveArchivedWorkspace.id,
+  })
+
+  assert.equal(archivedOnlyResolution.ok, false)
+  assert.equal(archivedOnlyResolution.status, WORKSPACE_RESOLUTION_STATUSES.membershipRequired)
+  assert.deepEqual(archivedOnlyResolution.diagnostics.warnings, ['active_memberships_filtered_by_inactive_workspace'])
+
   console.log('workspaceResolutionService tests passed')
 } finally {
   await server.close()

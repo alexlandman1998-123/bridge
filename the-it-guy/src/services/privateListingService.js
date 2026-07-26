@@ -51,6 +51,8 @@ import {
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
 import { getSellerMandateContinuityDiagnosticsSnapshot } from './sellerMandateContinuityReportService.js'
 import { issueSellerDocumentRequests } from './sellerDocumentRequestOrchestrationService.js'
+import { createClientPortalNotification } from './clientPortalNotificationsService.js'
+import { orchestrateSellerPostMandateDocumentRequest } from './sellerPostMandateDocumentOrchestrationService.js'
 import {
   assertSellerUploadTarget,
   buildSellerDocumentAssuranceReport,
@@ -82,6 +84,7 @@ const SELLER_PORTAL_ACCESS_STORAGE_PREFIX = 'bridge:seller-portal-access:'
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = 'seller_portal_invite_sent_after_mandate_signed'
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_invite_skipped_after_mandate_signed'
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
+let sellerPortalPayloadRpcUnavailable = false
 const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
   'active',
   'finalised',
@@ -859,6 +862,21 @@ function isMissingRpcError(error, functionName = '') {
     code === '42883' ||
     code === 'pgrst202' ||
     (functionName && message.includes(String(functionName).toLowerCase()))
+  )
+}
+
+function isRecoverableSellerPortalPayloadRpcError(error) {
+  if (!error) return false
+  const status = Number(error.status || error.statusCode || 0)
+  const code = String(error.code || '').toLowerCase()
+  const message = String(error.message || error.details || '').toLowerCase()
+  return (
+    status >= 500 ||
+    code === '500' ||
+    code === 'xx000' ||
+    message.includes('internal server') ||
+    message.includes('server error') ||
+    message.includes('bridge_private_listing_seller_portal_payload')
   )
 }
 
@@ -2712,6 +2730,8 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
   if (!normalizedToken) return null
   const accessToken = normalizeText(options.accessToken)
   const requirePortalAccess = Boolean(options.requirePortalAccess)
+  const securePortalLookup = requirePortalAccess || Boolean(accessToken)
+  if (sellerPortalPayloadRpcUnavailable && !securePortalLookup) return null
   const rpcArgs = requirePortalAccess || accessToken
     ? {
         p_token: normalizedToken,
@@ -2724,7 +2744,7 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
   let rpc = await client.rpc('bridge_private_listing_seller_portal_payload', rpcArgs)
   if (
     rpc.error &&
-    (requirePortalAccess || accessToken) &&
+    securePortalLookup &&
     isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')
   ) {
     rpc = await client.rpc('bridge_private_listing_seller_portal_payload', {
@@ -2733,6 +2753,10 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
   }
   if (rpc.error) {
     if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')) return null
+    if (!securePortalLookup && isRecoverableSellerPortalPayloadRpcError(rpc.error)) {
+      sellerPortalPayloadRpcUnavailable = true
+      return null
+    }
     throw rpc.error
   }
   if (rpc.data?.authRequired) {
@@ -2854,21 +2878,40 @@ async function notifySellerPortalDocumentsReady(client, { listing = {}, onboardi
   return data || { ok: true }
 }
 
-async function hasSellerPortalMandateInviteBeenSent(client, packetId) {
+async function hasSellerPortalMandateInviteBeenSent(client, packetId, {
+  documentPackFingerprint = '',
+  workflowRunDedupeKey = '',
+} = {}) {
   const normalizedPacketId = normalizeUuid(packetId)
   if (!normalizedPacketId) return false
 
   const { data, error } = await client
     .from('document_packet_events')
-    .select('id')
+    .select('id, event_payload_json')
     .eq('packet_id', normalizedPacketId)
     .eq('event_type', SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT)
-    .limit(1)
+    .limit(25)
   if (error) {
     console.warn('[Private Listings] seller portal invite event dedupe lookup skipped', error)
     return false
   }
-  return Boolean((data || []).length)
+  const rows = Array.isArray(data) ? data : []
+  const fingerprint = normalizeText(documentPackFingerprint)
+  const runKey = normalizeText(workflowRunDedupeKey)
+  if (!fingerprint && !runKey) return Boolean(rows.length)
+
+  return rows.some((row) => {
+    const payload = row?.event_payload_json && typeof row.event_payload_json === 'object'
+      ? row.event_payload_json
+      : {}
+    const existingFingerprint = normalizeText(payload.documentPackFingerprint || payload.document_pack_fingerprint)
+    const existingRunKey = normalizeText(payload.workflowRunDedupeKey || payload.workflow_run_dedupe_key)
+    if (!existingFingerprint && !existingRunKey) return true
+    return Boolean(
+      (fingerprint && existingFingerprint === fingerprint) ||
+        (runKey && existingRunKey === runKey),
+    )
+  })
 }
 
 async function fetchSellerOnboardingForInvite(client, { listingId = '', sellerWorkspaceToken = '' } = {}) {
@@ -2941,6 +2984,71 @@ async function appendSellerPortalMandateInviteEvent(eventType, {
   })
 }
 
+function formatSellerPostMandateAuditReason(reason = '') {
+  return normalizeText(reason).replace(/_/g, ' ') || 'unknown reason'
+}
+
+function buildSellerPostMandateActivityFromAudit(eventType, {
+  listingId = '',
+  auditSummary = null,
+  errorMessage = '',
+} = {}) {
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) return null
+  const audit = auditSummary && typeof auditSummary === 'object' ? auditSummary : {}
+  const reason = normalizeText(audit.reason)
+  if (reason === 'already_completed') return null
+
+  const isCompleted = eventType === 'seller_post_mandate_documents_completed' ||
+    eventType === SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT
+  const isFailed = eventType === SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT
+  const count = Number(audit.outstandingDocumentCount || 0)
+  const structureLabel = normalizeText(audit.sellerStructure?.label || audit.sellerStructure?.sellerType)
+  const documentWord = count === 1 ? 'document' : 'documents'
+  const title = isCompleted
+    ? 'Seller document request sent'
+    : isFailed
+      ? 'Seller document request failed'
+      : 'Seller document request skipped'
+  const description = isCompleted
+    ? `Requested ${count || 'the required'} seller ${documentWord}${structureLabel ? ` for ${structureLabel}` : ''} after mandate signature.`
+    : isFailed
+      ? `Seller post-mandate document request failed${errorMessage ? `: ${errorMessage}` : '.'}`
+      : `Seller post-mandate document request skipped: ${formatSellerPostMandateAuditReason(reason)}.`
+
+  return {
+    privateListingId: normalizedListingId,
+    activityType: isCompleted
+      ? 'seller_post_mandate_documents_requested'
+      : isFailed
+        ? 'seller_post_mandate_documents_failed'
+        : 'seller_post_mandate_documents_skipped',
+    activityTitle: title,
+    activityDescription: description,
+    visibility: isCompleted ? 'client_visible' : 'internal',
+    metadata: {
+      source: 'seller_post_mandate_document_request',
+      eventType,
+      auditSummary: audit,
+      documentPackFingerprint: normalizeText(audit.documentPackFingerprint) || null,
+      workflowRunDedupeKey: normalizeText(audit.workflowRunDedupeKey) || null,
+      documentPackSource: normalizeText(audit.documentPackSource) || null,
+      outstandingDocumentKeys: Array.isArray(audit.outstandingDocumentKeys) ? audit.outstandingDocumentKeys : [],
+      sellerStructure: audit.sellerStructure || null,
+      errorMessage: normalizeText(errorMessage) || null,
+    },
+  }
+}
+
+async function createSellerPostMandateActivityFromAudit(eventType, options = {}) {
+  const activity = buildSellerPostMandateActivityFromAudit(eventType, options)
+  if (!activity) return null
+  return createPrivateListingActivity(activity).catch((activityError) => {
+    console.warn('[Private Listings] seller post-mandate document activity skipped', activityError)
+    return null
+  })
+}
+
 export async function sendSellerPortalInviteAfterMandateSigned({
   packetId = '',
   organisationId = '',
@@ -2955,13 +3063,10 @@ export async function sendSellerPortalInviteAfterMandateSigned({
   const normalizedPacketId = normalizeUuid(packetId)
   if (!normalizedPacketId) return { skipped: true, reason: 'packet_id_missing' }
 
-  const alreadySent = await hasSellerPortalMandateInviteBeenSent(client, normalizedPacketId)
-  if (alreadySent) return { skipped: true, reason: 'already_sent' }
-
   const onboarding = await fetchSellerOnboardingForInvite(client, { listingId, sellerWorkspaceToken })
   const resolvedListingId = normalizeUuid(listingId || onboarding?.private_listing_id)
   const listing = resolvedListingId
-    ? await getPrivateListing(resolvedListingId, { includeRequirementsAndDocuments: false })
+    ? await getPrivateListing(resolvedListingId, { includeRequirementsAndDocuments: true })
     : null
 
   if (!listing?.id) {
@@ -3010,46 +3115,136 @@ export async function sendSellerPortalInviteAfterMandateSigned({
     return { skipped: true, reason: 'seller_portal_token_missing' }
   }
 
-  await ensureSellerClientPortalContext(client, {
+  const orchestrationContext = {
     listing: {
       ...listing,
+      mandateStatus: 'signed',
       mandatePacketId: normalizedPacketId,
+      mandate_packet_id: normalizedPacketId,
+      sellerOnboarding: {
+        ...(listing.sellerOnboarding || {}),
+        ...effectiveOnboarding,
+        token,
+        formData,
+      },
     },
     onboarding: {
       ...effectiveOnboarding,
       token,
     },
     formData,
-  }).catch((contextError) => {
-    console.warn('[Private Listings] seller portal context sync skipped before mandate invite', contextError)
-    return null
-  })
+    mandatePacket: {
+      ...(listing.mandatePacket || {}),
+      id: normalizedPacketId,
+      status: 'completed',
+    },
+    mandateVersion: {
+      id: versionId,
+      finalSignedFilePath: finalArtifactPath,
+      final_signed_file_path: finalArtifactPath,
+      finalSignedFileUrl: finalArtifactUrlPresent ? 'present' : '',
+      final_signed_file_url: finalArtifactUrlPresent ? 'present' : '',
+    },
+    requirements: Array.isArray(listing.documentRequirements) ? listing.documentRequirements : [],
+    documents: Array.isArray(listing.documents) ? listing.documents : [],
+    mandateSigned: true,
+  }
 
-  let emailResult = null
-  let invitation = null
+  let orchestrationResult = null
   try {
-    invitation = await issueSellerPortalInvite(token)
-    const invitationLink = buildSellerClientPortalLink(invitation?.inviteToken)
-    if (!invitationLink) throw new Error('Seller portal invitation could not be created.')
-    emailResult = await notifySellerPortalDocumentsReady(client, {
-      listing: {
-        ...listing,
-        mandatePacketId: normalizedPacketId,
-        sellerOnboarding: {
-          ...(listing.sellerOnboarding || {}),
-          ...effectiveOnboarding,
-          token,
-          formData,
+    orchestrationResult = await orchestrateSellerPostMandateDocumentRequest({
+      client,
+      context: orchestrationContext,
+      reason: 'mandate_signed',
+      hasAlreadyCompleted: async ({ documentPackFingerprint, workflowRunDedupeKey }) => hasSellerPortalMandateInviteBeenSent(
+        client,
+        normalizedPacketId,
+        { documentPackFingerprint, workflowRunDedupeKey },
+      ),
+      ensurePortalContext: async ({ portalToken }) => ensureSellerClientPortalContext(client, {
+        listing: {
+          ...listing,
+          mandatePacketId: normalizedPacketId,
         },
+        onboarding: {
+          ...effectiveOnboarding,
+          token: normalizeText(portalToken) || token,
+        },
+        formData,
+      }).catch((contextError) => {
+        console.warn('[Private Listings] seller portal context sync skipped before mandate invite', contextError)
+        return null
+      }),
+      issuePortalInvite: async ({ portalToken }) => {
+        const invitation = await issueSellerPortalInvite(normalizeText(portalToken) || token)
+        const invitationLink = buildSellerClientPortalLink(invitation?.inviteToken)
+        if (!invitationLink) throw new Error('Seller portal invitation could not be created.')
+        return {
+          ...invitation,
+          portalLink: invitationLink,
+        }
       },
-      onboarding: {
-        ...effectiveOnboarding,
-        token,
+      createNotification: async ({ notificationPayload }) => createClientPortalNotification(notificationPayload).catch((notificationError) => {
+        console.warn('[Private Listings] seller portal document notification skipped after mandate invite', notificationError)
+        return null
+      }),
+      recordEvent: async ({ eventType, payload }) => {
+        const packetEventType = eventType === 'seller_post_mandate_documents_completed'
+          ? SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT
+          : SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT
+        const auditSummary = payload.auditSummary && typeof payload.auditSummary === 'object'
+          ? payload.auditSummary
+          : null
+        const eventPayload = {
+          portalInviteStatus: eventType === 'seller_post_mandate_documents_completed' ? 'sent' : 'skipped',
+          sentAt: eventType === 'seller_post_mandate_documents_completed' ? new Date().toISOString() : null,
+          skipReason: eventType === 'seller_post_mandate_documents_completed' ? null : payload.reason,
+          dedupeKey: normalizeText(payload.dedupeKey) || null,
+          workflowRunDedupeKey: normalizeText(payload.workflowRunDedupeKey) || null,
+          documentPackFingerprint: normalizeText(payload.documentPackFingerprint) || null,
+          documentPackSource: normalizeText(auditSummary?.documentPackSource) || null,
+          documentPackRequirementKeys: Array.isArray(auditSummary?.documentPackRequirementKeys)
+            ? auditSummary.documentPackRequirementKeys
+            : [],
+          outstandingDocumentKeys: Array.isArray(auditSummary?.outstandingDocumentKeys)
+            ? auditSummary.outstandingDocumentKeys
+            : [],
+          outstandingDocumentCount: Number(auditSummary?.outstandingDocumentCount || 0),
+          sellerStructure: auditSummary?.sellerStructure || null,
+          recipientEmailPresent: Boolean(getSellerClientPortalEmail(listing, { ...effectiveOnboarding, token }, formData)),
+          deliveryId: normalizeText(payload.deliveryId) || null,
+          canonicalInviteId: normalizeText(payload.canonicalInviteId) || null,
+          inviteExpiresAt: normalizeText(payload.inviteExpiresAt) || null,
+          stablePortalTokenPresent: Boolean(payload.stablePortalTokenPresent),
+          notificationCreated: Boolean(payload.notificationCreated),
+          orchestrationVersion: payload.orchestrationVersion || auditSummary?.orchestrationVersion || null,
+          requestCounts: payload.requestCounts || auditSummary?.requestCounts || null,
+          auditSummary,
+        }
+        const packetEvent = await appendSellerPortalMandateInviteEvent(packetEventType, {
+          packetId: normalizedPacketId,
+          organisationId: organisationId || listing.organisationId,
+          versionId,
+          source,
+          listingId: listing.id,
+          sellerWorkspaceToken: token,
+          finalArtifactPath,
+          finalArtifactUrlPresent,
+          payload: eventPayload,
+        })
+        await createSellerPostMandateActivityFromAudit(eventType, {
+          listingId: listing.id,
+          auditSummary,
+        })
+        return packetEvent
       },
-      formData,
-      portalLink: invitationLink,
     })
   } catch (emailError) {
+    await createSellerPostMandateActivityFromAudit(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT, {
+      listingId: listing.id,
+      auditSummary: orchestrationResult?.auditSummary || null,
+      errorMessage: normalizeText(emailError?.message) || 'Seller portal email could not be sent.',
+    })
     await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT, {
       packetId: normalizedPacketId,
       organisationId: organisationId || listing.organisationId,
@@ -3064,56 +3259,23 @@ export async function sendSellerPortalInviteAfterMandateSigned({
         failedAt: new Date().toISOString(),
         recipientEmailPresent: Boolean(getSellerClientPortalEmail(listing, { ...effectiveOnboarding, token }, formData)),
         errorMessage: normalizeText(emailError?.message) || 'Seller portal email could not be sent.',
+        documentPackFingerprint: normalizeText(orchestrationResult?.documentPackFingerprint) || null,
+        workflowRunDedupeKey: normalizeText(orchestrationResult?.workflowRunDedupeKey) || null,
       },
     })
     throw emailError
   }
 
-  if (emailResult?.skipped) {
-    await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT, {
-      packetId: normalizedPacketId,
-      organisationId: organisationId || listing.organisationId,
-      versionId,
-      source,
-      listingId: listing.id,
-      sellerWorkspaceToken: token,
-      finalArtifactPath,
-      finalArtifactUrlPresent,
-      payload: {
-        portalInviteStatus: 'skipped',
-        skipReason: emailResult.reason || 'email_or_portal_link_missing',
-      },
-    })
-    return emailResult
-  }
-
-  await appendSellerPortalMandateInviteEvent(SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT, {
-    packetId: normalizedPacketId,
-    organisationId: organisationId || listing.organisationId,
-    versionId,
-    source,
-    listingId: listing.id,
-    sellerWorkspaceToken: token,
-    finalArtifactPath,
-    finalArtifactUrlPresent,
-    payload: {
-      portalInviteStatus: 'sent',
-      sentAt: new Date().toISOString(),
-      recipientEmailPresent: true,
-      deliveryId: normalizeText(emailResult?.deliveryId) || null,
-      canonicalInviteId: normalizeText(emailResult?.canonicalInviteId) || null,
-      inviteExpiresAt: normalizeText(invitation?.inviteExpiresAt) || null,
-      stablePortalTokenPresent: Boolean(normalizeText(invitation?.stablePortalToken)),
-    },
-  })
+  if (orchestrationResult?.skipped) return orchestrationResult
 
   return {
     ok: true,
     sent: true,
     listingId: listing.id,
-    deliveryId: emailResult?.deliveryId || null,
-    canonicalInviteId: emailResult?.canonicalInviteId || null,
-    inviteExpiresAt: invitation?.inviteExpiresAt || null,
+    deliveryId: orchestrationResult?.emailResult?.deliveryId || null,
+    canonicalInviteId: orchestrationResult?.emailResult?.canonicalInviteId || null,
+    inviteExpiresAt: orchestrationResult?.invitation?.inviteExpiresAt || null,
+    requestCounts: orchestrationResult?.requestIssuance?.counts || null,
   }
 }
 

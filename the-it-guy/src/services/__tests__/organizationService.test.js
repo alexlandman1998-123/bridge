@@ -55,6 +55,40 @@ try {
   }
 
   {
+    assert.equal(__organizationServiceTestUtils.isSelectableOrganizationStatus('active'), true)
+    assert.equal(__organizationServiceTestUtils.isSelectableOrganizationStatus('pending'), true)
+    assert.equal(__organizationServiceTestUtils.isSelectableOrganizationStatus('archived'), false)
+    assert.equal(__organizationServiceTestUtils.isSelectableOrganizationStatus('retired'), false)
+  }
+
+  {
+    assert.equal(
+      __organizationServiceTestUtils.normalizeOrganizationIdentity('Produktive Realty (Pty) Ltd'),
+      'produktive real estate',
+    )
+    assert.equal(
+      __organizationServiceTestUtils.normalizeOrganizationIdentity('Produktive Real Estate'),
+      'produktive real estate',
+    )
+    assert.equal(__organizationServiceTestUtils.normalizeDomain('https://www.produktiverealty.co.za/team'), 'produktiverealty.co.za')
+    assert.equal(__organizationServiceTestUtils.normalizeDomain('owner@gmail.com'), '')
+    assert.equal(
+      __organizationServiceTestUtils.organizationsHaveDuplicateSignal(
+        { name: 'Produktive Realty', organizationType: 'agency', website: 'https://produktiverealty.co.za' },
+        { legal_name: 'Produktive Real Estate', organization_type: 'agency', website: 'www.produktiverealty.co.za' },
+      ),
+      true,
+    )
+    assert.equal(
+      __organizationServiceTestUtils.organizationsHaveDuplicateSignal(
+        { name: 'Produktive Realty', registrationNumber: '2022/594205/07' },
+        { name: 'Different Trading Name', registration_number: '2022-594205-07' },
+      ),
+      true,
+    )
+  }
+
+  {
     const member = __organizationServiceTestUtils.toMember({
       id: 'member-1',
       first_name: 'Sarah',

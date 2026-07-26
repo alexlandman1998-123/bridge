@@ -18,6 +18,13 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+const INACTIVE_WORKSPACE_STATUSES = new Set(['archived', 'deleted', 'disabled', 'inactive', 'removed', 'retired', 'suspended'])
+
+function isSelectableWorkspaceStatus(value) {
+  const normalized = normalizeText(value).toLowerCase() || 'active'
+  return !INACTIVE_WORKSPACE_STATUSES.has(normalized)
+}
+
 function isMissingSchemaError(error, token = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
@@ -134,7 +141,7 @@ async function validateAttorneyCompletion(client, { userId, appRole, workspaceId
 async function validateOrganisationCompletion(client, { userId, appRole, workspaceType, workspaceId }) {
   let query = client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, status, app_role, workspace_type, module_context, module_metadata, organisations:organisation_id(id, name, display_name, type)')
+    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, status, app_role, workspace_type, module_context, module_metadata, organisations:organisation_id(id, name, display_name, type, status)')
     .eq('user_id', userId)
     .eq('status', MEMBERSHIP_STATUSES.active)
 
@@ -148,7 +155,7 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
   ) {
     query = client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
+      .select('id, organisation_id, user_id, branch_id, role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type, status)')
       .eq('user_id', userId)
       .eq('status', MEMBERSHIP_STATUSES.active)
     if (workspaceId) query.eq('organisation_id', workspaceId)
@@ -161,7 +168,7 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
     throw result.error
   }
 
-  const activeRows = result.data || []
+  const activeRows = (result.data || []).filter((row) => !row.organisations || isSelectableWorkspaceStatus(row.organisations.status))
   const membership = activeRows.find((row) => {
     const rowType = normalizeWorkspaceType(row.organisations?.type || row.workspace_type, inferWorkspaceTypeFromAppRole(appRole))
     return !workspaceType || rowType === workspaceType
