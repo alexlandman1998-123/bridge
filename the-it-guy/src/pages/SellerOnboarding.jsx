@@ -5620,7 +5620,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           {form.leaseExists ? (
                             <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                               Lease Expiry Date
-                              <input className={DETAIL_INPUT_CLASS} type="date" value={form.leaseExpiryDate} onChange={(event) => handleFormUpdate('leaseExpiryDate', event.target.value)} />
+                              <input className={DATE_INPUT_CLASS} type="date" value={form.leaseExpiryDate} onChange={(event) => handleFormUpdate('leaseExpiryDate', event.target.value)} />
                             </label>
                           ) : null}
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
