@@ -60,6 +60,29 @@ assert.equal(defaultWithAllowedPacks.blockingCount, 0)
 assert.ok(defaultWithAllowedPacks.presentSignalGroupKeys.includes('sectional_title'))
 assert.ok(defaultWithAllowedPacks.presentPackKeys.includes('property_sectional_title_pack'))
 
+const defaultWithAppVisibilityCondition = scanMandateTemplateContent({
+  metadata_json: { mandate_template_variant: 'default' },
+  sections: [
+    universalSection(),
+    {
+      sectionKey: 'property_full_title_pack',
+      sectionLabel: 'Full Title Property Pack',
+      legalText: 'Full title erf number and floor size details are recorded for this Property.',
+      placeholderKeysText: 'property_title_type, erf_number, erf_size, floor_size',
+      conditionJson: {
+        enabled: true,
+        rule: {
+          field: 'property_title_type',
+          operator: 'in',
+          value: ['full_title', 'agricultural_holding'],
+        },
+      },
+    },
+  ],
+})
+assert.equal(defaultWithAppVisibilityCondition.isValidForPublish, true)
+assert.equal(defaultWithAppVisibilityCondition.blockingCount, 0)
+
 const defaultWithSectionalLeak = scanMandateTemplateSections([
   universalSection({
     sectionKey: 'property_details',

@@ -3331,6 +3331,17 @@ const MANDATE_DEFAULT_CONDITIONAL_PACK_SECTION_KEYS = [
   'property_sectional_title_pack',
 ]
 
+const MANDATE_DEFAULT_PROPERTY_ROUTE_SPECIFIC_KEYS = [
+  'erf_number',
+  'erf_size',
+  'floor_size',
+  'property_unit_number',
+  'property_section_number',
+  'sectional_title_number',
+  'property_complex_name',
+  'property_estate_name',
+]
+
 function withPlaceholderKeys(section = {}, {
   add = [],
   remove = [],
@@ -3353,6 +3364,20 @@ function withPlaceholderKeys(section = {}, {
     placeholderKeys,
     placeholderKeysText: placeholderKeys.join(', '),
   }
+}
+
+function normalizeDefaultMandatePropertyDetailsLegalText(legalText = '') {
+  const routeSpecificTokenPattern = /\{\{\s*(?:erf_number|erf_size|floor_size|property_unit_number|property_section_number|sectional_title_number|property_complex_name|property_estate_name)\s*\}\}/i
+  return String(legalText || '')
+    .split('\n')
+    .filter((line) => !routeSpecificTokenPattern.test(line))
+    .join('\n')
+    .replace(
+      'material facts, defects, restrictions, servitudes, disputes, rules, or other matters',
+      'known material facts, defects, restrictions, disputes, or other matters',
+    )
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function normalizeDefaultMandateStarterSections(template = null, sections = []) {
@@ -3393,14 +3418,11 @@ function normalizeDefaultMandateStarterSections(template = null, sections = []) 
     }
 
     if (sectionKey === 'property_details') {
-      return {
+      return withPlaceholderKeys({
         ...section,
-        legalText: String(section.legalText || '').replace(
-          'material facts, defects, restrictions, servitudes, disputes, rules, or other matters',
-          'known material facts, defects, restrictions, disputes, or other matters',
-        ),
+        legalText: normalizeDefaultMandatePropertyDetailsLegalText(section.legalText),
         conditionJson,
-      }
+      }, { remove: MANDATE_DEFAULT_PROPERTY_ROUTE_SPECIFIC_KEYS })
     }
 
     if (sectionKey === 'seller_individual_capacity_pack') {

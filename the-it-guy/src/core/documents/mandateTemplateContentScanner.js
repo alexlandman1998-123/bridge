@@ -90,6 +90,8 @@ function hasConditionSignal(condition = {}) {
   const source = asRecord(condition)
   if (!Object.keys(source).length) return false
   if (normalizeText(source.field || source.fact || source.path || source.key)) return true
+  const rule = asRecord(source.rule)
+  if (normalizeText(rule.field || rule.fact || rule.path || rule.key || rule.placeholder || rule.placeholderKey || rule.placeholder_key)) return true
   if (Array.isArray(source.all) && source.all.length) return true
   if (Array.isArray(source.any) && source.any.length) return true
   if (Array.isArray(source.conditions) && source.conditions.length) return true

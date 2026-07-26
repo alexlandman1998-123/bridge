@@ -16,12 +16,18 @@ function assertNoUnknownTokens(tokens, packetType) {
 }
 
 const otpFieldKeys = new Set(listCanonicalMergeFields({ packetType: 'otp' }).map((field) => field.key))
+const mandateFieldKeys = new Set(listCanonicalMergeFields({ packetType: 'mandate' }).map((field) => field.key))
 
 for (const key of ['seller_email', 'seller_phone']) {
   assert.equal(otpFieldKeys.has(key), true, `OTP merge-field registry should include ${key}.`)
 }
 
+for (const key of ['erf_number', 'erf_size', 'floor_size']) {
+  assert.equal(mandateFieldKeys.has(key), true, `Mandate merge-field registry should include ${key}.`)
+}
+
 assertNoUnknownTokens(['seller_email', 'seller_phone'], 'otp')
+assertNoUnknownTokens(['erf_number', 'erf_size', 'floor_size'], 'mandate')
 assertNoUnknownTokens(
   ['buyer_full_name', 'buyer_id_number', 'buyer_email', 'buyer_phone', 'buyer_domicilium_address'],
   'otp',
