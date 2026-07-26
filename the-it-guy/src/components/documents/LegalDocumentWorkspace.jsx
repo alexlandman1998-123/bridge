@@ -240,6 +240,32 @@ function formatRelativeTime(value) {
   return 'just now'
 }
 
+function formatMandateCurrency(value) {
+  const text = normalizeText(value)
+  if (!text) return ''
+  if (/^r\s?/i.test(text)) return text
+  const numeric = typeof value === 'number'
+    ? value
+    : Number(text.replace(/[^0-9.-]+/g, ''))
+  if (!Number.isFinite(numeric) || numeric <= 0) return text
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(numeric).replace(/\u00a0/g, ' ')
+}
+
+function formatMandatePercentValue(value) {
+  const text = normalizeText(value)
+  if (!text) return ''
+  if (text.includes('%')) return text
+  const numeric = typeof value === 'number'
+    ? value
+    : Number(text.replace(/[^0-9.-]+/g, ''))
+  if (!Number.isFinite(numeric) || numeric <= 0) return text
+  return `${numeric}%`
+}
+
 function firstNonEmptyText(...values) {
   for (const value of values) {
     const text = normalizeText(value)
@@ -2570,6 +2596,212 @@ function PhysicalMandatePanel({
           </p>
         </div>
       )}
+    </section>
+  )
+}
+
+function MandateReviewColumn({ title, Icon, rows = [] }) {
+  const ColumnIcon = Icon
+  return (
+    <div className="min-w-0">
+      <div className="mb-3 flex items-center gap-2">
+        {ColumnIcon ? (
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#0a66ff]">
+            <ColumnIcon size={15} />
+          </span>
+        ) : null}
+        <h5 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">{title}</h5>
+      </div>
+      <dl className="divide-y divide-[#e8eef7]">
+        {rows.map((row) => (
+          <div key={row.key} className="grid gap-1 py-2.5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-3">
+            <dt className="text-xs font-semibold text-[#7b8ea4]">{row.label}</dt>
+            <dd className={`min-w-0 text-sm font-semibold ${row.missing ? 'text-[#9b6b1c]' : 'text-[#102033]'}`}>
+              <span className="break-words">{row.value || 'Not captured'}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function buildMandateReviewRow(key, label, value) {
+  const text = normalizeText(value)
+  return {
+    key,
+    label,
+    value: text || 'Not captured',
+    missing: !text,
+  }
+}
+
+function buildMandateDurationLabel(startDate, endDate) {
+  const start = normalizeText(startDate)
+  const end = normalizeText(endDate)
+  if (start && end) return `${start} to ${end}`
+  return start || end || ''
+}
+
+function buildMandateCommissionLabel(mandate = {}, placeholders = {}) {
+  const structure = normalizeKey(mandate.commissionStructure || mandate.commission_structure || placeholders.commission_structure)
+  const percentage = formatMandatePercentValue(firstNonEmptyText(
+    mandate.commissionPercentage,
+    mandate.commissionPercent,
+    mandate.commission_percentage,
+    placeholders.commission_percentage,
+    placeholders.mandate_commission_percent,
+  ))
+  const amount = formatMandateCurrency(firstNonEmptyText(
+    mandate.commissionAmount,
+    mandate.commission_amount,
+    placeholders.commission_amount,
+    placeholders.mandate_commission_amount,
+  ))
+  if (structure === 'fixed' && amount) return amount
+  if (structure === 'percentage' && percentage) return percentage
+  return [percentage, amount].filter(Boolean).join(' / ')
+}
+
+function MandateReviewPanel({
+  summary = {},
+  data = null,
+  routing = null,
+  validation = null,
+  templateLabel = '',
+  templateKey = '',
+  savedLabel = '',
+  className = '',
+}) {
+  const seller = data?.seller && typeof data.seller === 'object' ? data.seller : {}
+  const property = data?.property && typeof data.property === 'object' ? data.property : {}
+  const mandate = data?.mandate && typeof data.mandate === 'object' ? data.mandate : {}
+  const agency = data?.agency && typeof data.agency === 'object' ? data.agency : {}
+  const agent = data?.agent && typeof data.agent === 'object' ? data.agent : {}
+  const transferAttorney = data?.transferAttorney && typeof data.transferAttorney === 'object'
+    ? data.transferAttorney
+    : data?.transfer_attorney && typeof data.transfer_attorney === 'object'
+      ? data.transfer_attorney
+      : {}
+  const placeholders = data?.placeholders && typeof data.placeholders === 'object' ? data.placeholders : {}
+  const source = data?.sourceContext && typeof data.sourceContext === 'object' ? data.sourceContext : {}
+
+  const sellerRows = [
+    buildMandateReviewRow('seller_name', 'Name', firstNonEmptyText(seller.fullName, placeholders.seller_full_name, summary.seller)),
+    buildMandateReviewRow('seller_email', 'Email', firstNonEmptyText(seller.email, placeholders.seller_email, source.sellerEmail)),
+    buildMandateReviewRow('seller_phone', 'Phone', firstNonEmptyText(seller.phone, placeholders.seller_phone, source.sellerPhone)),
+    buildMandateReviewRow('seller_capacity', 'Capacity', formatMandateRouteLabel(firstNonEmptyText(seller.entityType, placeholders.seller_entity_type))),
+    buildMandateReviewRow('seller_marital', 'Marital regime', formatMandateRouteLabel(firstNonEmptyText(
+      seller.maritalRegime,
+      seller.maritalStatus,
+      placeholders.seller_marital_regime,
+      placeholders.seller_marital_status,
+    ))),
+  ]
+
+  const propertyReference = [
+    firstNonEmptyText(property.erfNumber, placeholders.property_erf_number, placeholders.erf_number),
+    firstNonEmptyText(property.unitNumber, placeholders.property_unit_number, placeholders.unit_number),
+    firstNonEmptyText(property.sectionNumber, placeholders.property_section_number, placeholders.section_number),
+  ].filter(Boolean).join(' / ')
+  const propertyRows = [
+    buildMandateReviewRow('property_address', 'Address', firstNonEmptyText(property.fullAddress, property.displayAddress, placeholders.property_address, summary.property)),
+    buildMandateReviewRow('property_type', 'Property type', formatMandateRouteLabel(firstNonEmptyText(property.propertyType, placeholders.property_type))),
+    buildMandateReviewRow('property_title', 'Title type', formatMandateRouteLabel(firstNonEmptyText(
+      property.propertyStructureType,
+      property.titleType,
+      property.title_type,
+      placeholders.property_structure_type,
+      routing?.propertyTitleType,
+    ))),
+    buildMandateReviewRow('property_reference', 'Erf / unit', propertyReference),
+    buildMandateReviewRow('property_size', 'Size', [
+      firstNonEmptyText(property.erfSize, placeholders.erf_size) ? `Erf ${firstNonEmptyText(property.erfSize, placeholders.erf_size)}` : '',
+      firstNonEmptyText(property.floorSize, placeholders.floor_size) ? `Floor ${firstNonEmptyText(property.floorSize, placeholders.floor_size)}` : '',
+    ].filter(Boolean).join(', ')),
+  ]
+
+  const mandateRows = [
+    buildMandateReviewRow('asking_price', 'Asking price', formatMandateCurrency(firstNonEmptyText(mandate.askingPrice, mandate.asking_price, placeholders.asking_price, placeholders.property_asking_price))),
+    buildMandateReviewRow('mandate_type', 'Mandate type', formatMandateRouteLabel(firstNonEmptyText(mandate.type, mandate.mandateType, placeholders.mandate_type))),
+    buildMandateReviewRow('mandate_dates', 'Mandate dates', buildMandateDurationLabel(
+      firstNonEmptyText(mandate.startDate, mandate.mandateStartDate, placeholders.mandate_start_date),
+      firstNonEmptyText(mandate.expiryDate, mandate.endDate, mandate.mandateEndDate, placeholders.mandate_expiry_date, placeholders.mandate_end_date),
+    )),
+    buildMandateReviewRow('commission', 'Commission', buildMandateCommissionLabel(mandate, placeholders)),
+    buildMandateReviewRow('transfer_attorney', 'Transfer attorney', firstNonEmptyText(
+      transferAttorney.companyName,
+      transferAttorney.name,
+      placeholders.transfer_attorney_company_name,
+    )),
+  ]
+
+  const routeRows = [
+    buildMandateReviewRow('route', 'Legal route', routing?.routeLabel || 'Route pending'),
+    buildMandateReviewRow('route_status', 'Route status', routing?.statusLabel || 'Ready'),
+    buildMandateReviewRow('template', 'Template', firstNonEmptyText(routing?.selectedTemplate, templateLabel, 'Seller Mandate')),
+    buildMandateReviewRow('template_key', 'Template key', templateKey),
+    buildMandateReviewRow('agent', 'Agent', firstNonEmptyText(agent.fullName, agent.name, placeholders.agent_full_name)),
+    buildMandateReviewRow('agency', 'Agency', firstNonEmptyText(agency.tradingName, agency.legalName, agency.name, placeholders.agency_display_name, placeholders.agency_name)),
+  ]
+
+  const missingCount = [
+    ...sellerRows,
+    ...propertyRows,
+    ...mandateRows,
+    ...routeRows.filter((row) => row.key !== 'template_key'),
+  ].filter((row) => row.missing).length
+  const validationWarnings = Array.isArray(validation?.warnings) ? validation.warnings : []
+  const validationMissing = Array.isArray(validation?.missingRequiredFields) ? validation.missingRequiredFields : []
+  const validationReviewText = [
+    ...validationWarnings.map((issue) => normalizeText(issue?.message || issue?.label || issue?.field || issue)),
+    ...validationMissing.map((issue) => normalizeText(issue?.message || issue?.label || issue?.field || issue)),
+  ].find(Boolean)
+  const needsReview = missingCount > 0 || validationWarnings.length > 0 || validationMissing.length > 0
+
+  return (
+    <section className={`rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] sm:p-6 ${className}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-[1.1rem] font-semibold text-[#102033]">Mandate Details</h4>
+            <span className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${
+              needsReview
+                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+            }`}>
+              {needsReview ? 'Review' : 'Ready'}
+            </span>
+          </div>
+          <p className="mt-1 text-sm font-medium text-[#607387]">
+            {summary.transaction}
+          </p>
+        </div>
+        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+          {savedLabel || summary.savedLabel || 'Draft'}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-6 xl:grid-cols-4">
+        <MandateReviewColumn title="Seller" Icon={UsersRound} rows={sellerRows} />
+        <MandateReviewColumn title="Property" Icon={FileText} rows={propertyRows} />
+        <MandateReviewColumn title="Terms" Icon={FileCheck2} rows={mandateRows} />
+        <MandateReviewColumn title="Route" Icon={ShieldCheck} rows={routeRows} />
+      </div>
+
+      {needsReview ? (
+        <div className="mt-5 rounded-[18px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">Some mandate details are incomplete or need a quick check.</p>
+              <p className="mt-1 leading-5">
+                {validationReviewText || 'The mandate can still be reviewed here before generation and signing.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -6900,7 +7132,17 @@ export default function LegalDocumentWorkspace({
             ) : null}
 
             {isMandatePacket ? (
-            <div className="mt-6 scroll-mt-24">
+            <div className="mt-6 space-y-5 scroll-mt-24">
+              <MandateReviewPanel
+                summary={workspaceSummary}
+                data={mandateDataSnapshot}
+                routing={mandateRoutingSnapshot}
+                validation={mandatePreviewValidation}
+                templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
+                templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
+                savedLabel={workspaceSummary.savedLabel}
+              />
+              <MandateRoutePanel routing={mandateRoutingSnapshot} />
               <SigningMethodPanel
                 method={signingMethod}
                 packetType={packetType}

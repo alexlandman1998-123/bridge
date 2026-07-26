@@ -16097,7 +16097,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               disabled={mandateQuickStartBusy}
             >
               <Pencil className="h-4 w-4" />
-              Edit Wording / Terms
+              Review Mandate / Signing
             </Button>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
