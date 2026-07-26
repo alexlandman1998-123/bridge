@@ -1,0 +1,31 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-1",
+  "contract": "arch9-simple-signing-experience-model-v1",
+  "status": "adapter_model_ready",
+  "inputContract": "existing SignerPortal session",
+  "coveredDocumentTypes": ["mandate", "otp"],
+  "modelStates": ["review", "sign", "finish", "completed", "blocked"],
+  "modelSections": [
+    "document",
+    "steps",
+    "progress",
+    "actionCard",
+    "helpCard",
+    "secureFooter",
+    "copy"
+  ],
+  "backendBoundaries": {
+    "changesEmailDispatch": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "acceptance": [
+    "existing signer session data maps into a simple screenshot-style UI model",
+    "mandate seller sessions resolve to Mandate/Seller copy",
+    "OTP purchaser sessions resolve to Offer to Purchase/Buyer copy",
+    "raw preview URLs, token links, signed URLs, and fallback HTML are not copied into the UI model",
+    "the adapter has no backend side effects"
+  ]
+}
