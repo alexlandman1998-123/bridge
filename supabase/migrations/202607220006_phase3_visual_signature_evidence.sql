@@ -93,11 +93,11 @@ begin
     or coalesce(v_payload->>'signatureEvidenceMode', '') <> 'visual_and_audit'
     or coalesce(v_payload->>'signatureAssetEvidenceSha256', '') !~ '^[0-9a-f]{64}$'
     or coalesce(v_payload->>'finalArtifactSha256', '') <> lower(coalesce(p_sha256, ''))
-    or case
+    or (case
       when coalesce(v_payload->>'finalArtifactByteLength', '') ~ '^[0-9]+$'
         then (v_payload->>'finalArtifactByteLength')::bigint <> p_byte_length
       else true
-    end
+    end)
     or jsonb_typeof(v_payload->'signatureAssetFingerprints') <> 'array' then
     raise exception 'Phase 3 finalisation requires verified visual signature evidence.'
       using errcode = '22000', detail = 'PHASE3_VISUAL_SIGNATURE_EVIDENCE_REQUIRED';
@@ -133,12 +133,12 @@ begin
         or coalesce(fingerprint->>'fieldType', '') not in ('signature', 'initial')
         or coalesce(fingerprint->>'sha256', '') !~ '^[0-9a-f]{64}$'
         or lower(coalesce(fingerprint->>'imageFormat', '')) not in ('png', 'jpeg')
-        or case
+        or (case
           when coalesce(fingerprint->>'byteLength', '') ~ '^[0-9]+$'
             then (fingerprint->>'byteLength')::bigint < 1
               or (fingerprint->>'byteLength')::bigint > 20971520
           else true
-        end
+        end)
     )
     or exists (
       select 1
@@ -354,12 +354,12 @@ begin
         or lower(coalesce(fingerprint->>'fieldType', '')) not in ('signature', 'initial')
         or coalesce(fingerprint->>'sha256', '') !~ '^[0-9a-f]{64}$'
         or lower(coalesce(fingerprint->>'imageFormat', '')) not in ('png', 'jpeg')
-        or case
+        or (case
           when coalesce(fingerprint->>'byteLength', '') ~ '^[0-9]+$'
             then (fingerprint->>'byteLength')::bigint < 1
               or (fingerprint->>'byteLength')::bigint > 20971520
           else true
-        end
+        end)
     )
     or exists (
       select 1
