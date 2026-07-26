@@ -847,10 +847,13 @@ Deno.serve(async (req: Request) => {
     const portalPublicationValid = Boolean(finalPortalPublication) &&
       normalizeText(finalPortalPublication?.artifact_sha256) === finalEvidenceSha256 &&
       normalizeText(finalPortalPublication?.artifact_path) === finalSignedFilePath;
-    const finalArtifactReady = finalArtifactEvidenceValid &&
-      Boolean(normalizeText(version.final_signed_document_id)) &&
-      completionReceiptValid &&
-      portalPublicationValid;
+    const finalArtifactAvailableToCompletedSigner = finalArtifactEvidenceValid &&
+      Boolean(normalizeText(version.final_signed_document_id));
+    const finalArtifactReady = finalArtifactAvailableToCompletedSigner ||
+      (finalArtifactEvidenceValid &&
+        Boolean(normalizeText(version.final_signed_document_id)) &&
+        completionReceiptValid &&
+        portalPublicationValid);
     const finalArtifact = buildFinalArtifactAccessDescriptor({
       ready: finalArtifactReady,
       packetId: packet.id,

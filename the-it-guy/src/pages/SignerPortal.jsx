@@ -825,7 +825,10 @@ export default function SignerPortal() {
 
   function handleSimpleSigningAction(actionId) {
     recordSignerExperience('primary_action_selected', { state: signerExperienceState, actionId })
-    if (actionId === 'view_document') document.getElementById('signer-document-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (actionId === 'view_document') {
+      if (simpleSigningModel.state === 'completed') void handleOpenCompletedPdf()
+      else document.getElementById('signer-document-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
     else if (actionId === 'next_field') {
       const nextField = progress.nextField || fields[0]
       const nextFieldType = normalizeKey(nextField?.field_type)

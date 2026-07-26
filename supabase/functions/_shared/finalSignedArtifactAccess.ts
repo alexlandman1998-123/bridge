@@ -242,6 +242,7 @@ export async function resolvePublishedFinalSignedArtifact({
   documentId = "",
   issueDownloadUrl = false,
   expiresInSeconds = 60,
+  allowEvidenceArtifactAccess = false,
 }: {
   supabase: any;
   packetId: string;
@@ -249,6 +250,7 @@ export async function resolvePublishedFinalSignedArtifact({
   documentId?: string;
   issueDownloadUrl?: boolean;
   expiresInSeconds?: number;
+  allowEvidenceArtifactAccess?: boolean;
 }): Promise<FinalArtifactAccessResult> {
   try {
     const [packetResult, versionResult, evidenceResult, eventResult, traceResult] =
@@ -350,6 +352,38 @@ export async function resolvePublishedFinalSignedArtifact({
         "The final signed document could not be verified right now.",
       );
     }
+    const buildEvidenceArtifact = async () => {
+      const finalArtifact: JsonRecord = {
+        documentId: finalDocumentId || null,
+        fileName: normalizeFinalArtifactText(evidence.file_name) ||
+          normalizeFinalArtifactText(version.final_signed_file_name) ||
+          "signed-document.pdf",
+        sha256: normalizeFinalArtifactText(evidence.sha256) || null,
+        byteLength: Number(evidence.byte_length) || null,
+      };
+      if (issueDownloadUrl) {
+        const signedUrlResult = await supabase.storage
+          .from(normalizeFinalArtifactText(evidence.bucket))
+          .createSignedUrl(
+            normalizeFinalArtifactText(evidence.path),
+            Math.max(30, Math.min(Number(expiresInSeconds) || 60, 300)),
+            { download: normalizeFinalArtifactText(finalArtifact.fileName) || "signed-document.pdf" },
+          );
+        if (signedUrlResult.error || !signedUrlResult.data?.signedUrl) {
+          return response(
+            "unavailable",
+            "A fresh secure link could not be created. Please try again.",
+          );
+        }
+        finalArtifact.downloadUrl = signedUrlResult.data.signedUrl;
+      }
+      return response(
+        "published",
+        "The final signed document is ready.",
+        finalArtifact,
+      );
+    };
+
     const documentResult = await supabase
       .from("documents")
       .select(
@@ -366,6 +400,9 @@ export async function resolvePublishedFinalSignedArtifact({
         document: asRecord(documentResult.data),
       })
     ) {
+      if (allowEvidenceArtifactAccess) {
+        return await buildEvidenceArtifact();
+      }
       return response(
         "pending_publication",
         "The signed document is safely recorded and is being published to the portal.",

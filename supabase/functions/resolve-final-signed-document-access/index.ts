@@ -353,6 +353,7 @@ Deno.serve(async (req: Request) => {
       documentId,
       issueDownloadUrl: action === "download",
       expiresInSeconds: 60,
+      allowEvidenceArtifactAccess: context === "signer",
     });
     if (action === "download") {
       try {
