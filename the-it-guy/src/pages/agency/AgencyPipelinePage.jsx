@@ -8722,10 +8722,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
           if (!recoveredGeneration) {
             const details = normalizeText(generationError?.message || String(generationError))
-            const blocker = new Error(
-              details || 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.',
-            )
-            blocker.code = generationError?.code || 'MANDATE_PACKET_VERSION_FAILED'
+            const blocker = generationError instanceof Error
+              ? generationError
+              : new Error(
+                  details || 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.',
+                )
+            if (!normalizeText(blocker.message)) {
+              blocker.message = 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.'
+            }
+            blocker.code = generationError?.code || blocker.code || 'MANDATE_PACKET_VERSION_FAILED'
+            blocker.details = generationError?.details || blocker.details || null
+            blocker.validation = generationError?.validation || blocker.validation || generatedVersionResult?.validation || null
             blocker.packetId = packet.id
             throw blocker
           }
@@ -9755,7 +9762,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartEmailDraft({ agent: '', seller: '' })
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
-      setMandateQuickStartError(quickStartError?.message || 'Unable to generate and start signing right now.')
+      const recoveryMessage = quickStartError?.code || quickStartError?.details || quickStartError?.validation
+        ? formatLegalDocumentGenerationRecovery(quickStartError, { packetType: 'mandate' })
+        : ''
+      setMandateQuickStartError(recoveryMessage || quickStartError?.message || 'Unable to generate and start signing right now.')
     } finally {
       setMandateQuickStartBusy(false)
       setMandateQuickStartProgress('')

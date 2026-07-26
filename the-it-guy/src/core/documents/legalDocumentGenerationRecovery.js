@@ -27,6 +27,57 @@ function safeIssueCodes(error) {
     .slice(0, 8)
 }
 
+function humanizeIssueText(value = '') {
+  return normalizeText(value)
+    .replace(/[{}]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function issueMessage(entry = null) {
+  if (!entry) return ''
+  if (typeof entry === 'string') return humanizeIssueText(entry)
+  return humanizeIssueText(
+    entry.placeholderLabel ||
+      entry.label ||
+      entry.message ||
+      entry.field ||
+      entry.placeholder ||
+      entry.key ||
+      entry.code ||
+      '',
+  )
+}
+
+function collectIssueMessages(error = null) {
+  const candidates = [
+    ...(Array.isArray(error?.details?.issues) ? error.details.issues : []),
+    ...(Array.isArray(error?.details?.blockingIssues) ? error.details.blockingIssues : []),
+    ...(Array.isArray(error?.details?.missingFields) ? error.details.missingFields : []),
+    ...(Array.isArray(error?.details?.missingPlaceholders) ? error.details.missingPlaceholders : []),
+    ...(Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts) ? error.validation.legalDocumentMissingRoutingFacts : []),
+    ...(Array.isArray(error?.validation?.missingPlaceholders) ? error.validation.missingPlaceholders : []),
+    ...(Array.isArray(error?.validation?.critical) ? error.validation.critical : []),
+    ...(Array.isArray(error?.validation?.mandateValidation?.missingRequiredFields)
+      ? error.validation.mandateValidation.missingRequiredFields
+      : []),
+    ...(Array.isArray(error?.validation?.mandateValidation?.missingFields)
+      ? error.validation.mandateValidation.missingFields
+      : []),
+    ...(Array.isArray(error?.validation?.sellerValidation?.missingRequiredFields)
+      ? error.validation.sellerValidation.missingRequiredFields
+      : []),
+  ]
+  return [...new Set(candidates.map(issueMessage).filter(Boolean))].slice(0, 8)
+}
+
+function appendIssueSummary(message = '', issues = []) {
+  const uniqueIssues = Array.isArray(issues) ? issues.filter(Boolean) : []
+  if (!uniqueIssues.length) return message
+  return `${message} Missing or blocked: ${uniqueIssues.join(', ')}.`
+}
+
 /** Safe diagnostic facts for the audit trail; never copies provider messages or document data. */
 export function buildSafeLegalDocumentGenerationDiagnostics(error = null) {
   const code = inferredCode(error) || 'GENERATION_FAILED'
@@ -47,7 +98,10 @@ function validationRecovery(error, label) {
     ? error.validation.legalDocumentMissingRoutingFacts
     : []
   const critical = Array.isArray(error?.validation?.critical) ? error.validation.critical : []
-  const fields = routingFacts.length
+  const collectedIssues = collectIssueMessages(error)
+  const fields = collectedIssues.length
+    ? collectedIssues
+    : routingFacts.length
     ? routingFacts.map((field) => String(field).replace(/_/g, ' '))
     : critical.map((item) => normalizeText(item?.placeholderLabel || item?.field || item?.message)).filter(Boolean)
   return {
@@ -68,10 +122,11 @@ export function resolveLegalDocumentGenerationRecovery(error = null, { packetTyp
   if (['VALIDATION_BLOCKED', 'WARNINGS_BLOCKED', 'MANDATE_PREFLIGHT_BLOCKED'].includes(code)) return withDiagnostics(validationRecovery(error, label), error)
   if (code === 'GENERATION_PREFLIGHT_BLOCKED') {
     const issueCodes = safeIssueCodes(error)
+    const issueMessages = collectIssueMessages(error)
     const templateIssue = issueCodes.includes('TEMPLATE_SOURCE_MISSING')
     return withDiagnostics(templateIssue
       ? { code, label: 'Template setup needs attention', message: `The approved ${label} template is not ready to render.`, nextAction: 'Ask a legal-template administrator to review the active template source.', retryable: false, actionKey: 'contact_admin', actionLabel: 'Copy admin reference' }
-      : { code, label: 'Information needed', message: `${label} generation was stopped before rendering because required document information is incomplete.`, nextAction: 'Review the highlighted document information, then select Generate again.', retryable: false, actionKey: 'review_information', actionLabel: 'Review information' }, error)
+      : { code, label: 'Information needed', message: appendIssueSummary(`${label} generation was stopped before rendering because required document information is incomplete.`, issueMessages), nextAction: 'Review the highlighted document information, then select Generate again.', retryable: false, actionKey: 'review_information', actionLabel: 'Review information' }, error)
   }
   if (code === 'GENERATION_ALREADY_IN_PROGRESS') return withDiagnostics({ code, label: 'Generation already running', message: `Another ${label} generation is already running for this packet. Your details are safe and a second copy was not started.`, nextAction: 'Wait a moment, then refresh the packet status.', retryable: true, actionKey: 'refresh', actionLabel: 'Refresh status' }, error)
   if (code === 'GENERATION_TIMEOUT') return withDiagnostics({ code, label: 'Generation is taking longer than expected', message: `${label} generation stopped waiting before completion could be confirmed. Your entered details are still available.`, nextAction: 'Refresh the draft status once before starting another generation.', retryable: true, actionKey: 'refresh', actionLabel: 'Refresh status' }, error)
