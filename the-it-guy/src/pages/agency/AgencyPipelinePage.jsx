@@ -165,6 +165,7 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
 const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 1500
@@ -3278,6 +3279,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerPreferredAttorneysLoading, setSellerPreferredAttorneysLoading] = useState(false)
   const [sellerPreferredAttorneysError, setSellerPreferredAttorneysError] = useState('')
   const [selectedSellerAttorneyId, setSelectedSellerAttorneyId] = useState('')
+  const sellerPreferredAttorneysCacheRef = useRef(new Map())
+  const sellerPreferredAttorneysPrefetchKeyRef = useRef('')
+  const sellerPreferredAttorneysRequestRef = useRef(0)
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
   const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)
@@ -8128,7 +8132,155 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
-  async function requestSellerOnboardingAttorneySelection() {
+  const sellerPreferredAttorneyCacheKey = useMemo(() => [
+    normalizeText(organisationId),
+    normalizeText(currentWorkspace?.type || workspace?.type || 'agency'),
+    normalizeText(role),
+    normalizeText(profile?.id),
+    normalizeText(currentMembership?.id || currentMembership?.organisationId),
+  ].join(':'), [
+    currentMembership?.id,
+    currentMembership?.organisationId,
+    currentWorkspace?.type,
+    organisationId,
+    profile?.id,
+    role,
+    workspace?.type,
+  ])
+
+  const selectedLeadPreferredTransferAttorneyId = useMemo(() => normalizeText(
+    selectedLead?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
+      selectedLead?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId ||
+      selectedLeadLinkedListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
+      selectedLeadLinkedListing?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId,
+  ), [selectedLead, selectedLeadLinkedListing])
+
+  const applySellerPreferredAttorneyOptions = useCallback((attorneys = []) => {
+    const normalizedAttorneys = Array.isArray(attorneys) ? attorneys : []
+    setSellerPreferredAttorneys(normalizedAttorneys)
+    const initialAttorney = normalizedAttorneys.find((attorney) => (
+      String(attorney.id) === selectedLeadPreferredTransferAttorneyId ||
+      String(attorney.preferredPartnerId) === selectedLeadPreferredTransferAttorneyId
+    )) ||
+      normalizedAttorneys.find((attorney) => attorney.isPreferredDefault) ||
+      normalizedAttorneys[0] ||
+      null
+    setSelectedSellerAttorneyId(initialAttorney?.id || '')
+    return normalizedAttorneys
+  }, [selectedLeadPreferredTransferAttorneyId])
+
+  const loadSellerPreferredAttorneyOptions = useCallback(async ({ applyState = true, showLoading = false } = {}) => {
+    const cacheKey = sellerPreferredAttorneyCacheKey
+    if (!applyState && sellerPreferredAttorneysPrefetchKeyRef.current === cacheKey) {
+      return sellerPreferredAttorneysCacheRef.current.get(cacheKey)?.attorneys || []
+    }
+    if (!applyState) {
+      sellerPreferredAttorneysPrefetchKeyRef.current = cacheKey
+    }
+    const requestId = sellerPreferredAttorneysRequestRef.current + 1
+    sellerPreferredAttorneysRequestRef.current = requestId
+    if (showLoading) {
+      setSellerPreferredAttorneysLoading(true)
+    }
+    if (applyState) {
+      setSellerPreferredAttorneysError('')
+    }
+
+    try {
+      const accessContext = {
+        organisationId,
+        role,
+        profile,
+        currentMembership,
+      }
+      const workspaceType = currentWorkspace?.type || workspace?.type || 'agency'
+      const [preferredPartnersResult, connectedAttorneysResult] = await Promise.allSettled([
+        withPipelineTimeout(
+          listOrganisationPreferredPartners(),
+          'Preferred transfer attorneys are taking too long to load.',
+          SELLER_ATTORNEY_PICKER_TIMEOUT_MS,
+        ),
+        withPipelineTimeout(
+          fetchPartnersSnapshot({
+            organisationId,
+            workspaceType,
+            includeDirectory: false,
+            accessContext,
+          }),
+          'Connected transfer attorneys are taking too long to load.',
+          SELLER_ATTORNEY_PICKER_TIMEOUT_MS,
+        )
+          .then((partnerSnapshot) => getPartnerAssignmentOptions(partnerSnapshot, 'transfer_attorney', accessContext)
+            .map(mapConnectedAttorneyToPreferredAttorney)
+            .filter(Boolean)),
+      ])
+      const partners = preferredPartnersResult.status === 'fulfilled' ? preferredPartnersResult.value : []
+      const connectedAttorneyOptions = connectedAttorneysResult.status === 'fulfilled' ? connectedAttorneysResult.value : []
+      if (preferredPartnersResult.status === 'rejected') {
+        console.warn('[Seller onboarding] Preferred transfer attorneys could not be loaded.', preferredPartnersResult.reason)
+      }
+      if (connectedAttorneysResult.status === 'rejected') {
+        console.warn('[Seller onboarding] Connected transfer attorneys could not be loaded.', connectedAttorneysResult.reason)
+      }
+      if (preferredPartnersResult.status === 'rejected' && connectedAttorneysResult.status === 'rejected') {
+        throw preferredPartnersResult.reason || connectedAttorneysResult.reason || new Error('Transfer attorneys could not be loaded.')
+      }
+      const attorneys = mergePreferredAttorneyOptions(
+        filterPreferredPartners(partners || [], { type: 'transfer_attorney', activeOnly: true }),
+        connectedAttorneyOptions,
+      )
+      sellerPreferredAttorneysCacheRef.current.set(cacheKey, {
+        attorneys,
+        loadedAt: Date.now(),
+      })
+      if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
+        applySellerPreferredAttorneyOptions(attorneys)
+        if (!attorneys.length) {
+          setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation / Partners before sending onboarding.')
+        }
+      }
+      return attorneys
+    } catch (loadError) {
+      if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
+        setSellerPreferredAttorneys([])
+        setSelectedSellerAttorneyId('')
+        setSellerPreferredAttorneysError(loadError?.message || 'Preferred transfer attorneys could not be loaded.')
+      }
+      return []
+    } finally {
+      if (!applyState && sellerPreferredAttorneysPrefetchKeyRef.current === cacheKey) {
+        sellerPreferredAttorneysPrefetchKeyRef.current = ''
+      }
+      if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
+        setSellerPreferredAttorneysLoading(false)
+      }
+    }
+  }, [
+    applySellerPreferredAttorneyOptions,
+    currentMembership,
+    currentWorkspace?.type,
+    organisationId,
+    profile,
+    role,
+    sellerPreferredAttorneyCacheKey,
+    workspace?.type,
+  ])
+
+  useEffect(() => {
+    if (!organisationId || !selectedLead || !selectedLeadIsSeller) return
+    if (!isValidEmail(normalizeText(selectedLeadContact?.email))) return
+    if (sellerPreferredAttorneysCacheRef.current.has(sellerPreferredAttorneyCacheKey)) return
+    void loadSellerPreferredAttorneyOptions({ applyState: false, showLoading: false })
+  }, [
+    loadSellerPreferredAttorneyOptions,
+    organisationId,
+    selectedLead,
+    selectedLeadContact?.email,
+    selectedLeadIsSeller,
+    sellerPreferredAttorneyCacheKey,
+  ])
+
+  function requestSellerOnboardingAttorneySelection() {
     if (!selectedLead) return
     if (isSellerOnboardingSending || sellerPreferredAttorneysLoading) return
     if (!organisationId) {
@@ -8145,57 +8297,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     setSellerPreferredAttorneysError('')
     setSellerAttorneyPickerOpen(true)
-    setSellerPreferredAttorneysLoading(true)
-    try {
-      const partners = await listOrganisationPreferredPartners()
-      let connectedAttorneyOptions = []
-      try {
-        const partnerSnapshot = await fetchPartnersSnapshot({
-          organisationId,
-          workspaceType: currentWorkspace?.type || workspace?.type || 'agency',
-          includeDirectory: false,
-          accessContext: {
-            organisationId,
-            role,
-            profile,
-            currentMembership,
-          },
-        })
-        connectedAttorneyOptions = getPartnerAssignmentOptions(partnerSnapshot, 'transfer_attorney', {
-          organisationId,
-          role,
-          profile,
-          currentMembership,
-        })
-          .map(mapConnectedAttorneyToPreferredAttorney)
-          .filter(Boolean)
-      } catch (partnerSnapshotError) {
-        console.warn('[Seller onboarding] Connected transfer attorneys could not be loaded.', partnerSnapshotError)
-      }
-      const attorneys = mergePreferredAttorneyOptions(
-        filterPreferredPartners(partners || [], { type: 'transfer_attorney', activeOnly: true }),
-        connectedAttorneyOptions,
-      )
-      setSellerPreferredAttorneys(attorneys)
-      const existingAttorneyId = normalizeText(
-        selectedLeadLinkedListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
-        selectedLeadLinkedListing?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId,
-      )
-      const initialAttorney = attorneys.find((attorney) => String(attorney.id) === existingAttorneyId || String(attorney.preferredPartnerId) === existingAttorneyId)
-        || attorneys.find((attorney) => attorney.isPreferredDefault)
-        || attorneys[0]
-        || null
-      setSelectedSellerAttorneyId(initialAttorney?.id || '')
-      if (!attorneys.length) {
+    const cached = sellerPreferredAttorneysCacheRef.current.get(sellerPreferredAttorneyCacheKey)
+    if (cached?.attorneys) {
+      applySellerPreferredAttorneyOptions(cached.attorneys)
+      setSellerPreferredAttorneysLoading(false)
+      if (!cached.attorneys.length) {
         setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation / Partners before sending onboarding.')
       }
-    } catch (loadError) {
+    } else {
       setSellerPreferredAttorneys([])
       setSelectedSellerAttorneyId('')
-      setSellerPreferredAttorneysError(loadError?.message || 'Preferred transfer attorneys could not be loaded.')
-    } finally {
-      setSellerPreferredAttorneysLoading(false)
+      setSellerPreferredAttorneysLoading(true)
     }
+    void loadSellerPreferredAttorneyOptions({ applyState: true, showLoading: !cached?.attorneys })
   }
 
   async function handleSendSellerOnboarding(preferredAttorney = null) {
