@@ -3568,6 +3568,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartPacketVersionId, setMandateQuickStartPacketVersionId] = useState('')
   const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
   const mandateQuickStartPregenerationRef = useRef({ key: '', promise: null })
+  const mandateQueuedSigningFinalisationRef = useRef(new Map())
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
   const routeLeadRecord = useMemo(() => {
@@ -10594,6 +10595,84 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function startQueuedMandateSigningFinalisation(sendOptions = {}) {
+    const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
+    const packetId = normalizeText(options.packetId)
+    if (!isUuidLike(packetId)) return false
+
+    const packetVersionId = normalizeText(options.packetVersionId)
+    const targetSignerRole = normalizeText(options.targetSignerRole).toLowerCase() || 'agent'
+    const signingStatus = normalizeText(options.signingStatus) ||
+      (targetSignerRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
+    const finalisationKey = [packetId, packetVersionId || 'latest', signingStatus].join(':')
+    const currentRuns = mandateQueuedSigningFinalisationRef.current
+    if (currentRuns.has(finalisationKey)) return true
+
+    const finalisationPromise = Promise.resolve()
+      .then(() => new Promise((resolve) => setTimeout(resolve, 0)))
+      .then(async () => {
+        console.info('[MANDATE] queued signing finalisation started.', {
+          packetId,
+          packetVersionId: packetVersionId || null,
+          targetSignerRole,
+        })
+        const result = await handleSendMandateToSeller({
+          ...options,
+          packetId,
+          packetVersionId: packetVersionId || null,
+          signingStatus,
+        })
+        if (!result?.ok) {
+          throw new Error(result?.errorMessage || 'Queued mandate signing finalisation did not complete.')
+        }
+        console.info('[MANDATE] queued signing finalisation completed.', {
+          packetId,
+          packetVersionId: packetVersionId || null,
+          recipientRole: result.recipientRole || null,
+          recipientEmail: result.recipientEmail || null,
+          emailConfirmed: result.emailConfirmed === true,
+        })
+        return result
+      })
+      .catch((finalisationError) => {
+        const errorMessage = finalisationError?.message || 'Mandate signing was queued, but finalising the email failed. Open the mandate workspace and resend.'
+        console.warn('[MANDATE] queued signing finalisation failed.', {
+          packetId,
+          packetVersionId: packetVersionId || null,
+          error: finalisationError,
+        })
+        setError(errorMessage)
+        if (isSupabaseConfigured && supabase) {
+          void supabase
+            .from('document_packet_events')
+            .insert({
+              packet_id: packetId,
+              organisation_id: organisationId,
+              version_id: isUuidLike(packetVersionId) ? packetVersionId : null,
+              event_type: 'mandate_signing_finalisation_failed',
+              event_payload_json: {
+                activity_type: 'mandate_signing_finalisation_failed',
+                message: errorMessage,
+                errorMessage,
+                signingStatus,
+                targetSignerRole,
+              },
+              created_by: normalizeText(currentAgent.id) || null,
+            })
+            .catch((eventError) => {
+              console.warn('[MANDATE] queued signing failure event skipped.', eventError)
+            })
+        }
+        return null
+      })
+      .finally(() => {
+        currentRuns.delete(finalisationKey)
+      })
+
+    currentRuns.set(finalisationKey, finalisationPromise)
+    return true
+  }
+
   function startMandateQuickStartPregeneration(options = {}) {
     if (!selectedLead || !selectedLeadIsSeller || !organisationId) return false
     if (selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length) return false
@@ -10781,6 +10860,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusGeneratedVersionId = normalizeText(statusGeneratedVersion?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       const mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
+      const requestedAgentEmail = mandateQuickStartEmailDraft.agent
+      const requestedSellerEmail = mandateQuickStartEmailDraft.seller
 
       if (!isUuidLike(mandatePacketId)) {
         if (currentStep === 'send' && mandateQuickStartPregenerationRef.current?.promise) {
@@ -10805,8 +10886,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sendResult = await handleQueueMandateSigningRequest({
         packetId: mandatePacketId,
         packetVersionId: isUuidLike(mandatePacketVersionId) ? mandatePacketVersionId : null,
-        agentEmail: mandateQuickStartEmailDraft.agent,
-        sellerEmail: mandateQuickStartEmailDraft.seller,
+        agentEmail: requestedAgentEmail,
+        sellerEmail: requestedSellerEmail,
         sourceFingerprintStatus: sourceFingerprintInfo.status,
         requestedSourceFingerprint: sourceFingerprintInfo.requestedSourceFingerprint,
         generatedSourceFingerprint: sourceFingerprintInfo.generatedSourceFingerprint,
@@ -10816,6 +10897,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw new Error(sendResult?.errorMessage || 'Mandate signing could not be queued yet. Check the signer emails and try again.')
       }
 
+      startQueuedMandateSigningFinalisation({
+        packetId: mandatePacketId,
+        packetVersionId: isUuidLike(mandatePacketVersionId) ? mandatePacketVersionId : null,
+        agentEmail: requestedAgentEmail,
+        sellerEmail: requestedSellerEmail,
+        targetSignerRole: sendResult.targetSignerRole || 'agent',
+      })
       setMandateQuickStartOpen(false)
       setMandateQuickStartStep('details')
       setMandateQuickStartSigningMethod('')
