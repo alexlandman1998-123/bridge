@@ -3004,7 +3004,6 @@ export default function LegalDocumentWorkspace({
   const signingDeliveryDisabled = signingDeliveryEnabled === false
   const signingDeliveryUnavailableMessage = normalizeText(signingDeliveryDisabledReason) ||
     'Signing delivery is temporarily unavailable. No signing links or sent status will be created until server-backed delivery is enabled.'
-  const isFocusedMandatePage = isPageMode && isMandatePacket
   const sourceContext = useMemo(() => (
     statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
       ? statusState.packet.source_context_json
@@ -6597,13 +6596,13 @@ export default function LegalDocumentWorkspace({
                 </div>
               </article>
             ) : null}
-            {!legalPermissions.canEditDraft ? (
+            {!isMandatePacket && !legalPermissions.canEditDraft ? (
               <article className="mb-5 rounded-[18px] border border-[#e4ebf4] bg-[#f8fbff] px-4 py-3 text-sm font-semibold text-[#55708d]">
                 Read-only mode: your role can view lifecycle progress and signer status, but cannot modify legal drafts.
               </article>
             ) : null}
 
-            {!isFocusedMandatePage ? (
+            {!isMandatePacket ? (
               <>
                 <div className="mb-5">
                   <DocumentJourneyProgress model={documentJourney} />
@@ -6639,7 +6638,7 @@ export default function LegalDocumentWorkspace({
                 />
               </div>
             ) : null}
-            {statusState?.signingActivity?.rows?.length ? (
+            {!isMandatePacket && statusState?.signingActivity?.rows?.length ? (
               <div id="legal-document-signing-activity" className="mb-5 scroll-mt-24">
                 <SigningActivityHistory history={statusState.signingActivity} />
               </div>
@@ -6699,6 +6698,7 @@ export default function LegalDocumentWorkspace({
               </section>
             ) : null}
 
+            {!isMandatePacket ? (
             <div id="legal-document-main-workspace" className={`${mainGridClassName} scroll-mt-24`}>
               <div className="xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <div className="xl:min-h-0 xl:flex-1">
@@ -6897,7 +6897,36 @@ export default function LegalDocumentWorkspace({
               </section>
 
             </div>
+            ) : null}
 
+            {isMandatePacket ? (
+            <div className="mt-6 scroll-mt-24">
+              <SigningMethodPanel
+                method={signingMethod}
+                packetType={packetType}
+                canChange={canChangeSigningMethod}
+                lockedReason={signingMethodLockedReason}
+                onSelect={handleSelectSigningMethod}
+                canResend={canResendSignatureLinks}
+                onResend={() => runReviewAction('resend_signature')}
+                resendSummary={resendSignatureSummary}
+                busy={actionBusy || loading}
+                className="min-h-[360px]"
+              />
+
+              {signingMethod === 'physical' ? (
+                <div className="mt-5">
+                  <PhysicalMandatePanel
+                    uploaded={manualSignedUploaded || isFullySignedLifecycle}
+                    uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
+                    signedUrl={signedPreviewUrl}
+                    busy={actionBusy || loading}
+                    onDownload={handlePhysicalDownload}
+                  />
+                </div>
+              ) : null}
+            </div>
+            ) : (
             <div className={secondaryGridClassName}>
               <aside className="h-full space-y-5">
                 {isMandatePacket ? (
@@ -6948,7 +6977,9 @@ export default function LegalDocumentWorkspace({
                 />
               </aside>
             </div>
+            )}
 
+            {!isMandatePacket ? (
             <div className="mt-5 rounded-[28px] border border-[#e5edf7] bg-white p-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)] sm:p-5">
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
                 <div className="grid min-w-0 gap-5 lg:grid-cols-[300px_minmax(320px,1fr)] lg:items-center">
@@ -7079,6 +7110,7 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
             </div>
+            ) : null}
           </div>
         </div>
         <DocumentMobileActionDock
