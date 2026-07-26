@@ -471,6 +471,116 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function getMandateManualOverrideFromSource(sourceContext = {}) {
+  const override = sourceContext?.mandateManualOverride && typeof sourceContext.mandateManualOverride === 'object'
+    ? sourceContext.mandateManualOverride
+    : sourceContext?.mandate_manual_override && typeof sourceContext.mandate_manual_override === 'object'
+      ? sourceContext.mandate_manual_override
+      : {}
+  return {
+    ...override,
+    fields: override?.fields && typeof override.fields === 'object' ? override.fields : {},
+  }
+}
+
+function setManualMandateValue(target = {}, key = '', value = '') {
+  const text = normalizeText(value)
+  if (text) target[key] = text
+}
+
+function applyMandateManualOverrideToData(mandateData = null, sourceContext = {}) {
+  if (!mandateData || typeof mandateData !== 'object') return mandateData
+  const override = getMandateManualOverrideFromSource(sourceContext)
+  const fields = override.fields || {}
+  if (!Object.keys(fields).some((key) => normalizeText(fields[key]))) return mandateData
+
+  const next = {
+    ...mandateData,
+    seller: { ...(mandateData.seller || {}) },
+    property: { ...(mandateData.property || {}) },
+    mandate: { ...(mandateData.mandate || {}) },
+    agency: { ...(mandateData.agency || {}) },
+    agent: { ...(mandateData.agent || {}) },
+    transferAttorney: { ...(mandateData.transferAttorney || mandateData.transfer_attorney || {}) },
+    placeholders: { ...(mandateData.placeholders || {}) },
+    sourceContext: { ...(mandateData.sourceContext || mandateData.source_context || {}) },
+  }
+  const field = (key) => fields[key]
+  const placeholder = (key, value) => setManualMandateValue(next.placeholders, key, value)
+  const source = (key, value) => setManualMandateValue(next.sourceContext, key, value)
+  const mandateDates = normalizeText(field('mandate_dates'))
+  const [mandateStartDate, mandateEndDate] = mandateDates.includes(' to ')
+    ? mandateDates.split(' to ').map(normalizeText)
+    : [mandateDates, '']
+  const commission = normalizeText(field('commission'))
+  const commissionIsPercentage = commission.includes('%')
+
+  setManualMandateValue(next.seller, 'fullName', field('seller_name'))
+  setManualMandateValue(next.seller, 'email', field('seller_email'))
+  setManualMandateValue(next.seller, 'phone', field('seller_phone'))
+  setManualMandateValue(next.seller, 'entityType', field('seller_capacity'))
+  setManualMandateValue(next.seller, 'maritalRegime', field('seller_marital'))
+  placeholder('seller_full_name', field('seller_name'))
+  placeholder('seller_email', field('seller_email'))
+  placeholder('seller_phone', field('seller_phone'))
+  placeholder('seller_entity_type', field('seller_capacity'))
+  placeholder('seller_marital_regime', field('seller_marital'))
+  source('sellerName', field('seller_name'))
+  source('sellerEmail', field('seller_email'))
+  source('sellerPhone', field('seller_phone'))
+
+  setManualMandateValue(next.property, 'fullAddress', field('property_address'))
+  setManualMandateValue(next.property, 'displayAddress', field('property_address'))
+  setManualMandateValue(next.property, 'propertyType', field('property_type'))
+  setManualMandateValue(next.property, 'propertyStructureType', field('property_title'))
+  setManualMandateValue(next.property, 'titleType', field('property_title'))
+  setManualMandateValue(next.property, 'erfNumber', field('property_reference'))
+  setManualMandateValue(next.property, 'erfSize', field('property_size'))
+  setManualMandateValue(next.property, 'askingPrice', field('asking_price'))
+  placeholder('property_address', field('property_address'))
+  placeholder('property_display_address', field('property_address'))
+  placeholder('property_type', field('property_type'))
+  placeholder('property_structure_type', field('property_title'))
+  placeholder('property_erf_number', field('property_reference'))
+  placeholder('erf_number', field('property_reference'))
+  placeholder('erf_size', field('property_size'))
+  placeholder('property_asking_price', field('asking_price'))
+  source('propertyAddress', field('property_address'))
+
+  setManualMandateValue(next.mandate, 'askingPrice', field('asking_price'))
+  setManualMandateValue(next.mandate, 'type', field('mandate_type'))
+  setManualMandateValue(next.mandate, 'mandateType', field('mandate_type'))
+  setManualMandateValue(next.mandate, 'startDate', mandateStartDate)
+  setManualMandateValue(next.mandate, 'expiryDate', mandateEndDate)
+  if (commission) {
+    setManualMandateValue(next.mandate, 'commissionStructure', commissionIsPercentage ? 'percentage' : 'fixed')
+    setManualMandateValue(next.mandate, commissionIsPercentage ? 'commissionPercentage' : 'commissionAmount', commission)
+    setManualMandateValue(next.mandate, commissionIsPercentage ? 'commissionPercent' : 'commissionAmount', commission)
+  }
+  placeholder('asking_price', field('asking_price'))
+  placeholder('mandate_type', field('mandate_type'))
+  placeholder('mandate_start_date', mandateStartDate)
+  placeholder('mandate_end_date', mandateEndDate)
+  placeholder('commission_structure', commission ? (commissionIsPercentage ? 'Percentage' : 'Fixed') : '')
+  placeholder(commissionIsPercentage ? 'mandate_commission_percent' : 'mandate_commission_amount', commission)
+  placeholder(commissionIsPercentage ? 'commission_percentage' : 'commission_amount', commission)
+
+  setManualMandateValue(next.transferAttorney, 'companyName', field('transfer_attorney'))
+  placeholder('transfer_attorney_company_name', field('transfer_attorney'))
+  setManualMandateValue(next.agent, 'fullName', field('agent'))
+  placeholder('agent_full_name', field('agent'))
+  setManualMandateValue(next.agency, 'name', field('agency'))
+  placeholder('agency_name', field('agency'))
+  placeholder('agency_display_name', field('agency'))
+  source('manualRouteLabel', field('route'))
+  source('manualRouteStatusLabel', field('route_status'))
+  source('manualTemplateLabel', field('template'))
+  source('manualTemplateKey', field('template_key'))
+  next.transfer_attorney = next.transferAttorney
+  next.sourceContext.mandateManualOverride = override
+  return next
+}
+
 function getPreferredAttorneyInitials(attorney = {}) {
   const words = normalizeText(attorney.companyName || attorney.contactPerson || attorney.email).split(/\s+/).filter(Boolean)
   return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'TA'
@@ -8414,85 +8524,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           console.warn('[MANDATE] seller onboarding lookup failed before generation', onboardingLookupError)
         }
       }
-      const leadForMapping = {
-        ...hydratedLead,
-        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
-        sellerName: normalizeText(selectedLeadContact?.firstName),
-        sellerSurname: normalizeText(selectedLeadContact?.lastName),
-        sellerEmail: normalizeText(selectedLeadContact?.email),
-        sellerPhone: normalizeText(selectedLeadContact?.phone),
-        propertyAddress: normalizeText(hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-        propertyType: normalizeText(selectedLeadPropertyType) || 'House',
-        listingTitle: normalizeText(hydratedLead?.propertyInterest || hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-        askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || 0) || 0,
-        assignedAgentName: normalizeText(hydratedLead?.assignedAgentName || currentAgent.fullName),
-        assignedAgentEmail: normalizeText(hydratedLead?.assignedAgentEmail || currentAgent.email),
-      }
-      const mandateData = mapSellerOnboardingToMandateData(
-        {
-          onboardingSubmission: {
-            ...((leadForMapping?.sellerOnboarding?.formData && typeof leadForMapping.sellerOnboarding.formData === 'object')
-              ? leadForMapping.sellerOnboarding.formData
-              : {}),
-            status: normalizeText(leadForMapping?.sellerOnboardingStatus || leadForMapping?.sellerOnboarding?.status),
-            askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || leadForMapping?.sellerOnboarding?.formData?.askingPrice || 0) || '',
-            mandateType: 'sole',
-          },
-          lead: leadForMapping,
-          privateListing: hydratedPrivateListing || {},
-          agency: {
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-          organisation: {
-            id: organisationId,
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-          agent: currentAgent,
-          contact: selectedLeadContact || {},
-          transaction: {},
-        },
-      )
-      const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
-      if (!mandatePreflight.canProceed) {
-        console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
-          leadId: selectedLead?.leadId || null,
-          missingRequiredFields: mandatePreflight.missingRequiredFields,
-          warnings: mandatePreflight.warnings,
-        })
-      }
-      templateResolution = await resolveActiveTemplate({
-        packetType: 'mandate',
-        moduleType: 'residential',
-        organisationId,
-        includeSections: true,
-        context: {
-          organisationId,
-          validationAction: 'generate',
-          mandateData,
-          sourceContext: mandateData?.sourceContext || {},
-        },
-      }).catch((templateError) => {
-        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
-        return null
-      })
-      template = templateResolution?.template || null
-
-      const packetSourceContextJson = {
-        leadId: dbLeadId || null,
-        uiLeadId: normalizeText(selectedLead.leadId) || null,
-        leadCategory: selectedLead.leadCategory,
-        leadSource: selectedLead.leadSource,
-        contactId: selectedLead.contactId,
-        generatedDataSnapshot: mandateData,
-        missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
-        warningsSnapshot: mandatePreflight.warnings,
-        sourceContext: mandateData.sourceContext,
-      }
-      const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
-      const loadExistingPacket = async () => {
+      const fetchExistingMandatePacket = async () => {
         if (mandatePacketId && isUuidLike(mandatePacketId)) {
           try {
             const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: true, includeEvents: false })
@@ -8525,6 +8557,99 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
         }
         return null
+      }
+      const existingPacketForGeneration = await fetchExistingMandatePacket()
+      const existingPacketSourceContext =
+        existingPacketForGeneration?.source_context_json && typeof existingPacketForGeneration.source_context_json === 'object'
+          ? existingPacketForGeneration.source_context_json
+          : {}
+      const leadForMapping = {
+        ...hydratedLead,
+        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
+        sellerName: normalizeText(selectedLeadContact?.firstName),
+        sellerSurname: normalizeText(selectedLeadContact?.lastName),
+        sellerEmail: normalizeText(selectedLeadContact?.email),
+        sellerPhone: normalizeText(selectedLeadContact?.phone),
+        propertyAddress: normalizeText(hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+        listingTitle: normalizeText(hydratedLead?.propertyInterest || hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || 0) || 0,
+        assignedAgentName: normalizeText(hydratedLead?.assignedAgentName || currentAgent.fullName),
+        assignedAgentEmail: normalizeText(hydratedLead?.assignedAgentEmail || currentAgent.email),
+      }
+      let mandateData = mapSellerOnboardingToMandateData(
+        {
+          onboardingSubmission: {
+            ...((leadForMapping?.sellerOnboarding?.formData && typeof leadForMapping.sellerOnboarding.formData === 'object')
+              ? leadForMapping.sellerOnboarding.formData
+              : {}),
+            status: normalizeText(leadForMapping?.sellerOnboardingStatus || leadForMapping?.sellerOnboarding?.status),
+            askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || leadForMapping?.sellerOnboarding?.formData?.askingPrice || 0) || '',
+            mandateType: 'sole',
+          },
+          lead: leadForMapping,
+          privateListing: hydratedPrivateListing || {},
+          agency: {
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          organisation: {
+            id: organisationId,
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          agent: currentAgent,
+          contact: selectedLeadContact || {},
+          transaction: {},
+        },
+      )
+      mandateData = applyMandateManualOverrideToData(mandateData, existingPacketSourceContext)
+      const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
+      if (!mandatePreflight.canProceed) {
+        console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
+          leadId: selectedLead?.leadId || null,
+          missingRequiredFields: mandatePreflight.missingRequiredFields,
+          warnings: mandatePreflight.warnings,
+        })
+      }
+      templateResolution = await resolveActiveTemplate({
+        packetType: 'mandate',
+        moduleType: 'residential',
+        organisationId,
+        includeSections: true,
+        context: {
+          organisationId,
+          validationAction: 'generate',
+          mandateData,
+          sourceContext: mandateData?.sourceContext || {},
+        },
+      }).catch((templateError) => {
+        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
+        return null
+      })
+      template = templateResolution?.template || null
+
+      const packetSourceContextJson = {
+        ...existingPacketSourceContext,
+        leadId: dbLeadId || null,
+        uiLeadId: normalizeText(selectedLead.leadId) || null,
+        leadCategory: selectedLead.leadCategory,
+        leadSource: selectedLead.leadSource,
+        contactId: selectedLead.contactId,
+        generatedDataSnapshot: mandateData,
+        missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
+        warningsSnapshot: mandatePreflight.warnings,
+        sourceContext: mandateData.sourceContext,
+      }
+      const existingManualOverride = getMandateManualOverrideFromSource(existingPacketSourceContext)
+      if (Object.keys(existingManualOverride.fields || {}).length) {
+        packetSourceContextJson.mandateManualOverride = existingManualOverride
+        packetSourceContextJson.mandate_manual_override = existingManualOverride
+      }
+      const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
+      const loadExistingPacket = async () => {
+        return existingPacketForGeneration || fetchExistingMandatePacket()
       }
       const createEditableMandatePacket = async () => {
         if (!normalizeText(template?.id)) {

@@ -4333,12 +4333,15 @@ export default function LegalDocumentWorkspace({
     setMandateOverrideSaving(true)
     setLoadError('')
     try {
+      const sourceContextJson = {
+        mandateManualOverride: nextOverride,
+        mandate_manual_override: nextOverride,
+      }
+      if (generatedDataSnapshot && typeof generatedDataSnapshot === 'object') {
+        sourceContextJson.generatedDataSnapshot = generatedDataSnapshot
+      }
       await updateWorkspacePacket(resolvedPacketId, {
-        sourceContextJson: {
-          mandateManualOverride: nextOverride,
-          mandate_manual_override: nextOverride,
-          generatedDataSnapshot,
-        },
+        sourceContextJson,
       })
       setActionFeedback('Mandate details override saved.')
     } catch (error) {
