@@ -85,7 +85,14 @@ import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDo
 import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
 import { isAmbiguousLegalDocumentGenerationFailure } from '../../core/documents/legalDocumentGenerationReconciliation'
-import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
+import {
+  applySigningFieldLayout,
+  createDocumentPacket,
+  fetchDocumentPacket,
+  fetchSigningFieldLayout,
+  listDocumentPackets,
+  saveSigningFieldPlacement,
+} from '../../lib/documentPacketsApi'
 import { listInboundLeadEmails } from '../../services/leadEmailCaptureService'
 import {
   mapSellerOnboardingToMandateData,
@@ -2059,6 +2066,30 @@ function resolveSignerLinkByRole(signers = [], role = '', email = '') {
     if (exact?.signing_link) return normalizeText(exact.signing_link)
   }
   return normalizeText(roleRows[0]?.signing_link)
+}
+
+async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, preparedFields = [] } = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  const resolvedVersionId = normalizeText(versionId)
+  const fields = Array.isArray(preparedFields) ? preparedFields : []
+  if (!resolvedPacketId || !resolvedVersionId || !fields.length) return null
+
+  const existingLayout = await fetchSigningFieldLayout({
+    packetId: resolvedPacketId,
+    versionId: resolvedVersionId,
+  }).catch(() => null)
+  const savedLayout = await saveSigningFieldPlacement({
+    packetId: resolvedPacketId,
+    versionId: resolvedVersionId,
+    fields,
+    expectedRevision: Number(existingLayout?.revision || 0),
+    pdfPageCount: Math.max(1, ...fields.map((field) => Number(field?.pageNumber || field?.page_number || 1))),
+  })
+  return applySigningFieldLayout({
+    packetId: resolvedPacketId,
+    versionId: resolvedVersionId,
+    layoutRevision: Number(savedLayout?.revision || 0),
+  })
 }
 
 function resolveWorkspaceModeFromAction(actionKey) {
@@ -9083,6 +9114,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           })
           const signingVersionId = normalizeText(signingPreparation?.version?.id)
+          await applyPreparedSigningLayoutForQuickFlow({
+            packetId: mandatePacketId,
+            versionId: signingVersionId,
+            preparedFields: signingPreparation?.seed?.fields || [],
+          })
 
           const linkResult = await generateSigningLinks({
             packetId: mandatePacketId,
