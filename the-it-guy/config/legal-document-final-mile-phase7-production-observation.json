@@ -1,0 +1,46 @@
+{
+  "phase": "document-generator-final-mile-phase-7",
+  "status": "production_observation_ready",
+  "production": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co",
+    "appUrl": "https://app.arch9.co.za",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  },
+  "release": {
+    "expectedReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "productionDeploymentId": "dpl_6GPW5vCM3iexzGQ66u9HRA9zv6tL",
+    "productionDeploymentUrl": "https://bridge-dwockzbai-alexs-projects-f5496a21.vercel.app",
+    "productionAlias": "https://app.arch9.co.za"
+  },
+  "targets": [
+    {
+      "label": "otp",
+      "packetId": "9ea0cf58-0e0f-47f4-b120-c4cde8d70c7c",
+      "packetVersionId": "5f3dc0d7-7e6d-428e-8404-90bdc9bc3051",
+      "expectedFileName": "otp-v2-final-signed.pdf"
+    },
+    {
+      "label": "mandate",
+      "packetId": "92d1a77a-26a6-4373-87d4-ec1871851f39",
+      "packetVersionId": "e06150db-596c-476d-a99d-d3f1cac442c9",
+      "expectedFileName": "mandate-v2-final-signed.pdf"
+    }
+  ],
+  "controls": {
+    "invokesDispatcher": false,
+    "sendsEmail": false,
+    "mutatesCustomerData": false,
+    "mayRecordFinalAccessTrace": true,
+    "signedDownloadUrlsRedacted": true,
+    "recipientEmailsRedacted": true
+  },
+  "requiredChecks": [
+    "production release manifest matches the promoted commit",
+    "bridge_get_final_completion_status_f5 reports completed_everywhere",
+    "bridge_get_document_generator_launch_chain_g1 has complete delivery counts",
+    "legal_final_artifact_deliveries has one sent latest delivery per signer",
+    "legal_document_pilot_lifecycle_traces_phase5 has final_delivery_completed evidence",
+    "resolve-final-signed-document-access returns an available final signed artifact with a redacted download URL"
+  ]
+}

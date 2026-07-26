@@ -410,6 +410,7 @@
     "test:document-generator-final-mile-phase4": "node --test src/core/documents/__tests__/finalCompletionTruth.test.js src/core/documents/__tests__/signingOperationalStatus.test.js src/core/documents/__tests__/signingCompletionCertificate.test.js && node scripts/document-generator-final-mile-phase4-ui-truth.test.mjs",
     "test:document-generator-final-mile-phase5": "node scripts/document-generator-final-mile-phase5-staging-recovery.test.mjs",
     "test:document-generator-final-mile-phase6": "node scripts/document-generator-final-mile-phase6-production-promotion.test.mjs",
+    "test:document-generator-final-mile-phase7": "node scripts/document-generator-final-mile-phase7-production-observation.test.mjs",
     "test:document-generator-phase1": "node scripts/document-generator-phase1-entrypoint-consolidation.test.mjs",
     "test:document-generator-phase-a2": "node scripts/document-generator-phase-a2-runtime.test.mjs",
     "test:document-generator-phase-a3": "node scripts/document-generator-phase-a3-lifecycle.test.mjs",

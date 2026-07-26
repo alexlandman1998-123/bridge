@@ -1,0 +1,140 @@
+{
+  "phase": "document-generator-final-mile-phase-7",
+  "status": "healthy",
+  "observedAt": "2026-07-26T09:40:54.062Z",
+  "mutatedData": false,
+  "production": {
+    "appUrl": "https://app.arch9.co.za",
+    "projectRef": "isdowlnollckzvltkasn",
+    "supabaseUrl": "https://isdowlnollckzvltkasn.supabase.co",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d"
+  },
+  "release": {
+    "expectedReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "liveReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "localReleaseId": "05f5f20d14ee3a6e1ef50b8c180b078cf28a7b77",
+    "manifestAssetCount": 421,
+    "manifestSupabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co"
+  },
+  "controls": {
+    "invokesDispatcher": false,
+    "sendsEmail": false,
+    "mutatesCustomerData": false,
+    "mayRecordFinalAccessTrace": true,
+    "signedDownloadUrlsRedacted": true,
+    "recipientEmailsRedacted": true
+  },
+  "packets": [
+    {
+      "label": "otp",
+      "packetId": "9ea0cf58-0e0f-47f4-b120-c4cde8d70c7c",
+      "packetVersionId": "5f3dc0d7-7e6d-428e-8404-90bdc9bc3051",
+      "status": "healthy",
+      "completion": {
+        "ready": true,
+        "stage": "completed_everywhere",
+        "deliveryReady": true,
+        "recipientCount": 2,
+        "deliveredRecipientCount": 2,
+        "outstandingRecipientCount": 0,
+        "artifactReady": true,
+        "transactionReady": true,
+        "surfaceReady": true
+      },
+      "launchChain": {
+        "packetStatus": "completed",
+        "currentVersion": true,
+        "delivery": {
+          "recipientCount": 2,
+          "deliveredRecipientCount": 2
+        },
+        "finalArtifactPresent": true,
+        "transactionPublished": true,
+        "surfaceCompleted": true
+      },
+      "access": {
+        "httpStatus": 200,
+        "success": true,
+        "state": "published",
+        "available": true,
+        "hasDownloadUrl": true,
+        "fileName": "otp-v2-final-signed.pdf",
+        "errorCode": null
+      },
+      "deliveryEvidence": {
+        "signerCount": 2,
+        "sentCount": 2,
+        "suppressedCount": 2,
+        "providerAcceptedCount": 0,
+        "missingProviderEvidenceCount": 0,
+        "latestAttemptAt": "2026-07-26T09:21:13.935+00:00"
+      },
+      "lifecycleTrace": {
+        "hasFinalDeliveryCompleted": true,
+        "hasFinalAccessAuthorized": true,
+        "stages": [
+          "final_access_authorized",
+          "final_delivery_completed"
+        ],
+        "latestObservedAt": "2026-07-26T09:23:01.536+00:00"
+      },
+      "blockers": []
+    },
+    {
+      "label": "mandate",
+      "packetId": "92d1a77a-26a6-4373-87d4-ec1871851f39",
+      "packetVersionId": "e06150db-596c-476d-a99d-d3f1cac442c9",
+      "status": "healthy",
+      "completion": {
+        "ready": true,
+        "stage": "completed_everywhere",
+        "deliveryReady": true,
+        "recipientCount": 2,
+        "deliveredRecipientCount": 2,
+        "outstandingRecipientCount": 0,
+        "artifactReady": true,
+        "transactionReady": true,
+        "surfaceReady": true
+      },
+      "launchChain": {
+        "packetStatus": "completed",
+        "currentVersion": true,
+        "delivery": {
+          "recipientCount": 2,
+          "deliveredRecipientCount": 2
+        },
+        "finalArtifactPresent": true,
+        "transactionPublished": true,
+        "surfaceCompleted": true
+      },
+      "access": {
+        "httpStatus": 200,
+        "success": true,
+        "state": "published",
+        "available": true,
+        "hasDownloadUrl": true,
+        "fileName": "mandate-v2-final-signed.pdf",
+        "errorCode": null
+      },
+      "deliveryEvidence": {
+        "signerCount": 2,
+        "sentCount": 2,
+        "suppressedCount": 1,
+        "providerAcceptedCount": 1,
+        "missingProviderEvidenceCount": 0,
+        "latestAttemptAt": "2026-07-26T09:21:14.997+00:00"
+      },
+      "lifecycleTrace": {
+        "hasFinalDeliveryCompleted": true,
+        "hasFinalAccessAuthorized": true,
+        "stages": [
+          "final_access_authorized",
+          "final_delivery_completed"
+        ],
+        "latestObservedAt": "2026-07-26T09:23:02.176+00:00"
+      },
+      "blockers": []
+    }
+  ],
+  "blockers": []
+}
