@@ -166,8 +166,12 @@ export function resolveSignableTemplatePolicy({
       : normalizedPacketType === 'otp'
         ? 'legal_scenario_fallback'
         : ''
+  const defaultFallbackSources = new Set([
+    fallbackRouteSource,
+    'global_default',
+  ].filter(Boolean))
   const defaultFallbackAllowed = fallbackRouteSource &&
-    source === fallbackRouteSource &&
+    defaultFallbackSources.has(source) &&
     isDefaultTemplateRouteFallback(template)
 
   if (!requiredRouteSource || (source !== requiredRouteSource && !defaultFallbackAllowed)) {

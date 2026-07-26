@@ -90,6 +90,14 @@ test('allows default boilerplate fallbacks while rejecting non-default generic f
     }).ok,
     true,
   )
+  assert.equal(
+    resolveSignableTemplatePolicy({
+      packetType: 'mandate',
+      template: platformDefaultMandate,
+      resolutionSource: 'global_default',
+    }).ok,
+    true,
+  )
 })
 
 test('requires a healthy converter before a PDF render may begin', () => {
