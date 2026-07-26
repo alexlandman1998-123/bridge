@@ -11,6 +11,8 @@ const cases = [
   ['AUTH_INVALID', 'Sign-in needs attention'],
   ['PACKETS_RLS_DENIED', 'Access needs attention'],
   ['MISSING_TEMPLATE_FILE', 'Template setup needs attention'],
+  ['MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED', 'Template route needs attention'],
+  ['MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED', 'Template wording needs attention'],
   ['STORAGE_UPLOAD_FAILED', 'Draft could not be saved'],
   ['PDF_RENDER_FAILED', 'Draft could not be assembled'],
   ['UNKNOWN_PROVIDER_FAILURE', 'Generation did not complete'],

@@ -352,7 +352,10 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
   const templateResolutionSource = normalizeText(templateResolution?.source || validation?.templateResolutionSource)
   const selectedTemplateLabel = normalizeText(template?.template_label || template?.label || template?.template_key || template?.key || 'the selected mandate template')
   const routeFallback = templateResolutionSource === 'mandate_scenario_fallback' && routeKey && routeKey !== 'default'
-  const platformDefaultFallback = routeFallback && isPlatformDefaultMandateTemplate(template)
+  const platformDefaultRouteFallback =
+    ['global_default', 'explicit_published'].includes(templateResolutionSource) && routeKey && routeKey !== 'default'
+  const runtimeRouteFallback = routeFallback || platformDefaultRouteFallback
+  const platformDefaultFallback = runtimeRouteFallback && isPlatformDefaultMandateTemplate(template)
   const blockers = []
   const warnings = []
 
@@ -368,7 +371,7 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
     }))
   }
 
-  if (routeFallback) {
+  if (runtimeRouteFallback) {
     const issue = buildRuntimeLaunchIssue({
       severity: blocksLaunch && !platformDefaultFallback ? 'blocking' : 'warning',
       code: 'MANDATE_LAUNCH_RUNTIME_ROUTE_FALLBACK',
@@ -396,7 +399,7 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
     status,
     action: action || 'preview',
     shouldBlockGeneration: blocksLaunch && blockers.length > 0,
-    canGenerateWithoutFallback: blockers.length === 0 && !routeFallback,
+    canGenerateWithoutFallback: blockers.length === 0 && !runtimeRouteFallback,
     routeKey: routeKey || 'default',
     routeLabel,
     templateResolutionSource: templateResolutionSource || null,
