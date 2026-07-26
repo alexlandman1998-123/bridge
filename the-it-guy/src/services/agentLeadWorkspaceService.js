@@ -232,6 +232,30 @@ function getSellerNameFromFormData(formData = {}) {
   )
 }
 
+function getSellerNameFromCanonicalFacts(source = {}) {
+  const facts = isPlainObject(source?.sellerCanonicalFacts)
+    ? source.sellerCanonicalFacts
+    : isPlainObject(source?.seller_canonical_facts_json)
+      ? source.seller_canonical_facts_json
+      : isPlainObject(source?.sellerOnboarding?.canonicalFacts)
+        ? source.sellerOnboarding.canonicalFacts
+        : isPlainObject(source?.seller_onboarding?.canonical_facts)
+          ? source.seller_onboarding.canonical_facts
+          : {}
+  const firstName = normalizeText(facts.firstName || facts.first_name || facts.sellerFirstName || facts.seller_first_name)
+  const lastName = normalizeText(facts.lastName || facts.last_name || facts.surname || facts.sellerSurname || facts.seller_surname)
+  return normalizeText(
+    facts.fullName ||
+      facts.full_name ||
+      facts.displayName ||
+      facts.display_name ||
+      facts.sellerName ||
+      facts.seller_name ||
+      facts.name ||
+      [firstName, lastName].filter(Boolean).join(' '),
+  )
+}
+
 function getLeadName(lead = {}, contact = null, listing = null) {
   const rowFormData = getSellerOnboardingFormData(lead)
   const listingFormData = getSellerOnboardingFormData(listing || {})
@@ -241,7 +265,23 @@ function getLeadName(lead = {}, contact = null, listing = null) {
     normalizeText(lead?.name),
     getSellerNameFromFormData(rowFormData),
     getSellerNameFromFormData(listingFormData),
-    normalizeText(rowFormData.email || rowFormData.sellerEmail || rowFormData.seller_email || lead?.email || lead?.sellerEmail || lead?.seller_email),
+    normalizeText(listing?.sellerName || listing?.seller_name || listing?.seller?.name),
+    getSellerNameFromCanonicalFacts(listing || {}),
+    getSellerNameFromCanonicalFacts(lead || {}),
+    normalizeText(
+      rowFormData.email ||
+        rowFormData.sellerEmail ||
+        rowFormData.seller_email ||
+        listingFormData.email ||
+        listingFormData.sellerEmail ||
+        listingFormData.seller_email ||
+        lead?.email ||
+        lead?.sellerEmail ||
+        lead?.seller_email ||
+        listing?.sellerEmail ||
+        listing?.seller_email ||
+        listing?.seller?.email,
+    ),
   ]
   return candidates.find((value) => value && !isPlaceholderLeadName(value)) || 'Unnamed lead'
 }
@@ -600,8 +640,8 @@ export function buildAgentLeadRows({
       contact,
       contactId,
       name: getLeadName(lead, contact, sellerListing),
-      phone: normalizeText(contact?.phone || contact?.phone_number || lead?.phone || lead?.sellerPhone || lead?.seller_phone || sellerFormData.phone || sellerFormData.sellerPhone || sellerFormData.seller_phone),
-      email: normalizeText(contact?.email || lead?.email || lead?.sellerEmail || lead?.seller_email || sellerFormData.email || sellerFormData.sellerEmail || sellerFormData.seller_email).toLowerCase(),
+      phone: normalizeText(contact?.phone || contact?.phone_number || lead?.phone || lead?.sellerPhone || lead?.seller_phone || sellerFormData.phone || sellerFormData.sellerPhone || sellerFormData.seller_phone || sellerListing?.sellerPhone || sellerListing?.seller_phone || sellerListing?.seller?.phone),
+      email: normalizeText(contact?.email || lead?.email || lead?.sellerEmail || lead?.seller_email || sellerFormData.email || sellerFormData.sellerEmail || sellerFormData.seller_email || sellerListing?.sellerEmail || sellerListing?.seller_email || sellerListing?.seller?.email).toLowerCase(),
       source: normalizeLeadSourceLabel(lead),
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',
@@ -1060,10 +1100,11 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
   }
 
   const contact = workspace.contacts[0] || null
+  const resolvedWorkspaceListingId = normalizeText(workspace?.listingId || workspace?.listing_id)
   const context = {
     leadId: getLeadId(lead),
     contactId: getContactId(contact) || getContactId(lead),
-    listingId: getListingId(lead),
+    listingId: getListingId(lead) || resolvedWorkspaceListingId,
     convertedTransactionId: readId(lead, ['convertedTransactionId', 'converted_transaction_id', 'convertedDealId']),
   }
   const [allAppointments, transactions, listings, documentPackets, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
@@ -1094,6 +1135,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     .filter(Boolean)
   const candidateListingIds = [
     context.listingId,
+    resolvedWorkspaceListingId,
     linkedListing?.id,
     linkedListing?.listingId,
     ...packetListingIds,

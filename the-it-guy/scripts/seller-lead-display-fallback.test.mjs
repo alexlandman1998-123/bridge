@@ -49,6 +49,61 @@ try {
   assert.equal(rows[0].sellerPropertyAddress, '39 Dromedaris Avenue, Reigerpark, Boksburg')
   assert.equal(rows[0].listings[0].title, '39 Dromedaris Avenue, Reigerpark')
 
+  const canonicalRows = buildAgentLeadRows({
+    leads: [{
+      leadId: 'seller-canonical-placeholder',
+      leadSource: 'Manual Entry',
+      leadCategory: 'seller',
+      stage: 'Seller Onboarding Sent',
+      status: 'Sent',
+      name: 'Unnamed Lead',
+      listingId: 'listing-canonical',
+      createdAt: '2026-05-05T08:00:00.000Z',
+    }],
+    contacts: [],
+    listings: [{
+      id: 'listing-canonical',
+      listing_status: 'seller_lead',
+      sellerName: 'Bianca Seller',
+      sellerEmail: 'bianca@example.test',
+      sellerPhone: '+27825556666',
+      sellerCanonicalFacts: {
+        sellerName: 'Canonical Seller',
+      },
+    }],
+  })
+
+  assert.equal(canonicalRows[0].name, 'Bianca Seller')
+  assert.equal(canonicalRows[0].email, 'bianca@example.test')
+  assert.equal(canonicalRows[0].phone, '+27825556666')
+
+  const canonicalFactsRows = buildAgentLeadRows({
+    leads: [{
+      leadId: 'seller-canonical-facts-placeholder',
+      leadSource: 'Manual Entry',
+      leadCategory: 'seller',
+      stage: 'Seller Onboarding Sent',
+      status: 'Sent',
+      name: 'Unnamed Lead',
+      listingId: 'listing-canonical-facts',
+      createdAt: '2026-05-05T08:00:00.000Z',
+    }],
+    contacts: [],
+    listings: [{
+      id: 'listing-canonical-facts',
+      listing_status: 'seller_lead',
+      sellerCanonicalFacts: {
+        sellerName: 'Canonical Seller',
+      },
+    }],
+  })
+
+  assert.equal(canonicalFactsRows[0].name, 'Canonical Seller')
+
+  const serviceSource = await readFile(new URL('../src/services/agentLeadWorkspaceService.js', import.meta.url), 'utf8')
+  assert.match(serviceSource, /resolvedWorkspaceListingId = normalizeText\(workspace\?\.listingId/, 'lead workspace fetch should retain repository-resolved listing ids')
+  assert.match(serviceSource, /listingId: getListingId\(lead\) \|\| resolvedWorkspaceListingId/, 'lead workspace context should use repository-resolved listing ids')
+
   const pageSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
   assert.match(pageSource, /lifecycle\.includes\('seller'\)/, 'seller lifecycle stages should force seller workspace rendering')
   assert.match(pageSource, /safeRow\.sellerOnboarding \|\| safeRow\.seller_onboarding/, 'seller onboarding payloads should force seller workspace rendering')
