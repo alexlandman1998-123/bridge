@@ -8,6 +8,15 @@ function record(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function isBlockingMissingPlaceholder(issue) {
+  if (!issue || typeof issue !== 'object') return true
+  return issue.required !== false
+}
+
+export function resolveBlockingMissingPlaceholders(value = []) {
+  return Array.isArray(value) ? value.filter(isBlockingMissingPlaceholder) : []
+}
+
 export function buildDraftLegalProvenance(template = {}) {
   const approval = readLegalTemplateApproval(template)
   return {
@@ -25,6 +34,7 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
   const missing = Array.isArray(version.placeholders_missing_json || version.placeholdersMissingJson)
     ? (version.placeholders_missing_json || version.placeholdersMissingJson)
     : []
+  const blockingMissing = resolveBlockingMissingPlaceholders(missing)
   const reasons = []
   const packetType = text(packet.packet_type || packet.packetType).toLowerCase()
   const templateId = text(template.id)
@@ -41,7 +51,7 @@ export function assessGeneratedDraftVersion({ packet = {}, template = {}, versio
   if (!templateId || packetTemplateId !== templateId || text(provenance.templateId) !== templateId) reasons.push('D1_TEMPLATE_PROVENANCE_MISMATCH')
   if (text(version.render_status || version.renderStatus).toLowerCase() !== 'generated') reasons.push('D1_VERSION_NOT_GENERATED')
   if (!text(version.rendered_file_path || version.renderedFilePath) && !text(version.rendered_file_url || version.renderedFileUrl) && !text(version.rendered_document_id || version.renderedDocumentId)) reasons.push('D1_DRAFT_ARTIFACT_MISSING')
-  if (missing.length) reasons.push('D1_UNRESOLVED_PLACEHOLDERS')
+  if (blockingMissing.length) reasons.push('D1_UNRESOLVED_PLACEHOLDERS')
   if (validation.generationStatus !== 'generated' || validation.previewOnly === true) reasons.push('D1_NOT_A_PERSISTED_DRAFT')
   if (!text(provenance.templateVersion)) reasons.push('D1_TEMPLATE_VERSION_MISSING')
   for (const key of ['sectionManifestHash', 'placeholderHash', 'generationPayloadHash', 'contentFingerprint']) if (!text(provenance[key])) reasons.push(`D1_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}_MISSING`)
