@@ -1667,7 +1667,7 @@ async function withPacketRetries(task, { attempts = 2, retryDelayMs = 450 } = {}
   throw lastError || new Error('Retry failed.')
 }
 
-const PACKET_GENERATION_TIMEOUT_MS = 10000
+const PACKET_GENERATION_TIMEOUT_MS = 60000
 const PACKET_GENERATION_LEASE_TTL_SECONDS = 120
 const FINAL_SIGNED_GENERATION_TIMEOUT_MS = 45000
 
