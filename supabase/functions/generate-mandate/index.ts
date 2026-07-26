@@ -900,7 +900,7 @@ async function renderStructuredSectionsToPdfBytes({
   const margin = 42;
   const maxWidth = pageWidth - margin * 2;
   const headerTop = pageHeight - 38;
-  const contentTop = pageHeight - 150;
+  const contentTop = pageHeight - 164;
   const footerY = 34;
   const headingSize = 13;
   const bodySize = 9.6;
@@ -954,6 +954,13 @@ async function renderStructuredSectionsToPdfBytes({
     })
     .filter(Boolean)
     .slice(0, 7);
+  const agencyEmail = firstPdfValue(
+    branding?.email,
+    branding?.organisationEmail,
+    branding?.organisation_email,
+    branding?.contactEmail,
+    getPdfPlaceholder(placeholders, "agency_email", "organisation_email", "organisation.email"),
+  );
   let page = pdf.addPage([pageWidth, pageHeight]);
   let y = contentTop;
   const plannedSigningFields: PlannedSigningField[] = [];
@@ -1013,17 +1020,18 @@ async function renderStructuredSectionsToPdfBytes({
         detailY -= index === 0 ? 10 : 8;
       }
     }
-    drawCentered(targetPage, safeTitle.toUpperCase(), pageHeight - 95, bold, 17, dark);
-    drawCentered(targetPage, documentReference, pageHeight - 114, regular, 8.5, muted);
-    targetPage.drawLine({ start: { x: margin, y: pageHeight - 128 }, end: { x: pageWidth - margin, y: pageHeight - 128 }, thickness: 0.6, color: lineColor });
+    drawCentered(targetPage, safeTitle.toUpperCase(), pageHeight - 108, bold, 17, dark);
+    drawCentered(targetPage, documentReference, pageHeight - 127, regular, 8.5, muted);
+    targetPage.drawLine({ start: { x: margin, y: pageHeight - 140 }, end: { x: pageWidth - margin, y: pageHeight - 140 }, thickness: 0.6, color: lineColor });
     targetPage.drawLine({ start: { x: margin, y: 58 }, end: { x: pageWidth - margin, y: 58 }, thickness: 0.6, color: lineColor });
   };
   const drawFooter = (targetPage: any, index: number, total: number) => {
     const footerLeft = orgName.length > 34 ? `${orgName.slice(0, 31)}...` : orgName;
     targetPage.drawText(footerLeft, { x: margin, y: footerY, size: 7.5, font: bold, color: muted });
     drawCentered(targetPage, `Page ${index + 1} of ${total}`, footerY, regular, 7.5, muted);
-    const ref = documentReference.length > 30 ? `${documentReference.slice(0, 27)}...` : documentReference;
-    targetPage.drawText(ref, { x: pageWidth - margin - regular.widthOfTextAtSize(ref, 7.5), y: footerY, size: 7.5, font: regular, color: muted });
+    const footerRightSource = normalizePdfText(agencyEmail) || documentReference;
+    const footerRight = footerRightSource.length > 40 ? `${footerRightSource.slice(0, 37)}...` : footerRightSource;
+    targetPage.drawText(footerRight, { x: pageWidth - margin - regular.widthOfTextAtSize(footerRight, 7.5), y: footerY, size: 7.5, font: regular, color: muted });
   };
   drawChrome(page);
 
@@ -1050,7 +1058,7 @@ async function renderStructuredSectionsToPdfBytes({
           drawLine(wrapped, { ...options, font, size, indent });
         }
       }
-      y -= 5;
+      y -= 8;
     }
   };
   const drawDetailPanel = () => {
@@ -1081,27 +1089,27 @@ async function renderStructuredSectionsToPdfBytes({
         page.drawText(line, { x: colX, y: rowY - 13 - lineIndex * 11, size: 9.2, font: regular, color: dark });
       });
     });
-    y -= panelHeight + 26;
+    y -= panelHeight + 32;
   };
 
   const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
-    const panelWidth = 210;
-    const panelHeight = 112;
+    const panelWidth = 222;
+    const panelHeight = 132;
     const panelY = pageHeight - options.panelTop - panelHeight;
-    const fieldTop = options.panelTop + 34;
+    const fieldTop = options.panelTop + 40;
     targetPage.drawRectangle({ x: options.x, y: panelY, width: panelWidth, height: panelHeight, color: rgb(1, 1, 1), borderColor: lineColor, borderWidth: 0.9 });
     targetPage.drawText(options.title, { x: options.x + 12, y: panelY + panelHeight - 22, size: 9.5, font: bold, color: dark });
-    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - 44, width: 186, height: 44, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
-    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 30, size: 7.5, font: regular, color: muted });
-    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 16, size: 8.5, font: bold, color: dark });
+    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - 52, width: 198, height: 52, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
+    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 39, size: 7.5, font: regular, color: muted });
+    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 23, size: 8.5, font: bold, color: dark });
     plannedSigningFields.push({
       signerRole: options.signerRole,
       fieldType: "signature",
       pageNumber: pdf.getPageCount(),
       xPosition: options.x + 12,
       yPosition: fieldTop,
-      width: 186,
-      height: 44,
+      width: 198,
+      height: 52,
       required: true,
       label: `${options.title} signature`,
     });
@@ -1124,18 +1132,18 @@ async function renderStructuredSectionsToPdfBytes({
 
   if (normalizedPacketType === "mandate") {
     addPage();
-    drawCentered(page, "SIGNATURES", pageHeight - 176, bold, 15, dark);
-    drawCentered(page, "The parties sign this mandate using the reserved execution blocks below.", pageHeight - 195, regular, 9.5, muted);
+    drawCentered(page, "SIGNATURES", pageHeight - 188, bold, 15, dark);
+    drawCentered(page, "The parties sign this mandate using the reserved execution blocks below.", pageHeight - 209, regular, 9.5, muted);
     const agentName = getPdfPlaceholder(placeholders, "agent_name", "agent.full_name", "signing_agent_name") || "Agent";
     const sellerName = getPdfPlaceholder(placeholders, "seller_display_name", "seller_name", "seller.full_name") || "Seller";
-    drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop: 235, x: margin, signerRole: "agent" });
-    drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop: 235, x: pageWidth - margin - 210, signerRole: "seller" });
+    drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop: 255, x: margin, signerRole: "agent" });
+    drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop: 255, x: pageWidth - margin - 222, signerRole: "seller" });
     const spouseName = firstPdfValue(
       getPdfPlaceholder(placeholders, "seller_spouse_name", "spouse_name", "seller.spouse_name"),
       getPdfPlaceholder(placeholders, "purchaser_2_name"),
     );
     if (!isMissingPdfValue(spouseName)) {
-      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: 382, x: margin, signerRole: "purchaser_2" });
+      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: 412, x: margin, signerRole: "purchaser_2" });
     }
   }
 

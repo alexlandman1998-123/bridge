@@ -1832,10 +1832,10 @@ const ROLE_FIELD_POSITION = {
 }
 
 const MANDATE_SIGNATURE_FIELD_POSITION = {
-  agent: { xPosition: 54, yPosition: 269, width: 186, height: 44 },
-  seller: { xPosition: 355, yPosition: 269, width: 186, height: 44 },
-  purchaser_2: { xPosition: 54, yPosition: 416, width: 186, height: 44 },
-  seller_spouse: { xPosition: 54, yPosition: 416, width: 186, height: 44 },
+  agent: { xPosition: 54, yPosition: 295, width: 198, height: 52 },
+  seller: { xPosition: 343, yPosition: 295, width: 198, height: 52 },
+  purchaser_2: { xPosition: 54, yPosition: 452, width: 198, height: 52 },
+  seller_spouse: { xPosition: 54, yPosition: 452, width: 198, height: 52 },
 }
 
 function createFallbackSignerName(role = 'other') {

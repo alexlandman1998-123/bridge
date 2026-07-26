@@ -2238,12 +2238,18 @@ async function buildFallbackMandatePdfBytes({
   const agencyRegistrationNumber = firstMeaningfulPdfText(placeholders.agency_registration_number);
   const agencyVatNumber = firstMeaningfulPdfText(placeholders.agency_vat_number);
   const agencyFspNumber = firstMeaningfulPdfText(placeholders.agency_fsp_number);
+  const agencyEmail = firstMeaningfulPdfText(
+    placeholders.agency_email,
+    placeholders.organisation_email,
+    placeholders["organisation.email"],
+  );
   const companyDetailLines = [
     firstMeaningfulPdfText(placeholders.agency_legal_name, placeholders.organisation_legal_name, orgName),
     agencyRegistrationNumber ? `Reg: ${agencyRegistrationNumber}` : "",
     agencyVatNumber ? `VAT: ${agencyVatNumber}` : "",
     agencyFspNumber ? `FSP: ${agencyFspNumber}` : "",
     firstMeaningfulPdfText(placeholders.agency_address, placeholders.organisation_physical_address, placeholders["organisation.physical_address"]),
+    agencyEmail,
   ].filter((line) => !isEmptyPdfValue(line));
   const documentReference =
     firstPdfText(placeholders.document_reference, placeholders.transaction_reference) ||
@@ -2346,17 +2352,48 @@ async function buildFallbackMandatePdfBytes({
       }
     }
     drawCompanyDetails(page);
+    page.drawText("MANDATE AGREEMENT", {
+      x: pageWidth / 2 - boldFont.widthOfTextAtSize("MANDATE AGREEMENT", 20) / 2,
+      y: pageHeight - 185,
+      size: 20,
+      font: boldFont,
+      color: navy,
+    });
+    page.drawText(documentReference, {
+      x: pageWidth / 2 - regularFont.widthOfTextAtSize(documentReference, 10) / 2,
+      y: pageHeight - 208,
+      size: 10,
+      font: regularFont,
+      color: muted,
+    });
     page.drawLine({
-      start: { x: marginX, y: pageHeight - 155 },
-      end: { x: pageWidth - marginX, y: pageHeight - 155 },
+      start: { x: marginX, y: pageHeight - 228 },
+      end: { x: pageWidth - marginX, y: pageHeight - 228 },
       thickness: 1,
       color: rule,
     });
   };
 
   const drawPageFooter = (page: any, pageNumber: number, pageCount: number) => {
+    const footerLeft = orgName.length > 42 ? `${orgName.slice(0, 39)}...` : orgName;
+    page.drawText(footerLeft, {
+      x: marginX,
+      y: 42,
+      size: 9,
+      font: boldFont,
+      color: muted,
+    });
     page.drawText(`Page ${pageNumber} of ${pages.length}`, {
       x: pageWidth / 2 - 32,
+      y: 42,
+      size: 9,
+      font: regularFont,
+      color: muted,
+    });
+    const footerRightSource = agencyEmail || documentReference;
+    const footerRight = footerRightSource.length > 48 ? `${footerRightSource.slice(0, 45)}...` : footerRightSource;
+    page.drawText(footerRight, {
+      x: pageWidth - marginX - regularFont.widthOfTextAtSize(footerRight, 9),
       y: 42,
       size: 9,
       font: regularFont,
@@ -2372,35 +2409,14 @@ async function buildFallbackMandatePdfBytes({
   };
 
   const firstPage = addPage();
-  firstPage.drawText("MANDATE AGREEMENT", {
-    x: pageWidth / 2 - boldFont.widthOfTextAtSize("MANDATE AGREEMENT", 28) / 2,
-    y: pageHeight - 225,
-    size: 28,
-    font: boldFont,
-    color: navy,
-  });
-  firstPage.drawText(`Document reference: ${documentReference}`, {
-    x: pageWidth / 2 - regularFont.widthOfTextAtSize(`Document reference: ${documentReference}`, 12) / 2,
-    y: pageHeight - 252,
-    size: 12,
-    font: regularFont,
-    color: muted,
-  });
-  firstPage.drawLine({
-    start: { x: marginX, y: pageHeight - 290 },
-    end: { x: pageWidth - marginX, y: pageHeight - 290 },
-    thickness: 1,
-    color: rule,
-  });
-
   let pageIndex = 0;
   let page = pages[pageIndex];
-  let y = pageHeight - 350;
+  let y = pageHeight - 280;
 
   const moveToNextContentPage = () => {
     pageIndex += 1;
     page = pages[pageIndex] || addPage();
-    y = pageHeight - 205;
+    y = pageHeight - 280;
     return true;
   };
 
@@ -2504,10 +2520,10 @@ async function buildFallbackMandatePdfBytes({
       }
       y -= rowHeight;
     }
-    y -= 10;
+    y -= 18;
   });
 
-  if (y < 505) moveToNextContentPage();
+  if (y < 560) moveToNextContentPage();
   const signaturePage = page;
   const signaturePageNumber = pageIndex + 1;
   signaturePage.drawText(`${signatureSectionIndex}.  SIGNATURE PAGES`, {
@@ -2525,29 +2541,39 @@ async function buildFallbackMandatePdfBytes({
     color: rule,
   });
 
+  y -= 30;
   const signatureFields = fields.filter((field) => lower(field.field_type) === "signature");
   for (const [index, field] of signatureFields.entries()) {
     const slot = resolveStructuredFallbackSignatureSlot({ field, index, pageWidth, pageHeight });
     const role = lower(field.signer_role);
     const name = pdfSafeText(field.signer_name || getPlaceholderValue(placeholders, `${role}_full_name`) || getPlaceholderValue(placeholders, `${role}.display_name`) || slot.roleLabel);
-    signaturePage.drawLine({
-      start: { x: slot.x, y: slot.lineY },
-      end: { x: slot.x + slot.width, y: slot.lineY },
-      thickness: 1,
-      color: navy,
+    signaturePage.drawRectangle({
+      x: slot.x,
+      y: slot.y,
+      width: slot.width,
+      height: slot.height,
+      borderColor: rgb(0.55, 0.62, 0.72),
+      borderWidth: 1,
     });
     signaturePage.drawText(slot.roleLabel, {
       x: slot.x,
-      y: slot.lineY - 25,
+      y: slot.y + slot.height + 16,
       size: 11,
       font: boldFont,
       color: navy,
     });
+    signaturePage.drawText("Signature", {
+      x: slot.x,
+      y: slot.y - 16,
+      size: 8.5,
+      font: regularFont,
+      color: muted,
+    });
     signaturePage.drawText(name, {
       x: slot.x,
-      y: slot.lineY - 47,
+      y: slot.y - 34,
       size: 10,
-      font: regularFont,
+      font: boldFont,
       color: navy,
     });
   }

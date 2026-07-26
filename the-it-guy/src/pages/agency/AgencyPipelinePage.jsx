@@ -2441,17 +2441,24 @@ function normalizeQuickFlowSigningLayoutFields(fields = []) {
     const fieldType = normalizeText(field?.fieldType || field?.field_type).toLowerCase() === 'initial'
       ? 'initial'
       : 'signature'
+    const fallbackWidth = fieldType === 'initial' ? 72 : 186
+    const fallbackHeight = fieldType === 'initial' ? 32 : 52
+    const rawWidth = Number(field?.width || field?.width_position || fallbackWidth)
+    const rawHeight = Number(field?.height || fallbackHeight)
     const width = Math.min(
-      fieldType === 'initial' ? 72 : 168,
-      Math.max(24, Number(field?.width || (fieldType === 'initial' ? 72 : 168))),
+      fieldType === 'initial' ? 90 : 220,
+      Math.max(24, Number.isFinite(rawWidth) ? rawWidth : fallbackWidth),
     )
     const height = Math.min(
-      fieldType === 'initial' ? 32 : 44,
-      Math.max(18, Number(field?.height || (fieldType === 'initial' ? 32 : 44))),
+      fieldType === 'initial' ? 36 : 58,
+      Math.max(18, Number.isFinite(rawHeight) ? rawHeight : fallbackHeight),
     )
     const requestedPage = Math.max(1, Math.trunc(Number(field?.pageNumber || field?.page_number || 1)) || 1)
     const pageOffset = Math.floor(index / QUICK_SIGNING_FIELD_ROWS_PER_PAGE)
     const row = index % QUICK_SIGNING_FIELD_ROWS_PER_PAGE
+    const rawXPosition = Number(field?.xPosition ?? field?.x_position)
+    const rawYPosition = Number(field?.yPosition ?? field?.y_position)
+    const hasNativePosition = Number.isFinite(rawXPosition) && Number.isFinite(rawYPosition)
     const requestedId = normalizeText(field?.id)
     const fallbackId = `quick_${signerRole}_${fieldType}_${index + 1}`
     const id = requestedId && !usedIds.has(requestedId) ? requestedId : fallbackId
@@ -2462,8 +2469,8 @@ function normalizeQuickFlowSigningLayoutFields(fields = []) {
       fieldType,
       signerRole,
       pageNumber: requestedPage + pageOffset,
-      xPosition: fieldType === 'initial' ? 451 : 72,
-      yPosition: 96 + (row * 58),
+      xPosition: hasNativePosition ? rawXPosition : fieldType === 'initial' ? 451 : 72,
+      yPosition: hasNativePosition ? rawYPosition : 96 + (row * 58),
       width,
       height,
       required: field?.required !== false,
