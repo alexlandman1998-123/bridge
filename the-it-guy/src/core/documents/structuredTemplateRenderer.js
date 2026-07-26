@@ -189,6 +189,9 @@ function resolveDocumentContactItems(branding = {}, placeholders = {}) {
     placeholders.agency_legal_name,
     placeholders.organisation_legal_name,
     placeholders['organisation.legal_name'],
+    placeholders.agency_name,
+    placeholders.organisation_name,
+    placeholders['organisation.name'],
     placeholders.agency_display_name,
     placeholders.organisation_display_name,
   )
@@ -890,6 +893,11 @@ export function renderStructuredTemplate({
     safeTitle ||
     'Preview reference pending'
   const isLegalDocumentPreview = ['mandate', 'otp'].includes(normalizedPacketType)
+  const legalDocumentTitle = normalizedPacketType === 'mandate'
+    ? 'Mandate Agreement'
+    : normalizedPacketType === 'otp'
+      ? 'Offer to Purchase'
+      : safeTitle
   const renderedSections = isLegalDocumentPreview
     ? normalizedSections.map((section, index) => renderMandateSectionHtml(section, placeholders, index, normalizedPacketType)).join('\n')
     : normalizedSections.map((section) => renderStructuredFieldRows(section, placeholders, normalizedPacketType)).join('\n')
@@ -939,20 +947,20 @@ export function renderStructuredTemplate({
           .packet-preview-missing { color: #8a3b15 !important; background: #fff6df; box-shadow: inset 0 -0.45em 0 rgba(255, 214, 120, 0.32); font-weight: 700 !important; }
           .packet-preview-missing-block, .packet-preview-missing-inline { color: #8a3b15 !important; }
           .legal-document-preview-shell { max-width: 210mm; min-height: 286mm; border-radius: 4px; border-color: #d7d7d7; box-shadow: 0 22px 60px rgba(15, 23, 42, 0.12); }
-          .legal-document-preview-shell .packet-preview-header { padding: 18mm 18mm 8mm; border-bottom: 1px solid #d8d8d8; background: #ffffff; }
+          .legal-document-preview-shell .packet-preview-header { align-items: flex-start; padding: 18mm 18mm 9mm; border-bottom: 1px solid #d8d8d8; background: #ffffff; }
           .legal-document-preview-shell .packet-preview-brand-left { min-width: 0; flex: 0 0 auto; }
-          .legal-document-preview-shell .packet-preview-logo { width: auto; min-width: 34mm; max-width: 48mm; height: 15mm; border: 0; border-radius: 0; }
-          .legal-document-preview-shell .packet-preview-logo img { max-width: 48mm; max-height: 15mm; }
+          .legal-document-preview-shell .packet-preview-logo { width: auto; min-width: 34mm; max-width: 54mm; height: 17mm; border: 0; border-radius: 0; justify-content: flex-start; }
+          .legal-document-preview-shell .packet-preview-logo img { max-width: 54mm; max-height: 17mm; }
           .legal-document-preview-shell .packet-preview-logo strong { color: #111827; font-size: 15px; line-height: 1.15; }
           .legal-document-preview-shell .document-contact-row { flex: 0 1 78mm; gap: 2mm; font-size: 10.5px; }
           .legal-document-preview-shell .document-contact-item { grid-template-columns: 4mm minmax(0, 1fr); max-width: 78mm; gap: 2mm; }
           .legal-document-preview-shell .document-contact-icon, .legal-document-preview-shell .document-contact-icon svg { width: 4mm; height: 4mm; }
-          .legal-document-preview-shell .packet-preview-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
+          .legal-document-preview-shell .packet-preview-title { padding: 10mm 18mm 7mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .legal-document-preview-shell .packet-preview-title h1 { color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
           .legal-document-preview-shell .packet-preview-title p { margin-top: 7px; color: #5c6670; font-size: 12px; line-height: 1.45; }
-          .legal-document-preview-body { display: block; padding: 9mm 18mm 16mm; }
-          .legal-preview-section { margin: 0 0 9mm; break-inside: avoid; page-break-inside: avoid; }
-          .legal-preview-section h2 { margin: 0 0 4mm; padding: 0 0 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.35; text-transform: uppercase; }
+          .legal-document-preview-body { display: block; padding: 11mm 18mm 17mm; }
+          .legal-preview-section { margin: 0 0 12mm; break-inside: avoid; page-break-inside: avoid; }
+          .legal-preview-section h2 { margin: 0 0 5mm; padding: 0 0 2.5mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.35; text-transform: uppercase; }
           .legal-preview-section h2 span { display: inline-block; min-width: 22px; }
           .legal-preview-paragraph { margin: 0; color: #1f2937; font-size: 13px; line-height: 1.72; }
           .legal-preview-paragraph + .legal-preview-table, .legal-preview-table + .legal-preview-paragraph { margin-top: 4mm; }
@@ -962,14 +970,14 @@ export function renderStructuredTemplate({
           .legal-section-signing-requirement { display: grid; grid-template-columns: minmax(34mm, 0.3fr) minmax(0, 1fr); gap: 4mm; align-items: end; margin-top: 5mm; color: #1f2937; font-size: 12px; break-inside: avoid; page-break-inside: avoid; }
           .legal-section-signing-label { color: #3f4a56; font-weight: 700; }
           .legal-section-signing-line { min-height: 8mm; border-bottom: 1px solid #111827; padding-bottom: 1.5mm; }
-          .legal-clause-list { display: grid; gap: 3mm; margin: 0; padding: 0; list-style: none; }
+          .legal-clause-list { display: grid; gap: 4mm; margin: 0; padding: 0; list-style: none; }
           .legal-clause-list li { display: grid; grid-template-columns: 30px minmax(130px, 0.38fr) minmax(0, 1fr); gap: 8px; color: #1f2937; font-size: 12.5px; line-height: 1.55; }
           .legal-clause-number, .legal-clause-label { color: #3f4a56; font-weight: 700; }
           .legal-clause-value { color: #111827; }
-          .legal-document-preview-shell .party-card-group { gap: 3mm; }
-          .legal-document-preview-shell .party-card-group + .party-card-group { margin-top: 5mm; }
+          .legal-document-preview-shell .party-card-group { gap: 4mm; }
+          .legal-document-preview-shell .party-card-group + .party-card-group { margin-top: 7mm; }
           .legal-document-preview-shell .party-card-group h4 { color: #3f4a56; font-size: 11px; }
-          .legal-document-preview-shell .party-card-grid { gap: 3mm; }
+          .legal-document-preview-shell .party-card-grid { gap: 4mm; }
           .legal-document-preview-shell .party-card { border-color: #d7d7d7; border-radius: 2mm; padding: 3mm; }
           .legal-document-preview-shell .party-card h5 { font-size: 12px; margin-bottom: 2mm; }
           .legal-document-preview-shell .party-card dl { gap: 1.5mm; }
@@ -997,7 +1005,7 @@ export function renderStructuredTemplate({
             ${renderDocumentContactRow(contactItems)}
           </header>
           <div class="packet-preview-title">
-            <h1>${escapeHtml(safeTitle)}</h1>
+            <h1>${escapeHtml(legalDocumentTitle)}</h1>
             <p>${escapeHtml(documentReference)}</p>
           </div>
           <main class="packet-preview-content ${legalBodyClass}">

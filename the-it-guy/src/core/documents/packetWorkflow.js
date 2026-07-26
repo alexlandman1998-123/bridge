@@ -360,6 +360,9 @@ function resolveDocumentContactItems(branding = {}, placeholders = {}) {
     placeholders.agency_legal_name,
     placeholders.organisation_legal_name,
     placeholders['organisation.legal_name'],
+    placeholders.agency_name,
+    placeholders.organisation_name,
+    placeholders['organisation.name'],
     placeholders.agency_display_name,
     placeholders.organisation_display_name,
   )
@@ -2225,6 +2228,7 @@ export function renderPacketPreviewHtml({
             box-shadow: 0 22px 60px rgba(15, 23, 42, 0.12);
           }
           .legal-document-preview-shell .packet-preview-header {
+            align-items: flex-start;
             padding: 18mm 18mm 8mm;
             border-bottom: 1px solid #d8d8d8;
             background: #ffffff;
@@ -2236,14 +2240,15 @@ export function renderPacketPreviewHtml({
           .legal-document-preview-shell .packet-preview-logo {
             width: auto;
             min-width: 34mm;
-            max-width: 48mm;
-            height: 15mm;
+            max-width: 54mm;
+            height: 17mm;
             border: 0;
             border-radius: 0;
+            justify-content: flex-start;
           }
           .legal-document-preview-shell .packet-preview-logo img {
-            max-width: 48mm;
-            max-height: 15mm;
+            max-width: 54mm;
+            max-height: 17mm;
           }
           .legal-document-preview-shell .packet-preview-logo strong {
             color: #111827;
@@ -2266,7 +2271,7 @@ export function renderPacketPreviewHtml({
             height: 4mm;
           }
           .legal-document-preview-shell .packet-preview-title {
-            padding: 9mm 18mm 6mm;
+            padding: 10mm 18mm 7mm;
             text-align: center;
             border-bottom: 1px solid #e4e4e4;
           }
@@ -2285,16 +2290,16 @@ export function renderPacketPreviewHtml({
           }
           .legal-document-preview-body {
             display: block;
-            padding: 9mm 18mm 16mm;
+            padding: 11mm 18mm 17mm;
           }
           .legal-preview-section {
-            margin: 0 0 9mm;
+            margin: 0 0 12mm;
             break-inside: avoid;
             page-break-inside: avoid;
           }
           .legal-preview-section h2 {
-            margin: 0 0 4mm;
-            padding: 0 0 2mm;
+            margin: 0 0 5mm;
+            padding: 0 0 2.5mm;
             border-bottom: 1px solid #d7d7d7;
             color: #111827;
             font-size: 13px;
@@ -2358,7 +2363,7 @@ export function renderPacketPreviewHtml({
           }
           .legal-clause-list {
             display: grid;
-            gap: 3mm;
+            gap: 4mm;
             margin: 0;
             padding: 0;
             list-style: none;
@@ -2380,17 +2385,17 @@ export function renderPacketPreviewHtml({
             color: #111827;
           }
           .legal-document-preview-shell .party-card-group {
-            gap: 3mm;
+            gap: 4mm;
           }
           .legal-document-preview-shell .party-card-group + .party-card-group {
-            margin-top: 5mm;
+            margin-top: 7mm;
           }
           .legal-document-preview-shell .party-card-group h4 {
             color: #3f4a56;
             font-size: 11px;
           }
           .legal-document-preview-shell .party-card-grid {
-            gap: 3mm;
+            gap: 4mm;
           }
           .legal-document-preview-shell .party-card {
             border-color: #d7d7d7;

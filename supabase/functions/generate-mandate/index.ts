@@ -928,8 +928,32 @@ async function renderStructuredSectionsToPdfBytes({
   );
   const logoImage = await embedPdfLogo(pdf, logoUrl);
   const documentReference = getPdfPlaceholder(placeholders, "document_reference", "packet_reference", "transaction_reference", "packet_id") || packetId || title;
-  const safeTitle = normalizePdfText(title || "Mandate Agreement");
   const normalizedPacketType = normalizeText(packetType).toLowerCase();
+  const safeTitle = normalizedPacketType === "mandate"
+    ? "Mandate Agreement"
+    : normalizedPacketType === "otp"
+      ? "Offer to Purchase"
+      : normalizePdfText(title || "Document");
+  const agencyDetailLines = [
+    orgName,
+    firstPdfValue(branding?.registrationNumber, branding?.registration_number, branding?.companyRegistrationNumber, branding?.company_registration_number, getPdfPlaceholder(placeholders, "agency_registration_number", "organisation_registration_number", "organisation.registration_number")),
+    firstPdfValue(branding?.vatNumber, branding?.vat_number, branding?.organisationVatNumber, branding?.organisation_vat_number, getPdfPlaceholder(placeholders, "agency_vat_number", "organisation_vat_number", "organisation.vat_number")),
+    firstPdfValue(branding?.fspNumber, branding?.fsp_number, branding?.organisationFspNumber, branding?.organisation_fsp_number, getPdfPlaceholder(placeholders, "agency_fsp_number", "organisation_fsp_number", "organisation.fsp_number")),
+    firstPdfValue(branding?.physicalAddress, branding?.physical_address, branding?.organisationPhysicalAddress, branding?.organisation_physical_address, branding?.address, getPdfPlaceholder(placeholders, "agency_address", "organisation_physical_address", "organisation.physical_address")),
+    firstPdfValue(branding?.email, branding?.organisationEmail, branding?.organisation_email, branding?.contactEmail, getPdfPlaceholder(placeholders, "agency_email", "organisation_email", "organisation.email")),
+    firstPdfValue(branding?.telephone, branding?.phoneNumber, branding?.phone_number, branding?.phone, branding?.organisationPhone, branding?.organisation_phone, getPdfPlaceholder(placeholders, "agency_phone", "organisation_phone", "organisation.phone")),
+    firstPdfValue(branding?.website, branding?.organisationWebsite, branding?.organisation_website, getPdfPlaceholder(placeholders, "agency_website", "organisation_website", "organisation.website")),
+  ]
+    .map((value, index) => {
+      const text = normalizePdfText(value);
+      if (!text) return "";
+      if (index === 1) return `Reg: ${text}`;
+      if (index === 2) return `VAT: ${text}`;
+      if (index === 3) return `FSP: ${text}`;
+      return text;
+    })
+    .filter(Boolean)
+    .slice(0, 7);
   let page = pdf.addPage([pageWidth, pageHeight]);
   let y = contentTop;
   const plannedSigningFields: PlannedSigningField[] = [];
@@ -953,19 +977,41 @@ async function renderStructuredSectionsToPdfBytes({
     });
   };
   const drawChrome = (targetPage: any) => {
+    const logoMaxWidth = 150;
+    const logoMaxHeight = 42;
     if (logoImage) {
       const logoSize = logoImage.scale(1);
-      const logoScale = Math.min(150 / logoSize.width, 42 / logoSize.height, 1);
+      const logoScale = Math.min(logoMaxWidth / logoSize.width, logoMaxHeight / logoSize.height, 1);
       const logoWidth = logoSize.width * logoScale;
       const logoHeight = logoSize.height * logoScale;
       targetPage.drawImage(logoImage, {
-        x: (pageWidth - logoWidth) / 2,
+        x: margin,
         y: headerTop - logoHeight,
         width: logoWidth,
         height: logoHeight,
       });
     } else {
-      drawCentered(targetPage, orgName, headerTop - 22, bold, 15, dark);
+      const fallbackLines = wrapPdfLine(orgName, bold, 13, logoMaxWidth).slice(0, 2);
+      fallbackLines.forEach((line, index) => {
+        targetPage.drawText(line, { x: margin, y: headerTop - 12 - index * 13, size: 13, font: bold, color: dark });
+      });
+    }
+    let detailY = headerTop - 2;
+    for (const [index, rawLine] of agencyDetailLines.entries()) {
+      const font = index === 0 ? bold : regular;
+      const size = index === 0 ? 8.5 : 7.2;
+      const lines = wrapPdfLine(rawLine, font, size, 176).slice(0, index === 0 ? 2 : 1);
+      for (const line of lines) {
+        const lineWidth = font.widthOfTextAtSize(line, size);
+        targetPage.drawText(line, {
+          x: pageWidth - margin - lineWidth,
+          y: detailY,
+          size,
+          font,
+          color: index === 0 ? dark : muted,
+        });
+        detailY -= index === 0 ? 10 : 8;
+      }
     }
     drawCentered(targetPage, safeTitle.toUpperCase(), pageHeight - 95, bold, 17, dark);
     drawCentered(targetPage, documentReference, pageHeight - 114, regular, 8.5, muted);
@@ -1035,7 +1081,7 @@ async function renderStructuredSectionsToPdfBytes({
         page.drawText(line, { x: colX, y: rowY - 13 - lineIndex * 11, size: 9.2, font: regular, color: dark });
       });
     });
-    y -= panelHeight + 18;
+    y -= panelHeight + 26;
   };
 
   const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
@@ -1073,7 +1119,7 @@ async function renderStructuredSectionsToPdfBytes({
     ensureSpace(headingSize + lineHeight * 2);
     drawWrapped(label.toUpperCase(), { font: bold, size: headingSize });
     drawWrapped(content, { font: regular, size: bodySize });
-    y -= 8;
+    y -= 14;
   }
 
   if (normalizedPacketType === "mandate") {
