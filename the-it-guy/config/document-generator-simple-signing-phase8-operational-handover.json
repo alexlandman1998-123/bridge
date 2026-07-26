@@ -1,0 +1,48 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-8",
+  "status": "operational_handover_ready",
+  "decision": "ready_for_keep_live_decision_after_phase7",
+  "production": {
+    "appUrl": "https://app.arch9.co.za",
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "vercelProject": "bridge",
+    "route": "/sign/:token"
+  },
+  "requiredPriorPhase": "document-generator-simple-signing-ui-phase-7",
+  "inputs": {
+    "phase7Observation": "test-results/document-generator-simple-signing-phase7/live-observation-report.json",
+    "maxObservationAgeMinutes": 1440
+  },
+  "releaseScope": {
+    "surface": "signer_portal",
+    "packetTypes": ["mandate", "otp"],
+    "appliesToAllGeneratedDocumentsInScope": true,
+    "documentGeneratorChanges": false
+  },
+  "controls": {
+    "noSigningActionRequired": true,
+    "noEmailSendRequired": true,
+    "noFinalArtifactGenerationRequired": true,
+    "noFinalArtifactAccessRequired": true,
+    "noCustomerDataMutationRequired": true,
+    "controlledTokenRedacted": true
+  },
+  "passingDecision": "keep_live",
+  "failingDecision": "rollback_or_investigate_signer_route",
+  "requiredChecks": [
+    "Phase 7 observation status is healthy",
+    "Phase 7 observation is fresh enough for handover",
+    "production release manifest was reachable during observation",
+    "simple signing shell and required regions were visible",
+    "old signer UI surfaces were absent",
+    "no forbidden production calls occurred",
+    "the observation report did not store the controlled signing token"
+  ],
+  "acceptance": [
+    "Phase 7 remains the required pre-handover gate",
+    "Phase 8 returns keep_live only from a healthy redacted Phase 7 observation",
+    "Phase 8 blocks stale, blocked, mutating, or non-redacted observations",
+    "Phase 8 does not sign, complete signing, send email, or generate final artifacts",
+    "rollback remains redeploying the previous production frontend artifact if the signer route regresses"
+  ]
+}

@@ -421,6 +421,8 @@
     "test:document-generator-simple-signing-phase5": "npm run test:document-generator-simple-signing-phase4 && npm run build && node scripts/document-generator-simple-signing-phase5-release-readiness.test.mjs",
     "test:document-generator-simple-signing-phase6": "npm run test:document-generator-simple-signing-phase5 && node scripts/document-generator-simple-signing-phase6-production-promotion.test.mjs",
     "test:document-generator-simple-signing-phase7": "npm run test:document-generator-simple-signing-phase6 && node scripts/document-generator-simple-signing-phase7-live-observation.test.mjs",
+    "test:document-generator-simple-signing-phase8": "npm run test:document-generator-simple-signing-phase7 && node scripts/document-generator-simple-signing-phase8-operational-handover.test.mjs",
+    "verify:document-generator-simple-signing:production": "node --env-file-if-exists=.env.production.local scripts/document-generator-simple-signing-phase8-operational-handover.mjs --refresh-live-observation --write",
     "test:document-generator-phase1": "node scripts/document-generator-phase1-entrypoint-consolidation.test.mjs",
     "test:document-generator-phase-a2": "node scripts/document-generator-phase-a2-runtime.test.mjs",
     "test:document-generator-phase-a3": "node scripts/document-generator-phase-a3-lifecycle.test.mjs",
