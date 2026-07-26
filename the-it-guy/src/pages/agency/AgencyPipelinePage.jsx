@@ -2136,6 +2136,10 @@ async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, pre
   const assessment = assessSigningFieldLayout(fields)
   if (!assessment.ready) {
     console.warn('Quick mandate signing layout failed local validation', assessment.reasons)
+    const layoutError = new Error(`Signature field layout contains invalid blocks: ${assessment.reasons.join(', ')}`)
+    layoutError.code = 'QUICK_SIGNING_FIELD_LAYOUT_INVALID'
+    layoutError.details = assessment
+    throw layoutError
   }
 
   const existingLayout = await fetchSigningFieldLayout({
@@ -9226,7 +9230,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
           console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
-          signingLinkFailureMessage = normalizeText(linkError?.message)
+          const layoutReasons = Array.isArray(linkError?.details?.reasons)
+            ? linkError.details.reasons.map((reason) => normalizeText(reason)).filter(Boolean).join(', ')
+            : ''
+          signingLinkFailureMessage = [
+            normalizeText(linkError?.message),
+            layoutReasons ? `Layout diagnostics: ${layoutReasons}` : '',
+          ].filter(Boolean).join(' ')
         }
 
         if ((!sellerSigningLink || !agentSigningLink) && supabase) {
