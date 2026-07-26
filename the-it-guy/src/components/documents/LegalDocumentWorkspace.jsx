@@ -2626,12 +2626,14 @@ function MandateReviewColumn({ title, Icon, rows = [] }) {
   )
 }
 
-function buildMandateReviewRow(key, label, value) {
+function buildMandateReviewRow(key, label, value, options = {}) {
   const text = normalizeText(value)
+  const editValue = normalizeText(options.editValue ?? value)
   return {
     key,
     label,
     value: text || 'Not captured',
+    editValue: text ? editValue : '',
     missing: !text,
   }
 }
@@ -2836,8 +2838,9 @@ function MandateReviewPanel({
     ].filter(Boolean).join(', ')),
   ]
 
+  const askingPriceRaw = firstNonEmptyText(mandate.askingPrice, mandate.asking_price, placeholders.asking_price, placeholders.property_asking_price)
   const mandateRows = [
-    buildMandateReviewRow('asking_price', 'Asking price', formatMandateCurrency(firstNonEmptyText(mandate.askingPrice, mandate.asking_price, placeholders.asking_price, placeholders.property_asking_price))),
+    buildMandateReviewRow('asking_price', 'Asking price', formatMandateCurrency(askingPriceRaw), { editValue: askingPriceRaw }),
     buildMandateReviewRow('mandate_type', 'Mandate type', formatMandateRouteLabel(firstNonEmptyText(mandate.type, mandate.mandateType, placeholders.mandate_type))),
     buildMandateReviewRow('mandate_dates', 'Mandate dates', buildMandateDurationLabel(
       firstNonEmptyText(mandate.startDate, mandate.mandateStartDate, placeholders.mandate_start_date),
@@ -2865,14 +2868,9 @@ function MandateReviewPanel({
     ...mandateRows,
     ...routeRows,
   ]
-  const manualFields = manualOverride?.fields && typeof manualOverride.fields === 'object' ? manualOverride.fields : {}
   const resetDraftFields = () => setDraftFields(Object.fromEntries(editableRows.map((row) => [
     row.key,
-    Object.prototype.hasOwnProperty.call(manualFields, row.key)
-      ? normalizeText(manualFields[row.key])
-      : row.missing
-        ? ''
-        : normalizeText(row.value),
+    row.editValue,
   ])))
   useEffect(() => {
     if (!editing) resetDraftFields()
@@ -2934,16 +2932,28 @@ function MandateReviewPanel({
           <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
             {savedLabel || summary.savedLabel || 'Draft'}
           </span>
-          <button
-            type="button"
-            onClick={editing ? () => void handleSaveManualOverride() : handleStartEditing}
-            disabled={savingManualOverride || !onSaveManualOverride}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#d7e4f3] bg-white text-[#526b84] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
-            aria-label={editing ? 'Save mandate detail overrides' : 'Edit mandate details'}
-            title={editing ? 'Save mandate detail overrides' : 'Edit mandate details'}
-          >
-            {editing ? <Save size={15} /> : <Pencil size={15} />}
-          </button>
+          {editing ? (
+            <button
+              type="button"
+              onClick={() => void handleSaveManualOverride()}
+              disabled={savingManualOverride || !onSaveManualOverride}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-[12px] border border-[#1a7f5a] bg-[#1a7f5a] px-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(26,127,90,0.18)] transition hover:bg-[#146b4b] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save size={15} />
+              {savingManualOverride ? 'Saving...' : 'Save'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStartEditing}
+              disabled={!onSaveManualOverride}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#d7e4f3] bg-white text-[#526b84] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Edit mandate details"
+              title="Edit mandate details"
+            >
+              <Pencil size={15} />
+            </button>
+          )}
           {editing ? (
             <button
               type="button"
