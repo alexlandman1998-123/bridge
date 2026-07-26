@@ -2069,17 +2069,44 @@ function resolveWorkspaceModeFromAction(actionKey) {
   return 'view'
 }
 
-function resolveMandateQuickStartPrimaryLabel(actionKey = '') {
+function resolveMandateQuickStartPrimaryLabel(actionKey = '', step = 'details', signingMethod = '') {
+  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
+  const normalizedMethod = normalizeText(signingMethod).toLowerCase()
+  if (normalizedStep === 'details') return 'Generate Mandate'
+  if (normalizedStep === 'method') {
+    if (normalizedMethod === 'physical') return 'Continue to Physical Signing'
+    if (normalizedMethod === 'digital') return 'Confirm Emails'
+    return 'Choose Signing Method'
+  }
+  if (normalizedStep === 'emails') return 'Review Send'
+  if (normalizedStep === 'send') return 'Send for Signature'
   const normalized = normalizeText(actionKey).toLowerCase()
   if (normalized === 'send' || normalized === 'edit') return 'Start Signing'
   return 'Generate & Start Signing'
 }
 
-function resolveMandateQuickStartIntro(actionKey = '') {
+function resolveMandateQuickStartTitle(step = 'details') {
+  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
+  if (normalizedStep === 'method') return 'Choose signing method'
+  if (normalizedStep === 'emails') return 'Confirm signer emails'
+  if (normalizedStep === 'send') return 'Send mandate for signature'
+  return 'Confirm mandate details'
+}
+
+function resolveMandateQuickStartIntro(actionKey = '', step = 'details', signingMethod = '') {
+  const normalizedStep = normalizeText(step).toLowerCase() || 'details'
+  const normalizedMethod = normalizeText(signingMethod).toLowerCase()
+  if (normalizedStep === 'method') return 'Choose whether this mandate will be signed digitally or handled as a physical signature.'
+  if (normalizedStep === 'emails') return 'Confirm the recipient email addresses before Arch9 creates and sends digital signing links.'
+  if (normalizedStep === 'send') {
+    return normalizedMethod === 'digital'
+      ? 'Review the digital signing recipients, then send the mandate.'
+      : 'Continue to the mandate workspace to manage the physical signature copy.'
+  }
   const normalized = normalizeText(actionKey).toLowerCase()
-  if (normalized === 'send') return 'The mandate PDF is ready. Confirm the recipient details before the signing request goes out.'
-  if (normalized === 'edit') return 'A mandate draft exists. Confirm the details below, then start the signing flow or edit the wording first.'
-  return 'Confirm the seller, property, and signer details before Arch9 generates the mandate and starts the signing flow.'
+  if (normalized === 'send') return 'The mandate PDF is ready. Confirm the details before choosing how it should be signed.'
+  if (normalized === 'edit') return 'A mandate draft exists. Confirm the details below, then choose how it should be signed.'
+  return 'Confirm the seller, property, and signer details before Arch9 generates the mandate.'
 }
 
 function resolveOtpQuickStartPrimaryLabel() {
@@ -2995,6 +3022,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)
   const [mandateQuickStartProgress, setMandateQuickStartProgress] = useState('')
   const [mandateQuickStartError, setMandateQuickStartError] = useState('')
+  const [mandateQuickStartStep, setMandateQuickStartStep] = useState('details')
+  const [mandateQuickStartSigningMethod, setMandateQuickStartSigningMethod] = useState('')
+  const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
 
   const routeLeadRecord = useMemo(() => {
@@ -4710,9 +4740,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     currentAgent,
-    currentAgent.email,
-    currentAgent.fullName,
-    currentAgent.id,
     organisationId,
     selectedLead,
     selectedLeadIsSeller,
@@ -4763,7 +4790,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : selectedLeadMandateActionMeta
   const selectedLeadMandateQuickStartActionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
   const selectedLeadMandatePrimaryLabel = ['generate', 'edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
-    ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey)
+    ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, 'details', '')
     : selectedLeadMandateActionState.label
   const selectedLeadMandateTemplateBlocking =
     isSupabaseConfigured &&
@@ -4860,6 +4887,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => selectedLeadMandateReadiness.warnings,
     [selectedLeadMandateReadiness],
   )
+  const mandateQuickStartSellerEmail = normalizeText(selectedLeadContact?.email)
+  const mandateQuickStartAgentEmail = useMemo(() => {
+    const assignedAgentEmail = normalizeText(selectedLead?.assignedAgentEmail).toLowerCase()
+    const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
+    return isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
+  }, [currentAgent.email, selectedLead?.assignedAgentEmail])
+  const mandateQuickStartAgentName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email || 'Signing agent')
+  const mandateQuickStartDigitalEmailRows = useMemo(
+    () => [
+      {
+        key: 'agent',
+        label: 'Agent signer',
+        name: mandateQuickStartAgentName,
+        email: mandateQuickStartAgentEmail,
+        ready: isValidEmail(mandateQuickStartAgentEmail),
+        issue: 'Add an email address for the assigned agent before sending digital signing.',
+      },
+      {
+        key: 'seller',
+        label: 'Seller signer',
+        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
+        email: mandateQuickStartSellerEmail,
+        ready: isValidEmail(mandateQuickStartSellerEmail),
+        issue: 'Add the seller email address before sending digital signing.',
+      },
+    ],
+    [
+      mandateQuickStartAgentEmail,
+      mandateQuickStartAgentName,
+      mandateQuickStartSellerEmail,
+      selectedLeadContact?.firstName,
+      selectedLeadContact?.lastName,
+    ],
+  )
+  const mandateQuickStartDigitalEmailBlockers = useMemo(
+    () => mandateQuickStartDigitalEmailRows.filter((row) => !row.ready).map((row) => row.issue),
+    [mandateQuickStartDigitalEmailRows],
+  )
+  const mandateQuickStartPrimaryDisabled = useMemo(() => {
+    const step = normalizeText(mandateQuickStartStep).toLowerCase() || 'details'
+    if (mandateQuickStartBusy) return true
+    if (step === 'details') {
+      return selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length > 0
+    }
+    if (step === 'method') return !['digital', 'physical'].includes(mandateQuickStartSigningMethod)
+    if (step === 'emails' || step === 'send') return mandateQuickStartDigitalEmailBlockers.length > 0
+    return false
+  }, [
+    mandateQuickStartBusy,
+    mandateQuickStartDigitalEmailBlockers,
+    mandateQuickStartSigningMethod,
+    mandateQuickStartStep,
+    selectedLeadMandateQuickStartBlockers,
+    selectedLeadMandateTemplateBlocking,
+  ])
 
   const selectedLeadMandateSignedEvidence = useMemo(() => {
     const mandateSigningStatus = normalizeText(mandatePacketStatus?.signingStatus).toLowerCase()
@@ -5894,9 +5976,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       templateReadiness: selectedLeadOtpTemplateReadiness,
     })
   }, [
-    currentAgent.email,
-    currentAgent.fullName,
-    currentAgent.id,
+    currentAgent,
     offerLinkForm.buyerEmail,
     offerLinkForm.buyerName,
     offerLinkForm.buyerPhone,
@@ -9070,8 +9150,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (!requiredSigningLink) {
         setError(
           recipientRole === 'seller'
-            ? 'Seller signing link could not be generated yet. Confirm the seller has an email address, then click Generate Mandate and Send Mandate again.'
-            : 'Agent signing link could not be generated yet. Confirm the assigned agent has an email address, then click Generate Mandate and Send Mandate again.',
+            ? 'Seller signing link could not be generated yet. Confirm the seller email address in the digital signing step, then send again.'
+            : 'Agent signing link could not be generated yet. Confirm the assigned agent email address in the digital signing step, then send again.',
         )
         return
       }
@@ -9253,11 +9333,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setMandateQuickStartError('')
     setMandateQuickStartProgress('')
+    setMandateQuickStartStep('details')
+    setMandateQuickStartSigningMethod('')
+    setMandateQuickStartPacketId('')
     setMandateQuickStartOpen(true)
   }
 
   async function handleMandateQuickStartGenerateAndSend() {
     if (!selectedLead || !selectedLeadIsSeller) return
+    const currentStep = normalizeText(mandateQuickStartStep).toLowerCase() || 'details'
+
+    if (currentStep === 'method') {
+      if (mandateQuickStartSigningMethod === 'digital') {
+        setMandateQuickStartError('')
+        setMandateQuickStartStep('emails')
+        return
+      }
+      if (mandateQuickStartSigningMethod === 'physical') {
+        setMandateQuickStartOpen(false)
+        setMandateQuickStartStep('details')
+        setMandateQuickStartSigningMethod('')
+        setMandateQuickStartError('')
+        setMandateQuickStartProgress('')
+        openSelectedLeadMandateWorkspace('send')
+        setMessage('Mandate prepared. Choose physical signature handling in the mandate workspace.')
+        return
+      }
+      setMandateQuickStartError('Choose digital signing or physical signature before continuing.')
+      return
+    }
+
+    if (currentStep === 'emails') {
+      if (mandateQuickStartDigitalEmailBlockers.length) {
+        setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
+        return
+      }
+      setMandateQuickStartError('')
+      setMandateQuickStartStep('send')
+      return
+    }
+
+    if (currentStep === 'send' && mandateQuickStartSigningMethod !== 'digital') {
+      setMandateQuickStartError('Choose digital signing before sending signing links.')
+      return
+    }
+
+    if (currentStep === 'send' && mandateQuickStartDigitalEmailBlockers.length) {
+      setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
+      return
+    }
+
     if (selectedLeadMandateTemplateBlocking) {
       setMandateQuickStartError(selectedLeadMandateTemplateReadiness?.value || 'Checking the published mandate template route. Try again in a moment.')
       return
@@ -9275,10 +9400,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusPacketId = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
         ? normalizeText(mandatePacketStatus.packet.id)
         : ''
-      let mandatePacketId = normalizeText(statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
+      let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       const needsGeneration = actionKey === 'generate' || !isUuidLike(mandatePacketId)
 
-      if (needsGeneration) {
+      if (currentStep === 'details' && needsGeneration) {
         const generated = await handleGenerateMandateFromSellerLead({
           onProgress: (message) => setMandateQuickStartProgress(normalizeText(message)),
         })
@@ -9294,6 +9419,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw new Error('The mandate was prepared, but no saved packet is available for signing. Open the editor to resolve packet setup.')
       }
 
+      setMandateQuickStartPacketId(mandatePacketId)
+
+      if (currentStep === 'details') {
+        setMandateQuickStartStep('method')
+        setMandateQuickStartProgress('')
+        return
+      }
+
       setMandateQuickStartProgress('Starting signing…')
       const sendResult = await handleSendMandateToSeller({ packetId: mandatePacketId })
       if (!sendResult) {
@@ -9301,6 +9434,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setMandateQuickStartOpen(false)
+      setMandateQuickStartStep('details')
+      setMandateQuickStartSigningMethod('')
+      setMandateQuickStartPacketId('')
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
       setMandateQuickStartError(quickStartError?.message || 'Unable to generate and start signing right now.')
@@ -16084,9 +16220,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setMandateQuickStartOpen(false)
           setMandateQuickStartError('')
           setMandateQuickStartProgress('')
+          setMandateQuickStartStep('details')
+          setMandateQuickStartSigningMethod('')
+          setMandateQuickStartPacketId('')
         }}
-        title="Confirm mandate details"
-        subtitle={resolveMandateQuickStartIntro(selectedLeadMandateQuickStartActionKey)}
+        title={resolveMandateQuickStartTitle(mandateQuickStartStep)}
+        subtitle={resolveMandateQuickStartIntro(selectedLeadMandateQuickStartActionKey, mandateQuickStartStep, mandateQuickStartSigningMethod)}
         className="max-w-2xl"
         footer={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -16100,6 +16239,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               Review Mandate / Signing
             </Button>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              {normalizeText(mandateQuickStartStep).toLowerCase() !== 'details' ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    const currentStep = normalizeText(mandateQuickStartStep).toLowerCase()
+                    setMandateQuickStartError('')
+                    setMandateQuickStartProgress('')
+                    if (currentStep === 'send') setMandateQuickStartStep('emails')
+                    else if (currentStep === 'emails') setMandateQuickStartStep('method')
+                    else setMandateQuickStartStep('details')
+                  }}
+                  disabled={mandateQuickStartBusy}
+                >
+                  Back
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -16107,6 +16263,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   setMandateQuickStartOpen(false)
                   setMandateQuickStartError('')
                   setMandateQuickStartProgress('')
+                  setMandateQuickStartStep('details')
+                  setMandateQuickStartSigningMethod('')
+                  setMandateQuickStartPacketId('')
                 }}
                 disabled={mandateQuickStartBusy}
               >
@@ -16115,75 +16274,191 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <Button
                 type="button"
                 onClick={() => void handleMandateQuickStartGenerateAndSend()}
-                disabled={mandateQuickStartBusy || selectedLeadMandateTemplateBlocking || selectedLeadMandateQuickStartBlockers.length > 0}
+                disabled={mandateQuickStartPrimaryDisabled}
               >
                 {mandateQuickStartBusy
                   ? (mandateQuickStartProgress || 'Working…')
-                  : resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey)}
+                  : resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, mandateQuickStartStep, mandateQuickStartSigningMethod)}
               </Button>
             </div>
           </div>
         )}
       >
         <div className="space-y-4">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {selectedLeadMandateQuickStartRows.map((row) => {
-              const ready = row.ready === true
-              const Icon = ready ? CheckCircle2 : AlertTriangle
-              const stateLabel = ready ? 'Ready' : row.optional ? 'Review' : 'Required'
-              return (
-                <div
-                  key={row.key}
-                  className={`rounded-[14px] border px-3 py-2.5 ${
-                    ready
-                      ? 'border-[#d4eadb] bg-[#f3fbf6]'
-                      : row.optional
-                        ? 'border-[#f2ddb7] bg-[#fff8eb]'
-                        : 'border-[#f0c8c3] bg-[#fff5f4]'
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : row.optional ? 'text-[#a86b17]' : 'text-[#ba382f]'}`} />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
-                          ready
-                            ? 'bg-white text-[#237a4d]'
-                            : row.optional
-                              ? 'bg-white text-[#936018]'
-                              : 'bg-white text-[#a63830]'
-                        }`}>
-                          {stateLabel}
-                        </span>
+          {normalizeText(mandateQuickStartStep).toLowerCase() === 'details' ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {selectedLeadMandateQuickStartRows.map((row) => {
+                const ready = row.ready === true
+                const Icon = ready ? CheckCircle2 : AlertTriangle
+                const stateLabel = ready ? 'Ready' : row.optional ? 'Review' : 'Required'
+                return (
+                  <div
+                    key={row.key}
+                    className={`rounded-[14px] border px-3 py-2.5 ${
+                      ready
+                        ? 'border-[#d4eadb] bg-[#f3fbf6]'
+                        : row.optional
+                          ? 'border-[#f2ddb7] bg-[#fff8eb]'
+                          : 'border-[#f0c8c3] bg-[#fff5f4]'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : row.optional ? 'text-[#a86b17]' : 'text-[#ba382f]'}`} />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
+                          <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
+                            ready
+                              ? 'bg-white text-[#237a4d]'
+                              : row.optional
+                                ? 'bg-white text-[#936018]'
+                                : 'bg-white text-[#a63830]'
+                          }`}>
+                            {stateLabel}
+                          </span>
+                        </div>
+                        <p className="mt-1 break-words text-sm text-[#5d7288]">{row.value}</p>
                       </div>
-                      <p className="mt-1 break-words text-sm text-[#5d7288]">{row.value}</p>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
 
-          {selectedLeadMandateQuickStartBlockers.length ? (
-            <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
-              <p className="font-semibold">Required before sending</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {selectedLeadMandateQuickStartBlockers.map((blocker, index) => (
-                  <li key={`${blocker}-${index}`}>{blocker}</li>
-                ))}
-              </ul>
+            {selectedLeadMandateQuickStartBlockers.length ? (
+              <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
+                <p className="font-semibold">Required before sending</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {selectedLeadMandateQuickStartBlockers.map((blocker, index) => (
+                    <li key={`${blocker}-${index}`}>{blocker}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {selectedLeadMandateQuickStartWarnings.length ? (
+              <div className="rounded-[14px] border border-[#f0ddb7] bg-[#fff9ed] px-3 py-3 text-sm text-[#7a5417]">
+                <p className="font-semibold">Can continue, but worth checking</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {selectedLeadMandateQuickStartWarnings.map((warning, index) => (
+                    <li key={`${warning}-${index}`}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </>
+          ) : null}
+
+          {normalizeText(mandateQuickStartStep).toLowerCase() === 'method' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                {
+                  key: 'digital',
+                  title: 'Digital Signing',
+                  copy: 'Send secure signing links to the agent and seller.',
+                  icon: Mail,
+                },
+                {
+                  key: 'physical',
+                  title: 'Physical Signature',
+                  copy: 'Download the mandate and manage the signed upload manually.',
+                  icon: FileText,
+                },
+              ].map((option) => {
+                const selected = mandateQuickStartSigningMethod === option.key
+                const Icon = option.icon
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => {
+                      setMandateQuickStartSigningMethod(option.key)
+                      setMandateQuickStartError('')
+                    }}
+                    className={`flex min-h-[120px] w-full items-start gap-3 rounded-[14px] border p-4 text-left transition ${
+                      selected
+                        ? 'border-[#1f7a53] bg-[#f1fbf6] shadow-sm'
+                        : 'border-[#dbe7f3] bg-white hover:border-[#abc9e5]'
+                    }`}
+                    disabled={mandateQuickStartBusy}
+                  >
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+                      selected ? 'border-[#9fd4ba] bg-white text-[#1f7a53]' : 'border-[#d7e5f3] bg-[#f7fbff] text-[#476783]'
+                    }`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold text-[#142238]">{option.title}</span>
+                      <span className="mt-1 block text-sm leading-5 text-[#60748b]">{option.copy}</span>
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           ) : null}
 
-          {selectedLeadMandateQuickStartWarnings.length ? (
-            <div className="rounded-[14px] border border-[#f0ddb7] bg-[#fff9ed] px-3 py-3 text-sm text-[#7a5417]">
-              <p className="font-semibold">Can continue, but worth checking</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {selectedLeadMandateQuickStartWarnings.map((warning, index) => (
-                  <li key={`${warning}-${index}`}>{warning}</li>
-                ))}
-              </ul>
+          {normalizeText(mandateQuickStartStep).toLowerCase() === 'emails' ? (
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {mandateQuickStartDigitalEmailRows.map((row) => {
+                  const ready = row.ready === true
+                  const Icon = ready ? CheckCircle2 : AlertTriangle
+                  return (
+                    <div
+                      key={row.key}
+                      className={`rounded-[14px] border px-3 py-3 ${
+                        ready ? 'border-[#d4eadb] bg-[#f3fbf6]' : 'border-[#f0c8c3] bg-[#fff5f4]'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${ready ? 'text-[#237a4d]' : 'text-[#ba382f]'}`} />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-[#243f5a]">{row.label}</p>
+                            <span className={`rounded-full bg-white px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${ready ? 'text-[#237a4d]' : 'text-[#a63830]'}`}>
+                              {ready ? 'Ready' : 'Required'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-[#5d7288]">{row.name}</p>
+                          <p className="mt-1 break-words text-sm font-medium text-[#314a63]">{row.email || row.issue}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {mandateQuickStartDigitalEmailBlockers.length ? (
+                <div className="rounded-[14px] border border-[#efc4bf] bg-[#fff4f3] px-3 py-3 text-sm text-[#8f3029]">
+                  <p className="font-semibold">Required before digital signing</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {mandateQuickStartDigitalEmailBlockers.map((blocker, index) => (
+                      <li key={`${blocker}-${index}`}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {normalizeText(mandateQuickStartStep).toLowerCase() === 'send' ? (
+            <div className="rounded-[14px] border border-[#d7e5f3] bg-white px-4 py-4">
+              <div className="flex items-start gap-3">
+                <Send className="mt-1 h-5 w-5 shrink-0 text-[#1f7a53]" />
+                <div>
+                  <p className="text-sm font-semibold text-[#142238]">Ready to send digital signing</p>
+                  <p className="mt-1 text-sm leading-5 text-[#60748b]">
+                    Arch9 will send the mandate to the agent first. Once the agent signs, the seller-side signing flow can continue.
+                  </p>
+                  <div className="mt-3 space-y-1 text-sm text-[#314a63]">
+                    {mandateQuickStartDigitalEmailRows.map((row) => (
+                      <p key={row.key}>
+                        <span className="font-semibold">{row.label}:</span> {row.email}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : null}
 
