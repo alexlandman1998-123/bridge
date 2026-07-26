@@ -12,6 +12,39 @@ function firstText(...values) {
   return ''
 }
 
+function normalizePlaceholderKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+export function isPlaceholderPropertyAddressText(value = '') {
+  const normalized = normalizePlaceholderKey(value)
+  if (!normalized) return true
+  return [
+    'unnamed lead',
+    'unnamed seller',
+    'untitled lead',
+    'untitled listing',
+    'property details pending',
+  ].includes(normalized)
+}
+
+function firstAddressText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text && !isPlaceholderPropertyAddressText(text)) return text
+  }
+  return ''
+}
+
+function firstRawQueryText(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const raw = String(value)
+    if (raw.length && !isPlaceholderPropertyAddressText(raw)) return raw
+  }
+  return ''
+}
+
 function normalizeProvince(value = '') {
   const text = normalizeText(value)
   if (!text) return ''
@@ -75,11 +108,11 @@ export function formatPropertyAddress(address = {}) {
     record.postalCode,
   ]
     .map(normalizeText)
-    .filter(Boolean)
+    .filter((part) => part && !isPlaceholderPropertyAddressText(part))
 
   if (parts.length) return parts.join(', ')
 
-  return normalizeText(record.formatted || record.query)
+  return firstAddressText(record.formatted, record.query)
 }
 
 export function normalizePropertyAddress(source = {}, listing = {}, fallback = {}) {
@@ -88,7 +121,7 @@ export function normalizePropertyAddress(source = {}, listing = {}, fallback = {
   const listingRecord = pickRecord(listing, {})
   const fallbackRecord = pickRecord(fallback, {})
 
-  const line1 = firstText(
+  const line1 = firstAddressText(
     record.line1,
     record.line_1,
     record.addressLine1,
@@ -102,7 +135,7 @@ export function normalizePropertyAddress(source = {}, listing = {}, fallback = {
     listingRecord.propertyAddress,
     listingRecord.address,
   )
-  const line2 = firstText(
+  const line2 = firstAddressText(
     record.line2,
     record.line_2,
     record.addressLine2,
@@ -113,28 +146,28 @@ export function normalizePropertyAddress(source = {}, listing = {}, fallback = {
     listingRecord.addressLine2,
     listingRecord.address_line_2,
   )
-  const suburb = firstText(
+  const suburb = firstAddressText(
     record.suburb,
     record.suburb_name,
     flat.suburb,
     fallbackRecord.suburb,
     listingRecord.suburb,
   )
-  const city = firstText(
+  const city = firstAddressText(
     record.city,
     record.town,
     flat.city,
     fallbackRecord.city,
     listingRecord.city,
   )
-  const province = firstText(
+  const province = firstAddressText(
     record.province,
     record.region,
     flat.province,
     fallbackRecord.province,
     listingRecord.province,
   )
-  const postalCode = firstText(
+  const postalCode = firstAddressText(
     record.postalCode,
     record.postal_code,
     flat.postalCode,
@@ -144,7 +177,7 @@ export function normalizePropertyAddress(source = {}, listing = {}, fallback = {
     listingRecord.postalCode,
     listingRecord.postal_code,
   )
-  const municipality = firstText(
+  const municipality = firstAddressText(
     record.municipality,
     record.local_municipality,
     flat.municipality,
@@ -184,14 +217,12 @@ export function normalizePropertyAddress(source = {}, listing = {}, fallback = {
     province: normalizeProvince(province),
     postalCode,
   })
-  const query = firstText(
+  const query = firstRawQueryText(
     record.query,
     record.search_query,
     flat.propertyAddressSearch,
     flat.addressQuery,
     fallbackRecord.query,
-    line1,
-    formatted,
   )
 
   return {

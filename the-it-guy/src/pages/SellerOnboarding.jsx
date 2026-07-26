@@ -66,6 +66,7 @@ import {
 import {
   createBlankPropertyAddress,
   formatPropertyAddress,
+  isPlaceholderPropertyAddressText,
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
 import {
@@ -870,10 +871,11 @@ function getPropertyAddressDetails(listing = {}, form = {}) {
     'country',
   ].some((key) => Object.prototype.hasOwnProperty.call(form || {}, key))
   const fallbackListing = hasFormAddressDetails || hasFlatFormAddress ? {} : listing
+  const listingAddressLine1 = getListingPropertyAddressLine1(listing)
   const fallbackAddress = hasFormAddressDetails || hasFlatFormAddress
     ? {}
     : {
-      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line1: listingAddressLine1,
       line2: listing?.addressLine2 || listing?.address_line_2 || '',
       suburb: listing?.suburb || '',
       city: listing?.city || '',
@@ -881,7 +883,7 @@ function getPropertyAddressDetails(listing = {}, form = {}) {
       postalCode: listing?.postalCode || listing?.postal_code || '',
       municipality: listing?.municipality || listing?.city || '',
       country: listing?.country || 'South Africa',
-      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+      source: listingAddressLine1 ? 'listing' : 'manual',
     }
 
   return normalizePropertyAddress(
@@ -904,14 +906,49 @@ function getPropertyAddressDetails(listing = {}, form = {}) {
   )
 }
 
+function firstUsablePropertyAddressText(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (text && !isPlaceholderPropertyAddressText(text)) return text
+  }
+  return ''
+}
+
+function firstUsablePropertyAddressQuery(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const query = String(value)
+    if (query.length && !isPlaceholderPropertyAddressText(query)) return query
+  }
+  return ''
+}
+
+function getListingPropertyAddressLine1(listing = {}) {
+  return firstUsablePropertyAddressText(
+    listing?.addressLine1,
+    listing?.address_line_1,
+    listing?.propertyAddress,
+    listing?.property_address,
+    listing?.address,
+  )
+}
+
+function getListingPropertyAddressSummary(listing = {}) {
+  return [
+    listing?.listingTitle,
+    listing?.title,
+    listing?.suburb,
+    listing?.city,
+  ]
+    .map((part) => String(part ?? '').trim())
+    .filter((part) => part && !isPlaceholderPropertyAddressText(part))
+    .join(', ')
+}
+
 function getPropertyDisplayAddress(listing = {}, form = {}) {
   const address = getPropertyAddressDetails(listing, form)
   const formatted = formatPropertyAddress(address)
-  return formatted || String(
-    listing?.listingTitle ||
-    listing?.title ||
-    'Property details pending',
-  ).trim()
+  return formatted || getListingPropertyAddressSummary(listing) || 'Property details pending'
 }
 
 function parsePropertyAddressQuery(query = '', fallback = {}) {
@@ -1470,11 +1507,19 @@ function normalizeFormData(listing) {
   if (existing.boreholeInstallation || existing.borehole || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole) featureKeys.add('borehole')
   if (existing.waterTank || existing.water_tank || canonicalFacts?.compliance?.water_tank) featureKeys.add('water_tank')
   const normalizedFeatures = Array.from(featureKeys)
+  const listingAddressLine1 = getListingPropertyAddressLine1(listing)
+  const propertyAddressSummary = getListingPropertyAddressSummary(listing)
+  const existingPropertyAddress = firstUsablePropertyAddressText(existing.propertyAddress)
+  const canonicalPropertyAddress = firstUsablePropertyAddressText(canonicalFacts?.property?.address)
+  const propertyAddressSearch = firstUsablePropertyAddressQuery(
+    existing.propertyAddressSearch,
+    canonicalFacts?.property?.address_details?.query,
+  )
   const propertyAddressDetails = normalizePropertyAddress(
     {
       propertyAddressDetails: existing.propertyAddressDetails || canonicalFacts?.property?.address_details || {},
-      propertyAddress: existing.propertyAddress || canonicalFacts?.property?.address || '',
-      propertyAddressSearch: existing.propertyAddressSearch || canonicalFacts?.property?.address_details?.query || '',
+      propertyAddress: existingPropertyAddress || canonicalPropertyAddress || '',
+      propertyAddressSearch,
       propertyAddressLine1: existing.propertyAddressLine1 || canonicalFacts?.property?.address_line_1 || '',
       propertyAddressLine2: existing.propertyAddressLine2 || canonicalFacts?.property?.address_line_2 || '',
       suburb: existing.suburb || canonicalFacts?.property?.suburb || '',
@@ -1486,7 +1531,7 @@ function normalizeFormData(listing) {
     },
     listing,
     {
-      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line1: listingAddressLine1,
       line2: listing?.addressLine2 || listing?.address_line_2 || '',
       suburb: listing?.suburb || '',
       city: listing?.city || '',
@@ -1494,7 +1539,7 @@ function normalizeFormData(listing) {
       postalCode: listing?.postalCode || listing?.postal_code || '',
       municipality: listing?.municipality || listing?.city || '',
       country: listing?.country || 'South Africa',
-      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+      source: listingAddressLine1 ? 'listing' : 'manual',
     },
   )
   const resolvedResidentialAddress = resolveAddress()
@@ -1641,8 +1686,8 @@ function normalizeFormData(listing) {
     commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch)),
     propertyType: resolvedPropertyType,
     propertyAddressDetails,
-    propertyAddressSearch: propertyAddressDetails.query || existing.propertyAddressSearch || '',
-    propertyAddress: propertyAddressDetails.formatted || existing.propertyAddress || canonicalFacts?.property?.address || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
+    propertyAddressSearch: propertyAddressDetails.query || propertyAddressSearch,
+    propertyAddress: propertyAddressDetails.formatted || existingPropertyAddress || canonicalPropertyAddress || propertyAddressSummary,
     propertyAddressLine1: propertyAddressDetails.line1,
     propertyAddressLine2: propertyAddressDetails.line2,
     suburb: propertyAddressDetails.suburb || existing.suburb || canonicalFacts?.property?.suburb || listing?.suburb || '',
@@ -3031,23 +3076,30 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handlePropertyAddressQueryChange(value) {
     setForm((previous) => {
       const current = getPropertyAddressDetails(listing || {}, previous || {})
-      const parsed = parsePropertyAddressQuery(value, current)
+      const query = String(value ?? '')
       const shouldPromoteTypedAddress =
         !current.line1 ||
         current.line1 === current.query ||
         current.source === 'typed_search'
-      const nextAddress = shouldPromoteTypedAddress
-        ? {
-          ...current,
-          ...(parsed || {}),
-          query: value,
-          line1: parsed?.line1 || value,
-          source: 'typed_search',
+      const nextAddress = {
+        ...current,
+        query,
+      }
+
+      if (shouldPromoteTypedAddress) {
+        nextAddress.line1 = query
+        nextAddress.source = query ? 'typed_search' : 'manual'
+        if (!query) {
+          nextAddress.line2 = ''
+          nextAddress.suburb = ''
+          nextAddress.city = ''
+          nextAddress.province = ''
+          nextAddress.postalCode = ''
+          nextAddress.municipality = ''
+          nextAddress.placeId = ''
         }
-        : {
-          ...current,
-          query: value,
-        }
+      }
+
       nextAddress.formatted = formatPropertyAddress(nextAddress)
       return buildFormWithPropertyAddress(previous || {}, nextAddress)
     })
@@ -5211,7 +5263,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       Search address
                       <input
                         className={DETAIL_INPUT_CLASS}
-                        value={propertyAddressDetails.query || propertyAddressDetails.formatted || ''}
+                        value={propertyAddressDetails.query || ''}
                         onChange={(event) => handlePropertyAddressQueryChange(event.target.value)}
                         placeholder="Start with the street, complex, suburb, or estate name"
                       />
@@ -5618,7 +5670,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             <input className={DETAIL_INPUT_CLASS} value={form.tenantContactDetails} onChange={(event) => handleFormUpdate('tenantContactDetails', event.target.value)} />
                           </label>
                           {form.leaseExists ? (
-                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            <label className="grid min-w-0 gap-2 text-sm font-medium text-[#2a4057]">
                               Lease Expiry Date
                               <input className={DATE_INPUT_CLASS} type="date" value={form.leaseExpiryDate} onChange={(event) => handleFormUpdate('leaseExpiryDate', event.target.value)} />
                             </label>

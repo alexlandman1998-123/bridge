@@ -10893,6 +10893,58 @@ body .auth-page-login:not(.onboarding-page) .auth-footer {
   padding-top: 0;
 }
 
+.seller-onboarding-main .seller-date-input,
+.seller-onboarding-main input[type='date'] {
+  align-self: stretch;
+  box-sizing: border-box;
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  max-width: 100%;
+  min-inline-size: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.seller-onboarding-main .seller-date-input::-webkit-date-and-time-value,
+.seller-onboarding-main input[type='date']::-webkit-date-and-time-value {
+  box-sizing: border-box;
+  display: block;
+  max-inline-size: 100%;
+  max-width: 100%;
+  min-inline-size: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.seller-onboarding-main .seller-date-input::-webkit-calendar-picker-indicator,
+.seller-onboarding-main input[type='date']::-webkit-calendar-picker-indicator {
+  flex: 0 0 auto;
+  margin-left: 0.25rem;
+}
+
+@media (max-width: 639px) {
+  .seller-onboarding-main .seller-date-input,
+  .seller-onboarding-main input[type='date'] {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    text-align: center;
+  }
+
+  .seller-onboarding-main .seller-date-input::-webkit-date-and-time-value,
+  .seller-onboarding-main input[type='date']::-webkit-date-and-time-value {
+    display: flex;
+    min-inline-size: 0;
+    width: 100%;
+  }
+}
+
 @media (max-width: 980px) {
   body .auth-page-login:not(.onboarding-page) .auth-shell {
     width: min(720px, 100%);
