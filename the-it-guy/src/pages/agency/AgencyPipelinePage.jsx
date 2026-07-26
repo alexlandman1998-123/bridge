@@ -81,6 +81,7 @@ import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resetSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
+import { assessSigningFieldLayout } from '../../core/documents/signingFieldLayout'
 import { findLatestSignableGeneratedVersion } from '../../core/documents/pilotDocumentFallback'
 import { resolveSignableTemplatePolicy } from '../../core/documents/documentGenerationContainment'
 import { formatLegalDocumentGenerationRecovery } from '../../core/documents/legalDocumentGenerationRecovery'
@@ -2068,18 +2069,14 @@ function resolveSignerLinkByRole(signers = [], role = '', email = '') {
   return normalizeText(roleRows[0]?.signing_link)
 }
 
-const QUICK_SIGNING_FIELD_ROLE_ORDER = ['agent', 'seller', 'purchaser_2', 'seller_spouse', 'witness_1', 'witness_2']
+const QUICK_SIGNING_FIELD_ROLES = new Set(['purchaser_1', 'purchaser_2', 'buyer_spouse', 'seller', 'seller_spouse', 'agent', 'contractor', 'witness_1', 'witness_2', 'other'])
+const QUICK_SIGNING_FIELD_ROWS_PER_PAGE = 12
 
 function normalizeQuickFlowSigningLayoutFields(fields = []) {
-  const roleRows = new Map()
+  const usedIds = new Set()
   return (Array.isArray(fields) ? fields : []).map((field, index) => {
-    const signerRole = normalizeText(field?.signerRole || field?.signer_role).toLowerCase() || 'other'
-    if (!roleRows.has(signerRole)) {
-      const orderedIndex = QUICK_SIGNING_FIELD_ROLE_ORDER.includes(signerRole)
-        ? QUICK_SIGNING_FIELD_ROLE_ORDER.indexOf(signerRole)
-        : roleRows.size
-      roleRows.set(signerRole, orderedIndex)
-    }
+    const requestedRole = normalizeText(field?.signerRole || field?.signer_role).toLowerCase()
+    const signerRole = QUICK_SIGNING_FIELD_ROLES.has(requestedRole) ? requestedRole : 'other'
     const fieldType = normalizeText(field?.fieldType || field?.field_type).toLowerCase() === 'initial'
       ? 'initial'
       : 'signature'
@@ -2091,16 +2088,21 @@ function normalizeQuickFlowSigningLayoutFields(fields = []) {
       fieldType === 'initial' ? 32 : 44,
       Math.max(18, Number(field?.height || (fieldType === 'initial' ? 32 : 44))),
     )
-    const roleRow = Number(roleRows.get(signerRole) || 0)
-    const yPosition = Math.min(790 - height, 650 + (roleRow * 58))
+    const requestedPage = Math.max(1, Math.trunc(Number(field?.pageNumber || field?.page_number || 1)) || 1)
+    const pageOffset = Math.floor(index / QUICK_SIGNING_FIELD_ROWS_PER_PAGE)
+    const row = index % QUICK_SIGNING_FIELD_ROWS_PER_PAGE
+    const requestedId = normalizeText(field?.id)
+    const fallbackId = `quick_${signerRole}_${fieldType}_${index + 1}`
+    const id = requestedId && !usedIds.has(requestedId) ? requestedId : fallbackId
+    usedIds.add(id)
     return {
       ...field,
-      id: normalizeText(field?.id) || `quick_${signerRole}_${fieldType}_${index + 1}`,
+      id,
       fieldType,
       signerRole,
-      pageNumber: Math.max(1, Number(field?.pageNumber || field?.page_number || 1)),
-      xPosition: fieldType === 'initial' ? 72 : 320,
-      yPosition: Math.max(36, yPosition),
+      pageNumber: requestedPage + pageOffset,
+      xPosition: fieldType === 'initial' ? 451 : 72,
+      yPosition: 96 + (row * 58),
       width,
       height,
       required: field?.required !== false,
@@ -2131,6 +2133,10 @@ async function applyPreparedSigningLayoutForQuickFlow({ packetId, versionId, pre
   const resolvedVersionId = normalizeText(versionId)
   const fields = normalizeQuickFlowSigningLayoutFields(preparedFields)
   if (!resolvedPacketId || !resolvedVersionId || !fields.length) return null
+  const assessment = assessSigningFieldLayout(fields)
+  if (!assessment.ready) {
+    console.warn('Quick mandate signing layout failed local validation', assessment.reasons)
+  }
 
   const existingLayout = await fetchSigningFieldLayout({
     packetId: resolvedPacketId,
