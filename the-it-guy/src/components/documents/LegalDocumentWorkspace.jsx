@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Plus, Printer, ShieldCheck, UsersRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Pencil, Plus, Printer, Save, ShieldCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -2663,6 +2663,116 @@ function buildMandateCommissionLabel(mandate = {}, placeholders = {}) {
   return [percentage, amount].filter(Boolean).join(' / ')
 }
 
+function getMandateManualOverride(sourceContext = {}) {
+  const override = sourceContext?.mandateManualOverride && typeof sourceContext.mandateManualOverride === 'object'
+    ? sourceContext.mandateManualOverride
+    : sourceContext?.mandate_manual_override && typeof sourceContext.mandate_manual_override === 'object'
+      ? sourceContext.mandate_manual_override
+      : {}
+  return {
+    ...override,
+    fields: override?.fields && typeof override.fields === 'object' ? override.fields : {},
+  }
+}
+
+function setOverrideValue(target, key, value) {
+  const text = normalizeText(value)
+  if (text) target[key] = text
+}
+
+function applyMandateManualOverride(data = null, sourceContext = {}) {
+  if (!data || typeof data !== 'object') return data
+  const manualOverride = getMandateManualOverride(sourceContext)
+  const fields = manualOverride.fields || {}
+  if (!Object.keys(fields).some((key) => normalizeText(fields[key]))) return data
+
+  const next = {
+    ...data,
+    seller: { ...(data.seller || {}) },
+    property: { ...(data.property || {}) },
+    mandate: { ...(data.mandate || {}) },
+    agency: { ...(data.agency || {}) },
+    agent: { ...(data.agent || {}) },
+    transferAttorney: { ...(data.transferAttorney || data.transfer_attorney || {}) },
+    placeholders: { ...(data.placeholders || {}) },
+    sourceContext: { ...(data.sourceContext || data.source_context || {}) },
+  }
+  const placeholder = (key, value) => setOverrideValue(next.placeholders, key, value)
+  const source = (key, value) => setOverrideValue(next.sourceContext, key, value)
+  const value = (key) => fields[key]
+  const mandateDates = normalizeText(value('mandate_dates'))
+  const [mandateStartDate, mandateEndDate] = mandateDates.includes(' to ')
+    ? mandateDates.split(' to ').map(normalizeText)
+    : [mandateDates, '']
+  const commission = normalizeText(value('commission'))
+  const commissionIsPercentage = commission.includes('%')
+
+  setOverrideValue(next.seller, 'fullName', value('seller_name'))
+  setOverrideValue(next.seller, 'email', value('seller_email'))
+  setOverrideValue(next.seller, 'phone', value('seller_phone'))
+  setOverrideValue(next.seller, 'entityType', value('seller_capacity'))
+  setOverrideValue(next.seller, 'maritalRegime', value('seller_marital'))
+  placeholder('seller_full_name', value('seller_name'))
+  placeholder('seller_email', value('seller_email'))
+  placeholder('seller_phone', value('seller_phone'))
+  placeholder('seller_entity_type', value('seller_capacity'))
+  placeholder('seller_marital_regime', value('seller_marital'))
+  source('sellerName', value('seller_name'))
+  source('sellerEmail', value('seller_email'))
+  source('sellerPhone', value('seller_phone'))
+
+  setOverrideValue(next.property, 'fullAddress', value('property_address'))
+  setOverrideValue(next.property, 'displayAddress', value('property_address'))
+  setOverrideValue(next.property, 'propertyType', value('property_type'))
+  setOverrideValue(next.property, 'propertyStructureType', value('property_title'))
+  setOverrideValue(next.property, 'titleType', value('property_title'))
+  setOverrideValue(next.property, 'erfNumber', value('property_reference'))
+  setOverrideValue(next.property, 'erfSize', value('property_size'))
+  setOverrideValue(next.property, 'askingPrice', value('asking_price'))
+  placeholder('property_address', value('property_address'))
+  placeholder('property_display_address', value('property_address'))
+  placeholder('property_type', value('property_type'))
+  placeholder('property_structure_type', value('property_title'))
+  placeholder('property_erf_number', value('property_reference'))
+  placeholder('erf_number', value('property_reference'))
+  placeholder('erf_size', value('property_size'))
+  placeholder('property_asking_price', value('asking_price'))
+  source('propertyAddress', value('property_address'))
+
+  setOverrideValue(next.mandate, 'askingPrice', value('asking_price'))
+  setOverrideValue(next.mandate, 'type', value('mandate_type'))
+  setOverrideValue(next.mandate, 'mandateType', value('mandate_type'))
+  setOverrideValue(next.mandate, 'startDate', mandateStartDate)
+  setOverrideValue(next.mandate, 'expiryDate', mandateEndDate)
+  if (commission) {
+    setOverrideValue(next.mandate, 'commissionStructure', commissionIsPercentage ? 'percentage' : 'fixed')
+    setOverrideValue(next.mandate, commissionIsPercentage ? 'commissionPercentage' : 'commissionAmount', commission)
+  }
+  placeholder('asking_price', value('asking_price'))
+  placeholder('mandate_type', value('mandate_type'))
+  placeholder('mandate_start_date', mandateStartDate)
+  placeholder('mandate_end_date', mandateEndDate)
+  placeholder('commission_structure', commission ? (commissionIsPercentage ? 'Percentage' : 'Fixed') : '')
+  placeholder(commissionIsPercentage ? 'mandate_commission_percent' : 'mandate_commission_amount', commission)
+  placeholder(commissionIsPercentage ? 'commission_percentage' : 'commission_amount', commission)
+
+  setOverrideValue(next.transferAttorney, 'companyName', value('transfer_attorney'))
+  placeholder('transfer_attorney_company_name', value('transfer_attorney'))
+  setOverrideValue(next.agent, 'fullName', value('agent'))
+  placeholder('agent_full_name', value('agent'))
+  setOverrideValue(next.agency, 'name', value('agency'))
+  placeholder('agency_name', value('agency'))
+  placeholder('agency_display_name', value('agency'))
+  source('manualRouteLabel', value('route'))
+  source('manualRouteStatusLabel', value('route_status'))
+  source('manualTemplateLabel', value('template'))
+  source('manualTemplateKey', value('template_key'))
+
+  next.transfer_attorney = next.transferAttorney
+  next.sourceContext.mandateManualOverride = manualOverride
+  return next
+}
+
 function MandateReviewPanel({
   summary = {},
   data = null,
@@ -2671,8 +2781,13 @@ function MandateReviewPanel({
   templateLabel = '',
   templateKey = '',
   savedLabel = '',
+  manualOverride = null,
+  onSaveManualOverride = null,
+  savingManualOverride = false,
   className = '',
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draftFields, setDraftFields] = useState({})
   const seller = data?.seller && typeof data.seller === 'object' ? data.seller : {}
   const property = data?.property && typeof data.property === 'object' ? data.property : {}
   const mandate = data?.mandate && typeof data.mandate === 'object' ? data.mandate : {}
@@ -2737,13 +2852,46 @@ function MandateReviewPanel({
   ]
 
   const routeRows = [
-    buildMandateReviewRow('route', 'Legal route', routing?.routeLabel || 'Route pending'),
-    buildMandateReviewRow('route_status', 'Route status', routing?.statusLabel || 'Ready'),
-    buildMandateReviewRow('template', 'Template', firstNonEmptyText(routing?.selectedTemplate, templateLabel, 'Seller Mandate')),
-    buildMandateReviewRow('template_key', 'Template key', templateKey),
+    buildMandateReviewRow('route', 'Legal route', firstNonEmptyText(source.manualRouteLabel, routing?.routeLabel, 'Route pending')),
+    buildMandateReviewRow('route_status', 'Route status', firstNonEmptyText(source.manualRouteStatusLabel, routing?.statusLabel, 'Ready')),
+    buildMandateReviewRow('template', 'Template', firstNonEmptyText(source.manualTemplateLabel, routing?.selectedTemplate, templateLabel, 'Seller Mandate')),
+    buildMandateReviewRow('template_key', 'Template key', firstNonEmptyText(source.manualTemplateKey, templateKey)),
     buildMandateReviewRow('agent', 'Agent', firstNonEmptyText(agent.fullName, agent.name, placeholders.agent_full_name)),
     buildMandateReviewRow('agency', 'Agency', firstNonEmptyText(agency.tradingName, agency.legalName, agency.name, placeholders.agency_display_name, placeholders.agency_name)),
   ]
+  const editableRows = [
+    ...sellerRows,
+    ...propertyRows,
+    ...mandateRows,
+    ...routeRows,
+  ]
+  const manualFields = manualOverride?.fields && typeof manualOverride.fields === 'object' ? manualOverride.fields : {}
+  const resetDraftFields = () => setDraftFields(Object.fromEntries(editableRows.map((row) => [
+    row.key,
+    Object.prototype.hasOwnProperty.call(manualFields, row.key)
+      ? normalizeText(manualFields[row.key])
+      : row.missing
+        ? ''
+        : normalizeText(row.value),
+  ])))
+  useEffect(() => {
+    if (!editing) resetDraftFields()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, manualOverride, data, routing, templateLabel, templateKey])
+
+  const handleStartEditing = () => {
+    resetDraftFields()
+    setEditing(true)
+  }
+  const handleSaveManualOverride = async () => {
+    const cleanFields = Object.fromEntries(editableRows.map((row) => [row.key, normalizeText(draftFields[row.key])]))
+    try {
+      await onSaveManualOverride?.(cleanFields)
+      setEditing(false)
+    } catch {
+      // Keep the draft open so the agent can retry without re-entering values.
+    }
+  }
 
   const missingCount = [
     ...sellerRows,
@@ -2777,17 +2925,65 @@ function MandateReviewPanel({
             {summary.transaction}
           </p>
         </div>
-        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
-          {savedLabel || summary.savedLabel || 'Draft'}
-        </span>
+        <div className="flex items-center gap-2">
+          {manualOverride?.updatedAt ? (
+            <span className="rounded-full border border-[#d7e4f3] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+              Manual override
+            </span>
+          ) : null}
+          <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+            {savedLabel || summary.savedLabel || 'Draft'}
+          </span>
+          <button
+            type="button"
+            onClick={editing ? () => void handleSaveManualOverride() : handleStartEditing}
+            disabled={savingManualOverride || !onSaveManualOverride}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#d7e4f3] bg-white text-[#526b84] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label={editing ? 'Save mandate detail overrides' : 'Edit mandate details'}
+            title={editing ? 'Save mandate detail overrides' : 'Edit mandate details'}
+          >
+            {editing ? <Save size={15} /> : <Pencil size={15} />}
+          </button>
+          {editing ? (
+            <button
+              type="button"
+              onClick={() => {
+                resetDraftFields()
+                setEditing(false)
+              }}
+              disabled={savingManualOverride}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#d7e4f3] bg-white text-[#526b84] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Cancel mandate detail editing"
+              title="Cancel"
+            >
+              <X size={15} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-5 grid gap-6 xl:grid-cols-4">
-        <MandateReviewColumn title="Seller" Icon={UsersRound} rows={sellerRows} />
-        <MandateReviewColumn title="Property" Icon={FileText} rows={propertyRows} />
-        <MandateReviewColumn title="Terms" Icon={FileCheck2} rows={mandateRows} />
-        <MandateReviewColumn title="Route" Icon={ShieldCheck} rows={routeRows} />
-      </div>
+      {editing ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {editableRows.map((row) => (
+            <label key={row.key} className="block rounded-[16px] border border-[#e5edf7] bg-[#fbfdff] px-3 py-3">
+              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7f93aa]">{row.label}</span>
+              <input
+                value={draftFields[row.key] ?? ''}
+                onChange={(event) => setDraftFields((current) => ({ ...current, [row.key]: event.target.value }))}
+                className="mt-2 h-10 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#1a7f5a] focus:ring-2 focus:ring-[#1a7f5a]/15"
+                placeholder="Not captured"
+              />
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-6 xl:grid-cols-4">
+          <MandateReviewColumn title="Seller" Icon={UsersRound} rows={sellerRows} />
+          <MandateReviewColumn title="Property" Icon={FileText} rows={propertyRows} />
+          <MandateReviewColumn title="Terms" Icon={FileCheck2} rows={mandateRows} />
+          <MandateReviewColumn title="Route" Icon={ShieldCheck} rows={routeRows} />
+        </div>
+      )}
 
       {needsReview ? (
         <div className="mt-5 rounded-[18px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#7d520d]">
@@ -3067,6 +3263,7 @@ export default function LegalDocumentWorkspace({
   const [signerPrepOpen, setSignerPrepOpen] = useState(false)
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [mandateOverrideSaving, setMandateOverrideSaving] = useState(false)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
@@ -3549,20 +3746,20 @@ export default function LegalDocumentWorkspace({
   }
   const mandateDataSnapshot = useMemo(() => {
     if (!isMandatePacket) return null
+    let snapshot = null
     if (sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object') {
-      return sourceContext.generatedDataSnapshot
-    }
-    if (latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object') {
-      return latestVersion.validation_summary_json.generatedDataSnapshot
-    }
-    if (latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object') {
-      return {
+      snapshot = sourceContext.generatedDataSnapshot
+    } else if (latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object') {
+      snapshot = latestVersion.validation_summary_json.generatedDataSnapshot
+    } else if (latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object') {
+      snapshot = {
         placeholders: latestVersion.placeholders_resolved_json,
         sourceContext: sourceContext.sourceContext || latestVersion?.validation_summary_json?.sourceContext || {},
       }
     }
-    return null
+    return applyMandateManualOverride(snapshot, sourceContext)
   }, [isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
+  const mandateManualOverride = useMemo(() => getMandateManualOverride(sourceContext), [sourceContext])
   const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
   const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
@@ -4105,6 +4302,52 @@ export default function LegalDocumentWorkspace({
     })
     return updatedVersion
   }, [])
+
+  const handleSaveMandateManualOverride = useCallback(async (fields = {}) => {
+    const resolvedPacketId = normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId)
+    if (!resolvedPacketId) {
+      setLoadError('Generate the mandate draft before saving manual overrides.')
+      return
+    }
+    const cleanFields = Object.fromEntries(Object.entries(fields || {}).map(([key, value]) => [key, normalizeText(value)]))
+    const nextOverride = {
+      fields: cleanFields,
+      source: 'agent_manual_override',
+      updatedAt: new Date().toISOString(),
+      updatedByRole: workspaceRole,
+    }
+    const currentContext =
+      statusStateRef.current?.packet?.source_context_json && typeof statusStateRef.current.packet.source_context_json === 'object'
+        ? statusStateRef.current.packet.source_context_json
+        : sourceContext
+    const baseSnapshot = mandateDataSnapshot && typeof mandateDataSnapshot === 'object'
+      ? mandateDataSnapshot
+      : currentContext?.generatedDataSnapshot && typeof currentContext.generatedDataSnapshot === 'object'
+        ? currentContext.generatedDataSnapshot
+        : null
+    const generatedDataSnapshot = applyMandateManualOverride(baseSnapshot, {
+      ...currentContext,
+      mandateManualOverride: nextOverride,
+    })
+
+    setMandateOverrideSaving(true)
+    setLoadError('')
+    try {
+      await updateWorkspacePacket(resolvedPacketId, {
+        sourceContextJson: {
+          mandateManualOverride: nextOverride,
+          mandate_manual_override: nextOverride,
+          generatedDataSnapshot,
+        },
+      })
+      setActionFeedback('Mandate details override saved.')
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to save mandate detail overrides.'))
+      throw error
+    } finally {
+      setMandateOverrideSaving(false)
+    }
+  }, [mandateDataSnapshot, packetId, sourceContext, statusState?.packet?.id, updateWorkspacePacket, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -7141,6 +7384,9 @@ export default function LegalDocumentWorkspace({
                 templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
                 templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
                 savedLabel={workspaceSummary.savedLabel}
+                manualOverride={mandateManualOverride}
+                onSaveManualOverride={handleSaveMandateManualOverride}
+                savingManualOverride={mandateOverrideSaving}
               />
               <MandateRoutePanel routing={mandateRoutingSnapshot} />
               <SigningMethodPanel
