@@ -413,6 +413,7 @@
     "test:document-generator-final-mile-phase7": "node scripts/document-generator-final-mile-phase7-production-observation.test.mjs",
     "test:document-generator-final-mile-phase8": "node scripts/document-generator-final-mile-phase8-operational-handover.test.mjs",
     "verify:document-generator-final-mile:production": "node --env-file=.env.production.local scripts/document-generator-final-mile-phase7-production-observation.mjs --write --allow-local-release-drift && node scripts/document-generator-final-mile-phase8-operational-handover.mjs --write",
+    "test:document-generator-simple-signing-phase0": "node --test src/core/documents/__tests__/simpleSigningExperienceScope.test.js && node scripts/document-generator-simple-signing-phase0-scope.test.mjs",
     "test:document-generator-phase1": "node scripts/document-generator-phase1-entrypoint-consolidation.test.mjs",
     "test:document-generator-phase-a2": "node scripts/document-generator-phase-a2-runtime.test.mjs",
     "test:document-generator-phase-a3": "node scripts/document-generator-phase-a3-lifecycle.test.mjs",

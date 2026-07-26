@@ -1,0 +1,41 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-0",
+  "contract": "arch9-simple-signing-experience-scope-v1",
+  "status": "scope_locked",
+  "coveredDocumentTypes": [
+    {
+      "packetType": "mandate",
+      "title": "Mandate",
+      "defaultFileName": "Mandate_Seller.pdf",
+      "supportedSignerRoles": ["agent", "seller", "seller_representative", "seller_trustee", "co_signer"]
+    },
+    {
+      "packetType": "otp",
+      "title": "Offer to Purchase",
+      "defaultFileName": "Offer_To_Purchase.pdf",
+      "supportedSignerRoles": ["purchaser_1", "purchaser_2", "buyer", "buyer_representative", "buyer_trustee", "seller"]
+    }
+  ],
+  "signingStates": ["review", "sign", "finish", "completed", "blocked"],
+  "stateTransitions": [
+    ["review", "sign"],
+    ["sign", "finish"],
+    ["finish", "completed"],
+    ["review", "blocked"],
+    ["sign", "blocked"],
+    ["finish", "blocked"]
+  ],
+  "backendBoundaries": {
+    "changesEmailDispatch": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "acceptance": [
+    "mandate and OTP generated packets are explicitly covered",
+    "signer sessions map into review, sign, finish, completed, or blocked",
+    "Phase 1 can build an adapter from current SignerPortal session data",
+    "Phase 0 does not change email dispatch, final artifacts, completion truth, token authority, or storage access"
+  ]
+}
