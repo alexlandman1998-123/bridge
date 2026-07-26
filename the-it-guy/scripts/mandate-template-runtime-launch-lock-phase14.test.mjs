@@ -25,8 +25,14 @@ function validation(action = 'preview') {
 
 const defaultTemplate = {
   id: 'mandate-default-live',
-  template_key: 'mandate_default',
+  template_key: 'mandate_default_v1',
   template_label: 'Default Mandate',
+  is_default: true,
+  is_active: true,
+  metadata_json: {
+    template_scope: 'global_default',
+    platform_default_can_route_without_org_template: true,
+  },
 }
 
 const routeTemplate = {
@@ -63,11 +69,11 @@ const generateFallback = buildMandateTemplateRuntimeLaunchReadiness(validation('
     mandateTemplateVariant: 'company_full_title',
   },
 })
-assert.equal(generateFallback.status, 'blocked')
-assert.equal(generateFallback.shouldBlockGeneration, true)
+assert.equal(generateFallback.status, 'attention')
+assert.equal(generateFallback.shouldBlockGeneration, false)
 assert.equal(generateFallback.canGenerateWithoutFallback, false)
-assert.ok(generateFallback.blockers.some((issue) => issue.code === 'MANDATE_LAUNCH_RUNTIME_ROUTE_FALLBACK'))
-assert.ok(generateFallback.blockerMessages.some((message) => message.includes('Publish the route-specific mandate template')))
+assert.ok(generateFallback.warnings.some((issue) => issue.code === 'MANDATE_LAUNCH_RUNTIME_ROUTE_FALLBACK'))
+assert.ok(generateFallback.warningMessages.some((message) => message.includes('published global/default mandate template is allowed')))
 
 const exactRoute = buildMandateTemplateRuntimeLaunchReadiness(validation('generate'), {
   source: 'mandate_scenario_variant',
@@ -114,14 +120,14 @@ for (const token of [
   'mapMandateTemplateLaunchReadinessIssue',
   "source: 'mandate_template_launch_readiness'",
   'mandateTemplateLaunchReadiness',
-  "const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some((issue) => issue?.source === 'mandate_template_launch_readiness')",
+  'const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(',
   'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED',
   'Mandate template launch readiness is blocked. Publish the correct route template before generation.',
 ]) {
   assert.ok(packetServiceSource.includes(token), `packetService should include runtime launch lock token ${token}.`)
 }
 
-const launchReadinessIndex = packetServiceSource.indexOf('const launchReadiness = buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution')
+const launchReadinessIndex = packetServiceSource.indexOf('buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution')
 const launchBlockerIndex = packetServiceSource.indexOf('const launchReadinessBlockers =', launchReadinessIndex)
 const criticalIndex = packetServiceSource.indexOf('...launchReadinessBlockers', launchBlockerIndex)
 const bypassIndex = packetServiceSource.indexOf('hasMandateTemplateLaunchReadinessBlockingIssues')

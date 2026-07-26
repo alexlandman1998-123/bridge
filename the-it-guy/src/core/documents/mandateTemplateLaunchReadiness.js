@@ -94,6 +94,28 @@ function runtimeActionBlocksLaunch(value = '') {
   return ['generate', 'upload_signed', 'finalise', 'finalize'].includes(normalizeText(value).toLowerCase())
 }
 
+function isPlatformDefaultMandateTemplate(template = {}) {
+  const metadata =
+    template?.metadata_json && typeof template.metadata_json === 'object'
+      ? template.metadata_json
+      : template?.metadataJson && typeof template.metadataJson === 'object'
+        ? template.metadataJson
+        : {}
+  const templateKey = normalizeText(template?.template_key || template?.templateKey || template?.key).toLowerCase()
+  const templateScope = normalizeText(metadata.template_scope || metadata.templateScope).toLowerCase()
+  return (
+    templateScope === 'global_default' ||
+    metadata.platform_default_can_route_without_org_template === true ||
+    (
+      templateKey === 'mandate_default_v1' &&
+      template?.is_default !== false &&
+      template?.isDefault !== false &&
+      template?.is_active !== false &&
+      template?.isActive !== false
+    )
+  )
+}
+
 function resolveRuntimeRouteKey(validation = {}, templateResolution = null) {
   const routing = templateResolution?.mandateTemplateRouting || {}
   return normalizeText(
@@ -330,6 +352,7 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
   const templateResolutionSource = normalizeText(templateResolution?.source || validation?.templateResolutionSource)
   const selectedTemplateLabel = normalizeText(template?.template_label || template?.label || template?.template_key || template?.key || 'the selected mandate template')
   const routeFallback = templateResolutionSource === 'mandate_scenario_fallback' && routeKey && routeKey !== 'default'
+  const platformDefaultFallback = routeFallback && isPlatformDefaultMandateTemplate(template)
   const blockers = []
   const warnings = []
 
@@ -347,16 +370,18 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
 
   if (routeFallback) {
     const issue = buildRuntimeLaunchIssue({
-      severity: blocksLaunch ? 'blocking' : 'warning',
+      severity: blocksLaunch && !platformDefaultFallback ? 'blocking' : 'warning',
       code: 'MANDATE_LAUNCH_RUNTIME_ROUTE_FALLBACK',
       routeKey,
       routeLabel,
       template,
       templateResolution,
       message: `No verified live ${routeLabel} mandate template is routable, so ${selectedTemplateLabel} would be used instead.`,
-      remediation: 'Publish the route-specific mandate template before generating a final mandate for this seller/property situation.',
+      remediation: platformDefaultFallback
+        ? 'The published global/default mandate template is allowed for generation; review the route-specific wording if this agency needs customised terms.'
+        : 'Publish the route-specific mandate template before generating a final mandate for this seller/property situation.',
     })
-    if (blocksLaunch) blockers.push(issue)
+    if (blocksLaunch && !platformDefaultFallback) blockers.push(issue)
     else warnings.push(issue)
   }
 
