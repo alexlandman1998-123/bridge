@@ -1,0 +1,37 @@
+{
+  "phase": "document-generator-simple-signing-ui-phase-3",
+  "status": "portal_wired",
+  "inputContract": "arch9-simple-signing-experience-model-v1",
+  "entryPoint": "src/pages/SignerPortal.jsx",
+  "shell": "src/components/documents/SimpleSigningShell.jsx",
+  "model": "src/core/documents/simpleSigningExperienceModel.js",
+  "preservedRuntimeHandlers": [
+    "resolveExternalSignerSession",
+    "applySignerField",
+    "saveSignerAsset",
+    "completeSignerSigning",
+    "resolveSignerFinalSignedArtifactAccess"
+  ],
+  "wiredActions": [
+    "view_document",
+    "next_field",
+    "finish_signing",
+    "open_completed_pdf",
+    "refresh_completion",
+    "contact_support"
+  ],
+  "backendBoundaries": {
+    "changesEmailDispatch": false,
+    "changesFinalArtifactGeneration": false,
+    "changesFinalCompletionTruth": false,
+    "changesSigningTokenAuthority": false,
+    "changesStorageAccess": false
+  },
+  "acceptance": [
+    "SignerPortal renders SimpleSigningShell from the Phase 1 model",
+    "existing PDF/HTML preview remains embedded with field overlays",
+    "primary action IDs route to existing signing, completion, and final PDF handlers",
+    "signature and initial actions reuse the existing saved-asset/capture flow",
+    "old multi-card signer surface is no longer rendered"
+  ]
+}

@@ -87,7 +87,7 @@ function buildPrimaryAction({ state, nextField, finalArtifactReady }) {
   }
   if (state === 'finish') return { id: 'finish_signing', label: 'Finish signing' }
   if (state === 'completed' && finalArtifactReady) return { id: 'open_completed_pdf', label: 'Open completed PDF' }
-  if (state === 'completed') return { id: 'close_page', label: 'Close page' }
+  if (state === 'completed') return { id: 'refresh_completion', label: 'Check again' }
   return { id: 'contact_support', label: 'Get help' }
 }
 

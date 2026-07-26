@@ -36,7 +36,7 @@ function buttonToneClass(tone = '') {
   return 'bg-[#12385f] text-white hover:bg-[#0f2f50]'
 }
 
-export function SimpleSigningProgressStepper({ model = null }) {
+export function SimpleSigningProgressStepper({ model = null, onAction = null }) {
   if (!model?.steps?.length) return null
   return (
     <section data-testid="simple-signing-progress" className="rounded-[8px] border border-[#dbe4ee] bg-white p-5 shadow-[0_12px_36px_rgba(15,32,54,0.06)]" aria-label="Signing progress">
@@ -45,7 +45,7 @@ export function SimpleSigningProgressStepper({ model = null }) {
           <h2 className="text-base font-bold text-[#142132]">Your signing progress</h2>
           <p className="mt-2 text-sm font-semibold text-[#4d5f73]">{model.currentStepLabel}</p>
         </div>
-        <button type="button" className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[7px] border border-[#cfd9e5] bg-white px-4 text-sm font-semibold text-[#1f344c] shadow-sm">
+        <button type="button" onClick={() => onAction?.('view_document')} className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[7px] border border-[#cfd9e5] bg-white px-4 text-sm font-semibold text-[#1f344c] shadow-sm">
           <FileText className="h-4 w-4 text-[#12385f]" aria-hidden="true" />
           View document
         </button>
@@ -71,7 +71,7 @@ export function SimpleSigningProgressStepper({ model = null }) {
   )
 }
 
-export function SimpleSigningDocumentCard({ model = null, children = null, onZoomOut = null, onZoomIn = null, onDownload = null }) {
+export function SimpleSigningDocumentCard({ model = null, children = null, zoomPercent = 100, onZoomOut = null, onZoomIn = null, onDownload = null }) {
   if (!model?.document) return null
   const pageCopy = model.document.pageCount
     ? `Page ${model.document.currentPage || 1} of ${model.document.pageCount}`
@@ -92,7 +92,7 @@ export function SimpleSigningDocumentCard({ model = null, children = null, onZoo
         <div className="flex items-center gap-2">
           <div className="flex items-center rounded-[7px] border border-[#d7e2ed] bg-white">
             <button type="button" onClick={onZoomOut} className="flex h-10 w-10 items-center justify-center text-[#29394c]" aria-label="Zoom out"><Minus className="h-4 w-4" aria-hidden="true" /></button>
-            <span className="min-w-14 border-x border-[#d7e2ed] px-3 text-center text-sm font-bold text-[#29394c]">100%</span>
+            <span className="min-w-14 border-x border-[#d7e2ed] px-3 text-center text-sm font-bold text-[#29394c]">{zoomPercent}%</span>
             <button type="button" onClick={onZoomIn} className="flex h-10 w-10 items-center justify-center text-[#29394c]" aria-label="Zoom in"><Plus className="h-4 w-4" aria-hidden="true" /></button>
           </div>
           <button type="button" onClick={onDownload} className="flex h-10 w-10 items-center justify-center rounded-[7px] border border-[#d7e2ed] bg-white text-[#12385f]" aria-label="Download document"><Download className="h-4 w-4" aria-hidden="true" /></button>
@@ -180,7 +180,7 @@ export function SimpleSigningCompleteState({ model = null, busy = false, onActio
   if (model?.state !== 'completed') return null
   return (
     <div data-testid="simple-signing-complete-state" className="space-y-4">
-      <SimpleSigningProgressStepper model={model} />
+      <SimpleSigningProgressStepper model={model} onAction={onAction} />
       <SimpleSigningActionCard model={model} busy={busy} onAction={onAction} />
       <SimpleSigningHelpCard model={model} />
     </div>
@@ -193,6 +193,7 @@ export default function SimpleSigningShell({
   documentPreview = null,
   onAction = null,
   onHelp = null,
+  zoomPercent = 100,
   onZoomOut = null,
   onZoomIn = null,
   onDownload = null,
@@ -213,9 +214,9 @@ export default function SimpleSigningShell({
         </header>
 
         <div className="flex-1 space-y-4">
-          <SimpleSigningProgressStepper model={model} />
+          <SimpleSigningProgressStepper model={model} onAction={onAction} />
           {model.state !== 'completed' ? (
-            <SimpleSigningDocumentCard model={model} onZoomOut={onZoomOut} onZoomIn={onZoomIn} onDownload={onDownload}>
+            <SimpleSigningDocumentCard model={model} zoomPercent={zoomPercent} onZoomOut={onZoomOut} onZoomIn={onZoomIn} onDownload={onDownload}>
               {documentPreview}
             </SimpleSigningDocumentCard>
           ) : null}

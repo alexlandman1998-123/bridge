@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Download, FileCheck2, Loader2, LockKeyhole, PenLine, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { Check, Loader2, PenLine, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -13,25 +13,15 @@ import {
 import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 import { buildSigningCompletion } from '../core/documents/signingCompletionContract'
 import { getSigningCompletionAccess } from '../core/documents/signingCompletionAccess'
-import { buildDocumentRoleGuidance } from '../core/documents/documentRoleGuidance'
-import DocumentRoleGuidanceCard from '../components/documents/DocumentRoleGuidanceCard'
-import { buildDocumentRoleActions } from '../core/documents/documentRoleActions'
-import DocumentRoleActionBar from '../components/documents/DocumentRoleActionBar'
-import { buildDocumentResponsibility } from '../core/documents/documentResponsibility'
-import DocumentResponsibilityCard from '../components/documents/DocumentResponsibilityCard'
 import { buildDocumentHelpRecovery } from '../core/documents/documentHelpRecovery'
 import DocumentHelpRecoveryCard from '../components/documents/DocumentHelpRecoveryCard'
-import { buildDocumentJourneyProgress } from '../core/documents/documentJourneyProgress'
-import { DocumentJourneyProgress } from '../components/documents/DocumentJourneyProgress'
-import { buildDocumentMobileAction } from '../core/documents/documentMobileAction'
-import { DocumentMobileActionDock } from '../components/documents/DocumentMobileActionDock'
-import { buildDocumentAccessibility } from '../core/documents/documentAccessibility'
-import { DocumentAccessibilityNavigation } from '../components/documents/DocumentAccessibilityNavigation'
 import { buildDocumentCommitConfirmation } from '../core/documents/documentCommitConfirmation'
 import { DocumentCommitConfirmation } from '../components/documents/DocumentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../core/documents/documentOutcomeFeedback'
 import { DocumentOutcomeNotice } from '../components/documents/DocumentOutcomeNotice'
 import { recordDocumentExperienceEvent } from '../services/documentExperienceTelemetryService'
+import { buildSimpleSigningExperienceModel } from '../core/documents/simpleSigningExperienceModel'
+import SimpleSigningShell from '../components/documents/SimpleSigningShell'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -57,14 +47,6 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
-function formatDateTime(value) {
-  const text = normalizeText(value)
-  if (!text) return '—'
-  const date = new Date(text)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('en-ZA')
-}
-
 function resolveErrorMessage(error = null) {
   const code = normalizeText(error?.code).toUpperCase()
   if (code === 'INVALID_SIGNING_TOKEN') return 'This signing link is invalid.'
@@ -82,90 +64,6 @@ function resolveErrorMessage(error = null) {
   return message || 'Unable to process signing right now.'
 }
 
-function SigningCompleteScreen({
-  completion,
-  packet = {},
-  signer = {},
-  version = {},
-  refreshing = false,
-  finalArtifactBusy = false,
-  finalArtifactError = '',
-  onRefresh = null,
-  onOpenFinalArtifact = null,
-}) {
-  const finalArtifact = completion?.finalArtifact || {}
-  const finalArtifactReady = finalArtifact?.ready === true
-  const documentType = normalizeKey(completion?.document?.type || packet?.packet_type)
-  const completedLabel = documentType === 'otp' ? 'Offer to Purchase' : documentType === 'mandate' ? 'Mandate' : 'Document'
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-[#eef3f8] p-4 text-[#142132] sm:p-6">
-      <section className="w-full max-w-2xl rounded-[28px] border border-[#d4e5dc] bg-white px-6 py-8 text-center shadow-[0_24px_70px_rgba(15,32,54,0.12)] sm:px-10 sm:py-11">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#e9f8ef] text-[#237047]">
-          <FileCheck2 className="h-8 w-8" />
-        </div>
-        <p className="mt-5 text-xs font-bold uppercase tracking-[0.14em] text-[#2b7b4d]">Signing complete</p>
-        <h1 className="mt-2 text-2xl font-black text-[#142132] sm:text-3xl">Your {completedLabel} has been signed</h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#607387]">
-          Thank you, {completion?.signer?.name || signer?.signer_name || 'Signer'}. Your signature was saved against this transaction and this signing link will not restart the process.
-        </p>
-
-        <div className="mt-7 rounded-[18px] border border-[#d7e2ef] bg-[#f8fbfd] p-4 text-left">
-          <p className="text-sm font-bold text-[#142132]">{completion?.document?.title || packet?.title || 'Signed document'}</p>
-          <p className="mt-1 text-xs text-[#607387]">
-            Version {completion?.version?.number || version?.version_number || '—'} · completed {formatDateTime(completion?.completedAt || completion?.signer?.signedAt)}
-          </p>
-          <p className={`mt-3 flex items-center gap-2 text-xs font-semibold ${completion?.transactionSaved ? 'text-[#276b46]' : 'text-[#8a641f]'}`}>
-            <ShieldCheck className="h-4 w-4" />
-            {completion?.transactionSaved
-              ? 'Completed version locked, verified and saved to the transaction'
-              : 'Completed version locked — transaction publication is being verified'}
-          </p>
-          {completion?.delivery?.emailStatus === 'sent' ? (
-            <p className="mt-2 text-xs font-semibold text-[#276b46]">A secure completed-copy email was delivered.</p>
-          ) : null}
-        </div>
-
-        {finalArtifactReady && typeof onOpenFinalArtifact === 'function' ? (
-          <button
-            type="button"
-            onClick={onOpenFinalArtifact}
-            disabled={finalArtifactBusy}
-            className="mt-6 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#12385f] px-5 text-sm font-bold text-white shadow-[0_14px_30px_rgba(18,56,95,0.22)] sm:w-auto"
-          >
-            {finalArtifactBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
-            {finalArtifactBusy ? 'Preparing secure PDF…' : 'Open completed PDF'}
-          </button>
-        ) : (
-          <p className="mt-6 rounded-[14px] border border-[#d8e3ef] bg-[#f4f8fc] px-4 py-3 text-sm font-semibold text-[#35546c]">
-            Your part is complete. The final PDF will be available in the transaction once every required signer has finished.
-          </p>
-        )}
-
-        {finalArtifactError ? (
-          <p className="mt-3 rounded-[12px] border border-[#f0ccc7] bg-[#fff7f5] px-4 py-3 text-sm font-semibold text-[#8e1f15]">
-            {finalArtifactError}
-          </p>
-        ) : null}
-
-        {(!finalArtifactReady || !completion?.transactionSaved) && typeof onRefresh === 'function' ? (
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[12px] border border-[#cbd9e8] bg-white px-4 text-sm font-bold text-[#35546c] disabled:opacity-60"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Checking…' : 'Check for completed copy'}
-          </button>
-        ) : null}
-
-        <p className="mt-6 text-xs leading-5 text-[#7389a2]">You may safely close this page. Reopening this link will continue to show this confirmation.</p>
-      </section>
-    </main>
-  )
-}
-
 function fieldTypeLabel(fieldType = '') {
   const normalized = normalizeKey(fieldType)
   if (normalized === 'initial') return 'Initial'
@@ -181,15 +79,6 @@ function fieldLocationLabel(field = null, { includeType = true } = {}) {
   return includeType ? `${typeLabel} · ${locationLabel}` : locationLabel
 }
 
-function signerInstructionText({ signer = {}, progress = {} } = {}) {
-  const role = normalizeKey(signer?.signer_role)
-  const status = normalizeKey(signer?.status)
-  if (status === 'signed' || Number(progress?.remainingCount || 0) === 0) return 'All required signatures are complete.'
-  if (role === 'agent') return 'Please review and sign the mandate.'
-  if (role === 'seller') return 'The agency representative has signed. Please review and sign the mandate.'
-  return 'Please review and complete the required signing fields.'
-}
-
 function isCompleted(field = null) {
   return normalizeKey(field?.status) === 'completed'
 }
@@ -201,20 +90,6 @@ function numberOr(value, fallback) {
 
 function getFieldId(field = null) {
   return normalizeText(field?.id)
-}
-
-function Arch9Mark() {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-[#d8e3ef] bg-white shadow-[0_10px_24px_rgba(17,47,80,0.10)]">
-        <img src="/favicon-light.svg" alt="" className="h-8 w-8 object-contain" />
-      </span>
-      <div>
-        <p className="text-sm font-bold leading-none text-[#142132]">Arch9</p>
-        <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#748aa2]">Secure Signing</p>
-      </div>
-    </div>
-  )
 }
 
 function LoadingShell() {
@@ -504,12 +379,13 @@ function PdfPage({ page, pageNumber, fields, activeFieldId, onFieldClick, zoom =
   )
 }
 
-function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onFieldClick }) {
+function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onFieldClick, embedded = false, zoom: controlledZoom = null, onPageCountChange = null }) {
   const [pdf, setPdf] = useState(null)
   const [pages, setPages] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [zoom, setZoom] = useState(1)
+  const activeZoom = Number.isFinite(Number(controlledZoom)) ? Number(controlledZoom) : zoom
 
   useEffect(() => {
     let cancelled = false
@@ -524,6 +400,7 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
         const loaded = await task.promise
         if (cancelled) return
         setPdf(loaded)
+        onPageCountChange?.(loaded.numPages)
         const pageNumbers = Array.from({ length: loaded.numPages }, (_, index) => index + 1)
         const loadedPages = await Promise.all(pageNumbers.map((pageNumber) => loaded.getPage(pageNumber)))
         if (!cancelled) setPages(loadedPages)
@@ -543,7 +420,7 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
         console.warn('[SignerPortal] PDF task cleanup failed', destroyError)
       }
     }
-  }, [documentUrl])
+  }, [documentUrl, onPageCountChange])
 
   const fieldsByPage = useMemo(() => {
     const groups = new Map()
@@ -556,20 +433,22 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
   }, [fields])
 
   return (
-    <section className="min-h-0 rounded-[22px] border border-[#d6e2ef] bg-[#e8eef5] shadow-[0_22px_70px_rgba(10,30,52,0.12)]">
-      <header className="sticky top-[88px] z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ef] bg-white/95 px-4 py-3 backdrop-blur md:top-0">
-        <div>
-          <h2 className="text-sm font-bold text-[#142132]">Document Preview</h2>
-          <p className="text-xs text-[#607387]">{pdf ? `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}` : 'Review the document before signing.'}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">-</button>
-          <span className="min-w-12 text-center text-xs font-bold text-[#607387]">{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">+</button>
-        </div>
-      </header>
+    <section className={embedded ? 'min-h-0 bg-[#eef3f8]' : 'min-h-0 rounded-[22px] border border-[#d6e2ef] bg-[#e8eef5] shadow-[0_22px_70px_rgba(10,30,52,0.12)]'}>
+      {!embedded ? (
+        <header className="sticky top-[88px] z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ef] bg-white/95 px-4 py-3 backdrop-blur md:top-0">
+          <div>
+            <h2 className="text-sm font-bold text-[#142132]">Document Preview</h2>
+            <p className="text-xs text-[#607387]">{pdf ? `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}` : 'Review the document before signing.'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">-</button>
+            <span className="min-w-12 text-center text-xs font-bold text-[#607387]">{Math.round(activeZoom * 100)}%</span>
+            <button type="button" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">+</button>
+          </div>
+        </header>
+      ) : null}
 
-      <div className="max-h-none overflow-auto md:max-h-[calc(100vh-148px)]">
+      <div className={embedded ? 'max-h-[62vh] overflow-auto bg-[#eef3f8]' : 'max-h-none overflow-auto md:max-h-[calc(100vh-148px)]'}>
         {loading ? (
           <div className="space-y-4 p-4">
             {[1, 2].map((item) => <div key={item} className="mx-auto h-[640px] max-w-[760px] animate-pulse rounded-[14px] bg-white/80" />)}
@@ -583,7 +462,7 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
               fields={fieldsByPage.get(index + 1) || []}
               activeFieldId={activeFieldId}
               onFieldClick={onFieldClick}
-              zoom={zoom}
+              zoom={activeZoom}
             />
           ))
         ) : fallbackHtml ? (
@@ -616,6 +495,8 @@ export default function SignerPortal() {
   const [activeFieldId, setActiveFieldId] = useState('')
   const [captureField, setCaptureField] = useState(null)
   const [completeConfirmationOpen, setCompleteConfirmationOpen] = useState(false)
+  const [previewZoom, setPreviewZoom] = useState(1)
+  const [previewPageCount, setPreviewPageCount] = useState(0)
   const lastSignerJourneyTelemetryRef = useRef('')
   const lastSignerOutcomeTelemetryRef = useRef('')
 
@@ -663,7 +544,6 @@ export default function SignerPortal() {
   const signer = session?.signer || {}
   const packet = session?.packet || {}
   const version = session?.version || {}
-  const sessionBinding = session?.sessionBinding || session?.session_binding || {}
   const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
   const documentPreviewUrl = normalizeText(
     session?.documentPreviewUrl ||
@@ -693,7 +573,7 @@ export default function SignerPortal() {
   }, [packet?.packet_type, packet?.title, session?.previewData])
 
   const progress = useMemo(() => {
-    const required = fields.filter((field) => field?.required)
+    const required = fields.filter((field) => field?.required !== false)
     const completed = required.filter(isCompleted)
     const remaining = required.filter((field) => !isCompleted(field))
     const percent = required.length ? Math.round((completed.length / required.length) * 100) : 0
@@ -707,7 +587,6 @@ export default function SignerPortal() {
   }, [fields])
 
   const canCompleteSigning = progress.remainingCount === 0 && progress.requiredCount > 0
-  const signerInstruction = signerInstructionText({ signer, progress })
   const currentCaptureType = normalizeKey(captureField?.field_type)
   const signerExperienceState = loading ? 'loading' : normalizeKey(signer?.status) || 'pending'
   const signerOutcomeFeedback = buildDocumentOutcomeFeedback({
@@ -922,78 +801,15 @@ export default function SignerPortal() {
       })
     : null)
 
-  if (completion) {
-    return (
-      <SigningCompleteScreen
-        completion={completion}
-        packet={packet}
-        signer={signer}
-        version={version}
-        refreshing={busyAction === 'refresh_completion'}
-        finalArtifactBusy={busyAction === 'open_final_artifact'}
-        finalArtifactError={completionDownloadError}
-        onRefresh={() => void handleRefreshCompletion()}
-        onOpenFinalArtifact={() => void handleOpenCompletedPdf()}
-      />
-    )
-  }
-
-  const signerGuidance = buildDocumentRoleGuidance({
-    surface: 'signer_portal',
-    role: signer?.signer_role,
-    packetType: packet?.packet_type,
-    signerStatus: signer?.status,
-    remainingFields: progress.remainingCount,
-    completedFields: progress.completedCount,
-  })
-  const signerJourney = buildDocumentJourneyProgress({
-    surface: 'signer_portal',
-    signerStatus: signer?.status,
-    requiredFields: progress.requiredCount,
-    completedFields: progress.completedCount,
-  })
-  const signerActions = buildDocumentRoleActions({
-    surface: 'signer_portal',
-    role: signer?.signer_role,
-    remainingFields: progress.remainingCount,
-    requiredFields: progress.requiredCount,
-    canComplete: canCompleteSigning,
-  })
-  const signerResponsibility = buildDocumentResponsibility({
-    surface: 'signer_portal',
-    role: signer?.signer_role,
-    state: signer?.status,
-    signers: session?.signingOrder || [],
-    currentSigner: signer,
-  })
-  const signerHelpRecovery = buildDocumentHelpRecovery({
-    surface: 'signer_portal',
-    role: signer?.signer_role,
-    state: signer?.status,
-    issue: errorMessage,
-    hasPreview: Boolean(documentPreviewUrl || fallbackPreviewHtml),
-  })
-  const signerMobileAction = buildDocumentMobileAction({
-    surface: 'signer_portal',
-    recoveryAction: signerHelpRecovery.hasIssue && signerHelpRecovery.action
-      ? { ...signerHelpRecovery.action, description: signerHelpRecovery.summary }
-      : null,
-    blocked: signerHelpRecovery.hasIssue,
-    remainingFields: progress.remainingCount,
-    requiredFields: progress.requiredCount,
-    canComplete: canCompleteSigning,
-    currentOwnerLabel: signerResponsibility.currentOwner?.name || signerResponsibility.currentOwner?.roleLabel,
-  })
-  const signerAccessibility = buildDocumentAccessibility({
-    surface: 'signer_portal',
-    journey: signerJourney,
-    responsibility: signerResponsibility,
-    helpRecovery: signerHelpRecovery,
-    mobileAction: signerMobileAction,
-    completedFields: progress.completedCount,
-    requiredFields: progress.requiredCount,
-    contentTargetId: 'signer-document-content',
-    actionsTargetId: 'signer-document-actions',
+  const simpleSigningModel = buildSimpleSigningExperienceModel({
+    session: {
+      ...session,
+      completion,
+      pageCount: previewPageCount || session?.pageCount || session?.page_count,
+    },
+    documentPreviewUrl,
+    fallbackPreviewHtml,
+    errorMessage,
   })
   const completeConfirmation = buildDocumentCommitConfirmation({
     action: 'complete_signing',
@@ -1007,141 +823,38 @@ export default function SignerPortal() {
     setCompleteConfirmationOpen(false)
   }
 
-  function handleSignerRoleAction(actionId) {
+  function handleSimpleSigningAction(actionId) {
     recordSignerExperience('primary_action_selected', { state: signerExperienceState, actionId })
-    if (actionId === 'next_field') scrollToField(progress.nextField || fields[0])
-    else if (actionId === 'review_document') window.scrollTo({ top: 0, behavior: 'smooth' })
-    else if (actionId === 'complete_signing' && canCompleteSigning) void handleCompleteSigning()
+    if (actionId === 'view_document') document.getElementById('signer-document-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    else if (actionId === 'next_field') {
+      const nextField = progress.nextField || fields[0]
+      const nextFieldType = normalizeKey(nextField?.field_type)
+      scrollToField(nextField)
+      if (nextField && !isCompleted(nextField) && ['initial', 'signature'].includes(nextFieldType)) void handleUseSaved(nextField)
+    }
+    else if (actionId === 'finish_signing' && canCompleteSigning) void handleCompleteSigning()
+    else if (actionId === 'open_completed_pdf') void handleOpenCompletedPdf()
+    else if (actionId === 'refresh_completion') void handleRefreshCompletion()
+    else if (actionId === 'contact_support') setStatusMessage('If you need help, contact your agent or attorney for assistance.')
   }
 
-  function handleHelpRecoveryAction(actionId) {
-    recordSignerExperience('recovery_selected', { state: signerExperienceState, actionId, category: signerHelpRecovery.category })
-    if (actionId === 'next_field') scrollToField(progress.nextField || fields[0])
-    else if (actionId === 'retry' || actionId === 'refresh') void handleRetryPortalSession()
-    else if (actionId === 'review_document') window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const simpleDocumentPreview = simpleSigningModel.state !== 'completed' ? (
+    <div id="signer-document-content" tabIndex={-1} className="scroll-mt-24 focus:outline-none">
+      <DocumentPreview
+        documentUrl={documentPreviewUrl}
+        fallbackHtml={fallbackPreviewHtml}
+        fields={fields}
+        activeFieldId={activeFieldId}
+        onFieldClick={selectField}
+        embedded
+        zoom={previewZoom}
+        onPageCountChange={setPreviewPageCount}
+      />
+    </div>
+  ) : null
 
-  function handleMobileAction(actionId) {
-    if (['next_field', 'review_document', 'complete_signing'].includes(actionId)) handleSignerRoleAction(actionId)
-    else handleHelpRecoveryAction(actionId)
-  }
-
-  return (
-    <main className="min-h-screen bg-[#eef3f8] pb-[calc(7rem+env(safe-area-inset-bottom))] text-[#142132] md:pb-0">
-      <DocumentAccessibilityNavigation model={signerAccessibility} />
-      <header className="sticky top-0 z-40 border-b border-[#d7e2ef] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
-          <Arch9Mark />
-          <div className="min-w-0 flex-1 text-center md:flex-none">
-            <h1 className="truncate text-sm font-bold text-[#142132] sm:text-base">{packet?.title || 'Document Packet'}</h1>
-            <p className="text-xs text-[#607387]">Version {version?.version_number || '—'} · {signer?.signer_name || 'Signer'}</p>
-            <p className="mt-1 text-xs font-semibold text-[#35546c]">{signerInstruction}</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46]">
-            <ShieldCheck className="h-4 w-4" />
-            {sessionBinding?.certified ? 'Certified document' : 'Secure'}
-          </div>
-        </div>
-      </header>
-
-      <div className="sticky top-[65px] z-30 border-b border-[#d7e2ef] bg-[#f8fbfd]/95 px-4 py-3 backdrop-blur md:hidden">
-        <div className="mb-2 flex items-center justify-between text-xs font-bold text-[#35546c]">
-          <span>{progress.completedCount}/{progress.requiredCount} completed</span>
-          <span>{progress.percent}%</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
-          <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-[1500px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px] lg:p-5">
-        <div id="signer-document-content" tabIndex={-1} className="min-w-0 scroll-mt-24 focus:outline-none">
-          <DocumentPreview
-            documentUrl={documentPreviewUrl}
-            fallbackHtml={fallbackPreviewHtml}
-            fields={fields}
-            activeFieldId={activeFieldId}
-            onFieldClick={selectField}
-          />
-        </div>
-
-        <aside id="signer-document-actions" tabIndex={-1} className="scroll-mt-24 space-y-4 focus:outline-none lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
-          <DocumentJourneyProgress model={signerJourney} compact />
-          <DocumentRoleGuidanceCard guidance={signerGuidance} compact />
-          <DocumentRoleActionBar model={signerActions} busy={Boolean(busyAction)} compact onAction={handleSignerRoleAction} />
-          <DocumentResponsibilityCard model={signerResponsibility} compact />
-          <DocumentHelpRecoveryCard model={signerHelpRecovery} busy={Boolean(busyAction) || loading} compact onAction={handleHelpRecoveryAction} />
-          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Progress</p>
-                <h2 className="mt-1 text-lg font-bold text-[#142132]">{progress.percent}% complete</h2>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f1f6fb] text-sm font-black text-[#12385f]">{progress.completedCount}/{progress.requiredCount}</div>
-            </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
-              <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
-            </div>
-            <button type="button" onClick={() => scrollToField()} disabled={!progress.nextField} className="mt-4 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#12385f] text-sm font-bold text-white disabled:bg-[#a5b4c5]">
-              {progress.nextField ? `Next: ${fieldLocationLabel(progress.nextField)}` : 'All required fields complete'}
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </section>
-
-          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Signer</p>
-            <div className="mt-3 space-y-2 text-sm text-[#4f6680]">
-              <p><span className="font-bold text-[#142132]">Name:</span> {signer?.signer_name || '—'}</p>
-              <p><span className="font-bold text-[#142132]">Role:</span> {String(signer?.signer_role || '').replace(/_/g, ' ') || '—'}</p>
-              <p><span className="font-bold text-[#142132]">Status:</span> {signer?.status || 'pending'}</p>
-              <p><span className="font-bold text-[#142132]">Expires:</span> {formatDateTime(signer?.token_expires_at)}</p>
-              {sessionBinding?.certified ? <p className="flex items-center gap-1.5 font-semibold text-[#276b46]"><ShieldCheck className="h-4 w-4" /> Exact delivered PDF verified</p> : null}
-            </div>
-          </section>
-
-          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Required Fields</p>
-            <div className="mt-3 space-y-2">
-              {fields.map((field) => {
-                const fieldId = getFieldId(field)
-                const completed = isCompleted(field)
-                return (
-                  <button
-                    key={fieldId}
-                    type="button"
-                    onClick={() => completed ? scrollToField(field) : handleUseSaved(field)}
-                    className={`flex w-full items-center justify-between gap-3 rounded-[14px] border px-3 py-3 text-left transition ${
-                      completed ? 'border-[#cde8d6] bg-[#eef9f2]' : 'border-[#d8e3ef] bg-[#fbfdff] hover:border-[#12385f]'
-                    }`}
-                  >
-                    <span>
-                      <span className="block text-sm font-bold text-[#142132]">{fieldLocationLabel(field)}</span>
-                      <span className="mt-0.5 block text-xs text-[#607387]">{completed ? 'Completed' : 'Tap to complete'}</span>
-                    </span>
-                    {completed ? <Check className="h-5 w-5 text-[#2b7b4d]" /> : <PenLine className="h-5 w-5 text-[#12385f]" />}
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-
-          {errorMessage ? <p className="rounded-[14px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15]">{errorMessage}</p> : null}
-          {statusMessage ? <DocumentOutcomeNotice model={signerOutcomeFeedback} onDismiss={() => setStatusMessage('')} /> : null}
-
-          <button
-            type="button"
-            onClick={() => void handleCompleteSigning()}
-            disabled={!canCompleteSigning || Boolean(busyAction)}
-            className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[15px] bg-[#12385f] px-4 text-base font-bold text-white shadow-[0_16px_34px_rgba(18,56,95,0.24)] disabled:bg-[#9daec1]"
-          >
-            <LockKeyhole className="h-5 w-5" />
-            {busyAction === 'complete_signing' ? 'Completing...' : 'Complete Signing'}
-          </button>
-        </aside>
-      </div>
-
-      <DocumentMobileActionDock model={signerMobileAction} busy={Boolean(busyAction) || loading} onAction={handleMobileAction} />
-
+  const overlayContent = (
+    <>
       <DocumentCommitConfirmation
         model={completeConfirmation}
         open={completeConfirmationOpen}
@@ -1159,6 +872,30 @@ export default function SignerPortal() {
           onSave={handleSaveAndApply}
         />
       ) : null}
-    </main>
+    </>
+  )
+
+  return (
+    <>
+      <SimpleSigningShell
+        model={simpleSigningModel}
+        busy={Boolean(busyAction)}
+        documentPreview={simpleDocumentPreview}
+        zoomPercent={Math.round(previewZoom * 100)}
+        onAction={handleSimpleSigningAction}
+        onHelp={() => setStatusMessage('If you have any questions or need assistance, contact your agent or attorney.')}
+        onZoomOut={() => setPreviewZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))}
+        onZoomIn={() => setPreviewZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))}
+        onDownload={() => {
+          if (documentPreviewUrl) window.open(documentPreviewUrl, '_blank', 'noopener,noreferrer')
+        }}
+      />
+      <div className="fixed inset-x-0 bottom-4 z-40 mx-auto w-[min(92vw,720px)] px-4">
+        {errorMessage ? <p className="rounded-[8px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15] shadow-lg">{errorMessage}</p> : null}
+        {completionDownloadError ? <p className="rounded-[8px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15] shadow-lg">{completionDownloadError}</p> : null}
+        {statusMessage ? <DocumentOutcomeNotice model={signerOutcomeFeedback} onDismiss={() => setStatusMessage('')} /> : null}
+      </div>
+      {overlayContent}
+    </>
   )
 }
