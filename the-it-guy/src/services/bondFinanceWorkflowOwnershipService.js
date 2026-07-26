@@ -20,6 +20,78 @@ function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function getPrimaryBondApplicationScope(record = {}) {
+  const transaction = record?.transaction && typeof record.transaction === 'object' ? record.transaction : record
+  const directScope =
+    record?.primaryBondApplication ||
+    record?.primary_bond_application ||
+    transaction?.primaryBondApplication ||
+    transaction?.primary_bond_application ||
+    null
+  if (directScope && typeof directScope === 'object') return directScope
+
+  const applicationRows = [
+    record?.bondApplications,
+    record?.bond_applications,
+    record?.transaction_bond_applications,
+    transaction?.bondApplications,
+    transaction?.bond_applications,
+    transaction?.transaction_bond_applications,
+  ].find((value) => Array.isArray(value) && value.length)
+  return Array.isArray(applicationRows) ? applicationRows.find(Boolean) || null : null
+}
+
+function resolveAssignmentScope(record = {}) {
+  const transaction = record?.transaction && typeof record.transaction === 'object' ? record.transaction : record
+  const applicationScope = getPrimaryBondApplicationScope(record) || {}
+  return {
+    organisationId:
+      normalizeText(transaction.assigned_organisation_id || transaction.assignedOrganisationId) ||
+      normalizeText(applicationScope.assigned_organisation_id || applicationScope.assignedOrganisationId) ||
+      normalizeText(transaction.bond_workspace_id || transaction.bondWorkspaceId || transaction.organisation_id || transaction.workspace_id),
+    regionId:
+      normalizeText(transaction.assigned_region_id || transaction.assignedRegionId) ||
+      normalizeText(applicationScope.assigned_region_id || applicationScope.assignedRegionId) ||
+      normalizeText(transaction.bond_region_id || transaction.bondRegionId || transaction.region_id),
+    workspaceUnitId:
+      normalizeText(
+        transaction.assigned_workspace_unit_id ||
+          transaction.assignedWorkspaceUnitId ||
+          transaction.assigned_branch_id ||
+          transaction.assignedBranchId ||
+          transaction.assigned_team_id ||
+          transaction.assignedTeamId,
+      ) ||
+      normalizeText(
+        applicationScope.assigned_workspace_unit_id ||
+          applicationScope.assignedWorkspaceUnitId ||
+          applicationScope.assigned_branch_id ||
+          applicationScope.assignedBranchId ||
+          applicationScope.assigned_team_id ||
+          applicationScope.assignedTeamId,
+      ) ||
+      normalizeText(transaction.bond_workspace_unit_id || transaction.bondWorkspaceUnitId || transaction.workspace_unit_id || transaction.branch_id || transaction.team_id),
+    userId:
+      normalizeText(transaction.assigned_user_id || transaction.assignedUserId) ||
+      normalizeText(applicationScope.assigned_user_id || applicationScope.assignedUserId) ||
+      null,
+    assignmentStatus:
+      normalizeText(transaction.bond_assignment_status || transaction.bondAssignmentStatus) ||
+      normalizeText(applicationScope.assignment_status || applicationScope.assignmentStatus || applicationScope.status) ||
+      null,
+    assignmentSource:
+      normalizeText(transaction.bond_assignment_source || transaction.bondAssignmentSource) ||
+      normalizeText(applicationScope.assignment_source || applicationScope.assignmentSource) ||
+      null,
+    scopeLevel:
+      normalizeText(transaction.scope_level || transaction.scopeLevel) ||
+      normalizeText(applicationScope.scope_level || applicationScope.scopeLevel) ||
+      null,
+    scopeMetadata:
+      transaction.scope_metadata || transaction.scopeMetadata || applicationScope.scope_metadata || applicationScope.scopeMetadata || null,
+  }
+}
+
 function pickUserEmail(user = {}, resolved = {}) {
   return normalizeEmail(
     user.email ||
@@ -47,25 +119,23 @@ function isHqRole(role = '') {
 }
 
 function buildScopeRecord(transaction = {}, owners = {}) {
+  const assignmentScope = resolveAssignmentScope(transaction)
   return {
     organisation_id:
       owners.bondWorkspaceId ||
-      normalizeText(transaction.assigned_organisation_id || transaction.assignedOrganisationId) ||
-      normalizeText(transaction.bond_workspace_id || transaction.organisation_id || transaction.workspace_id),
+      assignmentScope.organisationId,
     region_id:
       owners.bondRegionId ||
-      normalizeText(transaction.assigned_region_id || transaction.assignedRegionId) ||
-      normalizeText(transaction.bond_region_id || transaction.region_id),
+      assignmentScope.regionId,
     workspace_unit_id:
       owners.bondWorkspaceUnitId ||
-      normalizeText(transaction.assigned_workspace_unit_id || transaction.assignedWorkspaceUnitId || transaction.assigned_branch_id || transaction.assignedBranchId || transaction.assigned_team_id || transaction.assignedTeamId) ||
-      normalizeText(transaction.bond_workspace_unit_id || transaction.workspace_unit_id || transaction.branch_id || transaction.team_id),
+      assignmentScope.workspaceUnitId,
     assigned_user_id:
       owners.primaryConsultantUserId ||
       owners.processorUserId ||
       owners.managerUserId ||
       owners.complianceUserId ||
-      normalizeText(transaction.assigned_user_id || transaction.assignedUserId) ||
+      assignmentScope.userId ||
       null,
     owner_user_id:
       owners.primaryConsultantUserId ||
@@ -95,8 +165,10 @@ function hasDirectUnitScopeAccess(resolved = {}, owners = {}, transaction = {}) 
   const scopeLevel = normalizeText(resolved.scopeLevelRaw || resolved.scopeLevel)
   if (![BOND_SCOPE_LEVELS.team, BOND_SCOPE_LEVELS.branch].includes(scopeLevel)) return false
   const userUnitId = normalizeText(resolved.workspaceUnitId)
+  const assignmentScope = resolveAssignmentScope(transaction)
   const transactionUnitId = normalizeText(
     owners.bondWorkspaceUnitId ||
+      assignmentScope.workspaceUnitId ||
       transaction.bond_workspace_unit_id ||
       transaction.workspace_unit_id ||
       transaction.branch_id ||
@@ -147,6 +219,7 @@ export function resolveFinanceWorkflowOwners(transaction = {}) {
   const effective = resolveEffectiveBondAssignment(transaction || {})
   const participant = resolveParticipantBondAssignment(transaction || {})
   const rolePlayer = resolveRolePlayerBondAssignment(transaction || {})
+  const assignmentScope = resolveAssignmentScope(transaction)
   const warnings = [...(effective.warnings || [])]
   if (effective.source !== 'canonical' && effective.source !== 'none') {
     warnings.push(`finance_owner_resolution_fallback:${effective.source}`)
@@ -157,22 +230,19 @@ export function resolveFinanceWorkflowOwners(transaction = {}) {
     warnings,
     bondWorkspaceId:
       effective.bondWorkspaceId ||
-      normalizeText(transaction.assigned_organisation_id || transaction.assignedOrganisationId) ||
-      normalizeText(transaction.bond_workspace_id || transaction.organisation_id || transaction.workspace_id) ||
+      assignmentScope.organisationId ||
       null,
     bondRegionId:
       effective.bondRegionId ||
-      normalizeText(transaction.assigned_region_id || transaction.assignedRegionId) ||
-      normalizeText(transaction.bond_region_id || transaction.region_id) ||
+      assignmentScope.regionId ||
       null,
     bondWorkspaceUnitId:
       effective.bondWorkspaceUnitId ||
-      normalizeText(transaction.assigned_workspace_unit_id || transaction.assignedWorkspaceUnitId || transaction.assigned_branch_id || transaction.assignedBranchId || transaction.assigned_team_id || transaction.assignedTeamId) ||
-      normalizeText(transaction.bond_workspace_unit_id || transaction.workspace_unit_id || transaction.branch_id || transaction.team_id) ||
+      assignmentScope.workspaceUnitId ||
       null,
     primaryConsultantUserId:
       effective.primaryConsultantUserId ||
-      normalizeText(transaction.assigned_user_id || transaction.assignedUserId) ||
+      assignmentScope.userId ||
       participant.primaryConsultantUserId ||
       rolePlayer.primaryConsultantUserId ||
       null,

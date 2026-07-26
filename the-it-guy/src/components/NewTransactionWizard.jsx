@@ -25,6 +25,11 @@ import {
   mergePartnerConnectionOptions,
   partnerOptionToRolePlayerSelection,
 } from '../lib/newTransactionPartnerOptions'
+import {
+  findPartnerPersonOption,
+  loadPartnerPersonOptions,
+  mergePartnerPersonIntoOption,
+} from '../lib/partnerPersonOptions'
 import { listOrganisationPreferredPartners, listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useOrganisation } from '../context/OrganisationContext'
@@ -130,6 +135,7 @@ function createInitialForm(initialDevelopmentId = '') {
       alterationChargeTreatment: 'included_in_purchase_price',
       bondOriginator: '',
       bondOriginatorEmail: '',
+      bondOriginatorPartnerPersonId: '',
       bank: '',
       bondSubmitted: false,
       bondApproved: false,
@@ -137,6 +143,7 @@ function createInitialForm(initialDevelopmentId = '') {
       proceedToAttorneys: false,
       attorney: '',
       attorneyEmail: '',
+      attorneyPartnerPersonId: '',
       expectedTransferDate: '',
       nextAction: '',
     },
@@ -536,6 +543,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [preferredDirectoryPartners, setPreferredDirectoryPartners] = useState([])
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [partnerConnectionOptions, setPartnerConnectionOptions] = useState(createInitialPartnerConnectionOptions)
+  const [partnerPersonOptions, setPartnerPersonOptions] = useState({
+    transfer_attorney: [],
+    bond_originator: [],
+  })
+  const [loadingPartnerPeople, setLoadingPartnerPeople] = useState({
+    transfer_attorney: false,
+    bond_originator: false,
+  })
+  const [partnerPeopleMessages, setPartnerPeopleMessages] = useState({
+    transfer_attorney: '',
+    bond_originator: '',
+  })
   const [loadingPartnerConnections, setLoadingPartnerConnections] = useState(false)
   const [loadingMeta, setLoadingMeta] = useState(false)
   const [loadingUnits, setLoadingUnits] = useState(false)
@@ -568,6 +587,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setPartnerInvitationModes(createInitialPartnerInvitationModes())
     setPartnerInvitationDrafts(createInitialPartnerInvitationDrafts())
     setPartnerConnectionOptions(createInitialPartnerConnectionOptions())
+    setPartnerPersonOptions({
+      transfer_attorney: [],
+      bond_originator: [],
+    })
+    setLoadingPartnerPeople({
+      transfer_attorney: false,
+      bond_originator: false,
+    })
+    setPartnerPeopleMessages({
+      transfer_attorney: '',
+      bond_originator: '',
+    })
     setPreferredDirectoryPartners([])
     setPartnerProspects([])
     setPartnerProspectQueries(createInitialPartnerProspectQueries())
@@ -859,6 +890,80 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => bondOriginatorPartnerOptions.find((partner) => partner.id === form.finance.bondOriginatorPartnerRelationshipId) || null,
     [bondOriginatorPartnerOptions, form.finance.bondOriginatorPartnerRelationshipId],
   )
+  const selectedAttorneyPerson = useMemo(
+    () =>
+      findPartnerPersonOption(
+        partnerPersonOptions.transfer_attorney,
+        form.finance.attorneyPartnerPersonId || selectedAttorneyPartner?.userId || '',
+      ),
+    [form.finance.attorneyPartnerPersonId, partnerPersonOptions.transfer_attorney, selectedAttorneyPartner?.userId],
+  )
+  const selectedBondOriginatorPerson = useMemo(
+    () =>
+      findPartnerPersonOption(
+        partnerPersonOptions.bond_originator,
+        form.finance.bondOriginatorPartnerPersonId || selectedBondOriginatorPartner?.userId || '',
+      ),
+    [form.finance.bondOriginatorPartnerPersonId, partnerPersonOptions.bond_originator, selectedBondOriginatorPartner?.userId],
+  )
+
+  useEffect(() => {
+    if (!open || partnerInvitationModes.transfer_attorney !== 'existing' || !selectedAttorneyPartner) {
+      setPartnerPersonOptions((previous) => ({ ...previous, transfer_attorney: [] }))
+      setPartnerPeopleMessages((previous) => ({ ...previous, transfer_attorney: '' }))
+      return
+    }
+
+    let cancelled = false
+    setLoadingPartnerPeople((previous) => ({ ...previous, transfer_attorney: true }))
+    loadPartnerPersonOptions(selectedAttorneyPartner, 'transfer_attorney')
+      .then((payload) => {
+        if (cancelled) return
+        setPartnerPersonOptions((previous) => ({ ...previous, transfer_attorney: payload.people || [] }))
+        setPartnerPeopleMessages((previous) => ({ ...previous, transfer_attorney: payload.message || '' }))
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPartnerPersonOptions((previous) => ({ ...previous, transfer_attorney: [] }))
+        setPartnerPeopleMessages((previous) => ({ ...previous, transfer_attorney: 'No visible attorneys are available for this firm yet.' }))
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPartnerPeople((previous) => ({ ...previous, transfer_attorney: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, partnerInvitationModes.transfer_attorney, selectedAttorneyPartner])
+
+  useEffect(() => {
+    if (!open || partnerInvitationModes.bond_originator !== 'existing' || !selectedBondOriginatorPartner) {
+      setPartnerPersonOptions((previous) => ({ ...previous, bond_originator: [] }))
+      setPartnerPeopleMessages((previous) => ({ ...previous, bond_originator: '' }))
+      return
+    }
+
+    let cancelled = false
+    setLoadingPartnerPeople((previous) => ({ ...previous, bond_originator: true }))
+    loadPartnerPersonOptions(selectedBondOriginatorPartner, 'bond_originator')
+      .then((payload) => {
+        if (cancelled) return
+        setPartnerPersonOptions((previous) => ({ ...previous, bond_originator: payload.people || [] }))
+        setPartnerPeopleMessages((previous) => ({ ...previous, bond_originator: payload.message || '' }))
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPartnerPersonOptions((previous) => ({ ...previous, bond_originator: [] }))
+        setPartnerPeopleMessages((previous) => ({ ...previous, bond_originator: 'No visible consultants are available for this bond originator yet.' }))
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPartnerPeople((previous) => ({ ...previous, bond_originator: false }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, partnerInvitationModes.bond_originator, selectedBondOriginatorPartner])
   const attorneyPartnerProspects = useMemo(
     () =>
       filterPartnerProspectsForSearch(partnerProspects, {
@@ -1165,9 +1270,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             attorney: '',
             attorneyEmail: '',
             attorneyPartnerRelationshipId: '',
+            attorneyPartnerPersonId: '',
             bondOriginator: '',
             bondOriginatorEmail: '',
             bondOriginatorPartnerRelationshipId: '',
+            bondOriginatorPartnerPersonId: '',
           },
         }
       }
@@ -1235,10 +1342,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           ? {
               attorney: partner?.companyName || '',
               attorneyEmail: partner?.email || '',
+              attorneyPartnerPersonId: partner?.userId || '',
             }
           : {
               bondOriginator: partner?.companyName || '',
               bondOriginatorEmail: partner?.email || '',
+              bondOriginatorPartnerPersonId: partner?.userId || '',
             }),
       },
     }))
@@ -1530,7 +1639,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         partnerInvitationModes.transfer_attorney === 'existing' && selectedAttorneyPartner
           ? partnerOptionToRolePlayerSelection(
               'transfer_attorney',
-              selectedAttorneyPartner,
+              mergePartnerPersonIntoOption(selectedAttorneyPartner, selectedAttorneyPerson, { roleType: 'transfer_attorney' }),
               selectedAttorneyWasDevelopmentDefault ? 'development_default' : '',
             )
           : partnerOptionToRolePlayerSelection(
@@ -1542,7 +1651,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         partnerInvitationModes.bond_originator === 'existing' && selectedBondOriginatorPartner
           ? partnerOptionToRolePlayerSelection(
               'bond_originator',
-              selectedBondOriginatorPartner,
+              mergePartnerPersonIntoOption(selectedBondOriginatorPartner, selectedBondOriginatorPerson, { roleType: 'bond_originator' }),
               selectedBondOriginatorWasDevelopmentDefault ? 'development_default' : '',
             )
           : partnerOptionToRolePlayerSelection(
@@ -2537,6 +2646,27 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                                 ))}
                               </select>
                             </Field>
+                            <Field label="Preferred Attorney">
+                              <select
+                                value={form.finance.attorneyPartnerPersonId || selectedAttorneyPartner?.userId || ''}
+                                onChange={(event) => setFinanceField('attorneyPartnerPersonId', event.target.value)}
+                                disabled={!selectedAttorneyPartner || loadingPartnerPeople.transfer_attorney}
+                              >
+                                <option value="">
+                                  {selectedAttorneyPartner ? 'Firm will assign internally' : 'Select attorney firm first'}
+                                </option>
+                                {loadingPartnerPeople.transfer_attorney ? <option disabled>Loading attorneys...</option> : null}
+                                {partnerPersonOptions.transfer_attorney.map((person) => (
+                                  <option key={person.userId} value={person.userId}>
+                                    {person.name}
+                                    {person.detail ? ` • ${person.detail}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedAttorneyPartner && !loadingPartnerPeople.transfer_attorney && !partnerPersonOptions.transfer_attorney.length && partnerPeopleMessages.transfer_attorney ? (
+                                <p className="mt-1 text-xs leading-5 text-[#60758d]">{partnerPeopleMessages.transfer_attorney}</p>
+                              ) : null}
+                            </Field>
                             <PartnerProspectPicker
                               label="Reusable Attorney Prospect"
                               query={partnerProspectQueries.transfer_attorney}
@@ -2625,6 +2755,27 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                                   </option>
                                 ))}
                               </select>
+                            </Field>
+                            <Field label="Bond Consultant">
+                              <select
+                                value={form.finance.bondOriginatorPartnerPersonId || selectedBondOriginatorPartner?.userId || ''}
+                                onChange={(event) => setFinanceField('bondOriginatorPartnerPersonId', event.target.value)}
+                                disabled={!selectedBondOriginatorPartner || loadingPartnerPeople.bond_originator}
+                              >
+                                <option value="">
+                                  {selectedBondOriginatorPartner ? 'Send to company queue' : 'Select bond originator first'}
+                                </option>
+                                {loadingPartnerPeople.bond_originator ? <option disabled>Loading consultants...</option> : null}
+                                {partnerPersonOptions.bond_originator.map((person) => (
+                                  <option key={person.userId} value={person.userId}>
+                                    {person.name}
+                                    {person.detail ? ` • ${person.detail}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedBondOriginatorPartner && !loadingPartnerPeople.bond_originator && !partnerPersonOptions.bond_originator.length && partnerPeopleMessages.bond_originator ? (
+                                <p className="mt-1 text-xs leading-5 text-[#60758d]">{partnerPeopleMessages.bond_originator}</p>
+                              ) : null}
                             </Field>
                             <PartnerProspectPicker
                               label="Reusable Originator Prospect"

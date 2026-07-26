@@ -5,6 +5,7 @@
     "npm:@supabase/supabase-js@2.49.9": "2.49.9",
     "npm:docxtemplater@3.67.4": "3.67.4",
     "npm:openai@^4.52.5": "4.104.0",
+    "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pizzip@3.1.6": "3.1.6"
   },
   "jsr": {
@@ -16,6 +17,18 @@
     }
   },
   "npm": {
+    "@pdf-lib/standard-fonts@1.0.0": {
+      "integrity": "sha512-hU30BK9IUN/su0Mn9VdlVKsWBS6GyhVfqjwl1FjZN4TxP6cCw0jP2w7V3Hf5uX7M0AZJ16vey9yE0ny7Sa59ZA==",
+      "dependencies": [
+        "pako@1.0.11"
+      ]
+    },
+    "@pdf-lib/upng@1.0.1": {
+      "integrity": "sha512-dQK2FUMQtowVP00mtIksrlZhdFXQZPC+taih1q4CvPZ5vqdxR/LKBaFg0oAfzd1GlHZXXSPdQfzQnt+ViGvEIQ==",
+      "dependencies": [
+        "pako@1.0.11"
+      ]
+    },
     "@supabase/auth-js@2.69.1": {
       "integrity": "sha512-FILtt5WjCNzmReeRLq5wRs3iShwmnWgBvxHfqapC/VoljJl+W8hDAyFmf1NVw3zH+ZjZ05AKxiKxVeb0HNWRMQ==",
       "dependencies": [
@@ -267,17 +280,32 @@
       ],
       "bin": true
     },
+    "pako@1.0.11": {
+      "integrity": "sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw=="
+    },
     "pako@2.1.0": {
       "integrity": "sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug=="
+    },
+    "pdf-lib@1.17.1": {
+      "integrity": "sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==",
+      "dependencies": [
+        "@pdf-lib/standard-fonts",
+        "@pdf-lib/upng",
+        "pako@1.0.11",
+        "tslib"
+      ]
     },
     "pizzip@3.1.6": {
       "integrity": "sha512-FCG2lSMVlrt2jB1iokujjXexanfszV/Y04t4mu1icdSEC/vb/2qDISr2kgENzdkThd1jkRNjvipWitU4gpbM/g==",
       "dependencies": [
-        "pako"
+        "pako@2.1.0"
       ]
     },
     "tr46@0.0.3": {
       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
+    },
+    "tslib@1.14.1": {
+      "integrity": "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg=="
     },
     "undici-types@5.26.5": {
       "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA=="
@@ -303,6 +331,7 @@
     "dependencies": [
       "npm:@supabase/supabase-js@2.49.9",
       "npm:docxtemplater@3.67.4",
+      "npm:pdf-lib@1.17.1",
       "npm:pizzip@3.1.6"
     ]
   }

@@ -91,15 +91,21 @@ function buildPrimaryAction({ state, nextField, finalArtifactReady }) {
   return { id: 'contact_support', label: 'Get help' }
 }
 
-function buildActionCard({ state, progress, nextField, finalArtifactReady }) {
+function buildActionCard({ state, nextField, finalArtifactReady }) {
   const primaryAction = buildPrimaryAction({ state, nextField, finalArtifactReady })
   if (state === 'completed') {
+    if (finalArtifactReady) {
+      return {
+        tone: 'success',
+        title: 'PDF ready',
+        description: 'Signing recorded. The completed PDF is available now.',
+        primaryAction,
+      }
+    }
     return {
       tone: 'success',
-      title: "You're all set",
-      description: finalArtifactReady
-        ? 'Your information has been saved and the completed PDF is available.'
-        : "Your information has been saved. You can close this page and we'll notify you when everyone has signed.",
+      title: 'Finalising PDF',
+      description: 'Signing recorded. The completed PDF is being prepared and will appear here when it is ready.',
       primaryAction,
     }
   }
@@ -140,7 +146,7 @@ function buildActionCard({ state, progress, nextField, finalArtifactReady }) {
 function stateCopy(state) {
   if (state === 'sign') return 'Please complete the required fields in the document.'
   if (state === 'finish') return 'Please submit your signing to finish.'
-  if (state === 'completed') return 'Your information has been saved.'
+  if (state === 'completed') return 'Signing recorded.'
   if (state === 'blocked') return 'This signing link needs attention.'
   return 'Please read the document and add your signature.'
 }
@@ -194,7 +200,9 @@ export function buildSimpleSigningExperienceModel({
   return {
     contract: CONTRACT,
     state,
-    stateLabel: SIMPLE_SIGNING_STATES.find((item) => item.id === state)?.label || 'Review',
+    stateLabel: state === 'completed'
+      ? finalArtifactReady ? 'PDF ready' : 'Finalising PDF'
+      : SIMPLE_SIGNING_STATES.find((item) => item.id === state)?.label || 'Review',
     currentStepLabel: currentStepLabel(state),
     mutatedData: false,
     document: {
@@ -209,7 +217,7 @@ export function buildSimpleSigningExperienceModel({
     },
     steps: buildSteps(state),
     progress,
-    actionCard: buildActionCard({ state, progress, nextField, finalArtifactReady }),
+    actionCard: buildActionCard({ state, nextField, finalArtifactReady }),
     helpCard: {
       title: 'Need help?',
       description: 'If you have any questions or need assistance, contact your agent or attorney.',

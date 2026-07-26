@@ -7,8 +7,11 @@ export function DocumentCommitConfirmation({ model = null, open = false, busy = 
   const contentRef = useRef(null)
   const busyRef = useRef(busy)
   const onCancelRef = useRef(onCancel)
-  busyRef.current = busy
-  onCancelRef.current = onCancel
+
+  useEffect(() => {
+    busyRef.current = busy
+    onCancelRef.current = onCancel
+  }, [busy, onCancel])
 
   useEffect(() => {
     if (!open || model?.contract !== 'arch9-document-commit-confirmation-v1') return undefined
@@ -59,7 +62,7 @@ export function DocumentCommitConfirmation({ model = null, open = false, busy = 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>Go back and review</Button>
           <Button type="button" data-document-confirm-primary onClick={onConfirm} disabled={busy || !model.canConfirm}>
-            <ShieldCheck size={16} aria-hidden="true" />{busy ? 'Processing…' : model.confirmLabel}
+            <ShieldCheck size={16} aria-hidden="true" />{busy ? 'Saving' : model.confirmLabel}
           </Button>
         </div>
       )}

@@ -39,6 +39,10 @@ const ASSIGNMENT_COLUMNS = [
   'attorney_department_id',
   'primary_attorney_id',
   'attorney_user_id',
+  'preferred_attorney_user_id',
+  'preferred_contact_name',
+  'preferred_contact_email',
+  'preferred_contact_phone',
   'secretary_id',
   'admin_handler_id',
   'assigned_user_id',
@@ -369,6 +373,7 @@ function normalizeAssignment(row = {}) {
   const assignmentType = row.assignment_type || row.assignmentType || row.matter_type || row.matterType || ''
   const attorneyRole = inferAttorneyRole(row)
   const attorneyUserId = row.attorney_user_id || row.primary_attorney_id || row.assigned_user_id || null
+  const preferredAttorneyUserId = row.preferred_attorney_user_id || row.preferredAttorneyUserId || null
   return {
     ...row,
     assignmentType,
@@ -383,6 +388,14 @@ function normalizeAssignment(row = {}) {
     primary_attorney_id: row.primary_attorney_id || attorneyUserId,
     attorneyUserId,
     attorney_user_id: attorneyUserId,
+    preferredAttorneyUserId,
+    preferred_attorney_user_id: preferredAttorneyUserId,
+    preferredContactName: row.preferred_contact_name || row.preferredContactName || '',
+    preferred_contact_name: row.preferred_contact_name || row.preferredContactName || '',
+    preferredContactEmail: row.preferred_contact_email || row.preferredContactEmail || '',
+    preferred_contact_email: row.preferred_contact_email || row.preferredContactEmail || '',
+    preferredContactPhone: row.preferred_contact_phone || row.preferredContactPhone || '',
+    preferred_contact_phone: row.preferred_contact_phone || row.preferredContactPhone || '',
     firmAcceptanceStatus: row.firm_acceptance_status || 'not_required',
     staffAssignmentStatus: row.staff_assignment_status || 'not_required',
     allocationState: row.allocation_state || 'active',
@@ -500,18 +513,26 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     documentRequests: laneDocumentRequests,
   })
   const primaryAttorneyId = normalizedAssignment.primary_attorney_id || normalizedAssignment.attorney_user_id || null
+  const preferredAttorneyId = normalizedAssignment.preferred_attorney_user_id || null
+  const displayAttorneyId = primaryAttorneyId || preferredAttorneyId
   const primaryProfile = profilesById[primaryAttorneyId] || null
+  const preferredProfile = profilesById[preferredAttorneyId] || null
   const secretaryProfile = profilesById[normalizedAssignment.secretary_id] || null
   const adminProfile = profilesById[normalizedAssignment.admin_handler_id] || null
   const documentSummary = buildDocumentSummary(laneDocumentRequests)
   const incomingSince = getIncomingSince({ transaction, assignment: normalizedAssignment, onboarding, status: contract.status })
-  const assignedAttorneyName = getPersonName(primaryProfile, normalizedAssignment.attorney_firm_name || 'Unassigned')
+  const assignedAttorneyName = getPersonName(
+    primaryProfile || preferredProfile,
+    normalizedAssignment.preferred_contact_name || normalizedAssignment.attorney_firm_name || 'Unassigned',
+  )
   const waitingOnLabels = contract.waitingOn.map((item) => WAITING_ON_LABELS[item] || item)
   const row = {
     id: normalizedAssignment.id,
     assignmentId: normalizedAssignment.id,
     transactionId: transaction.id,
     matterId: transaction.id,
+    firmId: normalizedAssignment.attorney_firm_id || normalizedAssignment.firm_id || '',
+    attorneyFirmId: normalizedAssignment.attorney_firm_id || normalizedAssignment.firm_id || '',
     reference: getMatterReference(transaction, transaction.id),
     matterType: getMatterTypeLabel(normalizedAssignment),
     laneKey,
@@ -544,10 +565,17 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     staffAssignmentStatus: normalizedAssignment.staffAssignmentStatus,
     allocationState: normalizedAssignment.allocationState,
     assignedAttorney: {
-      id: primaryAttorneyId || '',
+      id: displayAttorneyId || '',
       name: assignedAttorneyName,
       initials: getInitials(assignedAttorneyName),
-      email: primaryProfile?.email || '',
+      email: primaryProfile?.email || preferredProfile?.email || normalizedAssignment.preferred_contact_email || '',
+      preferred: Boolean(!primaryAttorneyId && preferredAttorneyId),
+    },
+    preferredAttorney: {
+      id: preferredAttorneyId || '',
+      name: getPersonName(preferredProfile, normalizedAssignment.preferred_contact_name || ''),
+      initials: getInitials(getPersonName(preferredProfile, normalizedAssignment.preferred_contact_name || '')),
+      email: preferredProfile?.email || normalizedAssignment.preferred_contact_email || '',
     },
     assignedSecretary: {
       id: normalizedAssignment.secretary_id || '',
@@ -742,10 +770,25 @@ function errorMentionsAnyColumn(error, columns = []) {
   return columns.filter(Boolean).some((column) => errorMentionsColumn(error, column))
 }
 
-function applyAssignmentQuery(query, { firmId, userId, canViewAll, statusColumn = 'assignment_status', orderColumn = 'updated_at' }) {
+function applyAssignmentQuery(query, {
+  firmId,
+  userId,
+  canViewAll,
+  statusColumn = 'assignment_status',
+  orderColumn = 'updated_at',
+  includePreferredAttorneyUser = true,
+}) {
   let nextQuery = query.eq('attorney_firm_id', firmId)
   if (!canViewAll) {
-    nextQuery = nextQuery.or(`attorney_user_id.eq.${userId},primary_attorney_id.eq.${userId},secretary_id.eq.${userId},admin_handler_id.eq.${userId},assigned_user_id.eq.${userId}`)
+    const userColumns = [
+      'attorney_user_id',
+      'primary_attorney_id',
+      'secretary_id',
+      'admin_handler_id',
+      'assigned_user_id',
+      includePreferredAttorneyUser ? 'preferred_attorney_user_id' : '',
+    ].filter(Boolean)
+    nextQuery = nextQuery.or(userColumns.map((column) => `${column}.eq.${userId}`).join(','))
   }
   if (statusColumn) nextQuery = nextQuery.neq(statusColumn, 'removed')
   if (orderColumn) nextQuery = nextQuery.order(orderColumn, { ascending: false })
@@ -754,13 +797,20 @@ function applyAssignmentQuery(query, { firmId, userId, canViewAll, statusColumn 
 
 async function fetchAssignments(client, { firmId, userId, canViewAll }) {
   const attempts = [
-    { statusColumn: 'assignment_status', orderColumn: 'updated_at' },
-    { statusColumn: 'status', orderColumn: 'updated_at' },
-    { statusColumn: null, orderColumn: 'updated_at' },
-    { statusColumn: 'assignment_status', orderColumn: 'created_at' },
-    { statusColumn: 'status', orderColumn: 'created_at' },
-    { statusColumn: null, orderColumn: 'created_at' },
-    { statusColumn: null, orderColumn: null },
+    { statusColumn: 'assignment_status', orderColumn: 'updated_at', includePreferredAttorneyUser: true },
+    { statusColumn: 'assignment_status', orderColumn: 'updated_at', includePreferredAttorneyUser: false },
+    { statusColumn: 'status', orderColumn: 'updated_at', includePreferredAttorneyUser: true },
+    { statusColumn: 'status', orderColumn: 'updated_at', includePreferredAttorneyUser: false },
+    { statusColumn: null, orderColumn: 'updated_at', includePreferredAttorneyUser: true },
+    { statusColumn: null, orderColumn: 'updated_at', includePreferredAttorneyUser: false },
+    { statusColumn: 'assignment_status', orderColumn: 'created_at', includePreferredAttorneyUser: true },
+    { statusColumn: 'assignment_status', orderColumn: 'created_at', includePreferredAttorneyUser: false },
+    { statusColumn: 'status', orderColumn: 'created_at', includePreferredAttorneyUser: true },
+    { statusColumn: 'status', orderColumn: 'created_at', includePreferredAttorneyUser: false },
+    { statusColumn: null, orderColumn: 'created_at', includePreferredAttorneyUser: true },
+    { statusColumn: null, orderColumn: 'created_at', includePreferredAttorneyUser: false },
+    { statusColumn: null, orderColumn: null, includePreferredAttorneyUser: true },
+    { statusColumn: null, orderColumn: null, includePreferredAttorneyUser: false },
   ]
   let lastMissingColumnError = null
 
@@ -773,7 +823,7 @@ async function fetchAssignments(client, { firmId, userId, canViewAll }) {
         (query) => applyAssignmentQuery(query, { firmId, userId, canViewAll, ...attempt }),
       )
     } catch (error) {
-      if (errorMentionsAnyColumn(error, [attempt.statusColumn, attempt.orderColumn])) {
+      if (errorMentionsAnyColumn(error, [attempt.statusColumn, attempt.orderColumn, attempt.includePreferredAttorneyUser ? 'preferred_attorney_user_id' : ''])) {
         lastMissingColumnError = error
         continue
       }
@@ -884,6 +934,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     assignment.secretary_id,
     assignment.admin_handler_id,
     assignment.assigned_user_id,
+    assignment.preferred_attorney_user_id,
   ]))
 
   const [buyers, developments, profiles] = await Promise.all([

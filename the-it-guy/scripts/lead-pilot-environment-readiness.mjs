@@ -373,8 +373,8 @@ function checkBuildConfig(report) {
   }
 
   const viteConfig = fs.readFileSync(`${appRoot}/vite.config.js`, 'utf8')
-  if (viteConfig.includes('document-title-fallback') && viteConfig.includes('Bridge Nine')) {
-    addFinding(report, 'Build Config', 'PASS', 'Document title has a Bridge Nine fallback for missing staging env.')
+  if (viteConfig.includes('document-title-fallback') && viteConfig.includes('Arch9 | Platform')) {
+    addFinding(report, 'Build Config', 'PASS', 'Document title has an Arch9 fallback for missing staging env.')
   } else {
     addFinding(report, 'Build Config', 'CRITICAL', 'Document title fallback is not configured.')
   }

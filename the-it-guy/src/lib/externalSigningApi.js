@@ -6,6 +6,30 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+const DEFAULT_SIGNING_ACTION_TIMEOUT_MS = 18000
+
+function createSigningActionTimeoutError(timeoutMs) {
+  const error = new Error('Signing is still being recorded. Check the signing status again in a moment.')
+  error.code = 'SIGNER_ACTION_STILL_PROCESSING'
+  error.retryable = true
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+function withForegroundTimeout(promise, timeoutMs = 0) {
+  const normalizedTimeoutMs = Number(timeoutMs) || 0
+  if (normalizedTimeoutMs <= 0) return promise
+
+  let timer = null
+  const timeout = new Promise((_, reject) => {
+    timer = globalThis.setTimeout(() => reject(createSigningActionTimeoutError(normalizedTimeoutMs)), normalizedTimeoutMs)
+  })
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) globalThis.clearTimeout(timer)
+  })
+}
+
 export async function resolveExternalSignerSession({ token } = {}) {
   const signingToken = normalizeText(token)
   if (!signingToken) {
@@ -70,14 +94,16 @@ export async function resolveExternalSignerSession({ token } = {}) {
   }
 }
 
-async function invokeSignerAction(payload = {}) {
-  const { data, error } = await invokeEdgeFunction('signer-signing-action', {
+async function invokeSignerAction(payload = {}, { timeoutMs = 0 } = {}) {
+  const { data, error } = await withForegroundTimeout(invokeEdgeFunction('signer-signing-action', {
     body: payload,
-  })
+  }), timeoutMs)
 
   if (error) {
     const requestError = new Error(error.message || 'Unable to process signing action.')
     requestError.code = String(error.code || 'SIGNER_ACTION_REQUEST_FAILED')
+    requestError.details = error.details || null
+    requestError.retryable = error.retryable === true
     throw requestError
   }
 
@@ -85,6 +111,8 @@ async function invokeSignerAction(payload = {}) {
     const edgeError = new Error(String(data?.error || data?.message || 'Unable to process signing action.'))
     edgeError.code = String(data?.errorCode || data?.error_code || 'SIGNER_ACTION_FAILED')
     edgeError.details = data || null
+    edgeError.signerCompleted = data?.signerCompleted === true || data?.signer_completed === true
+    edgeError.retryable = data?.retryable === true
     throw edgeError
   }
 
@@ -111,11 +139,11 @@ export async function applySignerField({ token, fieldId, assetType, assetPath = 
   })
 }
 
-export async function completeSignerSigning({ token } = {}) {
+export async function completeSignerSigning({ token, timeoutMs = DEFAULT_SIGNING_ACTION_TIMEOUT_MS } = {}) {
   return invokeSignerAction({
     action: 'complete_signing',
     token,
-  })
+  }, { timeoutMs })
 }
 
 /**

@@ -29064,7 +29064,7 @@ async function fetchDirectTransactionIdsForUser(
     let assignmentQuery = await client
       .from('transaction_attorney_assignments')
       .select(
-        'transaction_id, firm_id, attorney_firm_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status',
+        'transaction_id, firm_id, attorney_firm_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, preferred_attorney_user_id, secretary_id, admin_handler_id, status, assignment_status',
       )
 
     if (
@@ -29072,7 +29072,8 @@ async function fetchDirectTransactionIdsForUser(
       (isMissingColumnError(assignmentQuery.error, 'assignment_status') ||
         isMissingColumnError(assignmentQuery.error, 'attorney_firm_id') ||
         isMissingColumnError(assignmentQuery.error, 'attorney_department_id') ||
-        isMissingColumnError(assignmentQuery.error, 'attorney_user_id'))
+        isMissingColumnError(assignmentQuery.error, 'attorney_user_id') ||
+        isMissingColumnError(assignmentQuery.error, 'preferred_attorney_user_id'))
     ) {
       assignmentQuery = await client
         .from('transaction_attorney_assignments')
@@ -29095,6 +29096,7 @@ async function fetchDirectTransactionIdsForUser(
       const assignedUserIds = [
         row?.primary_attorney_id,
         row?.attorney_user_id,
+        row?.preferred_attorney_user_id,
         row?.secretary_id,
         row?.admin_handler_id,
       ].map((item) => normalizeTextValue(item))

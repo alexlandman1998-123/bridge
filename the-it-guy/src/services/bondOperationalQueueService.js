@@ -89,7 +89,14 @@ function getTimestamp(value) {
 }
 
 function getQueueRecordTransaction(record = {}) {
-  return record?.transaction && typeof record.transaction === 'object' ? record.transaction : record
+  if (record?.transaction && typeof record.transaction === 'object') {
+    return {
+      ...record.transaction,
+      primaryBondApplication: record.primaryBondApplication || record.primary_bond_application || record.transaction.primaryBondApplication || record.transaction.primary_bond_application || null,
+      bondApplications: record.bondApplications || record.bond_applications || record.transaction_bond_applications || record.transaction.bondApplications || record.transaction.bond_applications || record.transaction.transaction_bond_applications || [],
+    }
+  }
+  return record
 }
 
 function getFirstArrayItem(value) {
@@ -459,7 +466,7 @@ export function getNewApplicationsQueue(rows = []) {
 }
 
 function getQueueRowTransaction(row = {}) {
-  return row?.transaction && typeof row.transaction === 'object' ? row.transaction : row
+  return getQueueRecordTransaction(row)
 }
 
 export function getVisibleNewApplicationsQueue(user = {}, rows = []) {

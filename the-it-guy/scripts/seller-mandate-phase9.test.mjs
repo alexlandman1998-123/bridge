@@ -187,7 +187,15 @@ await test('seller portal invite trigger is anchored after mandate finalization'
   assert.match(signerSigningAction, /if \(lower\(packet\.packet_type\) !== "mandate"\) return/)
   assert.match(
     signerSigningAction,
-    /nextPacketStatus === "completed"[\s\S]*final_signed_generation_triggered[\s\S]*appendSellerPortalInviteAfterMandateSignedTrigger[\s\S]*sendSellerPortalInviteAfterMandateSigned/,
+    /queueBackgroundSignerCompletion\(\(\) => runPostSignerCompletionWorkflowJob/,
+  )
+  assert.match(
+    signerSigningAction,
+    /async function runPostSignerCompletionWorkflowJob[\s\S]*nextPacketStatus !== "completed"[\s\S]*runFinalSignedCompletionJob/,
+  )
+  assert.match(
+    signerSigningAction,
+    /async function runFinalSignedCompletionJob[\s\S]*final_signed_generation_triggered[\s\S]*appendSellerPortalInviteAfterMandateSignedTrigger[\s\S]*sendSellerPortalInviteAfterMandateSigned/,
   )
   assert.doesNotMatch(signerSigningAction, /sendFinalSignedMandateEmails|seller_mandate_signed/)
   assert.match(signerSigningAction, /SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = "seller_portal_invite_sent_after_mandate_signed"/)
@@ -201,6 +209,19 @@ await test('seller portal invite trigger is anchored after mandate finalization'
   assert.match(privateListingService, /SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = 'seller_portal_invite_sent_after_mandate_signed'/)
   assert.match(privateListingService, /hasSellerPortalMandateInviteBeenSent/)
   assert.match(privateListingService, /notifySellerPortalDocumentsReady/)
+})
+
+await test('signer completion tap path only queues heavy side effects', () => {
+  const start = signerSigningAction.indexOf('if (action === "complete_signing")')
+  const end = signerSigningAction.indexOf('return jsonResponse(400', start)
+  assert.ok(start > 0 && end > start, 'complete_signing branch should be discoverable')
+  const completeSigningBranch = signerSigningAction.slice(start, end)
+  assert.match(completeSigningBranch, /queueBackgroundSignerCompletion\(\(\) => runPostSignerCompletionWorkflowJob/)
+  assert.doesNotMatch(completeSigningBranch, /maybeSendSellerMandateInvite\(\{/)
+  assert.doesNotMatch(completeSigningBranch, /sendSellerPortalInviteAfterMandateSigned\(\{/)
+  assert.doesNotMatch(completeSigningBranch, /syncSellerMandateCompletion\(\{/)
+  assert.doesNotMatch(completeSigningBranch, /invokeFinalSignedDocumentGenerator\(\{/)
+  assert.doesNotMatch(completeSigningBranch, /fetch\(`/)
 })
 
 await test('seller portal invite phase 3 diagnostics and backfill are wired', () => {

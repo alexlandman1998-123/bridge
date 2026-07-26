@@ -25,10 +25,22 @@ export function buildDocumentOutcomeFeedback({ surface = 'workspace', message = 
   let nextStep = attention ? 'Review the recovery guidance before trying this step again.' : 'Continue with the next recommended document action.'
   let category = attention ? 'attention' : 'general'
 
-  if (!attention && String(surface).toLowerCase().includes('signer') && includesAny(normalized, ['signing submitted', 'securely recorded'])) {
-    title = 'Signing complete'
-    nextStep = 'You can safely close this page while the other required parties finish.'
-    category = 'signer_complete'
+  if (String(surface).toLowerCase().includes('signer') && normalized === 'saving') {
+    title = 'Saving'
+    nextStep = 'Keep this page open while your signing is recorded.'
+    category = 'signer_saving'
+  } else if (!attention && String(surface).toLowerCase().includes('signer') && includesAny(normalized, ['signing recorded', 'signing submitted', 'securely recorded'])) {
+    title = 'Signing recorded'
+    nextStep = 'The completed PDF will appear here when it is ready.'
+    category = 'signer_recorded'
+  } else if (!attention && String(surface).toLowerCase().includes('signer') && includesAny(normalized, ['finalising pdf'])) {
+    title = 'Finalising PDF'
+    nextStep = 'You can check again in a moment. No new signing link is needed.'
+    category = 'signer_finalising'
+  } else if (!attention && String(surface).toLowerCase().includes('signer') && includesAny(normalized, ['pdf ready'])) {
+    title = 'PDF ready'
+    nextStep = 'Open or download the completed PDF.'
+    category = 'signer_pdf_ready'
   } else if (!attention && includesAny(normalized, ['sent for signature', 'document sent'])) {
     title = 'Sent for signature'
     nextStep = 'Track signer progress and wait before sending a reminder.'

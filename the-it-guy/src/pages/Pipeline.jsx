@@ -27,6 +27,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
+import { activateAnchorOnSpace } from '../lib/keyboardActivation'
 import {
   createViewingRequest,
   formatViewingStatusLabel,
@@ -1627,6 +1628,7 @@ function LegacyPipeline() {
                           href={row.onboardingLink}
                           target="_blank"
                           rel="noreferrer"
+                          onKeyDown={activateAnchorOnSpace}
                           className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f4f78]"
                         >
                           View Seller
@@ -1638,6 +1640,7 @@ function LegacyPipeline() {
                           href={row.sellerPortalLink}
                           target="_blank"
                           rel="noreferrer"
+                          onKeyDown={activateAnchorOnSpace}
                           className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f4f78]"
                         >
                           Open Client Portal

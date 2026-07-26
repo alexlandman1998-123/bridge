@@ -4,6 +4,7 @@ import {
   normalizeText,
   requireClient,
 } from './attorneyFirmServiceShared.js'
+import { notifyAttorneyIncomingPrimaryAssignment } from './attorneyIncomingMatterNotificationService.js'
 
 const ALLOCATION_SELECT = [
   'id',
@@ -194,4 +195,44 @@ export async function manageAttorneyFirmAllocation({
 
 export async function manageTransferFirmAllocation(input, options = {}) {
   return manageAttorneyFirmAllocation({ ...input, laneKey: 'transfer' }, options)
+}
+
+export async function assignAttorneyIncomingMatterPrimary({
+  assignmentId,
+  attorneyUserId,
+  transactionId = '',
+  laneKey = 'transfer',
+  actorUserId = '',
+}, { client = requireClient() } = {}) {
+  const allocation = await manageAttorneyFirmAllocation({
+    assignmentId,
+    action: 'assign_primary',
+    attorneyUserId,
+    laneKey,
+  }, { client })
+
+  let notificationResult = null
+  let notificationError = null
+  try {
+    notificationResult = await notifyAttorneyIncomingPrimaryAssignment({
+      assignment: allocation,
+      assignmentId,
+      transactionId: allocation?.transactionId || transactionId,
+      attorneyUserId: allocation?.attorneyUserId || attorneyUserId,
+      laneKey: allocation?.laneKey || laneKey,
+      actorUserId,
+      client,
+    })
+  } catch (error) {
+    notificationError = error
+    console.warn('[attorney-incoming] assignment notification skipped', error)
+  }
+
+  return {
+    allocation,
+    assignment: allocation,
+    transactionId: allocation?.transactionId || transactionId || '',
+    notificationResult,
+    notificationError,
+  }
 }

@@ -12,6 +12,7 @@ import { handleSellerMandateSentEmail } from "../send-email/handlers/sellerManda
 import { handleSellerOnboardingEmail } from "../send-email/handlers/sellerOnboarding.ts";
 
 type JsonRecord = Record<string, unknown>;
+type SupabaseAdminClient = ReturnType<typeof createClient<any, "public", any>>;
 
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT = "seller_portal_invite_ready_after_mandate_signed";
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = "seller_portal_invite_sent_after_mandate_signed";
@@ -35,27 +36,347 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/**
- * This endpoint is called by an unauthenticated signer link. Finalisation
- * retries may pass through a finaliser response, so reduce it to resolver
- * identities before sending it back to the browser.
- */
-function buildPublicFinalArtifactDescriptor(artifact: unknown, packetId: string, packetVersionId: string) {
-  const source = artifact && typeof artifact === "object" && !Array.isArray(artifact)
-    ? artifact as Record<string, unknown>
-    : {};
+async function invokeFinalSignedDocumentGenerator({
+  SUPABASE_URL,
+  FINALISER_SERVICE_ROLE_KEY,
+  packetId,
+  packetVersionId,
+}: {
+  SUPABASE_URL: string;
+  FINALISER_SERVICE_ROLE_KEY: string;
+  packetId: string;
+  packetVersionId: string;
+}) {
+  const finaliserFunction = "generate-final-signed-document";
+  const retryFinaliser = "generate-final-signed-document";
+  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${retryFinaliser}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": FINALISER_SERVICE_ROLE_KEY,
+      "Authorization": `Bearer ${FINALISER_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({
+      packetId,
+      packetVersionId,
+      finalisedBy: null,
+    }),
+  });
+  const body = await response.json().catch(() => ({})) as JsonRecord;
   return {
-    kind: "final_signed_document",
-    resolver: "resolve-final-signed-document-access",
-    ready: source.ready === true,
-    packetId: normalizeText(source.packetId || source.packet_id) || packetId || null,
-    packetVersionId: normalizeText(source.packetVersionId || source.packet_version_id) || packetVersionId || null,
-    documentId: normalizeText(source.documentId || source.document_id) || null,
-    fileName: normalizeText(source.fileName || source.file_name) || "signed-document.pdf",
-    sha256: normalizeText(source.sha256) || null,
-    byteLength: Number.isFinite(Number(source.byteLength)) && Number(source.byteLength) > 0 ? Number(source.byteLength) : null,
-    finalisedAt: normalizeText(source.finalisedAt || source.finalised_at) || null,
+    ok: response.ok && body?.success !== false,
+    status: response.status,
+    body,
   };
+}
+
+function queueBackgroundSignerCompletion(taskFactory: () => Promise<void>) {
+  const runtime = globalThis as typeof globalThis & {
+    EdgeRuntime?: {
+      waitUntil?: (promise: Promise<unknown>) => void;
+    };
+  };
+  const guardedTask = Promise.resolve()
+    .then(taskFactory)
+    .catch((error) => {
+    console.error("[mandate-signing] async signer completion workflow failed", error);
+  });
+  if (typeof runtime.EdgeRuntime?.waitUntil === "function") {
+    runtime.EdgeRuntime.waitUntil(guardedTask);
+    return;
+  }
+  void guardedTask;
+}
+
+async function runFinalSignedCompletionJob({
+  supabase,
+  SUPABASE_URL,
+  FINALISER_SERVICE_ROLE_KEY,
+  packet,
+  packetId,
+  packetVersionId,
+  organisationId,
+  completionSigners,
+  nowIso,
+}: {
+  supabase: SupabaseAdminClient;
+  SUPABASE_URL: string;
+  FINALISER_SERVICE_ROLE_KEY: string;
+  packet: Record<string, unknown>;
+  packetId: string;
+  packetVersionId: string;
+  organisationId: string;
+  completionSigners: Record<string, unknown>[];
+  nowIso: string;
+}) {
+  const finalResult = await invokeFinalSignedDocumentGenerator({
+    SUPABASE_URL,
+    FINALISER_SERVICE_ROLE_KEY,
+    packetId,
+    packetVersionId,
+  });
+  const finalBody = finalResult.body;
+  if (!finalResult.ok) {
+    console.error("[mandate-signing] final signed generation failed", {
+      mandateId: packetId,
+      status: finalResult.status,
+      errorCode: finalBody?.errorCode || null,
+    });
+    await appendPacketEvent({
+      supabase,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      eventType: "final_signed_generation_failed",
+      payload: {
+        failedAt: new Date().toISOString(),
+        httpStatus: finalResult.status,
+        errorCode: finalBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
+      },
+    });
+    return;
+  }
+
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId: packetVersionId,
+    eventType: "final_signed_generation_triggered",
+    payload: {
+      generatedAt: new Date().toISOString(),
+      finalArtifactDocumentId: (finalBody?.finalArtifact as JsonRecord | undefined)?.documentId || null,
+    },
+  });
+
+  if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return;
+
+  try {
+    await syncSellerMandateCompletion({
+      supabase,
+      packet,
+      packetId,
+      organisationId,
+      nowIso,
+    });
+  } catch (syncError) {
+    console.error("[mandate-signing] seller mandate completion sync failed", {
+      mandateId: packetId,
+      error: String(syncError),
+    });
+  }
+
+  try {
+    await appendSellerPortalInviteAfterMandateSignedTrigger({
+      supabase,
+      packet,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      finalBody,
+      nowIso,
+    });
+  } catch (triggerError) {
+    console.error("[mandate-signing] seller portal invite trigger marker failed", {
+      mandateId: packetId,
+      error: String(triggerError),
+    });
+  }
+
+  try {
+    const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
+      supabase,
+      packet,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      finalBody,
+      allSigners: completionSigners,
+      nowIso,
+    });
+    console.log("[mandate-signing] seller portal invite after mandate signed result", {
+      mandateId: packetId,
+      sent: Boolean(portalInviteResult?.sent),
+      skipped: Boolean(portalInviteResult?.skipped),
+      failed: Boolean(portalInviteResult?.failed),
+      reason: normalizeText(portalInviteResult?.reason) || null,
+    });
+  } catch (portalInviteError) {
+    console.error("[mandate-signing] seller portal invite after mandate signed failed", {
+      mandateId: packetId,
+      error: String(portalInviteError),
+    });
+  }
+}
+
+function shouldMarkForegroundFinalising(packet: Record<string, unknown>, signer: Record<string, unknown>) {
+  const packetType = normalizeText(packet.packet_type).toLowerCase();
+  if (packetType === "mandate") return isMandateSeller(signer.signer_role);
+  if (packetType === "otp") return true;
+  return false;
+}
+
+async function markPacketFinalisingAfterSignerClick({
+  supabase,
+  packet,
+  packetId,
+  signer,
+  nowIso,
+}: {
+  supabase: SupabaseAdminClient;
+  packet: Record<string, unknown>;
+  packetId: string;
+  signer: Record<string, unknown>;
+  nowIso: string;
+}) {
+  const existingSourceContext =
+    packet.source_context_json && typeof packet.source_context_json === "object"
+      ? packet.source_context_json as Record<string, unknown>
+      : {};
+  const update = await supabase
+    .from("document_packets")
+    .update({
+      status: "partially_signed",
+      completed_at: null,
+      source_context_json: buildSigningStatusContext({
+        packetType: normalizeText(packet.packet_type),
+        existingSourceContext,
+        signingStatus: "finalising",
+        signerRole: signer.signer_role,
+        signedAt: nowIso,
+        lastSignerCompletedAt: nowIso,
+        sellerInviteSent: Boolean(existingSourceContext.sellerInviteSent || existingSourceContext.seller_invite_sent),
+      }),
+    })
+    .eq("id", packetId);
+  if (update.error) throw update.error;
+}
+
+async function runPostSignerCompletionWorkflowJob({
+  supabase,
+  SUPABASE_URL,
+  FINALISER_SERVICE_ROLE_KEY,
+  packet,
+  packetId,
+  packetVersionId,
+  organisationId,
+  signerId,
+  signer,
+  nowIso,
+}: {
+  supabase: SupabaseAdminClient;
+  SUPABASE_URL: string;
+  FINALISER_SERVICE_ROLE_KEY: string;
+  packet: Record<string, unknown>;
+  packetId: string;
+  packetVersionId: string;
+  organisationId: string;
+  signerId: string;
+  signer: Record<string, unknown>;
+  nowIso: string;
+}) {
+  const allSignersResult = await supabase
+    .from("document_packet_signers")
+    .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
+    .eq("packet_id", packetId)
+    .eq("packet_version_id", packetVersionId);
+  if (allSignersResult.error) throw allSignersResult.error;
+
+  const existingSourceContext =
+    packet.source_context_json && typeof packet.source_context_json === "object"
+      ? packet.source_context_json as Record<string, unknown>
+      : {};
+  let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
+  let sellerInviteSent = false;
+
+  if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
+    const inviteResult = await maybeSendSellerMandateInvite({
+      supabase,
+      packet,
+      existingSourceContext,
+      allSigners,
+      packetId,
+      packetVersionId,
+      organisationId,
+      agentSigner: signer,
+      nowIso,
+    });
+    allSigners = inviteResult.allSigners;
+    sellerInviteSent = inviteResult.sellerInviteSent;
+  }
+
+  const spouseRequiredForVersion = await resolveMandateSpouseRequiredForVersion({
+    supabase,
+    packet,
+    packetId,
+    packetVersionId,
+  });
+  const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
+  const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
+  const workflowSigningStatus = nextPacketStatus === "completed"
+    ? "completed"
+    : resolveSigningStatusFromSigners(completionSigners, normalizeText(packet.packet_type));
+  const progressSigningStatus = nextPacketStatus === "completed" ? "finalising" : workflowSigningStatus;
+  const preFinalPacketStatus = nextPacketStatus === "completed" ? "partially_signed" : nextPacketStatus;
+
+  const packetProgressUpdate = await supabase
+    .from("document_packets")
+    .update({
+      status: preFinalPacketStatus,
+      completed_at: null,
+      source_context_json: buildSigningStatusContext({
+        packetType: normalizeText(packet.packet_type),
+        existingSourceContext,
+        signingStatus: progressSigningStatus,
+        signerRole: signer.signer_role,
+        signedAt: nextPacketStatus === "completed" ? nowIso : normalizeText(existingSourceContext.signedAt) || null,
+        lastSignerCompletedAt: nowIso,
+        sellerInviteSent,
+      }),
+    })
+    .eq("id", packetId);
+  if (packetProgressUpdate.error) throw packetProgressUpdate.error;
+
+  if (nextPacketStatus !== "completed") return;
+
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId: packetVersionId,
+    eventType: "all_signers_completed",
+    payload: {
+      signedAt: nowIso,
+      packetStatus: "completed",
+    },
+  });
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId: packetVersionId,
+    eventType: normalizeText(packet.packet_type).toLowerCase() === "otp"
+      ? "otp_signed_by_final_signer"
+      : "mandate_signed_by_seller",
+    payload: {
+      signerId,
+      signerRole: signer.signer_role,
+      signerName: signer.signer_name,
+      signerEmail: signer.signer_email,
+      signedAt: nowIso,
+    },
+  });
+  await runFinalSignedCompletionJob({
+    supabase,
+    SUPABASE_URL,
+    FINALISER_SERVICE_ROLE_KEY,
+    packet,
+    packetId,
+    packetVersionId,
+    organisationId,
+    completionSigners,
+    nowIso,
+  });
 }
 
 function lower(value: unknown) {
@@ -1987,7 +2308,7 @@ Deno.serve(async (req: Request) => {
     const nowIso = new Date().toISOString();
     const [runtimePacketResult, runtimeVersionResult] = await Promise.all([
       supabase.from("document_packets")
-        .select("id, organisation_id, packet_type, status, current_version_number")
+        .select("id, organisation_id, packet_type, title, lead_id, status, current_version_number, source_context_json")
         .eq("id", packetId)
         .maybeSingle(),
       supabase.from("document_packet_versions")
@@ -2285,115 +2606,37 @@ Deno.serve(async (req: Request) => {
             errorCode: "F2_CONTROLLED_SESSION_COMPLETION_FAILED",
           });
         }
-        const [retryPacketResult, retryVersionResult] = await Promise.all([
-          supabase.from("document_packets").select("packet_type").eq("id", packetId).maybeSingle(),
-          supabase.from("document_packet_versions").select("final_signed_file_path").eq("id", packetVersionId).eq("packet_id", packetId).maybeSingle(),
-        ]);
-        if (retryPacketResult.error) throw retryPacketResult.error;
-        if (retryVersionResult.error) throw retryVersionResult.error;
-        if (!normalizeText(retryVersionResult.data?.final_signed_file_path)) {
-          const retryFinaliser = "generate-final-signed-document";
-          const retryResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${retryFinaliser}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "apikey": FINALISER_SERVICE_ROLE_KEY,
-              "Authorization": `Bearer ${FINALISER_SERVICE_ROLE_KEY}`,
-            },
-            body: JSON.stringify({ packetId, packetVersionId, finalisedBy: null }),
-          });
-          const retryBody = await retryResponse.json().catch(() => ({}));
-          if (!retryResponse.ok || retryBody?.success === false) {
-            return jsonResponse(502, {
-              success: false,
-              error: "Your signature is safe, but final document generation still needs to be retried.",
-              errorCode: retryBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
-              signerCompleted: true,
-              retryable: true,
-            });
-          }
-          return jsonResponse(200, {
-            success: true,
-            signer,
-            alreadyCompleted: true,
-            packetStatus: "completed",
-            signingStatus: "completed",
-            finalArtifact: buildPublicFinalArtifactDescriptor(retryBody?.finalArtifact, packetId, packetVersionId),
-            finalisationRetried: true,
-          });
-        }
-      }
-      if (normalizeText(signer.status).toLowerCase() === "signed") {
-        const allSignersResult = await supabase
-          .from("document_packet_signers")
-          .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
-          .eq("packet_id", packetId)
-          .eq("packet_version_id", packetVersionId);
-        if (allSignersResult.error) throw allSignersResult.error;
-        const packetContextResult = await supabase
-          .from("document_packets")
-          .select("id, organisation_id, packet_type, title, lead_id, source_context_json")
-          .eq("id", packetId)
-          .maybeSingle();
-        if (packetContextResult.error) throw packetContextResult.error;
-        const packet = (packetContextResult.data || {}) as Record<string, unknown>;
-        const existingSourceContext =
-          packetContextResult.data?.source_context_json && typeof packetContextResult.data.source_context_json === "object"
-            ? packetContextResult.data.source_context_json as Record<string, unknown>
-            : {};
-        let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
-        let sellerInviteSent = false;
-
-        if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
-          const inviteResult = await maybeSendSellerMandateInvite({
+        if (runtimePacket && shouldMarkForegroundFinalising(runtimePacket, signer)) {
+          await markPacketFinalisingAfterSignerClick({
             supabase,
-            packet,
-            existingSourceContext,
-            allSigners,
+            packet: runtimePacket,
             packetId,
-            packetVersionId,
-            organisationId,
-            agentSigner: signer,
+            signer,
             nowIso,
           });
-          allSigners = inviteResult.allSigners;
-          sellerInviteSent = inviteResult.sellerInviteSent;
         }
-
-        const spouseRequiredForVersion = await resolveMandateSpouseRequiredForVersion({
+        queueBackgroundSignerCompletion(() => runPostSignerCompletionWorkflowJob({
           supabase,
-          packet,
+          SUPABASE_URL,
+          FINALISER_SERVICE_ROLE_KEY,
+          packet: runtimePacket || {},
           packetId,
           packetVersionId,
-        });
-        const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
-        const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
-        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners, normalizeText(packet.packet_type));
-
-        await supabase
-          .from("document_packets")
-          .update({
-            status: nextPacketStatus,
-            completed_at: nextPacketStatus === "completed" ? existingSourceContext.signedAt || nowIso : null,
-            source_context_json: buildSigningStatusContext({
-              packetType: normalizeText(packet.packet_type),
-              existingSourceContext,
-              signingStatus: workflowSigningStatus,
-              signerRole: signer.signer_role,
-              signedAt: nextPacketStatus === "completed" ? normalizeText(existingSourceContext.signedAt) || nowIso : normalizeText(existingSourceContext.signedAt) || null,
-              lastSignerCompletedAt: normalizeText(existingSourceContext.lastSignerCompletedAt) || normalizeText(signer.signed_at) || nowIso,
-              sellerInviteSent,
-            }),
-          })
-          .eq("id", packetId);
+          organisationId,
+          signerId,
+          signer,
+          nowIso,
+        }));
 
         return jsonResponse(200, {
           success: true,
           signer,
           alreadyCompleted: true,
-          packetStatus: nextPacketStatus,
-          signingStatus: workflowSigningStatus,
-          sellerInviteSent,
+          packetStatus: "partially_signed",
+          signingStatus: shouldMarkForegroundFinalising(runtimePacket || {}, signer) ? "finalising" : "recorded",
+          progressionQueued: true,
+          finalisationQueued: shouldMarkForegroundFinalising(runtimePacket || {}, signer),
+          finalisationStatus: shouldMarkForegroundFinalising(runtimePacket || {}, signer) ? "queued" : "pending_progression",
         });
       }
       const requiredFieldsQuery = await supabase
@@ -2458,205 +2701,38 @@ Deno.serve(async (req: Request) => {
         },
       });
 
-      const allSignersResult = await supabase
-        .from("document_packet_signers")
-        .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
-        .eq("packet_id", packetId)
-        .eq("packet_version_id", packetVersionId);
-      if (allSignersResult.error) throw allSignersResult.error;
-      const packetContextResult = await supabase
-        .from("document_packets")
-        .select("id, organisation_id, packet_type, title, lead_id, source_context_json")
-        .eq("id", packetId)
-        .maybeSingle();
-      if (packetContextResult.error) throw packetContextResult.error;
-      const packet = (packetContextResult.data || {}) as Record<string, unknown>;
-      const existingSourceContext =
-        packetContextResult.data?.source_context_json && typeof packetContextResult.data.source_context_json === "object"
-          ? packetContextResult.data.source_context_json as Record<string, unknown>
-          : {};
-      let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
-      let sellerInviteSent = false;
-
-      if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
-        const inviteResult = await maybeSendSellerMandateInvite({
+      const completedSigner = (signerUpdate.data || signer) as Record<string, unknown>;
+      const finalisingMarked = Boolean(runtimePacket && shouldMarkForegroundFinalising(runtimePacket, completedSigner));
+      if (finalisingMarked) {
+        await markPacketFinalisingAfterSignerClick({
           supabase,
-          packet,
-          existingSourceContext,
-          allSigners,
+          packet: runtimePacket as Record<string, unknown>,
           packetId,
-          packetVersionId,
-          organisationId,
-          agentSigner: signerUpdate.data || signer,
+          signer: completedSigner,
           nowIso,
         });
-        allSigners = inviteResult.allSigners;
-        sellerInviteSent = inviteResult.sellerInviteSent;
       }
-
-      const spouseRequiredForVersion = await resolveMandateSpouseRequiredForVersion({
+      queueBackgroundSignerCompletion(() => runPostSignerCompletionWorkflowJob({
         supabase,
-        packet,
+        SUPABASE_URL,
+        FINALISER_SERVICE_ROLE_KEY,
+        packet: runtimePacket || {},
         packetId,
         packetVersionId,
-      });
-      const completionSigners = filterMandateSignersForCompletion(allSigners, packet, spouseRequiredForVersion);
-      const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
-      const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners, normalizeText(packet.packet_type));
-      const progressSigningStatus = nextPacketStatus === "completed" ? "finalising" : workflowSigningStatus;
-
-      const preFinalPacketStatus = nextPacketStatus === "completed" ? "partially_signed" : nextPacketStatus;
-      const packetProgressUpdate = await supabase
-        .from("document_packets")
-        .update({
-          status: preFinalPacketStatus,
-          completed_at: null,
-          source_context_json: buildSigningStatusContext({
-            packetType: normalizeText(packet.packet_type),
-            existingSourceContext,
-            signingStatus: progressSigningStatus,
-            signerRole: signer.signer_role,
-            signedAt: nextPacketStatus === "completed" ? nowIso : normalizeText(existingSourceContext.signedAt) || null,
-            lastSignerCompletedAt: nowIso,
-            sellerInviteSent,
-          }),
-        })
-        .eq("id", packetId);
-      if (packetProgressUpdate.error) throw packetProgressUpdate.error;
-
-      if (nextPacketStatus === "completed") {
-        await appendPacketEvent({
-          supabase,
-          packetId,
-          organisationId,
-          versionId: packetVersionId,
-          eventType: "all_signers_completed",
-          payload: {
-            signedAt: nowIso,
-            packetStatus: "completed",
-          },
-        });
-        await appendPacketEvent({
-          supabase,
-          packetId,
-          organisationId,
-          versionId: packetVersionId,
-          eventType: normalizeText(packet.packet_type).toLowerCase() === "otp"
-            ? "otp_signed_by_final_signer"
-            : "mandate_signed_by_seller",
-          payload: {
-            signerId,
-            signerRole: signer.signer_role,
-            signerName: signer.signer_name,
-            signerEmail: signer.signer_email,
-            signedAt: nowIso,
-          },
-        });
-        const finaliserFunction = "generate-final-signed-document";
-        const finalResponse = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${finaliserFunction}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": FINALISER_SERVICE_ROLE_KEY,
-            "Authorization": `Bearer ${FINALISER_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({
-            packetId,
-            packetVersionId,
-            finalisedBy: null,
-          }),
-        });
-        const finalBody = await finalResponse.json().catch(() => ({}));
-        if (!finalResponse.ok || finalBody?.success === false) {
-          console.error("[mandate-signing] final signed generation failed", {
-            mandateId: packetId,
-            status: finalResponse.status,
-            errorCode: finalBody?.errorCode || null,
-          });
-          return jsonResponse(502, {
-            success: false,
-            error: "Your signature was saved, but the final signed document could not be generated. It is safe to retry finalisation.",
-            errorCode: finalBody?.errorCode || "FINAL_SIGNED_GENERATION_FAILED",
-            signerCompleted: true,
-            retryable: true,
-          });
-        } else {
-          await appendPacketEvent({
-            supabase,
-            packetId,
-            organisationId,
-            versionId: packetVersionId,
-            eventType: "final_signed_generation_triggered",
-            payload: {
-              generatedAt: new Date().toISOString(),
-              finalArtifactDocumentId: finalBody?.finalArtifact?.documentId || null,
-            },
-          });
-          if (normalizeText(packet.packet_type).toLowerCase() === "mandate") {
-            try {
-              await syncSellerMandateCompletion({
-              supabase,
-              packet,
-              packetId,
-              organisationId,
-              nowIso,
-              });
-            } catch (syncError) {
-              console.error("[mandate-signing] seller mandate completion sync failed", {
-                mandateId: packetId,
-                error: String(syncError),
-              });
-            }
-            try {
-              await appendSellerPortalInviteAfterMandateSignedTrigger({
-              supabase,
-              packet,
-              packetId,
-              organisationId,
-              versionId: packetVersionId,
-              finalBody,
-              nowIso,
-              });
-            } catch (triggerError) {
-              console.error("[mandate-signing] seller portal invite trigger marker failed", {
-                mandateId: packetId,
-                error: String(triggerError),
-              });
-            }
-            try {
-              const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
-              supabase,
-              packet,
-              packetId,
-              organisationId,
-              versionId: packetVersionId,
-              finalBody,
-              allSigners: completionSigners,
-              nowIso,
-              });
-              console.log("[mandate-signing] seller portal invite after mandate signed result", {
-              mandateId: packetId,
-              sent: Boolean(portalInviteResult?.sent),
-              skipped: Boolean(portalInviteResult?.skipped),
-              failed: Boolean(portalInviteResult?.failed),
-              reason: normalizeText(portalInviteResult?.reason) || null,
-              });
-            } catch (portalInviteError) {
-              console.error("[mandate-signing] seller portal invite after mandate signed failed", {
-                mandateId: packetId,
-                error: String(portalInviteError),
-              });
-            }
-          }
-        }
-      }
+        organisationId,
+        signerId,
+        signer: completedSigner,
+        nowIso,
+      }));
 
       return jsonResponse(200, {
         success: true,
         signer: signerUpdate.data,
-        packetStatus: nextPacketStatus,
-        signingStatus: workflowSigningStatus,
-        sellerInviteSent,
+        packetStatus: finalisingMarked ? "partially_signed" : normalizeText(runtimePacket?.status).toLowerCase() || "partially_signed",
+        signingStatus: finalisingMarked ? "finalising" : "recorded",
+        progressionQueued: true,
+        finalisationQueued: finalisingMarked,
+        finalisationStatus: finalisingMarked ? "queued" : "pending_progression",
       });
     }
 

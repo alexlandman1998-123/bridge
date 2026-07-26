@@ -8,13 +8,14 @@ import { createMissionControlResponse, writeNodeJsonResponse } from './server/se
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 
 function documentTitleFallbackPlugin() {
-  let documentTitle = 'Bridge Nine'
+  const fallbackDocumentTitle = 'Arch9 | Platform'
+  let documentTitle = fallbackDocumentTitle
 
   return {
     name: 'document-title-fallback',
     configResolved(config) {
       const env = loadEnv(config.mode, config.root, '')
-      documentTitle = String(env.VITE_DOCUMENT_TITLE || process.env.VITE_DOCUMENT_TITLE || documentTitle).trim() || 'Bridge Nine'
+      documentTitle = String(env.VITE_DOCUMENT_TITLE || process.env.VITE_DOCUMENT_TITLE || fallbackDocumentTitle).trim() || fallbackDocumentTitle
     },
     transformIndexHtml(html) {
       return html.replaceAll('%VITE_DOCUMENT_TITLE%', documentTitle)

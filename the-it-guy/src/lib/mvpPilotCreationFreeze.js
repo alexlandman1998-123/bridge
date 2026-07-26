@@ -12,25 +12,20 @@ function parseBoolean(value) {
   return null
 }
 
-function isProductionEnvironment(env = {}) {
-  const mode = String(env.VITE_APP_ENV || env.MODE || '').trim().toLowerCase()
-  return env.PROD === true || ['production', 'prod'].includes(mode)
-}
-
 /**
- * New creation is fail-closed in production while the controlled-pilot hold is
- * active. Set VITE_MVP_PILOT_CREATION_PAUSED=false only after the release gate
- * has explicitly cleared the pilot.
+ * New creation is open unless the controlled-pilot hold is explicitly enabled.
+ * Set VITE_MVP_PILOT_CREATION_PAUSED=true only when an operator deliberately
+ * pauses live listing and transaction creation.
  */
 export function resolveMvpPilotCreationFreeze(env = readRuntimeEnvironment()) {
   const configured = parseBoolean(env.VITE_MVP_PILOT_CREATION_PAUSED)
-  const paused = configured === null ? isProductionEnvironment(env) : configured
+  const paused = configured === true
 
   return {
     paused,
     code: 'mvp_pilot_creation_paused',
     message: 'New listings and transactions are temporarily paused while the controlled-pilot release issue is being resolved. Existing records remain available to review.',
-    source: configured === null ? 'production_fail_closed_default' : 'explicit_configuration',
+    source: configured === null ? 'default_unpaused' : 'explicit_configuration',
   }
 }
 

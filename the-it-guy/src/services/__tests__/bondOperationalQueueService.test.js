@@ -260,9 +260,41 @@ try {
       onboarding_completed_at: '2026-05-26T09:00:00.000Z',
       updated_at: '2026-05-26T10:00:00.000Z',
     },
+    {
+      transaction: {
+        id: 'tx-nested-consultant-intake',
+        organisation_id: 'agency-workspace',
+        finance_type: 'bond',
+        onboarding_completed_at: '2026-05-27T09:00:00.000Z',
+        updated_at: '2026-05-27T10:00:00.000Z',
+      },
+      primaryBondApplication: {
+        assigned_organisation_id: 'workspace-1',
+        assigned_user_id: '11111111-1111-4111-8111-111111111111',
+        assignment_status: 'consultant_assigned',
+      },
+    },
+    {
+      transaction: {
+        id: 'tx-nested-company-intake',
+        organisation_id: 'agency-workspace',
+        finance_type: 'bond',
+        onboarding_completed_at: '2026-05-28T09:00:00.000Z',
+        updated_at: '2026-05-28T10:00:00.000Z',
+      },
+      bondApplications: [
+        {
+          assigned_organisation_id: 'workspace-1',
+          assignment_status: 'organisation_queue',
+        },
+      ],
+    },
   ]
   const scopedQueuesForConsultant = queueService.resolveBondOperationalQueues(consultant, intakeRows)
-  assert.deepEqual(scopedQueuesForConsultant.new_applications.map((item) => item.transactionId), ['tx-consultant-intake'])
+  assert.deepEqual(scopedQueuesForConsultant.new_applications.map((item) => item.transactionId), [
+    'tx-consultant-intake',
+    'tx-nested-consultant-intake',
+  ])
 
   const scopedQueuesForBranch = queueService.resolveBondOperationalQueues(
     makeContext({
@@ -276,7 +308,8 @@ try {
   assert.deepEqual(scopedQueuesForBranch.new_applications.map((item) => item.transactionId), ['tx-branch-intake'])
 
   const scopedQueuesForHq = queueService.resolveBondOperationalQueues(manager, intakeRows)
-  assert.equal(scopedQueuesForHq.new_applications.length, 4)
+  assert.equal(scopedQueuesForHq.new_applications.length, 6)
+  assert(scopedQueuesForHq.new_applications.some((item) => item.transactionId === 'tx-nested-company-intake'))
 
   console.log('bondOperationalQueueService tests passed')
 } finally {

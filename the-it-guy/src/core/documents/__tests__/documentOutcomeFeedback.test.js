@@ -22,8 +22,15 @@ test('gives a signer the correct remaining-field next step', () => {
 
 test('gives a completed signer a safe terminal next step', () => {
   const model = buildDocumentOutcomeFeedback({ surface: 'signer_portal', message: 'Signing submitted. All required fields were securely recorded.' })
-  assert.equal(model.category, 'signer_complete')
-  assert.match(model.nextStep, /safely close this page/i)
+  assert.equal(model.category, 'signer_recorded')
+  assert.equal(model.title, 'Signing recorded')
+  assert.match(model.nextStep, /completed PDF/)
+})
+
+test('shows signer completion as explicit lightweight states', () => {
+  assert.equal(buildDocumentOutcomeFeedback({ surface: 'signer_portal', message: 'Saving' }).title, 'Saving')
+  assert.equal(buildDocumentOutcomeFeedback({ surface: 'signer_portal', message: 'Finalising PDF' }).category, 'signer_finalising')
+  assert.equal(buildDocumentOutcomeFeedback({ surface: 'signer_portal', message: 'PDF ready' }).category, 'signer_pdf_ready')
 })
 
 test('does not present retry failures as success', () => {

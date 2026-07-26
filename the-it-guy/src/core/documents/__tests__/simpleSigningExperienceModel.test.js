@@ -70,10 +70,28 @@ test('maps completion with final artifact to the all-set state', () => {
     }),
   })
   assert.equal(model.state, 'completed')
-  assert.equal(model.actionCard.title, "You're all set")
+  assert.equal(model.stateLabel, 'PDF ready')
+  assert.equal(model.actionCard.title, 'PDF ready')
   assert.equal(model.actionCard.primaryAction.label, 'Open completed PDF')
   assert.equal(model.document.fileName, 'mandate-v2-final-signed.pdf')
   assert.ok(model.steps.every((step) => step.status === 'complete'))
+})
+
+test('maps signed sessions without final artifact to finalising PDF state', () => {
+  const model = buildSimpleSigningExperienceModel({
+    session: baseSession({
+      signer: { signer_role: 'seller', status: 'signed' },
+      completion: {
+        finalArtifact: { ready: false },
+      },
+    }),
+  })
+  assert.equal(model.state, 'completed')
+  assert.equal(model.stateLabel, 'Finalising PDF')
+  assert.equal(model.copy.instruction, 'Signing recorded.')
+  assert.equal(model.actionCard.title, 'Finalising PDF')
+  assert.equal(model.actionCard.description, 'Signing recorded. The completed PDF is being prepared and will appear here when it is ready.')
+  assert.equal(model.actionCard.primaryAction.label, 'Check again')
 })
 
 test('adapts OTP purchaser sessions without hardcoding mandate copy', () => {

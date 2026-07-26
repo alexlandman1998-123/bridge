@@ -23,6 +23,22 @@ export function buildPrivateListingAttorneyAllocationInput({
   const companyName = normalizeText(attorney.companyName || attorney.company_name)
   if (!listingId) throw new Error('A private listing is required before allocating the transfer attorney.')
   if (!companyName) throw new Error('Select a transfer attorney before finalising the mandate.')
+  const preferredAttorneyUserId = normalizeNullableUuid(
+    attorney.preferredAttorneyUserId ||
+      attorney.preferred_attorney_user_id ||
+      attorney.userId ||
+      attorney.user_id ||
+      attorney.selectedPerson?.userId ||
+      attorney.selectedPerson?.id,
+  )
+  const preferredAttorneyMetadata = preferredAttorneyUserId
+    ? {
+        preferredAttorneyUserId,
+        preferredAttorneyName: normalizeText(attorney.preferredAttorneyName || attorney.selectedPerson?.name),
+        preferredAttorneyEmail: normalizeText(attorney.preferredAttorneyEmail || attorney.selectedPerson?.email).toLowerCase(),
+        preferredAttorneyPhone: normalizeText(attorney.preferredAttorneyPhone || attorney.selectedPerson?.phone),
+      }
+    : {}
 
   return {
     p_private_listing_id: listingId,
@@ -37,7 +53,10 @@ export function buildPrivateListingAttorneyAllocationInput({
       : 'seller_mandate',
     p_mandate_packet_id: normalizeNullableUuid(mandatePacketId),
     p_mandate_signed_at: mandateSignedAt || new Date().toISOString(),
-    p_metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+    p_metadata: {
+      ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
+      ...preferredAttorneyMetadata,
+    },
   }
 }
 

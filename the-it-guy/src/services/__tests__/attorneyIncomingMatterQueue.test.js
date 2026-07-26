@@ -102,6 +102,20 @@ try {
         assigned_at: '2026-07-06T08:00:00.000Z',
       },
       {
+        id: 'assign-preferred',
+        transaction_id: 'tx-preferred',
+        attorney_firm_id: 'firm-1',
+        assignment_type: 'transfer',
+        attorney_role: 'transfer_attorney',
+        instruction_status: 'new_instruction',
+        assignment_status: 'pending',
+        allocation_state: 'awaiting_firm_acceptance',
+        firm_acceptance_status: 'awaiting_firm_acceptance',
+        preferred_attorney_user_id: 'att-3',
+        preferred_contact_name: 'Priya Preferred',
+        assigned_at: '2026-07-08T08:00:00.000Z',
+      },
+      {
         id: 'assign-cancellation',
         transaction_id: 'tx-cancellation',
         attorney_firm_id: 'firm-1',
@@ -185,6 +199,16 @@ try {
         onboarding_status: 'submitted',
         is_active: true,
       },
+      {
+        id: 'tx-preferred',
+        buyer_id: 'buyer-8',
+        transaction_reference: 'TRF-PREF',
+        property_address_line_1: '8 Preferred Close',
+        onboarding_status: 'signed_otp_received',
+        current_main_stage: 'ATTY',
+        seller_name: 'Seller Preferred',
+        is_active: true,
+      },
     ],
     onboardingRows: [
       {
@@ -219,6 +243,7 @@ try {
       { id: 'buyer-3', name: 'Sipho Buyer', email: 'sipho@example.com' },
       { id: 'buyer-4', name: 'Leila Buyer', email: 'leila@example.com' },
       { id: 'buyer-5', name: 'Musa Buyer', email: 'musa@example.com' },
+      { id: 'buyer-8', name: 'Palesa Buyer', email: 'palesa@example.com' },
     ],
     units: [
       { id: 'unit-1', development_id: 'dev-1', unit_number: '101' },
@@ -235,6 +260,7 @@ try {
     profiles: [
       { id: 'att-1', full_name: 'Sarah Conveyancer', email: 'sarah@example.com' },
       { id: 'att-2', full_name: 'John Transfer', email: 'john@example.com' },
+      { id: 'att-3', full_name: 'Priya Preferred', email: 'priya@example.com' },
     ],
   }
 
@@ -246,6 +272,7 @@ try {
       'assign-docs',
       'assign-bond',
       'assign-cancellation',
+      'assign-preferred',
       'assign-ready',
     ])
     assert.deepEqual(queue.allRows.map((row) => row.id), [
@@ -256,15 +283,16 @@ try {
       'assign-pre',
       'assign-accepted',
       'assign-bond',
+      'assign-preferred',
       'assign-cancellation',
     ])
-    assert.equal(queue.summary.totalIncoming, 6)
-    assert.equal(queue.summary.allTransferInstructions, 8)
-    assert.equal(queue.summary.allAttorneyInstructions, 8)
+    assert.equal(queue.summary.totalIncoming, 7)
+    assert.equal(queue.summary.allTransferInstructions, 9)
+    assert.equal(queue.summary.allAttorneyInstructions, 9)
     assert.equal(queue.summary.awaitingBuyer, 1)
     assert.equal(queue.summary.awaitingSignedOtp, 1)
     assert.equal(queue.summary.awaitingDocuments, 1)
-    assert.equal(queue.summary.readyForAcceptance, 3)
+    assert.equal(queue.summary.readyForAcceptance, 4)
     assert.equal(queue.summary.documentBlockers, 2)
     assert.deepEqual(queue.rows[0].waitingOn, ['buyer'])
     assert.equal(queue.rows[0].actionHref, '/legal-documents/packet-mandate')
@@ -274,7 +302,12 @@ try {
     assert.equal(queue.rows[3].matterType, 'Bond Registration')
     assert.equal(queue.rows[3].nextAction, 'Accept the bond attorney instruction.')
     assert.equal(queue.rows[4].matterType, 'Bond Cancellation')
-    assert.equal(queue.rows[5].nextAction, 'Accept the transfer attorney instruction.')
+    assert.equal(queue.rows[5].firmId, 'firm-1')
+    assert.equal(queue.rows[5].assignedAttorney.id, 'att-3')
+    assert.equal(queue.rows[5].assignedAttorney.name, 'Priya Preferred')
+    assert.equal(queue.rows[5].assignedAttorney.preferred, true)
+    assert.equal(queue.rows[5].preferredAttorney.email, 'priya@example.com')
+    assert.equal(queue.rows[6].nextAction, 'Accept the transfer attorney instruction.')
   }
 
   {
@@ -301,6 +334,18 @@ try {
       assignment_type: 'cancellation',
     })
     assert.equal(normalized.attorney_role, 'cancellation_attorney')
+  }
+
+  {
+    const normalized = __attorneyIncomingMatterQueueTestUtils.normalizeAssignment({
+      id: 'assign-preferred-normalized',
+      transaction_id: 'tx-preferred',
+      assignment_type: 'transfer',
+      preferred_attorney_user_id: 'att-3',
+      preferred_contact_name: 'Priya Preferred',
+    })
+    assert.equal(normalized.preferred_attorney_user_id, 'att-3')
+    assert.equal(normalized.preferredContactName, 'Priya Preferred')
   }
 
   {

@@ -15,6 +15,10 @@ import { getDemoEnvironmentSummary, resetDemoEnvironment } from '../services/dem
 import { calculateLaunchReadiness } from '../services/release/launchReadiness'
 import { getUniversalPartnerRoutingDiagnosticsSnapshot } from '../services/universalPartnerRoutingService'
 import { getUniversalAssignmentDiagnosticsSnapshot } from '../services/universalAssignmentService'
+import {
+  applyPartnerPersonRoutingRemediation,
+  getPartnerPersonRoutingRemediationPlan,
+} from '../services/partnerPersonRoutingDiagnosticsService'
 import { applyCanonicalInviteReconciliation, getCanonicalInviteHealth, reconcileCanonicalInvites } from '../services/inviteOperationsService'
 import { dispatchNotificationReminders, getNotificationAutomationHealth } from '../services/notificationAutomationOperationsService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -220,6 +224,8 @@ export default function PlatformDiagnosticsPage() {
   const [routingLoading, setRoutingLoading] = useState(false)
   const [assignmentDiagnostics, setAssignmentDiagnostics] = useState(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [personRoutingApplyLoading, setPersonRoutingApplyLoading] = useState(false)
+  const [personRoutingApplyResult, setPersonRoutingApplyResult] = useState(null)
   const [inviteHealth, setInviteHealth] = useState(null)
   const [inviteReconciliation, setInviteReconciliation] = useState(null)
   const [inviteLoading, setInviteLoading] = useState(false)
@@ -412,14 +418,50 @@ export default function PlatformDiagnosticsPage() {
     try {
       setAssignmentLoading(true)
       setError('')
-      const snapshot = await getUniversalAssignmentDiagnosticsSnapshot({
-        workspaceId: currentWorkspace?.id || '',
+      setPersonRoutingApplyResult(null)
+      const [snapshot, personRouting] = await Promise.all([
+        getUniversalAssignmentDiagnosticsSnapshot({
+          workspaceId: currentWorkspace?.id || '',
+        }),
+        getPartnerPersonRoutingRemediationPlan({
+          workspaceId: currentWorkspace?.id || '',
+        }),
+      ])
+      setAssignmentDiagnostics({
+        ...snapshot,
+        personRouting: personRouting.diagnostics,
+        personRoutingRemediation: personRouting.remediation,
+        personRoutingReleaseGate: personRouting.releaseGate,
       })
-      setAssignmentDiagnostics(snapshot)
     } catch (assignmentError) {
       setError(assignmentError?.message || 'Assignment diagnostics failed.')
     } finally {
       setAssignmentLoading(false)
+    }
+  }
+
+  async function applyPersonRoutingRemediation() {
+    try {
+      setPersonRoutingApplyLoading(true)
+      setError('')
+      const result = await applyPartnerPersonRoutingRemediation({
+        workspaceId: currentWorkspace?.id || '',
+        dryRun: false,
+        actorUserId: authState.user?.id || '',
+      })
+      setPersonRoutingApplyResult(result)
+      if (result.refreshed) {
+        setAssignmentDiagnostics((current) => ({
+          ...(current || {}),
+          personRouting: result.refreshed.diagnostics,
+          personRoutingRemediation: result.refreshed.remediation,
+          personRoutingReleaseGate: result.refreshed.releaseGate,
+        }))
+      }
+    } catch (applyError) {
+      setError(applyError?.message || 'Company-to-person remediation failed.')
+    } finally {
+      setPersonRoutingApplyLoading(false)
     }
   }
 
@@ -1751,6 +1793,203 @@ export default function PlatformDiagnosticsPage() {
                 <StatCard label="Queue" value={assignmentDiagnostics.totals?.assignedToQueue || 0} tone="warning" />
                 <StatCard label="Fallbacks" value={assignmentDiagnostics.totals?.fallbacks || 0} tone={assignmentDiagnostics.totals?.fallbacks ? 'warning' : 'success'} />
               </div>
+              {assignmentDiagnostics.personRouting ? (
+                <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Company to person routing</h3>
+                      <p className="mt-2 text-sm text-[#60758d]">
+                        Flags accepted attorney queues without a primary person, company-level bond queues without a consultant, and bond transaction/application assignee mismatches.
+                      </p>
+                    </div>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      assignmentDiagnostics.personRouting.status === 'critical'
+                        ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]'
+                        : assignmentDiagnostics.personRouting.status === 'warning'
+                          ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]'
+                          : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'
+                    }`}>
+                      {assignmentDiagnostics.personRouting.status}
+                    </span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-5">
+                    <StatCard label="Attorney queue" value={assignmentDiagnostics.personRouting.totals?.attorneyCompanyQueue || 0} tone={assignmentDiagnostics.personRouting.totals?.attorneyCompanyQueue ? 'warning' : 'success'} />
+                    <StatCard label="Attorney people" value={assignmentDiagnostics.personRouting.totals?.attorneyPersonAssigned || 0} tone="success" />
+                    <StatCard label="Bond queue" value={assignmentDiagnostics.personRouting.totals?.bondCompanyQueue || 0} tone={assignmentDiagnostics.personRouting.totals?.bondCompanyQueue ? 'warning' : 'success'} />
+                    <StatCard label="Bond people" value={assignmentDiagnostics.personRouting.totals?.bondPersonAssigned || 0} tone="success" />
+                    <StatCard label="Issues" value={assignmentDiagnostics.personRouting.totals?.issues || 0} tone={assignmentDiagnostics.personRouting.totals?.critical ? 'critical' : assignmentDiagnostics.personRouting.totals?.warnings ? 'warning' : 'success'} />
+                  </div>
+                  {assignmentDiagnostics.personRoutingReleaseGate ? (
+                    <div className={`rounded-[14px] border p-4 ${
+                      assignmentDiagnostics.personRoutingReleaseGate.status === 'no_go'
+                        ? 'border-[#f2c8c4] bg-[#fff5f4]'
+                        : assignmentDiagnostics.personRoutingReleaseGate.status === 'conditional_go'
+                          ? 'border-[#f5d3a4] bg-[#fff8ec]'
+                          : 'border-[#cfe8d8] bg-[#effaf3]'
+                    }`}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Phase 7 release gate</h4>
+                          <p className="mt-2 text-sm text-[#60758d]">{assignmentDiagnostics.personRoutingReleaseGate.nextAction}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">{assignmentDiagnostics.personRoutingReleaseGate.status.replace(/_/g, ' ')}</span>
+                          <strong className="mt-1 block text-2xl text-[#31485e]">{assignmentDiagnostics.personRoutingReleaseGate.score}%</strong>
+                        </div>
+                      </div>
+                      {assignmentDiagnostics.personRoutingReleaseGate.blockers?.length ? (
+                        <ul className="mt-3 divide-y divide-[#f2d7d3] rounded-[12px] border border-[#f2c8c4] bg-white text-sm">
+                          {assignmentDiagnostics.personRoutingReleaseGate.blockers.map((blocker) => (
+                            <li key={blocker.code} className="flex flex-wrap items-start justify-between gap-3 px-3 py-2">
+                              <span>
+                                <span className="block font-semibold text-[#9f1c1c]">{blocker.label}</span>
+                                <span className="text-[#60758d]">{blocker.action}</span>
+                              </span>
+                              <span className="font-semibold text-[#31485e]">{blocker.count}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {!assignmentDiagnostics.personRoutingReleaseGate.blockers?.length && assignmentDiagnostics.personRoutingReleaseGate.warnings?.length ? (
+                        <ul className="mt-3 divide-y divide-[#f5d3a4] rounded-[12px] border border-[#f5d3a4] bg-white text-sm">
+                          {assignmentDiagnostics.personRoutingReleaseGate.warnings.map((warning) => (
+                            <li key={warning.code} className="flex flex-wrap items-start justify-between gap-3 px-3 py-2">
+                              <span>
+                                <span className="block font-semibold text-[#8a4b10]">{warning.label}</span>
+                                <span className="text-[#60758d]">{warning.action}</span>
+                              </span>
+                              <span className="font-semibold text-[#31485e]">{warning.count}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {assignmentDiagnostics.personRoutingRemediation ? (
+                    <div className="grid gap-3 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Phase 6 action queue</h4>
+                          <p className="mt-2 text-sm text-[#60758d]">
+                            Automatic syncs only fill blank person fields from an already-selected person. Mismatches and new person choices remain manual review.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="header-secondary-cta"
+                          onClick={applyPersonRoutingRemediation}
+                          disabled={personRoutingApplyLoading || !(assignmentDiagnostics.personRoutingRemediation.summary?.automatic)}
+                        >
+                          {personRoutingApplyLoading ? 'Applying syncs...' : 'Apply automatic syncs'}
+                        </button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <StatCard label="Automatic" value={assignmentDiagnostics.personRoutingRemediation.summary?.automatic || 0} tone={assignmentDiagnostics.personRoutingRemediation.summary?.automatic ? 'warning' : 'success'} />
+                        <StatCard label="Needs person" value={assignmentDiagnostics.personRoutingRemediation.summary?.needsPerson || 0} tone={assignmentDiagnostics.personRoutingRemediation.summary?.needsPerson ? 'warning' : 'success'} />
+                        <StatCard label="Review" value={assignmentDiagnostics.personRoutingRemediation.summary?.reviewRequired || 0} tone={assignmentDiagnostics.personRoutingRemediation.summary?.reviewRequired ? 'warning' : 'success'} />
+                        <StatCard label="Total actions" value={assignmentDiagnostics.personRoutingRemediation.summary?.total || 0} />
+                      </div>
+                      {personRoutingApplyResult ? (
+                        <div className={`rounded-[12px] border p-3 text-sm ${
+                          personRoutingApplyResult.summary?.failed
+                            ? 'border-[#f2c8c4] bg-[#fff5f4] text-[#9f1c1c]'
+                            : 'border-[#cfe8d8] bg-[#effaf3] text-[#236340]'
+                        }`}>
+                          Applied {personRoutingApplyResult.summary?.applied || 0} automatic sync{personRoutingApplyResult.summary?.applied === 1 ? '' : 's'}
+                          {personRoutingApplyResult.summary?.skipped ? `, skipped ${personRoutingApplyResult.summary.skipped}` : ''}
+                          {personRoutingApplyResult.summary?.failed ? `, failed ${personRoutingApplyResult.summary.failed}` : ''}.
+                        </div>
+                      ) : null}
+                      {assignmentDiagnostics.personRoutingRemediation.actions?.length ? (
+                        <div className="overflow-x-auto rounded-[14px] border border-[#dde4ee]">
+                          <table className="w-full min-w-[760px] text-left text-sm">
+                            <thead className="bg-[#f5f8fb] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                              <tr>
+                                <th className="px-4 py-3">Mode</th>
+                                <th className="px-4 py-3">Action</th>
+                                <th className="px-4 py-3">Owner</th>
+                                <th className="px-4 py-3">Target</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#edf1f6]">
+                              {assignmentDiagnostics.personRoutingRemediation.actions.slice(0, 8).map((action) => (
+                                <tr key={action.id} className="align-top">
+                                  <td className="px-4 py-3">
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                      action.mode === 'automatic' ? 'bg-[#effaf3] text-[#236340]' : 'bg-[#fff8ec] text-[#8a4b10]'
+                                    }`}>
+                                      {action.mode === 'automatic' ? 'automatic' : 'manual'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[#60758d]">
+                                    <span className="block font-semibold text-[#31485e]">{action.label}</span>
+                                    <span>{action.recommendation}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[#60758d]">{action.ownerRole}</td>
+                                  <td className="px-4 py-3 text-[#60758d]">
+                                    {action.href ? (
+                                      <a className="font-semibold text-[#31485e] underline decoration-[#a8b7c6] underline-offset-4" href={action.href}>
+                                        Open target
+                                      </a>
+                                    ) : (
+                                      <span>{action.transactionId || action.recordId || '-'}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="rounded-[14px] border border-[#cfe8d8] bg-[#effaf3] px-4 py-3 text-sm font-semibold text-[#236340]">
+                          No Phase 6 remediation actions needed.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                  {assignmentDiagnostics.personRouting.topIssues?.length ? (
+                    <div className="overflow-x-auto rounded-[14px] border border-[#dde4ee] bg-white">
+                      <table className="w-full min-w-[760px] text-left text-sm">
+                        <thead className="bg-[#f5f8fb] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                          <tr>
+                            <th className="px-4 py-3">Area</th>
+                            <th className="px-4 py-3">Issue</th>
+                            <th className="px-4 py-3">Age</th>
+                            <th className="px-4 py-3">Owner</th>
+                            <th className="px-4 py-3">Next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#edf1f6]">
+                          {assignmentDiagnostics.personRouting.topIssues.slice(0, 8).map((issue) => (
+                            <tr key={`${issue.area}-${issue.code}-${issue.recordId || issue.transactionId}`} className="align-top">
+                              <td className="px-4 py-3 font-semibold text-[#31485e]">{issue.area}</td>
+                              <td className="px-4 py-3 text-[#60758d]">
+                                <span className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                  issue.severity === 'critical'
+                                    ? 'bg-[#fff5f4] text-[#9f1c1c]'
+                                    : issue.severity === 'warning'
+                                      ? 'bg-[#fff8ec] text-[#8a4b10]'
+                                      : 'bg-[#effaf3] text-[#236340]'
+                                }`}>
+                                  {issue.severity}
+                                </span>
+                                {issue.message}
+                              </td>
+                              <td className="px-4 py-3 text-[#60758d]">{Number.isFinite(issue.ageDays) ? `${issue.ageDays}d` : '-'}</td>
+                              <td className="px-4 py-3 text-[#60758d]">{issue.ownerRole}</td>
+                              <td className="px-4 py-3 text-[#60758d]">{issue.recommendation}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="rounded-[14px] border border-[#cfe8d8] bg-[#effaf3] px-4 py-3 text-sm font-semibold text-[#236340]">
+                      No company-to-person routing gaps found.
+                    </p>
+                  )}
+                </div>
+              ) : null}
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
                   <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Event types</h3>

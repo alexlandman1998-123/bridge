@@ -136,7 +136,7 @@ export function SimpleSigningActionCard({ model = null, busy = false, onAction =
               className={cx('mt-5 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-[7px] px-5 text-sm font-bold shadow-[0_14px_30px_rgba(18,56,95,0.18)] transition sm:w-auto sm:min-w-[280px]', buttonToneClass(card.tone), busy ? 'opacity-60' : '')}
             >
               {actionIcon(action.id)}
-              {busy ? 'Working...' : action.label}
+              {busy ? 'Saving' : action.label}
               {!busy && !['view_document', 'open_completed_pdf', 'contact_support', 'refresh_completion'].includes(action.id) ? <ArrowRight className="h-4 w-4" aria-hidden="true" /> : null}
             </button>
           ) : null}

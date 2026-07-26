@@ -41,6 +41,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { activateAnchorOnSpace } from '../lib/keyboardActivation'
 import {
   DOCUMENT_START_DOCUMENT_KINDS,
   DOCUMENT_START_ENTRY_POINTS,
@@ -8845,7 +8846,7 @@ function AgentListingDetail() {
                   </div>
                   <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2 xl:grid-cols-5">
                     {resolveSellerPortalTokenFromListing(listingRecord) && sellerPortalAccessState?.linkActive !== false ? (
-                      <a href={buildSellerClientPortalLink(resolveSellerPortalTokenFromListing(listingRecord))} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
+                      <a href={buildSellerClientPortalLink(resolveSellerPortalTokenFromListing(listingRecord))} target="_blank" rel="noreferrer" onKeyDown={activateAnchorOnSpace} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
                         Open Seller Portal
                         <ExternalLink size={14} />
                       </a>

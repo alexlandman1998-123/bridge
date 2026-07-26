@@ -43,12 +43,45 @@ function normalizeSectionManifest(value) {
   return []
 }
 
+function resolveSessionPreviewUrl(session = null) {
+  return normalizeText(
+    session?.documentPreviewUrl ||
+      session?.document_preview_url ||
+      session?.previewUrl ||
+      session?.preview_url ||
+      session?.previewVersion?.rendered_file_url ||
+      session?.version?.rendered_file_url,
+  )
+}
+
+function preloadPreviewResource(session = null) {
+  const url = resolveSessionPreviewUrl(session)
+  if (!url || typeof document === 'undefined') return
+  const existing = [...document.head.querySelectorAll('link[data-signer-preview-preload]')]
+    .some((link) => link.getAttribute('href') === url)
+  if (existing) return
+  const link = document.createElement('link')
+  link.rel = 'prefetch'
+  link.as = 'document'
+  link.href = url
+  link.dataset.signerPreviewPreload = 'true'
+  document.head.appendChild(link)
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
-function resolveErrorMessage(error = null) {
+function signerAlreadyRecorded({ signerStatus = '', signerCompleted = false } = {}) {
+  return signerCompleted === true || normalizeKey(signerStatus) === 'signed'
+}
+
+function resolveErrorMessage(error = null, { signerStatus = '' } = {}) {
+  if (signerAlreadyRecorded({ signerStatus, signerCompleted: isSignerCompletedRetryableError(error) })) {
+    return 'Signing recorded. The completed PDF may still be finalising. Please check again in a moment.'
+  }
   const code = normalizeText(error?.code).toUpperCase()
+  if (code === 'SIGNER_ACTION_STILL_PROCESSING') return 'Your signing is still being recorded. Please check again in a moment.'
   if (code === 'INVALID_SIGNING_TOKEN') return 'This signing link is invalid.'
   if (code === 'SIGNING_TOKEN_EXPIRED') return 'This signing link has expired.'
   if (code === 'REMAINING_REQUIRED_FIELDS') return 'Complete all required fields before submitting signing.'
@@ -62,6 +95,14 @@ function resolveErrorMessage(error = null) {
     return 'This signing link could not be opened. Please request a new signing link from your agent.'
   }
   return message || 'Unable to process signing right now.'
+}
+
+function isSigningStillProcessingError(error = null) {
+  return normalizeText(error?.code).toUpperCase() === 'SIGNER_ACTION_STILL_PROCESSING'
+}
+
+function isSignerCompletedRetryableError(error = null) {
+  return error?.signerCompleted === true || error?.details?.signerCompleted === true || error?.details?.signer_completed === true
 }
 
 function fieldTypeLabel(fieldType = '') {
@@ -499,14 +540,16 @@ export default function SignerPortal() {
   const [previewPageCount, setPreviewPageCount] = useState(0)
   const lastSignerJourneyTelemetryRef = useRef('')
   const lastSignerOutcomeTelemetryRef = useRef('')
+  const completionSubmitInFlightRef = useRef(false)
 
   async function resolvePortalSession() {
     const result = await resolveExternalSignerSession({ token })
     return result?.session || null
   }
 
-  async function refreshSession() {
+  async function refreshSession({ preloadPreview = false } = {}) {
     const nextSession = await resolvePortalSession()
+    if (preloadPreview) preloadPreviewResource(nextSession)
     setSession(nextSession)
     return nextSession
   }
@@ -543,16 +586,8 @@ export default function SignerPortal() {
 
   const signer = session?.signer || {}
   const packet = session?.packet || {}
-  const version = session?.version || {}
   const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
-  const documentPreviewUrl = normalizeText(
-    session?.documentPreviewUrl ||
-      session?.document_preview_url ||
-      session?.previewUrl ||
-      session?.preview_url ||
-      session?.previewVersion?.rendered_file_url ||
-      session?.version?.rendered_file_url,
-  )
+  const documentPreviewUrl = resolveSessionPreviewUrl(session)
   const fallbackPreviewHtml = useMemo(() => {
     const previewData = session?.previewData && typeof session.previewData === 'object' ? session.previewData : null
     if (!previewData) return ''
@@ -647,7 +682,7 @@ export default function SignerPortal() {
       assetPath: asset?.path || '',
       completedByEmail: signer?.signer_email || '',
     })
-    const nextSession = await refreshSession()
+    const nextSession = await refreshSession({ preloadPreview: true })
     const nextRemaining = (Array.isArray(nextSession?.fields) ? nextSession.fields : []).find((item) => item?.required !== false && !isCompleted(item))
     setStatusMessage(`${fieldTypeLabel(fieldType)} applied to ${fieldLocationLabel(field, { includeType: false })}.`)
     setCaptureField(null)
@@ -667,7 +702,7 @@ export default function SignerPortal() {
       setAssets((current) => ({ ...current, [assetType]: asset }))
       await applyFieldWithAsset(field, asset)
     } catch (error) {
-      setErrorMessage(resolveErrorMessage(error))
+      setErrorMessage(resolveErrorMessage(error, { signerStatus: signer?.status }))
     } finally {
       setBusyAction('')
     }
@@ -686,28 +721,55 @@ export default function SignerPortal() {
       setErrorMessage('')
       await applyFieldWithAsset(field, asset)
     } catch (error) {
-      setErrorMessage(resolveErrorMessage(error))
+      setErrorMessage(resolveErrorMessage(error, { signerStatus: signer?.status }))
     } finally {
       setBusyAction('')
     }
   }
 
   async function handleCompleteSigning(confirmedCompletion = false) {
+    if (completionSubmitInFlightRef.current) return
     if (!confirmedCompletion) {
+      if (busyAction === 'complete_signing') return
       recordSignerExperience('commit_opened', { state: signerExperienceState, actionId: 'complete_signing' })
       setCompleteConfirmationOpen(true)
       return
     }
     recordSignerExperience('commit_confirmed', { state: signerExperienceState, actionId: 'complete_signing' })
+    completionSubmitInFlightRef.current = true
     try {
       setBusyAction('complete_signing')
       setErrorMessage('')
-      setStatusMessage('')
-      await completeSignerSigning({ token })
-      await refreshSession()
+      setStatusMessage('Saving')
+      const completionResult = await completeSignerSigning({ token })
+      setStatusMessage('Signing recorded')
+      const nextSession = await refreshSession()
+      const nextSignerStatus = normalizeKey(nextSession?.signer?.status)
+      const nextCompletion = nextSession?.completion || null
+      const nextFinalArtifact = nextCompletion?.finalArtifact || nextCompletion?.final_artifact || null
+      const finalArtifactReady = nextFinalArtifact?.ready === true || Boolean(nextFinalArtifact?.downloadUrl || nextFinalArtifact?.download_url)
+      if (finalArtifactReady) setStatusMessage('PDF ready')
+      else if (nextSignerStatus === 'signed' || completionResult?.finalisationQueued || completionResult?.progressionQueued) setStatusMessage('Finalising PDF')
     } catch (error) {
-      setErrorMessage(resolveErrorMessage(error))
+      if (isSigningStillProcessingError(error) || isSignerCompletedRetryableError(error)) {
+        setErrorMessage('')
+        setStatusMessage(isSigningStillProcessingError(error)
+          ? 'Saving is taking longer than expected. Checking whether the signing was recorded.'
+          : 'Signing recorded')
+        try {
+          const nextSession = await refreshSession()
+          if (normalizeKey(nextSession?.signer?.status) === 'signed') {
+            setStatusMessage('Finalising PDF')
+          }
+        } catch (refreshError) {
+          console.warn('[SignerPortal] Signing completion status refresh failed after slow completion.', refreshError)
+        }
+      } else {
+        setStatusMessage('')
+        setErrorMessage(resolveErrorMessage(error, { signerStatus: signer?.status }))
+      }
     } finally {
+      completionSubmitInFlightRef.current = false
       setBusyAction('')
     }
   }
@@ -718,7 +780,7 @@ export default function SignerPortal() {
       setErrorMessage('')
       await refreshSession()
     } catch (error) {
-      setErrorMessage(resolveErrorMessage(error))
+      setErrorMessage(resolveErrorMessage(error, { signerStatus: signer?.status }))
     } finally {
       setBusyAction('')
     }
@@ -751,7 +813,7 @@ export default function SignerPortal() {
       }
     } catch (error) {
       targetWindow?.close()
-      setCompletionDownloadError(resolveErrorMessage(error))
+      setCompletionDownloadError(resolveErrorMessage(error, { signerStatus: signer?.status }))
     } finally {
       setBusyAction('')
     }
@@ -763,7 +825,7 @@ export default function SignerPortal() {
       setErrorMessage('')
       await refreshSession()
     } catch (error) {
-      setErrorMessage(resolveErrorMessage(error))
+      setErrorMessage(resolveErrorMessage(error, { signerStatus: signer?.status }))
     } finally {
       setLoading(false)
     }
@@ -819,8 +881,9 @@ export default function SignerPortal() {
   })
 
   async function handleConfirmedCompletion() {
-    await handleCompleteSigning(true)
     setCompleteConfirmationOpen(false)
+    if (completionSubmitInFlightRef.current) return
+    await handleCompleteSigning(true)
   }
 
   function handleSimpleSigningAction(actionId) {
@@ -835,7 +898,7 @@ export default function SignerPortal() {
       scrollToField(nextField)
       if (nextField && !isCompleted(nextField) && ['initial', 'signature'].includes(nextFieldType)) void handleUseSaved(nextField)
     }
-    else if (actionId === 'finish_signing' && canCompleteSigning) void handleCompleteSigning()
+    else if (actionId === 'finish_signing' && canCompleteSigning && !completionSubmitInFlightRef.current) void handleCompleteSigning()
     else if (actionId === 'open_completed_pdf') void handleOpenCompletedPdf()
     else if (actionId === 'refresh_completion') void handleRefreshCompletion()
     else if (actionId === 'contact_support') setStatusMessage('If you need help, contact your agent or attorney for assistance.')
@@ -860,8 +923,8 @@ export default function SignerPortal() {
     <>
       <DocumentCommitConfirmation
         model={completeConfirmation}
-        open={completeConfirmationOpen}
-        busy={busyAction === 'complete_signing'}
+        open={completeConfirmationOpen && busyAction !== 'complete_signing'}
+        busy={false}
         onCancel={() => setCompleteConfirmationOpen(false)}
         onConfirm={() => void handleConfirmedCompletion()}
       />

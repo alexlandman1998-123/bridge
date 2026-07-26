@@ -5614,6 +5614,10 @@ export async function sendSellerOnboarding(
     deferStatusTransition = false,
     performedBy = '',
     transferAttorneyPreferredPartnerId = '',
+    transferAttorneyPreferredUserId = '',
+    transferAttorneyPreferredUserName = '',
+    transferAttorneyPreferredUserEmail = '',
+    transferAttorneyPreferredUserPhone = '',
   } = {},
 ) {
   const client = requireClient()
@@ -5671,6 +5675,27 @@ export async function sendSellerOnboarding(
     throw new Error(requestedPreferredAttorneyId
       ? 'The selected transfer attorney is no longer active for this agency.'
       : 'Configure an active preferred transfer attorney before sending seller onboarding.')
+  }
+  const preferredAttorneyUserId = normalizeText(transferAttorneyPreferredUserId)
+  const preferredAttorneyName = normalizeText(transferAttorneyPreferredUserName)
+  const preferredAttorneyEmail = normalizeText(transferAttorneyPreferredUserEmail).toLowerCase()
+  const preferredAttorneyPhone = normalizeText(transferAttorneyPreferredUserPhone)
+  if (preferredAttorneyUserId) {
+    preferredTransferAttorney = {
+      ...preferredTransferAttorney,
+      preferredAttorneyUserId,
+      userId: preferredAttorneyUserId,
+      preferredAttorneyName,
+      preferredAttorneyEmail,
+      preferredAttorneyPhone,
+      selectedPerson: {
+        id: preferredAttorneyUserId,
+        userId: preferredAttorneyUserId,
+        name: preferredAttorneyName,
+        email: preferredAttorneyEmail,
+        phone: preferredAttorneyPhone,
+      },
+    }
   }
 
   const existingQuery = await client

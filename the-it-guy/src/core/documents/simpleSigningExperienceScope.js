@@ -81,8 +81,8 @@ export function resolveSimpleSigningState({
   const status = key(signerStatus)
   const required = Math.max(0, number(requiredFields))
   const completed = Math.max(0, number(completedFields))
-  if (hasSessionError || BLOCKED_STATUSES.has(status)) return 'blocked'
   if (completion || status === 'signed') return 'completed'
+  if (hasSessionError || BLOCKED_STATUSES.has(status)) return 'blocked'
   if (required > 0 && completed >= required) return 'finish'
   if (completed > 0 || SIGN_STATUSES.has(status)) return 'sign'
   if (REVIEW_STATUSES.has(status) || required > 0) return 'review'

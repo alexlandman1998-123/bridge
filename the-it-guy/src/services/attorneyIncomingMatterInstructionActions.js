@@ -32,6 +32,7 @@ const ASSIGNMENT_SELECT_COLUMNS = [
   'staff_assignment_status',
   'allocation_state',
   'appointment_source',
+  'preferred_attorney_user_id',
 ]
 
 const ASSIGNMENT_RESULT_SELECT = 'id, transaction_id, instruction_status'
@@ -591,6 +592,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
   if (!assignment) throw new Error('Incoming matter assignment was not found.')
   const resolvedTransactionId = normalizeText(assignment.transaction_id || assignment.transactionId || normalizedTransactionId)
   const attorneyRole = getAttorneyInstructionRole(assignment)
+  const resolvedActorUserId = await getActorUserId(client, actorUserId)
 
   if (
     normalizeText(assignment.allocation_state) === 'awaiting_firm_acceptance' &&
@@ -599,6 +601,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
     const firmDecision = await manageAttorneyFirmAllocation(client, {
       assignment,
       action: 'accept',
+      attorneyUserId: normalizeText(assignment.preferred_attorney_user_id || assignment.preferredAttorneyUserId) || null,
     })
     return {
       assignment: firmDecision,
@@ -622,7 +625,6 @@ export async function acceptAttorneyIncomingInstruction(client, {
     }
   }
 
-  const resolvedActorUserId = await getActorUserId(client, actorUserId)
   const occurredAt = acceptedAt || new Date().toISOString()
   const assignmentPayload = buildAcceptAttorneyIncomingInstructionPayload({
     actorUserId: resolvedActorUserId,

@@ -576,6 +576,7 @@ declare
   v_next_packet_status text;
   v_event_type text;
   v_signing_status text;
+  v_expected_dispatch_kind text;
   v_evidence jsonb;
 begin
   if auth.role() <> 'service_role' then
@@ -654,6 +655,8 @@ begin
       using errcode = '22000', detail = 'PHASE2_SIGNER_BINDING_INVALID';
   end if;
 
+  v_expected_dispatch_kind := case when coalesce(p_is_resend, false) then 'resend' else 'initial' end;
+
   select * into v_dispatch
   from public.document_signing_dispatches
   where id = p_dispatch_id
@@ -664,7 +667,7 @@ begin
      or nullif(lower(trim(coalesce(v_dispatch.target_signer_role, ''))), '') is null
      or lower(trim(v_dispatch.target_signer_role)) <> lower(trim(v_signer.signer_role))
      or v_dispatch.status not in ('authorized', 'delivered')
-     or v_dispatch.dispatch_kind is distinct from case when coalesce(p_is_resend, false) then 'resend' else 'initial' end then
+     or v_dispatch.dispatch_kind is distinct from v_expected_dispatch_kind then
     raise exception 'The E4 signing dispatch is not bound to this OTP signer invitation.'
       using errcode = '22000', detail = 'PHASE2_E4_DISPATCH_BINDING_INVALID';
   end if;

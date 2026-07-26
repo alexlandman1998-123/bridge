@@ -5,8 +5,8 @@ import {
 } from '../src/lib/mvpPilotCreationFreeze.js'
 
 const productionDefault = resolveMvpPilotCreationFreeze({ VITE_APP_ENV: 'production' })
-assert.equal(productionDefault.paused, true)
-assert.equal(productionDefault.source, 'production_fail_closed_default')
+assert.equal(productionDefault.paused, false)
+assert.equal(productionDefault.source, 'default_unpaused')
 
 const explicitResume = resolveMvpPilotCreationFreeze({
   VITE_APP_ENV: 'production',
@@ -15,10 +15,17 @@ const explicitResume = resolveMvpPilotCreationFreeze({
 assert.equal(explicitResume.paused, false)
 assert.equal(explicitResume.source, 'explicit_configuration')
 
+const explicitPause = resolveMvpPilotCreationFreeze({
+  VITE_APP_ENV: 'production',
+  VITE_MVP_PILOT_CREATION_PAUSED: 'true',
+})
+assert.equal(explicitPause.paused, true)
+assert.equal(explicitPause.source, 'explicit_configuration')
+
 assert.throws(
   () => assertMvpPilotCreationAllowed({
     operation: 'create a transaction',
-    env: { VITE_APP_ENV: 'production' },
+    env: { VITE_APP_ENV: 'production', VITE_MVP_PILOT_CREATION_PAUSED: 'true' },
   }),
   (error) => error?.code === 'mvp_pilot_creation_paused',
 )

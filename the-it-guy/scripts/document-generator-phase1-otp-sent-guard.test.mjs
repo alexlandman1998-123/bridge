@@ -67,7 +67,7 @@ assert.match(signerAction, /const signerSessionActive = \["sent", "viewed"\]\.in
 assert.match(signerAction, /const canonicalOtpPdfReady/)
 assert.match(signerAction, /OTP_CANONICAL_PDF_REQUIRED/)
 assert.match(signerAction, /const finaliserFunction = "generate-final-signed-document"/)
-assert.match(signerAction, /packet_type, status, current_version_number/)
+assert.match(signerAction, /packet_type[\s\S]*status[\s\S]*current_version_number[\s\S]*source_context_json/)
 assert.match(signerAction, /deferExpiryMutation: true/)
 
 const otpMutationGate = signerAction.indexOf('if (normalizeText(runtimePacket?.packet_type).toLowerCase() === "otp")')

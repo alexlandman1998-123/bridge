@@ -13,6 +13,7 @@ import {
   Plus,
   Save,
   SlidersHorizontal,
+  UserPlus,
   UserRound,
   UsersRound,
   XCircle,
@@ -29,6 +30,8 @@ import {
   acceptAttorneyIncomingMatterInstruction,
   declineAttorneyIncomingMatterInstruction,
 } from '../lib/api'
+import { getAssignableAttorneyFirmMembers } from '../services/transactionAttorneyAssignments'
+import { assignAttorneyIncomingMatterPrimary } from '../services/transferFirmAllocationService'
 
 const DEFAULT_FILTERS = {
   status: 'all',
@@ -595,15 +598,30 @@ function canDeclineIncomingMatter(row = {}) {
   return !['accepted', 'declined', 'removed', 'completed'].includes(normalize(row.statusKey || row.status))
 }
 
+function canAssignIncomingMatter(row = {}, canManageAssignments = false) {
+  if (!canManageAssignments || row.isPreInstruction || !row.assignmentId) return false
+  return ['awaiting_staff_assignment', 'staff_assigned'].includes(normalize(row.allocationState))
+}
+
 function getIncomingMatterActionLabel(row = {}) {
   return row.matterType || 'Attorney Instruction'
 }
 
-function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = false, declining = false }) {
+function IncomingRowActions({
+  row,
+  onAcceptMatter,
+  onDeclineMatter,
+  onAssignMatter,
+  accepting = false,
+  declining = false,
+  assigning = false,
+  canManageAssignments = false,
+}) {
   const href = row.actionHref || '#'
   const preview = getMatterPreview(row)
   const readyForAcceptance = canAcceptIncomingMatter(row)
   const canDecline = canDeclineIncomingMatter(row)
+  const canAssign = canAssignIncomingMatter(row, canManageAssignments)
   const matterLabel = getIncomingMatterActionLabel(row)
 
   return (
@@ -625,6 +643,16 @@ function IncomingRowActions({ row, onAcceptMatter, onDeclineMatter, accepting = 
             className="block w-full rounded-lg px-3 py-2 text-left text-[#00614f] hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
           >
             {accepting ? `Accepting ${matterLabel}` : `Accept ${matterLabel}`}
+          </button>
+        ) : null}
+        {canAssign ? (
+          <button
+            type="button"
+            disabled={assigning}
+            onClick={() => onAssignMatter?.(row)}
+            className="block w-full rounded-lg px-3 py-2 text-left text-[#00614f] hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {assigning ? 'Assigning Primary' : row.allocationState === 'staff_assigned' ? 'Reassign Primary' : 'Assign Primary'}
           </button>
         ) : null}
         {canDecline ? (
@@ -700,8 +728,11 @@ function IncomingMattersTable({
   onOpenMatter,
   onAcceptMatter,
   onDeclineMatter,
+  onAssignMatter,
   acceptingMatterId = '',
   decliningMatterId = '',
+  assigningMatterId = '',
+  canManageAssignments = false,
 }) {
   const allSelected = rows.length > 0 && rows.every((row) => selectedRows.includes(row.matterId))
 
@@ -730,8 +761,10 @@ function IncomingMattersTable({
               const href = row.actionHref || '#'
               const preview = getMatterPreview(row)
               const readyForAcceptance = canAcceptIncomingMatter(row)
+              const canAssign = canAssignIncomingMatter(row, canManageAssignments)
               const accepting = acceptingMatterId === row.assignmentId
               const declining = decliningMatterId === row.assignmentId
+              const assigning = assigningMatterId === row.assignmentId
               const matterLabel = getIncomingMatterActionLabel(row)
               return (
                 <tr
@@ -801,6 +834,19 @@ function IncomingMattersTable({
                           {row.isPreInstruction ? 'Open Mandate' : `Open ${matterLabel}`}
                         </Link>
                       ) : null}
+                      {canAssign ? (
+                        <button
+                          type="button"
+                          disabled={assigning}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onAssignMatter?.(row)
+                          }}
+                          className="text-xs font-semibold text-[#00614f] disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {assigning ? 'Assigning' : row.allocationState === 'staff_assigned' ? 'Reassign' : 'Assign'}
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -829,6 +875,20 @@ function IncomingMattersTable({
                           <ArrowRight size={14} />
                         </Link>
                       ) : null}
+                      {canAssign ? (
+                        <button
+                          type="button"
+                          disabled={assigning}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onAssignMatter?.(row)
+                          }}
+                          className="inline-flex h-9 min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
+                        >
+                          <UserPlus size={14} />
+                          {assigning ? 'Assigning' : row.allocationState === 'staff_assigned' ? 'Reassign' : 'Assign'}
+                        </button>
+                      ) : null}
                       {readyForAcceptance ? (
                         <Link
                           to={href}
@@ -844,8 +904,11 @@ function IncomingMattersTable({
                         row={row}
                         onAcceptMatter={onAcceptMatter}
                         onDeclineMatter={onDeclineMatter}
+                        onAssignMatter={onAssignMatter}
                         accepting={accepting}
                         declining={declining}
+                        assigning={assigning}
+                        canManageAssignments={canManageAssignments}
                       />
                     </div>
                   </td>
@@ -975,6 +1038,122 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
         </table>
       </div>
     </section>
+  )
+}
+
+function IncomingAssignmentDialog({
+  row,
+  firmId = '',
+  pending = false,
+  onCancel,
+  onConfirm,
+}) {
+  const [members, setMembers] = useState([])
+  const [attorneyUserId, setAttorneyUserId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    if (!row) return undefined
+
+    const resolvedFirmId = row.firmId || row.attorneyFirmId || firmId
+    if (!resolvedFirmId) {
+      queueMicrotask(() => {
+        if (active) setError('Attorney firm context is missing for this assignment.')
+      })
+      return undefined
+    }
+
+    queueMicrotask(() => {
+      if (active) setLoading(true)
+    })
+    getAssignableAttorneyFirmMembers(resolvedFirmId, row.laneKey || 'transfer')
+      .then((result) => {
+        if (!active) return
+        const options = result.primaryAttorneys || []
+        const preferredId = row.preferredAttorney?.id || ''
+        const assignedId = row.assignedAttorney?.preferred ? '' : row.assignedAttorney?.id || ''
+        const defaultId = [preferredId, assignedId].find((candidate) =>
+          candidate && options.some((option) => (option.userId || option.id) === candidate),
+        )
+        setMembers(options)
+        setAttorneyUserId(defaultId || '')
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError?.message || 'Unable to load eligible firm members.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => { active = false }
+  }, [firmId, row])
+
+  if (!row) return null
+
+  const isReassign = row.allocationState === 'staff_assigned'
+  const selectedMember = members.find((member) => (member.userId || member.id) === attorneyUserId) || null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/25 px-4 backdrop-blur-[1px]" role="dialog" aria-modal="true">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close assignment dialog" onClick={pending ? undefined : onCancel} />
+      <section className="relative w-full max-w-[500px] rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#00614f]">
+            <UserPlus size={20} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-950">{isReassign ? 'Reassign Primary Attorney' : 'Assign Primary Attorney'}</h2>
+            <p className="mt-1 truncate text-sm font-medium text-slate-500">{row.reference}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <p className="font-semibold text-slate-800">{row.buyer || row.buyerName || row.clientName || 'Buyer pending'}</p>
+          <p className="mt-1 truncate">{row.property}</p>
+          {row.preferredAttorney?.name || row.preferredAttorney?.email ? (
+            <p className="mt-2 text-xs font-semibold text-[#00614f]">
+              Agent preference: {[row.preferredAttorney.name, row.preferredAttorney.email].filter(Boolean).join(' · ')}
+            </p>
+          ) : null}
+        </div>
+
+        <label className="mt-4 block">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Primary {row.matterType || 'Attorney'}</span>
+          <select
+            value={attorneyUserId}
+            onChange={(event) => setAttorneyUserId(event.target.value)}
+            disabled={pending || loading}
+            className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-[#00614f] disabled:cursor-wait disabled:bg-slate-50"
+          >
+            <option value="">{loading ? 'Loading firm members...' : 'Select an active firm member'}</option>
+            {members.map((member) => (
+              <option key={member.userId || member.id} value={member.userId || member.id}>
+                {member.name || member.email || 'Firm member'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedMember?.email ? <p className="mt-2 text-xs font-medium text-slate-500">{selectedMember.email}</p> : null}
+        {error ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={pending} className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={pending || loading || !attorneyUserId}
+            onClick={() => onConfirm({ row, attorneyUserId })}
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[#00463d] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00614f] disabled:cursor-not-allowed disabled:opacity-65"
+          >
+            {pending ? 'Assigning...' : isReassign ? 'Reassign Primary' : 'Assign Primary'}
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1133,6 +1312,7 @@ function AttorneyMattersPage() {
   const [localSavedViews, setLocalSavedViews] = useState([])
   const [incomingAction, setIncomingAction] = useState({ pendingId: '', error: '' })
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
+  const [assignmentDialog, setAssignmentDialog] = useState({ row: null })
 
   const viewKey = normalize(matterType || 'all')
 
@@ -1174,6 +1354,7 @@ function AttorneyMattersPage() {
     setSelectedRows([])
     setIncomingAction({ pendingId: '', error: '' })
     setDeclineDialog({ row: null, reason: '' })
+    setAssignmentDialog({ row: null })
   }, [filters, quickFilter, searchTerm, viewKey])
 
   useEffect(() => {
@@ -1198,6 +1379,10 @@ function AttorneyMattersPage() {
 
   const savedViews = useMemo(() => [...(workspace?.savedViews || []), ...localSavedViews], [localSavedViews, workspace?.savedViews])
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
+  const canManageIncomingAssignments = Boolean(
+    permissionsState.hasPermission('can_view_all_firm_matters') &&
+    permissionsState.hasPermission('can_update_attorney_assignments'),
+  )
 
   function handleFilterChange(key, value) {
     setFilters((previous) => ({ ...previous, [key]: value }))
@@ -1281,6 +1466,11 @@ function AttorneyMattersPage() {
     setDeclineDialog({ row, reason: '' })
   }
 
+  function handleRequestAssignIncomingMatter(row = {}) {
+    setIncomingAction({ pendingId: '', error: '' })
+    setAssignmentDialog({ row })
+  }
+
   async function handleDeclineIncomingMatter() {
     const row = declineDialog.row || {}
     const reason = String(declineDialog.reason || '').trim()
@@ -1304,6 +1494,29 @@ function AttorneyMattersPage() {
       setIncomingAction({
         pendingId: '',
         error: actionError?.message || 'Unable to decline this incoming matter.',
+      })
+    }
+  }
+
+  async function handleAssignIncomingMatter({ row = {}, attorneyUserId = '' } = {}) {
+    const assignmentId = row.assignmentId || row.id
+    if (!assignmentId || !attorneyUserId) return
+
+    setIncomingAction({ pendingId: assignmentId, kind: 'assign', error: '' })
+    try {
+      await assignAttorneyIncomingMatterPrimary({
+        assignmentId,
+        attorneyUserId,
+        transactionId: row.transactionId || row.matterId || '',
+        laneKey: row.laneKey || 'transfer',
+      })
+      await refreshIncomingWorkspaceAfterDecision(row)
+      setAssignmentDialog({ row: null })
+      setIncomingAction({ pendingId: '', error: '' })
+    } catch (actionError) {
+      setIncomingAction({
+        pendingId: '',
+        error: actionError?.message || 'Unable to assign this incoming matter.',
       })
     }
   }
@@ -1370,8 +1583,11 @@ function AttorneyMattersPage() {
               onOpenMatter={handleOpenMatter}
               onAcceptMatter={handleAcceptIncomingMatter}
               onDeclineMatter={handleRequestDeclineIncomingMatter}
+              onAssignMatter={handleRequestAssignIncomingMatter}
               acceptingMatterId={incomingAction.kind === 'accept' ? incomingAction.pendingId : ''}
               decliningMatterId={incomingAction.kind === 'decline' ? incomingAction.pendingId : ''}
+              assigningMatterId={incomingAction.kind === 'assign' ? incomingAction.pendingId : ''}
+              canManageAssignments={canManageIncomingAssignments}
             />
           ) : (
             <MattersTable
@@ -1414,6 +1630,14 @@ function AttorneyMattersPage() {
         onReasonChange={(reason) => setDeclineDialog((previous) => ({ ...previous, reason }))}
         onCancel={() => setDeclineDialog({ row: null, reason: '' })}
         onConfirm={handleDeclineIncomingMatter}
+      />
+      <IncomingAssignmentDialog
+        key={assignmentDialog.row?.assignmentId || assignmentDialog.row?.id || 'incoming-assignment-dialog'}
+        row={assignmentDialog.row}
+        firmId={workspace?.firm?.id || permissionsState.firmId || ''}
+        pending={incomingAction.kind === 'assign' && Boolean(incomingAction.pendingId)}
+        onCancel={() => setAssignmentDialog({ row: null })}
+        onConfirm={handleAssignIncomingMatter}
       />
     </main>
   )

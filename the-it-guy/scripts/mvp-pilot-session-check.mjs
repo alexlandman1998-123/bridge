@@ -4,7 +4,7 @@ const result = spawnSync(process.execPath, ['scripts/mvp-pilot-acceptance.mjs'],
 let acceptance = null
 try { acceptance = JSON.parse(result.stdout) } catch { acceptance = null }
 
-const normalizedPause = String(process.env.MVP_PILOT_CREATION_PAUSED ?? 'true').trim().toLowerCase()
+const normalizedPause = String(process.env.MVP_PILOT_CREATION_PAUSED ?? 'false').trim().toLowerCase()
 const pilotCreationPaused = !['0', 'false', 'no', 'off'].includes(normalizedPause)
 const blockers = [
   ...(acceptance?.blockers || (acceptance ? [] : ['pilot_acceptance_unavailable'])),
@@ -24,7 +24,7 @@ const output = {
     'A gate decision disagrees between module surfaces',
     'The listing workspace displays an application-shell or null-id error',
   ],
-  recoveryAction: 'Stop new pilot transactions, preserve the transaction id and error evidence, repair and certify the release, then set MVP_PILOT_CREATION_PAUSED=false only with an explicit go decision.',
+  recoveryAction: 'Stop new pilot transactions, preserve the transaction id and error evidence, repair and certify the release, then set MVP_PILOT_CREATION_PAUSED=true only with an explicit hold decision.',
   blockers,
 }
 

@@ -73,6 +73,18 @@ for (const oldRenderedSurface of [
 
 assert.ok(shellSource.includes('zoomPercent'), 'SimpleSigningShell should expose controlled zoom percent from SignerPortal')
 assert.ok(modelSource.includes("return { id: 'refresh_completion', label: 'Check again' }"), 'Completed-without-final-artifact state should refresh, not fake an email/send action')
+assert.ok(portalSource.includes('signerAlreadyRecorded({ signerStatus, signerCompleted: isSignerCompletedRetryableError(error) })'), 'SignerPortal should detect signed/completed errors before showing link recovery copy')
+assert.ok(portalSource.includes('Signing recorded. The completed PDF may still be finalising. Please check again in a moment.'), 'Signed signer errors should steer to finalising/check-again copy, not new-link copy')
+assert.ok(portalSource.includes('resolveErrorMessage(error, { signerStatus: signer?.status })'), 'Session-aware portal errors should pass signer status into recovery copy')
+assert.ok(modelSource.includes("finalArtifactReady ? 'PDF ready' : 'Finalising PDF'"), 'Signed sessions should render completion/finalising state instead of blocked link recovery')
+assert.ok(portalSource.includes('const completionSubmitInFlightRef = useRef(false)'), 'SignerPortal should keep a synchronous completion-submit guard')
+assert.ok(portalSource.includes('if (completionSubmitInFlightRef.current) return'), 'SignerPortal should ignore duplicate completion submits')
+assert.ok(portalSource.includes("open={completeConfirmationOpen && busyAction !== 'complete_signing'}"), 'Completion submit should not leave the signer trapped in a busy modal')
+assert.ok(portalSource.includes('busy={false}'), 'Completion confirmation modal should close instead of showing a blocking busy state')
+assert.ok(portalSource.includes('function preloadPreviewResource(session = null)'), 'SignerPortal should preload the preview resource before the final submit screen')
+assert.ok(portalSource.includes('async function refreshSession({ preloadPreview = false } = {})'), 'SignerPortal session refresh should support preview preloading')
+assert.ok(portalSource.includes('if (preloadPreview) preloadPreviewResource(nextSession)'), 'SignerPortal should warm preview before committing refreshed session state')
+assert.ok(portalSource.includes('const nextSession = await refreshSession({ preloadPreview: true })'), 'Field completion should refresh field data and preload preview before showing final submit')
 
 for (const boundary of [
   'does not change email delivery',

@@ -31,6 +31,10 @@ test('fails blocked signing links into a help state', () => {
   assert.equal(resolveSimpleSigningState({ hasSessionError: true }), 'blocked')
 })
 
+test('keeps signed sessions out of blocked link recovery copy', () => {
+  assert.equal(resolveSimpleSigningState({ signerStatus: 'signed', hasSessionError: true }), 'completed')
+})
+
 test('keeps phase 0 out of backend and delivery behavior', () => {
   const scope = buildSimpleSigningExperienceScope()
   assert.equal(scope.mutatedData, false)

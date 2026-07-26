@@ -71,6 +71,9 @@ export function mergePartnerConnectionOptions(connectionOptions = [], legacyOpti
 
 export function partnerOptionToRolePlayerSelection(roleType, partner, selectionSource = '') {
   if (!partner) return null
+  const isAttorneyRole = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(roleType)
+  const selectedPerson = partner.selectedPerson && typeof partner.selectedPerson === 'object' ? partner.selectedPerson : null
+  const selectedUserId = partner.userId || selectedPerson?.userId || selectedPerson?.id || null
   const resolvedSelectionSource =
     selectionSource ||
     (partner.source === 'development_default'
@@ -91,14 +94,18 @@ export function partnerOptionToRolePlayerSelection(roleType, partner, selectionS
     partnerConnectionId: partner.connectionId || null,
     partnerOrganisationId:
       partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId || null,
-    userId: partner.userId || null,
+    userId: isAttorneyRole ? null : selectedUserId,
+    firmFirstAllocation: isAttorneyRole && Boolean(selectedUserId),
+    preferredAttorneyUserId: isAttorneyRole ? selectedUserId : null,
     partner: {
       companyName: partner.companyName,
       contactPerson: partner.contactPerson || partner.contactName || partner.companyName,
       email: partner.email,
       phone: partner.phone || '',
-      userId: partner.userId || null,
+      userId: isAttorneyRole ? null : selectedUserId,
+      preferredAttorneyUserId: isAttorneyRole ? selectedUserId : null,
       partnerConnectionId: partner.connectionId || null,
+      selectedPerson,
     },
   }
 }
