@@ -3180,7 +3180,9 @@ export async function generatePacketVersion({
     preflightTemplate = preflightTemplateResolution?.template || template || null
     requireLegalTemplateGenerationApproval(preflightTemplate, normalizedPacketType)
   }
-  await requireDocumentConversionHealth()
+  if (!templateUsesNativeRenderer(preflightTemplate, normalizedPacketType)) {
+    await requireDocumentConversionHealth()
+  }
   const generationAttemptId = createGenerationAttemptId()
   let generationLeasePacketId = normalizeNullableUuid(packetId)
   let generationLeaseClaimed = false
@@ -3340,7 +3342,7 @@ export async function generatePacketVersion({
             'OTP generation requires a published structured template approved for the native PDF renderer.',
           )
         }
-        const renderMode = validation.packetType === 'otp' || useEditableNativeRenderer
+        const renderMode = validation.packetType === 'otp' || useEditableNativeRenderer || templateUsesNativeRenderer(effectiveTemplate, validation.packetType)
           ? 'native_structured'
           : resolveTemplateRenderMode(effectiveTemplate, validation.packetType)
         if (

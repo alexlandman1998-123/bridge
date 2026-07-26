@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import Docxtemplater from "docxtemplater";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import PizZip from "pizzip";
 import {
   NATIVE_RENDERER_VERSION,
@@ -728,6 +729,125 @@ async function renderHtmlToPdfBytes(html: string, fileName = "mandate.pdf") {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+function normalizePdfText(value: unknown) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\u2022/g, "-")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "");
+}
+
+function replacePlaceholdersForPdf(value: unknown, placeholders: Record<string, string>) {
+  return normalizePdfText(value).replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, key) => {
+    const direct = placeholders[normalizeText(key)];
+    const snake = placeholders[normalizeText(key).replace(/[.\s-]+/g, "_")];
+    return normalizePdfText(direct || snake || "");
+  });
+}
+
+function wrapPdfLine(text: string, font: any, fontSize: number, maxWidth: number) {
+  const words = normalizePdfText(text).split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (font.widthOfTextAtSize(next, fontSize) <= maxWidth || !line) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+async function renderStructuredSectionsToPdfBytes({
+  sectionManifest,
+  placeholders,
+  title,
+}: {
+  sectionManifest: MandateSection[];
+  placeholders: Record<string, string>;
+  title: string;
+}) {
+  const pdf = await PDFDocument.create();
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 48;
+  const maxWidth = pageWidth - margin * 2;
+  const headingSize = 15;
+  const bodySize = 10.5;
+  const lineHeight = 15;
+  let page = pdf.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  const addPage = () => {
+    page = pdf.addPage([pageWidth, pageHeight]);
+    y = pageHeight - margin;
+  };
+  const ensureSpace = (height: number) => {
+    if (y - height < margin) addPage();
+  };
+  const drawLine = (line: string, options: { font?: any; size?: number; color?: any; indent?: number } = {}) => {
+    const size = options.size || bodySize;
+    ensureSpace(size + 6);
+    page.drawText(normalizePdfText(line), {
+      x: margin + (options.indent || 0),
+      y,
+      size,
+      font: options.font || regular,
+      color: options.color || rgb(0.08, 0.13, 0.2),
+    });
+    y -= lineHeight;
+  };
+  const drawWrapped = (text: string, options: { font?: any; size?: number; indent?: number } = {}) => {
+    const size = options.size || bodySize;
+    const font = options.font || regular;
+    const indent = options.indent || 0;
+    for (const paragraph of normalizePdfText(text).split(/\n{2,}/)) {
+      const lines = normalizePdfText(paragraph).split(/\n/);
+      for (const line of lines) {
+        for (const wrapped of wrapPdfLine(line, font, size, maxWidth - indent)) {
+          drawLine(wrapped, { ...options, font, size, indent });
+        }
+      }
+      y -= 5;
+    }
+  };
+
+  drawWrapped(title || "Mandate Agreement", { font: bold, size: 19 });
+  y -= 8;
+
+  for (const [index, section] of (sectionManifest || []).entries()) {
+    const label = normalizeText(section?.label || section?.key) || `Section ${index + 1}`;
+    const content = replacePlaceholdersForPdf(section?.content || section?.legalText || section?.legal_text, placeholders);
+    if (!content.trim()) continue;
+    ensureSpace(headingSize + lineHeight * 2);
+    drawWrapped(label.toUpperCase(), { font: bold, size: headingSize });
+    drawWrapped(content, { font: regular, size: bodySize });
+    y -= 8;
+  }
+
+  const pages = pdf.getPages();
+  pages.forEach((targetPage: any, index: number) => {
+    targetPage.drawText(`Page ${index + 1} of ${pages.length}`, {
+      x: pageWidth - margin - 80,
+      y: 24,
+      size: 8,
+      font: regular,
+      color: rgb(0.36, 0.45, 0.57),
+    });
+  });
+
+  return new Uint8Array(await pdf.save());
+}
+
 function assertValidPdfBytes(bytes: Uint8Array) {
   const header = new TextDecoder().decode(bytes.subarray(0, 5));
   const trailer = new TextDecoder().decode(bytes.subarray(Math.max(0, bytes.length - 2048)));
@@ -1247,7 +1367,13 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
+        outputBytes = buildPdfConverterUrl()
+          ? await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"))
+          : await renderStructuredSectionsToPdfBytes({
+              sectionManifest,
+              placeholders: placeholderMap,
+              title: normalizeText(generationTemplate.label || (packetType === "otp" ? "Offer to Purchase" : "Mandate Agreement")),
+            });
         assertValidPdfBytes(outputBytes);
         contentType = "application/pdf";
         generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");
