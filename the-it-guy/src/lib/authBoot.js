@@ -217,12 +217,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     }
   }
 
-  const { data: userData, error: userError } = await runAuthBootStep(
-    'auth.getUser',
-    () => supabase.auth.getUser(),
-  )
-  if (userError) throw userError
-  const user = userData?.user || session.user
+  const user = session.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
   const [profile, loadedSignupIntent] = await Promise.all([

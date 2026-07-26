@@ -20,6 +20,7 @@
     "test:legal-template-platform-defaults-phase7": "node scripts/legal-template-platform-defaults-phase7.test.mjs",
     "test:legal-template-platform-defaults-phase8": "node scripts/legal-template-platform-defaults-phase8.test.mjs",
     "test:legal-template-source-of-truth": "node scripts/legal-template-source-of-truth.test.mjs",
+    "test:auth-bridge-bootstrap-timeout": "node scripts/auth-bridge-bootstrap-timeout.test.mjs",
     "test:mandate-signing-send-responsiveness": "node scripts/mandate-signing-send-responsiveness.test.mjs",
     "test:lead-mandate-quick-start": "node scripts/lead-mandate-quick-start.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",

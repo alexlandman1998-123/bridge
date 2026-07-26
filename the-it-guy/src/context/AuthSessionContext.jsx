@@ -370,7 +370,14 @@ export function AuthSessionProvider({ children }) {
             },
           })
         }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
-        const nextState = await loadBridgeAuthState({ session, selectedWorkspaceId })
+        const nextState = await withBootstrapTimeout(
+          loadBridgeAuthState({ session, selectedWorkspaceId }),
+          {
+            timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+            phase: 'bridge',
+            getDiagnostics: getActiveAuthBootStepDiagnostics,
+          },
+        )
         resolvedBridgeState = nextState
         if (!active) {
           bridgeOutcome = 'cancelled'
