@@ -6025,6 +6025,7 @@ function ArchlineTransferWorkspace({
   onUploadDocument,
   onAddNote,
   onOpenDocuments,
+  onOpenParties,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState('')
   const [search, setSearch] = useState('')
@@ -6742,7 +6743,7 @@ function ArchlineTransferWorkspace({
                 {(viewModel.selectedTaskContext.keyDates || []).slice(0, 6).map((item) => (
                   <div key={item.key || item.label} className="flex items-center justify-between gap-3 py-3 text-sm">
                     <span className="text-slate-600">{item.label}</span>
-                    <strong className="text-right font-medium text-slate-950">{value}</strong>
+                    <strong className="text-right font-medium text-slate-950">{item.value}</strong>
                   </div>
                 ))}
               </div>

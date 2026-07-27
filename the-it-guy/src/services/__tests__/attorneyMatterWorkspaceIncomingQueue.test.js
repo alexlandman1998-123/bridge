@@ -110,6 +110,45 @@ try {
         agent: 'Agent One',
         actionHref: '/transactions/tx-incoming',
       },
+      {
+        id: 'pre-incoming-assignment',
+        assignmentId: 'pre-incoming-assignment',
+        transactionId: 'tx-pre-incoming',
+        matterId: 'tx-pre-incoming',
+        reference: 'PRE-INCOMING-001',
+        matterType: 'Transfer',
+        status: 'awaiting_client_onboarding',
+        statusLabel: 'Awaiting Buyer Onboarding',
+        waitingOn: ['buyer_onboarding'],
+        waitingOnLabels: ['Buyer onboarding'],
+        incomingSince: '2026-07-02T08:00:00.000Z',
+        incomingAgeDays: 7,
+        buyerName: 'Onboarding Buyer',
+        sellerName: 'Onboarding Seller',
+        property: '2 Intake Street',
+        purchasePrice: 1600000,
+        documents: {
+          openCount: 0,
+          reviewCount: 0,
+          rejectedCount: 0,
+        },
+        nextAction: 'Wait for buyer onboarding submission.',
+        assignedAttorney: {
+          id: 'att-1',
+          name: 'Sarah Conveyancer',
+          initials: 'SC',
+        },
+        assignedSecretary: {
+          id: '',
+          name: '',
+        },
+        assignedAdminHandler: {
+          id: '',
+          name: '',
+        },
+        agent: 'Agent Two',
+        actionHref: '/transactions/tx-pre-incoming',
+      },
     ],
   }
 
@@ -120,12 +159,13 @@ try {
     })
 
     assert.equal(workspace.view.usesIncomingQueue, true)
-    assert.deepEqual(workspace.tableRows.map((row) => row.matterId), ['listing:listing-1', 'tx-incoming'])
+    assert.deepEqual(workspace.tableRows.map((row) => row.matterId), ['listing:listing-1', 'tx-incoming', 'tx-pre-incoming'])
     assert.equal(workspace.tableRows[0].rowKind, 'pre_instruction')
     assert.equal(workspace.tableRows[0].status, 'Awaiting Buyer')
     assert.equal(workspace.tableRows[0].statusKey, 'awaiting_buyer')
     assert.equal(workspace.tableRows[0].nextAction, 'Await a buyer before the formal transfer instruction is activated.')
-    assert.equal(workspace.summary.incomingMatters, 2)
+    assert.equal(workspace.tableRows[2].statusKey, 'awaiting_client_onboarding')
+    assert.equal(workspace.summary.incomingMatters, 3)
     assert.equal(workspace.summary.awaitingBuyer, 1)
     assert.equal(workspace.summary.awaitingSignedOtp, 1)
     assert.equal(workspace.filters.statuses.some((option) => option.key === 'awaiting_buyer'), true)
@@ -143,6 +183,16 @@ try {
     })
 
     assert.deepEqual(workspace.tableRows.map((row) => row.matterId), ['tx-incoming'])
+  }
+
+  {
+    const workspace = buildAttorneyMatterWorkspace(source, {
+      view: 'active',
+      filters: { status: 'awaiting_client_onboarding' },
+      pageSize: 20,
+    })
+
+    assert.deepEqual(workspace.tableRows.map((row) => row.matterId), ['tx-pre-incoming'])
   }
 
   {

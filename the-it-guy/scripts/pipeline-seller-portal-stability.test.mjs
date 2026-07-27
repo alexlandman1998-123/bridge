@@ -32,6 +32,11 @@ assert.match(pipelineSource, /snapshot\?\.leadWorkspaceStatus === 'not_found'[\s
 assert.ok(pipelineSource.includes('This lead link is stale or the lead has been removed from the selected workspace.'), 'stale lead workspace links should show an explicit recovery message')
 assert.ok(pipelineSource.includes('Back to Leads'), 'stale lead workspace links should offer a path back to the lead list')
 assert.match(pipelineSource, /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(resolvedRouteLeadId\)/, 'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id')
+assert.match(pipelineSource, /getPrivateListing\(listingId, \{ includeRequirementsAndDocuments: false \}\)/, 'seller lead workspace should hydrate its selected listing without waiting for the full organisation listing refresh')
+assert.match(pipelineSource, /SELECTED_SELLER_LISTING_HYDRATION_TIMEOUT_MS = 5000/, 'selected seller listing hydration should have a bounded first-paint timeout')
+assert.match(pipelineSource, /setAppointmentListingOptions\(\(previous\) => dedupeListingOptions\(\[\.\.\.\(Array\.isArray\(previous\) \? previous : \[\]\), listingOption\]\)\)/, 'selected seller listing hydration should merge the rich listing into the listing cache')
+assert.match(pipelineSource, /byId\.set\(option\.id, \{\s*\.\.\.olderOption,\s*\.\.\.newerOption,[\s\S]*?label: normalizeText\(newerOption\.label\)/, 'listing option de-dupe should preserve rich seller listing fields before normalising appointment labels')
+assert.match(pipelineSource, /function normalizeAppointmentListingOption\(listing = \{\}\) \{[\s\S]*?return \{\s*\.\.\.listing,[\s\S]*?label: buildAppointmentListingLabel\(listing\)/, 'appointment listing options should retain seller listing journey and readiness fields')
 
 assert.match(
   agencyCrmRepositorySource,

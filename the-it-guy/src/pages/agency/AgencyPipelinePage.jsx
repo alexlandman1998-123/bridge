@@ -74,7 +74,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
@@ -172,6 +172,7 @@ const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
 const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 1500
 const LEAD_WORKSPACE_HYDRATION_MAX_RETRIES = 4
+const SELECTED_SELLER_LISTING_HYDRATION_TIMEOUT_MS = 5000
 const LEAD_WORKSPACE_STALE_LINK_COPY = 'This lead link is stale or the lead has been removed from the selected workspace.'
 const LEAD_WORKSPACE_UNAVAILABLE_COPY = 'This lead could not be checked for the selected workspace. Refresh the page or open it again from the lead list.'
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
@@ -1411,6 +1412,7 @@ function normalizeAppointmentListingOption(listing = {}) {
   const parking = Number(listing?.garages || listing?.coveredParking || listing?.openParking || listing?.propertyDetails?.garages || listing?.propertyDetails?.coveredParking || listing?.propertyDetails?.openParking || 0) || 0
   const askingPrice = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.propertyDetails?.price || listing?.estimatedValue || 0) || 0
   return {
+    ...listing,
     id,
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
@@ -3445,6 +3447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadRequestRef = useRef(0)
   const reloadTimerRef = useRef(null)
   const routeLeadHydrationRef = useRef('')
+  const selectedSellerListingHydrationRef = useRef('')
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
@@ -6230,6 +6233,85 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
     [resolveLeadLinkedListing, selectedLead],
   )
+
+  useEffect(() => {
+    if (!selectedLead || !selectedLeadIsSeller || !organisationId || !isSupabaseConfigured) return undefined
+    const listingId = normalizeText(
+      selectedLeadLinkedListing?.id ||
+        selectedLead?.listingId ||
+        selectedLead?.listing_id ||
+        selectedLead?.privateListingId ||
+        selectedLead?.private_listing_id,
+    )
+    if (!isUuidLike(listingId)) return undefined
+
+    const linkedListingHasSellerFacts = Boolean(
+      selectedLeadLinkedListing &&
+        (
+          normalizeText(selectedLeadLinkedListing?.listingStatus || selectedLeadLinkedListing?.listing_status || selectedLeadLinkedListing?.lifecycleStatus) ||
+          normalizeText(selectedLeadLinkedListing?.mandateStatus || selectedLeadLinkedListing?.mandate_status || selectedLeadLinkedListing?.mandate?.status) ||
+          selectedLeadLinkedListing?.sellerOnboarding ||
+          Array.isArray(selectedLeadLinkedListing?.documents)
+        ),
+    )
+    if (linkedListingHasSellerFacts) return undefined
+
+    const hydrationKey = `${organisationId}:${normalizeLeadIdentityKey(selectedLead.leadId)}:${listingId}`
+    if (selectedSellerListingHydrationRef.current === hydrationKey) return undefined
+    selectedSellerListingHydrationRef.current = hydrationKey
+
+    let cancelled = false
+    async function hydrateSelectedSellerListing() {
+      try {
+        const listing = await withPipelineTimeout(
+          getPrivateListing(listingId, { includeRequirementsAndDocuments: false }),
+          'Selected seller listing is taking too long to load.',
+          SELECTED_SELLER_LISTING_HYDRATION_TIMEOUT_MS,
+        )
+        if (cancelled || !listing?.id) return
+        const listingOption = normalizeAppointmentListingOption(listing)
+        if (listingOption) {
+          setAppointmentListingOptions((previous) => dedupeListingOptions([...(Array.isArray(previous) ? previous : []), listingOption]))
+        }
+        const listingLeadFallback = mapPrivateListingToLeadFallback(listing)
+        if (listingLeadFallback) {
+          setRecords((previous) => ({
+            ...previous,
+            leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => {
+              if (normalizeLeadIdentityKey(lead?.leadId) !== normalizeLeadIdentityKey(selectedLead.leadId)) return lead
+              return {
+                ...lead,
+                listingId: normalizeText(listing.id) || normalizeText(lead?.listingId),
+                privateListingId: normalizeText(listing.id) || normalizeText(lead?.privateListingId),
+                propertyInterest: normalizeText(listingLeadFallback.propertyInterest) || normalizeText(lead?.propertyInterest),
+                sellerPropertyAddress: normalizeText(listingLeadFallback.sellerPropertyAddress) || normalizeText(lead?.sellerPropertyAddress),
+                areaInterest: normalizeText(listingLeadFallback.areaInterest) || normalizeText(lead?.areaInterest),
+                estimatedValue: Number(listingLeadFallback.estimatedValue || 0) || Number(lead?.estimatedValue || 0) || 0,
+                sellerOnboardingStatus: normalizeText(listingLeadFallback.sellerOnboardingStatus) || normalizeText(lead?.sellerOnboardingStatus),
+                sellerOnboarding: listingLeadFallback.sellerOnboarding || lead?.sellerOnboarding || null,
+                mandatePacketId: normalizeText(listing?.mandatePacketId || listing?.mandate_packet_id || lead?.mandatePacketId),
+                updatedAt: listing?.updatedAt || lead?.updatedAt,
+              }
+            }),
+          }))
+        }
+      } catch (listingHydrationError) {
+        if (!cancelled) {
+          console.warn('[PIPELINE] selected seller listing hydration failed; organisation listing refresh will continue in the background.', listingHydrationError)
+        }
+      }
+    }
+
+    void hydrateSelectedSellerListing()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    organisationId,
+    selectedLead,
+    selectedLeadIsSeller,
+    selectedLeadLinkedListing,
+  ])
 
   const selectedSellerJourney = useMemo(() => buildSellerJourney({
     lead: selectedLead || {},

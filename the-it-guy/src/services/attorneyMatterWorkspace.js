@@ -17,6 +17,7 @@ const STATUS_FILTERS = [
 const INCOMING_STATUS_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'awaiting_buyer', label: 'Awaiting Buyer' },
+  { key: 'awaiting_client_onboarding', label: 'Awaiting Buyer Onboarding' },
   { key: 'awaiting_signed_otp', label: 'Awaiting Signed OTP' },
   { key: 'awaiting_documents', label: 'Awaiting Documents' },
   { key: 'ready_for_acceptance', label: 'Ready For Acceptance' },
@@ -43,6 +44,7 @@ const QUICK_FILTERS = [
 
 const INCOMING_QUICK_FILTERS = [
   { key: 'awaiting_buyer', label: 'Awaiting Buyer', query: { status: 'awaiting_buyer' } },
+  { key: 'awaiting_client_onboarding', label: 'Awaiting Buyer Onboarding', query: { status: 'awaiting_client_onboarding' } },
   { key: 'awaiting_signed_otp', label: 'Awaiting OTP', query: { status: 'awaiting_signed_otp' } },
   { key: 'awaiting_documents', label: 'Awaiting Documents', query: { status: 'awaiting_documents' } },
   { key: 'ready_for_acceptance', label: 'Ready For Acceptance', query: { status: 'ready_for_acceptance' } },
@@ -61,6 +63,7 @@ const SAVED_VIEWS = [
 
 const INCOMING_SAVED_VIEWS = [
   { id: 'incoming-awaiting-buyer', name: 'Awaiting Buyer', filters: { status: 'awaiting_buyer' } },
+  { id: 'incoming-awaiting-client-onboarding', name: 'Awaiting Buyer Onboarding', filters: { status: 'awaiting_client_onboarding' } },
   { id: 'incoming-awaiting-otp', name: 'Awaiting OTP', filters: { status: 'awaiting_signed_otp' } },
   { id: 'incoming-awaiting-documents', name: 'Awaiting Documents', filters: { status: 'awaiting_documents' } },
   { id: 'incoming-ready-for-acceptance', name: 'Ready For Acceptance', filters: { status: 'ready_for_acceptance' } },
@@ -971,6 +974,7 @@ export async function getAttorneyMatterWorkspace(options = {}) {
       ? getAttorneyIncomingMatterQueue({
           firmId: options.firmId || null,
           userId: options.userId || null,
+          includePreIncoming: true,
         })
       : Promise.resolve(null),
   ])
