@@ -117,6 +117,66 @@ export type SendLegacyTestPayload = {
   name?: string;
 };
 
+export type SendLeadAcknowledgementPayload = {
+  type: "lead_acknowledgement" | "lead_acknowledgement_email" | "property_enquiry_acknowledgement";
+  to: string;
+  subject?: string;
+  replyTo?: string;
+  reply_to?: string;
+  fromName?: string;
+  from_name?: string;
+  fromEmail?: string;
+  from_email?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  leadId?: string;
+  lead_id?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  organisationLogoUrl?: string;
+  organisation_logo_url?: string;
+  organisationTagline?: string;
+  organisation_tagline?: string;
+  organisationPhone?: string;
+  organisation_phone?: string;
+  organisationEmail?: string;
+  organisation_email?: string;
+  organisationWebsite?: string;
+  organisation_website?: string;
+  organisationBrandPrimaryColor?: string;
+  organisation_brand_primary_color?: string;
+  organisationBrandSecondaryColor?: string;
+  organisation_brand_secondary_color?: string;
+  enquiryReceivedAt?: string;
+  enquiry_received_at?: string;
+  timezone?: string;
+  source?: string;
+  originalMessage?: string;
+  original_message?: string;
+  agentName?: string;
+  agent_name?: string;
+  agentFirstName?: string;
+  agent_first_name?: string;
+  agentEmail?: string;
+  agent_email?: string;
+  agentPhone?: string;
+  agent_phone?: string;
+  agentJobTitle?: string;
+  agent_job_title?: string;
+  agentBio?: string;
+  agent_bio?: string;
+  agentAvatarUrl?: string;
+  agent_avatar_url?: string;
+  responseExpectation?: string;
+  response_expectation?: string;
+  customResponseText?: string;
+  custom_response_text?: string;
+};
+
 export type SendArch9LaunchConfirmationPayload = {
   type:
     | "arch9_launch_confirmation"

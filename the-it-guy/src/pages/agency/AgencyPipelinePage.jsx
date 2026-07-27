@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
@@ -714,6 +714,19 @@ function PreferredAttorneySelectionModal({
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
+const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'activity', 'appointments', 'documents', 'offers', 'insights', 'mapping'])
+
+function resolveLeadWorkspaceTabFromSearch(search = '') {
+  if (!search) return 'overview'
+  const params = new URLSearchParams(search)
+  const requestedTab = normalizeKey(params.get('tab') || params.get('sellerWorkspace') || '')
+  if (SELLER_LEAD_WORKSPACE_TAB_KEYS.has(requestedTab) || BUYER_LEAD_WORKSPACE_TAB_KEYS.has(requestedTab)) {
+    return requestedTab
+  }
+  return 'overview'
 }
 
 const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
@@ -3627,8 +3640,14 @@ function financeFormFromSummary(summary = {}) {
 
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
+  const routeLeadWorkspaceTab = useMemo(() => resolveLeadWorkspaceTabFromSearch(location.search), [location.search])
+  const hasExplicitLeadWorkspaceTab = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.has('tab') || params.has('sellerWorkspace')
+  }, [location.search])
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
   const [loading, setLoading] = useState(true)
@@ -4546,10 +4565,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     setSelectedLeadId(routeLeadId)
-    setLeadWorkspaceTab('overview')
     setRouteLeadHydrationNotice('')
     setRouteLeadHydrationStatus('loading')
   }, [routeLeadId])
+
+  useEffect(() => {
+    if (!routeLeadId) return
+    setLeadWorkspaceTab(routeLeadWorkspaceTab)
+  }, [routeLeadId, routeLeadWorkspaceTab])
 
   useEffect(() => {
     if (routeLeadRecord) {
@@ -5381,15 +5404,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
 
+  useEffect(() => {
+    if (!routeLeadId || hasExplicitLeadWorkspaceTab || !selectedLeadIsSeller) return
+    setLeadWorkspaceTab('property')
+  }, [hasExplicitLeadWorkspaceTab, routeLeadId, selectedLeadIsSeller])
+
   const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
-    setLeadWorkspaceTab(tabKey)
+    const nextTab = normalizeKey(tabKey) || 'overview'
+    setLeadWorkspaceTab(nextTab)
+    if (isLeadWorkspaceRoute && location.pathname) {
+      const params = new URLSearchParams(location.search)
+      params.set('tab', nextTab)
+      params.delete('sellerWorkspace')
+      const nextSearch = params.toString()
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+        },
+        { replace: true },
+      )
+    }
     if (typeof window === 'undefined' || typeof document === 'undefined') return
     window.setTimeout(() => {
       document
         .querySelector('[data-testid="lead-workspace-tabs"]')
         ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 0)
-  }, [])
+  }, [isLeadWorkspaceRoute, location.pathname, location.search, navigate])
 
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
@@ -13889,6 +13931,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {selectedLead && selectedLeadIsSeller ? (
+                    <div className="mt-6 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
+                      <div className="grid min-w-[860px] grid-cols-7 gap-2">
+                        {[
+                          { key: 'overview', label: 'Overview', meta: '' },
+                          { key: 'seller', label: 'Seller', meta: '' },
+                          { key: 'property', label: 'Property', meta: '' },
+                          { key: 'mandate', label: 'Mandate', meta: '' },
+                          { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                          { key: 'documents', label: 'Documents', meta: '' },
+                          { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
+                        ].map((tab) => {
+                          const isActive = leadWorkspaceTab === tab.key
+                          return (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
+                              role="tab"
+                              aria-selected={isActive}
+                              className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-[16px] px-4 text-sm transition ${
+                                isActive
+                                  ? 'bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
+                                  : 'font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
+                              }`}
+                            >
+                              <span>{tab.label}</span>
+                              {tab.meta !== '' ? (
+                                <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
+                              ) : null}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {selectedLead && selectedLeadIsSeller && leadWorkspaceTab === 'overview' ? (
                     <div className="mt-6 space-y-5">
                       <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                         <div className="rounded-[26px] border border-[#dbe7f2] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbff_100%)] p-5 shadow-[0_16px_38px_rgba(31,54,78,0.07)] sm:p-6">
@@ -14011,7 +14090,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
                 </div>
 
-                {selectedLead ? (
+                {selectedLead && !selectedLeadIsSeller ? (
                   <div className={`${selectedLeadIsSeller ? 'mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8' : 'scroll-mt-4 overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]'}`} role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
                     <div className={`${selectedLeadIsSeller ? 'grid min-w-[860px] grid-cols-7 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
                       {(selectedLeadIsSeller ? [

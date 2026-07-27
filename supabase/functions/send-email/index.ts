@@ -10,6 +10,7 @@ import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
+import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import {
   handleArch9LaunchConfirmationEmail,
   handleArch9LaunchInternalNotificationEmail,
@@ -42,6 +43,7 @@ import type {
   SendCommercialAccessNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
   SendLeadPropertySharePayload,
+  SendLeadAcknowledgementPayload,
   SendLegacyTestPayload,
   SendNotificationReminderDispatchPayload,
   SendOfferDecisionNotificationPayload,
@@ -333,6 +335,22 @@ Deno.serve(async (req: Request) => {
       });
       return await handleBuyerOfferLinkEmail(
         payload as SendBuyerOfferLinkPayload,
+      );
+    }
+
+    if (
+      [
+        "lead_acknowledgement",
+        "lead_acknowledgement_email",
+        "property_enquiry_acknowledgement",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "lead_acknowledgement",
+        recipient: recipient || null,
+      });
+      return await handleLeadAcknowledgementEmail(
+        payload as SendLeadAcknowledgementPayload,
       );
     }
 

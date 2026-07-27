@@ -24,6 +24,19 @@ const OPTIONAL_LEAD_COLUMNS = [
   "enquired_property_price",
   "source_reference_id",
   "raw_enquiry_payload",
+  "acknowledgement_status",
+  "acknowledgement_sent_at",
+  "acknowledgement_message_id",
+  "acknowledgement_failure_reason",
+  "acknowledgement_attempt_count",
+];
+
+const OPTIONAL_ACKNOWLEDGEMENT_COLUMNS = [
+  "acknowledgement_status",
+  "acknowledgement_sent_at",
+  "acknowledgement_message_id",
+  "acknowledgement_failure_reason",
+  "acknowledgement_attempt_count",
 ];
 
 const OPTIONAL_LOG_COLUMNS = [
@@ -82,6 +95,25 @@ function normalizeEmail(value: unknown) {
   return emailMatch?.[0] || "";
 }
 
+function isValidEmail(value: unknown) {
+  const email = normalizeEmail(value);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email);
+}
+
+function pickText(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function firstNameFrom(value: unknown) {
+  const text = normalizeText(value);
+  if (!text || /^lead$/i.test(text) || /^unknown$/i.test(text)) return "";
+  return text.split(/\s+/).filter(Boolean)[0] || "";
+}
+
 function isUuidLike(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value));
 }
@@ -94,6 +126,19 @@ function isMissingColumnError(error: unknown) {
   const code = normalizeText((error as { code?: string })?.code).toUpperCase();
   const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
   return code === "42703" || code === "PGRST204" || message.includes("column") && message.includes("does not exist");
+}
+
+function isMissingTableError(error: unknown, tableName = "") {
+  const code = normalizeText((error as { code?: string })?.code).toUpperCase();
+  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  const target = normalizeLower(tableName);
+  return code === "42P01" || code === "PGRST205" || message.includes("does not exist") && (!target || message.includes(target));
+}
+
+function isUniqueViolationError(error: unknown) {
+  const code = normalizeText((error as { code?: string })?.code).toUpperCase();
+  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  return code === "23505" || message.includes("duplicate key");
 }
 
 function missingColumnName(error: unknown, allowedColumns: string[]) {
@@ -128,6 +173,46 @@ function stripHtml(value: unknown) {
     .replace(/&amp;/gi, "&")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function cleanPublicText(value: unknown, maxLength = 500) {
+  const text = stripHtml(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function safeUrl(value: unknown) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function jobTitleLabel(value: unknown) {
+  const key = normalizeLower(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const labels: Record<string, string> = {
+    organisation_owner: "Organisation Owner",
+    principal: "Principal",
+    director: "Director",
+    partner: "Partner",
+    administrator: "Administrator",
+    branch_manager: "Branch Manager",
+    sales_manager: "Sales Manager",
+    development_manager: "Development Manager",
+    team_lead: "Team Lead",
+    senior_agent: "Senior Agent",
+    property_practitioner: "Property Practitioner",
+    agent: "Agent",
+    transaction_coordinator: "Transaction Coordinator",
+    listing_coordinator: "Listing Coordinator",
+    admin_coordinator: "Admin Coordinator",
+    assistant: "Assistant",
+  };
+  return labels[key] || normalizeText(value);
 }
 
 function readPath(source: JsonRecord, path: string): unknown {
@@ -750,6 +835,49 @@ async function insertWithColumnFallback(client: SupabaseClientLike, table: strin
   throw new Error(`Unable to insert ${table}.`);
 }
 
+async function updateWithColumnFallback(
+  client: SupabaseClientLike,
+  table: string,
+  payload: JsonRecord,
+  optionalColumns: string[],
+  applyFilter: (query: any) => any,
+) {
+  const workingPayload = { ...payload };
+  const remainingOptionalColumns = new Set(optionalColumns);
+  for (let attempt = 0; attempt <= optionalColumns.length; attempt += 1) {
+    const result = await applyFilter(client.from(table).update(workingPayload));
+    if (!result.error) return result.data as JsonRecord | null;
+    if (!isMissingColumnError(result.error) || attempt === optionalColumns.length) throw result.error;
+    const missingColumn = missingColumnName(result.error, [...remainingOptionalColumns]);
+    const columnToRemove = missingColumn || [...remainingOptionalColumns].find((column) => column in workingPayload) || "";
+    if (!columnToRemove) throw result.error;
+    delete workingPayload[columnToRemove];
+    remainingOptionalColumns.delete(columnToRemove);
+  }
+  throw new Error(`Unable to update ${table}.`);
+}
+
+async function insertInboundEmail(client: SupabaseClientLike, payload: JsonRecord) {
+  try {
+    const row = await insertWithColumnFallback(client, "inbound_lead_emails", payload, OPTIONAL_INBOUND_EMAIL_COLUMNS);
+    return { row, duplicate: false };
+  } catch (error) {
+    if (!isUniqueViolationError(error)) throw error;
+    const provider = normalizeText(payload.provider);
+    const messageId = normalizeText(payload.provider_message_id);
+    if (!provider || !messageId) throw error;
+    const existing = await client
+      .from("inbound_lead_emails")
+      .select("*")
+      .eq("provider", provider)
+      .eq("provider_message_id", messageId)
+      .limit(1)
+      .maybeSingle();
+    if (existing.error || !existing.data) throw error;
+    return { row: existing.data as JsonRecord, duplicate: true };
+  }
+}
+
 async function findExistingContact(client: SupabaseClientLike, organisationId: string, email: string, phone: string) {
   if (email) {
     const { data, error } = await client
@@ -896,6 +1024,471 @@ async function recordFailure(client: SupabaseClientLike, patch: JsonRecord) {
   });
 }
 
+async function recordLeadAcknowledgementActivity(
+  client: SupabaseClientLike,
+  {
+    organisationId,
+    leadId,
+    agentId,
+    note,
+    outcome,
+  }: {
+    organisationId: string;
+    leadId: string;
+    agentId?: string;
+    note: string;
+    outcome?: string;
+  },
+) {
+  if (!isUuidLike(organisationId) || !isUuidLike(leadId) || !normalizeText(note)) return;
+  const insert = await client.from("lead_activities").insert({
+    activity_id: createUuid(),
+    organisation_id: organisationId,
+    lead_id: leadId,
+    agent_id: isUuidLike(agentId) ? agentId : null,
+    activity_type: "Email",
+    activity_note: normalizeText(note),
+    activity_date: new Date().toISOString(),
+    outcome: normalizeText(outcome) || null,
+  });
+  if (insert.error && !isMissingTableError(insert.error, "lead_activities")) throw insert.error;
+}
+
+async function updateLeadAcknowledgementStatus(
+  client: SupabaseClientLike,
+  leadId: string,
+  payload: JsonRecord,
+) {
+  if (!isUuidLike(leadId)) return;
+  try {
+    await updateWithColumnFallback(
+      client,
+      "leads",
+      {
+        ...payload,
+        updated_at: new Date().toISOString(),
+      },
+      OPTIONAL_ACKNOWLEDGEMENT_COLUMNS,
+      (query) => query.eq("lead_id", leadId),
+    );
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+  }
+}
+
+async function fetchSingleById(client: SupabaseClientLike, table: string, column: string, value: string) {
+  if (!value) return null;
+  const result = await client.from(table).select("*").eq(column, value).limit(1).maybeSingle();
+  if (result.error) {
+    if (isMissingTableError(result.error, table) || isMissingColumnError(result.error)) return null;
+    throw result.error;
+  }
+  return (result.data || null) as JsonRecord | null;
+}
+
+async function fetchOrganisationMember(client: SupabaseClientLike, organisationId: string, userId: string) {
+  if (!isUuidLike(organisationId) || !isUuidLike(userId)) return null;
+  const result = await client
+    .from("organisation_users")
+    .select("*")
+    .eq("organisation_id", organisationId)
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if (result.error) {
+    if (isMissingTableError(result.error, "organisation_users") || isMissingColumnError(result.error)) return null;
+    throw result.error;
+  }
+  return (result.data || null) as JsonRecord | null;
+}
+
+function resolveOrganisationEmail(organisation: JsonRecord | null) {
+  return normalizeEmail(pickText(
+    organisation?.lead_inbox_email,
+    organisation?.enquiries_email,
+    organisation?.email,
+    organisation?.company_email,
+    organisation?.support_email,
+  ));
+}
+
+function resolveBranchEmail(branch: JsonRecord | null) {
+  return normalizeEmail(pickText(branch?.lead_inbox_email, branch?.email, branch?.branch_email));
+}
+
+function buildAgentContext(profile: JsonRecord | null, membership: JsonRecord | null, organisationName: string) {
+  const firstName = pickText(profile?.first_name, firstNameFrom(profile?.full_name));
+  const lastName = pickText(profile?.last_name);
+  const fullName = pickText(profile?.full_name, [firstName, lastName].filter(Boolean).join(" "), profile?.email);
+  return {
+    name: fullName,
+    firstName: firstNameFrom(firstName || fullName),
+    email: normalizeEmail(profile?.email),
+    phone: pickText(profile?.phone_number, profile?.phone, profile?.mobile),
+    avatarUrl: safeUrl(pickText(profile?.avatar_url, profile?.profile_image_url, profile?.photo_url)),
+    jobTitle: jobTitleLabel(pickText(membership?.job_title, profile?.title, profile?.job_title)) || "Property Practitioner",
+    bio: cleanPublicText(profile?.bio, 250) || `${fullName || "The agent"} is a property practitioner at ${organisationName} and will assist you with your enquiry.`,
+  };
+}
+
+function resolveReplyTo({
+  mode,
+  agentEmail,
+  branchEmail,
+  organisationEmail,
+}: {
+  mode: string;
+  agentEmail: string;
+  branchEmail: string;
+  organisationEmail: string;
+}) {
+  if (mode === "branch") return branchEmail || organisationEmail || agentEmail;
+  if (mode === "organisation") return organisationEmail || branchEmail || agentEmail;
+  return agentEmail || organisationEmail || branchEmail;
+}
+
+async function prepareAcknowledgementOutbox(
+  client: SupabaseClientLike,
+  {
+    organisationId,
+    branchId,
+    leadId,
+    agentId,
+    listingId,
+    recipient,
+    subject,
+    messagePreview,
+    dedupeKey,
+    payload,
+    metadata,
+  }: {
+    organisationId: string;
+    branchId?: string;
+    leadId: string;
+    agentId?: string;
+    listingId?: string;
+    recipient: string;
+    subject: string;
+    messagePreview?: string;
+    dedupeKey: string;
+    payload: JsonRecord;
+    metadata: JsonRecord;
+  },
+) {
+  if (!isUuidLike(organisationId) || !normalizeText(dedupeKey)) return null;
+  const existing = await client
+    .from("notification_events")
+    .select("*")
+    .eq("organisation_id", organisationId)
+    .eq("dedupe_key", dedupeKey)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) {
+    if (isMissingTableError(existing.error, "notification_events")) return null;
+    throw existing.error;
+  }
+  if (existing.data) {
+    const existingStatus = normalizeLower(existing.data.status);
+    if (["sent", "delivered", "queued", "prepared"].includes(existingStatus)) {
+      return { ...(existing.data as JsonRecord), alreadyPrepared: true };
+    }
+    const updated = await client
+      .from("notification_events")
+      .update({
+        status: "queued",
+        queued_at: new Date().toISOString(),
+        error_message: null,
+        payload_json: payload,
+        metadata_json: metadata,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.data.id)
+      .select("*")
+      .single();
+    if (updated.error) throw updated.error;
+    return { ...(updated.data as JsonRecord), retryingFailedEvent: true };
+  }
+
+  const inserted = await client
+    .from("notification_events")
+    .insert({
+      automation_key: "lead_acknowledgement",
+      organisation_id: organisationId,
+      branch_id: isUuidLike(branchId) ? branchId : null,
+      assigned_user_id: isUuidLike(agentId) ? agentId : null,
+      lead_id: isUuidLike(leadId) ? leadId : null,
+      listing_id: isUuidLike(listingId) ? listingId : null,
+      event_key: "lead.enquiry_received",
+      category: "standard_email",
+      trigger_type: "system_event",
+      channel: "email",
+      status: "queued",
+      recipient_email: recipient,
+      recipient_role: "lead",
+      subject,
+      message_preview: normalizeText(messagePreview).slice(0, 320) || null,
+      provider: "send-email",
+      source: "inbound_lead_email",
+      dedupe_key: dedupeKey,
+      payload_json: payload,
+      metadata_json: metadata,
+      queued_at: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
+  if (inserted.error) {
+    if (isMissingTableError(inserted.error, "notification_events")) return null;
+    if (isUniqueViolationError(inserted.error)) return null;
+    throw inserted.error;
+  }
+  return inserted.data as JsonRecord;
+}
+
+async function markAcknowledgementOutbox(
+  client: SupabaseClientLike,
+  eventId: unknown,
+  patch: JsonRecord,
+) {
+  if (!isUuidLike(eventId)) return;
+  const update = await client
+    .from("notification_events")
+    .update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", normalizeText(eventId));
+  if (update.error && !isMissingTableError(update.error, "notification_events")) throw update.error;
+}
+
+async function invokeSendEmailFunction({
+  supabaseUrl,
+  serviceRoleKey,
+  payload,
+}: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  payload: JsonRecord;
+}) {
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false || data?.error) {
+    throw new Error(normalizeText(data?.error) || `send-email returned HTTP ${response.status}`);
+  }
+  return data as JsonRecord;
+}
+
+async function dispatchLeadAcknowledgementEmail({
+  client,
+  supabaseUrl,
+  serviceRoleKey,
+  canonical,
+  inbound,
+  inboundEmailId,
+  leadId,
+}: {
+  client: SupabaseClientLike;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  canonical: JsonRecord;
+  inbound: ReturnType<typeof normalizeInboundPayload>;
+  inboundEmailId: string;
+  leadId: string;
+}) {
+  const organisationId = normalizeText(canonical.organisationId);
+  const recipient = normalizeEmail(canonical.email);
+  const agentId = normalizeText(canonical.assignedAgentId);
+  const dedupeKey = `lead-acknowledgement:${organisationId}:${normalizeText(inbound.providerMessageId || inboundEmailId || leadId)}`;
+  const lead = await fetchSingleById(client, "leads", "lead_id", leadId);
+  const attemptCount = Number(lead?.acknowledgement_attempt_count || 0) || 0;
+
+  const skip = async (reason: string, note: string) => {
+    await updateLeadAcknowledgementStatus(client, leadId, {
+      acknowledgement_status: "skipped",
+      acknowledgement_failure_reason: reason,
+      acknowledgement_attempt_count: attemptCount,
+    });
+    await recordLeadAcknowledgementActivity(client, {
+      organisationId,
+      leadId,
+      agentId,
+      note,
+      outcome: reason,
+    });
+    return { status: "skipped", reason };
+  };
+
+  if (!isValidEmail(recipient)) {
+    return await skip("invalid_lead_email", "Acknowledgement email skipped because the lead did not have a valid email address.");
+  }
+
+  if (["sent", "queued"].includes(normalizeLower(lead?.acknowledgement_status))) {
+    return { status: "duplicate", reason: "acknowledgement_already_processed" };
+  }
+
+  const organisation = await fetchSingleById(client, "organisations", "id", organisationId);
+  if (!organisation) {
+    return await skip("missing_organisation", "Acknowledgement email skipped because the organisation could not be resolved.");
+  }
+  if (organisation.automatic_lead_acknowledgement_enabled === false) {
+    return await skip("organisation_disabled", "Acknowledgement email skipped because automatic acknowledgements are disabled for this organisation.");
+  }
+
+  const membership = await fetchOrganisationMember(client, organisationId, agentId);
+  const profile = membership ? await fetchSingleById(client, "profiles", "id", agentId) : null;
+  const organisationName = pickText(organisation.name, organisation.display_name, organisation.legal_name, "Arch9");
+  const agent = buildAgentContext(profile, membership, organisationName);
+  if (!membership || !agent.name || !isValidEmail(agent.email)) {
+    return await skip("missing_assigned_agent", "Acknowledgement email skipped because no valid assigned agent was available.");
+  }
+
+  const branch = isUuidLike(canonical.branchId)
+    ? await fetchSingleById(client, "organisation_branches", "id", normalizeText(canonical.branchId))
+    : null;
+  const organisationEmail = resolveOrganisationEmail(organisation);
+  const branchEmail = resolveBranchEmail(branch);
+  const replyTo = resolveReplyTo({
+    mode: normalizeText(organisation.lead_acknowledgement_reply_to_mode) || "assigned_agent",
+    agentEmail: agent.email,
+    branchEmail,
+    organisationEmail,
+  });
+  if (!isValidEmail(replyTo)) {
+    return await skip("missing_reply_to", "Acknowledgement email skipped because no valid reply-to address was available.");
+  }
+
+  const subject = "Thanks for your property enquiry";
+  const emailPayload: JsonRecord = {
+    type: "lead_acknowledgement",
+    to: recipient,
+    subject,
+    replyTo,
+    idempotencyKey: dedupeKey,
+    organisationId,
+    leadId,
+    recipientName: normalizeText(canonical.name),
+    organisationName,
+    organisationLogoUrl: safeUrl(pickText(organisation.logo_url, organisation.logoUrl, organisation.brand_logo_url)),
+    organisationTagline: pickText(organisation.tagline, organisation.slogan),
+    organisationPhone: pickText(organisation.phone, organisation.company_phone),
+    organisationEmail: organisationEmail,
+    organisationWebsite: pickText(organisation.website),
+    organisationBrandPrimaryColor: pickText(organisation.brand_primary_colour, organisation.primary_colour, organisation.brand_primary_color),
+    organisationBrandSecondaryColor: pickText(organisation.brand_secondary_colour, organisation.secondary_colour, organisation.brand_secondary_color),
+    enquiryReceivedAt: inbound.receivedAt || new Date().toISOString(),
+    timezone: pickText(organisation.timezone, "Africa/Johannesburg"),
+    source: normalizeText(canonical.source),
+    originalMessage: cleanPublicText(canonical.message, 500),
+    agentName: agent.name,
+    agentFirstName: agent.firstName,
+    agentEmail: agent.email,
+    agentPhone: agent.phone,
+    agentJobTitle: agent.jobTitle,
+    agentBio: agent.bio,
+    agentAvatarUrl: agent.avatarUrl,
+    responseExpectation: normalizeText(organisation.lead_acknowledgement_response_expectation) || "as_soon_as_possible",
+    customResponseText: cleanPublicText(organisation.lead_acknowledgement_custom_response_text, 240),
+    fromName: pickText(organisation.lead_acknowledgement_sender_name, organisationName),
+  };
+
+  const metadata = {
+    event: "lead.enquiry_received",
+    channel: "email",
+    template: "lead_acknowledgement",
+    inboundEmailId,
+    providerMessageId: inbound.providerMessageId,
+    replyTo,
+  };
+  let outbox: JsonRecord | null = null;
+  try {
+    outbox = await prepareAcknowledgementOutbox(client, {
+      organisationId,
+      branchId: normalizeText(canonical.branchId),
+      leadId,
+      agentId,
+      listingId: normalizeText(canonical.listingId),
+      recipient,
+      subject,
+      messagePreview: normalizeText(canonical.message),
+      dedupeKey,
+      payload: emailPayload,
+      metadata,
+    });
+  } catch (outboxError) {
+    console.warn("[inbound-lead-email] acknowledgement outbox unavailable; continuing with idempotent direct send", outboxError);
+  }
+  if (outbox?.alreadyPrepared && ["sent", "delivered", "queued", "prepared"].includes(normalizeLower(outbox.status))) {
+    await updateLeadAcknowledgementStatus(client, leadId, {
+      acknowledgement_status: ["sent", "delivered"].includes(normalizeLower(outbox.status)) ? "sent" : "queued",
+      acknowledgement_sent_at: outbox.sent_at || null,
+      acknowledgement_message_id: outbox.provider_message_id || null,
+      acknowledgement_failure_reason: null,
+      acknowledgement_attempt_count: attemptCount,
+    });
+    return { status: "duplicate", reason: "acknowledgement_already_processed" };
+  }
+
+  await updateLeadAcknowledgementStatus(client, leadId, {
+    acknowledgement_status: "queued",
+    acknowledgement_failure_reason: null,
+    acknowledgement_attempt_count: attemptCount + 1,
+  });
+
+  try {
+    const sendResult = await invokeSendEmailFunction({ supabaseUrl, serviceRoleKey, payload: emailPayload });
+    const providerMessageId = normalizeText(sendResult.providerMessageId || sendResult.emailId);
+    const sentAt = new Date().toISOString();
+    await markAcknowledgementOutbox(client, outbox?.id, {
+      status: "sent",
+      provider_message_id: providerMessageId || null,
+      sent_at: sentAt,
+      error_message: null,
+    });
+    await updateLeadAcknowledgementStatus(client, leadId, {
+      acknowledgement_status: "sent",
+      acknowledgement_sent_at: sentAt,
+      acknowledgement_message_id: providerMessageId || null,
+      acknowledgement_failure_reason: null,
+      acknowledgement_attempt_count: attemptCount + 1,
+    });
+    await recordLeadAcknowledgementActivity(client, {
+      organisationId,
+      leadId,
+      agentId,
+      note: `Acknowledgement email sent to ${recipient}`,
+      outcome: providerMessageId ? `provider_message_id:${providerMessageId}` : "sent",
+    });
+    return { status: "sent", providerMessageId };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Acknowledgement email failed.";
+    await markAcknowledgementOutbox(client, outbox?.id, {
+      status: "failed",
+      failed_at: new Date().toISOString(),
+      error_message: reason,
+    });
+    await updateLeadAcknowledgementStatus(client, leadId, {
+      acknowledgement_status: "failed",
+      acknowledgement_failure_reason: reason,
+      acknowledgement_attempt_count: attemptCount + 1,
+    });
+    await recordLeadAcknowledgementActivity(client, {
+      organisationId,
+      leadId,
+      agentId,
+      note: "Acknowledgement email could not be sent",
+      outcome: reason,
+    });
+    return { status: "failed", reason };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { success: false, error: "Method not allowed." });
@@ -966,7 +1559,18 @@ Deno.serve(async (req) => {
       normalized_payload: inbound.normalizedPayload,
       received_at: inbound.receivedAt,
     };
-    const inboundEmail = await insertWithColumnFallback(client, "inbound_lead_emails", rawEmailPayload, OPTIONAL_INBOUND_EMAIL_COLUMNS);
+    const inboundEmailInsert = await insertInboundEmail(client, rawEmailPayload);
+    const inboundEmail = inboundEmailInsert.row;
+
+    if (inboundEmailInsert.duplicate) {
+      return jsonResponse(200, {
+        success: true,
+        status: "duplicate",
+        inboundEmailId: inboundEmail.email_id,
+        leadId: inboundEmail.lead_id || null,
+        contactId: inboundEmail.contact_id || null,
+      });
+    }
 
     if (!alias) {
       await recordFailure(client, {
@@ -996,12 +1600,34 @@ Deno.serve(async (req) => {
         })
         .eq("email_id", inboundEmail.email_id);
 
+      let acknowledgement: JsonRecord | null = null;
+      if (result.status === "processed") {
+        try {
+          acknowledgement = await dispatchLeadAcknowledgementEmail({
+            client,
+            supabaseUrl,
+            serviceRoleKey,
+            canonical,
+            inbound,
+            inboundEmailId: normalizeText(inboundEmail.email_id),
+            leadId: normalizeText(result.leadId),
+          });
+        } catch (acknowledgementError) {
+          console.warn("[inbound-lead-email] acknowledgement dispatch failed without rolling back lead ingestion", acknowledgementError);
+          acknowledgement = {
+            status: "failed",
+            reason: acknowledgementError instanceof Error ? acknowledgementError.message : "Acknowledgement dispatch failed.",
+          };
+        }
+      }
+
       return jsonResponse(200, {
         success: true,
         status: result.status,
         inboundEmailId: inboundEmail.email_id,
         leadId: result.leadId,
         contactId: result.contactId,
+        acknowledgement,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Inbound lead email failed.";
