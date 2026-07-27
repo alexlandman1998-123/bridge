@@ -14093,28 +14093,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h1 className="mt-8 max-w-4xl text-[2.2rem] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[2.8rem]" title={selectedLeadDisplayName}>
                                 {selectedLeadDisplayName}
                               </h1>
-                              <p className="mt-5 flex max-w-4xl items-start gap-2 text-[15px] font-semibold leading-6 text-white/88">
-                                <Home className="mt-0.5 h-4 w-4 shrink-0 text-white/76" />
-                                <span className="min-w-0 break-words">{selectedLeadPropertyLabel || 'Not captured'}</span>
+                              <p className="mt-5 flex max-w-4xl items-start gap-2 text-[15px] font-semibold leading-6" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                <Home className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                <span className="min-w-0 break-words" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadPropertyLabel || 'Not captured'}</span>
                               </p>
                             </div>
 
-                            <div className="grid gap-4 text-sm font-semibold text-white/88 md:grid-cols-[max-content_max-content_minmax(0,1fr)]">
+                            <div className="grid gap-4 text-sm font-semibold md:grid-cols-[max-content_max-content_minmax(0,1fr)]" style={{ color: 'rgba(255,255,255,0.88)' }}>
                               {normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? (
-                                <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2 hover:text-white">
-                                  <Phone className="h-4 w-4 shrink-0 text-white/72" />
-                                  <span className="truncate">{selectedLeadContact?.phone || selectedLead?.phone}</span>
+                                <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                  <Phone className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                  <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.phone || selectedLead?.phone}</span>
                                 </a>
                               ) : null}
                               {normalizeText(selectedLeadContact?.email || selectedLead?.email) ? (
-                                <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2 hover:text-white">
-                                  <Mail className="h-4 w-4 shrink-0 text-white/72" />
-                                  <span className="truncate">{selectedLeadContact?.email || selectedLead?.email}</span>
+                                <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                  <Mail className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                  <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.email || selectedLead?.email}</span>
                                 </a>
                               ) : null}
-                              <span className="inline-flex min-w-0 items-center gap-2">
-                                <MessageCircle className="h-4 w-4 shrink-0 text-white/72" />
-                                <span className="truncate">Lead Source {selectedLead.leadSource || 'Not captured'}</span>
+                              <span className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                <MessageCircle className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>Lead Source {selectedLead.leadSource || 'Not captured'}</span>
                               </span>
                             </div>
                           </div>
