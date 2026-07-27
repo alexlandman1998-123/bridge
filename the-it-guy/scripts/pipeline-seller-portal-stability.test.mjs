@@ -144,6 +144,11 @@ assert.match(
   'seller portal core document center should no longer discard compact mandate metadata',
 )
 assert.match(
+  clientPortalWorkspaceSource,
+  /resolveSellerClientPortalFinalSignedDocumentAccess\([\s\S]*?\)\.catch\(\(error\) => \{[\s\S]*?seller mandate final-signed access skipped during portal hydration[\s\S]*?return null[\s\S]*?\}\)/,
+  'seller portal hydration should not fail the whole portal when final-signed access resolution returns a transient edge error',
+)
+assert.match(
   corePayloadSalesMigration,
   /'propertyDisclosure', v_form_data -> 'propertyDisclosure'[\s\S]*?'property_disclosure', v_form_data -> 'property_disclosure'/,
   'core payload should include generated seller disclosure data for the mobile Sales category',

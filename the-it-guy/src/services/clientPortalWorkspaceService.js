@@ -627,6 +627,9 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       packetId: mandatePacketId,
       packetVersionId: mandatePacketVersionId,
       download: false,
+    }).catch((error) => {
+      console.warn('[clientPortalWorkspaceService] seller mandate final-signed access skipped during portal hydration.', error)
+      return null
     })
     mandatePacket = attachSellerMandateFinalAccess(mandatePacket, finalSignedAccess)
   } else {
