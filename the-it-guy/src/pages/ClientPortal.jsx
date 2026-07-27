@@ -5423,12 +5423,21 @@ function SellerMobilePortal({
 
   useEffect(() => {
     if (!currentSellerJourneyStageKey) return
-    setExpandedStageKey((previous) => (previous === currentSellerJourneyStageKey ? previous : currentSellerJourneyStageKey))
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setExpandedStageKey((previous) => (previous === currentSellerJourneyStageKey ? previous : currentSellerJourneyStageKey))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [currentSellerJourneyStageKey])
 
-  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
-    sellerJourneyStages.find((stage) => stage.state === 'current') ||
+  const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current') ||
     sellerJourneyStages[0]
+  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
+    currentStage
   const safeProgress = Math.max(0, Math.min(100, Number(sellerProgressPercent) || 0))
   const documentActionItems = Array.isArray(sellerDocumentsNeedingAttention)
     ? sellerDocumentsNeedingAttention
@@ -5437,9 +5446,6 @@ function SellerMobilePortal({
   const previewDocuments = documentActionItems.slice(0, 4)
   const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
-  const ringStyle = {
-    background: `conic-gradient(#18365a ${safeProgress * 3.6}deg, #e5e9ee 0deg)`,
-  }
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Home', icon: Home },
     { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
@@ -5449,6 +5455,23 @@ function SellerMobilePortal({
   ]
   const nextActionHref = sellerNextStep?.href ||
     getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents')
+  const activeStageIsCurrent = activeStage?.key === currentStage?.key
+  const hasRequiredNextAction = Boolean(primaryDocumentAction || sellerNextStep?.tone === 'action')
+  const nextRequiredTitle = primaryDocumentAction?.label ||
+    primaryDocumentAction?.title ||
+    (sellerNextStep?.tone === 'action' ? sellerNextStep?.title : '') ||
+    'No further action from your side'
+  const nextRequiredDescription = primaryDocumentAction?.description ||
+    primaryDocumentAction?.message ||
+    (sellerNextStep?.tone === 'action' ? sellerNextStep?.description : '') ||
+    'Everything needed from you is currently up to date. Your property team will update this space when the next action is ready.'
+  const heroBackgroundStyle = sellerPropertyImageUrl
+    ? {
+        backgroundImage: `linear-gradient(90deg, rgba(5, 28, 34, 0.96) 0%, rgba(5, 28, 34, 0.78) 45%, rgba(5, 28, 34, 0.2) 100%), url("${sellerPropertyImageUrl}")`,
+      }
+    : {
+        backgroundImage: 'linear-gradient(135deg, #062b2b 0%, #15395a 58%, #5f7c67 100%)',
+      }
   const selectedUploadTarget = selectedDocumentAction
     ? resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
     : null
@@ -5586,53 +5609,52 @@ function SellerMobilePortal({
 
         {isOverviewSection ? (
           <>
-            <section className="relative mt-6 overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
-              {sellerPropertyImageUrl ? (
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-y-0 right-0 w-[56%] bg-cover bg-center opacity-[0.16] grayscale"
-                  style={{ backgroundImage: `linear-gradient(90deg,#ffffff 0%,rgba(255,255,255,0.45) 45%,rgba(255,255,255,0.05) 100%), url("${sellerPropertyImageUrl}")` }}
-                />
-              ) : null}
-              <div className="relative">
-                <p className="text-sm font-medium text-[#687380]">Seller Portal</p>
-                <h2 className="mt-3 max-w-[18rem] text-[2rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#0f172a]">{sellerPropertyTitle || 'Property sale'}</h2>
-                <div className="mt-6 flex items-center gap-5">
-                  <div className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={ringStyle}>
-                    <span className="absolute inset-[7px] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]" />
-                    <span className="relative text-[1.35rem] font-semibold tracking-[-0.04em] text-[#101823]">{safeProgress}%</span>
-                  </div>
-                  <div className="min-w-0 border-l border-[#e2e6ec] pl-5">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8491]">Current status</p>
-                    <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold tracking-[-0.025em] text-[#10213a]">
-                      <span className="h-2 w-2 rounded-full bg-[#1d8b5f]" />
+            <section
+              className="relative mt-6 min-h-[304px] overflow-hidden rounded-[18px] border border-white/70 bg-[#062b2b] bg-cover bg-center p-6 text-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]"
+              style={heroBackgroundStyle}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
+              <div className="relative flex min-h-[256px] flex-col">
+                <p className="text-sm font-medium text-[#a5d8a7]">Seller Portal</p>
+                <h2 className="mt-4 max-w-[19rem] text-[2rem] font-semibold leading-[1.08] text-white">{sellerPropertyTitle || 'Property sale'}</h2>
+                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/18 pt-5">
+                  <div className="min-w-0">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-white/68">Current status</p>
+                    <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
+                      <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
                       <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
                     </p>
-                    <p className="mt-1 text-sm font-medium text-[#6b7280]">{sellerStepLabel}</p>
+                    <p className="mt-1 text-sm font-medium text-white/72">{sellerStepLabel}</p>
+                  </div>
+                  <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/94 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                    <span className="relative text-center">
+                      <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-white/70">Complete</span>
+                    </span>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+            <section className="mt-4 rounded-[18px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#101823]">Your sale journey</h3>
+                <h3 className="text-[1.16rem] font-semibold text-[#101823]">Your sale journey</h3>
                 <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{sellerStepLabel}</span>
               </div>
-              <ol>
+              <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-3 [scrollbar-width:none]">
                 {sellerJourneyStages.map((stage, index) => {
                   const isExpanded = activeStage?.key === stage.key
                   const isCompleted = stage.state === 'completed'
                   const isCurrent = stage.state === 'current'
-                  const isLast = index === sellerJourneyStages.length - 1
                   return (
-                    <li key={stage.key} className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-2">
-                      {!isLast ? <span aria-hidden="true" className={`absolute left-[22px] top-11 h-[calc(100%-22px)] w-px ${isCompleted ? 'bg-[#b8d8c9]' : 'bg-[#dfe4ea]'}`} /> : null}
+                    <li key={stage.key} className="relative min-w-[76px]">
+                      {index < sellerJourneyStages.length - 1 ? <span aria-hidden="true" className={`absolute left-[48px] top-[19px] h-px w-[62px] ${isCompleted ? 'bg-[#9dceb5]' : 'bg-[#dfe4ea]'}`} /> : null}
                       <button
                         type="button"
                         onClick={() => setExpandedStageKey(stage.key)}
-                        className={`relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
-                          isCompleted ? 'border-[#8ac6a8] bg-white text-[#257454]' : isCurrent ? 'border-[#18365a] bg-[#18365a] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
+                        className={`relative z-10 mx-auto flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                          isCompleted ? 'border-[#63ad73] bg-[#63ad73] text-white' : isCurrent ? 'border-[#063f34] bg-[#063f34] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
                         }`}
                         aria-label={`View ${stage.label}`}
                       >
@@ -5641,53 +5663,99 @@ function SellerMobilePortal({
                       <button
                         type="button"
                         onClick={() => setExpandedStageKey(stage.key)}
-                        className={`mb-3 min-h-[44px] min-w-0 rounded-[18px] px-3 py-2.5 text-left transition ${isExpanded ? 'bg-[#f7f9fb] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]' : 'bg-transparent'}`}
+                        className="mt-2 block w-full text-center"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className={`text-base font-semibold tracking-[-0.02em] ${isCurrent ? 'text-[#10213a]' : isCompleted ? 'text-[#1f2937]' : 'text-[#7b8491]'}`}>{stage.label}</span>
-                          {isCurrent ? <span className="rounded-full bg-[#e8edf3] px-2.5 py-1 text-xs font-semibold text-[#24364d]">Current</span> : null}
-                        </div>
-                        {isExpanded ? (
-                          <div className="mt-1.5">
-                            <p className="text-sm leading-5 text-[#4b5563]">{stage.description}</p>
-                            <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
-                              <span>{stage.owner}</span>
-                              <span aria-hidden="true">.</span>
-                              <span>{stage.dateLabel}</span>
-                            </p>
-                          </div>
-                        ) : null}
+                        <span className={`block text-[0.69rem] font-semibold leading-4 ${isCurrent || isExpanded ? 'text-[#10213a]' : isCompleted ? 'text-[#344054]' : 'text-[#7b8491]'}`}>{stage.label}</span>
                       </button>
                     </li>
                   )
                 })}
               </ol>
+              <article className="mt-2 rounded-[16px] border border-[#dfe7ef] bg-[#fbfcfd] p-4">
+                <div className="flex items-start gap-4">
+                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#063f34] text-white">
+                    <FileText size={22} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="text-[1.25rem] font-semibold leading-tight text-[#101823]">{activeStage?.label || 'Current step'}</h4>
+                      <span className="shrink-0 rounded-full bg-[#edf7ed] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#4d8a48]">
+                        {activeStageIsCurrent ? 'Current step' : activeStage?.dateLabel || 'Overview'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-[#344054]">{activeStage?.description || 'Your sale journey will update as the transaction progresses.'}</p>
+                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
+                      <span>{activeStage?.owner || sellerAgentName || sellerAgencyName || 'Your property team'}</span>
+                      <span aria-hidden="true">.</span>
+                      <span>{activeStage?.dateLabel || 'Today'}</span>
+                    </p>
+                    {activeStageIsCurrent ? (
+                      <Link to={nextActionHref} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#063f34] px-4 text-sm font-semibold text-white">
+                        <span>{sellerNextStep?.label || 'Continue'}</span>
+                        <ChevronRight size={17} />
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
             </section>
 
-            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Next required item</p>
-              <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.045em] text-[#101823]">
-                {primaryDocumentAction?.label || primaryDocumentAction?.title || sellerNextStep?.title || 'Review next step'}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-[#5f6b7a]">
-                {primaryDocumentAction?.description || sellerNextStep?.description || 'Your property team will keep the next action updated here.'}
-              </p>
-              <Link to={nextActionHref} className="mt-4 flex min-h-[48px] items-center justify-between rounded-[16px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]">
-                <span>{sellerNextStep?.label || 'Open next step'}</span>
-                <ChevronRight size={18} />
-              </Link>
+            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/40 bg-[#063f34] p-5 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Next required item</p>
+              <div className="mt-3 flex items-start gap-3">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-[#8bd985]/40 bg-white/8 text-[#a9ec9c]">
+                  <FileText size={20} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{nextRequiredTitle}</h3>
+                  <p className="mt-1 text-sm leading-5 text-white/72">{nextRequiredDescription}</p>
+                </div>
+              </div>
+              {primaryDocumentAction ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDocumentAction(primaryDocumentAction)}
+                  className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]"
+                >
+                  <span>Upload document</span>
+                  <UploadCloud size={18} />
+                </button>
+              ) : hasRequiredNextAction ? (
+                <Link to={nextActionHref} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]">
+                  <span>{sellerNextStep?.label || 'Open next step'}</span>
+                  <ChevronRight size={18} />
+                </Link>
+              ) : (
+                <div className="mt-4 flex min-h-[48px] items-center justify-center rounded-[14px] border border-[#8bd985]/35 bg-[#0a4d40]/80 px-4 text-sm font-semibold text-[#c5f6bc]">
+                  All caught up
+                </div>
+              )}
             </section>
             <section className="mt-4 grid gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
-                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{activeSellerOfferCount}</strong>
-                  <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <div className="p-4">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><Tag size={20} /></span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
+                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{activeSellerOfferCount}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                  </div>
+                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
+                    <span>View offers</span>
+                    <ChevronRight size={15} />
+                  </div>
                 </Link>
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
-                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
-                  <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <div className="p-4">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><FileText size={20} /></span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
+                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
+                  </div>
+                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
+                    <span>View documents</span>
+                    <ChevronRight size={15} />
+                  </div>
                 </Link>
               </div>
               <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
