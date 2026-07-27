@@ -5479,11 +5479,77 @@ function getSellerMobileDocumentOpenKey(document = {}) {
     target?.file_path ||
       target?.storage_path ||
       target?.url ||
+      target?.packet_version_id ||
+      target?.packetVersionId ||
       target?.id ||
       target?.generatedFileName ||
       target?.generated_file_name ||
       '',
   ).trim()
+}
+
+function toPortalPdfFileName(value = '', fallback = 'seller-document.pdf') {
+  const raw = String(value || fallback || 'seller-document.pdf').trim() || 'seller-document.pdf'
+  return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
+}
+
+async function downloadGeneratedPortalDocumentPdf(markup = '', fileName = 'seller-document.pdf') {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF downloads are only available in the browser.')
+  }
+
+  let pdfStage = null
+  let styleElement = null
+  try {
+    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+    const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
+    const style = pdfDocument.head.querySelector('style')
+    styleElement = document.createElement('style')
+    styleElement.setAttribute('data-generated-portal-document-pdf-style', 'true')
+    styleElement.textContent = style?.textContent || ''
+    pdfStage = document.createElement('div')
+    pdfStage.setAttribute('data-generated-portal-document-pdf-stage', 'true')
+    pdfStage.style.position = 'fixed'
+    pdfStage.style.left = '-10000px'
+    pdfStage.style.top = '0'
+    pdfStage.style.width = '210mm'
+    pdfStage.style.background = '#ffffff'
+    pdfStage.style.pointerEvents = 'none'
+    pdfStage.innerHTML = pdfDocument.body.innerHTML
+    document.head.appendChild(styleElement)
+    document.body.appendChild(pdfStage)
+
+    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
+      if (image.complete) return Promise.resolve()
+      return new Promise((resolve) => {
+        image.onload = resolve
+        image.onerror = resolve
+      })
+    })
+    await Promise.all(imageLoads)
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+
+    await html2pdf()
+      .set({
+        margin: 0,
+        filename: toPortalPdfFileName(fileName),
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: 1123,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(pdfStage)
+      .save()
+  } finally {
+    pdfStage?.remove()
+    styleElement?.remove()
+  }
 }
 
 function formatSellerMobileUploadSize(bytes = 0) {
@@ -5495,7 +5561,7 @@ function formatSellerMobileUploadSize(bytes = 0) {
 
 const SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG = {
   sale: {
-    label: 'Sale',
+    label: 'Sales',
     description: 'Mandate, seller declaration, and sale documents.',
     icon: FileSignature,
     tone: 'green',
@@ -5514,7 +5580,7 @@ const SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG = {
   },
   property: {
     label: 'Property',
-    description: 'Rates, levies, certificates, disclosure, and property records.',
+    description: 'Rates, levies, certificates, and property records.',
     icon: Home,
     tone: 'blue',
   },
@@ -5543,15 +5609,15 @@ function uniqueSellerMobileDocuments(items = []) {
 }
 
 function getSellerMobileDocumentCategoryKey(item = {}) {
-  if (item?.sellerCategoryKey && SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG[item.sellerCategoryKey]) {
-    return item.sellerCategoryKey
+  const explicitCategoryKey = String(item?.sellerCategoryKey || '').trim().toLowerCase()
+  if (['sale', 'sales', 'mandate', 'transfer'].includes(explicitCategoryKey)) return 'sale'
+  if (explicitCategoryKey && SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG[explicitCategoryKey]) {
+    return explicitCategoryKey
   }
   const haystack = `${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
-  if (/sale_document|sale documents|seller declaration|seller disclosure/.test(haystack)) return 'sale'
+  if (/sale_document|sales?|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration|seller disclosure|property condition disclosure|disclosure|defects/.test(haystack)) return 'sale'
   if (/additional/.test(haystack)) return 'additional'
-  if (/mandate/.test(haystack)) return 'mandate'
-  if (/transfer|clearance|guarantee|sale agreement|otp|registration/.test(haystack)) return 'transfer'
-  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|disclosure/.test(haystack)) return 'property'
+  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed/.test(haystack)) return 'property'
   return 'fica'
 }
 
@@ -8684,10 +8750,10 @@ function ClientPortal() {
       try {
         setError('')
         setOpeningDocumentPath(openKey)
-        const blob = new Blob([String(document.generatedHtml)], { type: 'text/html;charset=utf-8' })
-        const objectUrl = URL.createObjectURL(blob)
-        window.open(objectUrl, '_blank', 'noopener,noreferrer')
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+        await downloadGeneratedPortalDocumentPdf(
+          String(document.generatedHtml),
+          document.generatedFileName || document.generated_file_name || document.fileName || document.file_name || `${document.id || 'seller-document'}.pdf`,
+        )
       } catch (openError) {
         setError(openError.message || 'Unable to open this document right now.')
       } finally {

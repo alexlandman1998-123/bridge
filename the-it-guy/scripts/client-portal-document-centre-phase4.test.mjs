@@ -142,4 +142,53 @@ test('standalone uploads remain visible without duplicating linked uploads', () 
   assert.equal(requirement.linkedDocument.id, 'linked-doc')
 })
 
+test('seller sale documents expose signed mandate and disclosure as downloadable PDFs', () => {
+  const model = buildDocumentCenter({
+    listing: {
+      id: 'listing-sale-documents',
+      sellerOnboarding: {
+        formData: {
+          sellerName: 'Mia Seller',
+          propertyDisclosure: {
+            declarationAccepted: true,
+            generatedDocument: {
+              id: 'disclosure-1',
+              title: 'Property Condition Disclosure',
+              fileName: 'seller-disclosure-annexure-a.html',
+              generatedAt: '2026-07-27T08:00:00Z',
+            },
+          },
+        },
+      },
+    },
+    activeSellingContext: {
+      mandatePacket: {
+        id: 'packet-1',
+        state: 'fully_signed',
+        packetVersionId: 'version-1',
+        finalSignedRecorded: true,
+        finalSignedFileName: 'Signed Mandate.pdf',
+        version: {
+          id: 'version-1',
+          final_signed_file_name: 'Signed Mandate.pdf',
+        },
+      },
+    },
+    requiredDocuments: [],
+    documents: [],
+    additionalDocumentRequests: [],
+  }, 'selling')
+
+  const disclosureSaleDocument = model.saleDocuments.find((item) => item.sourceId === 'seller-declaration-disclosure')
+  const signedMandate = model.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
+  const generatedDisclosure = model.uploadedDocuments.find((item) => item.requirementKey === 'property_condition_disclosure')
+
+  assert.equal(Boolean(disclosureSaleDocument), true)
+  assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')
+  assert.equal(generatedDisclosure.generatedFileName, 'seller-disclosure-annexure-a.pdf')
+  assert.equal(signedMandate.document_name, 'Signed Mandate.pdf')
+  assert.equal(signedMandate.packet_version_id, 'version-1')
+  assert.equal(signedMandate.canonicalFinalArtifact, true)
+})
+
 console.log('client portal document centre phase 4 tests passed')

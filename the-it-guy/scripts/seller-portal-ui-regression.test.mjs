@@ -9,6 +9,7 @@ const stageWorkspaceSource = await fs.readFile(new URL('../src/components/client
 const sellerOffersSource = await fs.readFile(new URL('../src/components/client-portal/offers/SellerOffersPage.jsx', import.meta.url), 'utf8')
 const sellerAppointmentsSource = await fs.readFile(new URL('../src/components/client-portal/appointments/SellerAppointmentsPage.jsx', import.meta.url), 'utf8')
 const sellerDocumentsSource = await fs.readFile(new URL('../src/components/client-portal/documents/SellerDocumentWorkspace.jsx', import.meta.url), 'utf8')
+const clientDocumentCentreSource = await fs.readFile(new URL('../src/components/client-portal/documents/ClientDocumentCentre.jsx', import.meta.url), 'utf8')
 const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks[\s\S]*?\n}\n\nfunction getFriendlySellerStatusLabel/)?.[0] || ''
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
@@ -53,6 +54,11 @@ assert.match(sellerDashboard, /SellerConversationCard/, 'seller dashboard should
 assert.match(sellerDashboard, /SellerDocumentTracker/, 'seller dashboard should render the document tracker')
 assert.doesNotMatch(sellerDashboard, /SellerNextMilestoneCard/, 'seller dashboard should not render the removed next milestone card')
 assert.match(source, /title="Document Tracker"/, 'document tracker should replace the important-document list')
+assert.match(clientDocumentCentreSource, /title: 'Sales Documents'/, 'seller document centre should expose a Sales Documents tab')
+assert.match(clientDocumentCentreSource, /sellerRequirementGroup\(item\) === 'sales'/, 'seller sale documents should use the shared sales grouping')
+assert.match(clientDocumentCentreSource, /property condition disclosure\|disclosure\|defects/, 'seller disclosure documents should group under sales, not property')
+assert.match(source, /\['sale', 'sales', 'mandate', 'transfer'\]\.includes\(explicitCategoryKey\)/, 'seller mobile documents should remap old mandate and transfer categories into Sales')
+assert.match(source, /downloadGeneratedPortalDocumentPdf/, 'seller mobile generated documents should download through the PDF renderer')
 assert.match(source, /progress: true/, 'seller progress should be enabled as its own portal route')
 assert.match(source, /<TransactionStageWorkspace/, 'seller progress should render the dedicated transaction-stage workspace')
 assert.doesNotMatch(source, /key: 'progress'.*hash: '#seller-sale-progress'/, 'seller progress navigation should not redirect into the overview dashboard')

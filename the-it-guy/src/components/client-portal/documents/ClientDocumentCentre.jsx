@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- document centre section builder is tested directly and shared with mobile portal views */
 import { useState } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import { buildSellerDocumentExperienceModel } from '../../../lib/sellerDocumentExperienceModel'
@@ -382,9 +383,8 @@ export function buildDocumentCentreSections(documentCenter = {}, workspace = 'bu
 function sellerRequirementGroup(item = {}) {
   const haystack = `${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
   if (/additional/.test(haystack)) return 'additional'
-  if (/mandate/.test(haystack)) return 'mandate'
-  if (/transfer|clearance|guarantee|sale agreement|otp/.test(haystack)) return 'transfer'
-  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate/.test(haystack)) return 'property'
+  if (/sale_document|sales?|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration|seller disclosure|property condition disclosure|disclosure|defects/.test(haystack)) return 'sales'
+  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed/.test(haystack)) return 'property'
   return 'fica'
 }
 
@@ -401,11 +401,10 @@ function buyerRequirementGroup(item = {}) {
 function decoratePortalDocumentItem(item = {}, categoryKey = '') {
   const labels = {
     sales: 'Sales',
+    sale: 'Sales',
     finance: 'Finance',
     property: 'Property',
     fica: 'FICA',
-    mandate: 'Mandate',
-    transfer: 'Transfer',
     additional: 'Additional Request',
   }
   return {
@@ -442,30 +441,31 @@ function ClientDocumentCentre({
   const sellerPropertyDocuments = sections.allRequired
     .filter((item) => sellerRequirementGroup(item) === 'property')
     .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'property'))
-  const sellerMandateDocuments = [
+  const sellerSalesDocuments = [
     ...sections.allRequired
-      .filter((item) => sellerRequirementGroup(item) === 'mandate')
-      .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'mandate')),
+      .filter((item) => sellerRequirementGroup(item) === 'sales')
+      .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'sales')),
     ...sections.signedDocuments
-      .filter((item) => /mandate/i.test(`${item?.title || ''} ${item?.description || ''}`))
-      .map((item) => decoratePortalDocumentItem(item, 'mandate')),
-  ]
-  const sellerTransferDocuments = [
-    ...sections.allRequired
-      .filter((item) => sellerRequirementGroup(item) === 'transfer')
-      .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'transfer')),
-    ...sections.signedDocuments
-      .filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`))
-      .map((item) => decoratePortalDocumentItem(item, 'transfer')),
+      .filter((item) => /mandate|transfer|sale agreement|otp|seller declaration|seller disclosure|property condition disclosure|disclosure/i.test(`${item?.title || ''} ${item?.description || ''}`))
+      .map((item) => decoratePortalDocumentItem(item, 'sales')),
+    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : [])
+      .map((item) => decoratePortalDocumentItem(item, 'sales')),
   ]
   const sellerAdditionalDocuments = sections.additionalRequests.map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'additional'))
   const sellerDocumentTabs = [
     {
       key: 'property',
       title: 'Property Documents',
-      subtitle: 'Property, mandate, transfer, levy, rates, occupancy, and related sale documents.',
-      items: uniqueById([...sellerPropertyDocuments, ...sellerMandateDocuments, ...sellerTransferDocuments]),
+      subtitle: 'Title deed, rates, compliance certificates, and property records.',
+      items: uniqueById(sellerPropertyDocuments),
       emptyState: 'No documents required in this category.',
+    },
+    {
+      key: 'sales',
+      title: 'Sales Documents',
+      subtitle: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
+      items: uniqueById(sellerSalesDocuments),
+      emptyState: 'No sales documents required in this category.',
     },
     {
       key: 'fica',

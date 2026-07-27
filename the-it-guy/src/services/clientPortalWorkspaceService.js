@@ -1740,7 +1740,14 @@ function dedupeDocumentCenterItems(items = []) {
 
 function isMandatePacketFinalSigned(mandatePacket = null) {
   if (!mandatePacket || typeof mandatePacket !== 'object') return false
-  return mandatePacket?.finalSignedAccess?.available === true
+  if (mandatePacket?.finalSignedAccess?.available === true) return true
+  const state = normalizeValue(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status)
+  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || mandatePacket?.version?.id)
+  return Boolean(
+    mandatePacket?.finalSignedRecorded === true &&
+      versionId &&
+      ['fully_signed', 'signed', 'completed', 'complete', 'finalised', 'finalized', 'finalisation_pending'].includes(state),
+  )
 }
 
 function getPortalSellerEmail(portalData = {}) {
