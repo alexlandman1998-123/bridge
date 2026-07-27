@@ -1263,6 +1263,25 @@ function firstWorkspaceText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function workspaceTextLooksLikeAddress(value = '') {
+  const text = normalizeText(value)
+  if (!text) return false
+  return text.includes(',') || /\d/.test(text)
+}
+
+function buildWorkspaceFormattedAddress(addressLine = '', ...parts) {
+  const line = normalizeText(addressLine)
+  const lineKey = line.toLowerCase()
+  const rows = [line]
+  for (const part of parts.map(normalizeText).filter(Boolean)) {
+    const partKey = part.toLowerCase()
+    if (rows.some((row) => row.toLowerCase() === partKey)) continue
+    if (lineKey && lineKey.includes(partKey)) continue
+    rows.push(part)
+  }
+  return rows.filter(Boolean).join(', ')
+}
+
 function firstWorkspaceValue(...values) {
   for (const value of values) {
     if (Array.isArray(value) && value.length) return value
@@ -1377,9 +1396,7 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
   const city = firstWorkspaceText(lead?.city, onboarding?.city, propertyDetails?.city, listingSource?.city)
   const province = firstWorkspaceText(lead?.province, onboarding?.province, propertyDetails?.province, listingSource?.province)
   const postalCode = firstWorkspaceText(lead?.postalCode, lead?.postal_code, onboarding?.postalCode, onboarding?.postal_code, propertyDetails?.postalCode, listingSource?.postalCode, listingSource?.postal_code)
-  const formattedAddress = [addressLine, suburb, city, province, postalCode].filter(Boolean)
-    .filter((part, index, parts) => parts.findIndex((item) => item.toLowerCase() === part.toLowerCase()) === index)
-    .join(', ')
+  const formattedAddress = buildWorkspaceFormattedAddress(addressLine, suburb, city, province, postalCode)
   const listingId = firstWorkspaceText(listingSource?.id, listingSource?.listingId, listingSource?.listing_id, listing?.id, lead?.listingId, lead?.listing_id)
   const listingStatus = firstWorkspaceText(
     listingSource?.listingStatus,
@@ -1396,7 +1413,8 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
       ? asArray(readinessModel?.incompleteItems)
       : asArray(readiness?.blockers),
   }
-  const propertyType = firstWorkspaceText(lead?.propertyType, lead?.property_type, lead?.propertyInterest, onboarding?.propertyType, onboarding?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType)
+  const leadPropertyInterestAsType = workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest
+  const propertyType = firstWorkspaceText(lead?.propertyType, lead?.property_type, onboarding?.propertyType, onboarding?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType, leadPropertyInterestAsType)
   const features = uniqueWorkspaceList([
     propertyDetails?.features,
     propertyDetails?.propertyFeatures,
@@ -5362,6 +5380,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
     }
   }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
+
+  const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
+    setLeadWorkspaceTab(tabKey)
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+    window.setTimeout(() => {
+      document
+        .querySelector('[data-testid="lead-workspace-tabs"]')
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }, [])
+
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
@@ -13983,7 +14012,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
 
                 {selectedLead ? (
-                  <div className={`${selectedLeadIsSeller ? 'mx-5 mb-5 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8' : 'overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]'}`} role="tablist" aria-label="Lead workspace sections">
+                  <div className={`${selectedLeadIsSeller ? 'mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8' : 'scroll-mt-4 overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]'}`} role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
                     <div className={`${selectedLeadIsSeller ? 'grid min-w-[860px] grid-cols-7 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
                       {(selectedLeadIsSeller ? [
                         { key: 'overview', label: 'Overview', meta: '' },
@@ -14004,7 +14033,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <button
                             key={tab.key}
                             type="button"
-                            onClick={() => setLeadWorkspaceTab(tab.key)}
+                            onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
                             className={`relative flex items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
@@ -14219,7 +14248,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
                   </section>
 
-                  <section className="overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections">
+                  <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
                     <div className="grid min-w-[880px] grid-cols-7">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
@@ -14235,7 +14264,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <button
                             key={tab.key}
                             type="button"
-                            onClick={() => setLeadWorkspaceTab(tab.key)}
+                            onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
                             className={`relative flex min-h-[64px] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
