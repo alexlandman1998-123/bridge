@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bell, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -3209,6 +3209,26 @@ function getAppointmentStatusLabel(status) {
   return APPOINTMENT_STATUS_LABELS[normalized] || status || 'Requested'
 }
 
+function formatSellerFieldLabel(value = '') {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function readFirstPresent(...values) {
+  return values.map(normalizeText).find(Boolean) || ''
+}
+
+function countSellerNotes(value = '') {
+  const note = normalizeText(value)
+  if (!note) return 0
+  return note.split(/\n+/).map((line) => line.trim()).filter(Boolean).length || 1
+}
+
 const MANUAL_LEAD_SOURCE_OPTIONS = [
   'Property24',
   'Private Property',
@@ -3455,6 +3475,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
+  const [sellerDetailsEditing, setSellerDetailsEditing] = useState(false)
   const [financeReadinessForm, setFinanceReadinessForm] = useState(FINANCE_READINESS_FORM_DEFAULTS)
   const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
@@ -6595,6 +6616,162 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerJourney.stage?.label,
   ])
 
+  const selectedSellerTabModel = useMemo(() => {
+    const lead = selectedLead || {}
+    const contact = selectedLeadContact || {}
+    const listing = selectedLeadLinkedListing || {}
+    const leadOnboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}
+    const listingOnboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}
+    const formData = {
+      ...((listingOnboarding.form_data && typeof listingOnboarding.form_data === 'object') ? listingOnboarding.form_data : {}),
+      ...((listingOnboarding.formData && typeof listingOnboarding.formData === 'object') ? listingOnboarding.formData : {}),
+      ...getLeadSellerOnboardingFormData(lead),
+    }
+    const normalizedStatus = selectedLeadOnboardingStatusKey
+    const statusLabel = selectedLeadOnboardingCompleted
+      ? 'Onboarding Complete'
+      : normalizedStatus === 'not_sent'
+        ? 'Not Started'
+        : normalizedStatus.includes('progress')
+          ? 'In Progress'
+          : normalizedStatus.includes('expired')
+            ? 'Link Expired'
+            : normalizedStatus.includes('sent')
+              ? 'Awaiting Seller'
+              : formatSellerFieldLabel(normalizedStatus) || 'Action Required'
+    const portalToken = readFirstPresent(lead.sellerOnboardingToken, lead.seller_onboarding_token, leadOnboarding.token, listingOnboarding.token)
+    const tokenExpiresAt = readFirstPresent(leadOnboarding.tokenExpiresAt, leadOnboarding.token_expires_at, listingOnboarding.tokenExpiresAt, listingOnboarding.token_expires_at)
+    const tokenExpired = tokenExpiresAt ? new Date(tokenExpiresAt).getTime() < Date.now() : false
+    const portalStatus = selectedLeadOnboardingCompleted
+      ? 'Completed'
+      : tokenExpired
+        ? 'Expired'
+        : portalToken
+          ? 'Active'
+          : 'Not Sent'
+    const fullName = selectedLeadDisplayName && selectedLeadDisplayName !== 'Lead Workspace'
+      ? selectedLeadDisplayName
+      : [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim()
+    const phone = readFirstPresent(contact.phone, lead.phone, lead.sellerPhone, formData.phone, formData.sellerPhone)
+    const email = readFirstPresent(contact.email, lead.email, lead.sellerEmail, formData.email, formData.sellerEmail).toLowerCase()
+    const additionalSellers = Array.isArray(formData.additionalOwners)
+      ? formData.additionalOwners
+      : Array.isArray(formData.additionalSellers)
+        ? formData.additionalSellers
+        : Array.isArray(formData.owners)
+          ? formData.owners.slice(1)
+          : []
+    const ownershipType = readFirstPresent(formData.ownershipType, formData.sellerLegalType, formData.legalType, formData.sellerType, listing.sellerType, lead.sellerType)
+    const ownerEntityType = readFirstPresent(formData.ownerEntityType, formData.owner_entity_type, listing.seller_type)
+    const ownerStructureType = readFirstPresent(formData.ownerStructureType, formData.owner_structure_type, formData.ownershipStructure, listing.ownership_structure)
+    const sellerType = formatSellerFieldLabel(ownerEntityType || ownershipType)
+    const ownershipStructure = formatSellerFieldLabel(ownerStructureType || ownershipType) || 'Not captured'
+    const representative = readFirstPresent(
+      formData.representativeName,
+      formData.authorisedRepresentativeName,
+      formData.authorizedRepresentativeName,
+      formData.companyRepresentativeName,
+      formData.trusteeName,
+      formData.executorName,
+      fullName,
+    )
+    const identityVerified = Boolean(
+      selectedLeadOnboardingCompleted ||
+      formData.identityVerificationStatus === 'verified' ||
+      formData.identity_verified === true ||
+      formData.idNumber ||
+      formData.id_number,
+    )
+    const documentMissing = Number(selectedSellerJourney.documentsOutstanding || 0)
+    const hasSellerInfo = Boolean(ownershipType || ownerEntityType || formData.idNumber || formData.id_number || selectedLeadOnboardingCompleted)
+    const hasPropertyDetails = Boolean(selectedLeadPropertyLabel && selectedLeadPropertyLabel !== 'Not captured')
+    const defectsCaptured = Boolean(
+      formData.defectsDisclosure ||
+      formData.defects_disclosure ||
+      formData.knownDefects ||
+      formData.known_defects ||
+      formData.noKnownDefects === true ||
+      formData.defectsDisclosureAccepted === true,
+    )
+    const termsAccepted = Boolean(
+      formData.termsAccepted ||
+      formData.terms_accepted ||
+      formData.acceptedTerms ||
+      formData.accepted_terms ||
+      leadOnboarding.termsAcceptedAt ||
+      listingOnboarding.termsAcceptedAt,
+    )
+    const checklist = [
+      { key: 'contact', label: 'Contact details', status: phone && email ? 'complete' : 'incomplete', value: phone && email ? 'Complete' : 'Missing' },
+      { key: 'seller', label: 'Seller information', status: hasSellerInfo ? 'complete' : portalToken ? 'pending' : 'incomplete', value: hasSellerInfo ? 'Complete' : portalToken ? 'Awaiting Seller' : 'Not started' },
+      { key: 'property', label: 'Property details', status: hasPropertyDetails ? 'complete' : 'incomplete', value: hasPropertyDetails ? 'Complete' : 'Missing' },
+      ...(defectsCaptured || selectedLeadOnboardingCompleted ? [{ key: 'defects', label: 'Defects disclosure', status: defectsCaptured || selectedLeadOnboardingCompleted ? 'complete' : 'pending', value: defectsCaptured || selectedLeadOnboardingCompleted ? 'Complete' : 'Awaiting Seller' }] : []),
+      ...(termsAccepted || selectedLeadOnboardingCompleted ? [{ key: 'terms', label: 'Terms accepted', status: termsAccepted || selectedLeadOnboardingCompleted ? 'complete' : 'pending', value: termsAccepted || selectedLeadOnboardingCompleted ? 'Complete' : 'Awaiting Seller' }] : []),
+      { key: 'documents', label: 'Required documents', status: documentMissing ? 'pending' : selectedSellerJourney.documents.length ? 'complete' : 'pending', value: documentMissing ? `${documentMissing} Missing` : selectedSellerJourney.documents.length ? 'Complete' : 'Pending' },
+    ]
+    const nextRequired = checklist.find((item) => item.status !== 'complete' && item.status !== 'not_required') || null
+    return {
+      profile: {
+        initials: getInitials(fullName || email || phone || 'Seller'),
+        fullName: fullName || 'Seller',
+        phone,
+        email,
+        preferredContactMethod: formatSellerFieldLabel(readFirstPresent(formData.preferredContactMethod, formData.preferred_contact_method, lead.preferredContactMethod, lead.preferred_contact_method)) || (phone ? 'WhatsApp' : email ? 'Email' : ''),
+        sellerType,
+        relationshipToProperty: formatSellerFieldLabel(readFirstPresent(formData.relationshipToProperty, formData.relationship_to_property, formData.sellerCapacity, formData.seller_capacity, ownershipType)),
+        primaryContactStatus: formData.primaryContact === false || formData.isPrimaryContact === false ? 'Additional contact' : 'Primary contact',
+        additionalSellerCount: additionalSellers.length,
+      },
+      onboarding: {
+        status: statusLabel,
+        statusKey: selectedLeadOnboardingCompleted ? 'complete' : normalizedStatus,
+        portalToken,
+        portalLink: portalToken ? buildSellerClientPortalLink(portalToken) : '',
+        invitationSentAt: readFirstPresent(lead.sellerOnboardingSentAt, leadOnboarding.sentAt, leadOnboarding.createdAt, listingOnboarding.sentAt, listingOnboarding.createdAt),
+        lastAccessedAt: readFirstPresent(leadOnboarding.lastAccessedAt, leadOnboarding.last_accessed_at, listingOnboarding.lastAccessedAt, listingOnboarding.last_accessed_at),
+        submittedAt: readFirstPresent(leadOnboarding.submittedAt, leadOnboarding.submitted_at, listingOnboarding.submittedAt, listingOnboarding.submitted_at),
+        lastReminderSentAt: readFirstPresent(leadOnboarding.lastReminderSentAt, leadOnboarding.last_reminder_sent_at, listingOnboarding.lastReminderSentAt, listingOnboarding.last_reminder_sent_at),
+        termsAcceptedAt: readFirstPresent(leadOnboarding.termsAcceptedAt, leadOnboarding.terms_accepted_at, listingOnboarding.termsAcceptedAt, listingOnboarding.terms_accepted_at, formData.termsAcceptedAt),
+        checklist,
+        nextRequiredAction: nextRequired,
+      },
+      representation: {
+        sellerCapacity: formatSellerFieldLabel(readFirstPresent(formData.sellerCapacity, formData.seller_capacity, ownershipType)) || 'Not captured',
+        ownershipStructure,
+        registeredEntity: readFirstPresent(formData.companyName, formData.company_name, formData.trustName, formData.trust_name, formData.estateName, formData.estate_name),
+        additionalSellerCount: additionalSellers.length,
+        representative: representative || 'Not applicable',
+        authorityStatus: ['company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(normalizeKey(ownerEntityType || ownershipType)) ? 'Required' : 'Not applicable',
+        identityVerificationStatus: identityVerified ? 'Verified' : 'Pending',
+        maritalStatus: formatSellerFieldLabel(readFirstPresent(formData.maritalStatus, formData.marital_status, formData.maritalRegime, formData.marital_regime)),
+      },
+      internal: {
+        leadSource: lead.leadSource || 'Not captured',
+        assignedAgent: selectedLeadAssignedAgentLabel || 'Not captured',
+        portalStatus,
+        sellerRecordStatus: selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage || 'Not captured',
+        notesCount: countSellerNotes(lead.notes),
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt || lead.createdAt,
+        organisation: organisationName || '',
+      },
+    }
+  }, [
+    organisationName,
+    selectedLead,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadContact,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadLinkedListing,
+    selectedLeadOnboardingCompleted,
+    selectedLeadOnboardingStatusKey,
+    selectedLeadPropertyLabel,
+    selectedLeadDisplayName,
+    selectedSellerJourney.documents,
+    selectedSellerJourney.documentsOutstanding,
+    selectedSellerJourney.stage?.label,
+  ])
+
   const resolveAppointmentListingLabel = useCallback(
     (listingId) => {
       const id = normalizeText(listingId)
@@ -7983,10 +8160,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSaveLeadDetails(event) {
     event.preventDefault()
-    if (!organisationId || !selectedLead) return
+    if (!organisationId || !selectedLead) return false
     if (!normalizeText(leadDetailForm.firstName) || !normalizeText(leadDetailForm.phone) || !normalizeText(leadDetailForm.email)) {
       setError('First name, phone, and email are required before saving lead details.')
-      return
+      return false
     }
 
     setIsLeadDetailSaving(true)
@@ -8114,8 +8291,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('')
       setMessage('Lead details saved.')
       scheduleRecordsReload(organisationId, 250)
+      return true
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save lead details right now.')
+      return false
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -14042,7 +14221,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <div className={`${selectedLeadIsSeller ? 'grid min-w-[640px] grid-cols-4 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
                       {(selectedLeadIsSeller ? [
                         { key: 'overview', label: 'Overview', meta: '', Icon: Columns3 },
-                        { key: 'seller', label: 'Editable Details', meta: '', Icon: Pencil },
+                        { key: 'seller', label: 'Seller', meta: '', Icon: Pencil },
                         { key: 'documents', label: 'Documents', meta: '', Icon: FileText },
                         { key: 'activity', label: 'Updates', meta: selectedLeadUnifiedTimeline.length, Icon: MessageCircle },
                       ] : [
@@ -16195,16 +16374,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'seller' && selectedLeadIsSeller ? (
-                  <form className="rounded-[24px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6" onSubmit={handleSaveLeadDetails}>
+                  sellerDetailsEditing ? (
+                  <form
+                    className="rounded-[24px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6"
+                    onSubmit={async (event) => {
+                      const saved = await handleSaveLeadDetails(event)
+                      if (saved) setSellerDetailsEditing(false)
+                    }}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf3f8] pb-5">
                       <div>
                         <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Editable Details</p>
                         <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadDisplayName}</h4>
-                        <p className="mt-1 text-sm leading-6 text-[#60758b]">Seller, lead, property, value, area, and note fields use the existing save flow.</p>
+                        <p className="mt-1 text-sm leading-6 text-[#60758b]">Seller, lead, property, value, area, and notes.</p>
                       </div>
-                      <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
-                        {isLeadDetailSaving ? 'Saving...' : 'Save Details'}
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setSellerDetailsEditing(false)} disabled={isLeadDetailSaving}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
+                          {isLeadDetailSaving ? 'Saving...' : 'Save Details'}
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="mt-6 space-y-7">
@@ -16302,6 +16493,215 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </section>
                     </div>
                   </form>
+                  ) : (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <section className="order-2 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_14px_34px_rgba(31,54,78,0.05)] lg:order-1 sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-[#102033]">Seller Profile</h3>
+                          <p className="mt-1 text-sm text-[#60758b]">Contact and relationship information</p>
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setSellerDetailsEditing(true)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit Details
+                        </Button>
+                      </div>
+
+                      <div className="mt-6 flex min-w-0 items-center gap-4">
+                        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#102033] text-base font-bold text-white">
+                          {selectedSellerTabModel.profile.initials}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xl font-semibold tracking-[-0.03em] text-[#102033]" title={selectedSellerTabModel.profile.fullName}>{selectedSellerTabModel.profile.fullName}</p>
+                          <span className="mt-2 inline-flex rounded-full bg-[#edf8f1] px-2.5 py-1 text-xs font-semibold text-[#0f7b4e]">
+                            {selectedSellerTabModel.profile.primaryContactStatus}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 divide-y divide-[#edf3f8]">
+                        {[
+                          ['Full name', selectedSellerTabModel.profile.fullName],
+                          ['Phone', selectedSellerTabModel.profile.phone || 'Phone not captured'],
+                          ['Email', selectedSellerTabModel.profile.email || 'Email not captured'],
+                          ['Preferred contact', selectedSellerTabModel.profile.preferredContactMethod || 'Not captured'],
+                          ['Seller type', selectedSellerTabModel.profile.sellerType || 'Not captured'],
+                          ['Relationship to property', selectedSellerTabModel.profile.relationshipToProperty || 'Not captured'],
+                          ...(selectedSellerTabModel.profile.additionalSellerCount ? [['Additional sellers', selectedSellerTabModel.profile.additionalSellerCount]] : []),
+                        ].map(([label, value]) => (
+                          <div key={label} className="grid grid-cols-[minmax(120px,0.42fr)_minmax(0,1fr)] gap-4 py-3 text-sm">
+                            <span className="text-[#60758b]">{label}</span>
+                            <span className="min-w-0 break-words text-right font-semibold text-[#20364c] sm:text-left">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        <a
+                          href={selectedSellerTabModel.profile.phone ? `tel:${selectedSellerTabModel.profile.phone}` : undefined}
+                          aria-label="Call seller"
+                          className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#b8d9c8] px-4 text-sm font-semibold text-[#0f6f47] transition hover:bg-[#f3fbf6] sm:flex-none ${selectedSellerTabModel.profile.phone ? '' : 'pointer-events-none opacity-45'}`}
+                        >
+                          <Phone className="h-4 w-4" />
+                          Call
+                        </a>
+                        <a
+                          href={selectedSellerTabModel.profile.email ? `mailto:${selectedSellerTabModel.profile.email}` : undefined}
+                          aria-label="Email seller"
+                          className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#b8d9c8] px-4 text-sm font-semibold text-[#0f6f47] transition hover:bg-[#f3fbf6] sm:flex-none ${selectedSellerTabModel.profile.email ? '' : 'pointer-events-none opacity-45'}`}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Email
+                        </a>
+                        <a
+                          href={selectedSellerTabModel.profile.phone ? `https://wa.me/${selectedSellerTabModel.profile.phone.replace(/[^\d+]/g, '').replace(/^\+/, '')}` : undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="Message seller on WhatsApp"
+                          className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#b8d9c8] px-4 text-sm font-semibold text-[#0f6f47] transition hover:bg-[#f3fbf6] sm:flex-none ${selectedSellerTabModel.profile.phone ? '' : 'pointer-events-none opacity-45'}`}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </a>
+                      </div>
+                    </section>
+
+                    <section className="order-1 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_14px_34px_rgba(31,54,78,0.05)] lg:order-2 sm:p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-[#102033]">Seller Onboarding</h3>
+                          <p className="mt-1 text-sm text-[#60758b]">Portal progress and actions</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          selectedSellerTabModel.onboarding.statusKey === 'complete'
+                            ? 'bg-[#dff4e8] text-[#0f7b4e]'
+                            : selectedSellerTabModel.onboarding.status.toLowerCase().includes('expired')
+                              ? 'bg-[#fff1f0] text-[#a43b2f]'
+                              : 'bg-[#fff6df] text-[#9a6416]'
+                        }`}>
+                          {selectedSellerTabModel.onboarding.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1fr)]">
+                        <div className="space-y-4">
+                          {[
+                            ['Portal invitation sent', selectedSellerTabModel.onboarding.invitationSentAt],
+                            ['Last accessed', selectedSellerTabModel.onboarding.lastAccessedAt],
+                            ['Onboarding submitted', selectedSellerTabModel.onboarding.submittedAt],
+                            ['Last reminder sent', selectedSellerTabModel.onboarding.lastReminderSentAt],
+                            ['Terms accepted', selectedSellerTabModel.onboarding.termsAcceptedAt],
+                          ].filter(([, value]) => normalizeText(value)).map(([label, value]) => (
+                            <div key={label} className="flex items-start gap-3">
+                              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[#6d839b]" />
+                              <div>
+                                <p className="text-xs font-medium text-[#60758b]">{label}</p>
+                                <p className="mt-1 text-sm font-semibold text-[#20364c]">{formatDateTime(value, 'Not captured')}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {!selectedSellerTabModel.onboarding.portalToken ? (
+                            <div className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-3 text-sm text-[#6f839c]">
+                              Onboarding not started.
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff]">
+                          <div className="divide-y divide-[#e8eef5]">
+                            {selectedSellerTabModel.onboarding.checklist.map((item) => (
+                              <div key={item.key} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                                <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#20364c]">
+                                  {item.status === 'complete' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0f8f59]" /> : <Clock3 className="h-4 w-4 shrink-0 text-[#d98500]" />}
+                                  <span className="truncate">{item.label}</span>
+                                </span>
+                                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'complete' ? 'bg-[#dff4e8] text-[#0f7b4e]' : 'bg-[#fff6df] text-[#9a6416]'}`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {selectedSellerTabModel.onboarding.nextRequiredAction ? (
+                        <div className="mt-5 rounded-[16px] border border-[#f1dfb8] bg-[#fffaf0] p-4">
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#9a6416]">Next Required Step</p>
+                          <p className="mt-2 text-sm font-semibold text-[#5f4618]">
+                            {selectedSellerTabModel.onboarding.nextRequiredAction.label} is still required.
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        <Button type="button" size="sm" className="min-h-11 bg-[#0f7b4e] hover:bg-[#0b6b42]" onClick={() => handleSellerJourneyAction('open_seller_portal')} disabled={!selectedSellerTabModel.onboarding.portalLink}>
+                          <ExternalLink className="h-4 w-4" />
+                          Open Portal
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
+                          <Send className="h-4 w-4" />
+                          Resend Link to Portal
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={() => handleCopySelectedSellerLink('portal')} disabled={!selectedSellerTabModel.onboarding.portalLink}>
+                          <Link2 className="h-4 w-4" />
+                          Copy Link
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending || !selectedSellerTabModel.profile.email}>
+                          <Bell className="h-4 w-4" />
+                          Send Reminder
+                        </Button>
+                      </div>
+                    </section>
+
+                    <section className="order-3 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_14px_34px_rgba(31,54,78,0.05)] sm:p-6">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#102033]">Representation & Ownership</h3>
+                        <p className="mt-1 text-sm text-[#60758b]">Legal and ownership context</p>
+                      </div>
+                      <div className="mt-6 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                        {[
+                          ['Seller capacity', selectedSellerTabModel.representation.sellerCapacity],
+                          ['Ownership structure', selectedSellerTabModel.representation.ownershipStructure],
+                          ...(selectedSellerTabModel.representation.registeredEntity ? [['Registered entity', selectedSellerTabModel.representation.registeredEntity]] : []),
+                          ['Additional sellers', selectedSellerTabModel.representation.additionalSellerCount ? selectedSellerTabModel.representation.additionalSellerCount : 'None'],
+                          ['Representative', selectedSellerTabModel.representation.representative],
+                          ['Authority status', selectedSellerTabModel.representation.authorityStatus],
+                          ['Identity verification', selectedSellerTabModel.representation.identityVerificationStatus],
+                          ...(selectedSellerTabModel.representation.maritalStatus ? [['Marital status', selectedSellerTabModel.representation.maritalStatus]] : []),
+                        ].map(([label, value]) => (
+                          <div key={label} className="grid grid-cols-[minmax(120px,0.55fr)_minmax(0,1fr)] gap-3 border-b border-[#edf3f8] pb-3">
+                            <span className="text-[#60758b]">{label}</span>
+                            <span className="min-w-0 break-words font-semibold text-[#20364c]">{value || 'Not captured'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="order-4 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_14px_34px_rgba(31,54,78,0.05)] sm:p-6">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#102033]">Internal Details</h3>
+                        <p className="mt-1 text-sm text-[#60758b]">Operational metadata</p>
+                      </div>
+                      <div className="mt-6 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                        {[
+                          ['Lead source', selectedSellerTabModel.internal.leadSource],
+                          ['Assigned agent', selectedSellerTabModel.internal.assignedAgent],
+                          ['Portal status', selectedSellerTabModel.internal.portalStatus],
+                          ['Seller record status', selectedSellerTabModel.internal.sellerRecordStatus],
+                          ['Created', formatDateTime(selectedSellerTabModel.internal.createdAt, 'Not captured')],
+                          ['Last updated', formatDateTime(selectedSellerTabModel.internal.updatedAt, 'Not captured')],
+                          ['Internal notes', selectedSellerTabModel.internal.notesCount ? selectedSellerTabModel.internal.notesCount : 'None'],
+                          ...(selectedSellerTabModel.internal.organisation ? [['Organisation', selectedSellerTabModel.internal.organisation]] : []),
+                        ].map(([label, value]) => (
+                          <div key={label} className="grid grid-cols-[minmax(110px,0.48fr)_minmax(0,1fr)] gap-3 border-b border-[#edf3f8] pb-3">
+                            <span className="text-[#60758b]">{label}</span>
+                            <span className="min-w-0 break-words font-semibold text-[#20364c]">{value || 'Not captured'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  )
                   ) : null}
 
                   {leadWorkspaceTab === 'property' && selectedLeadIsSeller ? (
