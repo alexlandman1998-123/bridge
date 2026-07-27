@@ -3557,6 +3557,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const routeLeadKey = normalizeLeadIdentityKey(routeLeadId)
     return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey) || null
   }, [records.leads, routeLeadId])
+  const routeLeadRecordRef = useRef(null)
+  useEffect(() => {
+    routeLeadRecordRef.current = routeLeadRecord
+  }, [routeLeadRecord])
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
   const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
@@ -4089,6 +4093,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
       if (isCalendarMode) {
         await reloadRecords(storageOrgId)
+      } else if (isLeadWorkspaceRoute && routeLeadId) {
+        scheduleRecordsReload(storageOrgId, 1200)
       } else {
         void reloadRecords(storageOrgId)
       }
@@ -4100,7 +4106,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentWorkspace?.id, currentWorkspace?.name, isCalendarMode, profile?.firstName, profile?.lastName, reloadRecords, role])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentWorkspace?.id, currentWorkspace?.name, isCalendarMode, isLeadWorkspaceRoute, profile?.firstName, profile?.lastName, reloadRecords, role, routeLeadId, scheduleRecordsReload])
 
   useEffect(() => {
     void loadContext()
@@ -4381,7 +4387,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const mergeRouteLeadSnapshot = (snapshot) => {
       if (!snapshot?.leads?.length) return false
       const resolvedRouteLeadId = normalizeText(snapshot?.resolvedLeadId || snapshot.leads[0]?.leadId)
-      const linkedListings = Array.isArray(snapshot.linkedListings) ? snapshot.linkedListings.filter(Boolean) : []
+      const existingLinkedListings = routeLeadWorkspaceSnapshotRef.current?.key === hydrationKey && Array.isArray(routeLeadWorkspaceSnapshotRef.current?.linkedListings)
+        ? routeLeadWorkspaceSnapshotRef.current.linkedListings
+        : []
+      const linkedListings = dedupeByKey([
+        ...existingLinkedListings,
+        ...(Array.isArray(snapshot.linkedListings) ? snapshot.linkedListings.filter(Boolean) : []),
+      ], (listing) => listing?.id || listing?.listingId || listing?.listing_id)
       routeLeadWorkspaceSnapshotRef.current = {
         key: hydrationKey,
         organisationId: normalizeText(organisationId),
@@ -4497,17 +4509,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (cancelled || attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) return
       attempt += 1
       try {
-        if (routeLeadRecord?.listingId || routeLeadRecord?.listing_id) {
+        const currentRouteLeadRecord = routeLeadRecordRef.current
+        if (currentRouteLeadRecord?.listingId || currentRouteLeadRecord?.listing_id) {
           const routeRecordSnapshot = await hydrateRouteLeadSnapshotLinkedListing({
             contacts: [],
-            leads: [routeLeadRecord],
+            leads: [currentRouteLeadRecord],
             leadActivities: [],
             tasks: [],
-            listingId: normalizeText(routeLeadRecord.listingId || routeLeadRecord.listing_id),
+            listingId: normalizeText(currentRouteLeadRecord.listingId || currentRouteLeadRecord.listing_id),
             leadWorkspaceStatus: 'ready',
             leadWorkspaceReason: 'route_record_linked_listing',
             requestedLeadId: routeLeadId,
-            resolvedLeadId: normalizeText(routeLeadRecord.leadId || routeLeadRecord.lead_id || routeLeadId),
+            resolvedLeadId: normalizeText(currentRouteLeadRecord.leadId || currentRouteLeadRecord.lead_id || routeLeadId),
           })
           if (cancelled) return
           if (routeRecordSnapshot?.linkedListings?.length && mergeRouteLeadSnapshot(routeRecordSnapshot)) {
@@ -4516,7 +4529,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             return
           }
         }
-        if (!routeLeadRecord) {
+        if (!currentRouteLeadRecord) {
           const seedSnapshot = await withPipelineTimeout(
             fetchAgencyCrmLeadRouteHydrationSeed(organisationId, routeLeadId),
             'Lead workspace data is taking too long to load.',
@@ -4582,7 +4595,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     organisationId,
     reloadRecords,
     routeLeadId,
-    routeLeadRecord,
   ])
 
   useEffect(() => {
