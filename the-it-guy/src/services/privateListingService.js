@@ -6274,6 +6274,93 @@ async function acceptSellerPlatformFeeConsent(client, {
   return data
 }
 
+function readAcceptedPreferredTransferAttorney(formData = {}) {
+  const source = formData && typeof formData === 'object' ? formData : {}
+  const choice = normalizeText(source.transferAttorneyChoice || source.transfer_attorney_choice || 'preferred').toLowerCase()
+  if (['nominate_other', 'nominate-other', 'other'].includes(choice)) return null
+
+  const preferred = source.preferredTransferAttorney && typeof source.preferredTransferAttorney === 'object'
+    ? source.preferredTransferAttorney
+    : {}
+  const acceptance = source.preferredTransferAttorneyAcceptance && typeof source.preferredTransferAttorneyAcceptance === 'object'
+    ? source.preferredTransferAttorneyAcceptance
+    : {}
+  const preferredPartnerId = getPreferredTransferAttorneyId(preferred)
+  const acceptedPartnerId = getPreferredTransferAttorneyAcceptanceId(acceptance) || preferredPartnerId
+  const accepted = source.preferredTransferAttorneyAccepted === true ||
+    normalizeText(source.preferred_transfer_attorney_accepted).toLowerCase() === 'true'
+
+  if (!preferredPartnerId || !accepted || acceptedPartnerId !== preferredPartnerId) return null
+
+  return {
+    preferredPartnerId,
+    partnerRelationshipId: normalizeUuid(preferred.partnerRelationshipId || preferred.partner_relationship_id || preferredPartnerId),
+    partnerOrganisationId: normalizeUuid(preferred.partnerOrganisationId || preferred.partner_organisation_id),
+    companyName: normalizeText(preferred.companyName || preferred.company_name || preferred.name),
+    contactPerson: normalizeText(preferred.contactPerson || preferred.contact_person || preferred.companyName || preferred.company_name),
+    email: normalizeText(preferred.email || preferred.emailAddress || preferred.email_address).toLowerCase(),
+    phone: normalizeText(preferred.phone || preferred.phoneNumber || preferred.phone_number),
+    acceptedAt: normalizeText(acceptance.acceptedAt || acceptance.accepted_at),
+  }
+}
+
+async function ensureAcceptedPreferredTransferAttorneyAllocation(client, {
+  listing = null,
+  onboarding = null,
+  formData = {},
+  source = 'seller_onboarding_completed',
+} = {}) {
+  const listingId = normalizeUuid(listing?.id || listing?.private_listing_id || onboarding?.private_listing_id)
+  const organisationId = normalizeUuid(resolveListingOrganisationId(listing) || listing?.organisation_id)
+  const attorney = readAcceptedPreferredTransferAttorney(formData)
+  if (!listingId || !organisationId || !attorney?.companyName) return null
+
+  const configQuery = await client.rpc('bridge_resolve_partner_role_configuration', {
+    p_organisation_id: organisationId,
+    p_role_type: 'transfer_attorney',
+    p_partner_organisation_id: attorney.partnerOrganisationId,
+    p_partner_relationship_id: attorney.partnerRelationshipId,
+    p_preferred_partner_id: normalizeUuid(attorney.preferredPartnerId),
+  })
+  if (configQuery.error) {
+    if (isMissingRpcError(configQuery.error, 'bridge_resolve_partner_role_configuration')) return null
+    throw configQuery.error
+  }
+
+  const partnerRoleConfigurationId = normalizeUuid(configQuery.data)
+  if (!partnerRoleConfigurationId) return null
+
+  const mandatePacketId = normalizeUuid(
+    listing?.mandatePacketId ||
+      listing?.mandate_packet_id ||
+      listing?.mandatePacket?.id ||
+      listing?.mandate_packet?.id,
+  )
+  const allocationQuery = await client.rpc('bridge_allocate_private_listing_transfer_attorney_v2', {
+    p_private_listing_id: listingId,
+    p_partner_role_configuration_id: partnerRoleConfigurationId,
+    p_company_name: attorney.companyName,
+    p_contact_person: attorney.contactPerson || attorney.companyName,
+    p_email_address: attorney.email || null,
+    p_phone_number: attorney.phone || null,
+    p_selection_source: 'seller_mandate',
+    p_mandate_packet_id: mandatePacketId,
+    p_mandate_signed_at: attorney.acceptedAt || onboarding?.submitted_at || new Date().toISOString(),
+    p_metadata: {
+      source,
+      onboardingId: onboarding?.id || null,
+      preferredPartnerId: attorney.preferredPartnerId,
+      partnerRelationshipId: attorney.partnerRelationshipId,
+      partnerOrganisationId: attorney.partnerOrganisationId,
+    },
+  })
+  if (allocationQuery.error) {
+    if (isMissingRpcError(allocationQuery.error, 'bridge_allocate_private_listing_transfer_attorney_v2')) return null
+    throw allocationQuery.error
+  }
+  return allocationQuery.data || null
+}
+
 export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -6430,6 +6517,15 @@ export async function submitSellerOnboarding(token, payload = {}) {
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
     })
+    await ensureAcceptedPreferredTransferAttorneyAllocation(client, {
+      listing: rpcContext.listing,
+      onboarding: rpcContext.onboarding,
+      formData: payload.formData,
+      source: 'seller_onboarding_completed',
+    }).catch((allocationError) => {
+      console.warn('[Private Listings] transfer attorney allocation skipped after onboarding submit', allocationError)
+      return null
+    })
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {
@@ -6581,6 +6677,15 @@ export async function submitSellerOnboarding(token, payload = {}) {
     formData: nextFormData,
     listing: listingForContext,
     onboarding: updateOnboarding.data,
+  })
+  await ensureAcceptedPreferredTransferAttorneyAllocation(client, {
+    listing: listingForContext,
+    onboarding: updateOnboarding.data,
+    formData: nextFormData,
+    source: 'seller_onboarding_completed_fallback',
+  }).catch((allocationError) => {
+    console.warn('[Private Listings] transfer attorney allocation skipped after onboarding fallback submit', allocationError)
+    return null
   })
 
   return {

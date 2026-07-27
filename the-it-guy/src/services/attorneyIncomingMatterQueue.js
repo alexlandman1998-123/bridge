@@ -92,6 +92,12 @@ const TRANSACTION_COLUMNS = [
   'next_action',
   'assigned_agent',
   'assigned_agent_email',
+  'originating_partner_organisation_id',
+  'referral_source_organisation_id',
+  'referral_source_organisation_name',
+  'originating_partner_organisation_name',
+  'source_organisation_name',
+  'transaction_type',
   'seller_name',
   'seller_email',
   'last_meaningful_activity_at',
@@ -134,6 +140,7 @@ const BUYER_COLUMNS = ['id', 'name', 'email']
 const UNIT_COLUMNS = ['id', 'development_id', 'unit_number', 'unit_label', 'phase', 'block', 'status']
 const DEVELOPMENT_COLUMNS = ['id', 'name', 'development_name', 'code']
 const PROFILE_COLUMNS = ['id', 'full_name', 'first_name', 'last_name', 'email']
+const ORGANISATION_COLUMNS = ['id', 'name', 'display_name', 'legal_name', 'logo_url', 'logoUrl', 'brand_logo_url']
 
 const STATUS_SORT_RANK = {
   awaiting_buyer: -1,
@@ -198,6 +205,89 @@ function getPersonName(profile = null, fallback = 'Unassigned') {
     [profile.first_name, profile.last_name].filter(Boolean).join(' '),
     profile.email,
   ])[0] || fallback
+}
+
+function getOrganisationName(organisation = null) {
+  return compact([
+    organisation?.display_name,
+    organisation?.name,
+    organisation?.legal_name,
+  ])[0] || ''
+}
+
+function getOrganisationLogo(organisation = null) {
+  return compact([
+    organisation?.logo_url,
+    organisation?.logoUrl,
+    organisation?.brand_logo_url,
+  ])[0] || ''
+}
+
+function resolveAssignedBySource({
+  assignment = {},
+  transaction = {},
+  allocation = {},
+  organisationsById = {},
+} = {}) {
+  const sourceOrganisationId = compact([
+    transaction.originating_partner_organisation_id,
+    transaction.referral_source_organisation_id,
+    transaction.organisation_id,
+    allocation.source_organisation_id,
+    allocation.organisation_id,
+    allocation.agency_organisation_id,
+  ])[0] || ''
+  const sourceOrganisation = organisationsById[sourceOrganisationId] || null
+  const sourceName = compact([
+    transaction.originating_partner_organisation_name,
+    transaction.referral_source_organisation_name,
+    transaction.source_organisation_name,
+    getOrganisationName(sourceOrganisation),
+    allocation.source_organisation_name,
+    allocation.organisation_name,
+    allocation.agency_name,
+    allocation.company_name,
+    allocation.companyName,
+    allocation.sender_name,
+    allocation.senderName,
+    allocation.assigned_agent_name,
+    allocation.assignedAgentName,
+    transaction.assigned_agent,
+    transaction.assigned_agent_email,
+    assignment.assigned_by,
+  ])[0] || ''
+  const normalizedSource = normalizeKey([sourceName, sourceOrganisationId, transaction.transaction_type, allocation.private_listing_id].join(' '))
+
+  if (normalizedSource.includes('kingston')) {
+    return {
+      key: 'kingstons',
+      label: 'Kingstons',
+      kind: 'entity',
+      logoUrl: getOrganisationLogo(sourceOrganisation) || '/brand/kingstons-logo-form.png',
+    }
+  }
+  if (normalizedSource.includes('produktive') || normalizedSource.includes('productive')) {
+    return {
+      key: 'produktive',
+      label: 'Produktive',
+      kind: 'entity',
+      logoUrl: getOrganisationLogo(sourceOrganisation) || '/brand/produktive-realty-logo-white.svg',
+    }
+  }
+  if (allocation.private_listing_id || allocation.privateListingId || normalizedSource.includes('private')) {
+    return {
+      key: 'private',
+      label: 'Private',
+      kind: 'private',
+      logoUrl: '',
+    }
+  }
+  return {
+    key: sourceOrganisationId || normalizeKey(sourceName) || 'private',
+    label: sourceName || 'Private',
+    kind: sourceName ? 'entity' : 'private',
+    logoUrl: getOrganisationLogo(sourceOrganisation),
+  }
 }
 
 function getMatterReference(transaction = {}, fallbackId = '') {
@@ -493,6 +583,7 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
     assignedSecretary: { id: '', name: '', initials: '', email: '' },
     assignedAdminHandler: { id: '', name: '', initials: '', email: '' },
     agent,
+    assignedBySource: resolveAssignedBySource({ allocation }),
     actionHref: mandatePacketId ? `/legal-documents/${encodeURIComponent(mandatePacketId)}` : '',
     raw: { allocation },
   }
@@ -500,7 +591,7 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
   return row
 }
 
-function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById }) {
+function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById, organisationsById }) {
   const normalizedAssignment = normalizeAssignment(assignment)
   const laneKey = getAttorneyInstructionLane(normalizedAssignment) || 'transfer'
   const laneDocumentRequests = (documentRequests || []).filter((request) =>
@@ -590,6 +681,11 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
       email: adminProfile?.email || '',
     },
     agent: transaction.assigned_agent || transaction.assigned_agent_email || '',
+    assignedBySource: resolveAssignedBySource({
+      assignment: normalizedAssignment,
+      transaction,
+      organisationsById,
+    }),
     actionHref: `/transactions/${transaction.id}`,
     contract,
     raw: {
@@ -676,6 +772,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   developments = [],
   profiles = [],
   preInstructionAllocations = [],
+  organisations = [],
 } = {}, options = {}) {
   const transactionsById = mapById(transactions)
   const onboardingByTransactionId = groupBy(onboardingRows, 'transaction_id')
@@ -684,6 +781,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   const unitsById = mapById(units)
   const developmentsById = mapById(developments)
   const profilesById = mapById(profiles)
+  const organisationsById = mapById(organisations)
 
   const instructionRows = (assignments || [])
     .map(normalizeAssignment)
@@ -704,6 +802,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
         unit,
         development,
         profilesById,
+        organisationsById,
       })
     })
     .filter(Boolean)
@@ -922,6 +1021,11 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   ])
 
   const buyerIds = unique(transactions.map((transaction) => transaction.buyer_id))
+  const organisationIds = unique(transactions.flatMap((transaction) => [
+    transaction.originating_partner_organisation_id,
+    transaction.referral_source_organisation_id,
+    transaction.organisation_id,
+  ]))
   const unitIds = unique(transactions.map((transaction) => transaction.unit_id))
   const units = await fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds)
   const developmentIds = unique([
@@ -937,10 +1041,11 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     assignment.preferred_attorney_user_id,
   ]))
 
-  const [buyers, developments, profiles] = await Promise.all([
+  const [buyers, developments, profiles, organisations] = await Promise.all([
     fetchRowsByIds(client, 'buyers', BUYER_COLUMNS, buyerIds),
     fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds),
     fetchRowsByIds(client, 'profiles', PROFILE_COLUMNS, profileIds),
+    fetchRowsByIds(client, 'organisations', ORGANISATION_COLUMNS, organisationIds),
   ])
 
   return buildAttorneyIncomingMatterQueueFromSources({
@@ -954,6 +1059,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     units,
     developments,
     profiles,
+    organisations,
     preInstructionAllocations,
   }, options)
 }

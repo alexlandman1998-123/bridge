@@ -1,9 +1,10 @@
 import { Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { buildVisibleSettingsGroups } from './settingsNavigation'
+import { SettingsLoadingState } from './settingsUi'
 
 function SettingsNavigation({ groups, onNavigate }) {
   if (!groups.length) {
@@ -113,7 +114,9 @@ export default function SettingsLayout() {
           </aside>
 
           <main className="settings-content min-w-0">
-            <Outlet />
+            <Suspense fallback={<SettingsLoadingState label="Loading settings section..." compact />}>
+              <Outlet />
+            </Suspense>
           </main>
         </div>
       </div>

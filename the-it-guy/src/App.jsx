@@ -461,7 +461,7 @@ function AppLayout({ onLogout, session = null, user }) {
     /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
-  const routeContentKey = `${location.pathname}${location.search || ''}`
+  const routeContentKey = location.pathname.startsWith('/settings') ? 'settings-shell' : `${location.pathname}${location.search || ''}`
   const hideSharedHeader =
     isLegalWorkspaceRoute ||
     location.pathname === '/command-center' ||

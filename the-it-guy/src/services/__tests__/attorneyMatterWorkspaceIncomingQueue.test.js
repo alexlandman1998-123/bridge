@@ -66,6 +66,7 @@ try {
         assignedAttorney: { id: 'firm-1', name: 'Arch9 Attorneys', initials: 'AA' },
         assignedSecretary: {},
         assignedAdminHandler: {},
+        assignedBySource: { key: 'private', label: 'Private', kind: 'private', logoUrl: '' },
         actionHref: '/legal-documents/packet-1',
       },
       {
@@ -108,6 +109,7 @@ try {
           name: '',
         },
         agent: 'Agent One',
+        assignedBySource: { key: 'produktive', label: 'Produktive', kind: 'entity', logoUrl: '/brand/produktive-realty-logo-white.svg' },
         actionHref: '/transactions/tx-incoming',
       },
     ],
@@ -125,6 +127,8 @@ try {
     assert.equal(workspace.tableRows[0].status, 'Awaiting Buyer')
     assert.equal(workspace.tableRows[0].statusKey, 'awaiting_buyer')
     assert.equal(workspace.tableRows[0].nextAction, 'Await a buyer before the formal transfer instruction is activated.')
+    assert.equal(workspace.tableRows[0].assignedBySource.label, 'Private')
+    assert.equal(workspace.tableRows[1].assignedBySource.label, 'Produktive')
     assert.equal(workspace.summary.incomingMatters, 2)
     assert.equal(workspace.summary.awaitingBuyer, 1)
     assert.equal(workspace.summary.awaitingSignedOtp, 1)

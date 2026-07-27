@@ -4,16 +4,10 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  ClipboardCheck,
   Clock3,
   Flag,
-  FileText,
   MoreHorizontal,
-  Plus,
-  SlidersHorizontal,
   UserPlus,
-  UserRound,
   UsersRound,
   XCircle,
 } from 'lucide-react'
@@ -105,22 +99,6 @@ const WAITING_ON_STYLES = {
   Documents: 'border-blue-200 bg-blue-50 text-blue-700',
   'Attorney acceptance': 'border-violet-200 bg-violet-50 text-violet-700',
   'Instruction review': 'border-emerald-200 bg-emerald-50 text-[#00614f]',
-}
-
-const QUICK_FILTER_ICONS = {
-  today: CalendarDays,
-  this_week: CalendarDays,
-  needs_attention: AlertTriangle,
-  my_matters: UserRound,
-  unassigned: UsersRound,
-  awaiting_client: UsersRound,
-  awaiting_signed_otp: ClipboardCheck,
-  awaiting_documents: FileText,
-  ready_for_acceptance: CheckCircle2,
-  awaiting_buyer: UsersRound,
-  document_blockers: AlertTriangle,
-  delayed: AlertTriangle,
-  due_for_registration: Flag,
 }
 
 function classNames(...values) {
@@ -238,198 +216,6 @@ function KpiCard({ item }) {
   )
 }
 
-function FilterButton({ active, children, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'inline-flex h-9 shrink-0 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition',
-        active
-          ? 'border-[#00614f] bg-[#00614f] text-white shadow-sm'
-          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function FilterGroup({ label, options = [], value, onChange }) {
-  return (
-    <div className="min-w-0">
-      <p className="mb-2 text-xs font-semibold text-slate-600">{label}</p>
-      <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-        {options.map((option) => (
-          <FilterButton key={option.key || option.value} active={value === (option.key || option.value)} onClick={() => onChange(option.key || option.value)}>
-            {option.label}
-          </FilterButton>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function SelectFilter({ label, value, options = [], onChange }) {
-  return (
-    <label className="grid min-w-[220px] gap-2">
-      <span className="text-xs font-semibold text-slate-600">{label}</span>
-      <span className="relative">
-        <select
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold text-slate-700 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50"
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-      </span>
-    </label>
-  )
-}
-
-function UnifiedFilterBar({ workspace, filters, onFilterChange, onOpenMoreFilters }) {
-  const lockedMatterType = workspace.view?.lockedMatterType || (workspace.view?.usesIncomingQueue ? 'transfer' : '')
-  const lockedMatterTypeOption = lockedMatterType
-    ? workspace.filters.matterTypes.find((option) => (option.key || option.value) === lockedMatterType)
-    : null
-
-  return (
-    <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.35fr)_260px_auto] xl:items-end">
-      <FilterGroup
-        label="Status"
-        options={workspace.filters.statuses}
-        value={filters.status}
-        onChange={(value) => onFilterChange('status', value)}
-      />
-      {lockedMatterType ? (
-        <div className="min-w-0">
-          <p className="mb-2 text-xs font-semibold text-slate-600">Matter Type</p>
-          <span className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-[#00614f]">
-            <CheckCircle2 size={15} />
-            <span className="truncate">{lockedMatterTypeOption?.label || workspace.view.title}</span>
-          </span>
-        </div>
-      ) : (
-        <FilterGroup
-          label="Matter Type"
-          options={workspace.filters.matterTypes}
-          value={filters.matterType}
-          onChange={(value) => onFilterChange('matterType', value)}
-        />
-      )}
-      <SelectFilter
-        label="Assignee"
-        value={filters.attorney}
-        options={workspace.filters.attorneys}
-        onChange={(value) => onFilterChange('attorney', value)}
-      />
-      <button
-        type="button"
-        onClick={onOpenMoreFilters}
-        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-      >
-        <SlidersHorizontal size={16} />
-        More Filters
-      </button>
-    </section>
-  )
-}
-
-function QuickFilters({ quickFilters = [], activeFilter, onChange, onSaveView }) {
-  return (
-    <section className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Quick Filters</p>
-      <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-        {quickFilters.map((filter) => {
-          const Icon = QUICK_FILTER_ICONS[filter.key] || CalendarDays
-          const active = activeFilter === filter.key
-          return (
-            <button
-              key={filter.key}
-              type="button"
-              onClick={() => onChange(active ? '' : filter.key)}
-              className={classNames(
-                'inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition',
-                active
-                  ? 'border-[#00614f] bg-emerald-50 text-[#00614f]'
-                  : filter.key === 'needs_attention' || filter.key === 'delayed'
-                    ? 'border-slate-200 bg-white text-red-600 hover:bg-red-50'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
-              )}
-            >
-              <Icon size={16} />
-              {filter.label}
-            </button>
-          )
-        })}
-        <button
-          type="button"
-          onClick={onSaveView}
-          className="ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#00614f] transition hover:bg-emerald-50"
-        >
-          <Plus size={16} />
-          Save View
-        </button>
-      </div>
-    </section>
-  )
-}
-
-function MoreFiltersDrawer({ open, workspace, filters, savedViews, onFilterChange, onApplySavedView, onClose }) {
-  if (!open) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20 backdrop-blur-[1px]" role="dialog" aria-modal="true">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close filters" onClick={onClose} />
-      <aside className="relative h-full w-full max-w-[420px] overflow-y-auto border-l border-slate-200 bg-white p-5 shadow-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">More Filters</h2>
-            <p className="mt-1 text-sm text-slate-500">Refine the operational queue without splitting the table.</p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-            Close
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-4">
-          <SelectFilter label="Assigned attorney" value={filters.attorney} options={workspace.filters.attorneys} onChange={(value) => onFilterChange('attorney', value)} />
-          <SelectFilter label="Assistant" value={filters.assistant} options={workspace.filters.assistants} onChange={(value) => onFilterChange('assistant', value)} />
-          <SelectFilter label="Branch" value={filters.branch} options={workspace.filters.branches} onChange={(value) => onFilterChange('branch', value)} />
-          <SelectFilter label="Partner" value={filters.partner} options={workspace.filters.partners} onChange={(value) => onFilterChange('partner', value)} />
-          <SelectFilter label="Development" value={filters.development} options={workspace.filters.developments} onChange={(value) => onFilterChange('development', value)} />
-          <SelectFilter label="Municipality" value={filters.municipality} options={workspace.filters.municipalities} onChange={(value) => onFilterChange('municipality', value)} />
-          <SelectFilter label="Bank" value={filters.bank} options={workspace.filters.banks} onChange={(value) => onFilterChange('bank', value)} />
-          <SelectFilter label="Date instructed" value={filters.dateInstructed} options={workspace.filters.dateRanges} onChange={(value) => onFilterChange('dateInstructed', value)} />
-          <SelectFilter label="Expected registration" value={filters.expectedRegistration} options={workspace.filters.dateRanges} onChange={(value) => onFilterChange('expectedRegistration', value)} />
-          <SelectFilter label="Expected lodgement" value={filters.expectedLodgement} options={workspace.filters.dateRanges} onChange={(value) => onFilterChange('expectedLodgement', value)} />
-          <SelectFilter label="Priority" value={filters.priority} options={workspace.filters.priorities} onChange={(value) => onFilterChange('priority', value)} />
-          <SelectFilter label="Matter value" value={filters.matterValue} options={workspace.filters.matterValues} onChange={(value) => onFilterChange('matterValue', value)} />
-        </div>
-
-        <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-950">Saved Views</h3>
-          <div className="mt-3 grid gap-2">
-            {savedViews.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                onClick={() => onApplySavedView(view)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:border-emerald-200 hover:text-[#00614f]"
-              >
-                {view.name}
-              </button>
-            ))}
-          </div>
-        </section>
-      </aside>
-    </div>
-  )
-}
-
 function StageProgress({ stage }) {
   return (
     <div className="min-w-[150px]">
@@ -476,6 +262,36 @@ function Assignee({ person }) {
         {person.initials}
       </span>
       <span className="truncate text-sm font-medium text-slate-700">{person.name}</span>
+    </div>
+  )
+}
+
+function AssignedBySource({ source = {} }) {
+  const label = source.label || 'Private'
+  const key = source.key || 'private'
+  const isProduktive = key === 'produktive'
+  const isPrivate = source.kind === 'private' || key === 'private'
+
+  return (
+    <div className="flex min-w-[130px] items-center gap-2">
+      <span
+        className={classNames(
+          'inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border text-[0.68rem] font-bold uppercase',
+          isPrivate
+            ? 'border-slate-200 bg-slate-100 text-slate-600'
+            : isProduktive
+              ? 'border-[#00463d] bg-[#00463d] text-white'
+              : 'border-slate-200 bg-white text-slate-700',
+        )}
+        title={label}
+      >
+        {source.logoUrl ? (
+          <img src={source.logoUrl} alt={label} className="max-h-7 max-w-8 object-contain" />
+        ) : (
+          label.slice(0, 2)
+        )}
+      </span>
+      <span className="truncate text-sm font-semibold text-slate-700">{label}</span>
     </div>
   )
 }
@@ -622,33 +438,6 @@ function WaitingOnChips({ labels = [] }) {
   )
 }
 
-function DocumentSignal({ documents = {} }) {
-  const openCount = Number(documents.openCount || 0)
-  const reviewCount = Number(documents.reviewCount || 0)
-  const rejectedCount = Number(documents.rejectedCount || 0)
-  const totalBlockers = openCount + reviewCount + rejectedCount
-  const parts = [
-    openCount ? `${openCount} open` : '',
-    reviewCount ? `${reviewCount} in review` : '',
-    rejectedCount ? `${rejectedCount} rejected` : '',
-  ].filter(Boolean)
-
-  return (
-    <div className="min-w-[150px]">
-      <span
-        className={classNames(
-          'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold',
-          totalBlockers ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700',
-        )}
-      >
-        <FileText size={14} />
-        {totalBlockers ? `${totalBlockers} blocker${totalBlockers === 1 ? '' : 's'}` : 'Clear'}
-      </span>
-      {parts.length ? <p className="mt-1 text-xs font-medium text-slate-500">{parts.join(', ')}</p> : null}
-    </div>
-  )
-}
-
 function IncomingMattersTable({
   rows = [],
   selectedRows = [],
@@ -668,7 +457,7 @@ function IncomingMattersTable({
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[980px] border-collapse text-left text-sm">
           <thead className="bg-white text-[0.68rem] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               <th className="w-10 border-b border-slate-200 px-4 py-3">
@@ -677,10 +466,8 @@ function IncomingMattersTable({
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Instruction</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Parties / Property</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Waiting On</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Documents</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned By</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Since</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned To</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Next Action</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
@@ -733,50 +520,13 @@ function IncomingMattersTable({
                     ) : null}
                   </td>
                   <td className="px-4 py-3"><WaitingOnChips labels={row.waitingOnLabels} /></td>
-                  <td className="px-4 py-3"><DocumentSignal documents={row.documents} /></td>
+                  <td className="px-4 py-3"><AssignedBySource source={row.assignedBySource} /></td>
                   <td className="min-w-[150px] px-4 py-3">
                     <p className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
                       <Clock3 size={15} className="text-slate-400" />
                       {formatShortDate(row.createdAt || row.lastActivity)}
                     </p>
                     <p className="mt-1 text-xs font-medium text-slate-500">{formatIncomingAge(row.incomingAgeDays)} in queue</p>
-                  </td>
-                  <td className="px-4 py-3"><Assignee person={row.assignedAttorney} /></td>
-                  <td className="min-w-[240px] px-4 py-3">
-                    <p className="font-semibold leading-5 text-slate-800">{row.nextAction}</p>
-                    <div className="mt-2 hidden flex-wrap gap-3 group-hover:flex">
-                      {readyForAcceptance ? (
-                        <button
-                          type="button"
-                          disabled={accepting}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onAcceptMatter?.(row)
-                          }}
-                          className="text-xs font-semibold text-[#00614f] disabled:cursor-wait disabled:opacity-60"
-                        >
-                          {accepting ? 'Accepting' : `Accept ${matterLabel}`}
-                        </button>
-                      ) : null}
-                      {row.actionHref ? (
-                        <Link to={href} state={{ matterPreview: preview }} onClick={(event) => event.stopPropagation()} className="text-xs font-semibold text-[#00614f]">
-                          {row.isPreInstruction ? 'Open Mandate' : `Open ${matterLabel}`}
-                        </Link>
-                      ) : null}
-                      {canAssign ? (
-                        <button
-                          type="button"
-                          disabled={assigning}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onAssignMatter?.(row)
-                          }}
-                          className="text-xs font-semibold text-[#00614f] disabled:cursor-wait disabled:opacity-60"
-                        >
-                          {assigning ? 'Assigning' : row.allocationState === 'staff_assigned' ? 'Reassign' : 'Assign'}
-                        </button>
-                      ) : null}
-                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -1206,24 +956,6 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
   )
 }
 
-function SavedViewStrip({ savedViews = [], onApply }) {
-  if (!savedViews.length) return null
-  return (
-    <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
-      {savedViews.slice(0, 7).map((view) => (
-        <button
-          key={view.id}
-          type="button"
-          onClick={() => onApply(view)}
-          className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:text-[#00614f]"
-        >
-          {view.name}
-        </button>
-      ))}
-    </section>
-  )
-}
-
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
@@ -1233,12 +965,9 @@ function AttorneyMattersPage() {
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
-  const [quickFilter, setQuickFilter] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
-  const [localSavedViews, setLocalSavedViews] = useState([])
   const [incomingAction, setIncomingAction] = useState({ pendingId: '', error: '' })
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
   const [assignmentDialog, setAssignmentDialog] = useState({ row: null })
@@ -1284,7 +1013,7 @@ function AttorneyMattersPage() {
     setIncomingAction({ pendingId: '', error: '' })
     setDeclineDialog({ row: null, reason: '' })
     setAssignmentDialog({ row: null })
-  }, [filters, quickFilter, searchTerm, viewKey])
+  }, [filters, searchTerm, viewKey])
 
   useEffect(() => {
     setFilters((previous) => (
@@ -1300,46 +1029,17 @@ function AttorneyMattersPage() {
       view: viewKey,
       search: searchTerm,
       filters,
-      quickFilter,
+      quickFilter: '',
       page,
       pageSize,
     })
-  }, [filters, page, pageSize, quickFilter, searchTerm, source, viewKey])
+  }, [filters, page, pageSize, searchTerm, source, viewKey])
 
-  const savedViews = useMemo(() => [...(workspace?.savedViews || []), ...localSavedViews], [localSavedViews, workspace?.savedViews])
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
   const canManageIncomingAssignments = Boolean(
     permissionsState.hasPermission('can_view_all_firm_matters') &&
     permissionsState.hasPermission('can_update_attorney_assignments'),
   )
-
-  function handleFilterChange(key, value) {
-    setFilters((previous) => ({ ...previous, [key]: value }))
-  }
-
-  function handleSaveView() {
-    const label = quickFilter
-      ? workspace?.quickFilters?.find((filter) => filter.key === quickFilter)?.label
-      : workspace?.view?.lockedMatterType
-        ? workspace.view.title
-      : filters.matterType !== 'all'
-        ? workspace?.filters?.matterTypes?.find((filter) => filter.key === filters.matterType)?.label
-        : 'Custom View'
-    const nextView = {
-      id: `local-${Date.now()}`,
-      name: `${label || 'Custom View'} ${localSavedViews.length + 1}`,
-      filters: { ...filters, quickFilter, searchTerm },
-    }
-    setLocalSavedViews((previous) => [...previous, nextView])
-  }
-
-  function handleApplySavedView(view) {
-    setFilters({ ...DEFAULT_FILTERS, ...(view.filters || {}) })
-    setQuickFilter(view.filters?.quickFilter || '')
-    setSearchTerm(view.filters?.searchTerm || '')
-    setPage(1)
-    setDrawerOpen(false)
-  }
 
   function handleToggleRow(matterId) {
     setSelectedRows((previous) =>
@@ -1473,24 +1173,9 @@ function AttorneyMattersPage() {
   return (
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
-        <SavedViewStrip savedViews={savedViews} onApply={handleApplySavedView} />
-        <UnifiedFilterBar
-          workspace={workspace}
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onOpenMoreFilters={() => setDrawerOpen(true)}
-        />
-
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
         </section>
-
-        <QuickFilters
-          quickFilters={workspace.quickFilters}
-          activeFilter={quickFilter}
-          onChange={setQuickFilter}
-          onSaveView={handleSaveView}
-        />
 
         {incomingAction.error ? (
           <section className="flex items-start gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
@@ -1542,15 +1227,6 @@ function AttorneyMattersPage() {
         />
       </div>
 
-      <MoreFiltersDrawer
-        open={drawerOpen}
-        workspace={workspace}
-        filters={filters}
-        savedViews={savedViews}
-        onFilterChange={handleFilterChange}
-        onApplySavedView={handleApplySavedView}
-        onClose={() => setDrawerOpen(false)}
-      />
       <IncomingDeclineDialog
         row={declineDialog.row}
         reason={declineDialog.reason}

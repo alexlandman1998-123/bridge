@@ -141,6 +141,7 @@ try {
       },
       {
         id: 'tx-docs',
+        organisation_id: 'org-kingstons',
         buyer_id: 'buyer-2',
         unit_id: 'unit-2',
         transaction_reference: 'TRF-DOCS',
@@ -262,6 +263,9 @@ try {
       { id: 'att-2', full_name: 'John Transfer', email: 'john@example.com' },
       { id: 'att-3', full_name: 'Priya Preferred', email: 'priya@example.com' },
     ],
+    organisations: [
+      { id: 'org-kingstons', name: 'Kingstons Real Estate' },
+    ],
   }
 
   {
@@ -299,6 +303,8 @@ try {
     assert.equal(queue.rows[0].transactionId, '')
     assert.deepEqual(queue.rows[1].waitingOn, ['signed_otp', 'documents'])
     assert.equal(queue.rows[2].documents.reviewCount, 1)
+    assert.equal(queue.rows[0].assignedBySource.label, 'Private')
+    assert.equal(queue.rows[2].assignedBySource.label, 'Kingstons')
     assert.equal(queue.rows[3].matterType, 'Bond Registration')
     assert.equal(queue.rows[3].nextAction, 'Accept the bond attorney instruction.')
     assert.equal(queue.rows[4].matterType, 'Bond Cancellation')
