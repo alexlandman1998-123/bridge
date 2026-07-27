@@ -16,6 +16,7 @@ const clientApi = read('src/lib/api.js')
 const sellerApi = read('src/services/privateListingService.js')
 const sellerWorkspace = read('src/services/clientPortalWorkspaceService.js')
 const clientPortal = read('src/pages/ClientPortal.jsx')
+const finalSignedGenerator = read('../supabase/functions/generate-final-signed-document/index.ts')
 const legalWorkspace = read('src/components/documents/LegalDocumentWorkspace.jsx')
 const packetApi = read('src/lib/documentPacketsApi.js')
 const sellerPortalFenceMigration = read('../supabase/migrations/202607220010_phase4_seller_portal_final_artifact_fence.sql')
@@ -349,6 +350,21 @@ assert.match(
   clientPortal,
   /documentId: normalizedPacketId && normalizedPacketVersionId \? '' : normalizedDocumentId/,
   'ClientPortal must avoid synthetic document ids when a packet and packet version identify the final artifact.',
+)
+assert.match(
+  clientPortal,
+  /window\.open\('about:blank', '_blank'\)/,
+  'ClientPortal must pre-open a neutral document tab instead of cloning the portal route on mobile Safari.',
+)
+assert.match(
+  endpoint,
+  /sellerPortalMandateAccess[\s\S]*?allowEvidenceArtifactAccess: context === "signer" \|\|[\s\S]*?sellerPortalMandateAccess/,
+  'Seller mandate downloads must be able to use the verified F2 artifact before transaction publication exists.',
+)
+assert.match(
+  finalSignedGenerator,
+  /updatePayload\.final_legal_packet_id = normalizedPacketId[\s\S]*?updatePayload\.final_legal_packet_version_id = normalizedPacketVersionId[\s\S]*?updatePayload\.final_artifact_sha256 = normalizeText\(evidence\.sha256\)/,
+  'Final signed publication must stamp canonical artifact metadata onto the visible Documents row.',
 )
 assert.match(
   packetApi,

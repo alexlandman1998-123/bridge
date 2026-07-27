@@ -356,6 +356,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const sellerPortalMandateAccess = context === "seller_portal" &&
+      normalizeFinalArtifactText(packet.packet_type).toLowerCase() === "mandate";
     const resolved = await resolvePublishedFinalSignedArtifact({
       supabase: admin,
       packetId,
@@ -363,7 +365,8 @@ Deno.serve(async (req: Request) => {
       documentId,
       issueDownloadUrl: action === "download",
       expiresInSeconds: 60,
-      allowEvidenceArtifactAccess: context === "signer",
+      allowEvidenceArtifactAccess: context === "signer" ||
+        sellerPortalMandateAccess,
     });
     if (action === "download") {
       try {

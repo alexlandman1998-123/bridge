@@ -298,20 +298,76 @@ async function publishFinalSignedDocument({
   supabase,
   documentId,
   path,
+  packetId = "",
+  packetVersionId = "",
 }: {
   supabase: any;
   documentId: string;
   path: string;
+  packetId?: string;
+  packetVersionId?: string;
 }) {
   if (!documentId || !path) return false;
+  const updatedAt = new Date().toISOString();
+  const updatePayload: Record<string, unknown> = {
+    visibility_scope: "shared",
+    is_client_visible: true,
+    status: "approved",
+    stage_key: "final_signed",
+    updated_at: updatedAt,
+  };
+  const normalizedPacketId = normalizeText(packetId);
+  const normalizedPacketVersionId = normalizeText(packetVersionId);
+  if (normalizedPacketId && normalizedPacketVersionId) {
+    const [packetResult, versionResult, evidenceResult] = await Promise.all([
+      supabase
+        .from("document_packets")
+        .select("id, transaction_id, packet_type")
+        .eq("id", normalizedPacketId)
+        .maybeSingle(),
+      supabase
+        .from("document_packet_versions")
+        .select("id, packet_id, final_signed_file_path, final_signed_file_bucket")
+        .eq("id", normalizedPacketVersionId)
+        .eq("packet_id", normalizedPacketId)
+        .maybeSingle(),
+      supabase
+        .from("legal_final_artifact_evidence")
+        .select("packet_id, packet_version_id, bucket, path, media_type, byte_length, sha256")
+        .eq("packet_id", normalizedPacketId)
+        .eq("packet_version_id", normalizedPacketVersionId)
+        .maybeSingle(),
+    ]);
+    const packet = packetResult.data || {};
+    const version = versionResult.data || {};
+    const evidence = evidenceResult.data || {};
+    if (
+      !packetResult.error &&
+      !versionResult.error &&
+      !evidenceResult.error &&
+      normalizeText(packet.id) === normalizedPacketId &&
+      normalizeText(version.id) === normalizedPacketVersionId &&
+      normalizeText(evidence.packet_id) === normalizedPacketId &&
+      normalizeText(evidence.packet_version_id) === normalizedPacketVersionId &&
+      normalizeText(evidence.path) === path &&
+      normalizeText(evidence.path) === normalizeText(version.final_signed_file_path) &&
+      normalizeText(evidence.bucket) === normalizeText(version.final_signed_file_bucket)
+    ) {
+      const packetType = normalizeText(packet.packet_type).toLowerCase();
+      updatePayload.transaction_id = normalizeText(packet.transaction_id) || null;
+      updatePayload.category = packetType === "otp" ? "sales_documents" : "mandate_documents";
+      updatePayload.document_type = packetType === "otp" ? "signed_otp" : "signed_mandate";
+      updatePayload.final_legal_packet_id = normalizedPacketId;
+      updatePayload.final_legal_packet_version_id = normalizedPacketVersionId;
+      updatePayload.final_artifact_bucket = normalizeText(evidence.bucket);
+      updatePayload.final_artifact_media_type = normalizeText(evidence.media_type) || "application/pdf";
+      updatePayload.final_artifact_byte_length = Number(evidence.byte_length) || null;
+      updatePayload.final_artifact_sha256 = normalizeText(evidence.sha256) || null;
+    }
+  }
   const result = await supabase
     .from("documents")
-    .update({
-      visibility_scope: "shared",
-      is_client_visible: true,
-      stage_key: "final_signed",
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("id", documentId)
     .eq("file_path", path)
     .select("id")
@@ -2895,6 +2951,8 @@ Deno.serve(async (req: Request) => {
         supabase,
         documentId: existingFinalDocumentId,
         path: existingFinalPath,
+        packetId,
+        packetVersionId: normalizeText(version.id),
       }))) {
         logFinalisation("error", "final_signed_document_publication_pending", {
           requestId: finalisationRequestId,
@@ -3367,6 +3425,8 @@ Deno.serve(async (req: Request) => {
       supabase,
       documentId: recordedFinalDocumentId,
       path: signedPath,
+      packetId,
+      packetVersionId: normalizeText(version.id),
     }))) {
       logFinalisation("error", "final_signed_document_publication_pending", {
         requestId: finalisationRequestId,

@@ -5493,11 +5493,57 @@ function toPortalHtmlFileName(value = '', fallback = 'seller-document.html') {
   return raw.replace(/\.(html?|pdf)$/i, '') + '.html'
 }
 
+function writePortalDocumentWindowMessage(targetWindow, {
+  title = 'Opening document',
+  message = 'Preparing your secure document...',
+  tone = 'neutral',
+} = {}) {
+  if (!targetWindow?.document) return
+  const accent = tone === 'error' ? '#b42318' : '#0b4d3f'
+  const safeTitle = String(title || 'Opening document')
+  const safeMessage = String(message || 'Preparing your secure document...')
+  try {
+    targetWindow.document.open()
+    targetWindow.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${safeTitle.replace(/[<>&"]/g, '')}</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: start center; background: #f3f6fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #142132; }
+      main { width: min(520px, calc(100vw - 32px)); margin-top: 56px; border: 1px solid #dbe5ef; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 18px 44px rgba(15, 23, 42, 0.10); }
+      h1 { margin: 0 0 10px; font-size: 24px; line-height: 1.2; color: ${accent}; }
+      p { margin: 0; font-size: 16px; line-height: 1.55; color: #667085; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${safeTitle.replace(/[<>&"]/g, '')}</h1>
+      <p>${safeMessage.replace(/[<>&"]/g, '')}</p>
+    </main>
+  </body>
+</html>`)
+    targetWindow.document.close()
+  } catch {
+    // Some mobile browsers restrict document writes on a pre-opened tab.
+  }
+}
+
+function openPortalDocumentWindow(title = 'Opening document') {
+  if (typeof window === 'undefined') return null
+  const targetWindow = window.open('about:blank', '_blank')
+  if (targetWindow) {
+    writePortalDocumentWindowMessage(targetWindow, { title })
+  }
+  return targetWindow
+}
+
 function openGeneratedPortalDocumentHtml(markup = '', fileName = 'seller-document.html') {
   if (typeof window === 'undefined' || typeof URL === 'undefined') {
     throw new Error('Document downloads are only available in the browser.')
   }
-  const targetWindow = window.open('', '_blank')
+  const targetWindow = openPortalDocumentWindow('Opening document')
   if (!targetWindow) {
     throw new Error('Unable to open this document. Please allow pop-ups and try again.')
   }
@@ -8801,7 +8847,7 @@ function ClientPortal() {
     }
 
     const resolvedOpeningKey = String(openingKey || `final-signed-${normalizedPacketVersionId || normalizedDocumentId}`).trim()
-    const targetWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    const targetWindow = openPortalDocumentWindow('Opening signed document')
     try {
       setError('')
       setDocumentActionError('')
@@ -8832,8 +8878,15 @@ function ClientPortal() {
         window.open(signedUrl, '_blank', 'noopener,noreferrer')
       }
     } catch (openError) {
-      if (targetWindow && !targetWindow.closed) targetWindow.close()
-      setDocumentActionError(openError.message || 'Unable to open this final signed document right now.')
+      const message = openError.message || 'Unable to open this final signed document right now.'
+      if (targetWindow && !targetWindow.closed) {
+        writePortalDocumentWindowMessage(targetWindow, {
+          title: 'Document unavailable',
+          message,
+          tone: 'error',
+        })
+      }
+      setDocumentActionError(message)
     } finally {
       setOpeningDocumentPath('')
     }

@@ -169,9 +169,19 @@ assert.match(
   'document action failures should not replace an already-loaded seller portal with the fatal load screen',
 )
 assert.match(
+  clientPortalPageSource,
+  /window\.open\('about:blank', '_blank'\)/,
+  'seller document downloads should pre-open a neutral tab instead of cloning the current portal route on mobile Safari',
+)
+assert.match(
   finalSignedResolverSource,
   /bridge_private_listing_seller_portal_core_payload[\s\S]*?bridge_private_listing_seller_portal_payload/,
   'seller final signed mandate authorization should use the fast core payload before falling back to the heavy payload',
+)
+assert.match(
+  finalSignedResolverSource,
+  /sellerPortalMandateAccess[\s\S]*?allowEvidenceArtifactAccess: context === "signer" \|\|[\s\S]*?sellerPortalMandateAccess/,
+  'seller final signed mandates should fall back to the verified F2 artifact when transaction publication is not available yet',
 )
 assert.match(
   corePayloadSalesMigration,
