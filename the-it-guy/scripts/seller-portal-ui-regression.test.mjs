@@ -22,8 +22,8 @@ assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards 
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
 assert.match(source, /src=\{sellerAgencyLogoUrl\}/, 'seller sidebar should render the agent entity logo')
 assert.ok(
-  sellerLogoResolver.indexOf('agencyLogoLightUrl') < sellerLogoResolver.indexOf('agencyLogoDarkUrl'),
-  'seller sidebar should prefer the organisation light logo before dark-logo fallbacks',
+  sellerLogoResolver.indexOf('agencyLogoDarkUrl') < sellerLogoResolver.indexOf('agencyLogoLightUrl'),
+  'seller sidebar should prefer the organisation dark logo before light-logo fallbacks',
 )
 assert.match(sellerLogoResolver, /organisation_logo_light_url/, 'seller logo resolution should support legacy organisation light-logo fields')
 assert.doesNotMatch(source, /return `Seller Onboarding \$\{label\}`/, 'seller sidebar should not render the redundant onboarding completion badge')
