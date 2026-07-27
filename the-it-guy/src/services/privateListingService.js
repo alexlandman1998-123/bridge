@@ -85,6 +85,7 @@ const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = 'seller_portal_invi
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_invite_skipped_after_mandate_signed'
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
 let sellerPortalPayloadRpcUnavailable = false
+let sellerPortalCorePayloadRpcUnavailable = false
 const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
   'active',
   'finalised',
@@ -2723,6 +2724,64 @@ function mapSellerClientPortalPayload(payload) {
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
     listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, mandatePacket),
   }
+}
+
+function mapSellerClientPortalCorePayload(payload) {
+  const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
+  const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
+  if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
+  const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
+  const mappedListing = mapPrivateListingRow(
+    listingRow,
+    onboardingMap,
+    new Map([[String(listingRow.id), []]]),
+    new Map([[String(listingRow.id), []]]),
+  )
+  return {
+    onboarding: onboardingRow,
+    appointments: [],
+    mandatePacket: null,
+    transaction: mapSellerPortalTransactionTracking(payload?.transaction),
+    listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, null),
+    corePayload: true,
+  }
+}
+
+async function fetchSellerClientPortalCorePayloadByToken(client, token, options = {}) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || sellerPortalCorePayloadRpcUnavailable) return null
+  const accessToken = normalizeText(options.accessToken)
+  const requirePortalAccess = Boolean(options.requirePortalAccess)
+  const rpcArgs = requirePortalAccess || accessToken
+    ? {
+        p_token: normalizedToken,
+        p_access_token: accessToken || null,
+        p_require_access: requirePortalAccess,
+      }
+    : {
+        p_token: normalizedToken,
+      }
+  const rpc = await client.rpc('bridge_private_listing_seller_portal_core_payload', rpcArgs)
+  if (rpc.error) {
+    if (
+      isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_core_payload') ||
+      isRecoverableSellerPortalPayloadRpcError(rpc.error)
+    ) {
+      sellerPortalCorePayloadRpcUnavailable = true
+      return null
+    }
+    throw rpc.error
+  }
+  if (rpc.data?.authRequired) {
+    if (accessToken) clearSellerPortalAccessToken(normalizedToken)
+    return {
+      portalAuth: {
+        ...rpc.data,
+        sessionExpired: Boolean(rpc.data?.sessionExpired || accessToken),
+      },
+    }
+  }
+  return mapSellerClientPortalCorePayload(rpc.data)
 }
 
 async function fetchSellerClientPortalPayloadByToken(client, token, options = {}) {
@@ -5904,7 +5963,11 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
 
-  const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken, {
+  const corePayload = options?.corePayload === true
+  const portalPayload = (corePayload ? await fetchSellerClientPortalCorePayloadByToken(client, normalizedToken, {
+    accessToken: options?.sellerPortalAccessToken,
+    requirePortalAccess: options?.requirePortalAccess === true,
+  }) : null) || await fetchSellerClientPortalPayloadByToken(client, normalizedToken, {
     accessToken: options?.sellerPortalAccessToken,
     requirePortalAccess: options?.requirePortalAccess === true,
   })
@@ -5912,6 +5975,9 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
+    if (corePayload && portalPayload.corePayload) {
+      return portalPayload
+    }
     const [initialBranding, mediaByListingId] = await Promise.all([
       fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),

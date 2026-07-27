@@ -10,6 +10,11 @@ const migration = await readFile(
   new URL('../../supabase/migrations/202607250007_seller_portal_payload_optional_enrichment_guard.sql', import.meta.url),
   'utf8',
 )
+const corePayloadMigration = await readFile(
+  new URL('../../supabase/migrations/202607270003_seller_portal_core_payload_fast_entry.sql', import.meta.url),
+  'utf8',
+)
+const clientPortalWorkspaceSource = await readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 
 assert.match(
   pipelineSource,
@@ -54,6 +59,46 @@ assert.match(
   privateListingServiceSource,
   /const securePortalLookup = requirePortalAccess \|\| Boolean\(accessToken\)[\s\S]*?if \(sellerPortalPayloadRpcUnavailable && !securePortalLookup\) return null/s,
   'seller portal payload circuit breaker should only skip non-secure fallback lookups',
+)
+assert.match(
+  privateListingServiceSource,
+  /fetchSellerClientPortalCorePayloadByToken\([\s\S]*?bridge_private_listing_seller_portal_core_payload/s,
+  'seller portal core loads should use the fast core payload RPC',
+)
+assert.match(
+  privateListingServiceSource,
+  /if \(corePayload && portalPayload\.corePayload\) \{[\s\S]*?return portalPayload[\s\S]*?\}/s,
+  'seller portal core loads should skip branding and media enrichment before first paint',
+)
+assert.match(
+  clientPortalWorkspaceSource,
+  /includeRequirementsAndDocuments: !corePayload[\s\S]*?corePayload,/s,
+  'seller portal core loads should request the lightweight onboarding payload',
+)
+assert.match(
+  clientPortalWorkspaceSource,
+  /if \(mode !== 'core'\) \{[\s\S]*?hydrateSellerMandatePacketForPortalData/s,
+  'client portal core mode should not hydrate mandate packets before first paint',
+)
+assert.match(
+  clientPortalWorkspaceSource,
+  /if \(mode !== 'core' && portalData\?\.transaction\?\.id\)/,
+  'client portal core mode should not load the workflow read model before first paint',
+)
+assert.match(
+  corePayloadMigration,
+  /create or replace function public\.bridge_private_listing_seller_portal_core_payload\(/,
+  'seller portal needs a dedicated fast core payload RPC',
+)
+assert.match(
+  corePayloadMigration,
+  /'requirements', '\[\]'::jsonb,[\s\S]*?'documents', '\[\]'::jsonb,[\s\S]*?'appointments', '\[\]'::jsonb,[\s\S]*?'mandatePacket', 'null'::jsonb/s,
+  'core payload must not synchronously enrich documents, appointments, or mandate artifacts',
+)
+assert.match(
+  corePayloadMigration,
+  /bridge_resolve_private_listing_seller_portal_token\(p_token\)/,
+  'core payload must preserve stable, legacy, and invite token resolution',
 )
 assert.match(
   documentPacketsApiSource,

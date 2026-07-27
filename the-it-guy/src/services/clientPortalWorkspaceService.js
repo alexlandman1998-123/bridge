@@ -591,10 +591,12 @@ export function buildSellerTransactionTrackingProjection({ listing = {}, transac
 }
 
 async function fetchSellerClientPortalDataByToken(token, options = {}) {
+  const corePayload = options?.mode === 'core'
   const context = await getSellerOnboardingByToken(token, {
-    includeRequirementsAndDocuments: true,
+    includeRequirementsAndDocuments: !corePayload,
     requirePortalAccess: true,
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
+    corePayload,
   })
   const listing = context?.listing || null
   if (!listing) {
@@ -614,10 +616,10 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const status = listing?.sellerOnboardingStatus || sellerOnboarding?.status || onboarding?.status || 'pending'
   const listingId = listing?.id || onboarding?.private_listing_id || null
   const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
-  let mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
+  let mandatePacket = corePayload ? null : mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
   const mandatePacketId = mandatePacket?.id || listing?.mandatePacketId || listing?.mandate_packet_id || null
   const mandatePacketVersionId = mandatePacket?.packetVersionId || mandatePacket?.version?.id || null
-  if (mandatePacketId && mandatePacketVersionId) {
+  if (!corePayload && mandatePacketId && mandatePacketVersionId) {
     const finalSignedAccess = await resolveSellerClientPortalFinalSignedDocumentAccess({
       token,
       accessToken: options?.sellerPortalAccessToken,
@@ -629,23 +631,23 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   } else {
     mandatePacket = attachSellerMandateFinalAccess(mandatePacket)
   }
-  const requiredDocuments = getSellerRequiredDocuments(listing, formData)
+  const requiredDocuments = corePayload ? [] : getSellerRequiredDocuments(listing, formData)
     .map((item) => mapSellerRequiredDocument(item))
   const sellerDocumentPack = resolveSellerPortalRequiredDocumentPack({
     listing,
     formData,
     requirements: requiredDocuments,
-    documents: listing?.documents || [],
+    documents: corePayload ? [] : listing?.documents || [],
     mandatePacket,
   })
   const sellerRequiredDocuments = sellerDocumentPack.requiredDocuments
-  const documents = (Array.isArray(listing?.documents) ? listing.documents : [])
+  const documents = (corePayload ? [] : Array.isArray(listing?.documents) ? listing.documents : [])
     .map((item) => mapSellerUploadedDocument(item))
-  const appointments = (Array.isArray(context?.appointments) ? context.appointments : [])
+  const appointments = (corePayload ? [] : Array.isArray(context?.appointments) ? context.appointments : [])
     .map((item) => mapSellerPortalAppointment(item))
   const rawOffers = [
-    ...(Array.isArray(context?.offers) ? context.offers : []),
-    ...(Array.isArray(listing?.offers) ? listing.offers : []),
+    ...(corePayload ? [] : Array.isArray(context?.offers) ? context.offers : []),
+    ...(corePayload ? [] : Array.isArray(listing?.offers) ? listing.offers : []),
   ]
   const listingPerformance = buildSellerPortalListingPerformance({
     listing,
@@ -653,7 +655,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     offers: rawOffers,
     appointments,
   })
-  const sellerActivityRows = listingId
+  const sellerActivityRows = !corePayload && listingId
     ? await getPrivateListingActivity(listingId).catch((error) => {
         console.warn('[clientPortalWorkspaceService] seller listing activity feed skipped.', error)
         return []
@@ -2020,6 +2022,7 @@ export async function resolveClientPortalContext(token) {
 async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
   if (isSellerOnboardingToken(token)) {
     return fetchSellerClientPortalDataByToken(token, {
+      mode,
       sellerPortalAccessToken: options?.sellerPortalAccessToken,
     })
   }
@@ -2221,7 +2224,9 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     }
   }
 
-  portalData = await hydrateSellerMandatePacketForPortalData(token, portalData, workspaceMode)
+  if (mode !== 'core') {
+    portalData = await hydrateSellerMandatePacketForPortalData(token, portalData, workspaceMode)
+  }
 
   const canonicalRequirements = await fetchCanonicalDocumentRequirementsForPortal(portalData, workspaceMode)
   const documentCenter = {
@@ -2256,7 +2261,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
   let workflowReadModel = null
   try {
-    if (portalData?.transaction?.id) {
+    if (mode !== 'core' && portalData?.transaction?.id) {
       workflowReadModel = await getTransactionWorkflowReadModel(portalData.transaction.id, {
         viewerRole: clientRole,
         canViewPrivate: false,
@@ -2348,8 +2353,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
         syncNotificationsFromNextActions(notificationContext),
         syncNotificationsFromActivityFeed(notificationContext),
       ])
+      notifications = await getClientPortalNotifications(token, clientRole)
     }
-    notifications = await getClientPortalNotifications(token, clientRole)
   } catch (notificationError) {
     console.warn('[client-portal-notifications] Failed to sync notifications', {
       token,
