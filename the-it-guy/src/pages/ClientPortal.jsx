@@ -2966,18 +2966,50 @@ function getFirstImageUrl(value) {
     return ''
   }
   if (typeof value === 'object') {
-    return pickFirstText(
+    const directUrl = pickFirstText(
       value.url,
       value.secureUrl,
       value.secure_url,
       value.imageUrl,
       value.image_url,
+      value.heroImageUrl,
+      value.hero_image_url,
+      value.coverImageUrl,
+      value.cover_image_url,
+      value.primaryImageUrl,
+      value.primary_image_url,
+      value.mainImageUrl,
+      value.main_image_url,
+      value.mediaUrl,
+      value.media_url,
       value.src,
       value.path,
+      value.fileUrl,
+      value.file_url,
+      value.downloadUrl,
+      value.download_url,
       value.publicUrl,
       value.public_url,
+      value.signedUrl,
+      value.signed_url,
       value.thumbnailUrl,
       value.thumbnail_url,
+    )
+    if (directUrl) return directUrl
+    return pickFirstText(
+      getFirstImageUrl(value.images),
+      getFirstImageUrl(value.photos),
+      getFirstImageUrl(value.gallery),
+      getFirstImageUrl(value.galleryImages),
+      getFirstImageUrl(value.gallery_images),
+      getFirstImageUrl(value.imageGallery),
+      getFirstImageUrl(value.image_gallery),
+      getFirstImageUrl(value.imageUrls),
+      getFirstImageUrl(value.image_urls),
+      getFirstImageUrl(value.media),
+      getFirstImageUrl(value.mediaItems),
+      getFirstImageUrl(value.media_items),
+      getFirstImageUrl(value.files),
     )
   }
   return ''
@@ -2988,18 +3020,38 @@ function resolveSellerPropertyImageUrl({ portal = {}, activeSellingContext = {},
     portal?.listing?.heroImageUrl,
     portal?.listing?.hero_image_url,
     portal?.listing?.heroImage,
+    portal?.listing?.coverImageUrl,
+    portal?.listing?.cover_image_url,
+    portal?.listing?.primaryImageUrl,
+    portal?.listing?.primary_image_url,
+    portal?.listing?.mainImageUrl,
+    portal?.listing?.main_image_url,
     portal?.listing?.imageUrl,
     portal?.listing?.image_url,
     portal?.listing?.propertyImage,
     portal?.listing?.property_image,
     portal?.listing?.marketing?.mediaUrl,
     portal?.listing?.marketing?.media_url,
+    portal?.listing?.propertyDetails?.coverImageUrl,
+    portal?.listing?.propertyDetails?.cover_image_url,
+    portal?.listing?.propertyDetails?.imageUrl,
+    portal?.listing?.propertyDetails?.image_url,
+    portal?.unit?.heroImageUrl,
+    portal?.unit?.hero_image_url,
+    portal?.unit?.coverImageUrl,
+    portal?.unit?.cover_image_url,
     portal?.unit?.imageUrl,
     portal?.unit?.image_url,
     portal?.unit?.propertyImage,
     portal?.unit?.property_image,
     activeSellingContext?.heroImageUrl,
     activeSellingContext?.hero_image_url,
+    activeSellingContext?.coverImageUrl,
+    activeSellingContext?.cover_image_url,
+    activeSellingContext?.primaryImageUrl,
+    activeSellingContext?.primary_image_url,
+    activeSellingContext?.mainImageUrl,
+    activeSellingContext?.main_image_url,
     activeSellingContext?.imageUrl,
     activeSellingContext?.image_url,
     activeSellingContext?.propertyImage,
@@ -3012,12 +3064,39 @@ function resolveSellerPropertyImageUrl({ portal = {}, activeSellingContext = {},
     getFirstImageUrl(portal?.listing?.photos),
     getFirstImageUrl(portal?.listing?.galleryImages),
     getFirstImageUrl(portal?.listing?.gallery_images),
+    getFirstImageUrl(portal?.listing?.imageGallery),
+    getFirstImageUrl(portal?.listing?.image_gallery),
+    getFirstImageUrl(portal?.listing?.imageUrls),
+    getFirstImageUrl(portal?.listing?.image_urls),
+    getFirstImageUrl(portal?.listing?.media),
+    getFirstImageUrl(portal?.listing?.mediaItems),
+    getFirstImageUrl(portal?.listing?.media_items),
     getFirstImageUrl(portal?.listing?.marketing?.imageGallery),
+    getFirstImageUrl(portal?.listing?.marketing?.image_gallery),
     getFirstImageUrl(portal?.listing?.marketing?.galleryImages),
+    getFirstImageUrl(portal?.listing?.marketing?.gallery_images),
+    getFirstImageUrl(portal?.listing?.marketing?.images),
+    getFirstImageUrl(portal?.listing?.propertyDetails?.imageGallery),
+    getFirstImageUrl(portal?.listing?.propertyDetails?.galleryImages),
+    getFirstImageUrl(portal?.unit?.images),
+    getFirstImageUrl(portal?.unit?.photos),
+    getFirstImageUrl(portal?.unit?.galleryImages),
+    getFirstImageUrl(portal?.unit?.gallery_images),
     getFirstImageUrl(activeSellingContext?.images),
     getFirstImageUrl(activeSellingContext?.photos),
+    getFirstImageUrl(activeSellingContext?.galleryImages),
+    getFirstImageUrl(activeSellingContext?.gallery_images),
+    getFirstImageUrl(activeSellingContext?.imageGallery),
+    getFirstImageUrl(activeSellingContext?.image_gallery),
+    getFirstImageUrl(activeSellingContext?.imageUrls),
+    getFirstImageUrl(activeSellingContext?.image_urls),
+    getFirstImageUrl(activeSellingContext?.media),
     getFirstImageUrl(formData?.images),
     getFirstImageUrl(formData?.photos),
+    getFirstImageUrl(formData?.galleryImages),
+    getFirstImageUrl(formData?.gallery_images),
+    getFirstImageUrl(formData?.imageGallery),
+    getFirstImageUrl(formData?.image_gallery),
   )
 }
 
@@ -6158,20 +6237,20 @@ function SellerMobilePortal({
               <div className="relative flex min-h-[256px] flex-col">
                 <p className="text-sm font-medium text-[#a5d8a7]">Seller Portal</p>
                 <h2 className="mt-4 max-w-[19rem] text-[2rem] font-semibold leading-[1.08] text-white">{sellerPropertyTitle || 'Property sale'}</h2>
-                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/18 pt-5">
+                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/[0.22] pt-5">
                   <div className="min-w-0">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-white/68">Current status</p>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current status</p>
                     <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
                       <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
                       <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
                     </p>
-                    <p className="mt-1 text-sm font-medium text-white/72">{sellerStepLabel}</p>
+                    <p className="mt-1 text-sm font-medium text-[#d8e7e5]">{sellerStepLabel}</p>
                   </div>
                   <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/94 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
                     <span className="relative text-center">
                       <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
-                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-white/70">Complete</span>
+                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
                     </span>
                   </div>
                 </div>
@@ -6241,33 +6320,33 @@ function SellerMobilePortal({
               </article>
             </section>
 
-            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/40 bg-[#063f34] p-5 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
+            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-5 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Next required item</p>
               <div className="mt-3 flex items-start gap-3">
-                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-[#8bd985]/40 bg-white/8 text-[#a9ec9c]">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
                   <FileText size={20} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{nextRequiredTitle}</h3>
-                  <p className="mt-1 text-sm leading-5 text-white/72">{nextRequiredDescription}</p>
+                  <p className="mt-1 text-sm leading-5 text-[#d8efe3]">{nextRequiredDescription}</p>
                 </div>
               </div>
               {primaryDocumentAction ? (
                 <button
                   type="button"
                   onClick={() => setSelectedDocumentAction(primaryDocumentAction)}
-                  className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]"
+                  className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]"
                 >
                   <span>Upload document</span>
                   <UploadCloud size={18} />
                 </button>
               ) : hasRequiredNextAction ? (
-                <Link to={nextActionHref} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]">
+                <Link to={nextActionHref} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
                   <span>{sellerNextStep?.label || 'Open next step'}</span>
                   <ChevronRight size={18} />
                 </Link>
               ) : (
-                <div className="mt-4 flex min-h-[48px] items-center justify-center rounded-[14px] border border-[#8bd985]/35 bg-[#0a4d40]/80 px-4 text-sm font-semibold text-[#c5f6bc]">
+                <div className="mt-4 flex min-h-[48px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
                   All caught up
                 </div>
               )}
@@ -6408,13 +6487,13 @@ function SellerMobilePortal({
         }}
       />
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white/92 px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden" aria-label="Seller portal mobile navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 lg:hidden" aria-label="Seller portal mobile navigation">
         <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
           {bottomNavItems.map((item) => {
             const Icon = item.icon
             const isActive = item.key === mobileSection || (item.key === 'overview' && mobileSection === 'overview')
             return (
-              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#f0f3f7] text-[#10213a]' : 'text-[#7b8491] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
+              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#eef8f1] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
                 <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
                 <span>{item.label}</span>
               </Link>

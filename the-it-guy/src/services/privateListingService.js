@@ -1980,9 +1980,37 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     ? onboardingFormData.portalBranding
     : {}
   const resolvedPortalBranding = resolveOnboardingBranding(portalBranding)
-  const imageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
-  const coverImageId = normalizeText(onboardingFormData.coverImageId) || normalizeText(imageGallery[0]?.id)
-  const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || null
+  const listingImageGallery = normalizeMediaItems(
+    row.galleryImages ||
+      row.gallery_images ||
+      row.images ||
+      row.photos ||
+      row.marketing?.imageGallery ||
+      row.marketing?.galleryImages ||
+      row.marketing?.images ||
+      [],
+  )
+  const onboardingImageGallery = normalizeMediaItems(onboardingFormData.imageGallery)
+  const imageGallery = onboardingImageGallery.length ? onboardingImageGallery : listingImageGallery
+  const fallbackCoverImageUrl = pickFirstText(
+    row.heroImageUrl,
+    row.hero_image_url,
+    row.coverImageUrl,
+    row.cover_image_url,
+    row.primaryImageUrl,
+    row.primary_image_url,
+    row.mainImageUrl,
+    row.main_image_url,
+    row.imageUrl,
+    row.image_url,
+    row.marketing?.mediaUrl,
+    row.marketing?.media_url,
+  )
+  const fallbackCoverImage = fallbackCoverImageUrl
+    ? { id: 'listing-cover-image', name: 'Property image', url: fallbackCoverImageUrl }
+    : null
+  const coverImageId = normalizeText(onboardingFormData.coverImageId || row.coverImageId || row.cover_image_id) || normalizeText(imageGallery[0]?.id)
+  const coverImage = imageGallery.find((item) => normalizeText(item.id) === coverImageId) || imageGallery[0] || fallbackCoverImage
   const floorplans = normalizeMediaItems(onboardingFormData.floorplans)
   const onboardingDescription = normalizeText(onboardingFormData.propertyNotes)
   const listingPreviewDescription = normalizeText(row.listing_preview_description || onboardingFormData.listingPreviewDescription)
@@ -2138,6 +2166,12 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
     publicationStatus: publicationDraft?.status || '',
     listingPublicationData: publicationDraft,
+    heroImageUrl: coverImage?.url || '',
+    imageUrl: coverImage?.url || '',
+    coverImageUrl: coverImage?.url || '',
+    images: imageGallery,
+    galleryImages: imageGallery,
+    coverImageId,
     externalLinks: externalListingLinks,
     listingExternalLinks: externalListingLinks,
     listingPreviewDescription,
@@ -5975,9 +6009,6 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
-    if (corePayload && portalPayload.corePayload) {
-      return portalPayload
-    }
     const [initialBranding, mediaByListingId] = await Promise.all([
       fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),
