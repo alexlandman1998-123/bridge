@@ -5677,7 +5677,7 @@ function buildSellerMobileDocumentDashboardModel(documentCenter = {}) {
       toUpload,
       progress: total ? Math.round((completed / total) * 100) : 0,
     }
-  }).filter((category) => category.total > 0)
+  }).filter((category) => category.total > 0 || category.key === 'sale')
   const stats = {
     total: allDocuments.length,
     awaitingReview: allDocuments.filter((item) => item.state === 'review').length,

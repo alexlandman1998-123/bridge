@@ -193,7 +193,8 @@ test('seller generated mandate and property disclosure expose the correct downlo
   const generatedDisclosure = model.uploadedDocuments.find((item) => item.requirementKey === 'property_condition_disclosure')
   const completedDisclosureRequirement = model.items.find((item) => item.sourceId === 'property_condition_disclosure')
 
-  assert.equal(Boolean(disclosureSaleDocument), false)
+  assert.equal(Boolean(disclosureSaleDocument), true)
+  assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')
   assert.equal(generatedDisclosure.generatedFileName, 'seller-disclosure-annexure-a.pdf')
   assert.equal(Boolean(completedDisclosureRequirement), true)
   assert.equal(Boolean(completedDisclosureRequirement.uploadSpec), false)
