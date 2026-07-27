@@ -14557,16 +14557,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
                             <div className="grid gap-3 sm:grid-cols-2">
                               {selectedSellerDocumentCategories.map((category) => {
-                                const CategoryIcon = category.icon
+                                const chartColor = category.complete ? '#0f8f59' : '#f5a400'
                                 return (
                                   <div key={category.key} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-[#20364c]">{category.label}</p>
-                                        <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total}</p>
+                                        <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
                                       </div>
-                                      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${category.complete ? 'bg-[#e5f6ec] text-[#0f7b4e]' : 'bg-[#fff6df] text-[#d98500]'}`}>
-                                        <CategoryIcon className="h-4 w-4" />
+                                      <span
+                                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full p-1"
+                                        style={{ background: `conic-gradient(${chartColor} ${category.percent * 3.6}deg, #e4ebf3 0deg)` }}
+                                        aria-label={`${category.label} ${category.percent}% complete`}
+                                      >
+                                        <span className="grid h-full w-full place-items-center rounded-full bg-white text-[0.62rem] font-bold tracking-[-0.02em] text-[#20364c]">
+                                          {category.percent}%
+                                        </span>
                                       </span>
                                     </div>
                                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
