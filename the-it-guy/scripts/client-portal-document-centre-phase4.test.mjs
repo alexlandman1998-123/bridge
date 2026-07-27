@@ -174,7 +174,16 @@ test('seller sale documents expose signed mandate and disclosure as downloadable
         },
       },
     },
-    requiredDocuments: [],
+    requiredDocuments: [
+      {
+        id: 'req-defects',
+        key: 'defects_declaration',
+        label: 'Property Condition Disclosure',
+        description: 'Property condition disclosure and known defects.',
+        status: 'required',
+        visibility: 'seller_visible',
+      },
+    ],
     documents: [],
     additionalDocumentRequests: [],
   }, 'selling')
@@ -182,10 +191,13 @@ test('seller sale documents expose signed mandate and disclosure as downloadable
   const disclosureSaleDocument = model.saleDocuments.find((item) => item.sourceId === 'seller-declaration-disclosure')
   const signedMandate = model.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
   const generatedDisclosure = model.uploadedDocuments.find((item) => item.requirementKey === 'property_condition_disclosure')
+  const completedDisclosureRequirement = model.requiredDocuments.find((item) => item.status === 'completed')
 
   assert.equal(Boolean(disclosureSaleDocument), true)
   assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')
   assert.equal(generatedDisclosure.generatedFileName, 'seller-disclosure-annexure-a.pdf')
+  assert.equal(Boolean(completedDisclosureRequirement), true)
+  assert.equal(Boolean(completedDisclosureRequirement.uploadSpec), false)
   assert.equal(signedMandate.document_name, 'Signed Mandate.pdf')
   assert.equal(signedMandate.packet_version_id, 'version-1')
   assert.equal(signedMandate.canonicalFinalArtifact, true)

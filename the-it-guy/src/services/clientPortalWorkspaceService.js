@@ -1728,6 +1728,40 @@ function findDownloadableDocumentForRequirement(downloadableDocumentsByKey = new
   return null
 }
 
+function generatedDownloadableDocumentSatisfiesRequirement(document = null, requirement = {}) {
+  if (!document || typeof document !== 'object') return false
+  if (normalizeDocumentStatus(document.status) !== 'completed') return false
+  const documentKey = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+  ].filter(Boolean).join(' '))
+  const requirementKey = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.documentType,
+    requirement?.document_type,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+  ].filter(Boolean).join(' '))
+  if (!documentKey || !requirementKey) return false
+  const isDisclosureDocument = documentKey.includes('property_condition_disclosure') ||
+    documentKey.includes('condition_disclosure') ||
+    documentKey.includes('disclosure') ||
+    documentKey.includes('defects')
+  const isDisclosureRequirement = requirementKey.includes('property_condition_disclosure') ||
+    requirementKey.includes('condition_disclosure') ||
+    requirementKey.includes('disclosure') ||
+    requirementKey.includes('defects')
+  return Boolean(isDisclosureDocument && isDisclosureRequirement)
+}
+
 function dedupeDocumentCenterItems(items = []) {
   const seen = new Set()
   return (items || []).filter((item) => {
@@ -2025,9 +2059,17 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     {
       const item = buildRequirementDocumentCenterItem(requirement, uploadedDocumentsById, uploadedDocuments)
       const downloadableDocument = findDownloadableDocumentForRequirement(downloadableDocumentsByKey, requirement)
+      const downloadableDocumentSatisfiesRequirement = generatedDownloadableDocumentSatisfiesRequirement(downloadableDocument, requirement)
       return downloadableDocument
         ? {
             ...item,
+            ...(downloadableDocumentSatisfiesRequirement
+              ? {
+                  status: 'completed',
+                  hasUploadedDocument: true,
+                  uploadSpec: null,
+                }
+              : {}),
             downloadableDocument,
             linkedDocument: item.linkedDocument || downloadableDocument,
           }

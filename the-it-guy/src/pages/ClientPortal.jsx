@@ -5615,9 +5615,9 @@ function getSellerMobileDocumentCategoryKey(item = {}) {
     return explicitCategoryKey
   }
   const haystack = `${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
-  if (/sale_document|sales?|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration|seller disclosure|property condition disclosure|disclosure|defects/.test(haystack)) return 'sale'
+  if (/sale_document|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration/.test(haystack)) return 'sale'
   if (/additional/.test(haystack)) return 'additional'
-  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed/.test(haystack)) return 'property'
+  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed|disclosure|defects|bank account|account confirmation|sale proceeds/.test(haystack)) return 'property'
   return 'fica'
 }
 

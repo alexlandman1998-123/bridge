@@ -1760,6 +1760,12 @@ function getPrivateListingMandateArtifactMatch(listing = {}, filePath = '') {
     { filePath: mandate.signedFilePath, bucket: mandate.signedFileBucket },
     { filePath: mandate.signed_file_path, bucket: mandate.signed_file_bucket },
     { filePath: artifact.filePath, bucket: artifact.fileBucket },
+    { filePath: mandatePacket.generatedPreviewFilePath, bucket: mandatePacket.generatedPreviewFileBucket },
+    { filePath: mandatePacket.generated_preview_file_path, bucket: mandatePacket.generated_preview_file_bucket },
+    { filePath: mandatePacket.renderedFilePath, bucket: mandatePacket.renderedFileBucket },
+    { filePath: mandatePacket.rendered_file_path, bucket: mandatePacket.rendered_file_bucket },
+    { filePath: version.renderedFilePath, bucket: version.renderedFileBucket },
+    { filePath: version.rendered_file_path, bucket: version.rendered_file_bucket },
     { filePath: mandatePacket.finalSignedFilePath, bucket: mandatePacket.finalSignedFileBucket },
     { filePath: mandatePacket.final_signed_file_path, bucket: mandatePacket.final_signed_file_bucket },
     { filePath: version.finalSignedFilePath, bucket: version.finalSignedFileBucket },
@@ -4738,7 +4744,7 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
 
   const versionQuery = await client
     .from('document_packet_versions')
-    .select('id, packet_id, version_number, render_status, rendered_file_path, rendered_file_name, final_signed_file_path, final_signed_file_name, final_signed_file_bucket, finalised_at, generated_at, created_at')
+    .select('id, packet_id, version_number, render_status, rendered_file_path, rendered_file_name, rendered_file_bucket, final_signed_file_path, final_signed_file_name, final_signed_file_bucket, finalised_at, generated_at, created_at')
     .in('packet_id', [...packetRowsById.keys()])
     .order('version_number', { ascending: false })
   let versionRows = []
@@ -4794,6 +4800,7 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
       // delivery must go through the Phase 4 packet/version resolver.
       finalSignedDownloadUrl: '',
       generatedPreviewFilePath: normalizeText(version?.rendered_file_path),
+      generatedPreviewFileBucket: normalizeText(version?.rendered_file_bucket),
       generatedPreviewFileName: normalizeText(version?.rendered_file_name || packet?.title || 'Mandate'),
       signedAt: normalizeText(version?.finalised_at || packet?.updated_at),
       updatedAt: normalizeText(packet?.updated_at || packet?.created_at),
