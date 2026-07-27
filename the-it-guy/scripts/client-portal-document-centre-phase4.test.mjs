@@ -142,7 +142,7 @@ test('standalone uploads remain visible without duplicating linked uploads', () 
   assert.equal(requirement.linkedDocument.id, 'linked-doc')
 })
 
-test('seller sale documents expose signed mandate and disclosure as downloadable PDFs', () => {
+test('seller generated mandate and property disclosure expose the correct downloadable records', () => {
   const model = buildDocumentCenter({
     listing: {
       id: 'listing-sale-documents',
@@ -191,13 +191,13 @@ test('seller sale documents expose signed mandate and disclosure as downloadable
   const disclosureSaleDocument = model.saleDocuments.find((item) => item.sourceId === 'seller-declaration-disclosure')
   const signedMandate = model.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
   const generatedDisclosure = model.uploadedDocuments.find((item) => item.requirementKey === 'property_condition_disclosure')
-  const completedDisclosureRequirement = model.requiredDocuments.find((item) => item.status === 'completed')
+  const completedDisclosureRequirement = model.items.find((item) => item.sourceId === 'property_condition_disclosure')
 
-  assert.equal(Boolean(disclosureSaleDocument), true)
-  assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')
+  assert.equal(Boolean(disclosureSaleDocument), false)
   assert.equal(generatedDisclosure.generatedFileName, 'seller-disclosure-annexure-a.pdf')
   assert.equal(Boolean(completedDisclosureRequirement), true)
   assert.equal(Boolean(completedDisclosureRequirement.uploadSpec), false)
+  assert.equal(completedDisclosureRequirement.downloadableDocument?.generatedFileName, 'seller-disclosure-annexure-a.pdf')
   assert.equal(signedMandate.document_name, 'Signed Mandate.pdf')
   assert.equal(signedMandate.packet_version_id, 'version-1')
   assert.equal(signedMandate.canonicalFinalArtifact, true)

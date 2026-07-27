@@ -5744,6 +5744,8 @@ function SellerMobileDocumentsPage({
   onSearchChange = null,
   onToggleActionOnly = null,
   onToggleSort = null,
+  onShowAllCategories = null,
+  onOpenUploadPicker = null,
   onUploadItem = null,
   onOpenDocument = null,
 }) {
@@ -5766,7 +5768,10 @@ function SellerMobileDocumentsPage({
       const comparison = String(a.title || '').localeCompare(String(b.title || ''))
       return sortDirection === 'desc' ? comparison * -1 : comparison
     })
-  const firstUploadable = model.attentionItems.find((item) => item.uploadSpec) || model.attentionItems[0] || null
+  const firstUploadable = model.attentionItems.find((item) => {
+    const uploadTarget = resolveSellerMobileDocumentUploadTarget(item)
+    return Boolean(item?.uploadSpec || uploadTarget.requirementKey)
+  }) || null
   const tabs = [
     { key: 'all', label: activeCategory ? 'All documents' : 'All', icon: FileText, count: activeItems.length },
     { key: 'review', label: 'To review', icon: Clock3, count: activeItems.filter((item) => item.state === 'review').length },
@@ -5781,6 +5786,30 @@ function SellerMobileDocumentsPage({
   ]
   const setFilter = (key) => {
     if (typeof onFilterChange === 'function') onFilterChange(key)
+  }
+  const clearActionOnly = () => {
+    if (actionOnly && typeof onToggleActionOnly === 'function') onToggleActionOnly()
+  }
+  const handleStatCardAction = (key) => {
+    if (key === 'review') {
+      clearActionOnly()
+      setFilter('review')
+      return
+    }
+    if (key === 'completed') {
+      clearActionOnly()
+      setFilter('completed')
+      return
+    }
+    if (key === 'upload') {
+      setFilter('all')
+      if (!actionOnly && typeof onToggleActionOnly === 'function') onToggleActionOnly()
+      if (typeof onOpenUploadPicker === 'function') onOpenUploadPicker()
+      return
+    }
+    clearActionOnly()
+    setFilter('all')
+    if (typeof onSearchChange === 'function') onSearchChange('')
   }
   const renderTabs = () => (
     <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-[14px] border border-[#e5e9ef] bg-white">
@@ -5899,7 +5928,7 @@ function SellerMobileDocumentsPage({
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={() => firstUploadable && typeof onUploadItem === 'function' && onUploadItem(firstUploadable)}
+          onClick={() => typeof onOpenUploadPicker === 'function' && onOpenUploadPicker()}
           disabled={!firstUploadable}
           className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] bg-[#063f34] px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(6,63,52,0.18)] disabled:cursor-not-allowed disabled:opacity-55"
         >
@@ -5911,17 +5940,11 @@ function SellerMobileDocumentsPage({
         {statCards.map((card) => {
           const Icon = card.icon
           const tone = sellerMobileToneClasses(card.tone)
-          const nextFilter = card.key === 'total' || card.key === 'upload' ? 'all' : card.key
           return (
             <button
               key={card.key}
               type="button"
-              onClick={() => {
-                setFilter(nextFilter)
-                if (card.key === 'upload' && firstUploadable) {
-                  onUploadItem?.(firstUploadable)
-                }
-              }}
+              onClick={() => handleStatCardAction(card.key)}
               className="min-h-[136px] rounded-[16px] border border-white/80 bg-white/95 p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.055)]"
             >
               <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[13px] ${tone.icon}`}>
@@ -5942,7 +5965,16 @@ function SellerMobileDocumentsPage({
       <section className="mt-3 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-[#101823]">Document categories</h2>
-          <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]">
+          <button
+            type="button"
+            onClick={() => {
+              clearActionOnly()
+              setFilter('all')
+              if (typeof onSearchChange === 'function') onSearchChange('')
+              if (typeof onShowAllCategories === 'function') onShowAllCategories()
+            }}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]"
+          >
             View all categories
             <ChevronRight size={15} />
           </button>
@@ -6126,6 +6158,7 @@ function SellerMobilePortal({
   const photoInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [selectedDocumentAction, setSelectedDocumentAction] = useState(null)
+  const [mobileDocumentUploadPickerOpen, setMobileDocumentUploadPickerOpen] = useState(false)
   const [selectedUploadFile, setSelectedUploadFile] = useState(null)
   const [selectedUploadPreviewUrl, setSelectedUploadPreviewUrl] = useState('')
   const [mobileUploadFeedback, setMobileUploadFeedback] = useState({ tone: '', message: '' })
@@ -6161,6 +6194,14 @@ function SellerMobilePortal({
   const documentActionItems = Array.isArray(sellerDocumentsNeedingAttention)
     ? sellerDocumentsNeedingAttention
     : []
+  const sellerMobileDocumentModel = useMemo(
+    () => buildSellerMobileDocumentDashboardModel(documentCenter),
+    [documentCenter],
+  )
+  const sellerMobileUploadChoices = sellerMobileDocumentModel.attentionItems.filter((item) => {
+    const uploadTarget = resolveSellerMobileDocumentUploadTarget(item)
+    return Boolean(item?.uploadSpec || uploadTarget.requirementKey)
+  })
   const primaryDocumentAction = documentActionItems[0] || null
   const previewDocuments = documentActionItems.slice(0, 4)
   const visibleOffers = sellerOfferItems.slice(0, 3)
@@ -6228,6 +6269,21 @@ function SellerMobilePortal({
   function closeDocumentActionSheet() {
     if (selectedUploadBusy) return
     setSelectedDocumentAction(null)
+    setSelectedUploadFile(null)
+    setMobileUploadFeedback({ tone: '', message: '' })
+  }
+
+  function openDocumentUploadPicker() {
+    if (!sellerMobileUploadChoices.length) return
+    setSelectedDocumentAction(null)
+    setSelectedUploadFile(null)
+    setMobileUploadFeedback({ tone: '', message: '' })
+    setMobileDocumentUploadPickerOpen(true)
+  }
+
+  function selectDocumentUploadChoice(item) {
+    setMobileDocumentUploadPickerOpen(false)
+    setSelectedDocumentAction(item)
     setSelectedUploadFile(null)
     setMobileUploadFeedback({ tone: '', message: '' })
   }
@@ -6536,7 +6592,14 @@ function SellerMobilePortal({
             onSearchChange={setMobileDocumentSearch}
             onToggleActionOnly={() => setMobileDocumentsActionOnly((previous) => !previous)}
             onToggleSort={() => setMobileDocumentSortDirection((previous) => (previous === 'asc' ? 'desc' : 'asc'))}
+            onShowAllCategories={() => {
+              setActiveMobileDocumentCategoryKey('')
+              setMobileDocumentSearch('')
+              setMobileDocumentsActionOnly(false)
+            }}
+            onOpenUploadPicker={openDocumentUploadPicker}
             onUploadItem={(item) => {
+              setMobileDocumentUploadPickerOpen(false)
               setSelectedDocumentAction(item)
               setSelectedUploadFile(null)
               setMobileUploadFeedback({ tone: '', message: '' })
@@ -6607,6 +6670,78 @@ function SellerMobilePortal({
           })}
         </div>
       </nav>
+
+      {mobileDocumentUploadPickerOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="seller-mobile-upload-picker-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#101823]/28 backdrop-blur-[2px]"
+            onClick={() => setMobileDocumentUploadPickerOpen(false)}
+            aria-label="Close document type picker"
+          />
+          <section className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-[30px] border border-white/80 bg-white px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+            <div className="mx-auto max-w-[430px]">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#d7dde5]" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8a94a3]">Upload document</p>
+                  <h3 id="seller-mobile-upload-picker-title" className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#101823]">
+                    Choose document type
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-[#667085]">
+                    Select what you are uploading, then take a photo or choose a saved file.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileDocumentUploadPickerOpen(false)}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-[#fbfcfd] text-[#344054]"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 max-h-[54vh] overflow-y-auto pr-1">
+                <div className="grid gap-2.5">
+                  {sellerMobileUploadChoices.length ? sellerMobileUploadChoices.map((item) => {
+                    const categoryKey = getSellerMobileDocumentCategoryKey(item)
+                    const categoryConfig = SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG[categoryKey] || SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG.fica
+                    const tone = sellerMobileToneClasses(categoryConfig.tone)
+                    const ChoiceIcon = categoryConfig.icon || FileText
+                    return (
+                      <button
+                        key={item.id || item.sourceId || item.title}
+                        type="button"
+                        onClick={() => selectDocumentUploadChoice(item)}
+                        className="grid min-h-[76px] grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 rounded-[16px] border border-[#edf0f3] bg-white p-3 text-left shadow-[0_6px_16px_rgba(15,23,42,0.025)]"
+                      >
+                        <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[13px] ${tone.icon}`}>
+                          <ChoiceIcon size={20} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold leading-5 text-[#101823] [overflow-wrap:anywhere]">{item.title || item.label || 'Requested document'}</span>
+                          <span className="mt-0.5 block text-[0.68rem] font-medium leading-4 text-[#667085] [overflow-wrap:anywhere]">
+                            {item.description || categoryConfig.description || 'Seller document'}
+                          </span>
+                          <span className={`mt-1.5 inline-flex rounded-full px-2.5 py-1 text-[0.66rem] font-semibold ${tone.pill}`}>
+                            {categoryConfig.label || 'Document'} - {getSellerMobileDocumentStatusLabel(item)}
+                          </span>
+                        </span>
+                        <ChevronRight size={18} className="text-[#98a2b3]" />
+                      </button>
+                    )
+                  }) : (
+                    <p className="rounded-[14px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] p-4 text-sm leading-6 text-[#667085]">
+                      No documents need an upload from you right now.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {selectedDocumentAction ? (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="seller-mobile-upload-title">

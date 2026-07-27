@@ -446,7 +446,7 @@ function ClientDocumentCentre({
       .filter((item) => sellerRequirementGroup(item) === 'sales')
       .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'sales')),
     ...sections.signedDocuments
-      .filter((item) => /mandate|transfer|sale agreement|otp|seller declaration|seller disclosure|property condition disclosure|disclosure/i.test(`${item?.title || ''} ${item?.description || ''}`))
+      .filter((item) => /mandate|transfer|sale agreement|agreement of sale|otp|seller instruction/i.test(`${item?.title || ''} ${item?.description || ''}`))
       .map((item) => decoratePortalDocumentItem(item, 'sales')),
     ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : [])
       .map((item) => decoratePortalDocumentItem(item, 'sales')),

@@ -1678,13 +1678,6 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
           description: 'Generated mandate document available for download.',
         })
       : null,
-    buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
-      ? buildSellerSaleDocumentCenterItem(buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode), {
-          id: 'seller-declaration-disclosure',
-          title: 'Seller Declaration / Disclosure',
-          description: 'Seller property declaration and disclosure form available for download.',
-        })
-      : null,
   ].filter(Boolean)
 }
 
