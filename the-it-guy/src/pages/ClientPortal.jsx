@@ -5944,6 +5944,11 @@ function SellerMobilePortal({
   const [selectedUploadFile, setSelectedUploadFile] = useState(null)
   const [selectedUploadPreviewUrl, setSelectedUploadPreviewUrl] = useState('')
   const [mobileUploadFeedback, setMobileUploadFeedback] = useState({ tone: '', message: '' })
+  const [activeMobileDocumentCategoryKey, setActiveMobileDocumentCategoryKey] = useState('')
+  const [mobileDocumentFilter, setMobileDocumentFilter] = useState('all')
+  const [mobileDocumentSearch, setMobileDocumentSearch] = useState('')
+  const [mobileDocumentsActionOnly, setMobileDocumentsActionOnly] = useState(false)
+  const [mobileDocumentSortDirection, setMobileDocumentSortDirection] = useState('asc')
   const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
   const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
     ? requestedMobileSection
@@ -6043,7 +6048,7 @@ function SellerMobilePortal({
   }
 
   async function handleSelectedDocumentFile(file, sourceLabel = 'file') {
-    if (!file || !selectedDocumentAction || typeof onUploadSellerDocument !== 'function') {
+    if (!file || !selectedDocumentAction) {
       return
     }
 
@@ -6064,7 +6069,12 @@ function SellerMobilePortal({
     }
 
     const target = resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
-    if (!target.requirementKey) {
+    const shouldUseDocumentCentreUpload = Boolean(
+      selectedDocumentAction?.uploadSpec &&
+        typeof onUploadDocumentCentre === 'function' &&
+        (!target.requirementKey || selectedDocumentAction.uploadSpec.type !== 'requirement'),
+    )
+    if (!shouldUseDocumentCentreUpload && (typeof onUploadSellerDocument !== 'function' || !target.requirementKey)) {
       setMobileUploadFeedback({
         tone: 'error',
         message: 'This document request is missing its upload key. Please contact your agent.',
@@ -6076,12 +6086,14 @@ function SellerMobilePortal({
       tone: 'loading',
       message: sourceLabel === 'photo' ? 'Uploading photo...' : 'Uploading file...',
     })
-    const result = await onUploadSellerDocument(target.requirementKey, file, {
-      requirementInstanceId: target.requirementInstanceId || null,
-      uploadingKey: target.uploadingKey,
-      category: target.category || 'Seller Document',
-      documentType: target.documentType || target.requirementKey,
-    })
+    const result = shouldUseDocumentCentreUpload
+      ? await onUploadDocumentCentre(selectedDocumentAction.uploadSpec, file)
+      : await onUploadSellerDocument(target.requirementKey, file, {
+          requirementInstanceId: target.requirementInstanceId || null,
+          uploadingKey: target.uploadingKey,
+          category: target.category || 'Seller Document',
+          documentType: target.documentType || target.requirementKey,
+        })
     if (result?.ok === false) {
       setMobileUploadFeedback({
         tone: 'error',
@@ -6317,16 +6329,35 @@ function SellerMobilePortal({
         ) : null}
 
         {mobileSection === 'documents' ? (
-          <div className="mt-4">
-            <ClientDocumentCentre
-              documentCenter={documentCenter}
-              workspace="selling"
-              uploadingDocumentKey={uploadingDocumentKey}
-              openingDocumentPath={openingDocumentPath}
-              onUpload={onUploadDocumentCentre}
-              onOpenDocument={onOpenSellerDocument}
-            />
-          </div>
+          <SellerMobileDocumentsPage
+            documentCenter={documentCenter}
+            sellerAgencyLogoUrl={sellerAgencyLogoUrl}
+            sellerAgencyName={sellerAgencyName}
+            activeCategoryKey={activeMobileDocumentCategoryKey}
+            activeFilter={mobileDocumentFilter}
+            searchQuery={mobileDocumentSearch}
+            actionOnly={mobileDocumentsActionOnly}
+            sortDirection={mobileDocumentSortDirection}
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onBackToCategories={() => setActiveMobileDocumentCategoryKey('')}
+            onSelectCategory={(categoryKey) => {
+              setActiveMobileDocumentCategoryKey(categoryKey)
+              setMobileDocumentFilter('all')
+              setMobileDocumentSearch('')
+              setMobileDocumentsActionOnly(false)
+            }}
+            onFilterChange={setMobileDocumentFilter}
+            onSearchChange={setMobileDocumentSearch}
+            onToggleActionOnly={() => setMobileDocumentsActionOnly((previous) => !previous)}
+            onToggleSort={() => setMobileDocumentSortDirection((previous) => (previous === 'asc' ? 'desc' : 'asc'))}
+            onUploadItem={(item) => {
+              setSelectedDocumentAction(item)
+              setSelectedUploadFile(null)
+              setMobileUploadFeedback({ tone: '', message: '' })
+            }}
+            onOpenDocument={onOpenSellerDocument}
+          />
         ) : null}
 
         {mobileSection === 'offers' ? (
@@ -8312,16 +8343,15 @@ function ClientPortal() {
   }
 
   function handleDocumentCentreUpload(uploadSpec, file) {
-    if (!file || !uploadSpec || typeof uploadSpec !== 'object') return
+    if (!file || !uploadSpec || typeof uploadSpec !== 'object') return undefined
 
     if (uploadSpec.type === 'additional_request') {
       const requestId = String(uploadSpec.requestId || '').trim()
-      if (!requestId) return
-      void handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
+      if (!requestId) return undefined
+      return handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
         documentRequestId: requestId,
         category: 'Additional Requests',
       })
-      return
     }
 
     if (uploadSpec.type === 'canonical_requirement') {
@@ -8332,19 +8362,18 @@ function ClientPortal() {
           '',
       ).trim()
       const requirementKey = String(uploadSpec.requirementKey || uploadSpec.documentDefinitionKey || '').trim()
-      if (!requirementInstanceId || !requirementKey) return
-      void handleUploadRequiredDocument(requirementKey, file, {
+      if (!requirementInstanceId || !requirementKey) return undefined
+      return handleUploadRequiredDocument(requirementKey, file, {
         requirementInstanceId,
         uploadingKey: requirementInstanceId,
         category: uploadSpec.category || 'Canonical Document Requirement',
         documentType: uploadSpec.documentType || requirementKey,
       })
-      return
     }
 
     const requirementKey = String(uploadSpec.requirementKey || '').trim()
-    if (!requirementKey) return
-    void handleUploadRequiredDocument(requirementKey, file)
+    if (!requirementKey) return undefined
+    return handleUploadRequiredDocument(requirementKey, file)
   }
 
   async function handleBuyerMobileDocumentUpload(uploadSpec, file) {
