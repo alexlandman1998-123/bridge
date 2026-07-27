@@ -10,6 +10,10 @@ const migration = await readFile(
   new URL('../../supabase/migrations/202607250007_seller_portal_payload_optional_enrichment_guard.sql', import.meta.url),
   'utf8',
 )
+const leadWorkspaceIndexesMigration = await readFile(
+  new URL('../../supabase/migrations/202607270002_agency_lead_workspace_hot_path_indexes.sql', import.meta.url),
+  'utf8',
+)
 
 assert.match(
   pipelineSource,
@@ -41,8 +45,33 @@ assert.match(
 )
 assert.match(
   agencyCrmRepositorySource,
+  /const LEAD_WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS = 2500/,
+  'lead workspace optional enrichment should have its own shorter timeout',
+)
+assert.match(
+  agencyCrmRepositorySource,
+  /settleOptionalLeadWorkspaceQuery\(contactPromise, 'lead contact lookup'\)[\s\S]*?settleOptionalLeadWorkspaceQuery\(activityPromise, 'lead activity lookup'\)[\s\S]*?settleOptionalLeadWorkspaceQuery\(taskPromise, 'lead task lookup'\)/,
+  'lead workspace should open from the core lead row even when optional enrichment is slow',
+)
+assert.match(
+  agencyCrmRepositorySource,
   /leadWorkspaceStatus: leadBlocked \? 'unavailable' : 'not_found'[\s\S]*?leadWorkspaceReason: leadBlocked \? 'lead_lookup_unavailable' : \(listingResolution\?\.reason \|\| 'lead_not_found'\)/,
   'lead workspace repository should return terminal status for stale listing-derived IDs instead of retrying indefinitely',
+)
+assert.match(
+  leadWorkspaceIndexesMigration,
+  /lead_activities_org_lead_activity_hot_path_idx[\s\S]*?on public\.lead_activities \(organisation_id, lead_id, activity_date desc, created_at desc\)/,
+  'lead workspace activity timeline should have a tenant and lead scoped ordering index',
+)
+assert.match(
+  leadWorkspaceIndexesMigration,
+  /contacts_org_contact_hot_path_idx[\s\S]*?on public\.contacts \(organisation_id, contact_id\)/,
+  'lead workspace contact lookup should have a tenant and contact scoped index',
+)
+assert.match(
+  leadWorkspaceIndexesMigration,
+  /private_listings_org_originating_crm_lead_hot_path_idx[\s\S]*?on public\.private_listings \(organisation_id, originating_crm_lead_id, updated_at desc\)/,
+  'listing-derived workspace routes should have a hot-path originating CRM lead index',
 )
 
 assert.match(

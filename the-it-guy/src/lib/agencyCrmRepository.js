@@ -30,6 +30,7 @@ const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
   'task_id, organisation_id, lead_id, assigned_agent_id, title, description, due_date, status, priority, created_at, updated_at'
+const LEAD_WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS = 2500
 const LEAD_LOCATION_DB_COLUMNS = [
   'formatted_address',
   'street_address',
@@ -115,6 +116,23 @@ function isMissingRpcError(error, functionName = '') {
   const message = normalizeLowerText(error?.message || error?.details || '')
   const target = normalizeLowerText(functionName)
   return code === '42883' || message.includes('function') && message.includes(target)
+}
+
+async function settleOptionalLeadWorkspaceQuery(queryPromise, label = 'lead workspace enrichment') {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      queryPromise,
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(`[agency-crm] ${label} timed out; opening lead workspace without that enrichment.`)
+          resolve({ data: null, error: null, timedOut: true })
+        }, LEAD_WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 function mapSupabaseContact(row = {}) {
@@ -788,7 +806,11 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
     .eq('lead_id', resolvedLeadId)
     .order('updated_at', { ascending: false })
 
-  const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
+  const [contactResult, activityResult, taskResult] = await Promise.all([
+    settleOptionalLeadWorkspaceQuery(contactPromise, 'lead contact lookup'),
+    settleOptionalLeadWorkspaceQuery(activityPromise, 'lead activity lookup'),
+    settleOptionalLeadWorkspaceQuery(taskPromise, 'lead task lookup'),
+  ])
   const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
   const activityBlocked = activityResult.error && (isPermissionDeniedError(activityResult.error) || isMissingSchemaOrTableError(activityResult.error))
   const taskBlocked = taskResult.error && (isPermissionDeniedError(taskResult.error) || isMissingSchemaOrTableError(taskResult.error))
