@@ -14080,86 +14080,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {selectedLead && selectedLeadIsSeller ? (
                     <section className="mt-6 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]">
-                      <div className="grid lg:grid-cols-[minmax(0,1.65fr)_minmax(360px,0.85fr)]">
+                      <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
                         <div className="bg-[radial-gradient(circle_at_20%_0%,rgba(47,155,105,0.22),transparent_34%),linear-gradient(135deg,#073a33_0%,#052d2c_52%,#031f25_100%)] p-6 text-white sm:p-8">
-                          <div className="grid h-full gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.76fr)] xl:items-stretch">
-                            <div className="flex min-w-0 flex-col justify-between gap-8">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/10">Seller Lead</span>
-                                  <span className="rounded-full bg-[#0f8f59]/25 px-3 py-1 text-xs font-semibold text-[#bdf5d5] ring-1 ring-[#46ca83]/20">
-                                    {selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage}
-                                  </span>
-                                </div>
-                                <h1 className="mt-7 max-w-3xl text-[2rem] font-bold leading-tight tracking-[-0.035em] sm:text-[2.45rem]" title={selectedLeadDisplayName}>
-                                  {selectedLeadDisplayName}
-                                </h1>
-                                <p className="mt-4 flex max-w-3xl items-start gap-2 text-[15px] font-medium leading-6 text-white/82">
-                                  <Home className="mt-0.5 h-4 w-4 shrink-0 text-white/76" />
-                                  <span>{selectedLeadPropertyLabel || 'Not captured'}</span>
-                                </p>
-                              </div>
-
-                              <div className="grid gap-4 text-sm text-white/84 md:grid-cols-[max-content_max-content_minmax(0,1fr)]">
-                                {normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? (
-                                  <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2 font-semibold hover:text-white">
-                                    <Phone className="h-4 w-4 shrink-0" />
-                                    <span className="truncate">{selectedLeadContact?.phone || selectedLead?.phone}</span>
-                                  </a>
-                                ) : null}
-                                {normalizeText(selectedLeadContact?.email || selectedLead?.email) ? (
-                                  <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2 font-semibold hover:text-white">
-                                    <Mail className="h-4 w-4 shrink-0" />
-                                    <span className="truncate">{selectedLeadContact?.email || selectedLead?.email}</span>
-                                  </a>
-                                ) : null}
-                                <span className="inline-flex min-w-0 items-center gap-2 font-semibold">
-                                  <MessageCircle className="h-4 w-4 shrink-0" />
-                                  <span className="truncate">Lead Source {selectedLead.leadSource || 'Not captured'}</span>
+                          <div className="flex h-full min-h-[270px] min-w-0 flex-col justify-between gap-10">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/14">Seller Lead</span>
+                                <span className="rounded-full bg-[#0f8f59]/25 px-3 py-1 text-xs font-semibold text-[#c8f8dc] ring-1 ring-[#46ca83]/25">
+                                  {selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage}
                                 </span>
                               </div>
+                              <h1 className="mt-8 max-w-4xl text-[2.2rem] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[2.8rem]" title={selectedLeadDisplayName}>
+                                {selectedLeadDisplayName}
+                              </h1>
+                              <p className="mt-5 flex max-w-4xl items-start gap-2 text-[15px] font-semibold leading-6 text-white/88">
+                                <Home className="mt-0.5 h-4 w-4 shrink-0 text-white/76" />
+                                <span className="min-w-0 break-words">{selectedLeadPropertyLabel || 'Not captured'}</span>
+                              </p>
                             </div>
 
-                            <div className="border-white/12 xl:border-l xl:pl-8">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-white/72">Next Best Action</p>
-                              <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.03em]">
-                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
-                              </h2>
-                              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-white/76">
-                                {selectedSellerReadiness.blockers?.length ? <span>{selectedSellerReadiness.blockers.length} items remaining</span> : <span>No immediate action required</span>}
-                                {selectedSellerReadiness.listingReadiness?.percent < 100 ? (
-                                  <>
-                                    <span className="h-1 w-1 rounded-full bg-white/35" />
-                                    <span>{selectedSellerReadiness.listingReadiness?.percent || 0}% readiness</span>
-                                  </>
-                                ) : null}
-                              </div>
-                              <p className="mt-5 text-sm leading-6 text-white/78">
-                                {selectedSellerReadiness.blockers?.[0]?.label
-                                  ? `Resolve ${selectedSellerReadiness.blockers[0].label.toLowerCase()} to move this seller closer to market readiness.`
-                                  : 'The seller workspace is on track. Keep the relationship, documents, and listing progress visible here.'}
-                              </p>
-                              {selectedSellerReadiness.listingReadiness?.percent < 100 ? (
-                                <p className="mt-4 text-[1.55rem] font-semibold tracking-[-0.04em] text-white">
-                                  {selectedSellerReadiness.listingReadiness?.percent || 0}% → 100%
-                                </p>
+                            <div className="grid gap-4 text-sm font-semibold text-white/88 md:grid-cols-[max-content_max-content_minmax(0,1fr)]">
+                              {normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? (
+                                <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2 hover:text-white">
+                                  <Phone className="h-4 w-4 shrink-0 text-white/72" />
+                                  <span className="truncate">{selectedLeadContact?.phone || selectedLead?.phone}</span>
+                                </a>
                               ) : null}
-                              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="min-h-11 bg-[#0f8f59] px-5 text-white shadow-[0_14px_26px_rgba(7,31,27,0.24)] hover:bg-[#0c774b]"
-                                  onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}
-                                  disabled={selectedSellerReadiness.nextAction?.disabled}
-                                >
-                                  <CheckCircle2 className="h-4 w-4" />
-                                  {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
-                                </Button>
-                                <Button type="button" size="sm" variant="secondary" className="min-h-11 border-white/25 bg-white/8 px-5 text-white hover:bg-white/14" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
-                                  <Send className="h-4 w-4" />
-                                  {selectedLeadSellerOnboardingActionLabel}
-                                </Button>
-                              </div>
+                              {normalizeText(selectedLeadContact?.email || selectedLead?.email) ? (
+                                <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2 hover:text-white">
+                                  <Mail className="h-4 w-4 shrink-0 text-white/72" />
+                                  <span className="truncate">{selectedLeadContact?.email || selectedLead?.email}</span>
+                                </a>
+                              ) : null}
+                              <span className="inline-flex min-w-0 items-center gap-2">
+                                <MessageCircle className="h-4 w-4 shrink-0 text-white/72" />
+                                <span className="truncate">Lead Source {selectedLead.leadSource || 'Not captured'}</span>
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -14564,45 +14520,65 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </section>
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
-                        <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
-                          <h3 className="text-base font-semibold text-[#102033]">Documents</h3>
-                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('documents')}>
-                            View All Documents
-                          </Button>
-                        </div>
-                        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {selectedSellerDocumentCategories.map((category) => {
-                              const CategoryIcon = category.icon
-                              return (
-                                <div key={category.key} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-[#20364c]">{category.label}</p>
-                                      <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total}</p>
-                                    </div>
-                                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[14px] ${category.complete ? 'bg-[#e5f6ec] text-[#0f7b4e]' : 'bg-[#fff6df] text-[#d98500]'}`}>
-                                      <CategoryIcon className="h-5 w-5" />
-                                    </span>
-                                  </div>
-                                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-                                    <span className={`block h-full rounded-full ${category.complete ? 'bg-[#0f8f59]' : 'bg-[#f5a400]'}`} style={{ width: `${category.percent}%` }} />
-                                  </div>
-                                </div>
-                              )
-                            })}
+                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
+                        <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
+                              <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
+                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+                              </h3>
+                              <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
+                                {selectedSellerReadiness.blockers?.[0]?.label
+                                  ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
+                                  : 'The seller workspace is on track.'}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
+                              onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}
+                              disabled={selectedSellerReadiness.nextAction?.disabled}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                            </Button>
                           </div>
-                          <button
-                            type="button"
-                            className="mt-auto flex min-h-[92px] items-center justify-center gap-3 rounded-[16px] border border-dashed border-[#cbd8e6] bg-[#fbfdff] px-4 text-sm font-semibold text-[#405b75] transition hover:border-[#9cb3c9] hover:bg-[#f7fbff]"
-                            onClick={() => setLeadWorkspaceTab('documents')}
-                          >
-                            <Upload className="h-5 w-5" />
-                            Upload or drag files here
-                          </button>
-                        </div>
-                      </section>
+                        </section>
+
+                        <section className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                            <h3 className="text-base font-semibold text-[#102033]">Documents</h3>
+                            <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('documents')}>
+                              View All Documents
+                            </Button>
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {selectedSellerDocumentCategories.map((category) => {
+                                const CategoryIcon = category.icon
+                                return (
+                                  <div key={category.key} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-[#20364c]">{category.label}</p>
+                                        <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total}</p>
+                                      </div>
+                                      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${category.complete ? 'bg-[#e5f6ec] text-[#0f7b4e]' : 'bg-[#fff6df] text-[#d98500]'}`}>
+                                        <CategoryIcon className="h-4 w-4" />
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                      <span className={`block h-full rounded-full ${category.complete ? 'bg-[#0f8f59]' : 'bg-[#f5a400]'}`} style={{ width: `${category.percent}%` }} />
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </section>
+                      </div>
 
                       <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
