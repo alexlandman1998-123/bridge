@@ -1,5 +1,7 @@
 import {
   ArrowRight,
+  ArrowUpDown,
+  Archive,
   BarChart3,
   Bell,
   CalendarClock,
@@ -19,9 +21,13 @@ import {
   MapPin,
   Megaphone,
   MessageCircle,
+  MoreVertical,
   PhoneCall,
+  Plus,
+  Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Tag,
   UploadCloud,
   User,
@@ -5373,6 +5379,529 @@ function formatSellerMobileUploadSize(bytes = 0) {
   if (size <= 0) return ''
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
   return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
+const SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG = {
+  fica: {
+    label: 'Identity',
+    description: 'FICA, identity, residence, and compliance documents.',
+    icon: User,
+    tone: 'green',
+  },
+  mandate: {
+    label: 'Mandate',
+    description: 'Mandate documents and seller signature records.',
+    icon: FileSignature,
+    tone: 'amber',
+  },
+  property: {
+    label: 'Property',
+    description: 'Rates, levies, certificates, disclosure, and property records.',
+    icon: Home,
+    tone: 'blue',
+  },
+  transfer: {
+    label: 'Transfer',
+    description: 'Sale, attorney, clearance, and registration support documents.',
+    icon: KeyRound,
+    tone: 'purple',
+  },
+  additional: {
+    label: 'Additional',
+    description: 'Extra requests from your property team.',
+    icon: FileText,
+    tone: 'slate',
+  },
+}
+
+function uniqueSellerMobileDocuments(items = []) {
+  const seen = new Set()
+  return items.filter((item, index) => {
+    const key = String(item?.id || item?.sourceId || item?.uploadKey || item?.title || `document-${index}`).trim()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function getSellerMobileDocumentCategoryKey(item = {}) {
+  const haystack = `${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
+  if (/additional/.test(haystack)) return 'additional'
+  if (/mandate/.test(haystack)) return 'mandate'
+  if (/transfer|clearance|guarantee|sale agreement|otp|registration/.test(haystack)) return 'transfer'
+  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|disclosure/.test(haystack)) return 'property'
+  return 'fica'
+}
+
+function getSellerMobileDocumentState(item = {}) {
+  const status = String(item?.status || '').trim().toLowerCase()
+  if (['approved', 'completed'].includes(status)) return 'completed'
+  if (['uploaded', 'under_review'].includes(status)) return 'review'
+  if (['cancelled', 'not_applicable', 'archived'].includes(status)) return 'archived'
+  return 'upload'
+}
+
+function getSellerMobileDocumentStatusLabel(item = {}) {
+  const state = getSellerMobileDocumentState(item)
+  if (state === 'completed') return 'Completed'
+  if (state === 'review') return 'Awaiting review'
+  if (state === 'archived') return 'Archived'
+  if (/mandate/i.test(`${item?.title || ''} ${item?.description || ''}`)) return 'Waiting for signature'
+  return 'Required'
+}
+
+function getSellerMobileDocumentUploadedLabel(item = {}) {
+  const uploadedAt = getPortalDocumentUploadedAt(item?.linkedDocument)
+  if (uploadedAt) return `Uploaded ${formatShortPortalDate(uploadedAt, 'recently')}`
+  if (item?.metaLine) return item.metaLine
+  if (item?.dueDate) return `Due ${formatShortPortalDate(item.dueDate, 'soon')}`
+  return ''
+}
+
+function buildSellerMobileDocumentDashboardModel(documentCenter = {}) {
+  const sections = buildDocumentCentreSections(documentCenter, 'selling')
+  const allDocuments = uniqueSellerMobileDocuments([
+    ...sections.allRequired,
+    ...sections.additionalRequests,
+    ...sections.uploadedUnderReview,
+    ...sections.rejectedNeedsAttention,
+    ...sections.approvedCompleted,
+    ...sections.signedDocuments,
+  ]).map((item) => ({
+    ...item,
+    categoryKey: getSellerMobileDocumentCategoryKey(item),
+    state: getSellerMobileDocumentState(item),
+  }))
+  const categories = Object.entries(SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG).map(([key, config]) => {
+    const items = allDocuments.filter((item) => item.categoryKey === key)
+    const total = items.length
+    const completed = items.filter((item) => item.state === 'completed').length
+    const awaitingReview = items.filter((item) => item.state === 'review').length
+    const toUpload = items.filter((item) => item.state === 'upload').length
+    return {
+      key,
+      ...config,
+      items,
+      total,
+      completed,
+      awaitingReview,
+      toUpload,
+      progress: total ? Math.round((completed / total) * 100) : 0,
+    }
+  }).filter((category) => category.total > 0)
+  const stats = {
+    total: allDocuments.length,
+    awaitingReview: allDocuments.filter((item) => item.state === 'review').length,
+    toUpload: allDocuments.filter((item) => item.state === 'upload').length,
+    completed: allDocuments.filter((item) => item.state === 'completed').length,
+    archived: allDocuments.filter((item) => item.state === 'archived').length,
+  }
+  const attentionItems = allDocuments
+    .filter((item) => item.state === 'upload')
+    .sort((a, b) => Number(Boolean(b.uploadSpec)) - Number(Boolean(a.uploadSpec)))
+
+  return {
+    sections,
+    allDocuments,
+    categories,
+    stats,
+    attentionItems,
+  }
+}
+
+function sellerMobileToneClasses(tone = 'green') {
+  const tones = {
+    green: {
+      icon: 'bg-[#eef8f1] text-[#17653d]',
+      progress: 'bg-[#17653d]',
+      pill: 'bg-[#eef8f1] text-[#17653d]',
+    },
+    amber: {
+      icon: 'bg-[#fff6e8] text-[#c87812]',
+      progress: 'bg-[#d49320]',
+      pill: 'bg-[#fff6e8] text-[#b66a0b]',
+    },
+    blue: {
+      icon: 'bg-[#edf6ff] text-[#1f76c2]',
+      progress: 'bg-[#2f80d0]',
+      pill: 'bg-[#edf6ff] text-[#1f76c2]',
+    },
+    purple: {
+      icon: 'bg-[#f4efff] text-[#7b4bc4]',
+      progress: 'bg-[#8652d1]',
+      pill: 'bg-[#f4efff] text-[#7b4bc4]',
+    },
+    slate: {
+      icon: 'bg-[#f2f5f8] text-[#52657b]',
+      progress: 'bg-[#52657b]',
+      pill: 'bg-[#f2f5f8] text-[#52657b]',
+    },
+  }
+  return tones[tone] || tones.green
+}
+
+function SellerMobileDocumentsPage({
+  documentCenter = {},
+  sellerAgencyLogoUrl = '',
+  sellerAgencyName = '',
+  activeCategoryKey = '',
+  activeFilter = 'all',
+  searchQuery = '',
+  actionOnly = false,
+  sortDirection = 'asc',
+  uploadingDocumentKey = '',
+  openingDocumentPath = '',
+  onBackToCategories = null,
+  onSelectCategory = null,
+  onFilterChange = null,
+  onSearchChange = null,
+  onToggleActionOnly = null,
+  onToggleSort = null,
+  onUploadItem = null,
+  onOpenDocument = null,
+}) {
+  const model = buildSellerMobileDocumentDashboardModel(documentCenter)
+  const activeCategory = activeCategoryKey
+    ? model.categories.find((category) => category.key === activeCategoryKey) || null
+    : null
+  const activeItems = activeCategory ? activeCategory.items : model.allDocuments
+  const normalizedQuery = String(searchQuery || '').trim().toLowerCase()
+  const filteredItems = activeItems
+    .filter((item) => {
+      if (activeFilter === 'review' && item.state !== 'review') return false
+      if (activeFilter === 'completed' && item.state !== 'completed') return false
+      if (activeFilter === 'archived' && item.state !== 'archived') return false
+      if (actionOnly && item.state !== 'upload') return false
+      if (!normalizedQuery) return true
+      return `${item.title || ''} ${item.description || ''} ${item.group || ''}`.toLowerCase().includes(normalizedQuery)
+    })
+    .sort((a, b) => {
+      const comparison = String(a.title || '').localeCompare(String(b.title || ''))
+      return sortDirection === 'desc' ? comparison * -1 : comparison
+    })
+  const firstUploadable = model.attentionItems.find((item) => item.uploadSpec) || model.attentionItems[0] || null
+  const tabs = [
+    { key: 'all', label: activeCategory ? 'All documents' : 'All', icon: FileText, count: activeItems.length },
+    { key: 'review', label: 'To review', icon: Clock3, count: activeItems.filter((item) => item.state === 'review').length },
+    { key: 'completed', label: 'Completed', icon: CheckCircle2, count: activeItems.filter((item) => item.state === 'completed').length },
+    { key: 'archived', label: 'Archived', icon: Archive, count: activeItems.filter((item) => item.state === 'archived').length },
+  ]
+  const statCards = [
+    { key: 'total', label: 'Total documents', value: activeCategory ? activeCategory.total : model.stats.total, icon: FileText, tone: 'green', action: 'View all' },
+    { key: 'review', label: 'Awaiting review', value: activeCategory ? activeCategory.awaitingReview : model.stats.awaitingReview, icon: Clock3, tone: 'amber', action: 'Review now' },
+    { key: 'upload', label: 'To upload', value: activeCategory ? activeCategory.toUpload : model.stats.toUpload, icon: UploadCloud, tone: 'blue', action: 'Upload now' },
+    { key: 'completed', label: 'Completed', value: activeCategory ? activeCategory.completed : model.stats.completed, icon: CheckCircle2, tone: 'green', action: 'View completed' },
+  ]
+  const setFilter = (key) => {
+    if (typeof onFilterChange === 'function') onFilterChange(key)
+  }
+  const renderTabs = () => (
+    <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-[14px] border border-[#e5e9ef] bg-white">
+      {tabs.map((tab) => {
+        const Icon = tab.icon
+        const active = activeFilter === tab.key
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setFilter(tab.key)}
+            className={`relative flex min-h-[48px] items-center justify-center gap-1.5 px-2 text-[0.68rem] font-semibold ${active ? 'text-[#17653d]' : 'text-[#667085]'}`}
+          >
+            <Icon size={15} />
+            <span className="truncate">{tab.label}</span>
+            {tab.key === 'review' && tab.count > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-[#d49320]" /> : null}
+            {active ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[#17653d]" /> : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+  const renderSearchControls = (placeholder) => (
+    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_92px_76px] gap-2">
+      <label className="flex min-h-[48px] items-center gap-2 rounded-[14px] border border-[#e5e9ef] bg-white px-3 text-sm text-[#667085]">
+        <Search size={17} className="shrink-0" />
+        <input
+          value={searchQuery}
+          onChange={(event) => typeof onSearchChange === 'function' && onSearchChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 bg-transparent text-sm text-[#101823] outline-none placeholder:text-[#98a2b3]"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={onToggleActionOnly}
+        className={`inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold ${actionOnly ? 'border-[#b8d8c6] bg-[#eff8f1] text-[#17653d]' : 'border-[#e5e9ef] bg-white text-[#344054]'}`}
+      >
+        <SlidersHorizontal size={16} />
+        <span>{actionOnly ? 'Action' : 'Filter'}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onToggleSort}
+        className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] border border-[#e5e9ef] bg-white px-3 text-sm font-semibold text-[#344054]"
+      >
+        <ArrowUpDown size={16} />
+        <span>{sortDirection === 'desc' ? 'Z-A' : 'Sort'}</span>
+      </button>
+    </div>
+  )
+
+  if (activeCategory) {
+    const Icon = activeCategory.icon
+    const tone = sellerMobileToneClasses(activeCategory.tone)
+    const categoryComplete = activeCategory.toUpload === 0 && activeCategory.awaitingReview === 0
+    return (
+      <section className="mt-4">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onBackToCategories} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#17653d]" aria-label="Back to document categories">
+            <ChevronRight size={22} className="rotate-180" />
+          </button>
+          {sellerAgencyLogoUrl ? (
+            <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-10 max-w-[168px] object-contain object-left" />
+          ) : null}
+        </div>
+        <div className="mt-5 flex items-start gap-4">
+          <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] ${tone.icon}`}>
+            <Icon size={26} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[1.55rem] font-semibold leading-tight text-[#101823]">{activeCategory.label}</h2>
+            <p className="mt-1 text-sm font-medium text-[#667085]">{activeCategory.completed} of {activeCategory.total} complete</p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e7eaef]">
+              <span className={`block h-full rounded-full ${tone.progress}`} style={{ width: `${activeCategory.progress}%` }} />
+            </div>
+            <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${tone.pill}`}>
+              {categoryComplete ? 'All documents complete' : `${activeCategory.toUpload} outstanding`}
+            </span>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-4 rounded-[18px] border border-[#e5e9ef] bg-white py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+          {statCards.map((card) => {
+            const CardIcon = card.icon
+            return (
+              <div key={card.key} className="border-r border-[#edf0f3] px-2 text-center last:border-r-0">
+                <span className={`mx-auto inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${sellerMobileToneClasses(card.tone).icon}`}><CardIcon size={19} /></span>
+                <strong className="mt-3 block text-xl font-semibold text-[#101823]">{card.value}</strong>
+                <span className="mt-1 block text-[0.68rem] leading-4 text-[#667085]">{card.label}</span>
+              </div>
+            )
+          })}
+        </div>
+        {renderTabs()}
+        {renderSearchControls(`Search ${activeCategory.label.toLowerCase()} documents...`)}
+        <MobileDocumentList
+          title={`${filteredItems.length} document${filteredItems.length === 1 ? '' : 's'}`}
+          items={filteredItems}
+          uploadingDocumentKey={uploadingDocumentKey}
+          openingDocumentPath={openingDocumentPath}
+          onUploadItem={onUploadItem}
+          onOpenDocument={onOpenDocument}
+        />
+        {categoryComplete ? (
+          <div className="mt-4 flex gap-3 rounded-[14px] border border-[#dfe8e2] bg-[#f2f7f3] p-4 text-[#17653d]">
+            <ShieldCheck size={22} className="shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">All documents in this category are complete</p>
+              <p className="mt-1 text-xs leading-5 text-[#466555]">Great job. Required {activeCategory.label.toLowerCase()} documents are complete.</p>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    )
+  }
+
+  return (
+    <section className="mt-4">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => firstUploadable && typeof onUploadItem === 'function' && onUploadItem(firstUploadable)}
+          disabled={!firstUploadable}
+          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] bg-[#063f34] px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(6,63,52,0.18)] disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          <Plus size={18} />
+          <span>Upload document</span>
+        </button>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {statCards.map((card) => {
+          const Icon = card.icon
+          const tone = sellerMobileToneClasses(card.tone)
+          const nextFilter = card.key === 'total' || card.key === 'upload' ? 'all' : card.key
+          return (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => {
+                setFilter(nextFilter)
+                if (card.key === 'upload' && firstUploadable) {
+                  onUploadItem?.(firstUploadable)
+                }
+              }}
+              className="min-h-[136px] rounded-[16px] border border-white/80 bg-white/95 p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.055)]"
+            >
+              <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[13px] ${tone.icon}`}>
+                <Icon size={21} />
+              </span>
+              <strong className="ml-3 inline-block align-middle text-[1.55rem] font-semibold text-[#101823]">{card.value}</strong>
+              <span className="ml-[58px] mt-1 block text-xs font-medium text-[#667085]">{card.label}</span>
+              <span className="mt-4 flex min-h-[38px] items-center justify-between rounded-[12px] border border-[#e5e9ef] px-3 text-xs font-semibold text-[#17653d]">
+                {card.action}
+                <ChevronRight size={15} />
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {renderTabs()}
+      {renderSearchControls('Search documents...')}
+      <section className="mt-3 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-[#101823]">Document categories</h2>
+          <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]">
+            View all categories
+            <ChevronRight size={15} />
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {model.categories.map((category) => {
+            const Icon = category.icon
+            const tone = sellerMobileToneClasses(category.tone)
+            const secondaryLabel = category.toUpload > 0
+              ? `${category.toUpload} Outstanding`
+              : category.awaitingReview > 0
+                ? `${category.awaitingReview} Awaiting`
+                : 'Complete'
+            return (
+              <button
+                key={category.key}
+                type="button"
+                onClick={() => onSelectCategory?.(category.key)}
+                className="min-h-[120px] rounded-[14px] border border-[#edf0f3] bg-white p-3 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${tone.icon}`}><Icon size={20} /></span>
+                  <ChevronRight size={18} className="mt-2 text-[#98a2b3]" />
+                </div>
+                <h3 className="mt-2 text-sm font-semibold text-[#101823]">{category.label}</h3>
+                <p className="mt-0.5 text-[0.68rem] font-medium text-[#667085]">{category.completed} of {category.total} complete</p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e7eaef]">
+                  <span className={`block h-full rounded-full ${tone.progress}`} style={{ width: `${category.progress}%` }} />
+                </div>
+                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[0.66rem] font-semibold ${tone.pill}`}>
+                  {secondaryLabel}
+                </span>
+              </button>
+            )
+          })}
+          {!model.categories.length ? (
+            <p className="col-span-2 rounded-[14px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] p-4 text-sm leading-6 text-[#667085]">
+              Document categories will appear here once your property team shares requirements.
+            </p>
+          ) : null}
+        </div>
+      </section>
+      <section className="mt-4 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-[#101823]">Things requiring your attention</h2>
+          <button type="button" onClick={onToggleActionOnly} className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]">
+            View all tasks
+            <ChevronRight size={15} />
+          </button>
+        </div>
+        <MobileDocumentList
+          items={model.attentionItems.slice(0, 4)}
+          emptyText="No documents need action from you right now."
+          compact
+          uploadingDocumentKey={uploadingDocumentKey}
+          openingDocumentPath={openingDocumentPath}
+          onUploadItem={onUploadItem}
+          onOpenDocument={onOpenDocument}
+        />
+      </section>
+    </section>
+  )
+}
+
+function MobileDocumentList({
+  title = '',
+  items = [],
+  emptyText = 'No documents found.',
+  compact = false,
+  uploadingDocumentKey = '',
+  openingDocumentPath = '',
+  onUploadItem = null,
+  onOpenDocument = null,
+}) {
+  return (
+    <section className={`${compact ? 'mt-3' : 'mt-4 rounded-[16px] border border-[#e5e9ef] bg-white p-4'}`}>
+      {title ? <h3 className="text-sm font-semibold text-[#101823]">{title}</h3> : null}
+      <div className={`${title ? 'mt-3' : ''} grid gap-2.5`}>
+        {items.length ? items.map((item) => {
+          const state = getSellerMobileDocumentState(item)
+          const statusLabel = getSellerMobileDocumentStatusLabel(item)
+          const statusTone = state === 'completed'
+            ? 'bg-[#eef8f1] text-[#17653d]'
+            : state === 'review'
+              ? 'bg-[#fff6e8] text-[#b66a0b]'
+              : state === 'archived'
+                ? 'bg-[#f2f5f8] text-[#52657b]'
+                : 'bg-[#fff1eb] text-[#b84d26]'
+          const uploadTarget = resolveSellerMobileDocumentUploadTarget(item)
+          const uploadKey = uploadTarget.uploadingKey || uploadTarget.requirementKey
+          const isUploading = Boolean(uploadKey && uploadingDocumentKey && (uploadingDocumentKey === uploadKey || uploadingDocumentKey === uploadTarget.requirementKey))
+          const linkedDocument = item.linkedDocument || item.document || null
+          const openKey = String(linkedDocument?.file_path || linkedDocument?.storage_path || linkedDocument?.id || '').trim()
+          const isOpening = Boolean(openKey && openingDocumentPath === openKey)
+          const canOpen = Boolean(linkedDocument && typeof onOpenDocument === 'function')
+          const canUpload = Boolean(item.uploadSpec || uploadTarget.requirementKey)
+          return (
+            <article key={item.id || item.title} className="flex min-h-[78px] items-center gap-3 rounded-[14px] border border-[#edf0f3] bg-white p-3 shadow-[0_6px_16px_rgba(15,23,42,0.025)]">
+              <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] ${state === 'review' ? 'bg-[#fff6e8] text-[#c87812]' : state === 'upload' ? 'bg-[#fff1eb] text-[#d05a25]' : 'bg-[#eef8f1] text-[#17653d]'}`}>
+                {state === 'upload' ? <UploadCloud size={20} /> : <FileText size={20} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h4 className="truncate text-sm font-semibold text-[#101823]">{item.title || 'Document'}</h4>
+                <p className="mt-0.5 truncate text-[0.68rem] font-medium text-[#667085]">{item.description || item.sellerCategoryLabel || 'Seller document'}</p>
+                <span className={`mt-1.5 inline-flex rounded-full px-2.5 py-1 text-[0.66rem] font-semibold ${statusTone}`}>{statusLabel}</span>
+              </div>
+              <div className="shrink-0 text-right">
+                {getSellerMobileDocumentUploadedLabel(item) ? <p className="mb-2 max-w-[82px] text-[0.64rem] leading-4 text-[#667085]">{getSellerMobileDocumentUploadedLabel(item)}</p> : null}
+                {state === 'upload' && canUpload ? (
+                  <button
+                    type="button"
+                    onClick={() => onUploadItem?.(item)}
+                    disabled={isUploading}
+                    className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[11px] bg-[#063f34] px-3 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    <span>{isUploading ? 'Uploading' : compact ? 'Continue' : 'Upload'}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                ) : canOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDocument({
+                      ...linkedDocument,
+                      file_path: linkedDocument.file_path || linkedDocument.storage_path,
+                    })}
+                    disabled={isOpening}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#e5e9ef] text-[#344054] disabled:opacity-60"
+                    aria-label={`Download ${item.title || 'document'}`}
+                  >
+                    <Download size={17} />
+                  </button>
+                ) : (
+                  <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] text-[#667085]" aria-label="More document actions">
+                    <MoreVertical size={17} />
+                  </button>
+                )}
+              </div>
+            </article>
+          )
+        }) : <p className="rounded-[14px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] p-4 text-sm leading-6 text-[#667085]">{emptyText}</p>}
+      </div>
+    </section>
+  )
 }
 
 function SellerMobilePortal({
