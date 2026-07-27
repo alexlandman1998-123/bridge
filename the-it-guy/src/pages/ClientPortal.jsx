@@ -108,6 +108,15 @@ const ISSUE_CATEGORIES = [
   'Other',
 ]
 
+function getClientPortalLoadErrorMessage(error, fallback = 'We could not load your client workspace right now.') {
+  const message = String(error?.message || error || '').trim()
+  const normalized = message.toLowerCase()
+  if (normalized.includes('statement timeout') || normalized.includes('failed to fetch') || normalized.includes('network')) {
+    return 'Your client portal is temporarily taking too long to load. Please retry in a moment.'
+  }
+  return message || fallback
+}
+
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Progress', icon: BarChart3 },
@@ -2106,6 +2115,47 @@ function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
 
+const SELLER_MOBILE_STAGE_INDEX_BY_KEY = {
+  contacted: 0,
+  seller_onboarding_sent: 0,
+  seller_onboarding_submitted: 0,
+  onboarding: 0,
+  submitted: 0,
+  mandate_sent: 1,
+  mandate_signed: 1,
+  listing_created: 2,
+  listing_live: 2,
+  listed: 2,
+  documents_submitted: 2,
+  documents_complete: 2,
+  offers: 3,
+  offer_received: 3,
+  offers_received: 3,
+  offer_accepted: 4,
+  contract: 4,
+  otp: 4,
+  finance: 4,
+  fin: 4,
+  bond: 4,
+  transfer: 5,
+  xfer: 5,
+  registered: 6,
+  registration: 6,
+  reg: 6,
+  completed: 6,
+  complete: 6,
+}
+
+function resolveSellerMobileJourneyIndex(...values) {
+  for (const value of values.flat()) {
+    const key = normalizeSellerPortalKey(value)
+    if (Object.hasOwn(SELLER_MOBILE_STAGE_INDEX_BY_KEY, key)) {
+      return SELLER_MOBILE_STAGE_INDEX_BY_KEY[key]
+    }
+  }
+  return null
+}
+
 function normalizeSellerVisibleListingLinks(items = []) {
   const normalizedLinks = (Array.isArray(items) ? items : [])
     .filter((item) => {
@@ -3102,149 +3152,6 @@ function buildSellerJourneyTimelineItems(items = []) {
     }))
 }
 
-function buildSellerNextMilestoneModel({
-  sellerNextStep = {},
-  sellerProgressModel = {},
-  sellerDocumentsNeedingAttention = [],
-  sellerVisibleListingLinks = [],
-  sellerOfferItems = [],
-} = {}) {
-  if (sellerNextStep?.tone === 'action') {
-    return {
-      title: sellerNextStep.title || 'Next action',
-      statusLabel: sellerNextStep.label || 'Action needed',
-      doing: ['Reviewing your sale file', 'Preparing the next milestone once this item is complete'],
-      sellerActions: [sellerNextStep.description || 'Please complete the requested item.'],
-      action: {
-        label: sellerNextStep.label || 'Open next step',
-        to: sellerNextStep.to,
-        href: sellerNextStep.href,
-      },
-    }
-  }
-
-  const currentKey = sellerProgressModel?.currentKey || ''
-  if (sellerDocumentsNeedingAttention.length) {
-    return {
-      title: 'Documents review',
-      statusLabel: 'Action may be needed',
-      doing: ['Checking your uploaded seller documents', 'Confirming your file is ready for the next milestone'],
-      sellerActions: [`${sellerDocumentsNeedingAttention.length} document${sellerDocumentsNeedingAttention.length === 1 ? '' : 's'} still need attention.`],
-      action: { label: 'Open documents', to: 'documents' },
-    }
-  }
-
-  if (currentKey === 'registration') {
-    return {
-      title: 'Registration',
-      statusLabel: 'Final stage',
-      doing: ['Confirming registration and close-out records', 'Preparing final transaction updates'],
-      sellerActions: ['Nothing for now. We will let you know if anything requires your attention.'],
-      action: null,
-    }
-  }
-
-  if (currentKey === 'transfer') {
-    return {
-      title: 'Transfer',
-      statusLabel: 'In progress',
-      doing: ['Coordinating attorney-side transfer milestones', 'Tracking remaining sale conditions'],
-      sellerActions: ['Nothing for now. Any signature requests will appear in your documents.'],
-      action: { label: 'View documents', to: 'documents' },
-    }
-  }
-
-  if (currentKey === 'finance' || sellerOfferItems.length > 0) {
-    return {
-      title: 'Offer and finance follow-up',
-      statusLabel: 'Agent coordinating',
-      doing: ['Following up on accepted-offer requirements', 'Keeping finance and transfer handover aligned'],
-      sellerActions: ['Nothing for now unless your agent requests a document or signature.'],
-      action: { label: 'View offers', to: 'offers' },
-    }
-  }
-
-  if (sellerVisibleListingLinks.length) {
-    return {
-      title: 'Marketing your property',
-      statusLabel: 'Listing live',
-      doing: ['Promoting your property on the shared listing channels', 'Monitoring buyer activity', 'Scheduling qualified viewings'],
-      sellerActions: ['Nothing for now. We will notify you if anything requires your attention.'],
-      action: { label: 'View listing', href: sellerVisibleListingLinks[0]?.url },
-    }
-  }
-
-  return {
-    title: sellerNextStep?.title || 'Next milestone',
-    statusLabel: 'No action needed',
-    doing: ['Preparing the next seller milestone', 'Keeping your sale records aligned'],
-    sellerActions: ['Nothing for now. Your agent will update you when the next step is ready.'],
-    action: sellerNextStep?.to ? { label: sellerNextStep.label || 'Open next step', to: sellerNextStep.to } : null,
-  }
-}
-
-function getSellerDocumentTitle(document = {}) {
-  return pickFirstText(
-    document.title,
-    document.label,
-    document.name,
-    document.documentName,
-    document.document_name,
-    document.documentTypeLabel,
-    document.document_type_label,
-    document.documentType,
-    document.document_type,
-    document.requiredDocumentLabel,
-    document.required_document_label,
-    document.key,
-    'Document',
-  )
-}
-
-function buildSellerImportantDocuments({ uploadedDocuments = [], requiredDocuments = [] } = {}) {
-  const relevantPattern = /(mandate|otp|offer|disclosure|id|identity|proof|address|rates|title|deed|transfer|bond|finance)/i
-  const merged = new Map()
-
-  const addDocument = (document, source) => {
-    const title = getSellerDocumentTitle(document)
-    const key = normalizeSellerPortalKey(document?.key || document?.documentKey || document?.document_key || document?.documentType || document?.document_type || title)
-    if (!key) return
-    const existing = merged.get(key) || {}
-    merged.set(key, {
-      ...existing,
-      ...document,
-      key,
-      title,
-      source,
-      statusLabel: getFriendlySellerStatusLabel(normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status), source === 'required' ? 'Requested' : 'Submitted'),
-      dateLabel: formatShortPortalDate(
-        document?.signedAt ||
-          document?.signed_at ||
-          document?.submittedAt ||
-          document?.submitted_at ||
-          document?.uploadedAt ||
-          document?.uploaded_at ||
-          document?.createdAt ||
-          document?.created_at,
-        '',
-      ),
-    })
-  }
-
-  requiredDocuments.forEach((document) => addDocument(document, 'required'))
-  uploadedDocuments.forEach((document) => addDocument(document, 'uploaded'))
-
-  const documents = Array.from(merged.values())
-  const scored = documents.map((document) => ({
-    ...document,
-    score: relevantPattern.test(document.title || document.key || '') ? 2 : document.source === 'uploaded' ? 1 : 0,
-  }))
-
-  return scored
-    .sort((a, b) => b.score - a.score || String(a.title).localeCompare(String(b.title)))
-    .slice(0, 4)
-}
-
 function SellerPortalAction({ action, token, workspaceNavigationScope, className = '', children }) {
   const content = children || (
     <>
@@ -3688,7 +3595,6 @@ function BuyerMobilePortal({
   clientJourneySteps = [],
   nextStepState = {},
   primaryOverviewAction = {},
-  primaryOverviewActionClasses,
   missingRequired,
   financeTypeLabel,
   financeSectionKey = 'account',
@@ -3750,6 +3656,7 @@ function BuyerMobilePortal({
     notes: '',
   })
   const [buyerFinanceFeedback, setBuyerFinanceFeedback] = useState({ tone: '', message: '' })
+  const [nowForBuyerAppointments] = useState(() => Date.now())
   const [selectedBuyerAppointment, setSelectedBuyerAppointment] = useState(null)
   const [buyerAppointmentRescheduleDraft, setBuyerAppointmentRescheduleDraft] = useState({
     preferredDateTime: '',
@@ -3779,7 +3686,6 @@ function BuyerMobilePortal({
   ]
   const visibleTeamMembers = teamMembers.slice(0, 4)
   const buyerAppointmentItems = buildBuyerMobileAppointmentItems(appointments)
-  const nowForBuyerAppointments = Date.now()
   const upcomingBuyerAppointments = buyerAppointmentItems.filter((appointment) => {
     if (['completed', 'complete', 'cancelled', 'canceled', 'declined'].includes(appointment.normalizedStatus)) return false
     const time = Date.parse(appointment.dateTime || '')
@@ -3854,15 +3760,6 @@ function BuyerMobilePortal({
   const buyerFinanceOpenRequests = Number(matterAccountsSummary?.openRequests || 0)
   const buyerFinanceOverdueRequests = Number(matterAccountsSummary?.overdueRequests || 0)
   const buyerFinanceEventCount = Number(matterAccountsSummary?.eventCount || 0)
-  const buyerFinanceRequestItems = buyerMatterAccounts.flatMap((account) =>
-    (Array.isArray(account?.requests) ? account.requests : []).map((request) => ({ account, request })),
-  )
-  const buyerFinanceOpenRequestItems = buyerFinanceRequestItems.filter(({ request }) =>
-    !['complete', 'completed', 'cancelled', 'canceled'].includes(normalizePortalStatus(request?.requestStatus)),
-  )
-  const buyerFinanceDocumentItems = buyerMatterAccounts.flatMap((account) =>
-    (Array.isArray(account?.documents) ? account.documents : []).map((document) => ({ account, document })),
-  )
   const buyerFinanceActivityItems = buyerMatterAccounts.flatMap((account) => {
     const entries = (Array.isArray(account?.entries) ? account.entries : []).map((entry) => ({
       id: entry.id || `${account.id}-entry-${entry.description}`,
@@ -3930,6 +3827,14 @@ function BuyerMobilePortal({
   const selectedBuyerUploadBusy = selectedBuyerIsUploading || buyerUploadFeedback.tone === 'loading'
   const selectedBuyerOpenKey = String(selectedBuyerLinkedDocument?.file_path || selectedBuyerLinkedDocument?.storage_path || selectedBuyerLinkedDocument?.id || '').trim()
   const selectedBuyerIsOpening = Boolean(selectedBuyerOpenKey && openingDocumentPath === selectedBuyerOpenKey)
+  const selectedBuyerUploadFileBlob = selectedBuyerUploadFile?.file || null
+  const selectedBuyerUploadIsImage = Boolean(
+    selectedBuyerUploadFileBlob && String(selectedBuyerUploadFileBlob.type || '').startsWith('image/'),
+  )
+  const selectedBuyerFinanceFileBlob = selectedBuyerFinanceFile?.file || null
+  const selectedBuyerFinanceIsImage = Boolean(
+    selectedBuyerFinanceFileBlob && String(selectedBuyerFinanceFileBlob.type || '').startsWith('image/'),
+  )
   const overviewActionItems = visibleActionItems.length
     ? visibleActionItems
     : [{
@@ -3995,53 +3900,36 @@ function BuyerMobilePortal({
   }
 
   useEffect(() => {
-    if (!selectedBuyerUploadFile?.file || !String(selectedBuyerUploadFile.file.type || '').startsWith('image/')) {
-      setSelectedBuyerUploadPreviewUrl('')
+    if (!selectedBuyerUploadIsImage || !selectedBuyerUploadFileBlob) {
       return undefined
     }
 
-    const previewUrl = URL.createObjectURL(selectedBuyerUploadFile.file)
-    setSelectedBuyerUploadPreviewUrl(previewUrl)
+    let cancelled = false
+    const previewUrl = URL.createObjectURL(selectedBuyerUploadFileBlob)
+    queueMicrotask(() => {
+      if (!cancelled) setSelectedBuyerUploadPreviewUrl(previewUrl)
+    })
     return () => {
+      cancelled = true
       URL.revokeObjectURL(previewUrl)
     }
-  }, [selectedBuyerUploadFile])
+  }, [selectedBuyerUploadFileBlob, selectedBuyerUploadIsImage])
 
   useEffect(() => {
-    if (activeBuyerDocumentFilter === 'all' || buyerDocumentCounts[activeBuyerDocumentFilter] > 0 || buyerDocumentCounts.all === 0) {
-      return
-    }
-    if (buyerDocumentCounts.action > 0) {
-      setBuyerDocumentFilter('action')
-      return
-    }
-    if (buyerDocumentCounts.review > 0) {
-      setBuyerDocumentFilter('review')
-      return
-    }
-    if (buyerDocumentCounts.approved > 0) {
-      setBuyerDocumentFilter('approved')
-    }
-  }, [
-    activeBuyerDocumentFilter,
-    buyerDocumentCounts.action,
-    buyerDocumentCounts.approved,
-    buyerDocumentCounts.all,
-    buyerDocumentCounts.review,
-  ])
-
-  useEffect(() => {
-    if (!selectedBuyerFinanceFile?.file || !String(selectedBuyerFinanceFile.file.type || '').startsWith('image/')) {
-      setSelectedBuyerFinancePreviewUrl('')
+    if (!selectedBuyerFinanceIsImage || !selectedBuyerFinanceFileBlob) {
       return undefined
     }
 
-    const previewUrl = URL.createObjectURL(selectedBuyerFinanceFile.file)
-    setSelectedBuyerFinancePreviewUrl(previewUrl)
+    let cancelled = false
+    const previewUrl = URL.createObjectURL(selectedBuyerFinanceFileBlob)
+    queueMicrotask(() => {
+      if (!cancelled) setSelectedBuyerFinancePreviewUrl(previewUrl)
+    })
     return () => {
+      cancelled = true
       URL.revokeObjectURL(previewUrl)
     }
-  }, [selectedBuyerFinanceFile])
+  }, [selectedBuyerFinanceFileBlob, selectedBuyerFinanceIsImage])
 
   function openBuyerDocumentSheet(document) {
     setSelectedBuyerDocument(document)
@@ -5139,7 +5027,7 @@ function BuyerMobilePortal({
               {selectedBuyerFinanceFile ? (
                 <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
                   <div className="flex items-center gap-3">
-                    {selectedBuyerFinancePreviewUrl ? (
+                    {selectedBuyerFinanceIsImage && selectedBuyerFinancePreviewUrl ? (
                       <img src={selectedBuyerFinancePreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
                     ) : (
                       <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
@@ -5323,7 +5211,7 @@ function BuyerMobilePortal({
               {selectedBuyerUploadFile ? (
                 <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
                   <div className="flex items-center gap-3">
-                    {selectedBuyerUploadPreviewUrl ? (
+                    {selectedBuyerUploadIsImage && selectedBuyerUploadPreviewUrl ? (
                       <img src={selectedBuyerUploadPreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
                     ) : (
                       <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
@@ -5491,6 +5379,7 @@ function SellerMobilePortal({
   token,
   workspaceNavigationScope,
   activeSection,
+  documentCenter = {},
   sellerAgencyName,
   sellerAgencyLogoUrl,
   sellerPropertyTitle,
@@ -5511,11 +5400,14 @@ function SellerMobilePortal({
   uploadingDocumentKey = '',
   openingDocumentPath = '',
   onUploadSellerDocument = null,
+  onUploadDocumentCentre = null,
   onOpenSellerDocument = null,
 }) {
+  const currentSellerJourneyStageKey = sellerJourneyStages.find((stage) => stage.state === 'current')?.key ||
+    sellerJourneyStages[0]?.key ||
+    ''
   const [expandedStageKey, setExpandedStageKey] = useState(() => {
-    const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current')
-    return currentStage?.key || sellerJourneyStages[0]?.key || ''
+    return currentSellerJourneyStageKey
   })
   const photoInputRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -5527,17 +5419,33 @@ function SellerMobilePortal({
   const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
     ? requestedMobileSection
     : 'overview'
-  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
-    sellerJourneyStages.find((stage) => stage.state === 'current') ||
+  const isOverviewSection = mobileSection === 'overview'
+
+  useEffect(() => {
+    if (!currentSellerJourneyStageKey) return
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setExpandedStageKey((previous) => (previous === currentSellerJourneyStageKey ? previous : currentSellerJourneyStageKey))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentSellerJourneyStageKey])
+
+  const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current') ||
     sellerJourneyStages[0]
+  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
+    currentStage
   const safeProgress = Math.max(0, Math.min(100, Number(sellerProgressPercent) || 0))
-  const primaryDocumentAction = sellerDocumentsNeedingAttention[0] || null
-  const visibleDocuments = sellerDocumentsNeedingAttention.slice(0, 4)
+  const documentActionItems = Array.isArray(sellerDocumentsNeedingAttention)
+    ? sellerDocumentsNeedingAttention
+    : []
+  const primaryDocumentAction = documentActionItems[0] || null
+  const previewDocuments = documentActionItems.slice(0, 4)
   const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
-  const ringStyle = {
-    background: `conic-gradient(#18365a ${safeProgress * 3.6}deg, #e5e9ee 0deg)`,
-  }
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Home', icon: Home },
     { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
@@ -5547,6 +5455,23 @@ function SellerMobilePortal({
   ]
   const nextActionHref = sellerNextStep?.href ||
     getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents')
+  const activeStageIsCurrent = activeStage?.key === currentStage?.key
+  const hasRequiredNextAction = Boolean(primaryDocumentAction || sellerNextStep?.tone === 'action')
+  const nextRequiredTitle = primaryDocumentAction?.label ||
+    primaryDocumentAction?.title ||
+    (sellerNextStep?.tone === 'action' ? sellerNextStep?.title : '') ||
+    'No further action from your side'
+  const nextRequiredDescription = primaryDocumentAction?.description ||
+    primaryDocumentAction?.message ||
+    (sellerNextStep?.tone === 'action' ? sellerNextStep?.description : '') ||
+    'Everything needed from you is currently up to date. Your property team will update this space when the next action is ready.'
+  const heroBackgroundStyle = sellerPropertyImageUrl
+    ? {
+        backgroundImage: `linear-gradient(90deg, rgba(5, 28, 34, 0.96) 0%, rgba(5, 28, 34, 0.78) 45%, rgba(5, 28, 34, 0.2) 100%), url("${sellerPropertyImageUrl}")`,
+      }
+    : {
+        backgroundImage: 'linear-gradient(135deg, #062b2b 0%, #15395a 58%, #5f7c67 100%)',
+      }
   const selectedUploadTarget = selectedDocumentAction
     ? resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
     : null
@@ -5560,25 +5485,26 @@ function SellerMobilePortal({
   const selectedLinkedDocument = selectedDocumentAction?.linkedDocument || selectedDocumentAction?.document || null
   const selectedOpenKey = String(selectedLinkedDocument?.file_path || selectedLinkedDocument?.storage_path || selectedLinkedDocument?.id || '').trim()
   const selectedIsOpening = Boolean(selectedOpenKey && openingDocumentPath === selectedOpenKey)
+  const selectedUploadFileBlob = selectedUploadFile?.file || null
+  const selectedUploadIsImage = Boolean(
+    selectedUploadFileBlob && String(selectedUploadFileBlob.type || '').startsWith('image/'),
+  )
 
   useEffect(() => {
-    if (!selectedUploadFile?.file || !String(selectedUploadFile.file.type || '').startsWith('image/')) {
-      setSelectedUploadPreviewUrl('')
+    if (!selectedUploadIsImage || !selectedUploadFileBlob) {
       return undefined
     }
 
-    const previewUrl = URL.createObjectURL(selectedUploadFile.file)
-    setSelectedUploadPreviewUrl(previewUrl)
+    let cancelled = false
+    const previewUrl = URL.createObjectURL(selectedUploadFileBlob)
+    queueMicrotask(() => {
+      if (!cancelled) setSelectedUploadPreviewUrl(previewUrl)
+    })
     return () => {
+      cancelled = true
       URL.revokeObjectURL(previewUrl)
     }
-  }, [selectedUploadFile])
-
-  function openDocumentActionSheet(document) {
-    setSelectedDocumentAction(document)
-    setSelectedUploadFile(null)
-    setMobileUploadFeedback({ tone: '', message: '' })
-  }
+  }, [selectedUploadFileBlob, selectedUploadIsImage])
 
   function closeDocumentActionSheet() {
     if (selectedUploadBusy) return
@@ -5681,110 +5607,155 @@ function SellerMobilePortal({
           </div>
         </header>
 
-        <section className="relative mt-6 overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
-          {sellerPropertyImageUrl ? (
-            <div
-              aria-hidden="true"
-              className="absolute inset-y-0 right-0 w-[56%] bg-cover bg-center opacity-[0.16] grayscale"
-              style={{ backgroundImage: `linear-gradient(90deg,#ffffff 0%,rgba(255,255,255,0.45) 45%,rgba(255,255,255,0.05) 100%), url("${sellerPropertyImageUrl}")` }}
-            />
-          ) : null}
-          <div className="relative">
-            <p className="text-sm font-medium text-[#687380]">Seller Portal</p>
-            <h2 className="mt-3 max-w-[18rem] text-[2rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#0f172a]">{sellerPropertyTitle || 'Property sale'}</h2>
-            <div className="mt-6 flex items-center gap-5">
-              <div className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={ringStyle}>
-                <span className="absolute inset-[7px] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]" />
-                <span className="relative text-[1.35rem] font-semibold tracking-[-0.04em] text-[#101823]">{safeProgress}%</span>
-              </div>
-              <div className="min-w-0 border-l border-[#e2e6ec] pl-5">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8491]">Current status</p>
-                <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold tracking-[-0.025em] text-[#10213a]">
-                  <span className="h-2 w-2 rounded-full bg-[#1d8b5f]" />
-                  <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
-                </p>
-                <p className="mt-1 text-sm font-medium text-[#6b7280]">{sellerStepLabel}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#101823]">Your sale journey</h3>
-            <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{sellerStepLabel}</span>
-          </div>
-          <ol>
-            {sellerJourneyStages.map((stage, index) => {
-              const isExpanded = activeStage?.key === stage.key
-              const isCompleted = stage.state === 'completed'
-              const isCurrent = stage.state === 'current'
-              const isLast = index === sellerJourneyStages.length - 1
-              return (
-                <li key={stage.key} className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-2">
-                  {!isLast ? <span aria-hidden="true" className={`absolute left-[22px] top-11 h-[calc(100%-22px)] w-px ${isCompleted ? 'bg-[#b8d8c9]' : 'bg-[#dfe4ea]'}`} /> : null}
-                  <button
-                    type="button"
-                    onClick={() => setExpandedStageKey(stage.key)}
-                    className={`relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
-                      isCompleted ? 'border-[#8ac6a8] bg-white text-[#257454]' : isCurrent ? 'border-[#18365a] bg-[#18365a] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
-                    }`}
-                    aria-label={`View ${stage.label}`}
-                  >
-                    {isCompleted ? <CheckCircle2 size={18} /> : stage.number}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedStageKey(stage.key)}
-                    className={`mb-3 min-h-[44px] min-w-0 rounded-[18px] px-3 py-2.5 text-left transition ${isExpanded ? 'bg-[#f7f9fb] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]' : 'bg-transparent'}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className={`text-base font-semibold tracking-[-0.02em] ${isCurrent ? 'text-[#10213a]' : isCompleted ? 'text-[#1f2937]' : 'text-[#7b8491]'}`}>{stage.label}</span>
-                      {isCurrent ? <span className="rounded-full bg-[#e8edf3] px-2.5 py-1 text-xs font-semibold text-[#24364d]">Current</span> : null}
-                    </div>
-                    {isExpanded ? (
-                      <div className="mt-1.5">
-                        <p className="text-sm leading-5 text-[#4b5563]">{stage.description}</p>
-                        <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
-                          <span>{stage.owner}</span>
-                          <span aria-hidden="true">.</span>
-                          <span>{stage.dateLabel}</span>
-                        </p>
-                      </div>
-                    ) : null}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-
-        {mobileSection === 'overview' ? (
+        {isOverviewSection ? (
           <>
-            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Next required item</p>
-              <h3 className="mt-2 text-[1.45rem] font-semibold tracking-[-0.045em] text-[#101823]">
-                {primaryDocumentAction?.label || primaryDocumentAction?.title || sellerNextStep?.title || 'Review next step'}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-[#5f6b7a]">
-                {primaryDocumentAction?.description || sellerNextStep?.description || 'Your property team will keep the next action updated here.'}
-              </p>
-              <Link to={nextActionHref} className="mt-4 flex min-h-[48px] items-center justify-between rounded-[16px] border border-[#dfe5ec] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]">
-                <span>{sellerNextStep?.label || 'Open next step'}</span>
-                <ChevronRight size={18} />
-              </Link>
+            <section
+              className="relative mt-6 min-h-[304px] overflow-hidden rounded-[18px] border border-white/70 bg-[#062b2b] bg-cover bg-center p-6 text-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]"
+              style={heroBackgroundStyle}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
+              <div className="relative flex min-h-[256px] flex-col">
+                <p className="text-sm font-medium text-[#a5d8a7]">Seller Portal</p>
+                <h2 className="mt-4 max-w-[19rem] text-[2rem] font-semibold leading-[1.08] text-white">{sellerPropertyTitle || 'Property sale'}</h2>
+                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/18 pt-5">
+                  <div className="min-w-0">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-white/68">Current status</p>
+                    <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
+                      <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
+                      <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-white/72">{sellerStepLabel}</p>
+                  </div>
+                  <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/94 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                    <span className="relative text-center">
+                      <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-white/70">Complete</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-4 rounded-[18px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-[1.16rem] font-semibold text-[#101823]">Your sale journey</h3>
+                <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{sellerStepLabel}</span>
+              </div>
+              <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-3 [scrollbar-width:none]">
+                {sellerJourneyStages.map((stage, index) => {
+                  const isExpanded = activeStage?.key === stage.key
+                  const isCompleted = stage.state === 'completed'
+                  const isCurrent = stage.state === 'current'
+                  return (
+                    <li key={stage.key} className="relative min-w-[76px]">
+                      {index < sellerJourneyStages.length - 1 ? <span aria-hidden="true" className={`absolute left-[48px] top-[19px] h-px w-[62px] ${isCompleted ? 'bg-[#9dceb5]' : 'bg-[#dfe4ea]'}`} /> : null}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStageKey(stage.key)}
+                        className={`relative z-10 mx-auto flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                          isCompleted ? 'border-[#63ad73] bg-[#63ad73] text-white' : isCurrent ? 'border-[#063f34] bg-[#063f34] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
+                        }`}
+                        aria-label={`View ${stage.label}`}
+                      >
+                        {isCompleted ? <CheckCircle2 size={18} /> : stage.number}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStageKey(stage.key)}
+                        className="mt-2 block w-full text-center"
+                      >
+                        <span className={`block text-[0.69rem] font-semibold leading-4 ${isCurrent || isExpanded ? 'text-[#10213a]' : isCompleted ? 'text-[#344054]' : 'text-[#7b8491]'}`}>{stage.label}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+              <article className="mt-2 rounded-[16px] border border-[#dfe7ef] bg-[#fbfcfd] p-4">
+                <div className="flex items-start gap-4">
+                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#063f34] text-white">
+                    <FileText size={22} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="text-[1.25rem] font-semibold leading-tight text-[#101823]">{activeStage?.label || 'Current step'}</h4>
+                      <span className="shrink-0 rounded-full bg-[#edf7ed] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#4d8a48]">
+                        {activeStageIsCurrent ? 'Current step' : activeStage?.dateLabel || 'Overview'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-[#344054]">{activeStage?.description || 'Your sale journey will update as the transaction progresses.'}</p>
+                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
+                      <span>{activeStage?.owner || sellerAgentName || sellerAgencyName || 'Your property team'}</span>
+                      <span aria-hidden="true">.</span>
+                      <span>{activeStage?.dateLabel || 'Today'}</span>
+                    </p>
+                    {activeStageIsCurrent ? (
+                      <Link to={nextActionHref} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#063f34] px-4 text-sm font-semibold text-white">
+                        <span>{sellerNextStep?.label || 'Continue'}</span>
+                        <ChevronRight size={17} />
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/40 bg-[#063f34] p-5 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Next required item</p>
+              <div className="mt-3 flex items-start gap-3">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-[#8bd985]/40 bg-white/8 text-[#a9ec9c]">
+                  <FileText size={20} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{nextRequiredTitle}</h3>
+                  <p className="mt-1 text-sm leading-5 text-white/72">{nextRequiredDescription}</p>
+                </div>
+              </div>
+              {primaryDocumentAction ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDocumentAction(primaryDocumentAction)}
+                  className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]"
+                >
+                  <span>Upload document</span>
+                  <UploadCloud size={18} />
+                </button>
+              ) : hasRequiredNextAction ? (
+                <Link to={nextActionHref} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/55 bg-[#0a4d40] px-4 text-sm font-semibold text-[#c5f6bc]">
+                  <span>{sellerNextStep?.label || 'Open next step'}</span>
+                  <ChevronRight size={18} />
+                </Link>
+              ) : (
+                <div className="mt-4 flex min-h-[48px] items-center justify-center rounded-[14px] border border-[#8bd985]/35 bg-[#0a4d40]/80 px-4 text-sm font-semibold text-[#c5f6bc]">
+                  All caught up
+                </div>
+              )}
             </section>
             <section className="mt-4 grid gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
-                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{activeSellerOfferCount}</strong>
-                  <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'offers')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <div className="p-4">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><Tag size={20} /></span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Offers</p>
+                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{activeSellerOfferCount}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">Active offers</span>
+                  </div>
+                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
+                    <span>View offers</span>
+                    <ChevronRight size={15} />
+                  </div>
                 </Link>
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
-                  <strong className="mt-2 block text-2xl font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
-                  <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
+                  <div className="p-4">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><FileText size={20} /></span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
+                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
+                  </div>
+                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
+                    <span>View documents</span>
+                    <ChevronRight size={15} />
+                  </div>
                 </Link>
               </div>
               <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
@@ -5809,7 +5780,7 @@ function SellerMobilePortal({
             emptyText="No immediate seller tasks are open."
             items={[
               sellerNextStep ? { id: 'next', title: sellerNextStep.title, description: sellerNextStep.description, to: sellerNextStep.to || 'documents' } : null,
-              ...visibleDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
+              ...previewDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
             ].filter(Boolean)}
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
@@ -5817,47 +5788,16 @@ function SellerMobilePortal({
         ) : null}
 
         {mobileSection === 'documents' ? (
-          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Documents</p>
-            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerDocumentTracker?.percent || 0}% approved</h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">
-              {visibleDocuments.length
-                ? `${visibleDocuments.length} item${visibleDocuments.length === 1 ? '' : 's'} need attention.`
-                : 'Your seller document list is up to date.'}
-            </p>
-            <div className="mt-4 grid gap-3">
-              {visibleDocuments.length ? visibleDocuments.map((item) => {
-                const target = resolveSellerMobileDocumentUploadTarget(item)
-                const isUploading = Boolean(
-                  target.uploadingKey &&
-                    uploadingDocumentKey &&
-                    (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
-                )
-                return (
-                  <button
-                    key={item.id || item.key || item.title}
-                    type="button"
-                    onClick={() => openDocumentActionSheet(item)}
-                    className="flex min-h-[76px] items-center justify-between gap-4 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 py-3 text-left transition active:scale-[0.99]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-[#101823]">{item.title || item.label || 'Requested document'}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#667085]">
-                        {isUploading ? 'Uploading...' : item.statusLabel || item.message || item.description || 'Action required'}
-                      </span>
-                    </span>
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
-                      <UploadCloud size={17} />
-                    </span>
-                  </button>
-                )
-              }) : (
-                <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
-                  New requests from your property team will appear here.
-                </p>
-              )}
-            </div>
-          </section>
+          <div className="mt-4">
+            <ClientDocumentCentre
+              documentCenter={documentCenter}
+              workspace="selling"
+              uploadingDocumentKey={uploadingDocumentKey}
+              openingDocumentPath={openingDocumentPath}
+              onUpload={onUploadDocumentCentre}
+              onOpenDocument={onOpenSellerDocument}
+            />
+          </div>
         ) : null}
 
         {mobileSection === 'offers' ? (
@@ -5958,7 +5898,7 @@ function SellerMobilePortal({
               {selectedUploadFile ? (
                 <div className="mt-5 rounded-[20px] border border-[#e2e8f0] bg-[#f8fafc] p-3">
                   <div className="flex items-center gap-3">
-                    {selectedUploadPreviewUrl ? (
+                    {selectedUploadIsImage && selectedUploadPreviewUrl ? (
                       <img src={selectedUploadPreviewUrl} alt="" className="h-14 w-14 shrink-0 rounded-[16px] object-cover" />
                     ) : (
                       <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#344054] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]">
@@ -7029,7 +6969,10 @@ function ClientPortal() {
           setError('')
           return
         }
-        setError(loadError?.message || 'We could not refresh your client workspace right now.')
+        console.warn('[client-portal] Background refresh skipped', {
+          token,
+          error: loadError,
+        })
       } finally {
         setHydratingPortal(false)
       }
@@ -7068,7 +7011,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(coreError?.message || 'We could not load your client workspace.')
+        setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your client workspace.'))
       }
     }
 
@@ -7100,7 +7043,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(loadError?.message || 'We could not finish loading your client workspace.')
+        setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your client workspace.'))
       }
     } finally {
       setHydratingPortal(false)
@@ -8057,6 +8000,22 @@ function ClientPortal() {
         documentId: document?.finalDocumentId || document?.final_document_id || document?.document_id || document?.id,
         openingKey: document?.id || '',
       })
+      return
+    }
+    if (document?.generatedHtml) {
+      const openKey = String(document?.id || document?.generatedFileName || 'generated-document').trim()
+      try {
+        setError('')
+        setOpeningDocumentPath(openKey)
+        const blob = new Blob([String(document.generatedHtml)], { type: 'text/html;charset=utf-8' })
+        const objectUrl = URL.createObjectURL(blob)
+        window.open(objectUrl, '_blank', 'noopener,noreferrer')
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      } catch (openError) {
+        setError(openError.message || 'Unable to open this document right now.')
+      } finally {
+        setOpeningDocumentPath('')
+      }
       return
     }
     if (!document?.file_path && !document?.url) {
@@ -9802,15 +9761,41 @@ function ClientPortal() {
       activeSellingContext?.mandatePacket ||
       portal?.mandate?.packet,
   )
+  const sellerStageProgressKey = normalizeSellerPortalKey(sellerStageMeta.currentStageKey || sellerStageMeta?.currentStage?.key)
+  const sellerStagesAtOrAfterMandate = [
+    'mandate_signed',
+    'listing_created',
+    'listing_live',
+    'listed',
+    'documents_submitted',
+    'documents_complete',
+    'offers',
+    'offer_accepted',
+    'transfer',
+    'registered',
+    'registration',
+  ]
+  const sellerStagesAtOrAfterListing = [
+    'listing_created',
+    'listing_live',
+    'listed',
+    'documents_submitted',
+    'documents_complete',
+    'offers',
+    'offer_accepted',
+    'transfer',
+    'registered',
+    'registration',
+  ]
   const hasMandateSigned = Boolean(
-    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+    sellerStagesAtOrAfterMandate.includes(sellerStageProgressKey) ||
       ['signed', 'fully_signed', 'completed', 'uploaded_signed'].includes(normalizeSellerPortalKey(mandatePacketState)) ||
       mandatePacketFinalSignedAvailable ||
       activeSellingContext?.mandatePacket?.finalSignedAccess?.available === true ||
       portal?.mandate?.packet?.finalSignedAccess?.available === true,
   )
   const hasListingCreated = Boolean(
-    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+    sellerStagesAtOrAfterListing.includes(sellerStageProgressKey) ||
       sellerVisibleListingLinks.length ||
       normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active'),
   )
@@ -10071,18 +10056,20 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
-  const sellerMobileStageKey = normalizeSellerPortalKey(sellerStageMeta?.currentStageKey || sellerStageMeta?.currentStage?.key)
-  const sellerMobileStageIndexByKey = {
-    mandate_signed: 1,
-    listed: 2,
-    offers: 3,
-    offer_accepted: 4,
-    transfer: 5,
-    registered: 6,
-  }
+  const sellerMobileResolvedIndex = resolveSellerMobileJourneyIndex(
+    sharedSellerPortalJourney?.currentStage?.key,
+    sharedSellerPortalJourney?.stageMeta?.currentStage?.key,
+    sharedSellerPortalJourney?.stageMeta?.currentStageKey,
+    sellerStageMeta?.currentStageKey,
+    sellerStageMeta?.currentStage?.key,
+    sellerListingProgressModel?.currentKey,
+    sellerSaleProgressModel?.isStarted ? sellerSaleProgressModel?.currentKey : '',
+    mainStage,
+  )
   const sellerMobileCurrentIndex = Math.max(
     !hasSellerOnboardingSubmitted ? 0 : 1,
-    sellerMobileStageIndexByKey[sellerMobileStageKey] ?? 0,
+    sellerMobileResolvedIndex ??
+      (activeSellerOfferCount > 0 ? 3 : hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
   )
   const sellerMobileJourneyStages = [
     {
@@ -10103,9 +10090,9 @@ function ClientPortal() {
     },
     {
       key: 'listing',
-      label: 'Listing live',
+      label: 'Listing Created',
       description: hasListingCreated
-        ? 'Your property listing is active and buyer interest is being tracked.'
+        ? 'Your property listing has been created and buyer interest is being tracked.'
         : 'Your agent will activate the listing once the mandate and listing pack are ready.',
       owner: sellerAgentName || sellerAgencyName,
     },
@@ -10586,6 +10573,7 @@ function ClientPortal() {
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
             activeSection={activeSection}
+            documentCenter={workspaceData?.documentCenter || {}}
             sellerAgencyName={sellerAgencyName}
             sellerAgencyLogoUrl={sellerAgencyLogoUrl}
             sellerPropertyTitle={sellerPropertyTitle}
@@ -10606,6 +10594,7 @@ function ClientPortal() {
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
             onUploadSellerDocument={handleUploadRequiredDocument}
+            onUploadDocumentCentre={handleDocumentCentreUpload}
             onOpenSellerDocument={handleOpenPortalDocument}
           />
         </div>
