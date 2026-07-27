@@ -54,7 +54,6 @@ import {
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
-import { fetchDocumentExperienceRuntimeRolloutAccess } from '../services/documentExperienceRuntimeRolloutService'
 import { recordPerformanceMetric } from '../services/observability/performanceMetrics'
 
 function normalizeText(value) {
@@ -2387,7 +2386,6 @@ export default function LegalDocumentWorkspacePage() {
   const [preferredTransferAttorneysError, setPreferredTransferAttorneysError] = useState('')
   const [selectedTransferAttorneyId, setSelectedTransferAttorneyId] = useState('')
   const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
-  const [runtimeRolloutAccess, setRuntimeRolloutAccess] = useState({ organisationId: '', decision: null })
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
   const hydratedRouteContextKeyRef = useRef('')
@@ -2419,19 +2417,6 @@ export default function LegalDocumentWorkspacePage() {
   const documentStartSourceMode = normalizeKey(searchParams.get('sourceMode'))
   const documentStartEntryPoint = normalizeKey(searchParams.get('documentStart'))
 
-  useEffect(() => {
-    if (loadingContext) return undefined
-    let active = true
-    const scopedOrganisationId = normalizeText(organisationId)
-    fetchDocumentExperienceRuntimeRolloutAccess({ organisationId: scopedOrganisationId })
-      .then((decision) => {
-        if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision })
-      })
-      .catch(() => {
-        if (active) setRuntimeRolloutAccess({ organisationId: scopedOrganisationId, decision: { allowed: false, title: 'Document rollout unavailable', message: 'The runtime rollout check could not be completed.', solution: { phases: [{ id: 'N6.1', action: 'Retry after the rollout service is restored.' }] } } })
-      })
-    return () => { active = false }
-  }, [loadingContext, organisationId])
   const documentStartLegalScenario = useMemo(
     () => readDocumentStartLegalScenarioParams(searchParams, packetType),
     [packetType, searchParams],
@@ -4466,7 +4451,6 @@ export default function LegalDocumentWorkspacePage() {
     resolveCurrentStatus,
     routeListingId,
     syncLeadMandateState,
-    transactionReference,
     validatedRoutePacketId,
     organisationId,
     effectiveMandateDraft,
@@ -4512,30 +4496,6 @@ export default function LegalDocumentWorkspacePage() {
             </Button>
           </div>
         </div>
-      </section>
-    )
-  }
-
-  const rolloutScopeMatches = runtimeRolloutAccess.organisationId === normalizeText(organisationId)
-  if (!rolloutScopeMatches || !runtimeRolloutAccess.decision) {
-    return (
-      <section className="flex min-h-[420px] items-center justify-center rounded-[18px] border border-[#dce6f2] bg-white text-sm font-semibold text-[#60758d]">
-        Checking document rollout access...
-      </section>
-    )
-  }
-
-  if (runtimeRolloutAccess.decision?.allowed !== true) {
-    const rolloutDecision = runtimeRolloutAccess.decision
-    return (
-      <section className="rounded-[20px] border border-[#f0d8aa] bg-[#fffaf0] p-6" data-testid="document-runtime-rollout-blocked">
-        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.08em] text-[#8a5a12]"><AlertCircle size={16} /> Controlled document rollout</p>
-        <h1 className="mt-2 text-2xl font-semibold text-[#142132]">{rolloutDecision.title || 'Document workspace temporarily unavailable'}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6b7d93]">{rolloutDecision.message}</p>
-        <ol className="mt-4 space-y-2 text-sm text-[#52677f]">
-          {(rolloutDecision.solution?.phases || []).map((phase) => <li key={phase.id}><span className="font-semibold">{phase.id}</span> {phase.action}</li>)}
-        </ol>
-        <Button type="button" variant="secondary" className="mt-5" onClick={handleBack}><ArrowLeft size={14} /> Back</Button>
       </section>
     )
   }
