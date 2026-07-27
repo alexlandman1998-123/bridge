@@ -12,6 +12,8 @@ import { inferLeadCategoryFromRecord, inferLeadCategoryFromSource, normalizeLead
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ACTIVE_LEAD_BLOCKLIST = ['converted', 'lost', 'archived', 'closed', 'dead']
+const ACTIVE_LISTING_INTEREST_BLOCKLIST = ['dismissed']
+const REVIEWABLE_DUPLICATE_INBOUND_ENQUIRY_ERROR = 'Possible duplicate inbound enquiry: same buyer contact already has an active lead for this listing. Review before merging or ignoring.'
 
 export const CANONICAL_LEAD_SOURCES = [
   'Property24',
@@ -283,7 +285,7 @@ async function findExistingLead(client, organisationId, contactId) {
   if (!contactId) return null
   const { data, error } = await client
     .from('leads')
-    .select('lead_id, organisation_id, assigned_agent_id, assigned_agent_email, assigned_user_id, branch_id, contact_id, lead_source, stage, status, priority, budget, area_interest, property_interest, listing_id, notes, created_at, updated_at')
+    .select('lead_id, organisation_id, assigned_agent_id, assigned_agent_email, assigned_user_id, branch_id, contact_id, lead_category, lead_source, stage, status, priority, budget, area_interest, property_interest, listing_id, source_reference_id, notes, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .eq('contact_id', contactId)
     .order('updated_at', { ascending: false })
@@ -293,6 +295,81 @@ async function findExistingLead(client, organisationId, contactId) {
     throw error
   }
   return (Array.isArray(data) ? data : []).find(isActiveLead) || null
+}
+
+async function findExistingLeadListingInterest(client, { organisationId = '', leadId = '', listingId = '' } = {}) {
+  if (!organisationId || !leadId || !listingId) return null
+  const { data, error } = await client
+    .from('lead_listing_interests')
+    .select('interest_id, organisation_id, lead_id, contact_id, listing_id, source, status, is_original_enquiry, created_at, updated_at')
+    .eq('organisation_id', organisationId)
+    .eq('lead_id', leadId)
+    .eq('listing_id', listingId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    if (isRecoverableReadError(error, 'lead_listing_interests')) return null
+    throw error
+  }
+  return data || null
+}
+
+async function findExistingLeadListingIngestionLog(client, { organisationId = '', leadId = '', contactId = '', listingId = '' } = {}) {
+  if (!organisationId || !leadId || !listingId) return null
+  let query = client
+    .from('lead_ingestion_logs')
+    .select('log_id, status, review_status, lead_id, contact_id, listing_id, created_at, processed_at')
+    .eq('organisation_id', organisationId)
+    .eq('lead_id', leadId)
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (contactId) query = query.eq('contact_id', contactId)
+  const { data, error } = await query.maybeSingle()
+  if (error) {
+    if (isRecoverableReadError(error, 'lead_ingestion_logs')) return null
+    throw error
+  }
+  return data || null
+}
+
+function isActiveListingInterest(row = {}) {
+  const safeRow = row || {}
+  const status = normalizeLower(safeRow.status)
+  return Boolean(safeRow.interest_id || safeRow.interestId) && !ACTIVE_LISTING_INTEREST_BLOCKLIST.includes(status)
+}
+
+function buildInboundEnquiryDuplicateReview({ enquiry = {}, existingLead = null, listing = null, existingInterest = null, previousLog = null } = {}) {
+  const leadId = normalizeText(existingLead?.lead_id || existingLead?.leadId)
+  const listingId = normalizeText(listing?.id || listing?.listing_id || listing?.listingId)
+  const isBuyerLead = inferLeadCategoryFromRecord(existingLead || enquiry.lead || {}, enquiry.lead?.leadCategory) === 'buyer'
+  const leadListingId = normalizeText(existingLead?.listing_id || existingLead?.listingId)
+  const hasSameLegacyListing = Boolean(leadId && listingId && leadListingId && leadListingId === listingId)
+  const hasSameActiveInterest = isActiveListingInterest(existingInterest)
+  if (!isBuyerLead || !leadId || !listingId || (!hasSameLegacyListing && !hasSameActiveInterest)) return null
+  return {
+    status: 'duplicate',
+    reviewStatus: 'needs_review',
+    error: REVIEWABLE_DUPLICATE_INBOUND_ENQUIRY_ERROR,
+    leadId,
+    contactId: normalizeText(existingLead?.contact_id || existingLead?.contactId || existingInterest?.contact_id || existingInterest?.contactId),
+    listingId,
+    duplicateOfLogId: normalizeText(previousLog?.log_id || previousLog?.logId),
+    reason: hasSameActiveInterest ? 'existing_active_listing_interest' : 'existing_active_lead_listing',
+  }
+}
+
+async function findReviewableInboundDuplicate(client, { enquiry, existingLead = null, listing = null } = {}) {
+  if (!existingLead || !listing?.id) return null
+  const leadId = normalizeText(existingLead.lead_id || existingLead.leadId)
+  const contactId = normalizeText(existingLead.contact_id || existingLead.contactId)
+  const listingId = normalizeText(listing.id)
+  const [existingInterest, previousLog] = await Promise.all([
+    findExistingLeadListingInterest(client, { organisationId: enquiry.organisationId, leadId, listingId }),
+    findExistingLeadListingIngestionLog(client, { organisationId: enquiry.organisationId, leadId, contactId, listingId }),
+  ])
+  return buildInboundEnquiryDuplicateReview({ enquiry, existingLead, listing, existingInterest, previousLog })
 }
 
 async function resolveListing(client, enquiry) {
@@ -391,10 +468,10 @@ async function maybeUpdateContact(organisationId, contact, enquiry) {
   if (Object.keys(patch).length) await updateAgencyCrmContactRecord(organisationId, contact.contact_id, patch)
 }
 
-async function createOrReuseLead({ enquiry, contact, listing, actor }) {
+async function createOrReuseLead({ enquiry, contact, listing, actor, existingLead = null }) {
   const client = requireClient()
-  const existingLead = contact?.contact_id ? await findExistingLead(client, enquiry.organisationId, contact.contact_id) : null
-  if (existingLead) return { lead: mapLeadRow(existingLead), reusedLead: true }
+  const activeLead = existingLead || (contact?.contact_id ? await findExistingLead(client, enquiry.organisationId, contact.contact_id) : null)
+  if (activeLead) return { lead: mapLeadRow(activeLead), reusedLead: true }
 
   const contactId = contact?.contact_id || enquiry.contact.contactId || createUuid()
   const assignedAgent = buildAssignedAgent(enquiry, listing)
@@ -458,7 +535,7 @@ export async function createOrUpdateLeadFromEnquiry(
   }
 
   const duplicateLog = await getExistingLog(client, enquiry)
-  if (duplicateLog?.status === 'processed' || duplicateLog?.status === 'duplicate') {
+  if (['assigned', 'processed', 'duplicate'].includes(normalizeLower(duplicateLog?.status))) {
     const log = await createIngestionLog(client, enquiry, {
       status: 'duplicate',
       leadId: duplicateLog.lead_id,
@@ -486,7 +563,26 @@ export async function createOrUpdateLeadFromEnquiry(
       resolveListing(client, enquiry),
     ])
     if (existingContact) await maybeUpdateContact(enquiry.organisationId, existingContact, enquiry)
-    const { lead, reusedLead } = await createOrReuseLead({ enquiry, contact: existingContact, listing, actor })
+    const existingLead = existingContact?.contact_id ? await findExistingLead(client, enquiry.organisationId, existingContact.contact_id) : null
+    const duplicateReview = await findReviewableInboundDuplicate(client, { enquiry, existingLead, listing })
+    if (duplicateReview) {
+      const log = await createIngestionLog(client, enquiry, duplicateReview)
+      return {
+        ok: true,
+        status: 'duplicate',
+        source: enquiry.source,
+        contactId: duplicateReview.contactId,
+        leadId: duplicateReview.leadId,
+        listingId: duplicateReview.listingId,
+        log,
+        reviewStatus: duplicateReview.reviewStatus,
+        duplicateReviewRequired: true,
+        duplicateReason: duplicateReview.reason,
+        warning: duplicateReview.error,
+      }
+    }
+
+    const { lead, reusedLead } = await createOrReuseLead({ enquiry, contact: existingContact, listing, actor, existingLead })
     const contactId = existingContact?.contact_id || lead.contactId
     const existingRequirements = await listLeadRequirements({ organisationId: enquiry.organisationId, leadId: lead.leadId }).catch(() => [])
     const isBuyerLead = inferLeadCategoryFromRecord(lead, enquiry.lead.leadCategory) === 'buyer'
@@ -633,6 +729,7 @@ export function ingestGenericLead(payload = {}, options = {}) {
 
 export const __leadIngestionServiceTestUtils = {
   buildRequirementPayload,
+  buildInboundEnquiryDuplicateReview,
   isActiveLead,
   normalizeEnquiryPayload,
   normalizeLeadSource,

@@ -1,4 +1,5 @@
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory.js'
+import { resolveBuyerLeadLifecycle } from '../core/leads/buyerLeadLifecycleContract.js'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -28,7 +29,13 @@ function resolveLeadCategory(lead = {}) {
   return inferLeadCategoryFromRecord(lead, 'buyer')
 }
 
+function resolveBuyerLifecycleForLead(lead = {}) {
+  return resolveLeadCategory(lead) === 'buyer' ? resolveBuyerLeadLifecycle(lead) : null
+}
+
 function resolveFunnelStage(lead = {}) {
+  const buyerLifecycle = resolveBuyerLifecycleForLead(lead)
+  if (buyerLifecycle) return buyerLifecycle.funnelStage
   const normalizedStage = normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
   if (normalizedStage === 'lead') return 'Lead'
   const stage = normalizeText(lead?.stage || lead?.status).toLowerCase()
@@ -48,6 +55,11 @@ function resolveFunnelStage(lead = {}) {
 }
 
 function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
+  const buyerLifecycle = resolveBuyerLifecycleForLead(lead)
+  if (buyerLifecycle) {
+    if (linkedDeal) return 'deal_otp'
+    return buyerLifecycle.columnId
+  }
   const stage = normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
   const status = normalizeLeadLifecycleStageKey(lead?.status)
   const combined = `${stage} ${status}`
@@ -164,7 +176,9 @@ function resolveReportingFlags(label = '') {
 export function resolveLeadLifecyclePresentation(lead = {}, options = {}) {
   const rawStage = normalizeText(options?.stage || lead?.stage || lead?.status)
   const stageKey = normalizeLeadLifecycleStageKey(rawStage)
-  const funnelStage = resolveFunnelStage({ ...lead, stage: rawStage || lead?.stage, status: lead?.status })
+  const scopedLead = { ...lead, stage: rawStage || lead?.stage, status: lead?.status }
+  const buyerLifecycle = resolveBuyerLifecycleForLead(scopedLead)
+  const funnelStage = buyerLifecycle?.funnelStage || resolveFunnelStage(scopedLead)
   const label = stageKey === 'lead'
     ? 'Lead'
     : normalizeText(options?.label || rawStage || funnelStage || 'Lead') || titleCase(stageKey)
@@ -172,6 +186,9 @@ export function resolveLeadLifecyclePresentation(lead = {}, options = {}) {
   return {
     key: stageKey,
     label,
+    lifecycleStage: buyerLifecycle?.stage || stageKey,
+    lifecycleStatus: buyerLifecycle?.lifecycleStatus || '',
+    lifecycleOrder: buyerLifecycle?.order || 0,
     funnelStage,
     columnId: resolveColumnId(lead, options),
     category: resolveLeadCategory(lead),

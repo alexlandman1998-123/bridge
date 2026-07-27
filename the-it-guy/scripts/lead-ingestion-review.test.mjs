@@ -127,6 +127,14 @@ try {
     status: 'duplicate',
     error: 'Duplicate payload external reference.',
   })
+  const reviewableDuplicate = normalizeLeadIngestionLog({
+    ...rawLog,
+    log_id: '77777777-7777-4777-8777-777777777777',
+    status: 'duplicate',
+    review_status: 'needs_review',
+    listing_id: '55555555-5555-4555-8555-555555555555',
+    error: 'Possible duplicate inbound enquiry: same buyer contact already has an active lead for this listing. Review before merging or ignoring.',
+  })
   const processed = normalizeLeadIngestionLog({
     ...rawLog,
     log_id: '44444444-4444-4444-8444-444444444444',
@@ -142,8 +150,12 @@ try {
     [normalized.logId, duplicate.logId],
   )
   assert.deepEqual(
-    filterLeadIngestionLogsClientSide([normalized, duplicate, processed], { issue: 'duplicate' }).map((row) => row.logId),
-    [duplicate.logId],
+    filterLeadIngestionLogsClientSide([normalized, duplicate, reviewableDuplicate, processed], { issue: 'duplicate' }).map((row) => row.logId),
+    [duplicate.logId, reviewableDuplicate.logId],
+  )
+  assert.deepEqual(
+    filterLeadIngestionLogsClientSide([normalized, duplicate, reviewableDuplicate, processed], { issue: 'needs_review' }).map((row) => row.logId),
+    [normalized.logId, reviewableDuplicate.logId],
   )
   assert.deepEqual(
     filterLeadIngestionLogsClientSide([normalized, duplicate, processed], { issue: 'unresolved_listing' }).map((row) => row.logId),

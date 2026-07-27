@@ -147,13 +147,13 @@ const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 
 assert.match(appSource, /SettingsLeadCapturePage/)
 assert.match(appSource, /path="lead-capture"/)
 
-const settingsLayoutSource = await fs.readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
-assert.match(settingsLayoutSource, /\/settings\/lead-capture/)
-assert.match(settingsLayoutSource, /Lead Capture/)
+const settingsNavigationSource = await fs.readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
+assert.match(settingsNavigationSource, /\/settings\/lead-capture/)
+assert.match(settingsNavigationSource, /Lead Capture/)
 
 const settingsLandingSource = await fs.readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
-assert.match(settingsLandingSource, /\/settings\/lead-capture/)
-assert.match(settingsLandingSource, /Manage forwarding addresses, agent activation, and inbound enquiry health/)
+assert.match(settingsLandingSource, /buildVisibleSettingsGroups/)
+assert.match(settingsNavigationSource, /Inbound addresses, routing health, and agent activation/)
 
 const leadCapturePageSource = await fs.readFile(new URL('../src/pages/settings/SettingsLeadCapturePage.jsx', import.meta.url), 'utf8')
 for (const copy of [

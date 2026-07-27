@@ -32,6 +32,16 @@ const leads = [
     createdAt: '2026-05-03T08:00:00.000Z',
   },
   {
+    leadId: 'lead-interest-canonical',
+    contactId: 'contact-five',
+    leadSource: 'Website',
+    leadCategory: 'buyer',
+    stage: 'Qualified',
+    status: 'Qualified',
+    listingId: 'legacy-listing',
+    createdAt: '2026-05-03T09:00:00.000Z',
+  },
+  {
     leadId: 'seller-listing-link',
     contactId: 'contact-four',
     leadSource: 'Canvassing',
@@ -58,6 +68,7 @@ const contacts = [
   { contactId: 'contact-two', firstName: 'Buyer', lastName: 'Viewing', phone: '+27820000000', email: 'buyer@example.test' },
   { contactId: 'contact-three', firstName: 'Converted', lastName: 'Client', phone: '+27821111111', email: 'converted@example.test' },
   { contactId: 'contact-four', firstName: 'Seller', lastName: 'Linked', phone: '+27822222222', email: 'seller@example.test' },
+  { contactId: 'contact-five', firstName: 'Canonical', lastName: 'Buyer', phone: '+27823333333', email: 'canonical@example.test' },
 ]
 
 const leadActivities = [
@@ -90,6 +101,8 @@ const transactions = [
 
 const listings = [
   { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', title: 'Sandton Sky Villa', propertyAddress: '12 Alice Lane', suburb: 'Sandton' },
+  { id: 'legacy-listing', originating_crm_lead_id: 'lead-interest-canonical', listing_status: 'active', title: 'Legacy lead listing', propertyAddress: '1 Old Road', suburb: 'Oldtown' },
+  { id: 'canonical-interest-listing', listing_status: 'active', title: 'Canonical interest listing', propertyAddress: '2 New Road', suburb: 'Newtown' },
   { id: 'listing-two', listing_status: 'seller_lead', title: 'Claremont Family Home', propertyAddress: '8 Protea Road', suburb: 'Claremont', assigned_agent_id: 'agent-seller-id', assigned_agent_email: 'seller.agent@example.test' },
   {
     id: 'listing-submitted',
@@ -113,6 +126,7 @@ const listings = [
 const listingInterests = [
   { interest_id: 'interest-one', lead_id: 'lead-contact-only', listing_id: 'missing-listing', status: 'interested', source: 'manual' },
   { interest_id: 'interest-two', lead_id: 'lead-viewing-offer', listing_id: 'listing-one', status: 'sent', source: 'manual' },
+  { interest_id: 'interest-three', lead_id: 'lead-interest-canonical', listing_id: 'canonical-interest-listing', status: 'shortlisted', source: 'manual' },
 ]
 
 const requirements = [
@@ -146,7 +160,7 @@ try {
 
   const rows = buildAgentLeadRows({ leads, contacts, leadActivities, tasks, appointments, offers, transactions, listings, listingInterests, requirements })
 
-  assert.equal(rows.length, 5, 'all leads should remain visible')
+  assert.equal(rows.length, 6, 'all leads should remain visible')
 
   const contactOnly = rows.find((row) => row.leadId === 'lead-contact-only')
   assert.equal(contactOnly.name, 'Missing Details')
@@ -175,6 +189,13 @@ try {
   assert.equal(converted.appointmentCount, 1, 'contact-linked appointments should resolve')
   assert.equal(converted.transactionCount, 1)
 
+  const canonicalBuyerLink = rows.find((row) => row.leadId === 'lead-interest-canonical')
+  assert.equal(canonicalBuyerLink.listingId, 'canonical-interest-listing', 'buyer lead property context should come from lead_listing_interests before legacy lead.listing_id')
+  assert.equal(canonicalBuyerLink.privateListingId, 'canonical-interest-listing')
+  assert.equal(canonicalBuyerLink.listings.length, 1, 'buyer lead listings should be scoped to canonical listing interests')
+  assert.equal(canonicalBuyerLink.listings[0].id, 'canonical-interest-listing')
+  assert.equal(canonicalBuyerLink.listings.some((listing) => listing.id === 'legacy-listing'), false, 'stale lead.listing_id should not remain the buyer canonical property link')
+
   const sellerLinkedByListingId = rows.find((row) => row.leadId === 'seller-listing-link')
   assert.equal(sellerLinkedByListingId.listings.length, 1, 'seller leads should keep listings linked by listing id')
   assert.equal(sellerLinkedByListingId.listings[0].id, 'listing-two')
@@ -193,13 +214,14 @@ try {
 
   assert.equal(filterAgentLeadRows(rows, { search: 'buyer@example.test' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { search: 'Sandton Sky Villa' }).length, 1)
+  assert.equal(filterAgentLeadRows(rows, { search: 'Canonical interest listing' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { search: 'Call missing details lead' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { search: 'Reigerpark' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { search: 'Manual Entry' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { stage: 'Converted to Transaction' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { source: 'Unknown' }).length, 1)
   assert.equal(filterAgentLeadRows(rows, { agent: 'Alex Agent' }).length, 1)
-  assert.equal(filterAgentLeadRows(rows, { createdFrom: '2026-05-02', createdTo: '2026-05-03' }).length, 2)
+  assert.equal(filterAgentLeadRows(rows, { createdFrom: '2026-05-02', createdTo: '2026-05-03' }).length, 3)
 
   const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
   const privateListingServiceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
@@ -223,6 +245,17 @@ try {
   }
   assert.ok(workspaceSource.includes('function PropertyMatchWorkflowPanel'), 'Property Match should explain the enquiry-to-suggestions workflow')
   assert.ok(workspaceSource.includes('function EnquiryPropertyPanel'), 'Property Match should surface the original enquiry property before alternatives')
+  assert.ok(workspaceSource.includes('function getBuyerQualificationChecklist'), 'buyer workspace should derive a qualification checklist from live lead and requirement data')
+  assert.ok(workspaceSource.includes('function BuyerQualificationChecklistCard'), 'buyer overview should render a qualification checklist card')
+  assert.ok(workspaceSource.includes('Qualification checklist'), 'buyer qualification checklist should be visible in the lead workspace')
+  assert.ok(workspaceSource.includes('Current-property dependency'), 'buyer qualification checklist should track sale dependency risk')
+  assert.ok(workspaceSource.includes('Match consent'), 'buyer qualification checklist should include consent before sending matches')
+  assert.ok(workspaceSource.includes('Buyer consented to receive property matches'), 'buyer qualification snapshot should expose the match consent field')
+  assert.ok(workspaceSource.includes('function getBuyerWorkspaceCommand'), 'buyer workspace should resolve a primary command')
+  assert.ok(workspaceSource.includes('BUYER_LEAD_LIFECYCLE_STAGES'), 'buyer workspace primary command should derive from canonical buyer lifecycle stages')
+  assert.ok(workspaceSource.includes('BUYER_LEAD_LIFECYCLE_STATUSES'), 'buyer workspace primary command should use canonical buyer lifecycle status')
+  assert.ok(workspaceSource.includes('const primaryCommand = getBuyerWorkspaceCommand(row)'), 'buyer progress current focus should use the lifecycle-derived primary command')
+  assert.ok(workspaceSource.includes('Lifecycle: {primaryCommand.lifecycle.label}'), 'buyer primary action should expose the lifecycle state driving it')
   for (const sectionTitle of ['Search Brief', 'Smart Suggestions', 'Shortlist / Interested Listings']) {
     assert.ok(workspaceSource.includes(`title="${sectionTitle}"`), `Property Match should include ${sectionTitle}`)
   }

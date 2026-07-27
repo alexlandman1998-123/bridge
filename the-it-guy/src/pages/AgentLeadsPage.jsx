@@ -193,6 +193,10 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import {
+  BUYER_LEAD_LIFECYCLE_STAGES,
+  BUYER_LEAD_LIFECYCLE_STATUSES,
+} from '../core/leads/buyerLeadLifecycleContract'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import {
   buildSellerRequirementProfile,
@@ -564,7 +568,7 @@ function makeRequirementDraft(requirement = null, lead = null) {
     currentPropertyStatus: source.currentPropertyStatus || source.current_property_status || source.currentProperty || source.current_property || lead?.currentPropertyStatus || lead?.current_property_status || lead?.currentProperty || lead?.current_property || readQualificationNoteValue(notes, 'Current property') || '',
     needsToSell: normalizeQualificationBoolean(source.needsToSell ?? source.needs_to_sell ?? lead?.needsToSell ?? lead?.needs_to_sell ?? readQualificationNoteValue(notes, 'Needs to sell')),
     communicationPreference: source.communicationPreference || '',
-    consentToReceiveMatches: Boolean(source.consentToReceiveMatches),
+    consentToReceiveMatches: Boolean(source.consentToReceiveMatches || source.consent_to_receive_matches),
     notes,
     status: source.status || 'active',
     isPrimary: Boolean(source.isPrimary),
@@ -1825,6 +1829,122 @@ function getBuyerQualificationState(row = {}) {
   }
 }
 
+function getBuyerQualificationChecklist(row = {}) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  const contactReady = Boolean(normalizeText(row.email || row.phone || row.contact?.email || row.contact?.phone))
+  const firstContacted = Boolean(row.firstContactedAt || row.first_contacted_at)
+  const hasBudget = getBuyerBudgetLabel(row, requirement) !== '—' || Boolean(getBuyerEnquiryPricePoint(row))
+  const hasArea = getBuyerAreaLabel(row, requirement) !== '—'
+  const hasPropertyType = getBuyerPropertyTypeLabel(row, requirement) !== '—'
+  const financeKnown = isBuyerFinancePositionKnown(row, requirement)
+  const timelineLabel = getBuyerTimelineLabel(requirement)
+  const urgencyLabel = getBuyerUrgencyLabel(row, requirement)
+  const timingDetail = [timelineLabel, urgencyLabel].filter((value) => value && value !== '—').join(' · ')
+  const timelineKnown = Boolean(timingDetail)
+  const currentPropertyKnown = getBuyerCurrentPropertyLabel(row, requirement) !== '—' || getBuyerNeedsToSellLabel(row, requirement) !== '—'
+  const canReceiveMatches = Boolean(requirement.consentToReceiveMatches || requirement.consent_to_receive_matches || row.consentToReceiveMatches || row.consent_to_receive_matches)
+  const propertyContext = getBuyerPropertyReadiness(row)
+  const qualification = getBuyerQualificationState(row)
+  const items = [
+    {
+      key: 'contact',
+      label: 'Contact route',
+      done: contactReady,
+      detail: contactReady ? 'Phone or email captured.' : 'Add a phone number or email.',
+      actionId: 'qualification',
+      required: true,
+    },
+    {
+      key: 'first_contact',
+      label: 'First contact',
+      done: firstContacted,
+      detail: firstContacted ? formatDate(row.firstContactedAt || row.first_contacted_at, 'Reached out') : 'Mark the first human contact.',
+      actionId: 'tasks',
+      required: true,
+    },
+    {
+      key: 'budget',
+      label: 'Budget captured',
+      done: hasBudget,
+      detail: hasBudget ? getBuyerBudgetLabel(row, requirement) : 'Capture min or max budget.',
+      actionId: 'qualification',
+      required: true,
+    },
+    {
+      key: 'search_brief',
+      label: 'Search brief',
+      done: hasArea && hasPropertyType,
+      detail: hasArea && hasPropertyType
+        ? [getBuyerAreaLabel(row, requirement), getBuyerPropertyTypeLabel(row, requirement)].filter((value) => value !== '—').join(' · ')
+        : 'Capture location and property type.',
+      actionId: 'qualification',
+      required: true,
+    },
+    {
+      key: 'finance',
+      label: 'Finance position',
+      done: financeKnown,
+      detail: financeKnown ? getBuyerFinancePositionLabel(row, requirement) : 'Confirm cash, bond, or pre-approval state.',
+      actionId: 'qualification',
+      required: true,
+    },
+    {
+      key: 'timing',
+      label: 'Timing and urgency',
+      done: timelineKnown,
+      detail: timelineKnown ? timingDetail : 'Capture urgency or buying timeline.',
+      actionId: 'qualification',
+      required: false,
+    },
+    {
+      key: 'current_property',
+      label: 'Current-property dependency',
+      done: currentPropertyKnown,
+      detail: currentPropertyKnown ? [getBuyerCurrentPropertyLabel(row, requirement), getBuyerNeedsToSellLabel(row, requirement)].filter((value) => value !== '—').join(' · ') : 'Confirm whether the buyer must sell first.',
+      actionId: 'qualification',
+      required: false,
+    },
+    {
+      key: 'match_consent',
+      label: 'Match consent',
+      done: canReceiveMatches,
+      detail: canReceiveMatches ? 'Buyer can receive property matches.' : 'Confirm consent before sending matches.',
+      actionId: 'qualification',
+      required: false,
+    },
+    {
+      key: 'property_context',
+      label: 'Property context',
+      done: propertyContext.propertyCount > 0,
+      detail: propertyContext.propertyCount ? `${propertyContext.propertyCount} linked or matched propert${propertyContext.propertyCount === 1 ? 'y' : 'ies'}.` : 'Link the enquiry property or shortlist a match.',
+      actionId: 'property_match',
+      required: false,
+    },
+    {
+      key: 'qualified',
+      label: 'Qualification confirmed',
+      done: qualification.qualified,
+      detail: qualification.helper,
+      actionId: 'qualification',
+      required: true,
+    },
+  ]
+  const completed = items.filter((item) => item.done).length
+  const required = items.filter((item) => item.required)
+  const requiredCompleted = required.filter((item) => item.done).length
+  const percent = Math.round((completed / Math.max(items.length, 1)) * 100)
+  return {
+    items,
+    completed,
+    total: items.length,
+    requiredCompleted,
+    requiredTotal: required.length,
+    percent,
+    ready: requiredCompleted === required.length,
+    next: items.find((item) => !item.done && item.required) || items.find((item) => !item.done) || null,
+  }
+}
+
 function shouldShowBondReferralPrompt(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
   const financeHaystack = normalizeText(
     `${requirement.financeType || requirement.finance_type || ''} ${requirement.financeStatus || requirement.finance_status || ''} ${row.financeType || row.finance_type || ''} ${row.financeStatus || row.finance_status || ''}`,
@@ -2020,23 +2140,19 @@ function getBuyerHumanTimelineItems(row = {}, workspace = {}, sourceInfo = {}) {
     .slice(0, 6)
 }
 
-function getBuyerWorkspaceCommand(row = {}) {
-  const deal = getBuyerDealSnapshot(row)
-  const steps = getBuyerOutreachSteps(row)
-  const finance = getBuyerFinanceReadiness(row)
-  const documents = getBuyerDocumentReadiness(row)
-  const property = getBuyerPropertyReadiness(row)
-  const qualification = getBuyerQualificationState(row)
-  const nextStep = steps.find((step) => !step.done)
-  const viewingCompleted = Boolean(
-    hasManualBuyerViewingCompleted(row) ||
-    (deal.latestViewing &&
-      (String(deal.latestViewing.status || '').toLowerCase() === 'completed' || deal.latestViewing.completedAt || deal.latestViewing.completed_at))
-  )
+function withBuyerLifecycleCommand(lifecycle = {}, command = {}) {
+  return {
+    ...command,
+    lifecycle,
+    lifecycleStage: lifecycle.lifecycleStage || lifecycle.key || '',
+    lifecycleStatus: lifecycle.lifecycleStatus || '',
+  }
+}
 
+function getBuyerTransactionLifecycleCommand({ lifecycle, deal, documents }) {
   if (deal.latestTransaction) {
     if (deal.transactionStateLabel === 'Deal fell through') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: 'Deal fell through',
         copy: deal.transactionStateHelper,
         actionLabel: 'Open Offers',
@@ -2044,10 +2160,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Restart or close out'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.transactionStateLabel === 'Onboarding needs attention') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: 'Buyer onboarding needs attention',
         copy: deal.transactionStateHelper,
         actionLabel: 'Open Offers',
@@ -2055,10 +2171,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Buyer onboarding'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.transactionStateLabel === 'Signed OTP outstanding') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: 'Signed OTP is the blocker',
         copy: deal.transactionStateHelper,
         actionLabel: 'Open Transaction',
@@ -2066,10 +2182,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Signed OTP'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.transactionStateLabel === 'Buyer onboarding pending' || deal.transactionStateLabel === 'Buyer onboarding sent' || deal.transactionStateLabel === 'Onboarding complete') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: deal.transactionStateLabel,
         copy: deal.transactionStateHelper,
         actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Offers' : 'Open Transaction',
@@ -2077,9 +2193,9 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: deal.transactionStateTone,
         blockers: deal.transactionStateLabel === 'Buyer onboarding pending' ? ['Buyer onboarding'] : deal.transactionStateLabel === 'Buyer onboarding sent' ? ['Buyer response'] : ['Prepare OTP'],
         snapshot: deal,
-      }
+      })
     }
-    return {
+    return withBuyerLifecycleCommand(lifecycle, {
       title: deal.transactionStateLabel,
       copy: deal.transactionStateHelper,
       actionLabel: 'Open Transaction',
@@ -2087,11 +2203,39 @@ function getBuyerWorkspaceCommand(row = {}) {
       tone: deal.transactionStateTone,
       blockers: deal.transactionStateLabel === 'Signed OTP received' ? [] : ['Transaction follow-up'],
       snapshot: deal,
-    }
+    })
   }
 
-  if (deal.acceptedOffer) {
-    return {
+  if (lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.registered) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Registration is complete',
+      copy: 'The buyer journey is closed. Open the transaction for registration and post-transfer context.',
+      actionLabel: 'Open Transaction',
+      actionId: 'convert',
+      tone: 'green',
+      blockers: [],
+      snapshot: deal,
+    })
+  }
+
+  return withBuyerLifecycleCommand(lifecycle, {
+    title: lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.finance
+      ? 'Finance follow-up is the primary action'
+      : lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.transfer
+        ? 'Transfer follow-up is the primary action'
+        : 'Create or open the transaction',
+    copy: deal.transactionStateHelper || 'The lead lifecycle has moved beyond accepted offer, so the next action belongs in the transaction workspace.',
+    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Offers',
+    actionId: deal.latestTransaction ? 'convert' : 'offers',
+    tone: documents.percent < 50 && lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.finance ? 'amber' : 'blue',
+    blockers: deal.latestTransaction ? ['Transaction follow-up'] : ['Transaction workspace'],
+    snapshot: deal,
+  })
+}
+
+function getBuyerOfferLifecycleCommand({ lifecycle, deal }) {
+  if (lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.offerAccepted || deal.acceptedOffer) {
+    return withBuyerLifecycleCommand(lifecycle, {
       title: 'Accepted offer is ready for conversion',
       copy: deal.transactionStateHelper,
       actionLabel: 'Open Offers',
@@ -2099,12 +2243,12 @@ function getBuyerWorkspaceCommand(row = {}) {
       tone: 'amber',
       blockers: ['Transaction workspace'],
       snapshot: deal,
-    }
+    })
   }
 
   if (deal.latestOffer) {
     if (['Buyer withdrew offer', 'Offer expired', 'Offer rejected'].includes(deal.offerStateLabel)) {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2112,10 +2256,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Restart or close out'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.offerStateLabel === 'Offer link failed' || deal.offerStateLabel === 'Seller review failed') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2123,10 +2267,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Delivery retry'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.offerStateLabel === 'Agent review required') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: 'Buyer offer needs seller routing',
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2134,10 +2278,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'blue',
         blockers: ['Seller review'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.offerStateLabel === 'Offer link sent' || deal.offerStateLabel === 'Buyer reviewing offer') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2145,10 +2289,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: deal.offerStateTone,
         blockers: ['Buyer response'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.offerStateLabel === 'Seller review sent' || deal.offerStateLabel === 'Seller reviewing offer') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2156,10 +2300,10 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: deal.offerStateTone,
         blockers: ['Seller decision'],
         snapshot: deal,
-      }
+      })
     }
     if (deal.offerStateLabel === 'Counter-offer in play') {
-      return {
+      return withBuyerLifecycleCommand(lifecycle, {
         title: 'Counter-offer needs buyer feedback',
         copy: deal.offerStateHelper,
         actionLabel: 'Open Offers',
@@ -2167,12 +2311,72 @@ function getBuyerWorkspaceCommand(row = {}) {
         tone: 'amber',
         blockers: ['Buyer response'],
         snapshot: deal,
-      }
+      })
     }
   }
 
-  if (viewingCompleted) {
-    return {
+  return withBuyerLifecycleCommand(lifecycle, {
+    title: lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.offerDraft ? 'Prepare the buyer offer' : 'Offer follow-up is the primary action',
+    copy: deal.offerStateHelper || 'The lead lifecycle is in the offer lane. Review the offer state and move it to the next party.',
+    actionLabel: 'Open Offers',
+    actionId: 'offers',
+    tone: lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.negotiating ? 'amber' : 'blue',
+    blockers: lifecycle.lifecycleStage === BUYER_LEAD_LIFECYCLE_STAGES.negotiating ? ['Negotiation response'] : ['Offer workflow'],
+    snapshot: deal,
+  })
+}
+
+function getBuyerWorkspaceCommand(row = {}) {
+  const deal = getBuyerDealSnapshot(row)
+  const steps = getBuyerOutreachSteps(row)
+  const finance = getBuyerFinanceReadiness(row)
+  const documents = getBuyerDocumentReadiness(row)
+  const property = getBuyerPropertyReadiness(row)
+  const lifecycle = resolveLeadLifecyclePresentation({
+    ...row,
+    convertedTransactionId: getLeadLinkedTransactionId(row) || row.convertedTransactionId || row.converted_transaction_id,
+  })
+  const stage = lifecycle.lifecycleStage || lifecycle.key
+  const nextStep = steps.find((step) => !step.done)
+  const viewingCompleted = Boolean(
+    hasManualBuyerViewingCompleted(row) ||
+    (deal.latestViewing &&
+      (String(deal.latestViewing.status || '').toLowerCase() === 'completed' || deal.latestViewing.completedAt || deal.latestViewing.completed_at))
+  )
+
+  if (lifecycle.lifecycleStatus === BUYER_LEAD_LIFECYCLE_STATUSES.lost) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Lead is closed out',
+      copy: 'This buyer lifecycle is marked lost. Review the timeline before reopening or creating new follow-up.',
+      actionLabel: 'Review Timeline',
+      actionId: 'timeline',
+      tone: 'amber',
+      blockers: ['Closed lead'],
+      snapshot: deal,
+    })
+  }
+
+  if ([
+    BUYER_LEAD_LIFECYCLE_STAGES.onboarding,
+    BUYER_LEAD_LIFECYCLE_STAGES.transactionCreated,
+    BUYER_LEAD_LIFECYCLE_STAGES.finance,
+    BUYER_LEAD_LIFECYCLE_STAGES.transfer,
+    BUYER_LEAD_LIFECYCLE_STAGES.registered,
+  ].includes(stage)) {
+    return getBuyerTransactionLifecycleCommand({ lifecycle, deal, documents })
+  }
+
+  if ([
+    BUYER_LEAD_LIFECYCLE_STAGES.offerDraft,
+    BUYER_LEAD_LIFECYCLE_STAGES.offerSubmitted,
+    BUYER_LEAD_LIFECYCLE_STAGES.negotiating,
+    BUYER_LEAD_LIFECYCLE_STAGES.offerAccepted,
+  ].includes(stage)) {
+    return getBuyerOfferLifecycleCommand({ lifecycle, deal })
+  }
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.viewingCompleted || viewingCompleted) {
+    return withBuyerLifecycleCommand(lifecycle, {
       title: 'Viewing is done, lock the next move',
       copy: 'Capture the actual outcome now: send the offer link, book the second viewing, or close out the property cleanly.',
       actionLabel: 'Open Offers',
@@ -2180,42 +2384,94 @@ function getBuyerWorkspaceCommand(row = {}) {
       tone: 'blue',
       blockers: ['Viewing outcome'],
       snapshot: deal,
-    }
+    })
   }
 
-  if (!qualification.qualified && finance.score < 60) {
-    return {
-      title: 'Finance position needs confirmation',
-      copy: finance.helper,
-      actionLabel: 'Qualify Buyer',
-      actionId: 'requirements',
-      tone: 'amber',
-      blockers: finance.missing,
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.viewingScheduled) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Manage the scheduled viewing',
+      copy: 'The buyer lifecycle is in viewing. Confirm attendance, update the outcome, then move toward offer readiness.',
+      actionLabel: 'Open Viewings',
+      actionId: 'appointments',
+      tone: 'blue',
+      blockers: ['Viewing outcome'],
       snapshot: deal,
-    }
+    })
   }
-  if (documents.percent < 50 && finance.score < 90) {
-    return {
-      title: 'Document pack is not ready',
-      copy: 'Finance and transaction readiness depend on the buyer document pack.',
-      actionLabel: 'Review Tasks',
-      actionId: 'tasks',
-      tone: 'amber',
-      blockers: documents.missing,
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.matched) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: property.percent < 55 ? 'Strengthen the property match' : 'Move matched properties to a viewing',
+      copy: property.percent < 55
+        ? 'The buyer is matched, but the property path still needs stronger linked listings or suggestions.'
+        : 'The buyer has property context. Move the strongest match into a scheduled viewing.',
+      actionLabel: property.percent < 55 ? 'Match Properties' : 'Schedule Viewing',
+      actionId: property.percent < 55 ? 'property_match' : 'appointments',
+      tone: property.percent < 55 ? 'amber' : 'blue',
+      blockers: property.percent < 55 ? ['Matched listings'] : ['Viewing'],
       snapshot: deal,
-    }
+    })
   }
-  if (property.percent < 55) {
-    return {
-      title: 'No strong property path yet',
-      copy: 'Capture requirements or send matching properties before pushing toward an offer.',
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.qualified) {
+    if (finance.score < 60) {
+      return withBuyerLifecycleCommand(lifecycle, {
+        title: 'Finance position needs confirmation',
+        copy: finance.helper,
+        actionLabel: 'Qualify Buyer',
+        actionId: 'requirements',
+        tone: 'amber',
+        blockers: finance.missing,
+        snapshot: deal,
+      })
+    }
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Qualified buyer needs property matches',
+      copy: 'The buyer is qualified. Use the property-match workspace to shortlist or send the next best listings.',
       actionLabel: 'Match Properties',
       actionId: 'property_match',
       tone: 'blue',
-      blockers: ['Property requirement', 'Matched listings'],
+      blockers: property.percent < 55 ? ['Matched listings'] : [],
       snapshot: deal,
-    }
+    })
   }
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.firstContact) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Finance position needs confirmation',
+      copy: finance.score < 60 ? finance.helper : 'The buyer has been contacted. Complete qualification before moving into matching.',
+      actionLabel: 'Qualify Buyer',
+      actionId: 'requirements',
+      tone: finance.score < 60 ? 'amber' : 'blue',
+      blockers: finance.score < 60 ? finance.missing : ['Qualification'],
+      snapshot: deal,
+    })
+  }
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.assigned) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Assigned buyer needs first contact',
+      copy: 'This buyer is assigned. Make or record first contact before qualification.',
+      actionLabel: 'Review Tasks',
+      actionId: 'tasks',
+      tone: 'blue',
+      blockers: ['First contact'],
+      snapshot: deal,
+    })
+  }
+
+  if (stage === BUYER_LEAD_LIFECYCLE_STAGES.nurture) {
+    return withBuyerLifecycleCommand(lifecycle, {
+      title: 'Nurture follow-up is due',
+      copy: 'This buyer is paused for nurture. Review the timeline and create the next follow-up when timing changes.',
+      actionLabel: 'Review Timeline',
+      actionId: 'timeline',
+      tone: 'blue',
+      blockers: ['Follow-up timing'],
+      snapshot: deal,
+    })
+  }
+
   if (nextStep) {
     const actionMap = {
       qualified: ['Qualify Buyer', 'requirements'],
@@ -2223,9 +2479,11 @@ function getBuyerWorkspaceCommand(row = {}) {
       offer_submitted: ['Open Offers', 'offers'],
       offer_accepted: ['Open Offers', 'offers'],
       won: ['Open Transaction', 'convert'],
+      contacted: ['Mark Reached Out', 'tasks'],
+      captured: ['Review Timeline', 'timeline'],
     }
     const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
-    return {
+    return withBuyerLifecycleCommand(lifecycle, {
       title: nextStep.label,
       copy: nextStep.hint,
       actionLabel,
@@ -2233,9 +2491,9 @@ function getBuyerWorkspaceCommand(row = {}) {
       tone: 'blue',
       blockers: [],
       snapshot: deal,
-    }
+    })
   }
-  return {
+  return withBuyerLifecycleCommand(lifecycle, {
     title: 'Buyer journey is transaction-ready',
     copy: 'The buyer has enough journey signal to review transaction handoff.',
     actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Offers',
@@ -2243,7 +2501,7 @@ function getBuyerWorkspaceCommand(row = {}) {
     tone: 'green',
     blockers: [],
     snapshot: deal,
-  }
+  })
 }
 
 function getWhatsAppHref(phone = '') {
@@ -2693,13 +2951,17 @@ function getLeadContactSnapshot(lead = {}) {
 
 function getLeadPrimaryListingId(lead = {}) {
   const safeLead = lead || {}
+  const interestListingId = normalizeText(
+    safeLead.listingInterests?.[0]?.listingId ||
+    safeLead.listingInterests?.[0]?.listing_id,
+  )
+  if (normalizeLeadCategory(safeLead) !== 'seller' && interestListingId) return interestListingId
   return normalizeText(
     safeLead.listingId ||
     safeLead.listing_id ||
     safeLead.privateListingId ||
     safeLead.private_listing_id ||
-    safeLead.listingInterests?.[0]?.listingId ||
-    safeLead.listingInterests?.[0]?.listing_id ||
+    interestListingId ||
     safeLead.listings?.[0]?.id ||
     safeLead.listings?.[0]?.listingId ||
     safeLead.listings?.[0]?.listing_id,
@@ -3578,6 +3840,7 @@ function getBuyerOutreachSteps(row = {}) {
 function BuyerOutreachProgress({
   row,
   onQualifyBuyer,
+  onNavigate,
   onMarkReachedOut,
   onMarkQualified,
   onScheduleViewing,
@@ -3592,6 +3855,7 @@ function BuyerOutreachProgress({
   const currentStepIndex = Math.max(0, steps.findIndex((step) => !step.done))
   const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
   const qualification = getBuyerQualificationState(row)
+  const primaryCommand = getBuyerWorkspaceCommand(row)
   const isQualificationFocus = nextStep?.key === 'qualified'
   const [markingQualified, setMarkingQualified] = useState(false)
   const [markingReachedOut, setMarkingReachedOut] = useState(false)
@@ -3633,6 +3897,15 @@ function BuyerOutreachProgress({
     return null
   }
 
+  function runPrimaryCommand() {
+    const actionId = primaryCommand.actionId || ''
+    if (actionId === 'convert') return onPrepareTransaction?.()
+    if (actionId === 'requirements' || actionId === 'qualification') return onQualifyBuyer?.()
+    if (actionId === 'appointments') return onScheduleViewing?.()
+    if (actionId === 'offers') return onOpenOffers?.()
+    return onNavigate?.(actionId || 'overview')
+  }
+
   return (
     <section className={`${buyerWorkspaceCardClass} overflow-hidden p-6`}>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] xl:items-start">
@@ -3653,8 +3926,16 @@ function BuyerOutreachProgress({
         </div>
         <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm font-semibold text-blue-800">
           <p className="text-[11px] uppercase tracking-[0.14em] text-blue-500">Current focus</p>
-          <p className="mt-1 text-sm text-slate-950">{nextStep?.label || 'Offer outcome'}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{nextStep?.hint || 'Keep the buyer moving through the offer path.'}</p>
+          <p className="mt-1 text-sm text-slate-950">{primaryCommand.title || nextStep?.label || 'Offer outcome'}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{primaryCommand.copy || nextStep?.hint || 'Keep the buyer moving through the offer path.'}</p>
+          <button type="button" onClick={runPrimaryCommand} className="mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800">
+            {primaryCommand.actionLabel || 'Take Action'}
+          </button>
+          {primaryCommand.lifecycle?.label ? (
+            <p className="mt-2 text-[11px] font-semibold leading-4 text-blue-600">
+              Lifecycle: {primaryCommand.lifecycle.label}
+            </p>
+          ) : null}
           {isQualificationFocus ? (
             <div className="mt-3 grid gap-2">
               <button type="button" onClick={onQualifyBuyer} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800">
@@ -4075,6 +4356,7 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
     { icon: Clock3, label: 'Urgency', value: getBuyerUrgencyLabel(row, displayRequirement) },
     { icon: Building2, label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, displayRequirement) },
     { icon: Tag, label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, displayRequirement) },
+    { icon: Send, label: 'Match Consent', value: displayRequirement?.consentToReceiveMatches || displayRequirement?.consent_to_receive_matches ? 'Confirmed' : 'Not confirmed' },
   ]
   const selectedPropertyType = parseListInput(draft.propertyTypes)[0] || ''
   const propertyTypeOptions = selectedPropertyType && !BUYER_PROPERTY_TYPE_OPTIONS.includes(selectedPropertyType)
@@ -4252,6 +4534,18 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
               {currentPropertyOptions.map((option) => <option key={option.value || 'unknown-current-property'} value={option.value}>{option.label}</option>)}
             </select>
           </label>
+          <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(draft.consentToReceiveMatches)}
+              onChange={(event) => updateDraftField('consentToReceiveMatches', event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-900">Buyer consented to receive property matches</span>
+              <span className="mt-0.5 block text-xs font-medium leading-5 text-slate-500">Use this before sending shortlist or saved-search updates.</span>
+            </span>
+          </label>
           {saveError ? <p className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{saveError}</p> : null}
         </form>
       ) : (
@@ -4282,6 +4576,84 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
         <Home size={15} />
         Listing recommendations
       </button>
+    </section>
+  )
+}
+
+function BuyerQualificationChecklistCard({ row, onNavigate }) {
+  const checklist = getBuyerQualificationChecklist(row)
+  const tone = checklist.ready ? 'green' : checklist.requiredCompleted >= Math.max(checklist.requiredTotal - 1, 1) ? 'amber' : 'blue'
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">
+            <BadgeCheck size={15} />
+            Buyer Qualification
+          </p>
+          <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">Qualification checklist</h2>
+          <p className="mt-1 text-sm text-slate-500">Required facts before this buyer is treated as qualified.</p>
+        </div>
+        <StatusPill tone={tone}>{checklist.requiredCompleted}/{checklist.requiredTotal} required</StatusPill>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+          <span>{checklist.completed} of {checklist.total} complete</span>
+          <span>{checklist.percent}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className={`h-full rounded-full transition-all ${checklist.ready ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${checklist.percent}%` }} />
+        </div>
+      </div>
+
+      {checklist.next ? (
+        <button
+          type="button"
+          onClick={() => onNavigate?.(checklist.next.actionId)}
+          className="mt-5 flex w-full items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-left hover:bg-amber-50"
+        >
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">
+            <AlertTriangle size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-950">Next: {checklist.next.label}</span>
+            <span className="mt-1 block text-xs leading-5 text-slate-600">{checklist.next.detail}</span>
+          </span>
+        </button>
+      ) : (
+        <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+            <CheckCircle2 size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-950">Buyer qualification is complete</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">The required qualification facts are captured.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-2">
+        {checklist.items.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onNavigate?.(item.actionId)}
+            className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3 text-left transition hover:border-blue-100 hover:bg-blue-50/50"
+          >
+            <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${item.done ? 'bg-emerald-100 text-emerald-700' : item.required ? 'bg-amber-100 text-amber-700' : 'bg-white text-slate-400'}`}>
+              {item.done ? <CheckCircle2 size={16} /> : item.required ? <AlertTriangle size={15} /> : <Clock3 size={15} />}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-950">{item.label}</span>
+              <span className="mt-0.5 block text-xs leading-5 text-slate-500">{item.detail}</span>
+            </span>
+            <span className={`mt-1 rounded-full px-2 py-1 text-[11px] font-semibold ${item.required ? 'bg-white text-slate-600' : 'bg-slate-100 text-slate-500'}`}>
+              {item.required ? 'Required' : 'Helpful'}
+            </span>
+          </button>
+        ))}
+      </div>
     </section>
   )
 }
@@ -4657,7 +5029,7 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, org
   const requirement = getBuyerPrimaryRequirement(row)
   return (
     <section className="grid gap-4">
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(0,0.95fr)]">
         <BuyerProfileCard
           row={row}
           requirement={requirement}
@@ -4667,6 +5039,10 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, org
           onSaved={onSaved}
           onRecommendations={() => onNavigate('property_match')}
           onBondPartnerReferral={onBondPartnerReferral}
+        />
+        <BuyerQualificationChecklistCard
+          row={row}
+          onNavigate={onNavigate}
         />
         <BuyerFollowUpCentreCard
           row={row}
@@ -22241,6 +22617,7 @@ function AgentLeadWorkspace() {
                   <BuyerOutreachProgress
                     row={row}
                     onQualifyBuyer={focusBuyerQualificationSnapshot}
+                    onNavigate={runBuyerWorkspaceAction}
                     onMarkReachedOut={markBuyerReachedOut}
                     onMarkQualified={markBuyerQualified}
                     onScheduleViewing={() => setActiveTab('appointments')}

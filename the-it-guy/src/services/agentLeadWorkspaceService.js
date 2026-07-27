@@ -16,6 +16,7 @@ import { buildRequirementSummary, listLeadRequirements } from './leadRequirement
 import { getSuggestionsForLead } from './leadSuggestionService'
 import { getPrivateListing } from './privateListingService'
 import { listOrganisationUsers } from '../lib/settingsApi'
+import { inferLeadCategoryFromRecord } from '../lib/leadCategory'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
@@ -339,6 +340,42 @@ function getListingId(row = {}) {
   return readId(row, ['listingId', 'listing_id', 'privateListingId', 'private_listing_id'])
 }
 
+function getLeadListingInterestListingId(row = {}) {
+  return readId(row, ['listingId', 'listing_id'])
+}
+
+function sortLeadListingInterestsForBuyer(left = {}, right = {}) {
+  const leftDismissed = normalizeLower(left.status) === 'dismissed'
+  const rightDismissed = normalizeLower(right.status) === 'dismissed'
+  if (leftDismissed !== rightDismissed) return leftDismissed ? 1 : -1
+  if (Boolean(left.isOriginalEnquiry ?? left.is_original_enquiry) !== Boolean(right.isOriginalEnquiry ?? right.is_original_enquiry)) {
+    return (left.isOriginalEnquiry ?? left.is_original_enquiry) ? -1 : 1
+  }
+  const statusRank = {
+    converted: 0,
+    offer_submitted: 1,
+    viewing_scheduled: 2,
+    viewed: 3,
+    sent: 4,
+    shortlisted: 5,
+    interested: 6,
+    suggested: 7,
+    dismissed: 99,
+  }
+  const leftStatusRank = statusRank[normalizeLower(left.status)] ?? 50
+  const rightStatusRank = statusRank[normalizeLower(right.status)] ?? 50
+  if (leftStatusRank !== rightStatusRank) return leftStatusRank - rightStatusRank
+  return new Date(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0).getTime() -
+    new Date(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0).getTime()
+}
+
+function getCanonicalBuyerLeadListingId(lead = {}, listingInterests = []) {
+  const canonicalInterest = [...(Array.isArray(listingInterests) ? listingInterests : [])]
+    .sort(sortLeadListingInterestsForBuyer)
+    .find((interest) => getLeadListingInterestListingId(interest))
+  return getLeadListingInterestListingId(canonicalInterest || {}) || getListingId(lead)
+}
+
 function getTransactionId(row = {}) {
   return readId(row, ['transactionId', 'transaction_id', 'convertedTransactionId', 'converted_transaction_id', 'id'])
 }
@@ -545,14 +582,26 @@ export function buildAgentLeadRows({
     const leadId = getLeadId(lead)
     const contact = getLeadContact(lead, contactsById)
     const contactId = readId(lead, ['contactId', 'contact_id']) || readId(contact || {}, ['contactId', 'contact_id'])
-    const listingId = getListingId(lead)
     const convertedTransactionId = readId(lead, ['convertedTransactionId', 'converted_transaction_id', 'convertedDealId'])
+    const relatedListingInterests = listingInterests
+      .filter((interest) => getLeadId(interest) === leadId || readId(interest, ['leadId', 'lead_id']) === leadId)
+      .sort(sortLeadListingInterestsForBuyer)
+    const isBuyerLead = inferLeadCategoryFromRecord(lead, 'buyer') === 'buyer'
+    const canonicalBuyerListingId = isBuyerLead ? getCanonicalBuyerLeadListingId(lead, relatedListingInterests) : ''
+    const listingId = isBuyerLead ? canonicalBuyerListingId : getListingId(lead)
     const context = { leadId, contactId, listingId, convertedTransactionId }
     const relatedActivities = leadActivities
       .filter((activity) => getLeadId(activity) === leadId)
       .sort((left, right) => new Date(right.activityDate || right.activity_date || right.createdAt || right.created_at || 0) - new Date(left.activityDate || left.activity_date || left.createdAt || left.created_at || 0))
     const relatedTasks = tasks.filter((task) => getLeadId(task) === leadId).sort(sortTasksByDueDate)
-    const relatedListings = normalizedListings.filter((listing) => matchesLeadContext(listing, context))
+    const canonicalBuyerListingIds = isBuyerLead
+      ? new Set(relatedListingInterests.map(getLeadListingInterestListingId).filter(Boolean))
+      : new Set()
+    const relatedListings = normalizedListings.filter((listing) => {
+      const normalizedListingId = getNormalizedListingId(listing)
+      if (isBuyerLead && canonicalBuyerListingIds.size) return canonicalBuyerListingIds.has(normalizedListingId)
+      return matchesLeadContext(listing, context)
+    })
     const expandedContext = {
       ...context,
       listingId: context.listingId || getListingId(relatedListings[0] || {}) || readId(relatedListings[0] || {}, ['id']),
@@ -564,7 +613,6 @@ export function buildAgentLeadRows({
     const relatedAppointments = appointments.filter((appointment) => matchesLeadContext(appointment, expandedContext))
     const relatedOffers = normalizedOffers.filter((offer) => matchesLeadContext(offer, expandedContext) || relatedAppointments.some((appointment) => getAppointmentId(appointment) && getAppointmentId(appointment) === offer.appointmentId))
     const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, expandedContext))
-    const relatedListingInterests = listingInterests.filter((interest) => getLeadId(interest) === leadId || readId(interest, ['leadId', 'lead_id']) === leadId)
     const relatedSuggestions = suggestions
       .filter((suggestion) => getLeadId(suggestion) === leadId || readId(suggestion, ['leadId', 'lead_id']) === leadId)
       .sort((left, right) => Number(right.score || 0) - Number(left.score || 0) || new Date(right.generatedAt || right.generated_at || 0).getTime() - new Date(left.generatedAt || left.generated_at || 0).getTime())
@@ -1163,15 +1211,28 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
   ])
   const directory = await listOrganisationUsers().catch(() => [])
   const directoryLookup = buildAgentDirectoryLookup(directory)
+  const isBuyerLead = inferLeadCategoryFromRecord(lead, 'buyer') === 'buyer'
+  const canonicalBuyerListingId = isBuyerLead ? getCanonicalBuyerLeadListingId(lead, listingInterests) : ''
+  const canonicalContext = {
+    ...context,
+    listingId: isBuyerLead ? (canonicalBuyerListingId || context.listingId) : context.listingId,
+  }
   const normalizedListings = listings.map(normalizeListing)
-  const linkedListing = normalizedListings.find((listing) => matchesLeadContext(listing, context)) || null
+  const canonicalBuyerListingIds = isBuyerLead
+    ? new Set(listingInterests.map(getLeadListingInterestListingId).filter(Boolean))
+    : new Set()
+  const linkedListing = normalizedListings.find((listing) => {
+    const listingId = getNormalizedListingId(listing)
+    if (isBuyerLead && canonicalBuyerListingIds.size) return canonicalBuyerListingIds.has(listingId)
+    return matchesLeadContext(listing, canonicalContext)
+  }) || null
   const normalizedDocumentPackets = documentPackets.map(normalizeDocumentPacket)
   const packetListingIds = normalizedDocumentPackets
-    .filter((packet) => packetMatchesLeadContext(packet, context))
+    .filter((packet) => packetMatchesLeadContext(packet, canonicalContext))
     .map((packet) => packet.listingId)
     .filter(Boolean)
   const candidateListingIds = [
-    context.listingId,
+    canonicalContext.listingId,
     resolvedWorkspaceListingId,
     linkedListing?.id,
     linkedListing?.listingId,
@@ -1217,7 +1278,11 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
   const candidateListingIdSet = new Set(candidateListingIds)
   const workspaceListings = normalizedListings
     .map((listing) => (hydratedListingId && getNormalizedListingId(listing) === hydratedListingId ? hydratedListing : listing))
-    .filter((listing) => matchesLeadContext(listing, context) || candidateListingIdSet.has(getNormalizedListingId(listing)))
+    .filter((listing) => {
+      const listingId = getNormalizedListingId(listing)
+      if (isBuyerLead && canonicalBuyerListingIds.size) return canonicalBuyerListingIds.has(listingId)
+      return matchesLeadContext(listing, canonicalContext) || candidateListingIdSet.has(listingId)
+    })
   if (hydratedListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === hydratedListingId)) {
     workspaceListings.push(hydratedListing)
   }
@@ -1225,8 +1290,8 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     workspaceListings.push(fallbackListing)
   }
   const expandedContext = {
-    ...context,
-    listingId: context.listingId || getListingId(workspaceListings[0] || {}) || getNormalizedListingId(workspaceListings[0] || {}),
+    ...canonicalContext,
+    listingId: canonicalContext.listingId || getListingId(workspaceListings[0] || {}) || getNormalizedListingId(workspaceListings[0] || {}),
   }
   const appointments = (Array.isArray(allAppointments) ? allAppointments : []).filter((appointment) => matchesLeadContext(appointment, expandedContext))
   const listingIds = [...new Set([expandedContext.listingId, ...appointments.map(getListingId)].filter(Boolean))]
@@ -1294,7 +1359,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     row: rows[0] || null,
     appointments,
     offers: offers.map(normalizeOffer),
-    transactions: transactions.map(normalizeTransaction).filter((transaction) => matchesLeadContext(transaction, context)),
+    transactions: transactions.map(normalizeTransaction).filter((transaction) => matchesLeadContext(transaction, expandedContext)),
     listings: workspaceListings,
     listingInterests,
     requirements,

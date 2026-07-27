@@ -341,6 +341,7 @@ const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDev
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
+const SettingsLeadProcessingPage = lazy(() => import('./pages/settings/SettingsLeadProcessingPage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
@@ -2911,6 +2912,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['agent']}>
                       <SettingsLeadCapturePage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="lead-processing"
+                  element={
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsLeadProcessingPage />
                     </RoleRoute>
                   }
                 />

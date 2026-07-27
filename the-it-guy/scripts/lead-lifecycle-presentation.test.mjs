@@ -13,6 +13,8 @@ const buyerViewing = resolveLeadLifecyclePresentation({
   stage: 'Appointment Scheduled',
 })
 assert.equal(buyerViewing.label, 'Appointment Scheduled')
+assert.equal(buyerViewing.lifecycleStage, 'viewing_scheduled')
+assert.equal(buyerViewing.lifecycleStatus, 'open')
 assert.equal(buyerViewing.funnelStage, 'Viewing Scheduled')
 assert.equal(buyerViewing.columnId, 'viewing_contacted')
 assert.equal(buyerViewing.stageTone.iconKey, 'calendar')
@@ -30,6 +32,8 @@ const converted = resolveLeadLifecyclePresentation({
   stage: 'Converted to Transaction',
 })
 assert.equal(converted.columnId, 'deal_otp')
+assert.equal(converted.lifecycleStage, 'transaction_created')
+assert.equal(converted.lifecycleStatus, 'converted')
 assert.equal(converted.reporting.dealCreated, true)
 
 const agencyPipelineSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')

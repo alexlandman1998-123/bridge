@@ -172,6 +172,9 @@ const EVENT_ACTIVITY_MAP = {
   [BUYER_LIFECYCLE_EVENTS.REGISTRATION_CONFIRMED]: ['Registration Confirmed', 'Registration confirmed.'],
 }
 
+const ACCEPTED_OFFER_CONVERSION_CANDIDATE_CONTRACT = 'arch9-accepted-offer-conversion-candidate-v1'
+const ACCEPTED_OFFER_CONVERSION_FINAL_GATE_CONTRACT = 'arch9-accepted-offer-conversion-final-gate-v1'
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -1342,7 +1345,7 @@ export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Da
   if (!Number.isFinite(offerAmount) || offerAmount <= 0) blockers.push('offer_amount_missing')
   const converted = normalizeOfferStatus(offer.status) === OFFER_STATUS.CONVERTED_TO_TRANSACTION && Boolean(transactionId)
   return {
-    contract: 'arch9-accepted-offer-conversion-candidate-v1',
+    contract: ACCEPTED_OFFER_CONVERSION_CANDIDATE_CONTRACT,
     candidateKey: organisationId && offerId ? `${organisationId}:${offerId}` : '',
     acceptedOfferId: offerId || null,
     organisationId: organisationId || null,
@@ -1359,6 +1362,67 @@ export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Da
     createdAt: normalizeDate(candidate.createdAt) || now,
     updatedAt: now,
   }
+}
+
+export function assessAcceptedOfferConversionFinalGate({
+  candidate = {},
+  offer = {},
+  payload = {},
+} = {}) {
+  const candidateBlockers = Array.isArray(candidate?.blockers)
+    ? candidate.blockers.map((item) => normalizeText(item)).filter(Boolean)
+    : []
+  const expected = {
+    acceptedOfferId: normalizeText(payload?.acceptedOfferId || offer?.offerId || offer?.id),
+    organisationId: normalizeText(payload?.organisationId || offer?.organisationId || offer?.organisation_id),
+    listingId: normalizeText(payload?.listingId || offer?.listingId || offer?.listing_id),
+    buyerLeadId: normalizeText(payload?.originatingBuyerLeadId || payload?.originatingLeadId || offer?.buyerLeadId || offer?.buyer_lead_id),
+    buyerContactId: normalizeText(payload?.buyerContactId || offer?.buyerContactId || offer?.buyer_contact_id),
+    offerAmount: money(payload?.purchasePrice || payload?.dealValue || offer?.offerAmount || offer?.offer_amount),
+  }
+  const observed = {
+    acceptedOfferId: normalizeText(candidate?.acceptedOfferId),
+    organisationId: normalizeText(candidate?.organisationId),
+    listingId: normalizeText(candidate?.listingId),
+    buyerLeadId: normalizeText(candidate?.buyerLeadId),
+    buyerContactId: normalizeText(candidate?.buyerContactId),
+    offerAmount: money(candidate?.offerAmount),
+  }
+  const issues = []
+  if (candidate?.contract !== ACCEPTED_OFFER_CONVERSION_CANDIDATE_CONTRACT) issues.push('conversion_candidate_contract_invalid')
+  if (normalizeText(candidate?.status) !== 'ready') issues.push('conversion_candidate_not_ready')
+  if (candidateBlockers.length) issues.push(...candidateBlockers)
+  if (!expected.acceptedOfferId || observed.acceptedOfferId !== expected.acceptedOfferId) issues.push('accepted_offer_mismatch')
+  if (!expected.organisationId || observed.organisationId !== expected.organisationId) issues.push('organisation_mismatch')
+  if (!expected.listingId || observed.listingId !== expected.listingId) issues.push('listing_mismatch')
+  if (!expected.buyerLeadId || observed.buyerLeadId !== expected.buyerLeadId) issues.push('buyer_lead_mismatch')
+  if (expected.buyerContactId && observed.buyerContactId && observed.buyerContactId !== expected.buyerContactId) issues.push('buyer_contact_mismatch')
+  if (!expected.offerAmount || observed.offerAmount !== expected.offerAmount) issues.push('offer_amount_mismatch')
+
+  return {
+    contract: ACCEPTED_OFFER_CONVERSION_FINAL_GATE_CONTRACT,
+    ready: issues.length === 0,
+    candidateStatus: normalizeText(candidate?.status) || 'unknown',
+    acceptedOfferId: expected.acceptedOfferId || null,
+    organisationId: expected.organisationId || null,
+    listingId: expected.listingId || null,
+    buyerLeadId: expected.buyerLeadId || null,
+    buyerContactId: expected.buyerContactId || null,
+    offerAmount: expected.offerAmount || null,
+    expected,
+    observed,
+    issues: Array.from(new Set(issues)),
+  }
+}
+
+export function assertAcceptedOfferConversionFinalGate(input = {}) {
+  const diagnostic = assessAcceptedOfferConversionFinalGate(input)
+  if (diagnostic.ready) return diagnostic
+  const error = new Error('The accepted-offer conversion diagnostic is not ready for transaction creation.')
+  error.code = 'ACCEPTED_OFFER_CONVERSION_FINAL_GATE_BLOCKED'
+  error.legacyCode = 'ACCEPTED_OFFER_CONVERSION_CANDIDATE_BLOCKED'
+  error.details = diagnostic
+  throw error
 }
 
 export async function ensureAcceptedOfferConversionCandidate({ organisationId = '', offerId = '', offer = null } = {}) {
@@ -1385,9 +1449,19 @@ export async function ensureAcceptedOfferConversionCandidate({ organisationId = 
 
   const conversionCandidate = buildAcceptedOfferConversionCandidate(canonicalOffer)
   const currentCandidate = jsonObject(canonicalOffer.conditions?.conversionCandidate)
+  const unchangedIdentity = [
+    'acceptedOfferId',
+    'organisationId',
+    'listingId',
+    'buyerLeadId',
+    'buyerContactId',
+    'financeType',
+    'clientIntakePreference',
+  ].every((field) => normalizeText(currentCandidate[field]) === normalizeText(conversionCandidate[field]))
   const unchanged = currentCandidate.contract === conversionCandidate.contract &&
     currentCandidate.candidateKey === conversionCandidate.candidateKey &&
     currentCandidate.status === conversionCandidate.status &&
+    unchangedIdentity &&
     JSON.stringify(currentCandidate.blockers || []) === JSON.stringify(conversionCandidate.blockers || []) &&
     Number(currentCandidate.offerAmount || 0) === Number(conversionCandidate.offerAmount || 0) &&
     normalizeText(currentCandidate.transactionId) === normalizeText(conversionCandidate.transactionId)
@@ -2442,21 +2516,21 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     throw new Error('Accepted offer not found.')
   }
   const canonicalOfferStatus = normalizeOfferStatus(canonicalOffer.status)
+  if (![OFFER_STATUS.ACCEPTED, OFFER_STATUS.CONVERTED_TO_TRANSACTION].includes(canonicalOfferStatus)) {
+    throw new Error('Only an accepted offer can be converted to a transaction.')
+  }
+
+  const candidateResult = await ensureAcceptedOfferConversionCandidate({
+    organisationId: scopedOrganisationId,
+    offerId: scopedOfferId,
+    offer: canonicalOffer,
+  })
+  canonicalOffer = candidateResult.offer
+  const refreshedOfferStatus = normalizeOfferStatus(canonicalOffer.status)
   const linkedTransactionId = toNullableUuid(canonicalOffer.transactionId || canonicalOffer.transaction_id)
 
   if (linkedTransactionId) {
-    await finalizeAcceptedOfferTransactionLinkage({
-      organisationId: scopedOrganisationId,
-      offerId: scopedOfferId,
-      offer: canonicalOffer,
-      listing,
-      transactionId: linkedTransactionId,
-      actor,
-      payload,
-      activityNote: 'Existing transaction reused for this accepted buyer offer.',
-    })
-
-    return attachLegalHandoff({
+    const result = {
       transactionId: linkedTransactionId,
       existing: true,
       alreadyConverted: true,
@@ -2469,7 +2543,25 @@ export async function createTransactionFromAcceptedCanonicalOffer({
         },
       },
       warning: 'existing_offer_transaction_reused',
-    }, linkedTransactionId)
+    }
+    const conversionReceipt = assertMvpAcceptedOfferConversionReceipt({
+      candidate: candidateResult.candidate,
+      result,
+      acceptedOfferId: scopedOfferId,
+    })
+
+    await finalizeAcceptedOfferTransactionLinkage({
+      organisationId: scopedOrganisationId,
+      offerId: scopedOfferId,
+      offer: canonicalOffer,
+      listing,
+      transactionId: linkedTransactionId,
+      actor,
+      payload,
+      activityNote: 'Existing transaction reused for this accepted buyer offer.',
+    })
+
+    return attachLegalHandoff({ ...result, conversionReceipt }, linkedTransactionId)
   }
 
   const existingAcceptedOfferTransaction = await findExistingTransactionForAcceptedOffer({
@@ -2479,6 +2571,22 @@ export async function createTransactionFromAcceptedCanonicalOffer({
 
   if (existingAcceptedOfferTransaction?.id) {
     const reusedTransactionId = toNullableUuid(existingAcceptedOfferTransaction.id)
+    const result = {
+      transactionId: reusedTransactionId,
+      existing: true,
+      alreadyConverted: refreshedOfferStatus === 'converted_to_transaction',
+      persisted: true,
+      transactionRow: {
+        transaction: existingAcceptedOfferTransaction,
+      },
+      warning: 'existing_offer_transaction_reused',
+    }
+    const conversionReceipt = assertMvpAcceptedOfferConversionReceipt({
+      candidate: candidateResult.candidate,
+      result,
+      acceptedOfferId: scopedOfferId,
+    })
+
     await finalizeAcceptedOfferTransactionLinkage({
       organisationId: scopedOrganisationId,
       offerId: scopedOfferId,
@@ -2490,33 +2598,11 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       activityNote: 'Existing transaction reused from the accepted-offer conversion record.',
     })
 
-    return attachLegalHandoff({
-      transactionId: reusedTransactionId,
-      existing: true,
-      alreadyConverted: canonicalOfferStatus === 'converted_to_transaction',
-      persisted: true,
-      transactionRow: {
-        transaction: existingAcceptedOfferTransaction,
-      },
-      warning: 'existing_offer_transaction_reused',
-    }, reusedTransactionId)
+    return attachLegalHandoff({ ...result, conversionReceipt }, reusedTransactionId)
   }
 
-  if (canonicalOfferStatus !== 'accepted') {
+  if (refreshedOfferStatus !== 'accepted') {
     throw new Error('Only an accepted offer can be converted to a transaction.')
-  }
-
-  const candidateResult = await ensureAcceptedOfferConversionCandidate({
-    organisationId: scopedOrganisationId,
-    offerId: scopedOfferId,
-    offer: canonicalOffer,
-  })
-  canonicalOffer = candidateResult.offer
-  if (candidateResult.candidate?.status !== 'ready') {
-    const error = new Error('The accepted offer needs attention before a transaction can be created.')
-    error.code = 'ACCEPTED_OFFER_CONVERSION_CANDIDATE_BLOCKED'
-    error.details = candidateResult.candidate
-    throw error
   }
 
   let canonicalListing = listing
@@ -2582,6 +2668,12 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     buyerLead,
     sellerOnboarding: canonicalListing?.sellerOnboarding,
   })
+  const finalGateDiagnostic = assertAcceptedOfferConversionFinalGate({
+    candidate: candidateResult.candidate,
+    offer: canonicalOffer,
+    payload: conversionPayload,
+  })
+  conversionPayload.acceptedOfferConversionDiagnostic = finalGateDiagnostic
 
   const created = await createTransactionFromLeadOverride({
     lead: buyerLead,

@@ -61,6 +61,9 @@ assert.match(serviceSource, /isOriginalEnquiry: true/)
 assert.match(serviceSource, /status: 'interested'/)
 assert.match(serviceSource, /createIngestionLog/)
 assert.match(serviceSource, /Duplicate payload external reference/)
+assert.match(serviceSource, /\['assigned', 'processed', 'duplicate'\]\.includes\(normalizeLower\(duplicateLog\?\.status\)\)/)
+assert.match(serviceSource, /Possible duplicate inbound enquiry/)
+assert.match(serviceSource, /findReviewableInboundDuplicate/)
 assert.match(serviceSource, /Unknown listing/)
 assert.match(serviceSource, /assigned_agent_email/, 'buyer enquiry ingestion should read listing agent email for ownership display')
 assert.match(serviceSource, /email: listingAgentEmail/, 'buyer enquiry ingestion should carry listing agent email into assignment payload')
@@ -154,6 +157,7 @@ const server = await createServer({
 try {
   const { __leadIngestionServiceTestUtils } = await server.ssrLoadModule('/src/services/leadIngestionService.js')
   const {
+    buildInboundEnquiryDuplicateReview,
     buildRequirementPayload,
     isActiveLead,
     normalizeEnquiryPayload,
@@ -225,6 +229,79 @@ try {
 
   const noDuplicateRequirement = buildRequirementPayload(enquiry, { leadId: requirement.leadId, contactId: requirement.contactId }, [{ status: 'active' }])
   assert.equal(noDuplicateRequirement, null, 'active requirements should be reused instead of duplicated')
+
+  const duplicateFromExistingInterest = buildInboundEnquiryDuplicateReview({
+    enquiry,
+    existingLead: {
+      lead_id: requirement.leadId,
+      contact_id: requirement.contactId,
+      lead_category: 'buyer',
+      listing_id: '',
+    },
+    listing: { id: '44444444-4444-4444-8444-444444444444' },
+    existingInterest: {
+      interest_id: '55555555-5555-4555-8555-555555555555',
+      listing_id: '44444444-4444-4444-8444-444444444444',
+      status: 'interested',
+    },
+    previousLog: { log_id: '66666666-6666-4666-8666-666666666666' },
+  })
+  assert.equal(duplicateFromExistingInterest.status, 'duplicate')
+  assert.equal(duplicateFromExistingInterest.reviewStatus, 'needs_review')
+  assert.equal(duplicateFromExistingInterest.reason, 'existing_active_listing_interest')
+  assert.equal(duplicateFromExistingInterest.duplicateOfLogId, '66666666-6666-4666-8666-666666666666')
+
+  const duplicateFromLegacyLeadListing = buildInboundEnquiryDuplicateReview({
+    enquiry,
+    existingLead: {
+      lead_id: requirement.leadId,
+      contact_id: requirement.contactId,
+      lead_category: 'buyer',
+      listing_id: '44444444-4444-4444-8444-444444444444',
+    },
+    listing: { id: '44444444-4444-4444-8444-444444444444' },
+  })
+  assert.equal(duplicateFromLegacyLeadListing.reason, 'existing_active_lead_listing')
+
+  const differentPropertyEnquiry = buildInboundEnquiryDuplicateReview({
+    enquiry,
+    existingLead: {
+      lead_id: requirement.leadId,
+      contact_id: requirement.contactId,
+      lead_category: 'buyer',
+      listing_id: '44444444-4444-4444-8444-444444444444',
+    },
+    listing: { id: '77777777-7777-4777-8777-777777777777' },
+  })
+  assert.equal(differentPropertyEnquiry, null, 'same buyer contact can still enquire on a different property')
+
+  const dismissedInterestEnquiry = buildInboundEnquiryDuplicateReview({
+    enquiry,
+    existingLead: {
+      lead_id: requirement.leadId,
+      contact_id: requirement.contactId,
+      lead_category: 'buyer',
+    },
+    listing: { id: '44444444-4444-4444-8444-444444444444' },
+    existingInterest: {
+      interest_id: '88888888-8888-4888-8888-888888888888',
+      listing_id: '44444444-4444-4444-8444-444444444444',
+      status: 'dismissed',
+    },
+  })
+  assert.equal(dismissedInterestEnquiry, null, 'dismissed interests should not suppress a fresh inbound enquiry')
+
+  const sellerEnquiry = buildInboundEnquiryDuplicateReview({
+    enquiry,
+    existingLead: {
+      lead_id: requirement.leadId,
+      contact_id: requirement.contactId,
+      lead_category: 'seller',
+      listing_id: '44444444-4444-4444-8444-444444444444',
+    },
+    listing: { id: '44444444-4444-4444-8444-444444444444' },
+  })
+  assert.equal(sellerEnquiry, null, 'seller leads are outside the buyer duplicate-enquiry guard')
 } finally {
   await server.close()
 }
