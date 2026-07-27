@@ -35,6 +35,10 @@ assertNotContains(listingDetailSource, '<h3 className="text-base font-semibold t
 assertContains(workspaceServiceSource, 'function buildSellerPortalListingPerformance', 'seller portal performance payload builder')
 assertContains(workspaceServiceSource, 'formData.listingPerformanceOverrides', 'seller portal override source')
 assertContains(workspaceServiceSource, 'listingPerformance,', 'seller portal listing performance payload')
+assertContains(workspaceServiceSource, 'leadRows = []', 'seller portal performance should accept agent listing lead rows')
+assertContains(workspaceServiceSource, 'leadCount * 6 + syncedActiveOffers.length * 8 + 12', 'seller portal performance should mirror agent dashboard estimated views')
+assertContains(workspaceServiceSource, 'Math.round(totalViews * 0.72)', 'seller portal performance should mirror agent dashboard portal view split')
+assertContains(workspaceServiceSource, 'const sellerLeadRows = collectSellerPortalLeadRows(context, listing, listing?.marketing)', 'seller portal should collect synced lead rows from the token payload')
 
 assertContains(portalSource, 'function SellerListingPerformance', 'seller portal listing performance component')
 assertContains(portalSource, '<SellerListingPerformance performance={sellerListingPerformance} />', 'seller portal overview performance render')

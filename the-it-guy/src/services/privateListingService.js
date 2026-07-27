@@ -2861,18 +2861,31 @@ function mapSellerClientPortalCorePayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
   if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
+  const payloadExternalLinks = normalizeListingExternalLinks(
+    payload?.externalListingLinks ||
+      payload?.external_listing_links ||
+      payload?.externalLinks ||
+      payload?.external_links ||
+      listingRow.external_links ||
+      listingRow.listing_external_links ||
+      [],
+  )
   const mandatePacket = payload?.mandatePacket && typeof payload.mandatePacket === 'object'
     ? payload.mandatePacket
     : payload?.mandate_packet && typeof payload.mandate_packet === 'object'
       ? payload.mandate_packet
       : null
-  const listingForMap = mandatePacket
-    ? {
-        ...listingRow,
-        mandatePacket,
-        mandate_packet: mandatePacket,
-      }
-    : listingRow
+  const listingForMap = {
+    ...listingRow,
+    external_links: payloadExternalLinks.length ? payloadExternalLinks : listingRow.external_links,
+    listing_external_links: payloadExternalLinks.length ? payloadExternalLinks : listingRow.listing_external_links,
+    ...(mandatePacket
+      ? {
+          mandatePacket,
+          mandate_packet: mandatePacket,
+        }
+      : {}),
+  }
   const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
   const mappedListing = mapPrivateListingRow(
     listingForMap,

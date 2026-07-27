@@ -362,6 +362,131 @@ function normalizeSellerPortalPerformanceNumber(value, fallback = 0) {
   return Math.max(0, Math.round(number))
 }
 
+function normalizeSellerPortalText(value = '') {
+  return String(value || '').trim()
+}
+
+function pickFirstSellerPortalText(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const normalized = normalizeSellerPortalText(value)
+      if (normalized) return normalized
+    }
+  }
+  return ''
+}
+
+function getFirstSellerPortalImageUrl(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return normalizeSellerPortalText(value)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = getFirstSellerPortalImageUrl(item)
+      if (resolved) return resolved
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    const directUrl = pickFirstSellerPortalText(
+      value.url,
+      value.secureUrl,
+      value.secure_url,
+      value.publicUrl,
+      value.public_url,
+      value.downloadUrl,
+      value.download_url,
+      value.src,
+      value.href,
+      value.imageUrl,
+      value.image_url,
+    )
+    if (directUrl) return directUrl
+    return pickFirstSellerPortalText(
+      getFirstSellerPortalImageUrl(value.images),
+      getFirstSellerPortalImageUrl(value.photos),
+      getFirstSellerPortalImageUrl(value.galleryImages),
+      getFirstSellerPortalImageUrl(value.gallery_images),
+      getFirstSellerPortalImageUrl(value.imageGallery),
+      getFirstSellerPortalImageUrl(value.image_gallery),
+      getFirstSellerPortalImageUrl(value.media),
+      getFirstSellerPortalImageUrl(value.mediaItems),
+      getFirstSellerPortalImageUrl(value.media_items),
+    )
+  }
+  return ''
+}
+
+function resolveSellerPortalHeroImageUrl(listing = {}, formData = {}) {
+  return pickFirstSellerPortalText(
+    listing?.heroImageUrl,
+    listing?.hero_image_url,
+    listing?.coverImageUrl,
+    listing?.cover_image_url,
+    listing?.primaryImageUrl,
+    listing?.primary_image_url,
+    listing?.mainImageUrl,
+    listing?.main_image_url,
+    listing?.imageUrl,
+    listing?.image_url,
+    listing?.propertyImage,
+    listing?.property_image,
+    listing?.marketing?.mediaUrl,
+    listing?.marketing?.media_url,
+    listing?.propertyDetails?.coverImageUrl,
+    listing?.propertyDetails?.cover_image_url,
+    listing?.propertyDetails?.imageUrl,
+    listing?.propertyDetails?.image_url,
+    formData?.heroImageUrl,
+    formData?.hero_image_url,
+    formData?.imageUrl,
+    formData?.image_url,
+    getFirstSellerPortalImageUrl(listing?.images),
+    getFirstSellerPortalImageUrl(listing?.photos),
+    getFirstSellerPortalImageUrl(listing?.galleryImages),
+    getFirstSellerPortalImageUrl(listing?.gallery_images),
+    getFirstSellerPortalImageUrl(listing?.imageGallery),
+    getFirstSellerPortalImageUrl(listing?.image_gallery),
+    getFirstSellerPortalImageUrl(listing?.marketing?.imageGallery),
+    getFirstSellerPortalImageUrl(listing?.marketing?.image_gallery),
+    getFirstSellerPortalImageUrl(listing?.marketing?.galleryImages),
+    getFirstSellerPortalImageUrl(listing?.marketing?.gallery_images),
+    getFirstSellerPortalImageUrl(listing?.propertyDetails?.imageGallery),
+    getFirstSellerPortalImageUrl(listing?.propertyDetails?.galleryImages),
+    getFirstSellerPortalImageUrl(formData?.images),
+    getFirstSellerPortalImageUrl(formData?.photos),
+    getFirstSellerPortalImageUrl(formData?.galleryImages),
+    getFirstSellerPortalImageUrl(formData?.gallery_images),
+  )
+}
+
+function collectSellerPortalLeadRows(...sources) {
+  const rows = []
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue
+    for (const key of ['leadListingInterests', 'lead_listing_interests', 'listingLeads', 'listing_leads', 'leads', 'pipelineLeads', 'pipeline_leads']) {
+      if (Array.isArray(source[key])) rows.push(...source[key])
+    }
+  }
+  const seen = new Set()
+  return rows.filter((row, index) => {
+    const id = row?.id || row?.leadId || row?.lead_id || row?.contactId || row?.contact_id || `lead-${index}`
+    const key = String(id)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function isSellerPortalActiveOffer(offer = {}) {
+  const status = normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)
+  return ['submitted', 'agent_review', 'seller_review', 'buyer_review_counter', 'countered', 'accepted'].includes(status)
+}
+
+function isSellerPortalPendingOffer(offer = {}) {
+  const status = normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)
+  return ['submitted', 'agent_review', 'seller_review', 'buyer_review_counter'].includes(status)
+}
+
 function normalizeSellerPortalListingPerformanceOverrides(source = {}) {
   if (!source || typeof source !== 'object') return {}
   return SELLER_PORTAL_LISTING_PERFORMANCE_KEYS.reduce((accumulator, key) => {
@@ -371,7 +496,7 @@ function normalizeSellerPortalListingPerformanceOverrides(source = {}) {
   }, {})
 }
 
-function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offers = [], appointments = [] } = {}) {
+function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offers = [], appointments = [], leadRows = [] } = {}) {
   const analytics = listing?.analytics || listing?.listingAnalytics || {}
   const overrides = normalizeSellerPortalListingPerformanceOverrides(
     formData.listingPerformanceOverrides ||
@@ -380,7 +505,10 @@ function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offe
       listing?.listingPerformance ||
       {},
   )
-  const activeOffers = (Array.isArray(offers) ? offers : []).filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
+  const offerRows = Array.isArray(offers) ? offers : []
+  const activeOffers = offerRows.filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
+  const syncedActiveOffers = offerRows.filter((offer) => isSellerPortalActiveOffer(offer))
+  const pendingOffers = offerRows.filter((offer) => isSellerPortalPendingOffer(offer)).length
   const visibleAppointments = (Array.isArray(appointments) ? appointments : []).filter((appointment) => {
     const status = normalizeValue(appointment?.status)
     return !['cancelled', 'canceled', 'declined'].includes(status)
@@ -390,19 +518,31 @@ function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offe
   const daysOnMarket = Number.isFinite(createdAt) && createdAt > 0
     ? Math.max(0, Math.ceil((Date.now() - createdAt) / (1000 * 60 * 60 * 24)))
     : 0
-  const totalViews = normalizeSellerPortalPerformanceNumber(analytics?.totalViews || analytics?.views)
-  const portalViews = normalizeSellerPortalPerformanceNumber(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews)
-  const bridgeViews = normalizeSellerPortalPerformanceNumber(analytics?.bridgeViews || analytics?.websiteViews)
+  const syncedLeadRows = Array.isArray(leadRows) ? leadRows : []
+  const leadCount = normalizeSellerPortalPerformanceNumber(syncedLeadRows.length || analytics?.leadCount || analytics?.leads)
+  const now = Date.now()
+  const sevenDays = 1000 * 60 * 60 * 24 * 7
+  const newLeadRowsThisWeek = syncedLeadRows.filter((lead) => {
+    const timestamp = new Date(lead?.createdAt || lead?.created_at || lead?.updatedAt || lead?.updated_at || 0).getTime()
+    return Number.isFinite(timestamp) && now - timestamp <= sevenDays
+  }).length
+  const explicitViews = normalizeSellerPortalPerformanceNumber(analytics?.totalViews || analytics?.views)
+  const rawPortalViews = normalizeSellerPortalPerformanceNumber(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews)
+  const rawBridgeViews = normalizeSellerPortalPerformanceNumber(analytics?.bridgeViews || analytics?.websiteViews)
+  const estimatedViews = leadCount * 6 + syncedActiveOffers.length * 8 + 12
+  const totalViews = explicitViews || rawPortalViews + rawBridgeViews || estimatedViews
+  const portalViews = rawPortalViews || Math.max(0, Math.round(totalViews * 0.72))
+  const bridgeViews = rawBridgeViews || Math.max(0, totalViews - portalViews)
   const basePerformance = {
-    totalViews: totalViews || portalViews + bridgeViews,
+    totalViews,
     portalViews,
     bridgeViews,
-    leadCount: normalizeSellerPortalPerformanceNumber(analytics?.leadCount || analytics?.leads),
-    newThisWeek: normalizeSellerPortalPerformanceNumber(analytics?.newThisWeek),
+    leadCount,
+    newThisWeek: newLeadRowsThisWeek || normalizeSellerPortalPerformanceNumber(analytics?.newThisWeek),
     scheduledViewings: visibleAppointments.length,
     completedViewings: completedAppointments.length,
-    offerCount: activeOffers.length,
-    pendingOffers: activeOffers.length,
+    offerCount: offerRows.length || activeOffers.length,
+    pendingOffers,
     daysOnMarket,
     areaAverageDays: normalizeSellerPortalPerformanceNumber(analytics?.areaAverageDaysOnMarket || listing?.market?.areaAverageDaysOnMarket || listing?.areaAverageDaysOnMarket, daysOnMarket ? Math.max(daysOnMarket + 15, 30) : 0),
   }
@@ -650,14 +790,16 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const appointments = (corePayload ? [] : Array.isArray(context?.appointments) ? context.appointments : [])
     .map((item) => mapSellerPortalAppointment(item))
   const rawOffers = [
-    ...(corePayload ? [] : Array.isArray(context?.offers) ? context.offers : []),
-    ...(corePayload ? [] : Array.isArray(listing?.offers) ? listing.offers : []),
+    ...(Array.isArray(context?.offers) ? context.offers : []),
+    ...(Array.isArray(listing?.offers) ? listing.offers : []),
   ]
+  const sellerLeadRows = collectSellerPortalLeadRows(context, listing, listing?.marketing)
   const listingPerformance = buildSellerPortalListingPerformance({
     listing,
     formData,
     offers: rawOffers,
     appointments,
+    leadRows: sellerLeadRows,
   })
   const sellerActivityRows = !corePayload && listingId
     ? await getPrivateListingActivity(listingId).catch((error) => {
@@ -731,6 +873,14 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     ...(Array.isArray(listing?.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
     ...(Array.isArray(formData.externalListingLinks) ? formData.externalListingLinks : []),
   ])
+  const sellerPortalHeroImageUrl = resolveSellerPortalHeroImageUrl(listing, formData)
+  const sellerPortalGalleryImages = [
+    ...(Array.isArray(listing?.galleryImages) ? listing.galleryImages : []),
+    ...(Array.isArray(listing?.gallery_images) ? listing.gallery_images : []),
+    ...(Array.isArray(listing?.images) ? listing.images : []),
+    ...(Array.isArray(listing?.marketing?.imageGallery) ? listing.marketing.imageGallery : []),
+    ...(Array.isArray(listing?.marketing?.image_gallery) ? listing.marketing.image_gallery : []),
+  ]
   const sellerPortalBranding = {
     ...(listing?.branding || {}),
     organisationName: listing?.organisationName || listing?.agencyName || listing?.branding?.organisationName || '',
@@ -753,6 +903,18 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     listing_status: listing?.listingStatus || listing?.listing_status || listing?.status || '',
     listingPerformance,
     listing_performance: listingPerformance,
+    heroImageUrl: sellerPortalHeroImageUrl,
+    hero_image_url: sellerPortalHeroImageUrl,
+    coverImageUrl: sellerPortalHeroImageUrl,
+    cover_image_url: sellerPortalHeroImageUrl,
+    imageUrl: sellerPortalHeroImageUrl,
+    image_url: sellerPortalHeroImageUrl,
+    propertyImage: sellerPortalHeroImageUrl,
+    property_image: sellerPortalHeroImageUrl,
+    galleryImages: sellerPortalGalleryImages,
+    gallery_images: sellerPortalGalleryImages,
+    imageGallery: sellerPortalGalleryImages,
+    image_gallery: sellerPortalGalleryImages,
     mandatePacket,
     externalListingLinks: sellerVisibleExternalLinks,
     listingExternalLinks: sellerVisibleExternalLinks,
@@ -772,6 +934,24 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       ...listing,
       listingPerformance,
       listing_performance: listingPerformance,
+      heroImageUrl: sellerPortalHeroImageUrl || listing?.heroImageUrl || '',
+      hero_image_url: sellerPortalHeroImageUrl || listing?.hero_image_url || '',
+      coverImageUrl: sellerPortalHeroImageUrl || listing?.coverImageUrl || '',
+      cover_image_url: sellerPortalHeroImageUrl || listing?.cover_image_url || '',
+      imageUrl: sellerPortalHeroImageUrl || listing?.imageUrl || '',
+      image_url: sellerPortalHeroImageUrl || listing?.image_url || '',
+      propertyImage: sellerPortalHeroImageUrl || listing?.propertyImage || '',
+      property_image: sellerPortalHeroImageUrl || listing?.property_image || '',
+      galleryImages: sellerPortalGalleryImages.length ? sellerPortalGalleryImages : listing?.galleryImages || [],
+      gallery_images: sellerPortalGalleryImages.length ? sellerPortalGalleryImages : listing?.gallery_images || [],
+      marketing: {
+        ...(listing?.marketing || {}),
+        mediaUrl: sellerPortalHeroImageUrl || listing?.marketing?.mediaUrl || '',
+        media_url: sellerPortalHeroImageUrl || listing?.marketing?.media_url || '',
+        imageGallery: sellerPortalGalleryImages.length ? sellerPortalGalleryImages : listing?.marketing?.imageGallery || [],
+        image_gallery: sellerPortalGalleryImages.length ? sellerPortalGalleryImages : listing?.marketing?.image_gallery || [],
+        externalLinks: sellerVisibleExternalLinks,
+      },
       externalLinks: sellerVisibleExternalLinks,
       listingExternalLinks: sellerVisibleExternalLinks,
     },
@@ -787,6 +967,16 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       unit_number: propertyAddress,
       phase: listing?.suburb || listing?.city || '',
       status: sellerPortalStage,
+      heroImageUrl: sellerPortalHeroImageUrl,
+      hero_image_url: sellerPortalHeroImageUrl,
+      coverImageUrl: sellerPortalHeroImageUrl,
+      cover_image_url: sellerPortalHeroImageUrl,
+      imageUrl: sellerPortalHeroImageUrl,
+      image_url: sellerPortalHeroImageUrl,
+      propertyImage: sellerPortalHeroImageUrl,
+      property_image: sellerPortalHeroImageUrl,
+      galleryImages: sellerPortalGalleryImages,
+      gallery_images: sellerPortalGalleryImages,
       development: {
         id: listing?.organisationId || null,
         name: sellerPortalBranding.agencyName || sellerPortalBranding.organisationName || 'Arch9',
@@ -862,6 +1052,18 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
       sellerLeadId,
       listingId,
+      heroImageUrl: sellerPortalHeroImageUrl,
+      hero_image_url: sellerPortalHeroImageUrl,
+      coverImageUrl: sellerPortalHeroImageUrl,
+      cover_image_url: sellerPortalHeroImageUrl,
+      imageUrl: sellerPortalHeroImageUrl,
+      image_url: sellerPortalHeroImageUrl,
+      propertyImage: sellerPortalHeroImageUrl,
+      property_image: sellerPortalHeroImageUrl,
+      galleryImages: sellerPortalGalleryImages,
+      gallery_images: sellerPortalGalleryImages,
+      imageGallery: sellerPortalGalleryImages,
+      image_gallery: sellerPortalGalleryImages,
       agencyName: sellerPortalBranding.agencyName || sellerPortalBranding.organisationName || '',
       agencyLogoUrl: sellerPortalBranding.logoDarkUrl || sellerPortalBranding.logoUrl || sellerPortalBranding.logoLightUrl || '',
       agencyLogoLightUrl: sellerPortalBranding.logoLightUrl || '',
