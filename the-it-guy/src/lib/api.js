@@ -1062,6 +1062,15 @@ function isPermissionDeniedError(error) {
   return error.code === '42501' || message.includes('permission denied')
 }
 
+function isStatementTimeoutError(error) {
+  if (!error) {
+    return false
+  }
+
+  const message = String(error.message || error.details || error.hint || error.error || '').toLowerCase()
+  return error.code === '57014' || message.includes('statement timeout')
+}
+
 function isMissingSchemaError(error) {
   if (!error) {
     return false
@@ -41256,14 +41265,26 @@ export async function fetchClientPortalCoreByToken(token) {
     throw buyerQuery.error
   }
 
-  const [documents, additionalDocumentRequests] = await Promise.all([
-    loadSharedDocuments(client, {
-      transactionIds: [transaction.id],
-      viewer: 'client',
-      clientPortalFinalArtifactDescriptors: true,
-    }),
-    fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
-  ])
+  let documents = []
+  let additionalDocumentRequests = []
+  try {
+    ;[documents, additionalDocumentRequests] = await Promise.all([
+      loadSharedDocuments(client, {
+        transactionIds: [transaction.id],
+        viewer: 'client',
+        clientPortalFinalArtifactDescriptors: true,
+      }),
+      fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
+    ])
+  } catch (documentError) {
+    if (!isStatementTimeoutError(documentError) && !isMissingSchemaError(documentError) && !isPermissionDeniedError(documentError)) {
+      throw documentError
+    }
+    console.warn('[client-portal-core] Optional document summary unavailable', {
+      transactionId: transaction.id,
+      error: documentError,
+    })
+  }
   let appointments = []
   try {
     const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transaction.id], {
@@ -41271,9 +41292,13 @@ export async function fetchClientPortalCoreByToken(token) {
     })
     appointments = appointmentsByTransactionId[transaction.id] || []
   } catch (appointmentsError) {
-    if (!isMissingSchemaError(appointmentsError)) {
+    if (!isMissingSchemaError(appointmentsError) && !isStatementTimeoutError(appointmentsError) && !isPermissionDeniedError(appointmentsError)) {
       throw appointmentsError
     }
+    console.warn('[client-portal-core] Optional appointments unavailable', {
+      transactionId: transaction.id,
+      error: appointmentsError,
+    })
   }
 
   const stage = normalizeStage(transaction.stage, unitQuery.data?.status)
@@ -41299,13 +41324,27 @@ export async function fetchClientPortalCoreByToken(token) {
     minimalChecklist.checklist,
   )
   const clientVisibleBuyerRequirements = getRoleFilteredRequirements(buyerRequirementProfile, 'client')
-  const attorneyRolePlayers = await resolveClientPortalAttorneyRolePlayers(client, {
-    transactionId: transaction.id,
-    transferFallbackName: transaction?.attorney || '',
-    transferFallbackEmail: transaction?.assigned_attorney_email || '',
-    bondFallbackName: transaction?.bond_originator || '',
-    bondFallbackEmail: transaction?.assigned_bond_originator_email || '',
-  })
+  let attorneyRolePlayers = {
+    transferAttorney: null,
+    bondAttorney: null,
+  }
+  try {
+    attorneyRolePlayers = await resolveClientPortalAttorneyRolePlayers(client, {
+      transactionId: transaction.id,
+      transferFallbackName: transaction?.attorney || '',
+      transferFallbackEmail: transaction?.assigned_attorney_email || '',
+      bondFallbackName: transaction?.bond_originator || '',
+      bondFallbackEmail: transaction?.assigned_bond_originator_email || '',
+    })
+  } catch (rolePlayerError) {
+    if (!isStatementTimeoutError(rolePlayerError) && !isMissingSchemaError(rolePlayerError) && !isPermissionDeniedError(rolePlayerError)) {
+      throw rolePlayerError
+    }
+    console.warn('[client-portal-core] Optional role-player summary unavailable', {
+      transactionId: transaction.id,
+      error: rolePlayerError,
+    })
+  }
 
   return {
     link,

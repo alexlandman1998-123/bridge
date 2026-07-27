@@ -108,6 +108,15 @@ const ISSUE_CATEGORIES = [
   'Other',
 ]
 
+function getClientPortalLoadErrorMessage(error, fallback = 'We could not load your client workspace right now.') {
+  const message = String(error?.message || error || '').trim()
+  const normalized = message.toLowerCase()
+  if (normalized.includes('statement timeout') || normalized.includes('failed to fetch') || normalized.includes('network')) {
+    return 'Your client portal is temporarily taking too long to load. Please retry in a moment.'
+  }
+  return message || fallback
+}
+
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Progress', icon: BarChart3 },
@@ -6843,7 +6852,10 @@ function ClientPortal() {
           setError('')
           return
         }
-        setError(loadError?.message || 'We could not refresh your client workspace right now.')
+        console.warn('[client-portal] Background refresh skipped', {
+          token,
+          error: loadError,
+        })
       } finally {
         setHydratingPortal(false)
       }
@@ -6882,7 +6894,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(coreError?.message || 'We could not load your client workspace.')
+        setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your client workspace.'))
       }
     }
 
@@ -6914,7 +6926,7 @@ function ClientPortal() {
         return
       }
       if (!hasCoreData) {
-        setError(loadError?.message || 'We could not finish loading your client workspace.')
+        setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your client workspace.'))
       }
     } finally {
       setHydratingPortal(false)
