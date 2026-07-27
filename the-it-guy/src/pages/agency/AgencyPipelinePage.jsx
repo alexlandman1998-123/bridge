@@ -3231,6 +3231,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadRequestRef = useRef(0)
   const reloadTimerRef = useRef(null)
   const routeLeadHydrationRef = useRef('')
+  const routeLeadWorkspaceSnapshotRef = useRef(null)
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
@@ -3550,16 +3551,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? readAgentPrivateListings().map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean)
           : []),
       ])
-      const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
-        const sourceContacts = Array.isArray(sourceSnapshot?.contacts) ? sourceSnapshot.contacts : []
+      const mergeActiveRouteLeadSnapshot = (sourceSnapshot) => {
+        const pinned = routeLeadWorkspaceSnapshotRef.current
+        if (!pinned || pinned.organisationId !== normalizeText(orgId) || !Array.isArray(pinned.leads) || !pinned.leads.length) {
+          return sourceSnapshot
+        }
+
         const sourceLeads = Array.isArray(sourceSnapshot?.leads) ? sourceSnapshot.leads : []
-        const sourceTasks = Array.isArray(sourceSnapshot?.tasks) ? sourceSnapshot.tasks : []
-        const sourceActivities = Array.isArray(sourceSnapshot?.leadActivities) ? sourceSnapshot.leadActivities : []
-        const sourceDeals = Array.isArray(sourceSnapshot?.deals) ? sourceSnapshot.deals : []
-        const sourceInboundEmails = Array.isArray(sourceSnapshot?.inboundLeadEmails) ? sourceSnapshot.inboundLeadEmails : []
+        const pinnedLeadKeys = new Set(
+          [pinned.requestedLeadId, pinned.resolvedLeadId, ...pinned.leads.map((lead) => lead?.leadId)]
+            .map((value) => normalizeLeadIdentityKey(value))
+            .filter(Boolean),
+        )
+        const sourceHasRouteLead = sourceLeads.some((lead) => pinnedLeadKeys.has(normalizeLeadIdentityKey(lead?.leadId)))
+        if (sourceHasRouteLead) return sourceSnapshot
+
+        return {
+          ...sourceSnapshot,
+          contacts: dedupeByKey(
+            [
+              ...(Array.isArray(sourceSnapshot?.contacts) ? sourceSnapshot.contacts : []),
+              ...(Array.isArray(pinned.contacts) ? pinned.contacts : []),
+            ],
+            (row) => row?.contactId,
+          ),
+          leads: mergeLeadRowsForReload(sourceLeads, pinned.leads),
+          leadActivities: dedupeByKey(
+            [
+              ...(Array.isArray(sourceSnapshot?.leadActivities) ? sourceSnapshot.leadActivities : []),
+              ...(Array.isArray(pinned.leadActivities) ? pinned.leadActivities : []),
+            ],
+            (row) => row?.activityId,
+          ),
+          tasks: dedupeByKey(
+            [
+              ...(Array.isArray(sourceSnapshot?.tasks) ? sourceSnapshot.tasks : []),
+              ...(Array.isArray(pinned.tasks) ? pinned.tasks : []),
+            ],
+            (row) => row?.taskId,
+          ),
+        }
+      }
+
+      const applySnapshotRecords = (sourceSnapshot, appointmentRows = sourceSnapshot?.appointments || []) => {
+        const effectiveSnapshot = mergeActiveRouteLeadSnapshot(sourceSnapshot)
+        const sourceContacts = Array.isArray(effectiveSnapshot?.contacts) ? effectiveSnapshot.contacts : []
+        const sourceLeads = Array.isArray(effectiveSnapshot?.leads) ? effectiveSnapshot.leads : []
+        const sourceTasks = Array.isArray(effectiveSnapshot?.tasks) ? effectiveSnapshot.tasks : []
+        const sourceActivities = Array.isArray(effectiveSnapshot?.leadActivities) ? effectiveSnapshot.leadActivities : []
+        const sourceDeals = Array.isArray(effectiveSnapshot?.deals) ? effectiveSnapshot.deals : []
+        const sourceInboundEmails = Array.isArray(effectiveSnapshot?.inboundLeadEmails) ? effectiveSnapshot.inboundLeadEmails : []
         const sourceAppointments = Array.isArray(appointmentRows)
           ? appointmentRows
-          : (Array.isArray(sourceSnapshot?.appointments) ? sourceSnapshot.appointments : [])
+          : (Array.isArray(effectiveSnapshot?.appointments) ? effectiveSnapshot.appointments : [])
         const scopedLeads = sourceLeads
         const scopedLeadIds = new Set(
           scopedLeads
@@ -4071,7 +4115,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadTypeView])
 
   useEffect(() => {
-    if (!routeLeadId) return
+    if (!routeLeadId) {
+      routeLeadWorkspaceSnapshotRef.current = null
+      return
+    }
     setSelectedLeadId(routeLeadId)
     setLeadWorkspaceTab('overview')
     setRouteLeadHydrationNotice('')
@@ -4137,6 +4184,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const mergeRouteLeadSnapshot = (snapshot) => {
       if (!snapshot?.leads?.length) return false
       const resolvedRouteLeadId = normalizeText(snapshot?.resolvedLeadId || snapshot.leads[0]?.leadId)
+      routeLeadWorkspaceSnapshotRef.current = {
+        key: hydrationKey,
+        organisationId: normalizeText(organisationId),
+        requestedLeadId: normalizeText(routeLeadId),
+        resolvedLeadId: resolvedRouteLeadId,
+        contacts: Array.isArray(snapshot.contacts) ? snapshot.contacts : [],
+        leads: Array.isArray(snapshot.leads) ? snapshot.leads : [],
+        leadActivities: Array.isArray(snapshot.leadActivities) ? snapshot.leadActivities : [],
+        tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : [],
+      }
       if (resolvedRouteLeadId) {
         setSelectedLeadId(resolvedRouteLeadId)
       }
@@ -4175,11 +4232,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           return
         }
         if (snapshot?.leadWorkspaceStatus === 'not_found') {
+          routeLeadWorkspaceSnapshotRef.current = null
           setRouteLeadHydrationStatus('not_found')
           setRouteLeadHydrationNotice(LEAD_WORKSPACE_STALE_LINK_COPY)
           return
         }
         if (snapshot?.leadWorkspaceStatus === 'unavailable') {
+          routeLeadWorkspaceSnapshotRef.current = null
           setRouteLeadHydrationStatus('unavailable')
           setRouteLeadHydrationNotice(LEAD_WORKSPACE_UNAVAILABLE_COPY)
           return

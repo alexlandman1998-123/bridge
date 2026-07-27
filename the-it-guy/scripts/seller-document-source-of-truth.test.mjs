@@ -34,6 +34,15 @@ const listing = {
       propertyStructureType: 'full_title',
       gasInstallation: true,
       solarInstallation: true,
+      propertyDisclosure: {
+        roof: { status: 'good', comments: 'No known defects' },
+        generatedDocument: {
+          id: 'disclosure-1',
+          title: 'Property Condition Disclosure',
+          fileName: 'property-condition-disclosure.html',
+          generatedAt: '2026-07-01T08:05:00Z',
+        },
+      },
     },
   },
 }
@@ -61,12 +70,26 @@ assert.deepEqual(keys, [
 
 const signedMandate = source.rows.find((row) => row.key === 'signed_mandate')
 assert.equal(signedMandate.complete, true)
+assert.equal(signedMandate.category, 'sales')
 assert.equal(signedMandate.status, 'completed')
 assert.equal(signedMandate.statusBucket, 'approved')
 assert.equal(signedMandate.hasUpload, true)
 assert.equal(signedMandate.source.requirement, 'generated_seller_requirement')
 assert.equal(signedMandate.source.document, 'document_packets.final_signed_artifact')
 assert.equal(signedMandate.upload.filePath, 'mandates/listing-1/signed-mandate.pdf')
+
+const propertyDisclosure = source.rows.find((row) => row.key === 'property_condition_disclosure')
+assert.equal(propertyDisclosure.complete, true)
+assert.equal(propertyDisclosure.category, 'sales')
+assert.equal(propertyDisclosure.status, 'completed')
+assert.equal(propertyDisclosure.statusBucket, 'approved')
+assert.equal(propertyDisclosure.hasUpload, true)
+assert.match(propertyDisclosure.upload.generatedHtml, /Declaration by Seller/)
+assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.html')
+
+const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')
+assert.equal(titleDeed.category, 'property')
+assert.equal(titleDeed.blocking, true)
 
 const gasCertificate = source.rows.find((row) => row.key === 'gas_compliance_certificate')
 assert.equal(gasCertificate.category, 'property')
@@ -80,16 +103,17 @@ assert.equal(solarDocuments.blocking, true)
 assert.deepEqual(source.summary, {
   total: 8,
   totalRequired: 8,
-  complete: 1,
-  completeRequired: 1,
-  blocking: 7,
-  uploaded: 1,
-  outstanding: 7,
+  complete: 2,
+  completeRequired: 2,
+  blocking: 6,
+  uploaded: 2,
+  outstanding: 6,
   underReview: 0,
-  approved: 1,
+  approved: 2,
   rejected: 0,
   byCategory: {
-    property: 6,
+    sales: 2,
+    property: 4,
     fica: 2,
   },
 })

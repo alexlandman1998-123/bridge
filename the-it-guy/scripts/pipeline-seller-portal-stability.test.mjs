@@ -37,6 +37,21 @@ assert.match(pipelineSource, /snapshot\?\.leadWorkspaceStatus === 'not_found'[\s
 assert.ok(pipelineSource.includes('This lead link is stale or the lead has been removed from the selected workspace.'), 'stale lead workspace links should show an explicit recovery message')
 assert.ok(pipelineSource.includes('Back to Leads'), 'stale lead workspace links should offer a path back to the lead list')
 assert.match(pipelineSource, /const resolvedRouteLeadId = normalizeText\(snapshot\?\.resolvedLeadId \|\| snapshot\.leads\[0\]\?\.leadId\)[\s\S]*?setSelectedLeadId\(resolvedRouteLeadId\)/, 'listing-derived lead routes should pivot the selected workspace row to the resolved canonical lead id')
+assert.match(
+  pipelineSource,
+  /const routeLeadWorkspaceSnapshotRef = useRef\(null\)/,
+  'lead workspace should keep a route-specific hydration snapshot',
+)
+assert.match(
+  pipelineSource,
+  /mergeActiveRouteLeadSnapshot[\s\S]*?routeLeadWorkspaceSnapshotRef\.current[\s\S]*?sourceHasRouteLead[\s\S]*?mergeLeadRowsForReload\(sourceLeads, pinned\.leads\)/,
+  'background pipeline refreshes should preserve the active route lead when the full list omits it',
+)
+assert.match(
+  pipelineSource,
+  /routeLeadWorkspaceSnapshotRef\.current = \{[\s\S]*?requestedLeadId: normalizeText\(routeLeadId\)[\s\S]*?resolvedLeadId: resolvedRouteLeadId/,
+  'successful direct lead hydration should pin the requested and resolved lead ids',
+)
 
 assert.match(
   agencyCrmRepositorySource,

@@ -1,7 +1,7 @@
 import {
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
-} from './platformFeeConsent'
+} from './platformFeeConsent.js'
 
 export const PROPERTY_DISCLOSURE_DECISION = Object.freeze({
   none: 'none',

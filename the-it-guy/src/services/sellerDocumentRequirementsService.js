@@ -1,4 +1,5 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
+import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -743,6 +744,17 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
   ].filter(Boolean).join(' '))
 
   if (group === 'additional' || category === 'additional_requests' || signal.includes('additional_request')) return 'additional'
+  if (
+    group === 'mandate' ||
+    category === 'mandate' ||
+    category === 'mandate_signature' ||
+    ['signed_mandate', 'property_condition_disclosure'].some((key) => sellerDocumentKeysOverlap(signal, key)) ||
+    signal.includes('offer_to_purchase') ||
+    signal.includes('sale_agreement') ||
+    signal.includes('seller_instruction')
+  ) {
+    return 'sales'
+  }
   if (['seller_identity', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney', 'fica'].includes(group)) return 'fica'
   return 'property'
 }
@@ -995,6 +1007,48 @@ export function buildSellerSignedMandateDocumentFromPacket(mandatePacket = null)
   }
 }
 
+function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listing = {}) {
+  const disclosure = isPlainObject(formData?.propertyDisclosure)
+    ? formData.propertyDisclosure
+    : isPlainObject(formData?.property_disclosure)
+      ? formData.property_disclosure
+      : null
+  if (!disclosure) return null
+
+  const generatedDocument = isPlainObject(disclosure.generatedDocument)
+    ? disclosure.generatedDocument
+    : isPlainObject(disclosure.generated_document)
+      ? disclosure.generated_document
+      : {}
+  const context = {
+    sellerName: normalizeText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
+    sellerIdNumber: normalizeText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
+    sellerId: normalizeText(generatedDocument.sellerId || listing?.sellerProfileId || listing?.seller_profile_id),
+    propertyId: normalizeText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
+    listingId: normalizeText(generatedDocument.listingId || listing?.id || listing?.private_listing_id),
+    transactionId: normalizeText(generatedDocument.transactionId || listing?.transactionId || listing?.transaction_id),
+  }
+  const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.html'
+
+  return {
+    id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
+    requirementKey: 'property_condition_disclosure',
+    requirement_key: 'property_condition_disclosure',
+    document_type: 'property_condition_disclosure',
+    documentType: 'property_condition_disclosure',
+    category: 'property_condition_disclosure',
+    document_category: 'property_condition_disclosure',
+    document_name: generatedDocument.title || 'Property Condition Disclosure',
+    name: generatedDocument.title || 'Property Condition Disclosure',
+    generatedHtml: buildPropertyDisclosureDocumentMarkup(disclosure, context),
+    generatedFileName: fileName.replace(/\.pdf$/i, '.html'),
+    status: 'completed',
+    visibility: 'seller_visible',
+    source: 'seller_onboarding.property_disclosure.generated_document',
+    created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
+  }
+}
+
 function getDocumentIdentity(document = {}, fallback = '') {
   return normalizeText(
     document?.id ||
@@ -1004,6 +1058,8 @@ function getDocumentIdentity(document = {}, fallback = '') {
       document?.file_path ||
       document?.url ||
       document?.file_url ||
+      document?.generatedFileName ||
+      document?.generated_file_name ||
       document?.document_name ||
       fallback,
   )
@@ -1069,6 +1125,8 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const uploadUrl = row?.documentUrl || row?.url || resolveDocumentUrl(document || {})
   const uploadPath = normalizeText(document?.storagePath || document?.storage_path || document?.filePath || document?.file_path || row?.filePath)
   const source = getSellerDocumentSourceType(row)
+  const generatedHtml = normalizeText(document?.generatedHtml || document?.generated_html)
+  const generatedFileName = normalizeText(document?.generatedFileName || document?.generated_file_name)
 
   return {
     id: normalizeText(row?.id) || `${contextId || 'seller'}:${key}`,
@@ -1089,7 +1147,7 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     applicable,
     complete,
     blocking: required && applicable && ['outstanding', 'rejected'].includes(statusBucket),
-    hasUpload: Boolean(document && (uploadUrl || uploadPath || documentHasFile(document) || complete)),
+    hasUpload: Boolean(document && (uploadUrl || uploadPath || generatedHtml || documentHasFile(document) || complete)),
     requestedBy: row?.requestedBy || normalizeRequestedBy(requirement || {}, document || {}),
     uploadedBy: row?.uploadedBy || normalizeUploadedBy(document || {}),
     uploadedAt: row?.uploadedAt || normalizeDateValue(document?.uploadedAt, document?.uploaded_at, document?.createdAt, document?.created_at),
@@ -1103,6 +1161,8 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
           fileName: row?.uploadedFileName || normalizeFileName(document, row?.title || row?.label),
           filePath: uploadPath,
           url: uploadUrl,
+          generatedHtml,
+          generatedFileName,
           bucket: normalizeText(document?.file_bucket || document?.bucket || document?.storage_bucket),
           uploadedAt: row?.uploadedAt || normalizeDateValue(document?.uploadedAt, document?.uploaded_at, document?.createdAt, document?.created_at),
           uploadedBy: row?.uploadedBy || normalizeUploadedBy(document),
@@ -1160,9 +1220,11 @@ export function buildSellerDocumentSourceOfTruth({
   const signedMandateDocument = buildSellerSignedMandateDocumentFromPacket(
     mandatePacket || listing?.mandatePacket || listing?.mandate_packet || null,
   )
+  const propertyDisclosureDocument = buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)
   const mergedDocuments = dedupeSellerDocuments([
     ...baseDocuments,
     ...(signedMandateDocument ? [signedMandateDocument] : []),
+    ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
   ])
   const sourceListing = {
     ...listing,

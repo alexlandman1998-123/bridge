@@ -414,6 +414,116 @@ function firstDraftValue(...values) {
   return ''
 }
 
+function buildListingMandatePacketSummary(listingRecord = {}, mandateWorkspace = {}) {
+  const mandate = listingRecord?.mandate || {}
+  const storedPacket = listingRecord?.mandatePacket && typeof listingRecord.mandatePacket === 'object'
+    ? listingRecord.mandatePacket
+    : listingRecord?.mandate_packet && typeof listingRecord.mandate_packet === 'object'
+      ? listingRecord.mandate_packet
+      : mandate?.packet && typeof mandate.packet === 'object'
+        ? mandate.packet
+        : {}
+  const storedVersion = storedPacket?.version && typeof storedPacket.version === 'object' ? storedPacket.version : {}
+  const mandatePacketId = firstDraftValue(
+    listingRecord?.mandatePacketId,
+    listingRecord?.mandate_packet_id,
+    storedPacket?.id,
+    storedPacket?.packetId,
+    storedPacket?.packet_id,
+    storedPacket?.packet?.id,
+    storedVersion?.packet_id,
+    mandate?.packetId,
+    mandate?.packet_id,
+    mandate?.id,
+  )
+  const finalSignedFilePath = firstDraftValue(
+    listingRecord?.mandateSignedDocumentPath,
+    listingRecord?.mandate_signed_document_path,
+    listingRecord?.finalSignedFilePath,
+    listingRecord?.final_signed_file_path,
+    mandate?.finalSignedFilePath,
+    mandate?.final_signed_file_path,
+    mandate?.signedFilePath,
+    mandate?.signed_file_path,
+    storedPacket?.finalSignedFilePath,
+    storedPacket?.final_signed_file_path,
+    storedVersion?.finalSignedFilePath,
+    storedVersion?.final_signed_file_path,
+  )
+  const finalSignedFileUrl = firstDraftValue(
+    listingRecord?.mandateSignedDocumentUrl,
+    listingRecord?.mandate_signed_document_url,
+    listingRecord?.finalSignedFileUrl,
+    listingRecord?.final_signed_file_url,
+    mandate?.finalSignedFileUrl,
+    mandate?.finalSignedDownloadUrl,
+    mandate?.final_signed_file_url,
+    mandate?.signedFileUrl,
+    mandate?.signed_file_url,
+    storedPacket?.finalSignedDownloadUrl,
+    storedPacket?.finalSignedFileAccessUrl,
+    storedPacket?.final_signed_file_url,
+    storedVersion?.final_signed_file_access_url,
+    storedVersion?.final_signed_file_url,
+    mandateWorkspace.signedUrl,
+    mandateWorkspace.viewUrl,
+  )
+  const finalSignedFileBucket = firstDraftValue(
+    listingRecord?.finalSignedFileBucket,
+    listingRecord?.final_signed_file_bucket,
+    listingRecord?.mandateSignedDocumentBucket,
+    listingRecord?.mandate_signed_document_bucket,
+    mandate?.finalSignedFileBucket,
+    mandate?.final_signed_file_bucket,
+    mandate?.signedFileBucket,
+    mandate?.signed_file_bucket,
+    storedPacket?.finalSignedFileBucket,
+    storedPacket?.final_signed_file_bucket,
+    storedVersion?.finalSignedFileBucket,
+    storedVersion?.final_signed_file_bucket,
+  )
+  if (!mandatePacketId && !finalSignedFilePath && !finalSignedFileUrl) return null
+
+  const versionId = firstDraftValue(
+    mandate?.versionId,
+    mandate?.version_id,
+    listingRecord?.mandatePacketVersionId,
+    listingRecord?.mandate_packet_version_id,
+    storedPacket?.packetVersionId,
+    storedPacket?.packet_version_id,
+    storedVersion?.id,
+  )
+  const finalSignedFileName = firstDraftValue(
+    mandate?.finalSignedFileName,
+    mandate?.signedFileName,
+    storedPacket?.finalSignedFileName,
+    storedPacket?.final_signed_file_name,
+    storedVersion?.finalSignedFileName,
+    storedVersion?.final_signed_file_name,
+    'Signed Mandate.pdf',
+  )
+
+  return {
+    id: mandatePacketId,
+    state: mandateWorkspace.isSigned ? 'fully_signed' : mandateWorkspace.status,
+    status: mandateWorkspace.status,
+    packet: { ...(storedPacket?.packet || {}), id: mandatePacketId, status: mandateWorkspace.status },
+    version: {
+      ...storedVersion,
+      id: versionId,
+      final_signed_file_path: finalSignedFilePath,
+      final_signed_file_url: finalSignedFileUrl,
+      final_signed_file_name: finalSignedFileName,
+      final_signed_file_bucket: finalSignedFileBucket,
+      finalised_at: firstDraftValue(storedVersion?.finalised_at, storedVersion?.finalized_at, mandateWorkspace.signedDate),
+    },
+    finalSignedFilePath,
+    finalSignedDownloadUrl: finalSignedFileUrl,
+    finalSignedFileName,
+    finalSignedFileBucket,
+  }
+}
+
 function mapAppointmentStatusToViewingStatus(status) {
   const normalized = String(status || '').trim().toLowerCase()
   if (['confirmed', 'accepted'].includes(normalized)) return VIEWING_STATUS.CONFIRMED
@@ -762,6 +872,7 @@ function applyListingPerformanceOverrides(basePerformance = {}, overrides = {}) 
 
 function getSellerDocumentSourceLabel(row = {}) {
   if (row?.source?.document === 'document_packets.final_signed_artifact') return 'Signed mandate packet'
+  if (row?.original?.document?.source === 'seller_onboarding.property_disclosure.generated_document') return 'Seller onboarding generated document'
   if (row?.source?.document === 'private_listing_documents' || row?.hasUpload) return 'Seller portal / linked document'
   if (row?.source?.requirement === 'private_listing_document_requirements') return 'Requirement checklist'
   return 'Generated seller requirement'
@@ -772,8 +883,10 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
   const originalDocument = row?.original?.document || {}
   const url = normalizeText(upload.url || row.url || row.documentUrl || originalDocument.url || originalDocument.fileUrl || originalDocument.file_url || originalDocument.signedUrl || originalDocument.signed_url)
   const filePath = normalizeText(upload.filePath || row.filePath || originalDocument.storagePath || originalDocument.storage_path || originalDocument.filePath || originalDocument.file_path)
+  const generatedHtml = normalizeText(upload.generatedHtml || row.generatedHtml || row.generated_html || originalDocument.generatedHtml || originalDocument.generated_html)
+  const generatedFileName = normalizeText(upload.generatedFileName || row.generatedFileName || row.generated_file_name || originalDocument.generatedFileName || originalDocument.generated_file_name)
   const uploadedOn = normalizeText(upload.uploadedAt || row.uploadedAt || originalDocument.uploadedAt || originalDocument.uploaded_at || originalDocument.createdAt || originalDocument.created_at)
-  const hasUpload = Boolean(row.hasUpload || url || filePath || uploadedOn)
+  const hasUpload = Boolean(row.hasUpload || url || filePath || generatedHtml || uploadedOn)
   const key = normalizeText(row.key || row.id || row.title || row.label)
   return {
     ...row,
@@ -784,9 +897,11 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
     status: row.status || (hasUpload ? 'uploaded' : 'required'),
     statusLabel: row.statusLabel || formatStatusLabel(row.status || (hasUpload ? 'uploaded' : 'required')),
     uploadedOn,
-    fileName: upload.fileName || row.uploadedFileName || row.fileName || originalDocument.fileName || originalDocument.file_name || originalDocument.document_name || '',
+    fileName: upload.fileName || row.uploadedFileName || row.fileName || originalDocument.fileName || originalDocument.file_name || originalDocument.document_name || generatedFileName || '',
     filePath,
     url,
+    generatedHtml,
+    generatedFileName,
     sourceLabel: getSellerDocumentSourceLabel(row),
   }
 }
@@ -795,7 +910,7 @@ const LISTING_DOCUMENT_GROUP_CONFIG = [
   {
     key: 'property',
     label: 'Property Documents',
-    description: 'Title deed, rates, disclosure, compliance certificates, and property records.',
+    description: 'Title deed, rates, compliance certificates, and property records.',
     icon: Building2,
     toneClasses: 'bg-[#eef5fb] text-[#1f4f78] border-[#d7e6f5]',
   },
@@ -836,6 +951,14 @@ function getListingDocumentGroupingKey(document = {}) {
   ].map((value) => String(value || '').toLowerCase()).join(' ')
 
   if (
+    category === 'sales' ||
+    group === 'mandate' ||
+    /mandate|otp|offer to purchase|sale agreement|sale instruction|seller instruction|commission|property condition disclosure|condition disclosure|disclosure|defects/.test(source)
+  ) {
+    return 'sales'
+  }
+
+  if (
     category === 'fica' ||
     ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group) ||
     /fica|identity|id document|passport|proof of residential address|proof of address|marriage|anc|spouse|company registration|cipc|director|authority|resolution|trust deed|trustee|letter of authority/.test(source)
@@ -846,17 +969,9 @@ function getListingDocumentGroupingKey(document = {}) {
   if (
     category === 'property' ||
     ['property', 'compliance', 'property_compliance', 'financial', 'occupancy'].includes(group) ||
-    /title deed|rates|levy|levies|body corporate|hoa|homeowners|property condition|disclosure|gas|solar|electrical|electric|beetle|plumbing|compliance|certificate|coc|building plan|approved plan|occupancy|occupation|erf|sectional title/.test(source)
+    /title deed|rates|levy|levies|body corporate|hoa|homeowners|gas|solar|electrical|electric|beetle|plumbing|compliance|certificate|coc|building plan|approved plan|occupancy|occupation|erf|sectional title/.test(source)
   ) {
     return 'property'
-  }
-
-  if (
-    category === 'sales' ||
-    group === 'mandate' ||
-    /mandate|otp|offer to purchase|sale agreement|sale instruction|seller instruction|commission/.test(source)
-  ) {
-    return 'sales'
   }
 
   return 'requests'
@@ -3528,6 +3643,19 @@ function AgentListingDetail() {
     if (!doc?.uploaded) return
     setDetailError('')
     setOpeningSellerDocumentKey(doc.key)
+    if (doc.generatedHtml) {
+      try {
+        downloadBlob(
+          new Blob([doc.generatedHtml], { type: 'text/html;charset=utf-8' }),
+          doc.generatedFileName || doc.fileName || `${doc.key || 'seller-document'}.html`,
+        )
+      } catch (error) {
+        setDetailError(error?.message || 'Unable to download this generated document.')
+      } finally {
+        setOpeningSellerDocumentKey('')
+      }
+      return
+    }
     const pendingWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
     if (pendingWindow) pendingWindow.opener = null
     try {
@@ -4579,53 +4707,8 @@ function AgentListingDetail() {
   }, [listingRecord, marketingDraft.expiryDate, marketingDraft.mandateSignedDate])
 
   const mandateContinuity = useMemo(() => {
-    const mandate = listingRecord?.mandate || {}
-    const mandatePacketId = firstDraftValue(
-      listingRecord?.mandatePacketId,
-      listingRecord?.mandate_packet_id,
-      listingRecord?.mandate_packet?.id,
-      mandate?.packetId,
-      mandate?.packet_id,
-      mandate?.packet?.id,
-      mandate?.id,
-    )
-    const finalSignedFilePath = firstDraftValue(
-      listingRecord?.mandateSignedDocumentPath,
-      listingRecord?.mandate_signed_document_path,
-      mandate?.finalSignedFilePath,
-      mandate?.final_signed_file_path,
-      mandate?.signedFilePath,
-      mandate?.signed_file_path,
-    )
-    const finalSignedFileUrl = firstDraftValue(
-      listingRecord?.mandateSignedDocumentUrl,
-      listingRecord?.mandate_signed_document_url,
-      mandate?.finalSignedFileUrl,
-      mandate?.finalSignedDownloadUrl,
-      mandate?.final_signed_file_url,
-      mandate?.signedFileUrl,
-      mandate?.signed_file_url,
-      mandateWorkspace.signedUrl,
-      mandateWorkspace.viewUrl,
-    )
-    const mandatePacket = mandatePacketId || finalSignedFilePath || finalSignedFileUrl
-      ? {
-          id: mandatePacketId,
-          state: mandateWorkspace.isSigned ? 'fully_signed' : mandateWorkspace.status,
-          status: mandateWorkspace.status,
-          packet: { id: mandatePacketId, status: mandateWorkspace.status },
-          version: {
-            id: firstDraftValue(mandate?.versionId, mandate?.version_id, listingRecord?.mandatePacketVersionId, listingRecord?.mandate_packet_version_id),
-            final_signed_file_path: finalSignedFilePath,
-            final_signed_file_url: finalSignedFileUrl,
-            final_signed_file_name: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
-            finalised_at: mandateWorkspace.signedDate,
-          },
-          finalSignedFilePath,
-          finalSignedDownloadUrl: finalSignedFileUrl,
-          finalSignedFileName: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
-        }
-      : null
+    const mandatePacket = buildListingMandatePacketSummary(listingRecord, mandateWorkspace)
+    const mandatePacketId = firstDraftValue(mandatePacket?.id, listingRecord?.mandatePacketId, listingRecord?.mandate_packet_id)
     const eventSources = [
       listingRecord?.activityEvents,
       listingRecord?.events,
@@ -4671,57 +4754,11 @@ function AgentListingDetail() {
         listingRecord?.seller_onboarding_token,
       ),
     })
-  }, [listingRecord, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.status, mandateWorkspace.viewUrl])
+  }, [listingRecord, mandateWorkspace])
 
   const sellerDocumentSource = useMemo(() => {
     if (!listingRecord) return null
-    const mandate = listingRecord?.mandate || {}
-    const mandatePacketId = firstDraftValue(
-      listingRecord?.mandatePacketId,
-      listingRecord?.mandate_packet_id,
-      listingRecord?.mandate_packet?.id,
-      mandate?.packetId,
-      mandate?.packet_id,
-      mandate?.packet?.id,
-      mandate?.id,
-    )
-    const finalSignedFilePath = firstDraftValue(
-      listingRecord?.mandateSignedDocumentPath,
-      listingRecord?.mandate_signed_document_path,
-      mandate?.finalSignedFilePath,
-      mandate?.final_signed_file_path,
-      mandate?.signedFilePath,
-      mandate?.signed_file_path,
-    )
-    const finalSignedFileUrl = firstDraftValue(
-      listingRecord?.mandateSignedDocumentUrl,
-      listingRecord?.mandate_signed_document_url,
-      mandate?.finalSignedFileUrl,
-      mandate?.finalSignedDownloadUrl,
-      mandate?.final_signed_file_url,
-      mandate?.signedFileUrl,
-      mandate?.signed_file_url,
-      mandateWorkspace.signedUrl,
-      mandateWorkspace.viewUrl,
-    )
-    const mandatePacket = mandatePacketId || finalSignedFilePath || finalSignedFileUrl
-      ? {
-          id: mandatePacketId,
-          state: mandateWorkspace.isSigned ? 'fully_signed' : mandateWorkspace.status,
-          status: mandateWorkspace.status,
-          packet: { id: mandatePacketId, status: mandateWorkspace.status },
-          version: {
-            id: firstDraftValue(mandate?.versionId, mandate?.version_id, listingRecord?.mandatePacketVersionId, listingRecord?.mandate_packet_version_id),
-            final_signed_file_path: finalSignedFilePath,
-            final_signed_file_url: finalSignedFileUrl,
-            final_signed_file_name: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
-            finalised_at: mandateWorkspace.signedDate,
-          },
-          finalSignedFilePath,
-          finalSignedDownloadUrl: finalSignedFileUrl,
-          finalSignedFileName: firstDraftValue(mandate?.finalSignedFileName, mandate?.signedFileName, 'Signed Mandate.pdf'),
-        }
-      : null
+    const mandatePacket = buildListingMandatePacketSummary(listingRecord, mandateWorkspace)
 
     return buildSellerDocumentSourceOfTruth({
       listing: {
@@ -4732,7 +4769,7 @@ function AgentListingDetail() {
       formData: getListingSellerFormData(listingRecord),
       mandatePacket,
     })
-  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.status, mandateWorkspace.viewUrl])
+  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace])
 
   const sellerDocumentTrackerRows = useMemo(
     () => (sellerDocumentSource?.rows || [])
@@ -4771,20 +4808,12 @@ function AgentListingDetail() {
   )
 
   const propertyDocuments = useMemo(
-    () => sellerDocumentExperienceItems.filter((doc) => {
-      const category = normalizeKey(doc?.category)
-      const group = normalizeKey(doc?.group)
-      return category === 'property' || ['property', 'compliance', 'property_compliance', 'financial', 'occupancy', 'mandate'].includes(group)
-    }),
+    () => sellerDocumentExperienceItems.filter((doc) => getListingDocumentGroupingKey(doc) === 'property'),
     [sellerDocumentExperienceItems],
   )
 
   const sellerDocuments = useMemo(
-    () => sellerDocumentExperienceItems.filter((doc) => {
-      const category = normalizeKey(doc?.category)
-      const group = normalizeKey(doc?.group)
-      return category === 'fica' || ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group)
-    }),
+    () => sellerDocumentExperienceItems.filter((doc) => getListingDocumentGroupingKey(doc) === 'fica'),
     [sellerDocumentExperienceItems],
   )
 
@@ -9800,7 +9829,7 @@ function AgentListingDetail() {
                             <div className="mt-4 flex flex-wrap justify-end gap-2">
                               <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                 {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                Upload
+                                {doc.uploaded ? 'Replace' : 'Upload'}
                                 <input
                                   type="file"
                                   className="hidden"
@@ -9808,7 +9837,7 @@ function AgentListingDetail() {
                                   onChange={(event) => void handleSellerDocumentUpload(doc, event)}
                                 />
                               </label>
-                              {doc.url || doc.filePath ? (
+                              {doc.url || doc.filePath || doc.generatedHtml ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}
