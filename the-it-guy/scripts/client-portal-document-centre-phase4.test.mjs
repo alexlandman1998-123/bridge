@@ -204,4 +204,57 @@ test('seller generated mandate and property disclosure expose the correct downlo
   assert.equal(signedMandate.canonicalFinalArtifact, true)
 })
 
+test('seller sale documents resolve from production packet status and snake case onboarding payloads', () => {
+  const model = buildDocumentCenter({
+    listing: {
+      id: 'listing-production-shape',
+      seller_profile_id: 'seller-production',
+      property_profile_id: 'property-production',
+    },
+    mandatePacketStatus: {
+      state: 'fully_signed',
+      packet: {
+        id: 'packet-production',
+        status: 'completed',
+        title: 'Exclusive Mandate',
+        final_signed_recorded: true,
+      },
+      versions: [
+        {
+          id: 'version-production',
+          rendered_file_path: 'mandates/generated/exclusive-mandate.pdf',
+          rendered_file_name: 'Exclusive Mandate.pdf',
+          final_signed_file_name: 'Signed Exclusive Mandate.pdf',
+        },
+      ],
+    },
+    onboardingFormData: {
+      form_data: {
+        sellerFirstName: 'Mia',
+        sellerSurname: 'Seller',
+        property_disclosure: {
+          declaration_accepted: true,
+          generated_document: {
+            id: 'disclosure-production',
+            title: 'Seller Declaration / Disclosure',
+            file_name: 'seller-declaration-disclosure.html',
+            generated_at: '2026-07-27T08:00:00Z',
+          },
+        },
+      },
+    },
+    requiredDocuments: [],
+    documents: [],
+    additionalDocumentRequests: [],
+  }, 'selling')
+
+  const saleDocumentTitles = model.saleDocuments.map((item) => item.title)
+  const signedMandate = model.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
+
+  assert.deepEqual(saleDocumentTitles, ['Mandate', 'Seller Declaration / Disclosure'])
+  assert.equal(model.saleDocuments.every((item) => item.sellerCategoryKey === 'sale'), true)
+  assert.equal(signedMandate.document_name, 'Signed Exclusive Mandate.pdf')
+  assert.equal(signedMandate.packet_version_id, 'version-production')
+})
+
 console.log('client portal document centre phase 4 tests passed')

@@ -1552,38 +1552,89 @@ function buildUploadedDocumentCenterItem(document = {}) {
 function getSellerPortalMandatePacket(portalData = {}) {
   const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
-  return portalData?.mandatePacket ||
-    activeSellingContext?.mandatePacket ||
-    listing?.mandatePacket ||
-    listing?.mandate_packet ||
-    portalData?.mandate?.packet ||
-    null
+  const candidates = [
+    portalData?.mandatePacket,
+    portalData?.mandate_packet,
+    portalData?.mandatePacketStatus,
+    portalData?.mandate_packet_status,
+    portalData?.mandatePacketStatus?.packet,
+    portalData?.mandate_packet_status?.packet,
+    activeSellingContext?.mandatePacket,
+    activeSellingContext?.mandate_packet,
+    activeSellingContext?.mandatePacketStatus,
+    activeSellingContext?.mandate_packet_status,
+    activeSellingContext?.mandatePacketStatus?.packet,
+    activeSellingContext?.mandate_packet_status?.packet,
+    listing?.mandatePacket,
+    listing?.mandate_packet,
+    listing?.mandatePacketStatus,
+    listing?.mandate_packet_status,
+    listing?.mandatePacketStatus?.packet,
+    listing?.mandate_packet_status?.packet,
+    portalData?.mandate?.packet,
+    portalData?.mandate?.packetStatus?.packet,
+    portalData?.mandate?.packet_status?.packet,
+  ]
+  const packetCandidates = candidates.filter((candidate) => isPlainObject(candidate))
+  return packetCandidates.find((candidate) => (
+    isPlainObject(candidate?.version) ||
+    Array.isArray(candidate?.versions) ||
+    candidate?.generatedPreviewFilePath ||
+    candidate?.generated_preview_file_path ||
+    candidate?.renderedFilePath ||
+    candidate?.rendered_file_path
+  )) || packetCandidates[0] || null
 }
 
 function buildGeneratedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return null
   const mandatePacket = getSellerPortalMandatePacket(portalData)
   if (!mandatePacket || typeof mandatePacket !== 'object') return null
+  const version = isPlainObject(mandatePacket?.version)
+    ? mandatePacket.version
+    : Array.isArray(mandatePacket?.versions) && isPlainObject(mandatePacket.versions[0])
+      ? mandatePacket.versions[0]
+      : {}
+  const packet = isPlainObject(mandatePacket?.packet) ? mandatePacket.packet : {}
   const filePath = toDisplayText(
     mandatePacket.generatedPreviewFilePath ||
       mandatePacket.generated_preview_file_path ||
+      mandatePacket.renderedFilePath ||
       mandatePacket.rendered_file_path ||
-      mandatePacket.version?.rendered_file_path,
+      mandatePacket.previewFilePath ||
+      mandatePacket.preview_file_path ||
+      mandatePacket.mandateFilePath ||
+      mandatePacket.mandate_file_path ||
+      version.renderedFilePath ||
+      version.rendered_file_path,
   )
   const fileUrl = toDisplayText(
     mandatePacket.generatedPreviewFileUrl ||
       mandatePacket.generated_preview_file_url ||
+      mandatePacket.renderedFileUrl ||
       mandatePacket.rendered_file_url ||
-      mandatePacket.version?.rendered_file_url,
+      mandatePacket.previewFileUrl ||
+      mandatePacket.preview_file_url ||
+      mandatePacket.mandateFileUrl ||
+      mandatePacket.mandate_file_url ||
+      version.renderedFileUrl ||
+      version.rendered_file_url,
   )
   if (!filePath && !fileUrl) return null
-  const packetId = toDisplayText(mandatePacket?.packet?.id || mandatePacket?.id)
-  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || mandatePacket?.version?.id)
+  const packetId = toDisplayText(packet?.id || mandatePacket?.id || mandatePacket?.packetId || mandatePacket?.packet_id)
+  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || version?.id)
   const fileName = toDisplayText(
     mandatePacket.generatedPreviewFileName ||
       mandatePacket.generated_preview_file_name ||
+      mandatePacket.renderedFileName ||
       mandatePacket.rendered_file_name ||
-      mandatePacket.version?.rendered_file_name,
+      mandatePacket.previewFileName ||
+      mandatePacket.preview_file_name ||
+      mandatePacket.mandateFileName ||
+      mandatePacket.mandate_file_name ||
+      version.renderedFileName ||
+      version.rendered_file_name ||
+      packet?.title,
     'Mandate',
   )
   return {
@@ -1600,18 +1651,64 @@ function buildGeneratedMandateDocumentFromPacket(portalData = {}, workspaceMode 
     storage_path: filePath,
     url: fileUrl,
     openDirectUrl: Boolean(fileUrl && !filePath),
-    created_at: mandatePacket?.version?.generated_at || mandatePacket?.packet?.updated_at || mandatePacket?.updatedAt || null,
+    created_at: version?.generated_at || version?.generatedAt || packet?.updated_at || mandatePacket?.updatedAt || mandatePacket?.updated_at || null,
   }
+}
+
+function resolveSellerPortalPropertyDisclosure(portalData = {}) {
+  const formData = resolveSellerPortalFormData(portalData)
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const onboarding = isPlainObject(portalData?.onboarding)
+    ? portalData.onboarding
+    : isPlainObject(portalData?.sellerOnboarding)
+      ? portalData.sellerOnboarding
+      : {}
+  const listingOnboarding = isPlainObject(listing?.sellerOnboarding)
+    ? listing.sellerOnboarding
+    : isPlainObject(listing?.seller_onboarding)
+      ? listing.seller_onboarding
+      : {}
+  const candidates = [
+    formData?.propertyDisclosure,
+    formData?.property_disclosure,
+    formData?.sellerDeclaration,
+    formData?.seller_declaration,
+    portalData?.propertyDisclosure,
+    portalData?.property_disclosure,
+    portalData?.sellerDeclaration,
+    portalData?.seller_declaration,
+    portalData?.onboardingFormData?.propertyDisclosure,
+    portalData?.onboardingFormData?.property_disclosure,
+    portalData?.onboardingFormData?.formData?.propertyDisclosure,
+    portalData?.onboardingFormData?.formData?.property_disclosure,
+    portalData?.onboardingFormData?.form_data?.propertyDisclosure,
+    portalData?.onboardingFormData?.form_data?.property_disclosure,
+    portalData?.sellerOnboardingFormData?.propertyDisclosure,
+    portalData?.sellerOnboardingFormData?.property_disclosure,
+    portalData?.sellerOnboardingFormData?.formData?.propertyDisclosure,
+    portalData?.sellerOnboardingFormData?.formData?.property_disclosure,
+    portalData?.sellerOnboardingFormData?.form_data?.propertyDisclosure,
+    portalData?.sellerOnboardingFormData?.form_data?.property_disclosure,
+    onboarding?.propertyDisclosure,
+    onboarding?.property_disclosure,
+    onboarding?.formData?.propertyDisclosure,
+    onboarding?.formData?.property_disclosure,
+    onboarding?.form_data?.propertyDisclosure,
+    onboarding?.form_data?.property_disclosure,
+    listingOnboarding?.propertyDisclosure,
+    listingOnboarding?.property_disclosure,
+    listingOnboarding?.formData?.propertyDisclosure,
+    listingOnboarding?.formData?.property_disclosure,
+    listingOnboarding?.form_data?.propertyDisclosure,
+    listingOnboarding?.form_data?.property_disclosure,
+  ]
+  return candidates.find((candidate) => isPlainObject(candidate)) || null
 }
 
 function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return null
   const formData = resolveSellerPortalFormData(portalData)
-  const disclosure = isPlainObject(formData?.propertyDisclosure)
-    ? formData.propertyDisclosure
-    : isPlainObject(formData?.property_disclosure)
-      ? formData.property_disclosure
-      : null
+  const disclosure = resolveSellerPortalPropertyDisclosure(portalData)
   if (!disclosure) return null
   const generatedDocument = isPlainObject(disclosure.generatedDocument)
     ? disclosure.generatedDocument
@@ -1670,16 +1767,19 @@ function buildSellerSaleDocumentCenterItem(document = {}, { id = '', title = '',
 
 function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return []
+  const generatedMandateDocument = buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode)
+  const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
+  const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
   return [
-    buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode)
-      ? buildSellerSaleDocumentCenterItem(buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode), {
+    (signedMandateDocument || generatedMandateDocument)
+      ? buildSellerSaleDocumentCenterItem(signedMandateDocument || generatedMandateDocument, {
           id: 'mandate',
           title: 'Mandate',
-          description: 'Generated mandate document available for download.',
+          description: 'Mandate document available for download.',
         })
       : null,
-    buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
-      ? buildSellerSaleDocumentCenterItem(buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode), {
+    propertyDisclosureDocument
+      ? buildSellerSaleDocumentCenterItem(propertyDisclosureDocument, {
           id: 'seller-declaration-disclosure',
           title: 'Seller Declaration / Disclosure',
           description: 'Seller property declaration and disclosure form available for download.',
@@ -1690,6 +1790,7 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
 
 function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 'buying') {
   const documents = [
+    buildSignedMandateDocumentFromPacket(portalData, workspaceMode),
     buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
     buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode),
   ].filter(Boolean)
@@ -1775,10 +1876,20 @@ function dedupeDocumentCenterItems(items = []) {
 function isMandatePacketFinalSigned(mandatePacket = null) {
   if (!mandatePacket || typeof mandatePacket !== 'object') return false
   if (mandatePacket?.finalSignedAccess?.available === true) return true
+  const version = isPlainObject(mandatePacket?.version)
+    ? mandatePacket.version
+    : Array.isArray(mandatePacket?.versions) && isPlainObject(mandatePacket.versions[0])
+      ? mandatePacket.versions[0]
+      : {}
   const state = normalizeValue(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status)
-  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || mandatePacket?.version?.id)
+  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || version?.id)
+  const finalSignedRecorded = mandatePacket?.finalSignedRecorded === true ||
+    mandatePacket?.final_signed_recorded === true ||
+    mandatePacket?.packet?.finalSignedRecorded === true ||
+    mandatePacket?.packet?.final_signed_recorded === true ||
+    Boolean(version?.final_signed_document_id || version?.finalSignedDocumentId || version?.final_signed_file_name || version?.finalSignedFileName)
   return Boolean(
-    mandatePacket?.finalSignedRecorded === true &&
+    finalSignedRecorded &&
       versionId &&
       ['fully_signed', 'signed', 'completed', 'complete', 'finalised', 'finalized', 'finalisation_pending'].includes(state),
   )
@@ -1859,15 +1970,25 @@ async function hydrateSellerMandatePacketForPortalData(token, portalData = {}, w
 
 function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return null
-  const mandatePacket = portalData?.activeSellingContext?.mandatePacket || portalData?.mandate?.packet || null
+  const mandatePacket = getSellerPortalMandatePacket(portalData)
   if (!isMandatePacketFinalSigned(mandatePacket)) return null
 
   const packetId = String(mandatePacket?.packet?.id || mandatePacket?.id || '').trim()
-  const versionId = String(mandatePacket?.packetVersionId || mandatePacket?.version?.id || '').trim()
+  const version = isPlainObject(mandatePacket?.version)
+    ? mandatePacket.version
+    : Array.isArray(mandatePacket?.versions) && isPlainObject(mandatePacket.versions[0])
+      ? mandatePacket.versions[0]
+      : {}
+  const versionId = String(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || version?.id || '').trim()
   const fileName = String(
     mandatePacket?.finalSignedAccess?.finalArtifact?.fileName ||
       mandatePacket?.finalSignedFileName ||
-      mandatePacket?.version?.final_signed_file_name ||
+      mandatePacket?.final_signed_file_name ||
+      version?.finalSignedFileName ||
+      version?.final_signed_file_name ||
+      mandatePacket?.generatedPreviewFileName ||
+      mandatePacket?.generated_preview_file_name ||
+      version?.rendered_file_name ||
       'Signed Mandate',
   ).trim()
   return {
@@ -1882,9 +2003,10 @@ function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = '
     status: 'completed',
     visibility: 'seller_visible',
     created_at:
-      mandatePacket?.version?.finalised_at ||
-      mandatePacket?.version?.finalized_at ||
-      mandatePacket?.version?.generated_at ||
+      version?.finalised_at ||
+      version?.finalized_at ||
+      version?.generated_at ||
+      version?.generatedAt ||
       mandatePacket?.packet?.updated_at ||
       null,
   }
@@ -1905,13 +2027,19 @@ function resolveSellerPortalFormData(portalData = {}) {
     ? portalData.formData
     : isPlainObject(portalData?.onboardingFormData?.formData)
       ? portalData.onboardingFormData.formData
-      : isPlainObject(portalData?.sellerOnboardingFormData)
-        ? portalData.sellerOnboardingFormData
-        : isPlainObject(onboarding?.formData)
-          ? onboarding.formData
-          : isPlainObject(onboarding?.form_data)
-            ? onboarding.form_data
-            : {}
+      : isPlainObject(portalData?.onboardingFormData?.form_data)
+        ? portalData.onboardingFormData.form_data
+        : isPlainObject(portalData?.sellerOnboardingFormData?.formData)
+          ? portalData.sellerOnboardingFormData.formData
+          : isPlainObject(portalData?.sellerOnboardingFormData?.form_data)
+            ? portalData.sellerOnboardingFormData.form_data
+            : isPlainObject(portalData?.sellerOnboardingFormData)
+              ? portalData.sellerOnboardingFormData
+              : isPlainObject(onboarding?.formData)
+                ? onboarding.formData
+                : isPlainObject(onboarding?.form_data)
+                  ? onboarding.form_data
+                  : {}
 }
 
 function resolveSellerPortalRawRequirements(portalData = {}) {
