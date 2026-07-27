@@ -382,6 +382,53 @@ function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}
   return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
 }
 
+function sanitizeDownloadFileName(value = '', fallback = 'signed-document.pdf') {
+  const normalized = normalizeText(value)
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return normalized || fallback
+}
+
+async function triggerBrowserDownload(url = '', fileName = 'signed-document.pdf') {
+  const downloadUrl = normalizeText(url)
+  if (!downloadUrl) {
+    throw new Error('The download link is not available yet.')
+  }
+  if (typeof document === 'undefined') return
+
+  const safeFileName = sanitizeDownloadFileName(fileName)
+  let objectUrl = ''
+  let href = downloadUrl
+  try {
+    if (typeof fetch === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        const response = await fetch(downloadUrl)
+        if (!response.ok) throw new Error('The signed document could not be downloaded.')
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        href = objectUrl
+      } catch (error) {
+        if (error?.message === 'The signed document could not be downloaded.') throw error
+        console.warn('[LegalDocumentWorkspace] Falling back to direct signed document download.', error)
+      }
+    }
+
+    const anchor = document.createElement('a')
+    anchor.href = href
+    anchor.download = safeFileName
+    anchor.rel = 'noopener'
+    anchor.style.display = 'none'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    if (objectUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    }
+  }
+}
+
 function createWorkspaceError(code, message, details = {}) {
   const error = new Error(message)
   error.code = code
@@ -6487,9 +6534,6 @@ export default function LegalDocumentWorkspace({
       throw new Error('The final signed document reference is incomplete.')
     }
 
-    // Open synchronously so a browser does not block the final navigation
-    // while the secure resolver mints its short-lived URL.
-    const targetWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
     setFinalSignedAccessBusy(true)
     try {
       const access = await resolveWorkspaceFinalSignedDocumentAccess({
@@ -6502,15 +6546,8 @@ export default function LegalDocumentWorkspace({
       if (access?.available !== true || !downloadUrl) {
         throw new Error(access?.message || 'The final signed document is still being securely published.')
       }
-      if (targetWindow) {
-        targetWindow.location.href = downloadUrl
-      } else if (typeof window !== 'undefined') {
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
-      }
+      await triggerBrowserDownload(downloadUrl, access?.finalArtifact?.fileName || latestVersion?.final_signed_file_name || `Signed ${isOtpPacket ? 'OTP' : 'Mandate'}.pdf`)
       return access
-    } catch (error) {
-      if (targetWindow && !targetWindow.closed) targetWindow.close()
-      throw error
     } finally {
       setFinalSignedAccessBusy(false)
     }

@@ -373,8 +373,14 @@ assert.match(
 )
 assert.match(
   legalWorkspace,
-  /handleOpenFinalSignedDocument[\s\S]*?resolveWorkspaceFinalSignedDocumentAccess[\s\S]*?download: true/,
+  /handleOpenFinalSignedDocument[\s\S]*?resolveWorkspaceFinalSignedDocumentAccess[\s\S]*?download: true[\s\S]*?triggerBrowserDownload/,
   'Legal workspace downloads must go through the Phase 4 resolver.',
+)
+const legalWorkspaceFinalDownloadHandler = legalWorkspace.match(/async function handleOpenFinalSignedDocument\(\) \{[\s\S]*?\n  \}/)?.[0] || ''
+assert.doesNotMatch(
+  legalWorkspaceFinalDownloadHandler,
+  /window\.open/,
+  'Legal workspace signed-document downloads must save the file directly instead of opening a browser tab.',
 )
 
 console.log('Phase 4 final-signed artifact access fence contract passed.')
