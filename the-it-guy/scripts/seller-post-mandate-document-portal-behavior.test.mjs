@@ -32,16 +32,28 @@ const { buildDocumentCenter, resolveSellerPortalRequiredDocumentPack } = await i
 const portalData = {
   listing: {
     id: 'listing-company-portal',
+    propertyAddress: '409 Queens Cres, Menlo Park',
     mandateStatus: 'signed',
     sellerOnboarding: {
       status: 'completed',
       formData: {
         email: 'company-seller@example.com',
+        firstName: 'Casey',
+        lastName: 'Director',
+        identityNumber: '8001015009087',
         ownershipType: 'company',
         companyName: 'Example Property Pty Ltd',
         companyRegistrationNumber: '2020/123456/07',
         companyRegisteredAddress: '1 Example Road',
         authorisedSignatoryName: 'Casey Director',
+        propertyDisclosure: {
+          decision: 'none',
+          declarationAccepted: true,
+          signature: 'Casey Director',
+          signedAt: '2026-07-20T08:00:00.000Z',
+          signedPlace: 'Pretoria',
+          responses: {},
+        },
       },
     },
   },
@@ -109,6 +121,7 @@ const documentCenter = buildDocumentCenter(portalData, 'selling')
 const requiredKeys = documentCenter.requiredDocuments.map((item) => item.key)
 const itemKeys = documentCenter.items.map((item) => item.sourceId)
 const resolutionItem = documentCenter.items.find((item) => item.sourceId === 'company_resolution_to_sell')
+const disclosureItem = documentCenter.items.find((item) => item.sourceId === 'property_condition_disclosure')
 const signedMandate = documentCenter.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
 
 assert.deepEqual(requiredKeys, packKeys)
@@ -119,6 +132,11 @@ assert.equal(itemKeys.includes('id_document'), false)
 assert.equal(itemKeys.includes('signed_mandate'), false)
 assert.equal(resolutionItem.status, 'uploaded')
 assert.equal(resolutionItem.uploadSpec.type, 'requirement')
+assert.equal(disclosureItem.status, 'completed')
+assert.equal(disclosureItem.uploadSpec, null)
+assert.equal(disclosureItem.openLabel, 'Download Property Disclosure')
+assert.equal(disclosureItem.linkedDocument.systemGeneratedDocument, true)
+assert.match(disclosureItem.linkedDocument.generatedHtml, /Declaration by Seller - Annexure A/)
 assert.equal(signedMandate.name, 'Signed Mandate.pdf')
 
 console.log('seller post-mandate document portal behavior tests passed')

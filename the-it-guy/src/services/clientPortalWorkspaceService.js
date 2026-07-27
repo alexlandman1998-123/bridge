@@ -37,6 +37,11 @@ import {
   resolveSellerPostMandateStructureRequirementPack,
 } from './sellerPostMandateDocumentOrchestrationService.js'
 import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
+import {
+  buildPropertyDisclosureDocument,
+  buildPropertyDisclosureDocumentMarkup,
+  isPropertyDisclosureDigitallyComplete,
+} from '../lib/propertyDisclosure.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1329,12 +1334,55 @@ function isSignedMandateDocument(document = {}) {
   return source.includes('mandate_signature') || source.includes('signed_mandate') || (source.includes('mandate') && source.includes('signed'))
 }
 
+function isPropertyDisclosureRequirement(requirement = {}) {
+  const source = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+    requirement?.title,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function isPropertyDisclosureDocument(document = {}) {
+  const source = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.title,
+    document?.type,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    source.includes('seller_disclosure_annexure_a') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
+  if (!document) return ''
+  if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return 'Download Signed Mandate'
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return 'Download Property Disclosure'
+  return ''
+}
+
 function documentMatchesRequirement(document = {}, requirement = {}) {
   const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
   const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
   if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
@@ -1455,6 +1503,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
+  const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
 
   return {
     id: `required_${key}`,
@@ -1475,7 +1524,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
           requirementKey: key,
         }
       : null,
-    openLabel: '',
+    openLabel,
     metaLine: toDisplayText(requirement?.requestedBy || requirement?.requested_by_name),
     dueDate: requirement?.dueDate || requirement?.due_date || null,
     requestedBy: requirement?.requestedBy || requirement?.requested_by_name || '',
@@ -1667,6 +1716,79 @@ function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = '
   }
 }
 
+function resolvePortalSellerName(portalData = {}, formData = {}) {
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  return toDisplayText(
+    formData.fullName ||
+      formData.full_name ||
+      [formData.firstName || formData.first_name, formData.lastName || formData.last_name].filter(Boolean).join(' ') ||
+      activeSellingContext.sellerName ||
+      activeSellingContext.seller_name ||
+      listing.sellerName ||
+      listing.seller_name ||
+      portalData?.buyer?.name,
+    'Seller',
+  )
+}
+
+function buildPropertyDisclosureDocumentFromPortalData(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const formData = resolveSellerPortalFormData(portalData)
+  const disclosure = formData?.propertyDisclosure || formData?.property_disclosure || portalData?.propertyDisclosure || portalData?.property_disclosure || null
+  if (!disclosure || typeof disclosure !== 'object') return null
+  if (!isPropertyDisclosureDigitallyComplete(disclosure) && disclosure.uploadedDocumentReviewed !== true && disclosure.uploaded_document_reviewed !== true) {
+    return null
+  }
+
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  const listingId = toDisplayText(listing.id || activeSellingContext.listingId || activeSellingContext.listing_id || portalData?.listingId)
+  const propertyAddress = toDisplayText(
+    activeSellingContext.propertyAddress ||
+      activeSellingContext.property_address ||
+      listing.propertyAddress ||
+      listing.property_address ||
+      portalData?.property?.address,
+  )
+  const context = {
+    listingId,
+    propertyId: toDisplayText(listing.propertyId || listing.property_id || portalData?.property?.id),
+    sellerId: toDisplayText(activeSellingContext.sellerLeadId || activeSellingContext.seller_lead_id || listing.sellerLeadId || listing.seller_lead_id),
+    sellerName: resolvePortalSellerName(portalData, formData),
+    sellerIdNumber: toDisplayText(formData.identityNumber || formData.identity_number || formData.idNumber || formData.id_number),
+    propertyAddress,
+    listingReference: toDisplayText(listing.reference || listing.listing_reference || activeSellingContext.reference),
+  }
+  const disclosureDocument = buildPropertyDisclosureDocument(disclosure, context)
+  const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
+  const fileName = disclosureDocument.fileName || 'seller-disclosure-annexure-a.html'
+  const createdAt = disclosure?.signedAt || disclosure?.signed_at || disclosure?.reviewedAt || disclosure?.reviewed_at || disclosureDocument.generatedAt || null
+
+  return {
+    id: disclosureDocument.id,
+    name: 'Property Disclosure - Annexure A',
+    document_name: 'Property Disclosure - Annexure A',
+    file_name: fileName,
+    title: 'Property Disclosure - Annexure A',
+    category: 'property_condition_disclosure',
+    document_type: 'property_condition_disclosure',
+    requirement_key: 'property_condition_disclosure',
+    status: 'completed',
+    visibility: 'seller_visible',
+    systemGeneratedDocument: true,
+    generatedHtml,
+    generatedFileName: fileName,
+    created_at: createdAt,
+    uploaded_at: createdAt,
+    metadata: {
+      source: 'seller_onboarding_property_disclosure',
+      synthetic: true,
+      listingId,
+    },
+  }
+}
+
 function resolveSellerPortalFormData(portalData = {}) {
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
   const onboarding = isPlainObject(portalData?.onboarding)
@@ -1800,8 +1922,10 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const requiredDocumentsRaw = sellerDocumentPack?.requiredDocuments ||
     (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
+  const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromPortalData(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
+    ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)

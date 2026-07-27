@@ -20,8 +20,8 @@ assert.match(
   'seller portal payload loading should retry the legacy token-only RPC while production schema reconciliation is pending',
 )
 const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''
-assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, portalPayload\.listing\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
-assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, listing\?\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')
+assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
+assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')
 assert.doesNotMatch(sellerOnboardingLoader, /branding\?\.logoUrl[\s\S]*\?\s*null[\s\S]*fetchOrganisationBrandingSnapshot/, 'seller onboarding portal must not skip latest branding when a stale logo snapshot exists')
 
 const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
@@ -31,17 +31,22 @@ assert.match(clientPortalSource, /buildSellerPortalProgressModelFromSharedJourne
 assert.match(clientPortalSource, /SELLER_PORTAL_NAV_GROUPS[\s\S]*Your Sale[\s\S]*Property[\s\S]*Account/)
 assert.match(clientPortalSource, /SellerPropertyHero/)
 assert.match(clientPortalSource, /SellerTransactionHealthCard/)
-assert.match(clientPortalSource, /SellerPropertyPerformance/)
+assert.match(clientPortalSource, /SellerListingPerformance/)
 assert.match(clientPortalSource, /SellerMarketingActivity/)
 assert.match(clientPortalSource, /SellerJourneyTimeline/)
-assert.match(clientPortalSource, /SellerImportantDocuments/)
+assert.match(clientPortalSource, /ClientDocumentCentre/)
 assert.match(clientPortalSource, /SELLER_SALE_PROGRESS_STEPS[\s\S]*OTP[\s\S]*Finance[\s\S]*Transfer[\s\S]*Registration/)
 assert.match(clientPortalSource, /function buildSellerSaleProgressModel/)
+assert.match(clientPortalSource, /SELLER_MOBILE_STAGE_INDEX_BY_KEY[\s\S]*listing_created:\s*2[\s\S]*listing_live:\s*2/, 'mobile seller journey must understand canonical listing-created/live stage keys')
+assert.match(clientPortalSource, /resolveSellerMobileJourneyIndex\([\s\S]*sharedSellerPortalJourney\?\.currentStage\?\.key[\s\S]*sellerStageMeta\?\.currentStageKey/, 'mobile seller journey must use the same shared journey and stage metadata as desktop')
+assert.match(clientPortalSource, /useEffect\(\(\) => \{[\s\S]*currentSellerJourneyStageKey[\s\S]*setExpandedStageKey/, 'mobile seller journey must resync the expanded card after full portal hydration')
 assert.match(
   clientPortalSource,
-  /const sellerProgressModel =[\s\S]*buildSellerSaleProgressModel\([\s\S]*buildSellerPortalProgressModelFromSharedJourney/,
-  'completed seller document progress should hand off to the OTP / Finance / Transfer / Registration sale journey before the legacy onboarding rail',
+  /const sharedSellerListingProgressModel = buildSellerPortalProgressModelFromSharedJourney\(sharedSellerPortalJourney\)[\s\S]*const sellerSaleProgressModel = buildSellerSaleProgressModel\(/,
+  'seller portal should derive listing progress from the shared journey before building the sale-stage progress model',
 )
+assert.match(clientPortalSource, /sellerListingProgressModel=\{sellerListingProgressModel\}/)
+assert.match(clientPortalSource, /sellerSaleProgressModel=\{sellerSaleProgressModel\}/)
 assert.match(clientPortalSource, /sellerStageMeta/)
 
 const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
@@ -49,7 +54,7 @@ assert.match(sellerOnboardingSource, /assignedAgentId/, 'seller onboarding submi
 assert.match(sellerOnboardingSource, /!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId/, 'seller onboarding submit notification should still run when ids can resolve the agent email server-side')
 
 const submittedEmailHandler = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/sellerOnboardingSubmitted.ts', import.meta.url), 'utf8')
-assert.match(submittedEmailHandler, /resolveAssignedAgentRecipient/, 'seller onboarding submitted email should resolve an agent recipient when no explicit to email is supplied')
+assert.match(submittedEmailHandler, /resolveInternalNotificationRecipients/, 'seller onboarding submitted email should resolve internal recipients when no explicit to email is supplied')
 assert.match(submittedEmailHandler, /\.from\("private_listings"\)/, 'seller onboarding submitted email should resolve recipients from the private listing')
 assert.match(submittedEmailHandler, /\.from\("leads"\)/, 'seller onboarding submitted email should resolve recipients from the linked lead')
 assert.match(submittedEmailHandler, /\.from\("profiles"\)/, 'seller onboarding submitted email should resolve recipients from the assigned agent profile')

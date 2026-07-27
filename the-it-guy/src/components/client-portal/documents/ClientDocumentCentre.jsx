@@ -81,6 +81,48 @@ function isSignedMandateDocument(document = {}) {
   return source.includes('mandate_signature') || source.includes('signed_mandate') || (source.includes('mandate') && source.includes('signed'))
 }
 
+function isPropertyDisclosureRequirement(requirement = {}) {
+  const source = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+    requirement?.title,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function isPropertyDisclosureDocument(document = {}) {
+  const source = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.title,
+    document?.type,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    source.includes('seller_disclosure_annexure_a') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
+  if (!document) return ''
+  if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return 'Download Signed Mandate'
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return 'Download Property Disclosure'
+  return ''
+}
+
 function getDocumentLookupKeys(document = {}) {
   return [
     document?.id,
@@ -99,6 +141,7 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
   if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
@@ -149,8 +192,8 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
     uploadKey: key,
-    uploadSpec: isSignedMandateRequirement(requirement) && linkedDocument ? null : resolveRequirementUploadSpec(requirement),
-    openLabel: isSignedMandateRequirement(requirement) && linkedDocument ? 'Download Signed Mandate' : '',
+    uploadSpec: getLinkedDocumentOpenLabel(requirement, linkedDocument) ? null : resolveRequirementUploadSpec(requirement),
+    openLabel: getLinkedDocumentOpenLabel(requirement, linkedDocument),
     metaLine: toText(requirement?.requestedBy || requirement?.requested_by_name),
     education: toText(education?.shortExplanation),
     requestStages: requirement?.requestStages || requirement?.request_stages || requirement?.requestStage || requirement?.request_stage || [],

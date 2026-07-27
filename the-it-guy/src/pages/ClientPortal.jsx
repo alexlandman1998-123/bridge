@@ -2115,6 +2115,47 @@ function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
 
+const SELLER_MOBILE_STAGE_INDEX_BY_KEY = {
+  contacted: 0,
+  seller_onboarding_sent: 0,
+  seller_onboarding_submitted: 0,
+  onboarding: 0,
+  submitted: 0,
+  mandate_sent: 1,
+  mandate_signed: 1,
+  listing_created: 2,
+  listing_live: 2,
+  listed: 2,
+  documents_submitted: 2,
+  documents_complete: 2,
+  offers: 3,
+  offer_received: 3,
+  offers_received: 3,
+  offer_accepted: 4,
+  contract: 4,
+  otp: 4,
+  finance: 4,
+  fin: 4,
+  bond: 4,
+  transfer: 5,
+  xfer: 5,
+  registered: 6,
+  registration: 6,
+  reg: 6,
+  completed: 6,
+  complete: 6,
+}
+
+function resolveSellerMobileJourneyIndex(...values) {
+  for (const value of values.flat()) {
+    const key = normalizeSellerPortalKey(value)
+    if (Object.hasOwn(SELLER_MOBILE_STAGE_INDEX_BY_KEY, key)) {
+      return SELLER_MOBILE_STAGE_INDEX_BY_KEY[key]
+    }
+  }
+  return null
+}
+
 function normalizeSellerVisibleListingLinks(items = []) {
   const normalizedLinks = (Array.isArray(items) ? items : [])
     .filter((item) => {
@@ -5362,9 +5403,11 @@ function SellerMobilePortal({
   onUploadDocumentCentre = null,
   onOpenSellerDocument = null,
 }) {
+  const currentSellerJourneyStageKey = sellerJourneyStages.find((stage) => stage.state === 'current')?.key ||
+    sellerJourneyStages[0]?.key ||
+    ''
   const [expandedStageKey, setExpandedStageKey] = useState(() => {
-    const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current')
-    return currentStage?.key || sellerJourneyStages[0]?.key || ''
+    return currentSellerJourneyStageKey
   })
   const photoInputRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -5377,6 +5420,12 @@ function SellerMobilePortal({
     ? requestedMobileSection
     : 'overview'
   const isOverviewSection = mobileSection === 'overview'
+
+  useEffect(() => {
+    if (!currentSellerJourneyStageKey) return
+    setExpandedStageKey((previous) => (previous === currentSellerJourneyStageKey ? previous : currentSellerJourneyStageKey))
+  }, [currentSellerJourneyStageKey])
+
   const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
     sellerJourneyStages.find((stage) => stage.state === 'current') ||
     sellerJourneyStages[0]
@@ -7885,6 +7934,22 @@ function ClientPortal() {
       })
       return
     }
+    if (document?.generatedHtml) {
+      const openKey = String(document?.id || document?.generatedFileName || 'generated-document').trim()
+      try {
+        setError('')
+        setOpeningDocumentPath(openKey)
+        const blob = new Blob([String(document.generatedHtml)], { type: 'text/html;charset=utf-8' })
+        const objectUrl = URL.createObjectURL(blob)
+        window.open(objectUrl, '_blank', 'noopener,noreferrer')
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      } catch (openError) {
+        setError(openError.message || 'Unable to open this document right now.')
+      } finally {
+        setOpeningDocumentPath('')
+      }
+      return
+    }
     if (!document?.file_path && !document?.url) {
       return
     }
@@ -9628,15 +9693,41 @@ function ClientPortal() {
       activeSellingContext?.mandatePacket ||
       portal?.mandate?.packet,
   )
+  const sellerStageProgressKey = normalizeSellerPortalKey(sellerStageMeta.currentStageKey || sellerStageMeta?.currentStage?.key)
+  const sellerStagesAtOrAfterMandate = [
+    'mandate_signed',
+    'listing_created',
+    'listing_live',
+    'listed',
+    'documents_submitted',
+    'documents_complete',
+    'offers',
+    'offer_accepted',
+    'transfer',
+    'registered',
+    'registration',
+  ]
+  const sellerStagesAtOrAfterListing = [
+    'listing_created',
+    'listing_live',
+    'listed',
+    'documents_submitted',
+    'documents_complete',
+    'offers',
+    'offer_accepted',
+    'transfer',
+    'registered',
+    'registration',
+  ]
   const hasMandateSigned = Boolean(
-    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+    sellerStagesAtOrAfterMandate.includes(sellerStageProgressKey) ||
       ['signed', 'fully_signed', 'completed', 'uploaded_signed'].includes(normalizeSellerPortalKey(mandatePacketState)) ||
       mandatePacketFinalSignedAvailable ||
       activeSellingContext?.mandatePacket?.finalSignedAccess?.available === true ||
       portal?.mandate?.packet?.finalSignedAccess?.available === true,
   )
   const hasListingCreated = Boolean(
-    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+    sellerStagesAtOrAfterListing.includes(sellerStageProgressKey) ||
       sellerVisibleListingLinks.length ||
       normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active'),
   )
@@ -9897,18 +9988,20 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
-  const sellerMobileStageKey = normalizeSellerPortalKey(sellerStageMeta?.currentStageKey || sellerStageMeta?.currentStage?.key)
-  const sellerMobileStageIndexByKey = {
-    mandate_signed: 1,
-    listed: 2,
-    offers: 3,
-    offer_accepted: 4,
-    transfer: 5,
-    registered: 6,
-  }
+  const sellerMobileResolvedIndex = resolveSellerMobileJourneyIndex(
+    sharedSellerPortalJourney?.currentStage?.key,
+    sharedSellerPortalJourney?.stageMeta?.currentStage?.key,
+    sharedSellerPortalJourney?.stageMeta?.currentStageKey,
+    sellerStageMeta?.currentStageKey,
+    sellerStageMeta?.currentStage?.key,
+    sellerListingProgressModel?.currentKey,
+    sellerSaleProgressModel?.isStarted ? sellerSaleProgressModel?.currentKey : '',
+    mainStage,
+  )
   const sellerMobileCurrentIndex = Math.max(
     !hasSellerOnboardingSubmitted ? 0 : 1,
-    sellerMobileStageIndexByKey[sellerMobileStageKey] ?? 0,
+    sellerMobileResolvedIndex ??
+      (activeSellerOfferCount > 0 ? 3 : hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
   )
   const sellerMobileJourneyStages = [
     {
@@ -9929,9 +10022,9 @@ function ClientPortal() {
     },
     {
       key: 'listing',
-      label: 'Listing live',
+      label: 'Listing Created',
       description: hasListingCreated
-        ? 'Your property listing is active and buyer interest is being tracked.'
+        ? 'Your property listing has been created and buyer interest is being tracked.'
         : 'Your agent will activate the listing once the mandate and listing pack are ready.',
       owner: sellerAgentName || sellerAgencyName,
     },
