@@ -5453,6 +5453,34 @@ function resolveSellerMobileDocumentUploadTarget(document = {}) {
   }
 }
 
+function resolveSellerMobileDocumentOpenTarget(document = {}) {
+  const generatedDocument = document?.generatedDocument && typeof document.generatedDocument === 'object'
+    ? document.generatedDocument
+    : document?.generated_document && typeof document.generated_document === 'object'
+      ? document.generated_document
+      : null
+  return document?.linkedDocument ||
+    document?.downloadableDocument ||
+    document?.uploadedDocument ||
+    document?.uploaded_document ||
+    document?.document ||
+    generatedDocument ||
+    null
+}
+
+function getSellerMobileDocumentOpenKey(document = {}) {
+  const target = resolveSellerMobileDocumentOpenTarget(document)
+  return String(
+    target?.file_path ||
+      target?.storage_path ||
+      target?.url ||
+      target?.id ||
+      target?.generatedFileName ||
+      target?.generated_file_name ||
+      '',
+  ).trim()
+}
+
 function formatSellerMobileUploadSize(bytes = 0) {
   const size = Number(bytes) || 0
   if (size <= 0) return ''
@@ -5621,8 +5649,6 @@ function sellerMobileToneClasses(tone = 'green') {
 
 function SellerMobileDocumentsPage({
   documentCenter = {},
-  sellerAgencyLogoUrl = '',
-  sellerAgencyName = '',
   activeCategoryKey = '',
   activeFilter = 'all',
   searchQuery = '',
@@ -5735,9 +5761,6 @@ function SellerMobileDocumentsPage({
           <button type="button" onClick={onBackToCategories} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#17653d]" aria-label="Back to document categories">
             <ChevronRight size={22} className="rotate-180" />
           </button>
-          {sellerAgencyLogoUrl ? (
-            <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-10 max-w-[168px] object-contain object-left" />
-          ) : null}
         </div>
         <div className="mt-5 flex items-start gap-4">
           <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] ${tone.icon}`}>
@@ -5929,34 +5952,24 @@ function MobileDocumentList({
           const uploadTarget = resolveSellerMobileDocumentUploadTarget(item)
           const uploadKey = uploadTarget.uploadingKey || uploadTarget.requirementKey
           const isUploading = Boolean(uploadKey && uploadingDocumentKey && (uploadingDocumentKey === uploadKey || uploadingDocumentKey === uploadTarget.requirementKey))
-          const linkedDocument = item.linkedDocument || item.document || null
-          const openKey = String(linkedDocument?.file_path || linkedDocument?.storage_path || linkedDocument?.id || '').trim()
+          const linkedDocument = resolveSellerMobileDocumentOpenTarget(item)
+          const openKey = getSellerMobileDocumentOpenKey(item)
           const isOpening = Boolean(openKey && openingDocumentPath === openKey)
           const canOpen = Boolean(linkedDocument && typeof onOpenDocument === 'function')
           const canUpload = Boolean(item.uploadSpec || uploadTarget.requirementKey)
           return (
-            <article key={item.id || item.title} className="flex min-h-[78px] items-center gap-3 rounded-[14px] border border-[#edf0f3] bg-white p-3 shadow-[0_6px_16px_rgba(15,23,42,0.025)]">
+            <article key={item.id || item.title} className="grid min-h-[78px] max-w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-[14px] border border-[#edf0f3] bg-white p-3 shadow-[0_6px_16px_rgba(15,23,42,0.025)]">
               <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] ${state === 'review' ? 'bg-[#fff6e8] text-[#c87812]' : state === 'upload' ? 'bg-[#fff1eb] text-[#d05a25]' : 'bg-[#eef8f1] text-[#17653d]'}`}>
                 {state === 'upload' ? <UploadCloud size={20} /> : <FileText size={20} />}
               </span>
               <div className="min-w-0 flex-1">
-                <h4 className="truncate text-sm font-semibold text-[#101823]">{item.title || 'Document'}</h4>
-                <p className="mt-0.5 truncate text-[0.68rem] font-medium text-[#667085]">{item.description || item.sellerCategoryLabel || 'Seller document'}</p>
+                <h4 className="max-w-full text-sm font-semibold leading-5 text-[#101823] [overflow-wrap:anywhere]">{item.title || 'Document'}</h4>
+                <p className="mt-0.5 max-w-full text-[0.68rem] font-medium leading-4 text-[#667085] [overflow-wrap:anywhere]">{item.description || item.sellerCategoryLabel || 'Seller document'}</p>
                 <span className={`mt-1.5 inline-flex rounded-full px-2.5 py-1 text-[0.66rem] font-semibold ${statusTone}`}>{statusLabel}</span>
               </div>
-              <div className="shrink-0 text-right">
+              <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 text-right">
                 {getSellerMobileDocumentUploadedLabel(item) ? <p className="mb-2 max-w-[82px] text-[0.64rem] leading-4 text-[#667085]">{getSellerMobileDocumentUploadedLabel(item)}</p> : null}
-                {state === 'upload' && canUpload ? (
-                  <button
-                    type="button"
-                    onClick={() => onUploadItem?.(item)}
-                    disabled={isUploading}
-                    className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[11px] bg-[#063f34] px-3 text-xs font-semibold text-white disabled:opacity-60"
-                  >
-                    <span>{isUploading ? 'Uploading' : compact ? 'Continue' : 'Upload'}</span>
-                    <ChevronRight size={14} />
-                  </button>
-                ) : canOpen ? (
+                {canOpen ? (
                   <button
                     type="button"
                     onClick={() => onOpenDocument({
@@ -5969,11 +5982,22 @@ function MobileDocumentList({
                   >
                     <Download size={17} />
                   </button>
-                ) : (
+                ) : null}
+                {state === 'upload' && canUpload ? (
+                  <button
+                    type="button"
+                    onClick={() => onUploadItem?.(item)}
+                    disabled={isUploading}
+                    className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[11px] bg-[#063f34] px-3 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    <span>{isUploading ? 'Uploading' : compact ? 'Continue' : 'Upload'}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                ) : !canOpen ? (
                   <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] text-[#667085]" aria-label="More document actions">
                     <MoreVertical size={17} />
                   </button>
-                )}
+                ) : null}
               </div>
             </article>
           )
@@ -6095,8 +6119,8 @@ function SellerMobilePortal({
       (uploadingDocumentKey === selectedUploadKey || uploadingDocumentKey === selectedUploadTarget?.requirementKey),
   )
   const selectedUploadBusy = selectedIsUploading || mobileUploadFeedback.tone === 'loading'
-  const selectedLinkedDocument = selectedDocumentAction?.linkedDocument || selectedDocumentAction?.document || null
-  const selectedOpenKey = String(selectedLinkedDocument?.file_path || selectedLinkedDocument?.storage_path || selectedLinkedDocument?.id || '').trim()
+  const selectedLinkedDocument = resolveSellerMobileDocumentOpenTarget(selectedDocumentAction)
+  const selectedOpenKey = getSellerMobileDocumentOpenKey(selectedDocumentAction)
   const selectedIsOpening = Boolean(selectedOpenKey && openingDocumentPath === selectedOpenKey)
   const selectedUploadFileBlob = selectedUploadFile?.file || null
   const selectedUploadIsImage = Boolean(

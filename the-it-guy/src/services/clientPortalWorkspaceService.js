@@ -37,6 +37,7 @@ import {
   resolveSellerPostMandateStructureRequirementPack,
 } from './sellerPostMandateDocumentOrchestrationService.js'
 import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
+import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1548,6 +1549,142 @@ function buildUploadedDocumentCenterItem(document = {}) {
   }
 }
 
+function getSellerPortalMandatePacket(portalData = {}) {
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  return portalData?.mandatePacket ||
+    activeSellingContext?.mandatePacket ||
+    listing?.mandatePacket ||
+    listing?.mandate_packet ||
+    portalData?.mandate?.packet ||
+    null
+}
+
+function buildGeneratedMandateDocumentFromPacket(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const mandatePacket = getSellerPortalMandatePacket(portalData)
+  if (!mandatePacket || typeof mandatePacket !== 'object') return null
+  const filePath = toDisplayText(
+    mandatePacket.generatedPreviewFilePath ||
+      mandatePacket.generated_preview_file_path ||
+      mandatePacket.rendered_file_path ||
+      mandatePacket.version?.rendered_file_path,
+  )
+  const fileUrl = toDisplayText(
+    mandatePacket.generatedPreviewFileUrl ||
+      mandatePacket.generated_preview_file_url ||
+      mandatePacket.rendered_file_url ||
+      mandatePacket.version?.rendered_file_url,
+  )
+  if (!filePath && !fileUrl) return null
+  const packetId = toDisplayText(mandatePacket?.packet?.id || mandatePacket?.id)
+  const versionId = toDisplayText(mandatePacket?.packetVersionId || mandatePacket?.packet_version_id || mandatePacket?.version?.id)
+  const fileName = toDisplayText(
+    mandatePacket.generatedPreviewFileName ||
+      mandatePacket.generated_preview_file_name ||
+      mandatePacket.rendered_file_name ||
+      mandatePacket.version?.rendered_file_name,
+    'Mandate',
+  )
+  return {
+    id: `mandate-generated-${versionId || packetId || 'document'}`,
+    name: fileName,
+    document_name: fileName,
+    category: 'mandate',
+    document_type: 'mandate',
+    requirementKey: 'mandate',
+    requirement_key: 'mandate',
+    status: 'available',
+    visibility: 'seller_visible',
+    file_path: filePath,
+    storage_path: filePath,
+    url: fileUrl,
+    openDirectUrl: Boolean(fileUrl && !filePath),
+    created_at: mandatePacket?.version?.generated_at || mandatePacket?.packet?.updated_at || mandatePacket?.updatedAt || null,
+  }
+}
+
+function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return null
+  const formData = resolveSellerPortalFormData(portalData)
+  const disclosure = isPlainObject(formData?.propertyDisclosure)
+    ? formData.propertyDisclosure
+    : isPlainObject(formData?.property_disclosure)
+      ? formData.property_disclosure
+      : null
+  if (!disclosure) return null
+  const generatedDocument = isPlainObject(disclosure.generatedDocument)
+    ? disclosure.generatedDocument
+    : isPlainObject(disclosure.generated_document)
+      ? disclosure.generated_document
+      : {}
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const context = {
+    sellerName: toDisplayText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
+    sellerIdNumber: toDisplayText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
+    sellerId: toDisplayText(generatedDocument.sellerId || listing?.sellerProfileId || listing?.seller_profile_id),
+    propertyId: toDisplayText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
+    listingId: toDisplayText(generatedDocument.listingId || listing?.id),
+    transactionId: toDisplayText(generatedDocument.transactionId || portalData?.transaction?.id),
+  }
+  const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
+  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.html')
+  return {
+    id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
+    name: generatedDocument.title || 'Property Condition Disclosure',
+    document_name: generatedDocument.title || 'Property Condition Disclosure',
+    category: 'property_condition_disclosure',
+    document_type: 'property_condition_disclosure',
+    requirementKey: 'property_condition_disclosure',
+    requirement_key: 'property_condition_disclosure',
+    status: 'completed',
+    visibility: 'seller_visible',
+    generatedHtml,
+    generatedFileName: fileName.replace(/\.pdf$/i, '.html'),
+    created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
+  }
+}
+
+function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 'buying') {
+  const documents = [
+    buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
+    buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode),
+  ].filter(Boolean)
+  const lookup = new Map()
+  documents.forEach((document) => {
+    getDocumentLookupKeys(document).forEach((key) => lookup.set(key, document))
+    const normalizedDocumentKey = normalizeDocumentMatchKey(document.requirementKey || document.requirement_key || document.document_type || document.category || document.name)
+    if (normalizedDocumentKey) lookup.set(normalizedDocumentKey, document)
+    normalizedDocumentKey
+      .split('_')
+      .filter(Boolean)
+      .forEach((part) => {
+        if (part === 'mandate' || part === 'disclosure' || part === 'defects') lookup.set(part, document)
+      })
+  })
+  return lookup
+}
+
+function findDownloadableDocumentForRequirement(downloadableDocumentsByKey = new Map(), requirement = {}) {
+  const keys = [
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.documentType,
+    requirement?.document_type,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+  ].map((value) => normalizeDocumentMatchKey(value)).filter(Boolean)
+  for (const key of keys) {
+    if (downloadableDocumentsByKey.has(key)) return downloadableDocumentsByKey.get(key)
+    if (key.includes('mandate') && downloadableDocumentsByKey.has('mandate')) return downloadableDocumentsByKey.get('mandate')
+    if ((key.includes('property_condition_disclosure') || key.includes('defects') || key.includes('disclosure')) && downloadableDocumentsByKey.has('property_condition_disclosure')) {
+      return downloadableDocumentsByKey.get('property_condition_disclosure')
+    }
+  }
+  return null
+}
+
 function dedupeDocumentCenterItems(items = []) {
   const seen = new Set()
   return (items || []).filter((item) => {
@@ -1802,11 +1939,14 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const requiredDocumentsRaw = sellerDocumentPack?.requiredDocuments ||
     (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
+  const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
+    ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
+  const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
   const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
@@ -1831,7 +1971,17 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     workspaceMode,
   )
   const requiredItems = requiredDocuments.map((requirement) =>
-    buildRequirementDocumentCenterItem(requirement, uploadedDocumentsById, uploadedDocuments),
+    {
+      const item = buildRequirementDocumentCenterItem(requirement, uploadedDocumentsById, uploadedDocuments)
+      const downloadableDocument = findDownloadableDocumentForRequirement(downloadableDocumentsByKey, requirement)
+      return downloadableDocument
+        ? {
+            ...item,
+            downloadableDocument,
+            linkedDocument: item.linkedDocument || downloadableDocument,
+          }
+        : item
+    },
   )
   const additionalItems = additionalRequests.map((request) =>
     buildAdditionalRequestDocumentCenterItem(request, uploadedDocumentsById, uploadedDocuments),
