@@ -102,6 +102,11 @@ import {
 import { getOffersForListing } from '../lib/listingOffersService'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
+import {
+  formatPlatformFeeAmount,
+  getPlatformFeeConsentConfig,
+  readPlatformFeeConsentAcceptance,
+} from '../lib/platformFeeConsent'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -9235,6 +9240,28 @@ function ClientPortal() {
     : 0
   const myDetailsCapturedFields = myDetailsSections.reduce((sum, section) => sum + section.capturedCount, 0)
   const myDetailsFieldCount = myDetailsSections.reduce((sum, section) => sum + section.fields.length, 0)
+  const buyerPlatformFeeConfig = getPlatformFeeConsentConfig('buyer')
+  const buyerPlatformFeeFormConsent = readPlatformFeeConsentAcceptance(portal?.onboardingFormData?.formData || {}, 'buyer')
+  const buyerPlatformFeeConsent = portal?.platformFee?.buyerConsent || (buyerPlatformFeeFormConsent.accepted ? buyerPlatformFeeFormConsent : null)
+  const buyerPlatformFeeCharge = portal?.platformFee?.buyerCharge || null
+  const buyerPlatformFeeAccepted = Boolean(
+    buyerPlatformFeeConsent?.acceptedAt ||
+      buyerPlatformFeeConsent?.accepted_at ||
+      buyerPlatformFeeFormConsent.accepted,
+  )
+  const buyerPlatformFeeAcceptedAt =
+    buyerPlatformFeeConsent?.acceptedAt ||
+    buyerPlatformFeeConsent?.accepted_at ||
+    buyerPlatformFeeFormConsent.acceptedAt ||
+    buyerPlatformFeeFormConsent.accepted_at ||
+    ''
+  const buyerPlatformFeeAmount = formatPlatformFeeAmount(
+    buyerPlatformFeeCharge?.amount ||
+      buyerPlatformFeeConsent?.feeAmount ||
+      buyerPlatformFeeConsent?.fee_amount ||
+      buyerPlatformFeeFormConsent.feeAmount,
+    buyerPlatformFeeCharge?.currency || buyerPlatformFeeConsent?.currency || buyerPlatformFeeFormConsent.currency,
+  )
   const portalRequiredDocuments = portal?.requiredDocuments || []
   const visiblePortalRequiredDocuments = portalRequiredDocuments.filter((document) => !isInformationSheetDocument(document))
   const reservationRequiredFromOnboarding = isTruthyPortalValue(
@@ -12350,6 +12377,27 @@ function ClientPortal() {
                     </button>
                   </div>
                 </header>
+
+                {buyerPlatformFeeAccepted ? (
+                  <article className="rounded-[24px] border border-[#d6e8dc] bg-[#f5fbf7] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="max-w-3xl">
+                        <div className="inline-flex items-center gap-2 text-sm font-semibold text-[#2f7a51]">
+                          <ShieldCheck size={17} />
+                          {buyerPlatformFeeConfig.title}
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-[#496276]">{buyerPlatformFeeConfig.body}</p>
+                      </div>
+                      <div className="rounded-[18px] border border-[#cfe4d8] bg-white px-4 py-3 text-right">
+                        <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Accepted</span>
+                        <strong className="mt-1 block text-lg font-semibold text-[#142132]">{buyerPlatformFeeAmount}</strong>
+                        <span className="mt-1 block text-xs text-[#6b7d93]">
+                          {buyerPlatformFeeAcceptedAt ? formatClientPortalDate(buyerPlatformFeeAcceptedAt) : 'On file'}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                ) : null}
 
                 {myDetailsSections.map((section) => {
                   const isEditingSection = myDetailsEditingSection === section.key

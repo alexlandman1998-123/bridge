@@ -23,6 +23,12 @@ import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
 import { getOnboardingBrandInitials, resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
+  buildPlatformFeeConsentAcceptance,
+  getPlatformFeeConsentConfig,
+  isPlatformFeeConsentAccepted,
+  readPlatformFeeConsentAcceptance,
+} from '../lib/platformFeeConsent'
+import {
   EMPLOYMENT_TYPE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
   getOnboardingStepDefinitions,
@@ -1859,6 +1865,7 @@ function ClientOnboarding() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [platformFeeConsentError, setPlatformFeeConsentError] = useState('')
   const [payload, setPayload] = useState(null)
   const [formData, setFormData] = useState({})
   const [submittedClientPortalPath, setSubmittedClientPortalPath] = useState('')
@@ -2370,6 +2377,21 @@ function ClientOnboarding() {
         finance: normalized.finance,
       }
     })
+  }
+
+  function updatePlatformFeeConsent(accepted) {
+    setPlatformFeeConsentError('')
+    setFormData((previous) => ({
+      ...(previous || {}),
+      platformFeeConsent: accepted
+        ? buildPlatformFeeConsentAcceptance('buyer')
+        : {
+            ...readPlatformFeeConsentAcceptance(previous || {}, 'buyer'),
+            accepted: false,
+            acceptedAt: '',
+            accepted_at: '',
+          },
+    }))
   }
 
   function isDetailFieldVisible(fieldConfig, context) {
@@ -2963,6 +2985,7 @@ function ClientOnboarding() {
     try {
       setSaving(true)
       setError('')
+      setPlatformFeeConsentError('')
       const submissionData = sanitizeClientFormData(formData, {
         purchaserType,
         financeType: normalizedFinanceType,
@@ -3006,6 +3029,11 @@ function ClientOnboarding() {
         submissionData,
         { transaction: payload?.transaction },
       )
+      if (!isPlatformFeeConsentAccepted(submissionData, 'buyer')) {
+        const message = getPlatformFeeConsentConfig('buyer').validationMessage
+        setPlatformFeeConsentError(message)
+        throw new Error(message)
+      }
       if (isDemoOnboarding) {
         setPayload((previous) => ({
           ...(previous || getDemoBuyerOnboardingPayload(token)),
@@ -3341,6 +3369,7 @@ function ClientOnboarding() {
   function validateCurrentStep() {
     try {
       setError('')
+      setPlatformFeeConsentError('')
 
       if (activeStep?.key === 'purchaser_entity' && !purchaserEntityType) {
         throw new Error('Select who is buying this property to continue.')
@@ -3374,6 +3403,12 @@ function ClientOnboarding() {
           submissionData,
           { transaction: payload?.transaction },
         )
+
+        if (activeStep?.key === 'review' && !isPlatformFeeConsentAccepted(submissionData, 'buyer')) {
+          const message = getPlatformFeeConsentConfig('buyer').validationMessage
+          setPlatformFeeConsentError(message)
+          throw new Error(message)
+        }
       }
 
       return true
@@ -4317,6 +4352,8 @@ function ClientOnboarding() {
         value: clientPortalPath ? 'Upload outstanding documents in your client portal' : 'Your team will share document instructions',
       },
     ]
+    const platformFeeConfig = getPlatformFeeConsentConfig('buyer')
+    const platformFeeConsent = readPlatformFeeConsentAcceptance(formData, 'buyer')
 
     return (
       <div className="space-y-4">
@@ -4370,6 +4407,33 @@ function ClientOnboarding() {
             rows: documentRows,
           })}
         </div>
+
+        <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-4 md:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold tracking-normal text-[#142132]">{platformFeeConfig.title}</h4>
+              <p className="mt-2 text-sm leading-6 text-[#5f738a]">{platformFeeConfig.body}</p>
+            </div>
+            <span className="rounded-full border border-[#d7eadf] bg-[#f4fbf7] px-3 py-1 text-xs font-semibold text-[#22824d]">
+              R750.00
+            </span>
+          </div>
+          <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#324559]">
+            <input
+              type="checkbox"
+              checked={platformFeeConsent.accepted}
+              onChange={(event) => updatePlatformFeeConsent(event.target.checked)}
+              aria-describedby={platformFeeConsentError ? 'buyer-platform-fee-consent-error' : undefined}
+              className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+            />
+            <span>{platformFeeConfig.checkboxLabel}</span>
+          </label>
+          {platformFeeConsentError ? (
+            <p id="buyer-platform-fee-consent-error" className="mt-2 text-sm font-semibold text-[#b42318]">
+              {platformFeeConsentError}
+            </p>
+          ) : null}
+        </section>
 
         <section className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] p-4 md:p-5">
           <h4 className="text-base font-semibold tracking-normal text-[#142132]">Ready to send?</h4>

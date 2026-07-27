@@ -80,6 +80,12 @@ import {
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
 } from '../lib/propertyDisclosure'
+import {
+  buildPlatformFeeConsentAcceptance,
+  getPlatformFeeConsentConfig,
+  isPlatformFeeConsentAccepted,
+  readPlatformFeeConsentAcceptance,
+} from '../lib/platformFeeConsent'
 
 const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Transferring Attorney', 'Review & Submit']
 
@@ -2350,8 +2356,11 @@ function PropertyDisclosureSection({
   onAnswerChange,
   onDownload,
   onDisclosureChange,
+  platformFeeConsentError = '',
 }) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosureKind })
+  const platformFeeConsent = readPlatformFeeConsentAcceptance({ propertyDisclosure: normalized }, 'seller')
+  const platformFeeConfig = getPlatformFeeConsentConfig('seller')
   const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
   const answerSummary = getPropertyDisclosureAnswerSummary(normalized)
   const answerOptions = [
@@ -2506,6 +2515,39 @@ function PropertyDisclosureSection({
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
             </div>
+            <section className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-base font-semibold tracking-normal text-[#172334]">{platformFeeConfig.title}</h4>
+                  <p className="mt-2 text-sm leading-6 text-[#35546c]">{platformFeeConfig.body}</p>
+                </div>
+                <span className="rounded-full border border-[#d8ecdf] bg-[#f5fbf7] px-3 py-1 text-xs font-semibold text-[#25603d]">
+                  R750.00
+                </span>
+              </div>
+              <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
+                <input
+                  type="checkbox"
+                  checked={platformFeeConsent.accepted}
+                  onChange={(event) => {
+                    onDisclosureChange(
+                      'platformFeeConsent',
+                      event.target.checked
+                        ? buildPlatformFeeConsentAcceptance('seller')
+                        : { ...platformFeeConsent, accepted: false, acceptedAt: '', accepted_at: '' },
+                    )
+                  }}
+                  aria-describedby={platformFeeConsentError ? 'seller-platform-fee-consent-error' : undefined}
+                  className="mt-1 h-4 w-4"
+                />
+                <span>{platformFeeConfig.checkboxLabel}</span>
+              </label>
+              {platformFeeConsentError ? (
+                <p id="seller-platform-fee-consent-error" className="mt-2 text-sm font-semibold text-[#b42318]">
+                  {platformFeeConsentError}
+                </p>
+              ) : null}
+            </section>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                 <input type="checkbox" checked={Boolean(normalized.declarationAccepted)} onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)} />
@@ -2714,6 +2756,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [platformFeeConsentError, setPlatformFeeConsentError] = useState('')
   const [success, setSuccess] = useState('')
   const [showWelcome, setShowWelcome] = useState(true)
   const [draftSyncStatus, setDraftSyncStatus] = useState('idle')
@@ -3009,6 +3052,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleFormUpdate(key, value) {
+    if (key === 'propertyDisclosure' || key === 'platformFeeConsent') {
+      setPlatformFeeConsentError('')
+    }
     setForm((previous) => {
       const next = { ...(previous || {}), [key]: value }
       if (key === 'propertyCategory') {
@@ -3280,6 +3326,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function patchPropertyDisclosure(patchOrKey = {}, value = undefined) {
+    setPlatformFeeConsentError('')
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
@@ -4034,8 +4081,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   async function handleSubmit() {
     if (!form || submitting) return
     setError('')
+    setPlatformFeeConsentError('')
     setSuccess('')
     const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
+    if (!isPlatformFeeConsentAccepted(submissionForm, 'seller')) {
+      const message = getPlatformFeeConsentConfig('seller').validationMessage
+      setPlatformFeeConsentError(message)
+      setError(message)
+      setCurrentStep(2)
+      setMobilePaneIndex(getDisclosureQuestionGroups().length + 2)
+      scrollSellerOnboardingToTop({ focusAlert: true })
+      return
+    }
     const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
     const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
     const submissionOwnershipBranch = getOwnershipBranch(submissionForm.ownershipType)
@@ -4071,6 +4128,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const finalForm = {
         ...(submissionForm || {}),
+        platformFeeConsent: readPlatformFeeConsentAcceptance(submissionForm, 'seller'),
         transferAttorneyChoice: getTransferAttorneyChoice(submissionForm),
         preferredTransferAttorneyAcceptance: getTransferAttorneyChoice(submissionForm) === 'preferred'
           ? buildPreferredTransferAttorneyAcceptance(submissionForm, listing || {})
@@ -4087,6 +4145,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           : null,
         propertyDisclosure: {
           ...(submissionForm.propertyDisclosure || {}),
+          platformFeeConsent: readPlatformFeeConsentAcceptance(submissionForm, 'seller'),
           generatedDocument: disclosureDocument,
         },
         propertyDisclosureStatus: getPropertyDisclosureStatus(submissionForm.propertyDisclosure || {}),
@@ -5749,6 +5808,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               onAnswerChange={handleDisclosureAnswerChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}
+              platformFeeConsentError={platformFeeConsentError}
             />
           ) : null}
 
@@ -5950,13 +6010,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 />
                 <ReviewCard
                   title="Property Disclosure"
-                  missing={disclosureMissing}
+                  missing={[
+                    ...disclosureMissing,
+                    ...(!isPlatformFeeConsentAccepted(form, 'seller') ? ['accept the ARCH9 Transaction Platform Fee authorisation'] : []),
+                  ]}
                   onEdit={() => setCurrentStep(2)}
                   collapsible
                   items={[
                     { label: 'Disclosure Status', value: getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(form.propertyDisclosure || {})) },
                     { label: 'Annexure A Answers', value: `${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered} / ${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).total} answered` },
                     { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
+                    { label: 'Platform Fee Consent', value: isPlatformFeeConsentAccepted(form, 'seller') ? 'Accepted - R750.00' : 'Not accepted' },
                   ]}
                 />
               </div>

@@ -32,6 +32,12 @@ import {
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
 import { resolveOnboardingBranding } from './onboardingBranding.js'
 import {
+  PLATFORM_FEE_CONSENT_TYPE,
+  getPlatformFeeConsentConfig,
+  isPlatformFeeConsentAccepted,
+  readPlatformFeeConsentAcceptance,
+} from './platformFeeConsent'
+import {
   evaluateMatterFinancialAccountReadiness,
   summarizeMatterFinancialAccountReadiness,
 } from '../core/attorneyAccounting/matterAccountReadiness'
@@ -37077,6 +37083,119 @@ export async function fetchClientPortalLinks(transactionId) {
   return data
 }
 
+function mapTransactionPlatformFeeConsent(row = {}) {
+  return {
+    id: row.id || '',
+    transactionId: row.transaction_id || '',
+    partyId: row.party_id || '',
+    partyType: row.party_type || '',
+    consentType: row.consent_type || '',
+    status: row.consent_status || '',
+    feeAmount: row.fee_amount || null,
+    currency: row.currency || 'ZAR',
+    wordingVersion: row.wording_version || '',
+    wordingSnapshot: row.wording_snapshot || '',
+    acceptedAt: row.accepted_at || null,
+    acceptedByName: row.accepted_by_name || '',
+    acceptedByEmail: row.accepted_by_email || '',
+    acceptedByPhone: row.accepted_by_phone || '',
+    source: row.source || '',
+    relatedDocumentId: row.related_document_id || '',
+    metadata: row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {},
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function mapTransactionPlatformFeeCharge(row = {}) {
+  return {
+    id: row.id || '',
+    transactionId: row.transaction_id || '',
+    partyId: row.party_id || '',
+    partyType: row.party_type || '',
+    consentId: row.consent_id || '',
+    attorneyOrganisationId: row.attorney_organisation_id || '',
+    amount: row.amount || null,
+    currency: row.currency || 'ZAR',
+    chargeType: row.charge_type || '',
+    chargeStatus: row.charge_status || '',
+    collectionStatus: row.collection_status || '',
+    invoiceId: row.invoice_id || '',
+    invoicedAt: row.invoiced_at || null,
+    paidAt: row.paid_at || null,
+    collectedAt: row.collected_at || null,
+    remittedAt: row.remitted_at || null,
+    reconciledAt: row.reconciled_at || null,
+    waivedAt: row.waived_at || null,
+    waiverReason: row.waiver_reason || '',
+    metadata: row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {},
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+async function fetchTransactionPlatformFeeSummary(client, transactionId) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  const emptySummary = {
+    consents: [],
+    charges: [],
+    buyerConsent: null,
+    sellerConsent: null,
+    buyerCharge: null,
+    sellerCharge: null,
+  }
+  if (!normalizedTransactionId) return emptySummary
+
+  const [consentsQuery, chargesQuery] = await Promise.all([
+    client
+      .from('transaction_consents')
+      .select(
+        'id, transaction_id, party_id, party_type, consent_type, consent_status, fee_amount, currency, wording_version, wording_snapshot, accepted_at, accepted_by_name, accepted_by_email, accepted_by_phone, source, related_document_id, metadata_json, created_at, updated_at',
+      )
+      .eq('transaction_id', normalizedTransactionId)
+      .eq('consent_type', PLATFORM_FEE_CONSENT_TYPE)
+      .order('accepted_at', { ascending: false, nullsFirst: false }),
+    client
+      .from('transaction_platform_charges')
+      .select(
+        'id, transaction_id, party_id, party_type, consent_id, attorney_organisation_id, amount, currency, charge_type, charge_status, collection_status, invoice_id, invoiced_at, paid_at, collected_at, remitted_at, reconciled_at, waived_at, waiver_reason, metadata_json, created_at, updated_at',
+      )
+      .eq('transaction_id', normalizedTransactionId)
+      .eq('charge_type', PLATFORM_FEE_CONSENT_TYPE)
+      .order('created_at', { ascending: false }),
+  ])
+
+  if (consentsQuery.error) {
+    if (isMissingTableError(consentsQuery.error, 'transaction_consents') || isMissingSchemaError(consentsQuery.error)) {
+      return emptySummary
+    }
+    throw consentsQuery.error
+  }
+
+  if (chargesQuery.error) {
+    if (isMissingTableError(chargesQuery.error, 'transaction_platform_charges') || isMissingSchemaError(chargesQuery.error)) {
+      return emptySummary
+    }
+    throw chargesQuery.error
+  }
+
+  const consents = (consentsQuery.data || []).map((row) => mapTransactionPlatformFeeConsent(row))
+  const charges = (chargesQuery.data || []).map((row) => mapTransactionPlatformFeeCharge(row))
+  const findAcceptedConsent = (partyType) =>
+    consents.find((item) => item.partyType === partyType && item.status === 'accepted') || null
+  const findActiveCharge = (partyType) =>
+    charges.find((item) => item.partyType === partyType && item.chargeStatus === 'active') || null
+
+  return {
+    consents,
+    charges,
+    buyerConsent: findAcceptedConsent('buyer'),
+    sellerConsent: findAcceptedConsent('seller'),
+    buyerCharge: findActiveCharge('buyer'),
+    sellerCharge: findActiveCharge('seller'),
+  }
+}
+
 export async function getOrCreateClientPortalLink({ developmentId, unitId, transactionId, buyerId = null }) {
   const client = requireClient()
 
@@ -37900,6 +38019,45 @@ async function markTransactionAwaitingSignedOtp(client, { transactionId, formDat
     nextAction,
     completedAt: resolvedCompletedAt,
   }
+}
+
+async function acceptBuyerPlatformFeeConsent(client, {
+  transaction = null,
+  buyer = null,
+  formData = {},
+  onboarding = null,
+  acceptedAt = null,
+} = {}) {
+  if (!transaction?.id) {
+    throw new Error('Transaction is required before platform fee consent can be recorded.')
+  }
+  if (!isPlatformFeeConsentAccepted(formData, 'buyer')) {
+    throw new Error(getPlatformFeeConsentConfig('buyer').validationMessage)
+  }
+
+  const consent = readPlatformFeeConsentAcceptance(formData, 'buyer')
+  const { data, error } = await client.rpc('bridge_accept_transaction_platform_fee_consent', {
+    p_party_type: 'buyer',
+    p_acceptance: {
+      ...consent,
+      acceptedAt: acceptedAt || consent.acceptedAt || consent.accepted_at || new Date().toISOString(),
+      acceptedByName: normalizeTextValue(buyer?.name || formData?.full_name || formData?.buyer_full_name || ''),
+      acceptedByEmail: normalizeEmailAddress(buyer?.email || formData?.email || ''),
+      acceptedByPhone: normalizeTextValue(buyer?.phone || formData?.phone || ''),
+      transactionReference: normalizeTextValue(transaction?.transaction_reference || transaction?.matter_number || ''),
+      relatedDocumentId: normalizeNullableUuid(onboarding?.id),
+      source: 'buyer_onboarding',
+    },
+  })
+
+  if (error) {
+    if (isMissingFunctionError(error, 'bridge_accept_transaction_platform_fee_consent') || isMissingSchemaError(error)) {
+      throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
+    }
+    throw error
+  }
+
+  return data
 }
 
 async function markTransactionSignedOtpReceived(client, { transactionId, nextAction = '' } = {}) {
@@ -38827,6 +38985,14 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   }
 
   if (submit) {
+    await acceptBuyerPlatformFeeConsent(client, {
+      transaction,
+      buyer,
+      formData: formDataForPersistence,
+      onboarding: updatedOnboarding,
+      acceptedAt: now,
+    })
+
     const { error: informationSheetUpdateError } = await client
       .from('transaction_required_documents')
       .update({
@@ -41010,6 +41176,7 @@ export async function fetchClientPortalByToken(token) {
     financeSnapshot.reservationRequired || reservationRequiredFromOnboardingForm || reservationRequiredFromEvents,
   )
   const fundingSources = await fetchTransactionFundingSources(client, transaction.id)
+  const platformFee = await fetchTransactionPlatformFeeSummary(client, transaction.id)
   const requiredDocuments = await ensureTransactionRequiredDocuments(
     client,
     {
@@ -41135,6 +41302,7 @@ export async function fetchClientPortalByToken(token) {
     otpPacket,
     attorneyRolePlayers,
     fundingSources,
+    platformFee,
     featureAvailability: {
       snag: settings.snag_reporting_enabled,
       alteration: settings.alteration_requests_enabled,

@@ -1,3 +1,8 @@
+import {
+  getPlatformFeeConsentConfig,
+  readPlatformFeeConsentAcceptance,
+} from './platformFeeConsent'
+
 export const PROPERTY_DISCLOSURE_DECISION = Object.freeze({
   none: 'none',
   disclose: 'disclose',
@@ -349,6 +354,7 @@ export function normalizePropertyDisclosure(disclosure = {}, { kind = 'residenti
     purchaserSignedPlace: normalizeText(source.purchaserSignedPlace || source.purchaser_signed_place),
     purchaserWitness1: normalizeText(source.purchaserWitness1 || source.purchaser_witness_1),
     purchaserWitness2: normalizeText(source.purchaserWitness2 || source.purchaser_witness_2),
+    platformFeeConsent: readPlatformFeeConsentAcceptance(source, 'seller'),
     uploadedDocumentReviewed: Boolean(source.uploadedDocumentReviewed ?? source.uploaded_document_reviewed),
     reviewedAt: normalizeText(source.reviewedAt || source.reviewed_at),
     reviewedBy: normalizeText(source.reviewedBy || source.reviewed_by),
@@ -465,6 +471,7 @@ export function buildPropertyDisclosureAnnexureSnapshot(disclosure = {}, context
     purchaserSignedPlace: normalized.purchaserSignedPlace,
     purchaserWitness1: normalized.purchaserWitness1,
     purchaserWitness2: normalized.purchaserWitness2,
+    platformFeeConsent: readPlatformFeeConsentAcceptance(normalized, 'seller'),
     summary,
   }
 }
@@ -480,6 +487,10 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   const sellerSignatureMarkup = sellerSignatureIsImage
     ? `<img class="signature-image" src="${escapeHtml(snapshot.sellerSignature)}" alt="Seller signature" />`
     : (escapeHtml(snapshot.sellerSignature) || '&nbsp;')
+  const platformFeeConfig = getPlatformFeeConsentConfig('seller')
+  const platformFeeConsent = readPlatformFeeConsentAcceptance(snapshot, 'seller')
+  const transactionReference = firstNonEmpty(context.transactionReference, context.transaction_reference, snapshot.transactionId)
+  const platformFeeAcceptedAt = platformFeeConsent.acceptedAt || platformFeeConsent.accepted_at || snapshot.sellerSignedAt
   const answerCell = (answer, value) => (answer === value ? '<span class="answer-mark">&#10003;</span>' : '&nbsp;')
   const pageTotal = 3
   const renderRows = (items) => items.map((item) => `
@@ -558,6 +569,11 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
     .signature-section { margin-top: 8mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
     .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .platform-fee-section { margin: 0 0 7mm; break-inside: avoid; page-break-inside: avoid; border: 1px solid #d7d7d7; padding: 4mm; color: #1f2937; font-size: 10.2pt; line-height: 1.45; }
+    .platform-fee-section h2 { margin: 0 0 2mm; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .platform-fee-section p { margin: 0 0 2.5mm; }
+    .platform-fee-accepted { margin-top: 3mm; color: #111827; font-weight: 700; }
+    .platform-fee-evidence { margin-top: 2mm; display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 4mm; color: #3f4a56; font-size: 8.8pt; }
     .execution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; }
     .execution-field { min-height: 17mm; border: 1px solid #d7d7d7; padding: 3mm; }
     .execution-label { display: block; color: #5c6670; font-size: 8.5pt; font-weight: 700; text-transform: uppercase; }
@@ -604,6 +620,17 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
       ${renderDisclosureHeader(branding)}
       ${renderTitle('Signature section')}
       <section class="doc-body">
+        <section class="platform-fee-section">
+          <h2>${escapeHtml(platformFeeConfig.title)}</h2>
+          <p>${escapeHtml(platformFeeConfig.body)}</p>
+          <p class="platform-fee-accepted">${platformFeeConsent.accepted ? '&#9745;' : '&#9744;'} ${escapeHtml(platformFeeConfig.checkboxLabel)}</p>
+          <div class="platform-fee-evidence">
+            <span><strong>Accepted by:</strong> ${escapeHtml(sellerName)}</span>
+            <span><strong>Accepted at:</strong> ${escapeHtml(platformFeeAcceptedAt) || '&nbsp;'}</span>
+            <span><strong>Consent version:</strong> ${escapeHtml(platformFeeConsent.wordingVersion || platformFeeConsent.wording_version)}</span>
+            <span><strong>Transaction:</strong> ${escapeHtml(transactionReference) || '&nbsp;'}</span>
+          </div>
+        </section>
         <section class="signature-section">
           <h2>Seller declaration and signature</h2>
           <p class="intro">I declare that the information in this Annexure A is true and complete to the best of my knowledge and that all known material facts relating to the property have been disclosed.</p>

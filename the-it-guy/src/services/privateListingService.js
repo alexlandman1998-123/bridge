@@ -2,6 +2,11 @@ import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
+  getPlatformFeeConsentConfig,
+  isPlatformFeeConsentAccepted,
+  readPlatformFeeConsentAcceptance,
+} from '../lib/platformFeeConsent'
+import {
   canTransitionPrivateListing,
   evaluatePrivateListingTransitionGuards,
   getAllowedPrivateListingTransitions,
@@ -6110,6 +6115,56 @@ async function maybeResolveCanonicalSellerRequirements({ listing, formData, clie
   return resolution
 }
 
+async function acceptSellerPlatformFeeConsent(client, {
+  token = '',
+  formData = {},
+  listing = null,
+  onboarding = null,
+} = {}) {
+  if (!isPlatformFeeConsentAccepted(formData, 'seller')) {
+    throw new Error(getPlatformFeeConsentConfig('seller').validationMessage)
+  }
+
+  const consent = readPlatformFeeConsentAcceptance(formData, 'seller')
+  const sellerName = normalizeText(
+    [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ') ||
+      formData.fullName ||
+      listing?.seller?.name ||
+      listing?.sellerName ||
+      '',
+  )
+  const relatedDocumentId = normalizeText(
+    formData.propertyDisclosure?.generatedDocument?.id ||
+      formData.propertyDisclosure?.generated_document?.id ||
+      formData.platformFeeConsent?.relatedDocumentId ||
+      formData.platformFeeConsent?.related_document_id ||
+      '',
+  )
+
+  const { data, error } = await client.rpc('bridge_accept_seller_platform_fee_consent', {
+    p_token: normalizeText(token || onboarding?.token || listing?.sellerOnboarding?.token),
+    p_acceptance: {
+      ...consent,
+      acceptedAt: consent.acceptedAt || consent.accepted_at || new Date().toISOString(),
+      acceptedByName: sellerName,
+      acceptedByEmail: normalizeText(formData.email || listing?.seller?.email || listing?.sellerEmail || ''),
+      acceptedByPhone: normalizeText(formData.phone || listing?.seller?.phone || listing?.sellerPhone || ''),
+      transactionReference: normalizeText(listing?.transactionReference || listing?.transaction_reference || ''),
+      relatedDocumentId,
+      source: 'seller_defects_declaration',
+    },
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_accept_seller_platform_fee_consent') || isMissingSchemaError(error)) {
+      throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
+    }
+    throw error
+  }
+
+  return data
+}
+
 export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -6260,6 +6315,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
         updated_at: new Date().toISOString(),
       },
     }).catch(() => false)
+    await acceptSellerPlatformFeeConsent(client, {
+      token: normalizedToken,
+      formData: payload.formData,
+      listing: rpcContext.listing,
+      onboarding: rpcContext.onboarding,
+    })
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {
@@ -6404,6 +6465,13 @@ export async function submitSellerOnboarding(token, payload = {}) {
     reason: 'seller_onboarding_completed',
   }).catch((canonicalError) => {
     console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback submit', canonicalError)
+  })
+
+  await acceptSellerPlatformFeeConsent(client, {
+    token: normalizedToken,
+    formData: nextFormData,
+    listing: listingForContext,
+    onboarding: updateOnboarding.data,
   })
 
   return {
