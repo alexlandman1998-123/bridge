@@ -14,6 +14,10 @@ const corePayloadMigration = await readFile(
   new URL('../../supabase/migrations/202607270003_seller_portal_core_payload_fast_entry.sql', import.meta.url),
   'utf8',
 )
+const corePayloadTrimMigration = await readFile(
+  new URL('../../supabase/migrations/202607270004_seller_portal_core_payload_trim_onboarding.sql', import.meta.url),
+  'utf8',
+)
 const clientPortalWorkspaceSource = await readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 
 assert.match(
@@ -99,6 +103,21 @@ assert.match(
   corePayloadMigration,
   /bridge_resolve_private_listing_seller_portal_token\(p_token\)/,
   'core payload must preserve stable, legacy, and invite token resolution',
+)
+assert.match(
+  corePayloadTrimMigration,
+  /v_onboarding_core := jsonb_build_object\(/,
+  'seller portal core payload should return a deliberately slim onboarding object',
+)
+assert.doesNotMatch(
+  corePayloadTrimMigration,
+  /'onboarding', to_jsonb\(v_onboarding\)/,
+  'seller portal core payload must not return the full onboarding form snapshot',
+)
+assert.doesNotMatch(
+  corePayloadTrimMigration,
+  /canonical_facts_json/,
+  'seller portal core payload must not include canonical fact snapshots before first paint',
 )
 assert.match(
   documentPacketsApiSource,
