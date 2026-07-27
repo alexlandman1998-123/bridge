@@ -5494,6 +5494,12 @@ function formatSellerMobileUploadSize(bytes = 0) {
 }
 
 const SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG = {
+  sale: {
+    label: 'Sale',
+    description: 'Mandate, seller declaration, and sale documents.',
+    icon: FileSignature,
+    tone: 'green',
+  },
   fica: {
     label: 'Identity',
     description: 'FICA, identity, residence, and compliance documents.',
@@ -5537,7 +5543,11 @@ function uniqueSellerMobileDocuments(items = []) {
 }
 
 function getSellerMobileDocumentCategoryKey(item = {}) {
+  if (item?.sellerCategoryKey && SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG[item.sellerCategoryKey]) {
+    return item.sellerCategoryKey
+  }
   const haystack = `${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
+  if (/sale_document|sale documents|seller declaration|seller disclosure/.test(haystack)) return 'sale'
   if (/additional/.test(haystack)) return 'additional'
   if (/mandate/.test(haystack)) return 'mandate'
   if (/transfer|clearance|guarantee|sale agreement|otp|registration/.test(haystack)) return 'transfer'
@@ -5579,6 +5589,7 @@ function buildSellerMobileDocumentDashboardModel(documentCenter = {}) {
     ...sections.rejectedNeedsAttention,
     ...sections.approvedCompleted,
     ...sections.signedDocuments,
+    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : []),
   ]).map((item) => ({
     ...item,
     categoryKey: getSellerMobileDocumentCategoryKey(item),
@@ -10355,23 +10366,32 @@ function ClientPortal() {
     portal?.listing?.branding?.logoLightUrl,
     portal?.listing?.branding?.logoLight,
     portal?.listing?.branding?.logo_light_url,
+    portal?.listing?.branding?.logoUrl,
+    portal?.listing?.branding?.logo_url,
+    portal?.listing?.branding?.logoIconUrl,
+    portal?.listing?.branding?.logo_icon_url,
     activeSellingContext?.agencyLogoLightUrl,
     activeSellingContext?.agency_logo_light_url,
     activeSellingContext?.branding?.logoLightUrl,
     activeSellingContext?.branding?.logoLight,
     activeSellingContext?.branding?.logo_light_url,
+    activeSellingContext?.branding?.logoUrl,
+    activeSellingContext?.branding?.logo_url,
+    activeSellingContext?.branding?.logoIconUrl,
+    activeSellingContext?.branding?.logo_icon_url,
     portal?.branding?.logoLightUrl,
     portal?.branding?.logoLight,
     portal?.branding?.logo_light_url,
+    portal?.branding?.logoUrl,
+    portal?.branding?.logo_url,
+    portal?.branding?.logoIconUrl,
+    portal?.branding?.logo_icon_url,
     portal?.listing?.agencyLogoUrl,
     portal?.listing?.agency_logo_url,
     portal?.listing?.organisationLogoUrl,
     portal?.listing?.organisation_logo_url,
-    portal?.listing?.branding?.logoUrl,
     activeSellingContext?.agencyLogoUrl,
     activeSellingContext?.agency_logo_url,
-    activeSellingContext?.branding?.logoUrl,
-    portal?.branding?.logoUrl,
     portal?.listing?.agencyLogoDarkUrl,
     portal?.listing?.agency_logo_dark_url,
     portal?.listing?.organisationLogoDarkUrl,

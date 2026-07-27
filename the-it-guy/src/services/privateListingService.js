@@ -2602,6 +2602,91 @@ function attachBrandingToListing(listing = null, branding = null) {
   }
 }
 
+function mergeSellerPortalListingPayloadFields(listing = null, payloadListing = {}) {
+  if (!listing || typeof listing !== 'object' || !payloadListing || typeof payloadListing !== 'object') return listing
+  const payloadImages = normalizeMediaItems(
+    payloadListing.images ||
+      payloadListing.galleryImages ||
+      payloadListing.gallery_images ||
+      payloadListing.imageGallery ||
+      payloadListing.image_gallery ||
+      payloadListing.photos ||
+      payloadListing.marketing?.imageGallery ||
+      payloadListing.marketing?.image_gallery ||
+      payloadListing.marketing?.galleryImages ||
+      payloadListing.marketing?.gallery_images ||
+      [],
+  )
+  const payloadCoverImage = payloadImages.find((item) => item.isCover) || payloadImages[0] || null
+  const heroImageUrl = pickFirstText(
+    payloadListing.heroImageUrl,
+    payloadListing.hero_image_url,
+    payloadListing.coverImageUrl,
+    payloadListing.cover_image_url,
+    payloadListing.primaryImageUrl,
+    payloadListing.primary_image_url,
+    payloadListing.mainImageUrl,
+    payloadListing.main_image_url,
+    payloadListing.imageUrl,
+    payloadListing.image_url,
+    payloadListing.marketing?.mediaUrl,
+    payloadListing.marketing?.media_url,
+    payloadCoverImage?.url,
+    listing.heroImageUrl,
+    listing.coverImageUrl,
+    listing.imageUrl,
+  )
+  const payloadBranding = payloadListing.branding && typeof payloadListing.branding === 'object'
+    ? payloadListing.branding
+    : {}
+  const mergedBranding = {
+    ...(listing.branding || {}),
+    ...payloadBranding,
+    organisationName: pickFirstText(payloadBranding.organisationName, payloadBranding.organisation_name, payloadListing.organisationName, payloadListing.organisation_name, listing.organisationName),
+    agencyName: pickFirstText(payloadBranding.agencyName, payloadBranding.agency_name, payloadListing.agencyName, payloadListing.agency_name, listing.agencyName),
+    logoUrl: pickFirstText(payloadBranding.logoUrl, payloadBranding.logo_url, payloadListing.agencyLogoUrl, payloadListing.agency_logo_url, listing.branding?.logoUrl),
+    logoDarkUrl: pickFirstText(payloadBranding.logoDarkUrl, payloadBranding.logo_dark_url, payloadBranding.logoDark, payloadListing.agencyLogoDarkUrl, payloadListing.agency_logo_dark_url, listing.branding?.logoDarkUrl),
+    logoLightUrl: pickFirstText(payloadBranding.logoLightUrl, payloadBranding.logo_light_url, payloadBranding.logoLight, payloadListing.agencyLogoLightUrl, payloadListing.agency_logo_light_url, listing.branding?.logoLightUrl),
+    logoIconUrl: pickFirstText(payloadBranding.logoIconUrl, payloadBranding.logo_icon_url, listing.branding?.logoIconUrl),
+  }
+  const galleryImages = payloadImages.length ? payloadImages : listing.galleryImages
+
+  return {
+    ...listing,
+    heroImageUrl,
+    hero_image_url: heroImageUrl,
+    coverImageUrl: heroImageUrl,
+    cover_image_url: heroImageUrl,
+    imageUrl: heroImageUrl,
+    image_url: heroImageUrl,
+    images: galleryImages,
+    galleryImages,
+    gallery_images: galleryImages,
+    agencyOrganisation: pickFirstText(mergedBranding.organisationName, listing.agencyOrganisation),
+    organisationName: pickFirstText(mergedBranding.organisationName, listing.organisationName),
+    agencyName: pickFirstText(mergedBranding.agencyName, listing.agencyName),
+    agencyLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, mergedBranding.logoLightUrl, listing.agencyLogoUrl),
+    agencyLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.agencyLogoDarkUrl),
+    agencyLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.agencyLogoLightUrl),
+    organisationLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, mergedBranding.logoLightUrl, listing.organisationLogoUrl),
+    organisationLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.organisationLogoDarkUrl),
+    organisationLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.organisationLogoLightUrl),
+    branding: mergedBranding,
+    marketing: {
+      ...(listing.marketing || {}),
+      ...(payloadListing.marketing && typeof payloadListing.marketing === 'object' ? payloadListing.marketing : {}),
+      mediaUrl: heroImageUrl,
+      media_url: heroImageUrl,
+      imageGallery: galleryImages,
+      image_gallery: galleryImages,
+      galleryImages,
+      gallery_images: galleryImages,
+      coverImageId: pickFirstText(payloadListing.coverImageId, payloadListing.cover_image_id, payloadCoverImage?.id, listing.marketing?.coverImageId),
+      cover_image_id: pickFirstText(payloadListing.cover_image_id, payloadListing.coverImageId, payloadCoverImage?.id, listing.marketing?.cover_image_id),
+    },
+  }
+}
+
 function resolveListingOrganisationId(listing = {}) {
   return normalizeText(listing?.organisationId || listing?.organisation_id || listing?.organizationId || listing?.organization_id)
 }
@@ -2756,12 +2841,13 @@ function mapSellerClientPortalPayload(payload) {
     new Map([[String(listingForMap.id), documents]]),
   )
   const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
+  const listingWithPayloadFields = mergeSellerPortalListingPayloadFields(mappedListing, listingRow)
   return {
     onboarding: onboardingRow,
     appointments,
     mandatePacket: safeMandatePacket,
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
-    listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, mandatePacket),
+    listing: sanitizeSellerPortalListingFinalArtifacts(listingWithPayloadFields, mandatePacket),
   }
 }
 
@@ -2776,12 +2862,13 @@ function mapSellerClientPortalCorePayload(payload) {
     new Map([[String(listingRow.id), []]]),
     new Map([[String(listingRow.id), []]]),
   )
+  const listingWithPayloadFields = mergeSellerPortalListingPayloadFields(mappedListing, listingRow)
   return {
     onboarding: onboardingRow,
     appointments: [],
     mandatePacket: null,
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
-    listing: sanitizeSellerPortalListingFinalArtifacts(mappedListing, null),
+    listing: sanitizeSellerPortalListingFinalArtifacts(listingWithPayloadFields, null),
     corePayload: true,
   }
 }

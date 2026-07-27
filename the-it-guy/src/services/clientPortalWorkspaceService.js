@@ -1645,6 +1645,49 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
   }
 }
 
+function buildSellerSaleDocumentCenterItem(document = {}, { id = '', title = '', description = '' } = {}) {
+  if (!document || typeof document !== 'object') return null
+  const documentId = toDisplayText(id || document.id || document.file_path || document.url || document.generatedFileName, 'sale-document')
+  return {
+    id: `sale_${documentId}`,
+    sourceId: documentId,
+    sourceType: 'sale_document',
+    title: toDisplayText(title || document.name || document.document_name, 'Sale document'),
+    description: toDisplayText(description, 'This sale document is available for download.'),
+    group: 'sale_documents',
+    status: 'completed',
+    visibility: 'seller_visible',
+    linkedDocument: document,
+    downloadableDocument: document,
+    hasUploadedDocument: true,
+    uploadSpec: null,
+    openLabel: 'Download',
+    sellerCategoryKey: 'sale',
+    metaLine: toDisplayText(document.created_at ? 'Available for download' : ''),
+    isCoreRequirement: false,
+  }
+}
+
+function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying') {
+  if (workspaceMode !== 'selling') return []
+  return [
+    buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode)
+      ? buildSellerSaleDocumentCenterItem(buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode), {
+          id: 'mandate',
+          title: 'Mandate',
+          description: 'Generated mandate document available for download.',
+        })
+      : null,
+    buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
+      ? buildSellerSaleDocumentCenterItem(buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode), {
+          id: 'seller-declaration-disclosure',
+          title: 'Seller Declaration / Disclosure',
+          description: 'Seller property declaration and disclosure form available for download.',
+        })
+      : null,
+  ].filter(Boolean)
+}
+
 function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 'buying') {
   const documents = [
     buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
@@ -1940,6 +1983,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
   const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
+  const saleDocuments = buildSellerPortalSaleDocuments(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
@@ -2039,6 +2083,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     requiredDocuments,
     additionalRequests,
     uploadedDocuments,
+    saleDocuments,
     approvedDocuments,
     rejectedDocuments,
     signedDocuments,
