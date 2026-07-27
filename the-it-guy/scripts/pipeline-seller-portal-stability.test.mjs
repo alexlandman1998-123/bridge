@@ -6,6 +6,11 @@ const agencyCrmRepositorySource = await readFile(new URL('../src/lib/agencyCrmRe
 const privateListingServiceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const documentPacketsApiSource = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
 const packetStatusResolverSource = await readFile(new URL('../src/core/documents/packetStatusResolver.js', import.meta.url), 'utf8')
+const clientPortalPageSource = await readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
+const finalSignedResolverSource = await readFile(
+  new URL('../../supabase/functions/resolve-final-signed-document-access/index.ts', import.meta.url),
+  'utf8',
+)
 const migration = await readFile(
   new URL('../../supabase/migrations/202607250007_seller_portal_payload_optional_enrichment_guard.sql', import.meta.url),
   'utf8',
@@ -147,6 +152,26 @@ assert.match(
   clientPortalWorkspaceSource,
   /resolveSellerClientPortalFinalSignedDocumentAccess\([\s\S]*?\)\.catch\(\(error\) => \{[\s\S]*?seller mandate final-signed access skipped during portal hydration[\s\S]*?return null[\s\S]*?\}\)/,
   'seller portal hydration should not fail the whole portal when final-signed access resolution returns a transient edge error',
+)
+assert.match(
+  clientPortalPageSource,
+  /openGeneratedPortalDocumentHtml\([\s\S]*?new Blob\(\[htmlWithPrintTools \|\| html\], \{ type: 'text\/html;charset=utf-8' \}\)/,
+  'seller generated disclosure downloads should open rendered HTML instead of a fragile mobile PDF conversion',
+)
+assert.match(
+  clientPortalPageSource,
+  /documentId: normalizedPacketId && normalizedPacketVersionId \? '' : normalizedDocumentId/,
+  'seller final signed mandate downloads should not send synthetic document ids when packet and version ids are present',
+)
+assert.match(
+  clientPortalPageSource,
+  /if \(!portal\) \{/,
+  'document action failures should not replace an already-loaded seller portal with the fatal load screen',
+)
+assert.match(
+  finalSignedResolverSource,
+  /bridge_private_listing_seller_portal_core_payload[\s\S]*?bridge_private_listing_seller_portal_payload/,
+  'seller final signed mandate authorization should use the fast core payload before falling back to the heavy payload',
 )
 assert.match(
   corePayloadSalesMigration,

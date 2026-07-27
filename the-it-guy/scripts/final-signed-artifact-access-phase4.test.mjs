@@ -347,8 +347,8 @@ assert.match(
 )
 assert.match(
   clientPortal,
-  /documentId: normalizedDocumentId/,
-  'ClientPortal must pass a final Documents-row descriptor to the secure resolver.',
+  /documentId: normalizedPacketId && normalizedPacketVersionId \? '' : normalizedDocumentId/,
+  'ClientPortal must avoid synthetic document ids when a packet and packet version identify the final artifact.',
 )
 assert.match(
   packetApi,

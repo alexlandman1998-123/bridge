@@ -5488,68 +5488,33 @@ function getSellerMobileDocumentOpenKey(document = {}) {
   ).trim()
 }
 
-function toPortalPdfFileName(value = '', fallback = 'seller-document.pdf') {
-  const raw = String(value || fallback || 'seller-document.pdf').trim() || 'seller-document.pdf'
-  return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
+function toPortalHtmlFileName(value = '', fallback = 'seller-document.html') {
+  const raw = String(value || fallback || 'seller-document.html').trim() || 'seller-document.html'
+  return raw.replace(/\.(html?|pdf)$/i, '') + '.html'
 }
 
-async function downloadGeneratedPortalDocumentPdf(markup = '', fileName = 'seller-document.pdf') {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    throw new Error('PDF downloads are only available in the browser.')
+function openGeneratedPortalDocumentHtml(markup = '', fileName = 'seller-document.html') {
+  if (typeof window === 'undefined' || typeof URL === 'undefined') {
+    throw new Error('Document downloads are only available in the browser.')
   }
-
-  let pdfStage = null
-  let styleElement = null
-  try {
-    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
-    const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
-    const style = pdfDocument.head.querySelector('style')
-    styleElement = document.createElement('style')
-    styleElement.setAttribute('data-generated-portal-document-pdf-style', 'true')
-    styleElement.textContent = style?.textContent || ''
-    pdfStage = document.createElement('div')
-    pdfStage.setAttribute('data-generated-portal-document-pdf-stage', 'true')
-    pdfStage.style.position = 'fixed'
-    pdfStage.style.left = '-10000px'
-    pdfStage.style.top = '0'
-    pdfStage.style.width = '210mm'
-    pdfStage.style.background = '#ffffff'
-    pdfStage.style.pointerEvents = 'none'
-    pdfStage.innerHTML = pdfDocument.body.innerHTML
-    document.head.appendChild(styleElement)
-    document.body.appendChild(pdfStage)
-
-    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
-      if (image.complete) return Promise.resolve()
-      return new Promise((resolve) => {
-        image.onload = resolve
-        image.onerror = resolve
-      })
-    })
-    await Promise.all(imageLoads)
-    await new Promise((resolve) => window.requestAnimationFrame(resolve))
-
-    await html2pdf()
-      .set({
-        margin: 0,
-        filename: toPortalPdfFileName(fileName),
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          windowWidth: 794,
-          windowHeight: 1123,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
-      })
-      .from(pdfStage)
-      .save()
-  } finally {
-    pdfStage?.remove()
-    styleElement?.remove()
+  const targetWindow = window.open('', '_blank')
+  if (!targetWindow) {
+    throw new Error('Unable to open this document. Please allow pop-ups and try again.')
   }
+  const documentTitle = toPortalHtmlFileName(fileName).replace(/[-_]+/g, ' ').replace(/\.html$/i, '').trim() || 'Seller document'
+  const html = String(markup || '').trim()
+  const htmlWithPrintTools = html.replace(
+    /<\/body>\s*<\/html>\s*$/i,
+    `<script>
+      window.addEventListener('load', function () {
+        document.title = ${JSON.stringify(documentTitle)}
+      })
+    </script></body></html>`,
+  )
+  const blob = new Blob([htmlWithPrintTools || html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  targetWindow.location.href = url
+  window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
 }
 
 function formatSellerMobileUploadSize(bytes = 0) {
@@ -7704,6 +7669,7 @@ function ClientPortal() {
   const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
   const [reservationProofUploadFeedback, setReservationProofUploadFeedback] = useState({ tone: '', message: '' })
+  const [documentActionError, setDocumentActionError] = useState('')
   const [expandedJourneyStepId, setExpandedJourneyStepId] = useState(null)
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
@@ -7864,6 +7830,7 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
+      setDocumentActionError('')
       const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
         mode: 'core',
         sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
@@ -7909,6 +7876,7 @@ function ClientPortal() {
       setWorkspaceData(fullData)
       setPortal(fullData?.legacyPortalData || null)
       setSellerPortalAuth(null)
+      setDocumentActionError('')
       setError('')
       console.log('[perf][client-portal] full data loaded', {
         token,
@@ -8828,7 +8796,7 @@ function ClientPortal() {
     const normalizedPacketVersionId = String(packetVersionId || '').trim()
     const normalizedDocumentId = String(documentId || '').trim()
     if ((!normalizedPacketId || !normalizedPacketVersionId) && !normalizedDocumentId) {
-      setError('The final signed document reference is incomplete.')
+      setDocumentActionError('The final signed document reference is incomplete.')
       return
     }
 
@@ -8836,6 +8804,7 @@ function ClientPortal() {
     const targetWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
     try {
       setError('')
+      setDocumentActionError('')
       setOpeningDocumentPath(resolvedOpeningKey)
       const access = effectiveWorkspace === 'seller'
         ? await resolveSellerClientPortalFinalSignedDocumentAccess({
@@ -8843,14 +8812,14 @@ function ClientPortal() {
             accessToken: sellerPortalAccessToken,
             packetId: normalizedPacketId,
             packetVersionId: normalizedPacketVersionId,
-            documentId: normalizedDocumentId,
+            documentId: normalizedPacketId && normalizedPacketVersionId ? '' : normalizedDocumentId,
             download: true,
           })
         : await resolveClientPortalFinalSignedDocumentAccess({
             token,
             packetId: normalizedPacketId,
             packetVersionId: normalizedPacketVersionId,
-            documentId: normalizedDocumentId,
+            documentId: normalizedPacketId && normalizedPacketVersionId ? '' : normalizedDocumentId,
             download: true,
           })
       const signedUrl = String(access?.finalArtifact?.downloadUrl || '').trim()
@@ -8864,7 +8833,7 @@ function ClientPortal() {
       }
     } catch (openError) {
       if (targetWindow && !targetWindow.closed) targetWindow.close()
-      setError(openError.message || 'Unable to open this final signed document right now.')
+      setDocumentActionError(openError.message || 'Unable to open this final signed document right now.')
     } finally {
       setOpeningDocumentPath('')
     }
@@ -8884,13 +8853,14 @@ function ClientPortal() {
       const openKey = String(document?.id || document?.generatedFileName || 'generated-document').trim()
       try {
         setError('')
+        setDocumentActionError('')
         setOpeningDocumentPath(openKey)
-        await downloadGeneratedPortalDocumentPdf(
+        openGeneratedPortalDocumentHtml(
           String(document.generatedHtml),
           document.generatedFileName || document.generated_file_name || document.fileName || document.file_name || `${document.id || 'seller-document'}.pdf`,
         )
       } catch (openError) {
-        setError(openError.message || 'Unable to open this document right now.')
+        setDocumentActionError(openError.message || 'Unable to open this document right now.')
       } finally {
         setOpeningDocumentPath('')
       }
@@ -8902,6 +8872,7 @@ function ClientPortal() {
 
     try {
       setError('')
+      setDocumentActionError('')
       setOpeningDocumentPath(String(document?.file_path || document?.url || document?.id || 'opening'))
       const openDirectUrl = Boolean(document?.openDirectUrl && document?.url)
       const signedUrl = openDirectUrl
@@ -8926,7 +8897,7 @@ function ClientPortal() {
       }
       window.open(signedUrl, '_blank', 'noopener,noreferrer')
     } catch (openError) {
-      setError(openError.message || 'Unable to open this document right now.')
+      setDocumentActionError(openError.message || 'Unable to open this document right now.')
     } finally {
       setOpeningDocumentPath('')
     }
@@ -9238,7 +9209,7 @@ function ClientPortal() {
     )
   }
 
-  if (error || !portal) {
+  if (!portal) {
     return (
       <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#f1d4cf] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
@@ -11476,6 +11447,11 @@ function ClientPortal() {
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
+      {documentActionError ? (
+        <div className="fixed left-4 right-4 top-4 z-[70] mx-auto max-w-[560px] rounded-[16px] border border-[#f1d4cf] bg-white px-4 py-3 text-sm font-semibold text-[#b42318] shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
+          {documentActionError}
+        </div>
+      ) : null}
       {effectiveWorkspace === 'seller' ? (
         <div className="lg:hidden">
           <SellerMobilePortal

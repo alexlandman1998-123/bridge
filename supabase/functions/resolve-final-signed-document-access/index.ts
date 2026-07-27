@@ -119,14 +119,24 @@ async function authorizeSellerPortal(
   const portalClient = createClient(url, anonKey, {
     auth: { persistSession: false },
   });
-  const payloadResult = await portalClient.rpc(
-    "bridge_private_listing_seller_portal_payload",
+  let payloadResult = await portalClient.rpc(
+    "bridge_private_listing_seller_portal_core_payload",
     {
       p_token: portalToken,
       p_access_token: sellerAccessToken,
       p_require_access: true,
     },
   );
+  if (payloadResult.error) {
+    payloadResult = await portalClient.rpc(
+      "bridge_private_listing_seller_portal_payload",
+      {
+        p_token: portalToken,
+        p_access_token: sellerAccessToken,
+        p_require_access: true,
+      },
+    );
+  }
   if (payloadResult.error) return false;
   const payload = asRecord(payloadResult.data);
   if (payload.authRequired === true || !asRecord(payload.listing).id) {

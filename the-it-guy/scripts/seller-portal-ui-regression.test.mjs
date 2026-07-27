@@ -63,7 +63,7 @@ assert.match(source, /\['sale', 'sales', 'mandate', 'transfer'\]\.includes\(expl
 assert.match(source, /category\.total > 0 \|\| category\.key === 'sale'/, 'seller mobile documents should keep the Sales category visible even when only generated sale documents are pending')
 assert.match(source, /Choose document type/, 'seller mobile upload should open a document-type picker before camera or file actions')
 assert.match(source, /onOpenUploadPicker=\{openDocumentUploadPicker\}/, 'seller mobile documents should route global uploads through the picker')
-assert.match(source, /downloadGeneratedPortalDocumentPdf/, 'seller mobile generated documents should download through the PDF renderer')
+assert.match(source, /openGeneratedPortalDocumentHtml/, 'seller mobile generated documents should open as rendered HTML instead of using the fragile mobile PDF renderer')
 assert.match(source, /progress: true/, 'seller progress should be enabled as its own portal route')
 assert.match(source, /<TransactionStageWorkspace/, 'seller progress should render the dedicated transaction-stage workspace')
 assert.doesNotMatch(source, /key: 'progress'.*hash: '#seller-sale-progress'/, 'seller progress navigation should not redirect into the overview dashboard')
