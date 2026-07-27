@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -716,6 +716,146 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
+  {
+    key: 'seller',
+    label: 'Seller Documents',
+    description: 'Identity and seller verification',
+    Icon: UserRound,
+    accent: '#2f73b8',
+    iconClass: 'border-[#dbeafe] bg-[#eff6ff] text-[#2563a6]',
+    progressClass: 'bg-[#2f73b8]',
+    cardClass: 'hover:border-[#b8d5f4]',
+  },
+  {
+    key: 'property',
+    label: 'Property Documents',
+    description: 'Ownership, rates, and disclosures',
+    Icon: Home,
+    accent: '#147c8f',
+    iconClass: 'border-[#cdeef4] bg-[#eefcff] text-[#147c8f]',
+    progressClass: 'bg-[#147c8f]',
+    cardClass: 'hover:border-[#b6dfe8]',
+  },
+  {
+    key: 'marketing',
+    label: 'Marketing Assets',
+    description: 'Listing media and campaign material',
+    Icon: ImageIcon,
+    accent: '#f59e0b',
+    iconClass: 'border-[#fde5b2] bg-[#fff7e6] text-[#d78500]',
+    progressClass: 'bg-[#f59e0b]',
+    cardClass: 'hover:border-[#f5d59a]',
+  },
+  {
+    key: 'legal',
+    label: 'Legal Documents',
+    description: 'Mandates, contracts, and approvals',
+    Icon: FileText,
+    accent: '#148a58',
+    iconClass: 'border-[#caead9] bg-[#eefaf3] text-[#148a58]',
+    progressClass: 'bg-[#148a58]',
+    cardClass: 'hover:border-[#b9dfca]',
+  },
+]
+
+function getSellerLeadDocumentCategoryKey(documentRow = {}) {
+  const source = normalizeKey([
+    documentRow?.category,
+    documentRow?.categoryKey,
+    documentRow?.documentCategory,
+    documentRow?.document_category,
+    documentRow?.type,
+    documentRow?.documentType,
+    documentRow?.document_type,
+    documentRow?.key,
+    documentRow?.id,
+    documentRow?.requirementKey,
+    documentRow?.requirement_key,
+    documentRow?.label,
+    documentRow?.title,
+  ].filter(Boolean).join(' '))
+
+  if (/(marketing|asset|photo|image|gallery|brochure|floor|plan|media|campaign|listing_photo|property_photo)/.test(source)) return 'marketing'
+  if (/(legal|mandate|otp|offer|agreement|contract|signature|signed|transfer|attorney|conveyancer)/.test(source)) return 'legal'
+  if (/(property|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
+  return 'seller'
+}
+
+function getSellerLeadDocumentStatusMeta(documentRow = {}) {
+  const rawStatus = normalizeText(documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status)
+  const status = normalizeKey(rawStatus)
+  const hasFile = Boolean(
+    documentRow?.url ||
+      documentRow?.fileUrl ||
+      documentRow?.file_url ||
+      documentRow?.downloadUrl ||
+      documentRow?.download_url ||
+      documentRow?.uploadedAt ||
+      documentRow?.uploaded_at,
+  )
+
+  if (/(rejected|declined|failed|invalid)/.test(status)) {
+    return {
+      state: 'danger',
+      label: rawStatus || 'Needs attention',
+      pillClass: 'border-[#f2c9c4] bg-[#fff5f4] text-[#9f3028]',
+      iconClass: 'bg-[#fff5f4] text-[#9f3028]',
+      Icon: AlertTriangle,
+    }
+  }
+  if (/(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
+    return {
+      state: 'complete',
+      label: rawStatus || 'Complete',
+      pillClass: 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]',
+      iconClass: 'bg-[#effaf3] text-[#1d7a52]',
+      Icon: CheckCircle2,
+    }
+  }
+  if (/(review|submitted|received|uploaded|processing)/.test(status) || hasFile) {
+    return {
+      state: 'review',
+      label: rawStatus || 'Uploaded',
+      pillClass: 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]',
+      iconClass: 'bg-[#fff8e8] text-[#8a641d]',
+      Icon: Clock3,
+    }
+  }
+  return {
+    state: 'pending',
+    label: rawStatus || 'Pending',
+    pillClass: 'border-[#dfe8f1] bg-[#f3f7fb] text-[#7890a8]',
+    iconClass: 'bg-[#f3f7fb] text-[#7890a8]',
+    Icon: FileText,
+  }
+}
+
+function buildSellerLeadDocumentCategories(documents = []) {
+  const grouped = new Map(SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => [category.key, []]))
+  documents.forEach((documentRow) => {
+    const key = getSellerLeadDocumentCategoryKey(documentRow)
+    grouped.get(grouped.has(key) ? key : 'seller').push(documentRow)
+  })
+
+  return SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => {
+    const items = grouped.get(category.key) || []
+    const completed = items.filter((documentRow) => {
+      const state = getSellerLeadDocumentStatusMeta(documentRow).state
+      return state === 'complete' || state === 'review'
+    }).length
+    const total = items.length
+    const progress = total ? Math.round((completed / total) * 100) : 0
+    return {
+      ...category,
+      items,
+      completed,
+      total,
+      progress,
+    }
+  })
+}
+
 function normalizeAppointmentCategorySignal(value) {
   return normalizeKey(value)
     .replace(/[_-]+/g, ' ')
@@ -1094,6 +1234,273 @@ function parseCurrencyAmount(value) {
   return number
 }
 
+const PROPERTY_WORKSPACE_FIELD_MAPPING = [
+  { uiField: 'fullAddress', source: 'property', sourceField: 'sellerPropertyAddress', fallbackSource: 'seller_onboarding.propertyAddress', writable: true },
+  { uiField: 'propertyType', source: 'property', sourceField: 'propertyInterest', fallbackSource: 'seller_onboarding.propertyType', writable: true },
+  { uiField: 'propertySubtype', source: 'seller_onboarding', sourceField: 'propertyStructureType', fallbackSource: 'listing.propertyType', writable: true },
+  { uiField: 'suburb', source: 'property', sourceField: 'suburb', fallbackSource: 'seller_onboarding.suburb', writable: true },
+  { uiField: 'city', source: 'property', sourceField: 'city', fallbackSource: 'seller_onboarding.city', writable: true },
+  { uiField: 'province', source: 'property', sourceField: 'province', fallbackSource: 'seller_onboarding.province', writable: true },
+  { uiField: 'postalCode', source: 'property', sourceField: 'postalCode', fallbackSource: 'seller_onboarding.postalCode', writable: true },
+  { uiField: 'bedrooms', source: 'property', sourceField: 'bedrooms', fallbackSource: 'seller_onboarding.bedrooms', writable: true },
+  { uiField: 'bathrooms', source: 'property', sourceField: 'bathrooms', fallbackSource: 'seller_onboarding.bathrooms', writable: true },
+  { uiField: 'features', source: 'seller_onboarding', sourceField: 'propertyFeatures', fallbackSource: 'listing.features', writable: false },
+  { uiField: 'occupancyStatus', source: 'seller_onboarding', sourceField: 'occupancyStatus', fallbackSource: null, writable: false },
+  { uiField: 'listingStatus', source: 'listing', sourceField: 'listingStatus', fallbackSource: 'seller_journey.kpis.listing', writable: false },
+  { uiField: 'listingReadiness', source: 'listing', sourceField: 'sellerReadiness.listingReadiness', fallbackSource: null, writable: false },
+  { uiField: 'mediaCounts', source: 'media', sourceField: 'listing.marketing', fallbackSource: 'seller_onboarding.imageGallery', writable: false },
+]
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function firstWorkspaceText(...values) {
+  return values.map(normalizeText).find(Boolean) || ''
+}
+
+function firstWorkspaceValue(...values) {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length) return value
+    if (isPlainObject(value) && Object.keys(value).length) return value
+    if (typeof value === 'number' && Number.isFinite(value) && value !== 0) return value
+    if (typeof value === 'boolean') return value
+    const text = normalizeText(value)
+    if (text) return value
+  }
+  return ''
+}
+
+function formatCapturedValue(value, fallback = 'Not captured') {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  const text = normalizeText(value)
+  return text || fallback
+}
+
+function formatMaybeCurrency(value) {
+  const amount = parseCurrencyAmount(value)
+  return amount > 0 ? formatCurrency(amount) : formatCapturedValue(value)
+}
+
+function titleCaseWorkspaceValue(value = '') {
+  const text = normalizeText(value).replace(/[_-]+/g, ' ')
+  if (!text) return ''
+  return text.replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function formatMetricValue(value, suffix = '') {
+  const text = normalizeText(value)
+  if (!text) return 'Not captured'
+  const amount = Number(text)
+  if (Number.isFinite(amount) && amount > 0) {
+    return suffix ? `${new Intl.NumberFormat('en-ZA').format(amount)} ${suffix}` : new Intl.NumberFormat('en-ZA').format(amount)
+  }
+  return suffix && !text.includes(suffix) ? `${text} ${suffix}` : text
+}
+
+function splitWorkspaceTextList(value) {
+  if (Array.isArray(value)) return value.flatMap(splitWorkspaceTextList)
+  if (isPlainObject(value)) {
+    return Object.entries(value)
+      .filter(([, entryValue]) => entryValue === true || normalizeText(entryValue))
+      .map(([key, entryValue]) => entryValue === true ? titleCaseWorkspaceValue(key) : normalizeText(entryValue))
+  }
+  const text = normalizeText(value)
+  if (!text) return []
+  return text
+    .split(/[,;\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 16)
+}
+
+function uniqueWorkspaceList(values = []) {
+  const seen = new Set()
+  const rows = []
+  for (const value of values.flatMap(splitWorkspaceTextList)) {
+    const label = titleCaseWorkspaceValue(value)
+    const key = normalizeText(label).toLowerCase()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    rows.push(label)
+  }
+  return rows
+}
+
+function countWorkspaceMedia(...groups) {
+  return groups.flatMap((group) => {
+    if (Array.isArray(group)) return group
+    if (group) return [group]
+    return []
+  }).filter(Boolean).length
+}
+
+function getWorkspaceSellerOnboarding(lead = {}, listing = {}) {
+  return {
+    ...getListingSellerFormData(listing?.sourceListing || listing || {}),
+    ...getLeadSellerOnboardingFormData(lead),
+  }
+}
+
+function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, journey = {}, readiness = {}, documentSummary = {} } = {}) {
+  const listingSource = listing?.sourceListing && isPlainObject(listing.sourceListing) ? listing.sourceListing : (listing || {})
+  const onboarding = getWorkspaceSellerOnboarding(lead, listingSource)
+  const propertyDetails = {
+    ...(isPlainObject(listingSource?.propertyDetails) ? listingSource.propertyDetails : {}),
+    ...(isPlainObject(listingSource?.property_details) ? listingSource.property_details : {}),
+    ...(isPlainObject(lead?.propertyDetails) ? lead.propertyDetails : {}),
+    ...(isPlainObject(lead?.property_details) ? lead.property_details : {}),
+  }
+  const marketing = {
+    ...(isPlainObject(listingSource?.marketing) ? listingSource.marketing : {}),
+    ...(isPlainObject(listingSource?.marketing_details) ? listingSource.marketing_details : {}),
+  }
+  const addressLine = firstWorkspaceText(
+    lead?.sellerPropertyAddress,
+    lead?.seller_property_address,
+    lead?.formattedAddress,
+    lead?.streetAddress,
+    onboarding?.propertyAddress,
+    onboarding?.formattedAddress,
+    onboarding?.streetAddress,
+    propertyDetails?.address,
+    listingSource?.propertyAddress,
+    listingSource?.property_address,
+    listingSource?.address,
+    listing?.address,
+  )
+  const suburb = firstWorkspaceText(lead?.suburb, onboarding?.suburb, propertyDetails?.suburb, listingSource?.suburb, listing?.suburb)
+  const city = firstWorkspaceText(lead?.city, onboarding?.city, propertyDetails?.city, listingSource?.city)
+  const province = firstWorkspaceText(lead?.province, onboarding?.province, propertyDetails?.province, listingSource?.province)
+  const postalCode = firstWorkspaceText(lead?.postalCode, lead?.postal_code, onboarding?.postalCode, onboarding?.postal_code, propertyDetails?.postalCode, listingSource?.postalCode, listingSource?.postal_code)
+  const formattedAddress = [addressLine, suburb, city, province, postalCode].filter(Boolean)
+    .filter((part, index, parts) => parts.findIndex((item) => item.toLowerCase() === part.toLowerCase()) === index)
+    .join(', ')
+  const listingId = firstWorkspaceText(listingSource?.id, listingSource?.listingId, listingSource?.listing_id, listing?.id, lead?.listingId, lead?.listing_id)
+  const listingStatus = firstWorkspaceText(
+    listingSource?.listingStatus,
+    listingSource?.listing_status,
+    listingSource?.status,
+    listing?.status,
+    journey?.kpis?.find?.((item) => item.key === 'listing')?.value,
+  )
+  const readinessModel = readiness?.listingReadiness || {}
+  const listingReadiness = {
+    percent: Number(readinessModel?.percent || 0) || 0,
+    items: asArray(readinessModel?.items),
+    incompleteItems: asArray(readinessModel?.incompleteItems).length
+      ? asArray(readinessModel?.incompleteItems)
+      : asArray(readiness?.blockers),
+  }
+  const propertyType = firstWorkspaceText(lead?.propertyType, lead?.property_type, lead?.propertyInterest, onboarding?.propertyType, onboarding?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType)
+  const features = uniqueWorkspaceList([
+    propertyDetails?.features,
+    propertyDetails?.propertyFeatures,
+    onboarding?.propertyFeatures,
+    onboarding?.features,
+    onboarding?.property_features,
+    listingSource?.features,
+    listingSource?.amenities,
+  ])
+  const photos = countWorkspaceMedia(
+    listingSource?.galleryImages,
+    listingSource?.gallery_images,
+    listingSource?.images,
+    listingSource?.photos,
+    listingSource?.media,
+    marketing?.imageGallery,
+    marketing?.image_gallery,
+    onboarding?.imageGallery,
+    onboarding?.image_gallery,
+    listingSource?.coverImage,
+    listingSource?.imageUrl,
+    listing?.thumbnailUrl,
+  )
+  return {
+    fieldMapping: PROPERTY_WORKSPACE_FIELD_MAPPING,
+    profile: {
+      address: formattedAddress || addressLine || 'No property address yet',
+      sourceLabel: Object.keys(onboarding).length ? 'Provided by seller' : 'Updated by agent',
+      rows: [
+        { label: 'Property type', value: propertyType },
+        { label: 'Property subtype', value: firstWorkspaceText(onboarding?.propertySubtype, onboarding?.property_subtype, onboarding?.propertyStructureType, onboarding?.property_structure_type, propertyDetails?.propertySubtype, propertyDetails?.propertyStructureType) },
+        { label: 'Complex / Estate', value: firstWorkspaceText(onboarding?.complexName, onboarding?.estateName, onboarding?.estateComplexName, propertyDetails?.complexName, listingSource?.estateName) },
+        { label: 'Erf / Stand number', value: firstWorkspaceText(lead?.erfNumber, onboarding?.erfNumber, onboarding?.standNumber, onboarding?.propertyReference, propertyDetails?.erfNumber) },
+        { label: 'Sectional title', value: firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle) },
+        { label: 'Unit number', value: firstWorkspaceText(onboarding?.unitNumber, onboarding?.unit_number, propertyDetails?.unitNumber) },
+        { label: 'Suburb', value: suburb },
+        { label: 'City', value: city },
+        { label: 'Province', value: province },
+        { label: 'Postal code', value: postalCode },
+        { label: 'GPS coordinates', value: firstWorkspaceText(
+          lead?.latitude && lead?.longitude ? `${lead.latitude}, ${lead.longitude}` : '',
+          onboarding?.latitude && onboarding?.longitude ? `${onboarding.latitude}, ${onboarding.longitude}` : '',
+          propertyDetails?.latitude && propertyDetails?.longitude ? `${propertyDetails.latitude}, ${propertyDetails.longitude}` : '',
+        ) },
+      ].map((row) => ({ ...row, value: formatCapturedValue(row.value) })),
+    },
+    listing: {
+      hasListing: Boolean(listingId || journey?.listingCreated),
+      id: listingId,
+      status: listingStatus || 'Not created',
+      statusTone: journey?.listingLive || normalizeText(listingStatus).toLowerCase().includes('live') || normalizeText(listingStatus).toLowerCase().includes('active') ? 'success' : listingId ? 'warning' : 'neutral',
+      title: firstWorkspaceText(listingSource?.listingTitle, listingSource?.title, listingSource?.propertyName, listing?.title, formattedAddress, addressLine),
+      reference: firstWorkspaceText(listingSource?.listingReference, listingSource?.reference, listingSource?.listing_reference, listingId),
+      askingPrice: firstWorkspaceValue(listingSource?.askingPrice, listingSource?.asking_price, listingSource?.price, lead?.estimatedValue, onboarding?.askingPrice),
+      estimatedValue: firstWorkspaceValue(lead?.estimatedValue, lead?.estimated_value, listingSource?.estimatedValue, listingSource?.estimated_value, onboarding?.estimatedValue),
+      createdAt: firstWorkspaceText(listingSource?.createdAt, listingSource?.created_at, listing?.createdAt, lead?.createdAt),
+      updatedAt: firstWorkspaceText(listingSource?.updatedAt, listingSource?.updated_at, listing?.updatedAt, lead?.updatedAt),
+      readiness: listingReadiness,
+      nextAction: readiness?.nextAction || null,
+    },
+    characteristics: {
+      metrics: [
+        { label: 'Bedrooms', value: firstWorkspaceValue(lead?.bedrooms, onboarding?.bedrooms, propertyDetails?.bedrooms, listingSource?.bedrooms, listing?.bedrooms), Icon: BedDouble },
+        { label: 'Bathrooms', value: firstWorkspaceValue(lead?.bathrooms, onboarding?.bathrooms, propertyDetails?.bathrooms, listingSource?.bathrooms, listing?.bathrooms), Icon: Bath },
+        { label: 'Garages', value: firstWorkspaceValue(lead?.garages, onboarding?.garages, propertyDetails?.garages, listingSource?.garages), Icon: Home },
+        { label: 'Parking', value: firstWorkspaceValue(lead?.parking, onboarding?.parking, onboarding?.parkingSpaces, propertyDetails?.parking, listingSource?.coveredParking, listingSource?.openParking, listing?.parking), Icon: Car },
+        { label: 'Erf size', value: firstWorkspaceValue(lead?.erfSize, onboarding?.erfSize, onboarding?.propertySize, propertyDetails?.erfSize, listingSource?.erfSize), suffix: 'm²', Icon: Ruler },
+        { label: 'Floor size', value: firstWorkspaceValue(lead?.floorSize, onboarding?.floorSize, propertyDetails?.floorSize, listingSource?.floorSize), suffix: 'm²', Icon: Building2 },
+      ],
+      details: [
+        { label: 'Storeys', value: firstWorkspaceValue(onboarding?.storeys, propertyDetails?.storeys) },
+        { label: 'Year built', value: firstWorkspaceValue(onboarding?.yearBuilt, propertyDetails?.yearBuilt) },
+        { label: 'Condition', value: firstWorkspaceValue(onboarding?.propertyCondition, onboarding?.condition, propertyDetails?.condition) },
+      ].map((row) => ({ ...row, value: formatCapturedValue(row.value) })),
+      features,
+    },
+    occupancy: {
+      rows: [
+        { label: 'Occupancy status', value: firstWorkspaceText(onboarding?.occupancyStatus, onboarding?.occupancy_status, onboarding?.occupationStatus), Icon: UserRound },
+        { label: 'Current occupants', value: firstWorkspaceText(onboarding?.currentOccupants, onboarding?.occupants), Icon: Home },
+        { label: 'Vacant from', value: firstWorkspaceText(onboarding?.vacantFrom, onboarding?.vacant_from), Icon: CalendarDays },
+        { label: 'Tenancy', value: firstWorkspaceText(onboarding?.tenancyStatus, onboarding?.tenancy_status, onboarding?.leaseStatus), Icon: FileText },
+        { label: 'Lease end date', value: firstWorkspaceText(onboarding?.leaseEndDate, onboarding?.lease_end_date), Icon: Clock3 },
+        { label: 'Rates & taxes', value: firstWorkspaceValue(onboarding?.ratesAndTaxes, onboarding?.ratesTaxes, onboarding?.monthlyRates), Icon: Tag, format: 'currency' },
+        { label: 'Levies', value: firstWorkspaceValue(onboarding?.levies, onboarding?.monthlyLevies), Icon: Columns3, format: 'currency' },
+        { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock },
+      ],
+    },
+    marketing: {
+      listingDescription: firstWorkspaceText(listingSource?.description, listingSource?.propertyDescription, listingSource?.property_description, marketing?.description),
+      sellerDescription: firstWorkspaceText(onboarding?.marketingDescription, onboarding?.propertyDescription, onboarding?.description, onboarding?.sellerNotes, lead?.notes),
+      headline: firstWorkspaceText(marketing?.headline, listingSource?.headline, onboarding?.marketingHeadline),
+      keySellingPoints: uniqueWorkspaceList([marketing?.keySellingPoints, marketing?.sellingPoints, onboarding?.keySellingPoints, onboarding?.sellingPoints]),
+      mediaCounts: {
+        photos,
+        videos: countWorkspaceMedia(listingSource?.videos, marketing?.videos, onboarding?.videos, onboarding?.videoGallery),
+        floorplans: countWorkspaceMedia(listingSource?.floorplans, listingSource?.floorPlans, marketing?.floorplans, marketing?.floorPlans, onboarding?.floorplans, onboarding?.floorPlans),
+        virtualTours: countWorkspaceMedia(listingSource?.virtualTours, listingSource?.virtual_tours, marketing?.virtualTours, onboarding?.virtualTours),
+        documents: Number(documentSummary?.total || 0) || asArray(listingSource?.documents).length,
+      },
+    },
+  }
+}
+
 function formatCompactCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Not captured'
@@ -1205,6 +1612,7 @@ function normalizeAppointmentListingOption(listing = {}) {
   const askingPrice = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.propertyDetails?.price || listing?.estimatedValue || 0) || 0
   return {
     id,
+    sourceListing: listing,
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
     title: normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name),
@@ -6089,6 +6497,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedListing,
   ])
 
+  const selectedSellerDocumentCategories = useMemo(
+    () => buildSellerLeadDocumentCategories(selectedSellerJourney?.documents || []),
+    [selectedSellerJourney],
+  )
+
+  const selectedSellerDocumentSummary = useMemo(() => {
+    const total = selectedSellerDocumentCategories.reduce((sum, category) => sum + category.total, 0)
+    const completed = selectedSellerDocumentCategories.reduce((sum, category) => sum + category.completed, 0)
+    return {
+      total,
+      completed,
+      outstanding: Math.max(total - completed, 0),
+      progress: total ? Math.round((completed / total) * 100) : 0,
+    }
+  }, [selectedSellerDocumentCategories])
+
+  const selectedSellerDocumentAttentionItems = useMemo(
+    () => selectedSellerDocumentCategories
+      .flatMap((category) => category.items.map((documentRow) => ({
+        ...documentRow,
+        categoryLabel: category.label,
+        statusMeta: getSellerLeadDocumentStatusMeta(documentRow),
+      })))
+      .filter((documentRow) => documentRow.statusMeta.state === 'pending' || documentRow.statusMeta.state === 'danger'),
+    [selectedSellerDocumentCategories],
+  )
+
   const selectedSellerReadiness = useMemo(() => buildSellerReadinessSummary({
     lead: selectedLead || {},
     contact: selectedLeadContact || {},
@@ -6104,6 +6539,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadLinkedListing,
     selectedSellerJourney,
+  ])
+
+  const selectedLeadPropertyWorkspace = useMemo(() => buildSellerPropertyWorkspaceViewModel({
+    lead: selectedLead || {},
+    listing: selectedLeadLinkedListing,
+    journey: selectedSellerJourney,
+    readiness: selectedSellerReadiness,
+    documentSummary: selectedSellerDocumentSummary,
+  }), [
+    selectedLead,
+    selectedLeadLinkedListing,
+    selectedSellerDocumentSummary,
+    selectedSellerJourney,
+    selectedSellerReadiness,
   ])
 
   const resolveAppointmentListingLabel = useCallback(
@@ -12157,7 +12606,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="flex max-h-[calc(100dvh-15rem)] min-h-[520px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+            <article className="flex min-h-[680px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
               <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
@@ -12430,7 +12879,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
               <>
-              <div className="hidden min-h-0 max-w-full flex-1 overflow-auto overscroll-contain lg:block">
+              <div className="hidden min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-visible lg:block">
 	                <div className="min-w-[1120px] px-4 py-4">
 	                  <div
 	                    className="grid items-center gap-4 px-3 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
@@ -15560,34 +16009,248 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'property' && selectedLeadIsSeller ? (
-                  <div className="space-y-4">
-                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
+                    <section className="order-2 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Property</p>
-                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadPropertyLabel}</h4>
-                          <p className="mt-1 text-sm leading-6 text-[#60758b]">Address and listing facts used for onboarding, mandate, and listing creation.</p>
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                            <Home className="h-4 w-4" /> Property Profile
+                          </p>
+                          <h4 className="mt-3 break-words text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadPropertyWorkspace.profile.address}</h4>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">Property information supplied during seller onboarding.</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" onClick={() => handleSellerJourneyAction(selectedSellerJourney.listingCreated ? 'open_listing' : 'create_listing')}>
-                          {selectedSellerJourney.listingCreated ? 'Open Listing' : 'Create Listing Draft'}
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                          <Pencil className="mr-1.5 h-4 w-4" /> Edit Details
                         </Button>
                       </div>
-                      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        {[
-                          ['Address', selectedLeadPropertyLabel],
-                          ['Property Type', selectedLead.propertyInterest || selectedLeadLinkedListing?.propertyType || 'Not captured'],
-                          ['Estimated Value', selectedLead.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : 'Not captured'],
-                          ['Listing Status', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
-                          ['Suburb', selectedLead.suburb || selectedLeadLinkedListing?.suburb || 'Not captured'],
-                          ['City', selectedLead.city || selectedLeadLinkedListing?.city || 'Not captured'],
-                          ['Province', selectedLead.province || selectedLeadLinkedListing?.province || 'Not captured'],
-                          ['Postal Code', selectedLead.postalCode || selectedLeadLinkedListing?.postalCode || 'Not captured'],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
-                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{value}</p>
+                      <span className="mt-4 inline-flex rounded-full bg-[#edf8f2] px-3 py-1 text-xs font-semibold text-[#17643a]">{selectedLeadPropertyWorkspace.profile.sourceLabel}</span>
+                      <div className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {selectedLeadPropertyWorkspace.profile.rows.map((row) => (
+                          <div key={row.label} className="border-b border-[#eef3f7] pb-3">
+                            <p className="text-xs font-semibold text-[#6f849a]">{row.label}</p>
+                            <p className={`mt-1 break-words text-sm font-semibold ${row.value === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#102033]'}`}>{row.value}</p>
                           </div>
                         ))}
+                      </div>
+                    </section>
+
+                    <section className="order-1 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                            <TrendingUp className="h-4 w-4" /> Listing & Readiness
+                          </p>
+                          <h4 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
+                            {selectedLeadPropertyWorkspace.listing.hasListing ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}%` : 'Listing not created'}
+                          </h4>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                            {selectedLeadPropertyWorkspace.listing.hasListing
+                              ? selectedLeadPropertyWorkspace.listing.title || 'Linked listing'
+                              : `Property information is ${selectedLeadPropertyWorkspace.listing.readiness.percent}% complete.`}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          selectedLeadPropertyWorkspace.listing.statusTone === 'success'
+                            ? 'bg-[#e8f7f1] text-[#1d7a52]'
+                            : selectedLeadPropertyWorkspace.listing.statusTone === 'warning'
+                              ? 'bg-[#fff4e5] text-[#a16207]'
+                              : 'bg-[#eef3f7] text-[#687c91]'
+                        }`}>
+                          {selectedLeadPropertyWorkspace.listing.status}
+                        </span>
+                      </div>
+                      {selectedLeadPropertyWorkspace.listing.hasListing ? (
+                        <div className="mt-5 space-y-4">
+                          <div className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
+                            <p className="text-xs font-semibold text-[#607891]">Linked listing</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[#102033]">{selectedLeadPropertyWorkspace.listing.title || 'Listing'}</p>
+                            <p className="mt-1 break-all text-xs font-semibold text-[#7890a8]">{selectedLeadPropertyWorkspace.listing.reference || selectedLeadPropertyWorkspace.listing.id}</p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {[
+                              ['Asking price', selectedLeadPropertyWorkspace.listing.askingPrice ? formatMaybeCurrency(selectedLeadPropertyWorkspace.listing.askingPrice) : 'Not captured'],
+                              ['Estimated value', selectedLeadPropertyWorkspace.listing.estimatedValue ? formatMaybeCurrency(selectedLeadPropertyWorkspace.listing.estimatedValue) : 'Not captured'],
+                              ['Created', selectedLeadPropertyWorkspace.listing.createdAt ? formatDate(selectedLeadPropertyWorkspace.listing.createdAt) : 'Not captured'],
+                              ['Last updated', selectedLeadPropertyWorkspace.listing.updatedAt ? formatDate(selectedLeadPropertyWorkspace.listing.updatedAt) : 'Not captured'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-white px-3 py-3">
+                                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                                <p className={`mt-1 text-sm font-semibold ${value === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#203a54]'}`}>{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-sm font-semibold">
+                              <span className="text-[#102033]">Readiness overview</span>
+                              <span className={selectedLeadPropertyWorkspace.listing.readiness.percent >= 80 ? 'text-[#168257]' : 'text-[#a16207]'}>
+                                {selectedLeadPropertyWorkspace.listing.readiness.percent >= 80 ? 'High' : 'Needs attention'}
+                              </span>
+                            </div>
+                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e6edf5]">
+                              <div className="h-full rounded-full bg-[#14915f]" style={{ width: `${selectedLeadPropertyWorkspace.listing.readiness.percent}%` }} />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            {(selectedLeadPropertyWorkspace.listing.readiness.incompleteItems.length
+                              ? selectedLeadPropertyWorkspace.listing.readiness.incompleteItems
+                              : selectedLeadPropertyWorkspace.listing.readiness.items
+                            ).slice(0, 5).map((item) => {
+                              const isComplete = item.complete === true
+                              return (
+                                <div key={item.key || item.id || item.label} className="flex items-center justify-between gap-3 text-sm">
+                                  <span className="flex min-w-0 items-center gap-2 font-semibold text-[#20364c]">
+                                    {isComplete ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#168257]" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-[#d08a16]" />}
+                                    <span className="truncate">{item.label || item.blocker}</span>
+                                  </span>
+                                  <span className={`text-xs font-semibold ${isComplete ? 'text-[#168257]' : 'text-[#a16207]'}`}>{isComplete ? 'Complete' : 'Missing'}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <Button type="button" size="sm" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.nextAction?.id || 'open_journey')}>
+                              Complete Missing Details <ArrowUpRight className="ml-1.5 h-4 w-4" />
+                            </Button>
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction('open_listing')}>
+                              Manage Listing <Settings className="ml-1.5 h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
+                          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Listing not created</p>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">Complete the missing information before creating the listing.</p>
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                              Complete Property Details
+                            </Button>
+                            <Button type="button" size="sm" className="rounded-[12px]" onClick={() => handleSellerJourneyAction('create_listing')}>
+                              Create Listing
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="order-3 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)]">
+                      <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                        <Ruler className="h-4 w-4" /> Property Characteristics
+                      </p>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {selectedLeadPropertyWorkspace.characteristics.metrics.map((metric) => {
+                          const MetricIcon = metric.Icon
+                          return (
+                            <div key={metric.label} className="flex min-h-[74px] items-center gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+                              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-white text-[#315b7a] shadow-sm">
+                                <MetricIcon className="h-5 w-5" />
+                              </span>
+                              <span className="min-w-0">
+                                <strong className="block truncate text-base font-semibold text-[#102033]">{formatMetricValue(metric.value, metric.suffix)}</strong>
+                                <span className="text-xs font-semibold text-[#7890a8]">{metric.label}</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                        {selectedLeadPropertyWorkspace.characteristics.details.map((row) => (
+                          <div key={row.label} className="rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
+                            <p className="text-xs font-semibold text-[#7890a8]">{row.label}</p>
+                            <p className={`mt-1 text-sm font-semibold ${row.value === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-5">
+                        <p className="text-xs font-semibold text-[#607891]">Features</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedLeadPropertyWorkspace.characteristics.features.length ? selectedLeadPropertyWorkspace.characteristics.features.map((feature) => (
+                            <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
+                          )) : (
+                            <span className="rounded-full bg-[#eef3f7] px-3 py-1 text-xs font-semibold text-[#7890a8]">No property features captured</span>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="order-4 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)]">
+                      <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                        <UserRound className="h-4 w-4" /> Occupancy & Ownership
+                      </p>
+                      <div className="mt-5 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                        {selectedLeadPropertyWorkspace.occupancy.rows.map((row) => {
+                          const RowIcon = row.Icon
+                          const value = row.format === 'currency' ? formatMaybeCurrency(row.value) : formatCapturedValue(row.value)
+                          return (
+                            <div key={row.label} className="flex gap-3 border-b border-[#eef3f7] pb-4">
+                              <RowIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#315b7a]" />
+                              <span className="min-w-0">
+                                <p className="text-xs font-semibold text-[#7890a8]">{row.label}</p>
+                                <p className={`mt-1 break-words text-sm font-semibold ${value === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#102033]'}`}>{value}</p>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </section>
+
+                    <section className="order-5 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:col-span-2">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                            <ImageIcon className="h-4 w-4" /> Marketing Information & Media
+                          </p>
+                          <h4 className="mt-3 text-lg font-semibold text-[#102033]">Description, selling points, and media summary</h4>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.hasListing ? 'open_listing' : 'create_listing')}>
+                            <Pencil className="mr-1.5 h-4 w-4" /> Edit Marketing Information
+                          </Button>
+                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.hasListing ? 'open_listing' : 'create_listing')}>
+                            <Upload className="mr-1.5 h-4 w-4" /> Manage Media
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)_minmax(260px,0.7fr)]">
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-xs font-semibold text-[#607891]">Published listing description</p>
+                            <p className={`mt-2 text-sm leading-6 ${selectedLeadPropertyWorkspace.marketing.listingDescription ? 'text-[#20364c]' : 'text-[#8aa0b7]'}`}>
+                              {selectedLeadPropertyWorkspace.marketing.listingDescription || 'No listing description has been added.'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-[#607891]">Seller-provided notes</p>
+                            <p className={`mt-2 text-sm leading-6 ${selectedLeadPropertyWorkspace.marketing.sellerDescription ? 'text-[#20364c]' : 'text-[#8aa0b7]'}`}>
+                              {selectedLeadPropertyWorkspace.marketing.sellerDescription || 'Not captured'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            ['Photos', selectedLeadPropertyWorkspace.marketing.mediaCounts.photos, ImageIcon],
+                            ['Videos', selectedLeadPropertyWorkspace.marketing.mediaCounts.videos, Eye],
+                            ['Floorplans', selectedLeadPropertyWorkspace.marketing.mediaCounts.floorplans, FileText],
+                            ['Virtual tours', selectedLeadPropertyWorkspace.marketing.mediaCounts.virtualTours, Box],
+                          ].map(([label, value, MediaIcon]) => (
+                            <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+                              {createElement(MediaIcon, { className: 'h-5 w-5 text-[#315b7a]' })}
+                              <p className="mt-2 text-lg font-semibold text-[#102033]">{value}</p>
+                              <p className="text-xs font-semibold text-[#7890a8]">{label}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-[#607891]">Key selling points</p>
+                          <ul className="mt-3 space-y-2">
+                            {selectedLeadPropertyWorkspace.marketing.keySellingPoints.length ? selectedLeadPropertyWorkspace.marketing.keySellingPoints.map((point) => (
+                              <li key={point} className="flex gap-2 text-sm font-semibold text-[#20364c]">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#168257]" /> {point}
+                              </li>
+                            )) : (
+                              <li className="text-sm font-semibold text-[#8aa0b7]">No key selling points captured</li>
+                            )}
+                          </ul>
+                        </div>
                       </div>
                     </section>
                   </div>
@@ -15630,54 +16293,196 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'documents' ? (
                   <div className="space-y-4">
-                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">{selectedLeadIsSeller ? 'Seller Documents' : 'Buyer Documents'}</p>
-                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Documents</h4>
-                          <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadDisplayName}</p>
-                        </div>
-                        <Upload className="h-4 w-4 text-[#7890a8]" />
-                      </div>
-                      <div className="mt-4 grid gap-3 md:grid-cols-3">
-                        {(selectedLeadIsSeller ? [
-                          ['Mandate', selectedSellerJourney.kpis.find((item) => item.key === 'mandate')?.value || 'Not started'],
-                          ['Onboarding status', normalizeText(selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status) || 'Not started'],
-                          ['Listing', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
-                        ] : [
-                          ['Buyer uploads', selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending'],
-                          ['FICA', selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested'],
-                          ['Pre-approval docs', selectedLeadShowBondReadinessCta ? 'Ready to request' : selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured'],
-                        ]).map(([label, value]) => (
-                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
-                            <p className="mt-1 break-all text-sm font-semibold text-[#203a54]">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
-                        {(selectedLeadIsSeller ? selectedSellerJourney.documents : [
-                          { id: 'buyer-upload', label: 'Buyer upload pack', status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending' },
-                          { id: 'fica', label: 'FICA documents', status: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested' },
-                          { id: 'otp', label: 'OTP / offer documents', status: selectedLeadOfferSummary.total ? `${selectedLeadOfferSummary.total} offer records` : 'No offer yet' },
-                          { id: 'preapproval', label: 'Pre-approval documents', status: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured' },
-                        ]).map((document) => (
-                          <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+                    {selectedLeadIsSeller ? (
+                      <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.07)]">
+                        <div className="border-b border-[#e6eef7] bg-[#fbfdff] px-5 py-5 sm:px-6">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-[#203a54]">{document.label}</p>
-                              <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{document.status || 'Not uploaded'}</p>
+                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Seller Documents</p>
+                              <h4 className="mt-2 truncate text-2xl font-semibold tracking-[-0.04em] text-[#102033]" title={selectedLeadDisplayName}>Documents</h4>
+                              <p className="mt-1 text-sm font-medium text-[#60758b]">{selectedLeadDisplayName}</p>
                             </div>
-                            {document.url ? (
-                              <a href={document.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
-                                Open
-                              </a>
-                            ) : (
-                              <span className="rounded-full bg-[#eef3f7] px-2.5 py-1 text-xs font-semibold text-[#7b8ca2]">Pending</span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex min-h-10 items-center rounded-full border border-[#dbe7f2] bg-white px-4 text-sm font-semibold text-[#31506b]">
+                                {selectedSellerDocumentSummary.completed} of {selectedSellerDocumentSummary.total} complete
+                              </span>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
+                                {selectedLeadSellerOnboardingActionLabel}
+                              </Button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </section>
+                          <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e6edf5]">
+                            <div className="h-full rounded-full bg-[#148a58] transition-all" style={{ width: `${selectedSellerDocumentSummary.progress}%` }} />
+                          </div>
+                        </div>
+
+                        <div className="px-5 pb-6 pt-6 sm:px-6">
+                          <div className="grid gap-x-4 gap-y-8 pt-8 sm:grid-cols-2 xl:grid-cols-4">
+                            {selectedSellerDocumentCategories.map((category) => {
+                              const CategoryIcon = category.Icon
+                              return (
+                                <div key={category.key} className={`relative min-h-[168px] rounded-[22px] border border-[#e3edf7] bg-white px-5 pb-5 pt-10 shadow-[0_12px_30px_rgba(31,54,78,0.05)] transition ${category.cardClass}`}>
+                                  <div className="absolute right-5 top-0 grid h-[78px] w-[78px] -translate-y-1/2 place-items-center rounded-full bg-white p-1 shadow-[0_10px_26px_rgba(31,54,78,0.12)]">
+                                    <div className="grid h-full w-full place-items-center rounded-full" style={{ background: `conic-gradient(${category.accent} ${category.progress * 3.6}deg, #e6edf5 0deg)` }}>
+                                      <div className="grid h-[58px] w-[58px] place-items-center rounded-full bg-white text-sm font-bold text-[#20364c]">
+                                        {category.progress}%
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className={`grid h-10 w-10 place-items-center rounded-[13px] border ${category.iconClass}`}>
+                                    <CategoryIcon className="h-5 w-5" />
+                                  </span>
+                                  <h5 className="mt-4 truncate text-base font-semibold text-[#20364c]" title={category.label}>{category.label}</h5>
+                                  <p className="mt-1 text-sm font-semibold text-[#6f849a]">
+                                    {category.total ? `${category.completed} of ${category.total} complete` : 'No items yet'}
+                                  </p>
+                                  <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-[#7f94aa]">{category.description}</p>
+                                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e6edf5]">
+                                    <div className={`h-full rounded-full ${category.progressClass}`} style={{ width: `${category.progress}%` }} />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          <div className="mt-6 grid gap-3 md:grid-cols-3">
+                            {[
+                              ['Mandate', selectedSellerJourney.kpis.find((item) => item.key === 'mandate')?.value || 'Not started'],
+                              ['Onboarding Status', normalizeText(selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status) || 'Not started'],
+                              ['Listing', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-[18px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-4">
+                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8496aa]">{label}</p>
+                                <p className="mt-2 break-words text-base font-semibold text-[#203a54]">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                            <div className="space-y-4" data-testid="seller-documents-list">
+                              {selectedSellerDocumentCategories.map((category) => {
+                                const CategoryIcon = category.Icon
+                                return (
+                                  <section key={category.key} className="rounded-[22px] border border-[#e3edf7] bg-[#fbfdff] p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="flex min-w-0 items-center gap-3">
+                                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border ${category.iconClass}`}>
+                                          <CategoryIcon className="h-5 w-5" />
+                                        </span>
+                                        <div className="min-w-0">
+                                          <h5 className="truncate text-base font-semibold text-[#20364c]" title={category.label}>{category.label}</h5>
+                                          <p className="mt-0.5 text-xs font-semibold text-[#7b8fa5]">{category.completed} of {category.total} complete</p>
+                                        </div>
+                                      </div>
+                                      <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">{category.progress}%</span>
+                                    </div>
+                                    <div className="mt-4 grid gap-2">
+                                      {category.items.length ? category.items.map((documentRow) => {
+                                        const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                                        const StatusIcon = statusMeta.Icon
+                                        const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+                                        return (
+                                          <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                              <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+                                                <StatusIcon className="h-4 w-4" />
+                                              </span>
+                                              <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-[#203a54]" title={documentRow.label || documentRow.title}>{documentRow.label || documentRow.title}</p>
+                                                <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.required === false ? 'Optional' : 'Required'} · {category.label}</p>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+                                              {documentUrl ? (
+                                                <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
+                                                  Open <ExternalLink className="h-3.5 w-3.5" />
+                                                </a>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        )
+                                      }) : (
+                                        <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-white px-4 py-5 text-sm font-semibold text-[#7890a8]">
+                                          No {category.label.toLowerCase()} have been requested yet.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </section>
+                                )
+                              })}
+                            </div>
+
+                            <aside className="space-y-4">
+                              <section className="rounded-[22px] border border-[#dbe7f2] bg-[#102033] p-5 text-white shadow-[0_18px_38px_rgba(16,32,51,0.16)]">
+                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Document Progress</p>
+                                <h5 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">{selectedSellerDocumentSummary.progress}%</h5>
+                                <p className="mt-2 text-sm leading-6 text-[#c7d5e2]">
+                                  {selectedSellerDocumentSummary.outstanding
+                                    ? `${selectedSellerDocumentSummary.outstanding} document${selectedSellerDocumentSummary.outstanding === 1 ? '' : 's'} still need attention before this seller pack is complete.`
+                                    : 'All requested seller documents are captured for this lead.'}
+                                </p>
+                              </section>
+                              <section className="rounded-[22px] border border-[#e3edf7] bg-white p-5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <h5 className="text-sm font-semibold text-[#20364c]">Still Needed</h5>
+                                  <span className="rounded-full bg-[#eef3f7] px-2.5 py-1 text-xs font-semibold text-[#7890a8]">{selectedSellerDocumentAttentionItems.length}</span>
+                                </div>
+                                <div className="mt-4 space-y-2">
+                                  {selectedSellerDocumentAttentionItems.length ? selectedSellerDocumentAttentionItems.slice(0, 5).map((documentRow) => (
+                                    <div key={`${documentRow.categoryLabel}-${documentRow.id || documentRow.key || documentRow.label}`} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                                      <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label || documentRow.title}>{documentRow.label || documentRow.title}</p>
+                                      <p className="mt-0.5 text-xs font-semibold text-[#7b8fa5]">{documentRow.categoryLabel}</p>
+                                    </div>
+                                  )) : (
+                                    <p className="rounded-[14px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-3 text-sm font-semibold text-[#25764a]">Nothing outstanding.</p>
+                                  )}
+                                </div>
+                              </section>
+                            </aside>
+                          </div>
+                        </div>
+                      </section>
+                    ) : (
+                      <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Buyer Documents</p>
+                            <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Documents</h4>
+                            <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadDisplayName}</p>
+                          </div>
+                          <Upload className="h-4 w-4 text-[#7890a8]" />
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-3">
+                          {[
+                            ['Buyer uploads', selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending'],
+                            ['FICA', selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested'],
+                            ['Pre-approval docs', selectedLeadShowBondReadinessCta ? 'Ready to request' : selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured'],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+                              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
+                              <p className="mt-1 break-all text-sm font-semibold text-[#203a54]">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
+                          {[
+                            { id: 'buyer-upload', label: 'Buyer upload pack', status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending' },
+                            { id: 'fica', label: 'FICA documents', status: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested' },
+                            { id: 'otp', label: 'OTP / offer documents', status: selectedLeadOfferSummary.total ? `${selectedLeadOfferSummary.total} offer records` : 'No offer yet' },
+                            { id: 'preapproval', label: 'Pre-approval documents', status: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured' },
+                          ].map((documentRow) => (
+                            <div key={documentRow.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#203a54]">{documentRow.label}</p>
+                                <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.status || 'Not uploaded'}</p>
+                              </div>
+                              <span className="rounded-full bg-[#eef3f7] px-2.5 py-1 text-xs font-semibold text-[#7b8ca2]">Pending</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
                   </div>
                   ) : null}
 

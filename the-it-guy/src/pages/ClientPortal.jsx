@@ -5740,6 +5740,32 @@ function sellerMobileToneClasses(tone = 'green') {
   return tones[tone] || tones.green
 }
 
+function sellerMobileToneRingColor(tone = 'green') {
+  return {
+    green: '#148c59',
+    amber: '#f59e0b',
+    blue: '#2f80d0',
+    purple: '#8652d1',
+    slate: '#52657b',
+  }[tone] || '#148c59'
+}
+
+function SellerMobileDocumentCategoryRing({ progress = 0, tone = 'green' }) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0))
+  const color = sellerMobileToneRingColor(tone)
+  return (
+    <span
+      className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full p-[6px] shadow-[0_12px_24px_rgba(15,23,42,0.08)]"
+      style={{ background: `conic-gradient(${color} ${safeProgress * 3.6}deg, #e5ebf2 0deg)` }}
+      aria-label={`${safeProgress}% complete`}
+    >
+      <span className="grid h-full w-full place-items-center rounded-full bg-white text-[0.9rem] font-semibold text-[#213247]">
+        {safeProgress}%
+      </span>
+    </span>
+  )
+}
+
 function SellerMobileDocumentsPage({
   documentCenter = {},
   activeCategoryKey = '',
@@ -5935,7 +5961,7 @@ function SellerMobileDocumentsPage({
   }
 
   return (
-    <section className="mt-4">
+    <section className="mt-4 min-h-[calc(100dvh-7rem)]">
       <div className="flex justify-end">
         <button
           type="button"
@@ -5973,7 +5999,7 @@ function SellerMobileDocumentsPage({
       </div>
       {renderTabs()}
       {renderSearchControls('Search documents...')}
-      <section className="mt-3 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
+      <section className="mt-3 flex min-h-[calc(100dvh-17rem)] flex-col rounded-[16px] border border-[#e5e9ef] bg-white p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-[#101823]">Document categories</h2>
           <button
@@ -5990,7 +6016,7 @@ function SellerMobileDocumentsPage({
             <ChevronRight size={15} />
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-8 grid flex-1 content-start grid-cols-2 gap-x-3 gap-y-8">
           {model.categories.map((category) => {
             const Icon = category.icon
             const tone = sellerMobileToneClasses(category.tone)
@@ -6004,9 +6030,12 @@ function SellerMobileDocumentsPage({
                 key={category.key}
                 type="button"
                 onClick={() => onSelectCategory?.(category.key)}
-                className="min-h-[120px] rounded-[14px] border border-[#edf0f3] bg-white p-3 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+                className="relative min-h-[150px] rounded-[14px] border border-[#edf0f3] bg-white px-3 pb-3 pt-10 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
               >
-                <div className="flex items-start justify-between gap-2">
+                <span className="absolute right-3 top-0 -translate-y-1/2">
+                  <SellerMobileDocumentCategoryRing progress={category.progress} tone={category.tone} />
+                </span>
+                <div className="flex items-start justify-between gap-2 pr-16">
                   <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${tone.icon}`}><Icon size={20} /></span>
                   <ChevronRight size={18} className="mt-2 text-[#98a2b3]" />
                 </div>
