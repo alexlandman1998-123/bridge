@@ -951,10 +951,24 @@ function getMandatePacketFinalSignedUrl(mandatePacket = null) {
   )
 }
 
+function getMandatePacketVersionId(mandatePacket = null) {
+  return normalizeText(
+    mandatePacket?.packetVersionId ||
+      mandatePacket?.packet_version_id ||
+      mandatePacket?.version?.id ||
+      mandatePacket?.versionId ||
+      mandatePacket?.version_id,
+  )
+}
+
 function isMandatePacketFinalSigned(mandatePacket = null) {
   if (!mandatePacket || typeof mandatePacket !== 'object') return false
   const state = normalizeKey(mandatePacket?.state || mandatePacket?.status || mandatePacket?.packet?.status)
-  const hasFinalArtifact = Boolean(getMandatePacketFinalSignedFilePath(mandatePacket) || getMandatePacketFinalSignedUrl(mandatePacket))
+  const hasFinalArtifact = Boolean(
+    getMandatePacketFinalSignedFilePath(mandatePacket) ||
+      getMandatePacketFinalSignedUrl(mandatePacket) ||
+      (mandatePacket?.finalSignedRecorded === true && getMandatePacketVersionId(mandatePacket)),
+  )
   return hasFinalArtifact && [
     'fully_signed',
     'signed',
@@ -969,7 +983,7 @@ function isMandatePacketFinalSigned(mandatePacket = null) {
 export function buildSellerSignedMandateDocumentFromPacket(mandatePacket = null) {
   if (!isMandatePacketFinalSigned(mandatePacket)) return null
   const packetId = normalizeText(mandatePacket?.packet?.id || mandatePacket?.id)
-  const versionId = normalizeText(mandatePacket?.version?.id)
+  const versionId = getMandatePacketVersionId(mandatePacket)
   const filePath = getMandatePacketFinalSignedFilePath(mandatePacket)
   const fileUrl = getMandatePacketFinalSignedUrl(mandatePacket)
   const fileName = normalizeText(
@@ -1028,7 +1042,7 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     listingId: normalizeText(generatedDocument.listingId || listing?.id || listing?.private_listing_id),
     transactionId: normalizeText(generatedDocument.transactionId || listing?.transactionId || listing?.transaction_id),
   }
-  const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.html'
+  const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.pdf'
 
   return {
     id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
@@ -1041,7 +1055,7 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     document_name: generatedDocument.title || 'Property Condition Disclosure',
     name: generatedDocument.title || 'Property Condition Disclosure',
     generatedHtml: buildPropertyDisclosureDocumentMarkup(disclosure, context),
-    generatedFileName: fileName.replace(/\.pdf$/i, '.html'),
+    generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     status: 'completed',
     visibility: 'seller_visible',
     source: 'seller_onboarding.property_disclosure.generated_document',
@@ -1148,6 +1162,8 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     complete,
     blocking: required && applicable && ['outstanding', 'rejected'].includes(statusBucket),
     hasUpload: Boolean(document && (uploadUrl || uploadPath || generatedHtml || documentHasFile(document) || complete)),
+    packetId: normalizeText(document?.packetId || document?.packet_id),
+    packetVersionId: normalizeText(document?.packetVersionId || document?.packet_version_id || document?.versionId || document?.version_id),
     requestedBy: row?.requestedBy || normalizeRequestedBy(requirement || {}, document || {}),
     uploadedBy: row?.uploadedBy || normalizeUploadedBy(document || {}),
     uploadedAt: row?.uploadedAt || normalizeDateValue(document?.uploadedAt, document?.uploaded_at, document?.createdAt, document?.created_at),

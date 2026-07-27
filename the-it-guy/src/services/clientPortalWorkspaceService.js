@@ -1628,7 +1628,7 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
     transactionId: toDisplayText(generatedDocument.transactionId || portalData?.transaction?.id),
   }
   const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
-  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.html')
+  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.pdf')
   return {
     id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
     name: generatedDocument.title || 'Property Condition Disclosure',
@@ -1640,7 +1640,7 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
     status: 'completed',
     visibility: 'seller_visible',
     generatedHtml,
-    generatedFileName: fileName.replace(/\.pdf$/i, '.html'),
+    generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
   }
 }

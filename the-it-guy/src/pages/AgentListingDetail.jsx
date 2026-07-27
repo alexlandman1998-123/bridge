@@ -49,6 +49,7 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -521,6 +522,17 @@ function buildListingMandatePacketSummary(listingRecord = {}, mandateWorkspace =
     finalSignedDownloadUrl: finalSignedFileUrl,
     finalSignedFileName,
     finalSignedFileBucket,
+    finalSignedRecorded: Boolean(
+      listingRecord?.finalSignedRecorded ||
+        listingRecord?.final_signed_recorded ||
+        mandate?.finalSignedRecorded ||
+        mandate?.final_signed_recorded ||
+        storedPacket?.finalSignedRecorded ||
+        storedPacket?.final_signed_recorded ||
+        storedVersion?.final_signed_document_id ||
+        finalSignedFilePath ||
+        finalSignedFileUrl,
+    ),
   }
 }
 
@@ -881,25 +893,57 @@ function getSellerDocumentSourceLabel(row = {}) {
 function mapSellerDocumentSourceRowForListing(row = {}) {
   const upload = row?.upload || {}
   const originalDocument = row?.original?.document || {}
-  const url = normalizeText(upload.url || row.url || row.documentUrl || originalDocument.url || originalDocument.fileUrl || originalDocument.file_url || originalDocument.signedUrl || originalDocument.signed_url)
-  const filePath = normalizeText(upload.filePath || row.filePath || originalDocument.storagePath || originalDocument.storage_path || originalDocument.filePath || originalDocument.file_path)
+  const url = normalizeText(
+    upload.url ||
+      row.url ||
+      row.documentUrl ||
+      originalDocument.url ||
+      originalDocument.fileUrl ||
+      originalDocument.file_url ||
+      originalDocument.signedUrl ||
+      originalDocument.signed_url ||
+      originalDocument.finalSignedFileUrl ||
+      originalDocument.final_signed_file_url ||
+      originalDocument.finalSignedDownloadUrl ||
+      originalDocument.final_signed_file_access_url,
+  )
+  const filePath = normalizeText(
+    upload.filePath ||
+      row.filePath ||
+      originalDocument.storagePath ||
+      originalDocument.storage_path ||
+      originalDocument.filePath ||
+      originalDocument.file_path ||
+      originalDocument.finalSignedFilePath ||
+      originalDocument.final_signed_file_path,
+  )
   const generatedHtml = normalizeText(upload.generatedHtml || row.generatedHtml || row.generated_html || originalDocument.generatedHtml || originalDocument.generated_html)
   const generatedFileName = normalizeText(upload.generatedFileName || row.generatedFileName || row.generated_file_name || originalDocument.generatedFileName || originalDocument.generated_file_name)
   const uploadedOn = normalizeText(upload.uploadedAt || row.uploadedAt || originalDocument.uploadedAt || originalDocument.uploaded_at || originalDocument.createdAt || originalDocument.created_at)
+  const packetId = normalizeText(row.packetId || row.packet_id || originalDocument.packetId || originalDocument.packet_id)
+  const packetVersionId = normalizeText(row.packetVersionId || row.packet_version_id || row.versionId || row.version_id || originalDocument.packetVersionId || originalDocument.packet_version_id || originalDocument.versionId || originalDocument.version_id)
   const hasUpload = Boolean(row.hasUpload || url || filePath || generatedHtml || uploadedOn)
   const key = normalizeText(row.key || row.id || row.title || row.label)
+  const rowStatus = normalizeKey(row.status)
+  const resolvedStatus = hasUpload && (!rowStatus || ['required', 'requested'].includes(rowStatus))
+    ? generatedHtml || row?.source?.document === 'document_packets.final_signed_artifact' || originalDocument?.source === 'document_packets.final_signed_artifact'
+      ? 'completed'
+      : 'uploaded'
+    : row.status || (hasUpload ? 'uploaded' : 'required')
   return {
     ...row,
     key,
     label: row.label || row.title || 'Seller document',
     required: row.required !== false,
     uploaded: hasUpload,
-    status: row.status || (hasUpload ? 'uploaded' : 'required'),
-    statusLabel: row.statusLabel || formatStatusLabel(row.status || (hasUpload ? 'uploaded' : 'required')),
+    status: resolvedStatus,
+    statusLabel: rowStatus !== normalizeKey(resolvedStatus) ? formatStatusLabel(resolvedStatus) : row.statusLabel || formatStatusLabel(resolvedStatus),
     uploadedOn,
     fileName: upload.fileName || row.uploadedFileName || row.fileName || originalDocument.fileName || originalDocument.file_name || originalDocument.document_name || generatedFileName || '',
     filePath,
     url,
+    packetId,
+    packetVersionId,
     generatedHtml,
     generatedFileName,
     sourceLabel: getSellerDocumentSourceLabel(row),
@@ -1894,6 +1938,70 @@ function downloadBlob(blob, filename) {
   link.click()
   link.remove()
   window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+}
+
+function toPdfFileName(value = '', fallback = 'seller-document.pdf') {
+  const raw = String(value || fallback || 'seller-document.pdf').trim() || 'seller-document.pdf'
+  return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
+}
+
+async function downloadGeneratedSellerDocumentPdf(markup = '', fileName = 'seller-document.pdf') {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF downloads are only available in the browser.')
+  }
+
+  let pdfStage = null
+  let styleElement = null
+  try {
+    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+    const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
+    const style = pdfDocument.head.querySelector('style')
+    styleElement = document.createElement('style')
+    styleElement.setAttribute('data-generated-seller-document-pdf-style', 'true')
+    styleElement.textContent = style?.textContent || ''
+    pdfStage = document.createElement('div')
+    pdfStage.setAttribute('data-generated-seller-document-pdf-stage', 'true')
+    pdfStage.style.position = 'fixed'
+    pdfStage.style.left = '-10000px'
+    pdfStage.style.top = '0'
+    pdfStage.style.width = '210mm'
+    pdfStage.style.background = '#ffffff'
+    pdfStage.style.pointerEvents = 'none'
+    pdfStage.innerHTML = pdfDocument.body.innerHTML
+    document.head.appendChild(styleElement)
+    document.body.appendChild(pdfStage)
+
+    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
+      if (image.complete) return Promise.resolve()
+      return new Promise((resolve) => {
+        image.onload = resolve
+        image.onerror = resolve
+      })
+    })
+    await Promise.all(imageLoads)
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+
+    await html2pdf()
+      .set({
+        margin: 0,
+        filename: toPdfFileName(fileName),
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: 1123,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(pdfStage)
+      .save()
+  } finally {
+    pdfStage?.remove()
+    styleElement?.remove()
+  }
 }
 
 function readPipelineLeads() {
@@ -3645,9 +3753,9 @@ function AgentListingDetail() {
     setOpeningSellerDocumentKey(doc.key)
     if (doc.generatedHtml) {
       try {
-        downloadBlob(
-          new Blob([doc.generatedHtml], { type: 'text/html;charset=utf-8' }),
-          doc.generatedFileName || doc.fileName || `${doc.key || 'seller-document'}.html`,
+        await downloadGeneratedSellerDocumentPdf(
+          doc.generatedHtml,
+          doc.generatedFileName || doc.fileName || `${doc.key || 'seller-document'}.pdf`,
         )
       } catch (error) {
         setDetailError(error?.message || 'Unable to download this generated document.')
@@ -3661,7 +3769,17 @@ function AgentListingDetail() {
     try {
       const filePath = String(doc.filePath || '').trim()
       const fallbackUrl = String(doc.url || '').trim()
-      const downloadUrl = filePath
+      const isFinalSignedMandateArtifact =
+        doc?.source?.document === 'document_packets.final_signed_artifact' ||
+        doc?.source === 'document_packets.final_signed_artifact' ||
+        (normalizeKey(doc.key).includes('mandate') && doc.packetId && doc.packetVersionId)
+      const downloadUrl = isFinalSignedMandateArtifact && doc.packetId && doc.packetVersionId
+        ? (await requestPersistedPdfAccess({
+            packetId: doc.packetId,
+            versionId: doc.packetVersionId,
+            purpose: 'download',
+          })).signedUrl
+        : filePath
         ? await createPrivateListingDocumentDownloadUrl({
             listingId,
             filePath,
@@ -9837,7 +9955,7 @@ function AgentListingDetail() {
                                   onChange={(event) => void handleSellerDocumentUpload(doc, event)}
                                 />
                               </label>
-                              {doc.url || doc.filePath || doc.generatedHtml ? (
+                              {doc.url || doc.filePath || doc.generatedHtml || (doc.packetId && doc.packetVersionId) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}

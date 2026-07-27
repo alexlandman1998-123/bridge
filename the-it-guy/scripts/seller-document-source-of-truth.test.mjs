@@ -39,7 +39,7 @@ const listing = {
         generatedDocument: {
           id: 'disclosure-1',
           title: 'Property Condition Disclosure',
-          fileName: 'property-condition-disclosure.html',
+          fileName: 'property-condition-disclosure.pdf',
           generatedAt: '2026-07-01T08:05:00Z',
         },
       },
@@ -78,6 +78,28 @@ assert.equal(signedMandate.source.requirement, 'generated_seller_requirement')
 assert.equal(signedMandate.source.document, 'document_packets.final_signed_artifact')
 assert.equal(signedMandate.upload.filePath, 'mandates/listing-1/signed-mandate.pdf')
 
+const strippedFinalArtifactSource = buildSellerDocumentSourceOfTruth({
+  ...listing,
+  mandatePacket: {
+    id: 'packet-1',
+    state: 'fully_signed',
+    packetVersionId: 'version-1',
+    finalSignedRecorded: true,
+    finalSignedFileName: 'Signed Mandate.pdf',
+    version: {
+      id: 'version-1',
+      final_signed_file_name: 'Signed Mandate.pdf',
+    },
+  },
+})
+const strippedFinalArtifactMandate = strippedFinalArtifactSource.rows.find((row) => row.key === 'signed_mandate')
+assert.equal(strippedFinalArtifactMandate.complete, true)
+assert.equal(strippedFinalArtifactMandate.status, 'completed')
+assert.equal(strippedFinalArtifactMandate.source.document, 'document_packets.final_signed_artifact')
+assert.equal(strippedFinalArtifactMandate.packetId, 'packet-1')
+assert.equal(strippedFinalArtifactMandate.packetVersionId, 'version-1')
+assert.equal(strippedFinalArtifactMandate.upload.filePath, '')
+
 const propertyDisclosure = source.rows.find((row) => row.key === 'property_condition_disclosure')
 assert.equal(propertyDisclosure.complete, true)
 assert.equal(propertyDisclosure.category, 'sales')
@@ -85,7 +107,7 @@ assert.equal(propertyDisclosure.status, 'completed')
 assert.equal(propertyDisclosure.statusBucket, 'approved')
 assert.equal(propertyDisclosure.hasUpload, true)
 assert.match(propertyDisclosure.upload.generatedHtml, /Declaration by Seller/)
-assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.html')
+assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.pdf')
 
 const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')
 assert.equal(titleDeed.category, 'property')
