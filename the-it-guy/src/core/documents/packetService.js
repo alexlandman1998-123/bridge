@@ -64,6 +64,7 @@ import {
   templateUsesNativeRenderer,
 } from './structuredTemplateRenderer'
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
+import { resolveDocumentBrandingContext } from '../../lib/roleplayerDocumentContext'
 import { resolveEditableSectionManifest, resolveVersionPlannedSigningFields } from './editableDocumentGeneration'
 import { applyFrozenEditableRenderInput } from './frozenEditableRenderInput'
 import {
@@ -2160,65 +2161,31 @@ function buildPacketTitle(packetType, context = {}) {
 
 function withSystemPlaceholders(placeholders = {}, context = {}, branding = null) {
   const merged = { ...(placeholders || {}) }
-  const organisationName =
-    normalizeText(branding?.organisationName) ||
-    normalizeText(context?.organisationName) ||
-    normalizeText(context?.organisation?.displayName) ||
-    normalizeText(context?.organisation?.name) ||
-    normalizeText(context?.agency?.organisationName) ||
-    normalizeText(context?.agency?.name) ||
-    'Organisation'
+  const documentBranding = resolveDocumentBrandingContext({
+    sources: [
+      branding && typeof branding === 'object' ? branding : null,
+      context?.branding && typeof context.branding === 'object' ? context.branding : null,
+      context?.mandateData?.branding && typeof context.mandateData.branding === 'object' ? context.mandateData.branding : null,
+      context?.mandateData?.agency?.branding && typeof context.mandateData.agency.branding === 'object' ? context.mandateData.agency.branding : null,
+      context?.organisation && typeof context.organisation === 'object' ? context.organisation : null,
+      context?.agency && typeof context.agency === 'object' ? context.agency : null,
+      context,
+    ].filter(Boolean),
+    context,
+    fallbackOrganisationName: 'Organisation',
+  })
+  const organisationName = documentBranding.organisationName || 'Organisation'
   const logoLightUrl =
-    normalizeNullableText(branding?.logoLightUrl) ||
-    normalizeNullableText(branding?.organisationLogoUrl) ||
-    normalizeNullableText(branding?.logoUrl) ||
-    normalizeNullableText(context?.organisationLogoUrl) ||
-    normalizeNullableText(context?.organisation?.logoLightUrl) ||
-    normalizeNullableText(context?.organisation?.logoUrl) ||
-    normalizeNullableText(context?.organisation?.logo_url) ||
-    normalizeNullableText(context?.agency?.logoLightUrl) ||
-    normalizeNullableText(context?.agency?.logoUrl)
+    normalizeNullableText(documentBranding.logoLightUrl) ||
+    normalizeNullableText(documentBranding.logoUrl) ||
+    normalizeNullableText(documentBranding.agencyLogoUrl)
   const logoDarkUrl =
-    normalizeNullableText(branding?.logoDarkUrl) ||
-    normalizeNullableText(branding?.organisationLogoDarkUrl) ||
-    normalizeNullableText(branding?.logoHighContrastUrl) ||
-    normalizeNullableText(context?.organisationLogoDarkUrl) ||
-    normalizeNullableText(context?.organisation?.logoDarkUrl) ||
-    normalizeNullableText(context?.agency?.logoDarkUrl) ||
+    normalizeNullableText(documentBranding.logoDarkUrl) ||
     logoLightUrl
-  const organisationWebsite =
-    normalizeNullableText(branding?.website) ||
-    normalizeNullableText(branding?.organisationWebsite) ||
-    normalizeNullableText(branding?.organisation_website) ||
-    normalizeNullableText(context?.organisation?.website) ||
-    normalizeNullableText(context?.agency?.website)
-  const organisationEmail =
-    normalizeNullableText(branding?.email) ||
-    normalizeNullableText(branding?.organisationEmail) ||
-    normalizeNullableText(branding?.organisation_email) ||
-    normalizeNullableText(context?.organisation?.email) ||
-    normalizeNullableText(context?.agency?.email)
-  const organisationPhysicalAddress =
-    normalizeNullableText(branding?.physicalAddress) ||
-    normalizeNullableText(branding?.physical_address) ||
-    normalizeNullableText(branding?.organisationPhysicalAddress) ||
-    normalizeNullableText(branding?.organisation_physical_address) ||
-    normalizeNullableText(branding?.address) ||
-    normalizeNullableText(context?.organisation?.physicalAddress) ||
-    normalizeNullableText(context?.organisation?.physical_address) ||
-    normalizeNullableText(context?.agency?.physicalAddress) ||
-    normalizeNullableText(context?.agency?.address)
-  const organisationPhone =
-    normalizeNullableText(branding?.telephone) ||
-    normalizeNullableText(branding?.phoneNumber) ||
-    normalizeNullableText(branding?.phone_number) ||
-    normalizeNullableText(branding?.phone) ||
-    normalizeNullableText(branding?.organisationPhone) ||
-    normalizeNullableText(branding?.organisation_phone) ||
-    normalizeNullableText(context?.organisation?.telephone) ||
-    normalizeNullableText(context?.organisation?.phoneNumber) ||
-    normalizeNullableText(context?.organisation?.phone_number) ||
-    normalizeNullableText(context?.agency?.phone)
+  const organisationWebsite = normalizeNullableText(documentBranding.website)
+  const organisationEmail = normalizeNullableText(documentBranding.email)
+  const organisationPhysicalAddress = normalizeNullableText(documentBranding.physicalAddress)
+  const organisationPhone = normalizeNullableText(documentBranding.phone)
 
   merged.organisation_name = merged.organisation_name || organisationName
   merged.organisation_logo_url = merged.organisation_logo_url || resolvePublicAssetUrl(logoLightUrl) || ''

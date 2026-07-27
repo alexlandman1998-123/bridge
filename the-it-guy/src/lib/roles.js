@@ -68,6 +68,7 @@ function createAgentPipelineNav() {
     activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
     children: [
       { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
+      { key: 'pipeline_enquiries', label: 'Enquiries', to: '/pipeline/enquiries' },
       { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
       { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     ],

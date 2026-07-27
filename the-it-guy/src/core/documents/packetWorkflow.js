@@ -23,6 +23,7 @@ import {
   isSectionalMandateProperty,
   withMandateScenarioPlaceholders,
 } from './mandateScenarioProfile'
+import { resolveDocumentBrandingContext } from '../../lib/roleplayerDocumentContext'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -1985,18 +1986,22 @@ export function renderPacketPreviewHtml({
 } = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
-  const orgName = normalizeText(branding?.organisationName || '') || 'Organisation'
+  const documentBranding = resolveDocumentBrandingContext({
+    sources: [
+      branding && typeof branding === 'object' ? branding : null,
+      placeholders && typeof placeholders === 'object' ? placeholders : null,
+    ].filter(Boolean),
+    fallbackOrganisationName: 'Organisation',
+  })
+  const orgName = normalizeText(documentBranding?.organisationName || '') || 'Organisation'
   const organisationLogo = resolvePublicAssetUrl(
-    normalizeText(branding?.logoLightUrl || '') ||
-    normalizeText(branding?.organisationLogoUrl || '') ||
-    normalizeText(branding?.logoDarkUrl || '') ||
-    normalizeText(branding?.logoHighContrastUrl || '') ||
-    normalizeText(branding?.organisationLogoDarkUrl || '') ||
-    normalizeText(branding?.organisationLogoHighContrastUrl || '') ||
-    normalizeText(branding?.organisation_high_contrast_logo_url || '') ||
+    normalizeText(documentBranding?.logoLightUrl || '') ||
+    normalizeText(documentBranding?.logoUrl || '') ||
+    normalizeText(documentBranding?.logoDarkUrl || '') ||
+    normalizeText(documentBranding?.agencyLogoUrl || '') ||
     '',
   )
-  const contactItems = resolveDocumentContactItems(branding, placeholders)
+  const contactItems = resolveDocumentContactItems(documentBranding, placeholders)
   const isLegalDocumentPreview = ['mandate', 'otp'].includes(normalizedPacketType)
   const legalDocumentTitle = normalizedPacketType === 'mandate'
     ? 'Mandate Agreement'

@@ -38,6 +38,7 @@ import {
 } from './sellerPostMandateDocumentOrchestrationService.js'
 import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import { resolveSellerDisclosureDocumentContext } from '../lib/roleplayerDocumentContext.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1921,14 +1922,15 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
       ? disclosure.generated_document
       : {}
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
-  const context = {
-    sellerName: toDisplayText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
-    sellerIdNumber: toDisplayText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
-    sellerId: toDisplayText(generatedDocument.sellerId || listing?.sellerProfileId || listing?.seller_profile_id),
-    propertyId: toDisplayText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
-    listingId: toDisplayText(generatedDocument.listingId || listing?.id),
-    transactionId: toDisplayText(generatedDocument.transactionId || portalData?.transaction?.id),
-  }
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  const context = resolveSellerDisclosureDocumentContext({
+    listing,
+    formData,
+    portalData,
+    activeSellingContext,
+    disclosure,
+    generatedDocument,
+  })
   const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
   const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.pdf')
   return {

@@ -1,5 +1,6 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import { resolveSellerDisclosureDocumentContext } from '../lib/roleplayerDocumentContext.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -1034,14 +1035,13 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     : isPlainObject(disclosure.generated_document)
       ? disclosure.generated_document
       : {}
-  const context = {
-    sellerName: normalizeText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
-    sellerIdNumber: normalizeText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
-    sellerId: normalizeText(generatedDocument.sellerId || listing?.sellerProfileId || listing?.seller_profile_id),
-    propertyId: normalizeText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
-    listingId: normalizeText(generatedDocument.listingId || listing?.id || listing?.private_listing_id),
-    transactionId: normalizeText(generatedDocument.transactionId || listing?.transactionId || listing?.transaction_id),
-  }
+  const context = resolveSellerDisclosureDocumentContext({
+    listing,
+    formData,
+    disclosure,
+    generatedDocument,
+    assetBaseUrl: normalizeText(listing?.assetBaseUrl || listing?.asset_base_url),
+  })
   const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.pdf'
 
   return {

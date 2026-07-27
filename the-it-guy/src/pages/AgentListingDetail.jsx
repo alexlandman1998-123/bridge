@@ -9398,6 +9398,35 @@ function AgentListingDetail() {
                 </div>
               </article>
 
+              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#142132]">Manual intervention actions</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#607387]">Complete skipped Quick Add fields without restarting seller onboarding.</p>
+                  </div>
+                  <StatusPill status={sellerProfile.completionPercent >= 90 ? 'done' : 'pending'} label={`${sellerProfile.completionPercent}% complete`} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {[
+                    { label: 'Add seller contact', target: 'Contact Details' },
+                    { label: 'Add seller ID / registration number', target: 'Seller Details' },
+                    { label: 'Add seller FICA', target: 'Documents' },
+                    { label: 'Open Mandate', target: 'Mandate Details' },
+                    { label: 'Generate Mandate', target: 'Mandate Details' },
+                    { label: 'Upload signed mandate', target: 'Documents' },
+                    { label: 'Signed manually', target: 'Mandate Details' },
+                    { label: 'Confirm commission', target: 'Commission' },
+                    { label: 'Add photos', target: 'Listing Site Data' },
+                    { label: 'Add external listing link', target: 'External Listing Links' },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-[14px] border border-[#e2ebf4] bg-[#fbfdff] px-3 py-2.5">
+                      <p className="text-sm font-semibold text-[#22374d]">{item.label}</p>
+                      <p className="mt-1 text-xs font-medium text-[#74879d]">{item.target}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <section className="grid items-stretch gap-5 md:grid-cols-2 min-[1320px]:grid-cols-3">
                 {sellerProfile.sections.map((section) => {
                   const Icon = section.icon || Info

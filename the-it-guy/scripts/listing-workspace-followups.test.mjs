@@ -19,18 +19,17 @@ assert.match(
 
 assert.match(
   source,
-  /const followUpActions = useMemo/,
-  'Listing workspace should expose a canonical follow-up action model.',
+  /Manual intervention actions/,
+  'Listing workspace should expose manual intervention actions for skipped Quick Add work.',
 )
 
 for (const label of [
-  'Send seller onboarding',
-  'Generate mandate',
+  'Send Seller Onboarding',
+  'Create Mandate',
   'Upload signed mandate',
   'Add seller contact',
   'Add seller ID / registration number',
   'Add seller FICA',
-  'Complete seller facts',
   'Confirm commission',
   'Add photos',
   'Add external listing link',
@@ -70,38 +69,38 @@ assert.match(
 
 assert.match(
   source,
-  /Complete a Quick Add listing here without restarting seller onboarding\./,
-  'Follow-up panel should explain the Quick Add bypass recovery path.',
+  /Complete skipped Quick Add fields without restarting seller onboarding\./,
+  'Manual intervention panel should explain the Quick Add bypass recovery path.',
 )
 
 assert.match(
   source,
-  /const listingFollowUpsComplete = !followUpActions\.length \|\| followUpActions\.every\(\(action\) => action\.complete\)/,
-  'Follow-up panel should disappear once every action is complete.',
+  /sellerProfile\.completionPercent >= 90/,
+  'Manual intervention panel should show completion state from seller profile readiness.',
 )
 
 assert.match(
   source,
-  /const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete/,
-  'Follow-up panel should only appear on the seller overview tab while incomplete.',
+  /sellerWorkspaceTab === 'seller'/,
+  'Manual intervention panel should live in the seller workspace tab.',
 )
 
 assert.match(
   source,
-  /\{shouldShowListingFollowUps \? \([\s\S]*Listing Follow-Ups/,
-  'Follow-up panel render should be guarded by the overview/incomplete condition.',
+  /sellerProfile\.sections\.map/,
+  'Seller profile sections should provide the editable detail follow-up surface.',
 )
 
 assert.match(
   source,
-  /handleSignedMandateUpload/,
-  'Signed mandate upload should have a dedicated handler.',
+  /handleSellerDocumentUpload/,
+  'Seller document uploads should use the shared seller document centre handler.',
 )
 
 assert.match(
   source,
-  /mandateStatus: 'signed_uploaded'/,
-  'Signed mandate uploads should mark the listing mandate as signed and uploaded.',
+  /uploadPrivateListingDocument\(listingRecord\.id, file/,
+  'Seller document uploads should persist through the private listing document service.',
 )
 
 assert.match(

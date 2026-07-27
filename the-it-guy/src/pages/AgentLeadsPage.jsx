@@ -20958,7 +20958,7 @@ function OwnershipCard({ organisationId, lead, actor, onSaved }) {
     <section id="seller-ownership" className="mt-5 scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">Ownership</h3>
+          <h3 className="text-sm font-semibold text-slate-950">Manage Assignment</h3>
           <p className="mt-1 text-sm text-slate-500">Responsible owner, queue, and first-contact SLA for this lead.</p>
         </div>
         <div className="flex flex-wrap gap-2">

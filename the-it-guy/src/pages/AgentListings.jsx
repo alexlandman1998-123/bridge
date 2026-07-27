@@ -93,7 +93,7 @@ const ORGANISATION_ASSIGNMENT_SCOPE_ROLES = ['principal', 'owner', 'admin', 'hq'
 const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not started' },
   { value: 'in_progress', label: 'Busy with seller' },
-  { value: 'signed_external_pending_upload', label: 'Manual signature reported — verification required' },
+  { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
   { value: 'expired', label: 'Expired' },
 ]
 const QUICK_ADD_INTENT_OPTIONS = [
@@ -3720,6 +3720,22 @@ function AgentListings({ initialTab = null } = {}) {
                           >
                             Open
                           </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {card.followUpQueue?.length ? (
+                      <div className="rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">Listing follow-ups</p>
+                        <div className="mt-2 space-y-1.5">
+                          {card.followUpQueue.slice(0, 3).map((item) => (
+                            <div key={item.key || item.label} className="flex min-w-0 items-center justify-between gap-2 text-[0.76rem]">
+                              <span className="truncate font-semibold text-[#263d55]">{item.label}</span>
+                              {item.reminderLabel ? (
+                                <span className="shrink-0 rounded-full border border-[#d7e3ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">{item.reminderLabel}</span>
+                              ) : null}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ) : null}

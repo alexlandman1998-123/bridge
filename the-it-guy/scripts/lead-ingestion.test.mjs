@@ -95,7 +95,7 @@ for (const copy of [
   'SellerJourneyRail',
   'SellerOverviewTab',
   'SellerDocumentsSummaryCard',
-  'SellerOwnershipSummaryCard',
+  'OwnershipCard',
   'SellerCommunicationCard',
   'SellerTimelinePanel',
   'Documents Complete',
@@ -118,7 +118,8 @@ assert.match(pageSource, /CreateLeadDropdown/)
 assert.match(pageSource, /LeadCreateModal/)
 assert.match(pageSource, /sendSellerOnboarding/)
 assert.match(pageSource, /sellerOnboardingIsSubmitted/)
-assert.match(pageSource, /\/pipeline\/leads\/\$\{row\.leadId\}\/legal\/mandate\?mode=\$\{mandateMeta\.mode\}&returnTo=\$\{returnTo\}/)
+assert.match(pageSource, /buildSellerLeadMandateWorkspacePath/)
+assert.match(pageSource, /DOCUMENT_START_ENTRY_POINTS\.sellerLeadMandate/)
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
 assert.match(pageSource, /activeTab === 'property_match'/)

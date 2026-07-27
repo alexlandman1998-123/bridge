@@ -2,6 +2,7 @@ import {
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
 } from './platformFeeConsent.js'
+import { resolveDocumentBrandingContext } from './roleplayerDocumentContext.js'
 
 export const PROPERTY_DISCLOSURE_DECISION = Object.freeze({
   none: 'none',
@@ -220,47 +221,42 @@ function isImageSignature(value = '') {
   return /^data:image\//i.test(normalizeText(value))
 }
 
-function resolveDocumentAssetUrl(value = '', assetBaseUrl = '') {
-  const raw = normalizeText(value)
-  if (!raw) return ''
-  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
-  const path = raw.startsWith('/') ? raw : `/${raw}`
-  const base = normalizeText(assetBaseUrl).replace(/\/+$/, '')
-  return base ? `${base}${path}` : path
+function resolvePropertyDisclosureBranding(context = {}) {
+  return resolveDocumentBrandingContext({
+    context,
+    sources: [
+      context.branding && typeof context.branding === 'object' ? context.branding : null,
+      context,
+    ],
+    assetBaseUrl: context.assetBaseUrl,
+    fallbackOrganisationName: 'Agency Workspace',
+  })
 }
 
-function resolvePropertyDisclosureBranding(context = {}) {
-  const branding = context.branding && typeof context.branding === 'object' ? context.branding : {}
-  const organisationName = firstNonEmpty(
-    branding.organisationName,
-    branding.organisation_name,
-    branding.agencyName,
-    branding.agency_name,
-    branding.name,
-    context.organisationName,
-    context.agencyName,
-    'Agency Workspace',
-  )
-  const agencyLogoUrl = resolveDocumentAssetUrl(
-    firstNonEmpty(
-      branding.logoLightUrl,
-      branding.logo_light_url,
-      branding.logoLight,
-      branding.organisationLogoUrl,
-      branding.organisation_logo_url,
-      branding.logoUrl,
-      branding.logo_url,
-      branding.logoDarkUrl,
-      branding.logoDark,
-      context.logoUrl,
-    ),
-    context.assetBaseUrl,
-  )
+function renderDisclosureContactIcon(type = '') {
+  const common = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
+  if (type === 'company') return `<svg ${common}><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path><path d="M18 9h1a1 1 0 0 1 1 1v11"></path><path d="M3 21h18"></path><path d="M8 7h4"></path><path d="M8 11h4"></path><path d="M8 15h4"></path></svg>`
+  if (type === 'registration') return `<svg ${common}><path d="M14 3v5h5"></path><path d="M6 21h12a2 2 0 0 0 2-2V8l-5-5H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"></path><path d="M8 13h8"></path><path d="M8 17h6"></path></svg>`
+  if (type === 'tax') return `<svg ${common}><path d="M7 3h10l2 2v16l-3-2-3 2-3-2-3 2-3-2V5l3-2z"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg>`
+  if (type === 'license') return `<svg ${common}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>`
+  if (type === 'website') return `<svg ${common}><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.2 2.4 3.4 5.4 3.4 9s-1.2 6.6-3.4 9"></path><path d="M12 3c-2.2 2.4-3.4 5.4-3.4 9s1.2 6.6 3.4 9"></path></svg>`
+  if (type === 'email') return `<svg ${common}><rect x="3.5" y="5.5" width="17" height="13" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg>`
+  if (type === 'address') return `<svg ${common}><path d="M12 21s7-5.2 7-11a7 7 0 0 0-14 0c0 5.8 7 11 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>`
+  return `<svg ${common}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6.4 6.4l1.2-1.2a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0 1 22 16.9z"></path></svg>`
+}
 
-  return {
-    organisationName,
-    agencyLogoUrl,
-  }
+function renderDisclosureContactRow(items = []) {
+  if (!items.length) return ''
+  return `
+    <div class="document-contact-row">
+      ${items.map((item) => `
+        <span class="document-contact-item">
+          <span class="document-contact-icon">${renderDisclosureContactIcon(item.type)}</span>
+          <span class="document-contact-value">${escapeHtml(item.value)}</span>
+        </span>
+      `).join('\n')}
+    </div>
+  `
 }
 
 function renderDisclosureHeader(branding = {}) {
@@ -271,6 +267,7 @@ function renderDisclosureHeader(branding = {}) {
   return `
     <header class="doc-header">
       <span class="agency-brand">${agencyBrand}</span>
+      ${renderDisclosureContactRow(branding.contactItems)}
     </header>
   `
 }
@@ -284,6 +281,7 @@ function renderDisclosureFooter(branding = {}, pageNumber = 1, pageTotal = 1) {
     <footer class="doc-footer">
       <span class="footer-brand">${agencyBrand}</span>
       <span class="page-no">Page ${pageNumber} of ${pageTotal}</span>
+      <span class="footer-contact">${(branding.contactItems || []).slice(0, 2).map((item) => `<span>${escapeHtml(item.value)}</span>`).join('')}</span>
     </footer>
   `
 }
@@ -544,10 +542,15 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
     body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
     .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
-    .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
-    .doc-header { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
-    .agency-brand { display: inline-flex; align-items: center; justify-content: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+    .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+    .property-disclosure-page--page-break { break-after: page; page-break-after: always; }
+    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
+    .agency-brand { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 34mm; max-width: 54mm; height: 17mm; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; line-height: 1.15; }
     .agency-brand img { max-width: 54mm; max-height: 17mm; object-fit: contain; }
+    .document-contact-row { display: grid; align-items: start; justify-content: end; gap: 2mm; color: #1f2937; font-size: 10.5px; line-height: 1.35; }
+    .document-contact-item { display: grid; grid-template-columns: 4mm minmax(0, 1fr); align-items: start; gap: 2mm; min-width: 0; max-width: 78mm; }
+    .document-contact-icon, .document-contact-icon svg { width: 4mm; height: 4mm; color: #111827; }
+    .document-contact-value { min-width: 0; overflow-wrap: break-word; }
     .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
     .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
     .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
@@ -586,6 +589,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .footer-brand { display: inline-flex; align-items: center; min-width: 34mm; max-width: 48mm; }
     .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
     .page-no { flex: 1; text-align: center; font-weight: 700; }
+    .footer-contact { display: grid; justify-items: end; min-width: 34mm; max-width: 48mm; gap: 1px; text-align: right; }
     @media print {
       body { background: #fff; }
       .property-disclosure-document, .property-disclosure-page { margin: 0; box-shadow: none; }
@@ -594,7 +598,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
 </head>
 <body>
   <main class="property-disclosure-document">
-    <section class="property-disclosure-page">
+    <section class="property-disclosure-page property-disclosure-page--page-break">
       ${renderDisclosureHeader(branding)}
       ${renderTitle()}
       <section class="doc-body">
@@ -605,7 +609,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
       </section>
       ${renderDisclosureFooter(branding, 1, pageTotal)}
     </section>
-    <section class="property-disclosure-page">
+    <section class="property-disclosure-page property-disclosure-page--page-break">
       ${renderDisclosureHeader(branding)}
       ${renderTitle('Continuation and comments section')}
       <section class="doc-body">

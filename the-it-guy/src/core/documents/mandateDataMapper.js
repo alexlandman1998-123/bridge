@@ -3,6 +3,7 @@ import {
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
 } from '../../lib/propertyDisclosure.js'
+import { resolveDocumentBrandingContext } from '../../lib/roleplayerDocumentContext.js'
 import {
   buildMandateScenarioPlaceholders,
   resolveMandateScenarioProfile,
@@ -699,21 +700,27 @@ function appendAnnexureLabel(current = '', label = '') {
 }
 
 function resolveAgencyProfile(agency = {}, organisation = {}, lead = {}) {
-  const legalName = firstText(agency.legalName, agency.legal_name, organisation.legalName, organisation.legal_name, agency.name, agency.organisationName, organisation.displayName, organisation.display_name, organisation.name, lead.agencyName)
+  const branding = resolveDocumentBrandingContext({
+    sources: [agency, organisation, lead],
+    fallbackOrganisationName: '',
+  })
+  const legalName = firstText(branding.legalName, agency.legalName, agency.legal_name, organisation.legalName, organisation.legal_name, agency.name, agency.organisationName, organisation.displayName, organisation.display_name, organisation.name, lead.agencyName)
   return {
     legalName,
     name: legalName,
     tradingName: firstText(agency.tradingName, agency.trading_name, organisation.tradingName, organisation.displayName, organisation.display_name, organisation.name, legalName),
-    registrationNumber: firstText(agency.registrationNumber, agency.agencyRegistrationNumber, agency.companyRegistrationNumber, organisation.registrationNumber, organisation.registration_number, organisation.companyRegistrationNumber),
-    vatNumber: firstText(agency.vatNumber, agency.vat_number, organisation.vatNumber, organisation.vat_number),
-    address: firstText(agency.address, agency.agencyAddress, organisation.address, organisation.physicalAddress),
+    registrationNumber: firstText(branding.registrationNumber, agency.registrationNumber, agency.agencyRegistrationNumber, agency.companyRegistrationNumber, organisation.registrationNumber, organisation.registration_number, organisation.companyRegistrationNumber),
+    vatNumber: firstText(branding.vatNumber, agency.vatNumber, agency.vat_number, organisation.vatNumber, organisation.vat_number),
+    address: firstText(branding.physicalAddress, agency.address, agency.agencyAddress, organisation.address, organisation.physicalAddress),
     branchName: firstText(agency.branchName, organisation.branchName, lead.branchName),
-    fspNumber: firstText(agency.fspNumber, agency.fsp_number, organisation.fspNumber, organisation.fsp_number, agency.metadata?.fspNumber, agency.metadata?.fsp_number, organisation.metadata?.fspNumber, organisation.metadata?.fsp_number),
-    phone: firstText(agency.phone, agency.contactPhone),
-    email: firstText(agency.email, agency.contactEmail),
-    logoUrl: firstText(agency.logoUrl, agency.logoLightUrl, organisation.logoUrl, organisation.logo_url),
-    logoLightUrl: firstText(agency.logoLightUrl, agency.logoUrl, organisation.logoLightUrl, organisation.logo_url),
-    logoDarkUrl: firstText(agency.logoDarkUrl, agency.logoHighContrastUrl, organisation.logoDarkUrl, organisation.logo_high_contrast_url),
+    fspNumber: firstText(branding.fspNumber, agency.fspNumber, agency.fsp_number, organisation.fspNumber, organisation.fsp_number, agency.metadata?.fspNumber, agency.metadata?.fsp_number, organisation.metadata?.fspNumber, organisation.metadata?.fsp_number),
+    phone: firstText(branding.phone, agency.phone, agency.contactPhone),
+    email: firstText(branding.email, agency.email, agency.contactEmail),
+    website: firstText(branding.website, agency.website, organisation.website),
+    logoUrl: firstText(branding.logoUrl, agency.logoUrl, agency.logoLightUrl, organisation.logoUrl, organisation.logo_url),
+    logoLightUrl: firstText(branding.logoLightUrl, agency.logoLightUrl, agency.logoUrl, organisation.logoLightUrl, organisation.logo_url),
+    logoDarkUrl: firstText(branding.logoDarkUrl, agency.logoDarkUrl, agency.logoHighContrastUrl, organisation.logoDarkUrl, organisation.logo_high_contrast_url),
+    branding,
   }
 }
 
@@ -940,6 +947,9 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     agency_registration_number: safePlaceholder(agencyProfile.registrationNumber),
     agency_vat_number: safePlaceholder(agencyProfile.vatNumber),
     agency_address: safePlaceholder(agencyProfile.address),
+    agency_email: safePlaceholder(agencyProfile.email),
+    agency_phone: safePlaceholder(agencyProfile.phone),
+    agency_website: safePlaceholder(agencyProfile.website),
     branch_name: safePlaceholder(agencyProfile.branchName),
     agency_fsp_number: safePlaceholder(agencyProfile.fspNumber),
     agency_logo_url: safePlaceholder(agencyProfile.logoUrl),
@@ -949,6 +959,15 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     'organisation.logo_url': safePlaceholder(firstText(agencyProfile.logoLightUrl, agencyProfile.logoUrl)),
     'organisation.logo_light_url': safePlaceholder(firstText(agencyProfile.logoLightUrl, agencyProfile.logoUrl)),
     'organisation.logo_dark_url': safePlaceholder(firstText(agencyProfile.logoDarkUrl, agencyProfile.logoLightUrl, agencyProfile.logoUrl)),
+    organisation_email: safePlaceholder(agencyProfile.email),
+    organisation_phone: safePlaceholder(agencyProfile.phone),
+    organisation_telephone: safePlaceholder(agencyProfile.phone),
+    organisation_website: safePlaceholder(agencyProfile.website),
+    organisation_physical_address: safePlaceholder(agencyProfile.address),
+    'organisation.email': safePlaceholder(agencyProfile.email),
+    'organisation.phone': safePlaceholder(agencyProfile.phone),
+    'organisation.website': safePlaceholder(agencyProfile.website),
+    'organisation.physical_address': safePlaceholder(agencyProfile.address),
     agent_full_name: safePlaceholder(agentProfile.fullName),
     agent_email: safePlaceholder(agentProfile.email),
     agent_phone: safePlaceholder(agentProfile.phone),
@@ -975,6 +994,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     mandate,
     transferAttorney,
     agency: agencyProfile,
+    branding: agencyProfile.branding,
     agent: agentProfile,
     signatures: {
       sellerName: seller.fullName,

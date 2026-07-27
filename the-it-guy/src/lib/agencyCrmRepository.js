@@ -810,6 +810,87 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
   }
 }
 
+export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadId) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadRouteHydrationSeed')
+  const leadUuid = normalizeLeadUuid(leadId)
+  if (!leadUuid) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+      leadWorkspaceStatus: 'not_found',
+      leadWorkspaceReason: 'invalid_lead_id',
+      requestedLeadId: normalizeText(leadId),
+      resolvedLeadId: '',
+      listingId: null,
+    }
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading agency CRM lead data.')
+  }
+
+  const leadResult = await fetchLeadRowById(workspaceId, leadUuid)
+  const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
+  if (leadResult.error && !leadBlocked) throw leadResult.error
+
+  let leadRow = !leadBlocked ? leadResult.data : null
+  let leadWorkspaceStatus = leadRow ? 'ready' : ''
+  let leadWorkspaceReason = leadRow ? 'lead_id' : ''
+  let listingResolution = null
+
+  if (!leadBlocked && !leadRow) {
+    listingResolution = await resolveListingDerivedLeadRow(workspaceId, leadUuid)
+    if (listingResolution?.lead) {
+      leadRow = listingResolution.lead
+      leadWorkspaceStatus = 'resolved'
+      leadWorkspaceReason = listingResolution.reason || 'listing_derived_id'
+    }
+  }
+
+  if (leadBlocked || !leadRow) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+      leadWorkspaceStatus: leadBlocked ? 'unavailable' : 'not_found',
+      leadWorkspaceReason: leadBlocked ? 'lead_lookup_unavailable' : (listingResolution?.reason || 'lead_not_found'),
+      requestedLeadId: leadUuid,
+      resolvedLeadId: '',
+      listingId: normalizeText(listingResolution?.listing?.id) || null,
+    }
+  }
+
+  const resolvedLeadId = normalizeLeadUuid(leadRow?.lead_id) || leadUuid
+  const contactId = normalizeText(leadRow?.contact_id)
+  const contactResult = contactId
+    ? await supabase
+      .from('contacts')
+      .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+      .eq('organisation_id', workspaceId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+    : { data: null, error: null }
+  const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
+  if (contactResult.error && !contactBlocked) throw contactResult.error
+
+  return {
+    contacts: contactResult.data && !contactBlocked ? [mapSupabaseContact(contactResult.data)] : [],
+    leads: [mapSupabaseLead(leadRow)],
+    leadActivities: [],
+    tasks: [],
+    source: 'remote',
+    leadWorkspaceStatus,
+    leadWorkspaceReason,
+    requestedLeadId: leadUuid,
+    resolvedLeadId,
+    listingId: normalizeText(listingResolution?.listing?.id) || normalizeText(leadRow?.listing_id) || null,
+  }
+}
+
 export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
   if (!isSupabaseConfigured || !supabase) {
