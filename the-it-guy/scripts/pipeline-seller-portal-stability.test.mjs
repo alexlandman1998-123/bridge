@@ -18,6 +18,10 @@ const corePayloadTrimMigration = await readFile(
   new URL('../../supabase/migrations/202607270004_seller_portal_core_payload_trim_onboarding.sql', import.meta.url),
   'utf8',
 )
+const corePayloadSalesMigration = await readFile(
+  new URL('../../supabase/migrations/202607270007_seller_portal_core_sales_documents.sql', import.meta.url),
+  'utf8',
+)
 const clientPortalWorkspaceSource = await readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 
 assert.match(
@@ -85,11 +89,6 @@ assert.match(
   'seller portal core loads should use the fast core payload RPC',
 )
 assert.match(
-  privateListingServiceSource,
-  /if \(corePayload && portalPayload\.corePayload\) \{[\s\S]*?return portalPayload[\s\S]*?\}/s,
-  'seller portal core loads should skip branding and media enrichment before first paint',
-)
-assert.match(
   clientPortalWorkspaceSource,
   /includeRequirementsAndDocuments: !corePayload[\s\S]*?corePayload,/s,
   'seller portal core loads should request the lightweight onboarding payload',
@@ -133,6 +132,31 @@ assert.doesNotMatch(
   corePayloadTrimMigration,
   /canonical_facts_json/,
   'seller portal core payload must not include canonical fact snapshots before first paint',
+)
+assert.match(
+  privateListingServiceSource,
+  /function mapSellerClientPortalCorePayload\(payload\)[\s\S]*?const mandatePacket = payload\?\.mandatePacket[\s\S]*?mandatePacket: safeMandatePacket/s,
+  'seller portal core mapper should preserve compact mandate metadata for mobile Sales documents',
+)
+assert.match(
+  clientPortalWorkspaceSource,
+  /let mandatePacket = mapSellerMandatePacket\(context\?\.mandatePacket \|\| listing\?\.mandatePacket \|\| null\)/,
+  'seller portal core document center should no longer discard compact mandate metadata',
+)
+assert.match(
+  corePayloadSalesMigration,
+  /'propertyDisclosure', v_form_data -> 'propertyDisclosure'[\s\S]*?'property_disclosure', v_form_data -> 'property_disclosure'/,
+  'core payload should include generated seller disclosure data for the mobile Sales category',
+)
+assert.match(
+  corePayloadSalesMigration,
+  /'requirements', '\[\]'::jsonb,[\s\S]*?'documents', '\[\]'::jsonb,[\s\S]*?'appointments', '\[\]'::jsonb,[\s\S]*?'mandatePacket', coalesce\(v_mandate_packet, 'null'::jsonb\)/s,
+  'core payload should keep general document hydration deferred while carrying compact mandate metadata',
+)
+assert.doesNotMatch(
+  corePayloadSalesMigration,
+  /'finalSignedFilePath'|'final_signed_file_path'|'rendered_file_path'/,
+  'core payload Sales metadata must not expose raw storage paths',
 )
 assert.match(
   documentPacketsApiSource,

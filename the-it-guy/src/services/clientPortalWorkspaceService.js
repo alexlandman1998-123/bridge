@@ -617,7 +617,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   const status = listing?.sellerOnboardingStatus || sellerOnboarding?.status || onboarding?.status || 'pending'
   const listingId = listing?.id || onboarding?.private_listing_id || null
   const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
-  let mandatePacket = corePayload ? null : mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
+  let mandatePacket = mapSellerMandatePacket(context?.mandatePacket || listing?.mandatePacket || null)
   const mandatePacketId = mandatePacket?.id || listing?.mandatePacketId || listing?.mandate_packet_id || null
   const mandatePacketVersionId = mandatePacket?.packetVersionId || mandatePacket?.version?.id || null
   if (!corePayload && mandatePacketId && mandatePacketVersionId) {

@@ -257,4 +257,50 @@ test('seller sale documents resolve from production packet status and snake case
   assert.equal(signedMandate.packet_version_id, 'version-production')
 })
 
+test('seller sale documents resolve from compact core payload data', () => {
+  const model = buildDocumentCenter({
+    listing: {
+      id: 'listing-core-sales',
+      mandate_packet_id: 'packet-core',
+    },
+    mandatePacket: {
+      id: 'packet-core',
+      state: 'fully_signed',
+      packetVersionId: 'version-core',
+      finalSignedRecorded: true,
+      packet: {
+        id: 'packet-core',
+        status: 'completed',
+        title: 'Mandate',
+      },
+      version: {
+        id: 'version-core',
+        final_signed_file_name: 'Signed Mandate.pdf',
+        rendered_file_name: 'Generated Mandate.pdf',
+      },
+    },
+    onboarding: {
+      private_listing_id: 'listing-core-sales',
+      form_data: {
+        propertyDisclosure: {
+          declarationAccepted: true,
+          generatedDocument: {
+            id: 'disclosure-core',
+            title: 'Seller Declaration / Disclosure',
+            fileName: 'seller-declaration-disclosure.html',
+            generatedAt: '2026-07-27T08:00:00Z',
+          },
+        },
+      },
+    },
+    requiredDocuments: [],
+    documents: [],
+    additionalDocumentRequests: [],
+    corePayload: true,
+  }, 'selling')
+
+  assert.deepEqual(model.saleDocuments.map((item) => item.title), ['Mandate', 'Seller Declaration / Disclosure'])
+  assert.equal(model.saleDocuments.length, 2)
+})
+
 console.log('client portal document centre phase 4 tests passed')

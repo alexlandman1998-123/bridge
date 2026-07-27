@@ -2861,20 +2861,33 @@ function mapSellerClientPortalCorePayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
   if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
+  const mandatePacket = payload?.mandatePacket && typeof payload.mandatePacket === 'object'
+    ? payload.mandatePacket
+    : payload?.mandate_packet && typeof payload.mandate_packet === 'object'
+      ? payload.mandate_packet
+      : null
+  const listingForMap = mandatePacket
+    ? {
+        ...listingRow,
+        mandatePacket,
+        mandate_packet: mandatePacket,
+      }
+    : listingRow
   const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
   const mappedListing = mapPrivateListingRow(
-    listingRow,
+    listingForMap,
     onboardingMap,
     new Map([[String(listingRow.id), []]]),
     new Map([[String(listingRow.id), []]]),
   )
+  const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
   const listingWithPayloadFields = mergeSellerPortalListingPayloadFields(mappedListing, listingRow)
   return {
     onboarding: onboardingRow,
     appointments: [],
-    mandatePacket: null,
+    mandatePacket: safeMandatePacket,
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
-    listing: sanitizeSellerPortalListingFinalArtifacts(listingWithPayloadFields, null),
+    listing: sanitizeSellerPortalListingFinalArtifacts(listingWithPayloadFields, mandatePacket),
     corePayload: true,
   }
 }
@@ -3054,6 +3067,8 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
   }
 }
 
+// Retained for the seller-documents-ready notification path while rollout wiring is staged.
+// eslint-disable-next-line no-unused-vars
 async function notifySellerPortalDocumentsReady(client, { listing = {}, onboarding = {}, formData = {}, portalLink = '' } = {}) {
   if (!isSellerPortalInviteReadyAfterSignedMandate(listing)) {
     return { skipped: true, reason: 'mandate_not_signed' }
