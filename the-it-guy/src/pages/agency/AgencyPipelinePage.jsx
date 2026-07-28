@@ -6612,6 +6612,103 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerJourney,
   ])
 
+  const selectedSellerReadinessRequirements = useMemo(() => {
+    const listingItems = selectedSellerReadiness.listingReadiness?.items || []
+    const hasPropertyDetails = Boolean(normalizeText(selectedLeadPropertyLabel) && selectedLeadPropertyLabel !== 'Not captured')
+    const marketingItems = listingItems.filter((item) => ['photos', 'description', 'pricing', 'visibility'].includes(normalizeKey(item?.key)))
+    const missingMarketingItems = marketingItems.filter((item) => !item.complete)
+    const marketingComplete = marketingItems.length ? missingMarketingItems.length === 0 : false
+    const attorneyLabel = normalizeText(
+      selectedLeadLinkedListing?.attorneyName ||
+      selectedLeadLinkedListing?.attorney_name ||
+      selectedLeadLinkedListing?.transferAttorneyName ||
+      selectedLeadLinkedListing?.transfer_attorney_name ||
+      selectedLead?.attorneyName ||
+      selectedLead?.attorney_name,
+    )
+
+    return [
+      {
+        key: 'mandate',
+        label: 'Mandate',
+        complete: selectedSellerJourney.mandateStatus === 'signed',
+        status: selectedSellerJourney.mandateStatus === 'signed' ? 'Complete' : selectedSellerJourney.mandateStatus === 'sent' ? 'Sent' : 'Missing',
+      },
+      {
+        key: 'seller_documents',
+        label: 'Seller Documents',
+        complete: selectedSellerJourney.documentsSubmitted,
+        status: selectedSellerJourney.documentsSubmitted ? 'Complete' : selectedSellerJourney.documentsOutstanding ? `${selectedSellerJourney.documentsOutstanding} missing` : 'Pending',
+      },
+      {
+        key: 'property_details',
+        label: 'Property Details',
+        complete: hasPropertyDetails,
+        status: hasPropertyDetails ? 'Complete' : 'Missing',
+      },
+      {
+        key: 'marketing_assets',
+        label: 'Marketing Assets',
+        complete: marketingComplete,
+        status: marketingComplete ? 'Complete' : missingMarketingItems.length ? `${missingMarketingItems.length} missing` : 'Pending',
+      },
+      {
+        key: 'attorney_selected',
+        label: 'Attorney Selected',
+        complete: Boolean(attorneyLabel),
+        status: attorneyLabel || 'Not selected',
+      },
+    ]
+  }, [
+    selectedLead,
+    selectedLeadLinkedListing,
+    selectedLeadPropertyLabel,
+    selectedSellerJourney.documentsOutstanding,
+    selectedSellerJourney.documentsSubmitted,
+    selectedSellerJourney.mandateStatus,
+    selectedSellerReadiness.listingReadiness?.items,
+  ])
+
+  const selectedSellerSummarySections = useMemo(() => ([
+    {
+      key: 'relationship',
+      title: 'Relationship',
+      rows: [
+        ['Lead Owner', selectedLeadAssignedAgentLabel],
+        ['Lead Channel', selectedLead?.leadDirection || 'Not captured'],
+        ['Lead Score', selectedLead?.priority || selectedLead?.leadScore || 'Not captured'],
+      ],
+    },
+    {
+      key: 'details',
+      title: 'Lead Details',
+      rows: [
+        ['Budget', selectedLead?.budget ? formatCurrency(selectedLead.budget) : 'Not captured'],
+        ['Pipeline Value', selectedLead?.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : 'Not captured'],
+        ['Area of Interest', selectedLead?.areaInterest || selectedLeadPropertyLabel || 'Not captured'],
+      ],
+    },
+    {
+      key: 'progress',
+      title: 'Linked / Progress',
+      rows: [
+        ['Lifecycle Stage', selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage || 'Not captured'],
+        ['Linked Transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
+        ['Next Follow Up', selectedLeadNextStep || 'Not captured'],
+        ['Days in Stage', `${selectedSellerJourney.daysInCurrentStage || 0} days`],
+      ],
+    },
+  ]), [
+    selectedLead,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadLinkedTransactionId,
+    selectedLeadNextStep,
+    selectedLeadPropertyLabel,
+    selectedSellerJourney.daysInCurrentStage,
+    selectedSellerJourney.stage?.label,
+  ])
+
   const selectedLeadPropertyWorkspace = useMemo(() => buildSellerPropertyWorkspaceViewModel({
     lead: selectedLead || {},
     listing: selectedLeadLinkedListing,
@@ -13862,11 +13959,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      ) : null}
 	                    </div>
 
-	                    <div className="min-w-0">
-	                      {selectedLead ? (
-	                        <>
-	                          <h1 className="max-w-full truncate text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]" title={selectedLeadDisplayName}>
-	                            {selectedLeadDisplayName}
+                    <div className="min-w-0">
+                      {selectedLead && !selectedLeadIsSeller ? (
+                        <>
+                          <h1 className="max-w-full truncate text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]" title={selectedLeadDisplayName}>
+                            {selectedLeadDisplayName}
 	                          </h1>
 	                          <div className="mt-2 flex flex-wrap items-center gap-2">
 	                            <span className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-[0.72rem] font-semibold text-[#244f70]">
@@ -13888,14 +13985,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            </span>
 	                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
 	                            <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
-	                          </div>
-	                        </>
-	                      ) : (
-	                        <h1 className="text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]">
-	                          Lead Workspace
-	                        </h1>
-	                      )}
-	                    </div>
+                          </div>
+                        </>
+                      ) : !selectedLead ? (
+                        <h1 className="text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]">
+                          Lead Workspace
+                        </h1>
+                      ) : null}
+                    </div>
 	                  </div>
 
                   {selectedLead && !selectedLeadIsSeller ? (
@@ -13931,100 +14028,91 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {selectedLead && selectedLeadIsSeller ? (
-                    <div className="mt-6 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                      <div className="grid min-w-[860px] grid-cols-7 gap-2">
-                        {[
-                          { key: 'overview', label: 'Overview', meta: '' },
-                          { key: 'seller', label: 'Seller', meta: '' },
-                          { key: 'property', label: 'Property', meta: '' },
-                          { key: 'mandate', label: 'Mandate', meta: '' },
-                          { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
-                          { key: 'documents', label: 'Documents', meta: '' },
-                          { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
-                        ].map((tab) => {
-                          const isActive = leadWorkspaceTab === tab.key
-                          return (
-                            <button
-                              key={tab.key}
-                              type="button"
-                              onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
-                              role="tab"
-                              aria-selected={isActive}
-                              className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-[16px] px-4 text-sm transition ${
-                                isActive
-                                  ? 'bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
-                                  : 'font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
-                              }`}
-                            >
-                              <span>{tab.label}</span>
-                              {tab.meta !== '' ? (
-                                <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
-                              ) : null}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {selectedLead && selectedLeadIsSeller && leadWorkspaceTab === 'overview' ? (
-                    <div className="mt-6 space-y-5">
-                      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                        <div className="rounded-[26px] border border-[#dbe7f2] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbff_100%)] p-5 shadow-[0_16px_38px_rgba(31,54,78,0.07)] sm:p-6">
-                          <div className="flex h-full min-w-0 flex-col justify-between gap-5">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="grid h-9 w-9 place-items-center rounded-[14px] border border-[#efe0b9] bg-[#fff8e6] text-[#b17b25]">
-                                  <Tag className="h-4 w-4" />
-                                </span>
-                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7d91a8]">Next Best Action</p>
+                    <>
+                      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]">
+                        <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
+                          <div className="bg-[radial-gradient(circle_at_20%_0%,rgba(47,155,105,0.22),transparent_34%),linear-gradient(135deg,#073a33_0%,#052d2c_52%,#031f25_100%)] p-6 text-white sm:p-8">
+                            <div className="flex h-full min-h-[270px] min-w-0 flex-col justify-between gap-10">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/14">Seller Lead</span>
+                                  <span className="rounded-full bg-[#0f8f59]/25 px-3 py-1 text-xs font-semibold text-[#c8f8dc] ring-1 ring-[#46ca83]/25">
+                                    {selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage}
+                                  </span>
+                                </div>
+                                <h1 className="mt-8 max-w-4xl text-[2.2rem] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[2.8rem]" title={selectedLeadDisplayName}>
+                                  {selectedLeadDisplayName}
+                                </h1>
+                                <p className="mt-5 flex max-w-4xl items-start gap-2 text-[15px] font-semibold leading-6" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                  <Home className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                  <span className="min-w-0 break-words" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadPropertyLabel || 'Not captured'}</span>
+                                </p>
                               </div>
-                              <h2 className="mt-4 text-[1.55rem] font-semibold tracking-[-0.045em] text-[#102033]">
-                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
-                              </h2>
-                              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
-                                {selectedSellerReadiness.blockers?.[0]?.label
-                                  ? `Resolve ${selectedSellerReadiness.blockers[0].label.toLowerCase()} to move the seller relationship forward.`
-                                  : 'Keep the seller, mandate, listing, and document flow moving from one workspace.'}
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Button type="button" size="sm" className="bg-[#102033] hover:bg-[#183652]" onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}>
-                                {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
-                              </Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
-                                {selectedLeadSellerOnboardingActionLabel}
-                              </Button>
+
+                              <div className="grid gap-4 text-sm font-semibold md:grid-cols-[max-content_max-content_minmax(0,1fr)]" style={{ color: 'rgba(255,255,255,0.88)' }}>
+                                {normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? (
+                                  <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                    <Phone className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                    <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.phone || selectedLead?.phone}</span>
+                                  </a>
+                                ) : null}
+                                {normalizeText(selectedLeadContact?.email || selectedLead?.email) ? (
+                                  <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                    <Mail className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                    <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.email || selectedLead?.email}</span>
+                                  </a>
+                                ) : null}
+                                <span className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                                  <MessageCircle className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+                                  <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>Lead Source {selectedLead.leadSource || 'Not captured'}</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.07)] sm:p-6">
-                          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
-                            <div
-                              className="grid h-32 w-32 shrink-0 place-items-center rounded-full"
-                              style={{ background: `conic-gradient(#2f9b69 ${(selectedSellerReadiness.listingReadiness?.percent || 0) * 3.6}deg, #e2ebf4 0deg)` }}
-                              aria-label={`Listing readiness ${selectedSellerReadiness.listingReadiness?.percent || 0}%`}
-                            >
-                              <div className="grid h-[104px] w-[104px] place-items-center rounded-full bg-white shadow-inner">
-                                <strong className="text-3xl font-semibold tracking-[-0.05em] text-[#102033]">{selectedSellerReadiness.listingReadiness?.percent || 0}%</strong>
+                          <div className="p-6 sm:p-8">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#30445a]">Listing Readiness</p>
+                            <div className="mt-5 grid gap-5 sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]">
+                              <div className="flex flex-col items-center">
+                                <div
+                                  className="grid h-36 w-36 place-items-center rounded-full"
+                                  style={{ background: `conic-gradient(#0f8f59 ${(selectedSellerReadiness.listingReadiness?.percent || 0) * 3.6}deg, #e6edf4 0deg)` }}
+                                  aria-label={`Listing readiness ${selectedSellerReadiness.listingReadiness?.percent || 0}%`}
+                                >
+                                  <div className="grid h-[112px] w-[112px] place-items-center rounded-full bg-white shadow-inner">
+                                    <strong className="text-3xl font-bold tracking-[-0.05em] text-[#102033]">{selectedSellerReadiness.listingReadiness?.percent || 0}%</strong>
+                                  </div>
+                                </div>
+                                <p className="mt-4 text-center text-sm font-semibold text-[#20364c]">
+                                  {(selectedSellerReadiness.listingReadiness?.percent || 0) >= 90
+                                    ? 'Ready to Market'
+                                    : (selectedSellerReadiness.listingReadiness?.percent || 0) >= 60
+                                      ? 'Almost Ready'
+                                      : 'Needs Attention'}
+                                </p>
+                                <div className="mt-2 flex items-center justify-center gap-0.5 text-[#f5a400]" aria-hidden="true">
+                                  {[0, 1, 2, 3, 4].map((item) => <Star key={item} className={`h-4 w-4 ${(selectedSellerReadiness.listingReadiness?.percent || 0) >= (item + 1) * 20 ? 'fill-current' : ''}`} />)}
+                                </div>
                               </div>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7d91a8]">Listing Readiness Score</p>
-                              <h2 className="mt-3 text-[1.45rem] font-semibold tracking-[-0.04em] text-[#102033]">
-                                {(selectedSellerReadiness.listingReadiness?.percent || 0) >= 90
-                                  ? 'Ready To Publish'
-                                  : (selectedSellerReadiness.listingReadiness?.percent || 0) >= 60
-                                    ? 'Almost Ready'
-                                    : 'Needs Attention'}
-                              </h2>
-                              <div className="mt-3 grid gap-1.5">
-                                {(selectedSellerReadiness.listingReadiness?.incompleteItems || selectedSellerReadiness.blockers || []).slice(0, 4).map((item) => (
-                                  <p key={item.key || item.label} className="text-sm font-semibold text-[#4f6680]">- {item.blocker || item.label}</p>
-                                ))}
-                                {!(selectedSellerReadiness.listingReadiness?.incompleteItems || selectedSellerReadiness.blockers || []).length ? (
-                                  <p className="text-sm font-semibold text-[#237348]">No readiness blockers</p>
+
+                              <div className="min-w-0 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff]">
+                                <div className="divide-y divide-[#e8eef5]">
+                                  {selectedSellerReadinessRequirements.map((item) => (
+                                    <div key={item.key} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+                                      <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#20364c]">
+                                        {item.complete ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0f8f59]" /> : <Clock3 className="h-4 w-4 shrink-0 text-[#f5a400]" />}
+                                        <span className="truncate">{item.label}</span>
+                                      </span>
+                                      <span className={`shrink-0 text-xs font-semibold ${item.complete ? 'text-[#0f7b4e]' : item.key === 'attorney_selected' ? 'text-[#6d839b]' : 'text-[#e18a00]'}`}>
+                                        {item.status}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                                {selectedSellerReadiness.blockers?.length ? (
+                                  <div className="border-t border-[#e8eef5] px-4 py-3 text-xs font-medium text-[#6d839b]">
+                                    {selectedSellerReadiness.blockers.length} readiness item{selectedSellerReadiness.blockers.length === 1 ? '' : 's'} need attention
+                                  </div>
                                 ) : null}
                               </div>
                             </div>
@@ -14032,61 +14120,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
 
-                      <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]" data-testid="seller-journey-overview">
-                        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-[#edf3f8] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-6 py-5 sm:px-8">
-                          <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#8aa0b7]">Seller Journey</p>
-                            <h2 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.035em] text-[#102033]">
-                              {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
-                            </h2>
-                          </div>
-                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
-                            {selectedSellerJourney.stage.label}
-                          </span>
+                      <div className="mt-3 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
+                        <div className="grid min-w-[860px] grid-cols-7 gap-2">
+                          {[
+                            { key: 'overview', label: 'Overview', meta: '' },
+                            { key: 'seller', label: 'Seller', meta: '' },
+                            { key: 'property', label: 'Property', meta: '' },
+                            { key: 'mandate', label: 'Mandate', meta: '' },
+                            { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                            { key: 'documents', label: 'Documents', meta: '' },
+                            { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
+                          ].map((tab) => {
+                            const isActive = leadWorkspaceTab === tab.key
+                            return (
+                              <button
+                                key={tab.key}
+                                type="button"
+                                onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
+                                role="tab"
+                                aria-selected={isActive}
+                                className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-[16px] px-4 text-sm transition ${
+                                  isActive
+                                    ? 'bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
+                                    : 'font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
+                                }`}
+                              >
+                                <span>{tab.label}</span>
+                                {tab.meta !== '' ? (
+                                  <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
+                                ) : null}
+                              </button>
+                            )
+                          })}
                         </div>
-
-                        <div className="overflow-x-auto px-6 py-8 sm:px-8" data-testid="seller-journey-rail">
-                          <ol
-                            className="grid min-w-[980px] gap-0"
-                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
-                          >
-                            {selectedSellerJourney.steps.map((step, index) => {
-                              const isCurrent = step.state === 'current'
-                              const isCompleted = step.state === 'completed'
-                              const dotClass = isCurrent
-                                ? 'border-[#2f9b69] bg-[#2f9b69] shadow-[0_0_0_6px_rgba(47,155,105,0.12)]'
-                                : isCompleted
-                                  ? 'border-[#2f9b69] bg-white text-[#2f9b69]'
-                                  : 'border-[#cad7e5] bg-white text-[#9aabbc]'
-                              const lineClass = isCompleted || isCurrent ? 'bg-[#bfe3cf]' : 'bg-[#dce6f1]'
-                              return (
-                                <li key={step.key} className="relative px-2 pb-1">
-                                  {index < selectedSellerJourney.steps.length - 1 ? (
-                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
-                                  ) : null}
-                                  <div className="relative flex flex-col items-center text-center">
-                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
-                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                                    </span>
-                                    <span className={`mt-3 rounded-full px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.1em] ${
-                                      isCurrent
-                                        ? 'bg-[#e7f7ee] text-[#237348]'
-                                        : isCompleted
-                                          ? 'bg-[#f0fbf4] text-[#2f7d56]'
-                                          : 'bg-[#eef3f8] text-[#7b8fa5]'
-                                    }`}>
-                                      {isCurrent ? 'Current' : isCompleted ? 'Completed' : 'Upcoming'}
-                                    </span>
-                                    <p className="mt-2 min-h-[40px] max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
-                                    {step.status ? <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#60758b]" title={step.status}>{step.status}</p> : null}
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ol>
-                        </div>
-                      </section>
-                    </div>
+                      </div>
+                    </>
                   ) : null}
                 </div>
 
@@ -14385,7 +14453,199 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               {selectedLead ? (
                 <div className={`mt-6 grid gap-6 ${!selectedLeadIsSeller && (leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity') ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
                   <div className="space-y-6">
-                  {leadWorkspaceTab === 'overview' ? (
+                  {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (
+                  <div className="space-y-6">
+                    <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="seller-journey-overview">
+                      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Seller Journey</p>
+                          <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
+                            {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
+                          </h2>
+                        </div>
+                        <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
+                          Current Stage
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="seller-journey-rail">
+                        <ol
+                          className="grid min-w-[980px] gap-0"
+                          style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
+                        >
+                          {selectedSellerJourney.steps.map((step, index) => {
+                            const isCurrent = step.state === 'current'
+                            const isCompleted = step.state === 'completed'
+                            const dotClass = isCurrent
+                              ? 'border-[#0f8f59] bg-white text-[#0f7b4e] shadow-[0_0_0_7px_rgba(15,143,89,0.12)]'
+                              : isCompleted
+                                ? 'border-[#0f8f59] bg-[#0f8f59] text-white'
+                                : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
+                            const lineClass = isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'
+                            return (
+                              <li key={step.key} className="relative px-2">
+                                {index < selectedSellerJourney.steps.length - 1 ? (
+                                  <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
+                                ) : null}
+                                <div className={`relative flex min-h-[116px] flex-col items-center text-center ${isCurrent ? 'rounded-[18px] border border-[#cfe8d8] bg-[#f4fbf7] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3'}`}>
+                                  <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
+                                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                  </span>
+                                  <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
+                                  <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}>
+                                    {step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}
+                                  </p>
+                                  {isCurrent ? (
+                                    <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
+                                  ) : null}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ol>
+                      </div>
+                    </section>
+
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-3">
+                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
+                        <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
+                              <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
+                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+                              </h3>
+                              <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
+                                {selectedSellerReadiness.blockers?.[0]?.label
+                                  ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
+                                  : 'The seller workspace is on track.'}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
+                              onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}
+                              disabled={selectedSellerReadiness.nextAction?.disabled}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                            </Button>
+                          </div>
+                        </section>
+
+                        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                            <h3 className="text-base font-semibold text-[#102033]">Documents</h3>
+                            <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('documents')}>
+                              View All Documents
+                            </Button>
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {selectedSellerDocumentCategories.map((category) => {
+                                const chartColor = category.progress >= 100 ? '#0f8f59' : '#f5a400'
+                                return (
+                                  <div key={category.key} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-[#20364c]">{category.label}</p>
+                                        <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                      </div>
+                                      <span
+                                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full p-1"
+                                        style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e4ebf3 0deg)` }}
+                                        aria-label={`${category.label} ${category.progress}% complete`}
+                                      >
+                                        <span className="grid h-full w-full place-items-center rounded-full bg-white text-[0.62rem] font-bold tracking-[-0.02em] text-[#20364c]">
+                                          {category.progress}%
+                                        </span>
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                      <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#f5a400]'}`} style={{ width: `${category.progress}%` }} />
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                        <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                          <h3 className="text-base font-semibold text-[#102033]">Lead Activity</h3>
+                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('activity')}>
+                            View All Activity
+                          </Button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                          {selectedLeadActivityGroups.length ? (
+                            <div className="space-y-6">
+                              {selectedLeadActivityGroups.map((group) => (
+                                <div key={group.key}>
+                                  <p className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">{group.label}</p>
+                                  <div className="space-y-0">
+                                    {group.rows.slice(0, 4).map((item, index) => {
+                                      const presentation = getLeadActivityPresentation(`${item.sourceLabel} ${item.title} ${item.sourceType}`)
+                                      const ActivityIcon = presentation.Icon
+                                      return (
+                                        <article key={item.id || `${group.key}-${index}`} className="relative grid grid-cols-[34px_minmax(0,1fr)] gap-3 pb-5 last:pb-0">
+                                          {index < group.rows.slice(0, 4).length - 1 ? <span className="absolute left-[16px] top-8 bottom-0 w-px bg-[#e8eef5]" /> : null}
+                                          <span className={`relative z-10 grid h-8 w-8 place-items-center rounded-full ${presentation.rail}`}>
+                                            <ActivityIcon className="h-4 w-4" />
+                                          </span>
+                                          <div className="min-w-0">
+                                            <div className="flex items-start justify-between gap-3">
+                                              <p className="min-w-0 truncate text-sm font-semibold text-[#20364c]">{item.sourceLabel || item.title || 'Lead update'}</p>
+                                              <span className="shrink-0 text-xs font-medium text-[#8aa0b7]">{formatRelativeTime(item.timestamp || item.dueDate)}</span>
+                                            </div>
+                                            <p className="mt-1 line-clamp-2 text-sm text-[#60758b]">{item.title || item.description || 'No note captured.'}</p>
+                                          </div>
+                                        </article>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-[16px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-10 text-center text-sm text-[#6f839c]">
+                              No activity logged yet.
+                            </div>
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                        <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                          <h3 className="text-base font-semibold text-[#102033]">Lead Summary</h3>
+                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('seller')}>
+                            Edit
+                          </Button>
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
+                          {selectedSellerSummarySections.map((section) => (
+                            <div key={section.key} className="min-h-[126px] rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
+                              <p className="text-sm font-semibold text-[#20364c]">{section.title}</p>
+                              <div className="mt-3 space-y-2">
+                                {section.rows.map(([label, value]) => (
+                                  <div key={label} className="grid grid-cols-[minmax(110px,0.48fr)_minmax(0,1fr)] gap-3 text-sm">
+                                    <span className="text-[#6d839b]">{label}</span>
+                                    <span className="min-w-0 truncate font-semibold text-[#20364c]" title={String(value)}>{value || 'Not captured'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                  ) : null}
+
+                  {leadWorkspaceTab === 'overview' && !selectedLeadIsSeller ? (
                   <div className="space-y-6">
                     <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-8">
                       <div className="flex flex-wrap items-start justify-between gap-6">
