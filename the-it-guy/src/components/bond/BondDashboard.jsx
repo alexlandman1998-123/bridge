@@ -50,6 +50,7 @@ const ACTIVE_FILTERS = [
 
 const DEFAULT_RANGE_KEY = 'last_30_days'
 const DEFAULT_RANGE_LABEL = 'Last 30 Days'
+const SUPPORTED_RANGE_KEYS = new Set(['last_30_days', 'this_month', 'quarter_to_date', 'all_time'])
 const MOCK_APPLICATION_QUERY_KEYS = ['mockApplications', 'mockData', 'demoApplications']
 const MOCK_APPLICATION_TRUE_VALUES = new Set(['1', 'true', 'yes', 'applications', 'bond'])
 
@@ -82,7 +83,10 @@ export default function BondDashboard({
   const navigate = useNavigate()
   const safeWorkspaceId = normalizeText(workspaceId)
   const location = useLocation()
-  const [rangeKey] = useState(DEFAULT_RANGE_KEY)
+  const [rangeKey, setRangeKey] = useState(() => {
+    const queryRange = new URLSearchParams(location.search || '').get('range')
+    return SUPPORTED_RANGE_KEYS.has(queryRange) ? queryRange : DEFAULT_RANGE_KEY
+  })
   const developmentId = 'all'
   const mockApplicationsPreview = shouldPreviewMockApplications(location.search)
   const [state, setState] = useState(
@@ -134,6 +138,15 @@ export default function BondDashboard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard()
   }, [loadDashboard])
+
+  const handleRangeChange = useCallback((nextRangeKey) => {
+    const normalized = SUPPORTED_RANGE_KEYS.has(nextRangeKey) ? nextRangeKey : DEFAULT_RANGE_KEY
+    setRangeKey(normalized)
+    const params = new URLSearchParams(location.search || '')
+    if (normalized === DEFAULT_RANGE_KEY) params.delete('range')
+    else params.set('range', normalized)
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+  }, [location.pathname, location.search, navigate])
 
   const snapshot = state.snapshot || {}
   const heroKpis = snapshot.heroKpis || []
@@ -197,7 +210,12 @@ export default function BondDashboard({
             </section>
           ) : null}
           {shouldRenderHqDashboard ? (
-            <BondHqCommandCentre snapshot={snapshot} />
+            <BondHqCommandCentre
+              snapshot={snapshot}
+              rangeKey={rangeKey}
+              onRangeChange={handleRangeChange}
+              onRefresh={loadDashboard}
+            />
           ) : (
             <>
               <KpiStrip items={heroKpis} />

@@ -584,32 +584,395 @@ function DataTable({ columns = [], rows = [], emptyLabel = 'Not enough data.' })
   )
 }
 
-export default function BondHqCommandCentre({ snapshot = {} }) {
+const DASHBOARD_TABS = Object.freeze([
+  { key: 'overview', label: 'Overview' },
+  { key: 'operations', label: 'Operations' },
+  { key: 'performance', label: 'Performance' },
+])
+
+const RANGE_LABELS = Object.freeze({
+  last_30_days: 'Last 30 Days',
+  this_month: 'This Month',
+  quarter_to_date: 'Quarter to Date',
+  all_time: 'All Time',
+})
+
+function formatDashboardTimestamp(value = '') {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return 'Last updated: No data yet'
+  return `Last updated: ${new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`
+}
+
+export default function BondHqCommandCentre({
+  snapshot = {},
+  rangeKey = 'last_30_days',
+  onRangeChange = () => {},
+  onRefresh = () => {},
+}) {
   const hq = snapshot.hqCommandCentre || {}
+  const overview = snapshot.managementOverview || {}
   const health = buildOperationalHealthModel(hq)
-  const performanceSnapshot = Array.isArray(snapshot.performanceSnapshot) ? snapshot.performanceSnapshot : []
   const priorityActions = Array.isArray(snapshot.priorityActions) ? snapshot.priorityActions : []
   const operationalRiskMatrix = Array.isArray(snapshot.operationalRiskMatrix) ? snapshot.operationalRiskMatrix : []
   const atRiskApplications = Array.isArray(snapshot.atRiskApplications) ? snapshot.atRiskApplications : []
   const operationalDiagnostics = snapshot.operationalDiagnostics || {}
+  const [activeTab, setActiveTab] = useState('overview')
 
   return (
-    <div className="space-y-10 pb-8">
-      <ExecutiveHeader />
-      <ExecutiveKpiStrip snapshot={snapshot} hq={hq} performanceSnapshot={performanceSnapshot} />
-      <HqNewApplicationsRail applications={snapshot.activeApplications || []} />
-      <WhatNeedsAttentionSection
-        hq={hq}
-        priorityActions={priorityActions}
-        operationalRiskMatrix={operationalRiskMatrix}
-        atRiskApplications={atRiskApplications}
-        operationalDiagnostics={operationalDiagnostics}
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 px-0 pb-6">
+      <ManagementDashboardHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        overview={overview}
+        rangeKey={rangeKey}
+        onRangeChange={onRangeChange}
+        onRefresh={onRefresh}
+        generatedAt={snapshot.generatedAt}
       />
-      <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
-      <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
-      <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
-      <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
-      <SystemFooter hq={hq} health={health} />
+
+      {activeTab === 'overview' ? (
+        <ManagementOverviewDashboard overview={overview} />
+      ) : null}
+
+      {activeTab === 'operations' ? (
+        <div className="space-y-4">
+          <HqNewApplicationsRail applications={snapshot.activeApplications || []} />
+          <WhatNeedsAttentionSection
+            hq={hq}
+            priorityActions={priorityActions}
+            operationalRiskMatrix={operationalRiskMatrix}
+            atRiskApplications={atRiskApplications}
+            operationalDiagnostics={operationalDiagnostics}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === 'performance' ? (
+        <div className="space-y-4">
+          <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
+          <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
+          <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
+          <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
+          <SystemFooter hq={hq} health={health} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ManagementDashboardHeader({
+  activeTab = 'overview',
+  onTabChange = () => {},
+  overview = {},
+  rangeKey = 'last_30_days',
+  onRangeChange = () => {},
+  onRefresh = () => {},
+  generatedAt = '',
+}) {
+  const filters = overview.filters || {}
+  const rangeOptions = Object.entries(RANGE_LABELS)
+
+  return (
+    <section className="border-b border-[#dce6f2] pb-3">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[clamp(1.45rem,2vw,2rem)] font-semibold tracking-[-0.02em] text-[#101828]">Bond Performance</h1>
+          <div className="mt-3 flex flex-wrap gap-5">
+            {DASHBOARD_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => onTabChange(tab.key)}
+                className={`border-b-2 px-0 pb-2 text-sm font-semibold transition ${
+                  activeTab === tab.key
+                    ? 'border-[#16875f] text-[#0b6b4a]'
+                    : 'border-transparent text-[#52657a] hover:text-[#17324d]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <select
+            className="h-9 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#17324d] shadow-[0_6px_14px_rgba(15,23,42,0.035)]"
+            value={filters.scopeLabel || 'Current scope'}
+            aria-label="Dashboard scope"
+            disabled
+          >
+            <option>{filters.scopeLabel || 'Current scope'}</option>
+          </select>
+          <select
+            className="h-9 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#17324d] shadow-[0_6px_14px_rgba(15,23,42,0.035)]"
+            value={rangeKey}
+            onChange={(event) => onRangeChange(event.target.value)}
+            aria-label="Dashboard date range"
+          >
+            {rangeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <select
+            className="h-9 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#52657a] shadow-[0_6px_14px_rgba(15,23,42,0.035)]"
+            value="previous_period"
+            aria-label="Comparison period"
+            disabled
+          >
+            <option>Previous period</option>
+          </select>
+          <span className="text-xs font-medium text-[#71869d]">{formatDashboardTimestamp(generatedAt || filters.lastUpdatedAt)}</span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#dbe5ef] bg-white text-[#315f8c] shadow-[0_6px_14px_rgba(15,23,42,0.035)] transition hover:border-[#b9cadc]"
+            aria-label="Refresh dashboard"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ManagementOverviewDashboard({ overview = {} }) {
+  const kpis = Array.isArray(overview.kpis) ? overview.kpis : []
+  const pipeline = Array.isArray(overview.pipeline) ? overview.pipeline : []
+  const summaryStrip = Array.isArray(overview.summaryStrip) ? overview.summaryStrip : []
+  const sla = Array.isArray(overview.sla) ? overview.sla : []
+  const commission = overview.commission || {}
+  const performanceTables = overview.performanceTables || {}
+
+  return (
+    <div className="space-y-3">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {kpis.map((item) => <ManagementKpiCard key={item.key} item={item} source={overview.metricSources?.[toMetricSourceKey(item.key)]} />)}
+      </section>
+
+      <ManagementPipelineSection stages={pipeline} summary={summaryStrip} />
+      <ManagementSlaSection items={sla} />
+      <ManagementCommissionSection commission={commission} />
+      <ManagementPerformanceTables tables={performanceTables} />
+    </div>
+  )
+}
+
+function toMetricSourceKey(key = '') {
+  return {
+    new_buyer_cases: 'newBuyerCases',
+    active_pipeline: 'activePipeline',
+    approval_rate: 'approvalRate',
+    registered_ytd: 'registeredYtd',
+    commission_forecast: 'commissionForecast',
+  }[key] || key
+}
+
+function ManagementKpiCard({ item = {}, source = '' }) {
+  const Icon = {
+    new_buyer_cases: UserRound,
+    active_pipeline: Layers3,
+    approval_rate: Gauge,
+    registered_ytd: FileCheck2,
+    commission_forecast: Banknote,
+  }[item.key] || LineChart
+
+  return (
+    <Link
+      to={item.href || '/bond/applications'}
+      title={source || item.label}
+      className="group min-w-0 rounded-[16px] border border-[#e2eaf3] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:-translate-y-px hover:border-[#c9d8e8]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#f0f7ff] text-[#2563a8] ring-1 ring-[#dcecff]">
+          <Icon size={18} />
+        </span>
+        <ArrowRight size={14} className="mt-1 shrink-0 text-[#9aacbf] opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+      </div>
+      <p className="mt-3 truncate text-xs font-bold text-[#17324d]">{item.label}</p>
+      <p className="mt-1 text-[clamp(1.7rem,2.2vw,2.25rem)] font-semibold leading-none tracking-[-0.03em] text-[#101828]">{item.value || 'No data yet'}</p>
+      <div className="mt-3 flex min-h-5 items-center justify-between gap-2 text-xs">
+        <span className="truncate font-medium text-[#60758d]">{item.secondary || 'No secondary data yet'}</span>
+        {item.comparison ? <span className="shrink-0 font-semibold text-[#16875f]">{item.comparison}</span> : null}
+      </div>
+    </Link>
+  )
+}
+
+const PIPELINE_ICONS = Object.freeze({
+  application: FileText,
+  at_banks: Landmark,
+  accepted: FileCheck2,
+  lodged: Download,
+  registered: ShieldAlert,
+})
+
+function ManagementPipelineSection({ stages = [], summary = [] }) {
+  return (
+    <section className="rounded-[16px] border border-[#e0e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#142132]">Active Bond Pipeline</h2>
+      <div className="mt-3 grid gap-2 xl:grid-cols-5">
+        {stages.map((stage, index) => {
+          const Icon = PIPELINE_ICONS[stage.key] || Layers3
+          return (
+            <Link
+              key={stage.key}
+              to={stage.href || '/bond/applications'}
+              className={`group relative min-h-[92px] overflow-hidden rounded-[14px] border border-[#dce6f0] bg-[#f8fbff] p-4 transition hover:border-[#b9cadc] ${
+                index === 0 ? 'xl:rounded-l-[16px]' : ''
+              } ${index === stages.length - 1 ? 'xl:rounded-r-[16px]' : ''}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white text-[#2563a8] ring-1 ring-[#d7e6f5]">
+                  <Icon size={16} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-[#17324d]">{stage.label}</p>
+                  <p className="mt-1 text-2xl font-semibold leading-none text-[#101828]">{formatNumber(stage.count || 0)}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#4c6076]">{stage.loanValueLabel || 'No data yet'}</p>
+                  {stage.detail ? <p className="mt-1 truncate text-[11px] font-medium text-[#71869d]">{stage.detail}</p> : null}
+                </div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {summary.map((item) => (
+          <Link key={item.key} to={item.href || '/bond/reports'} className="min-w-0 rounded-[12px] border border-[#e5edf4] bg-[#fbfdff] px-3 py-3 transition hover:border-[#cbd9e8]">
+            <p className="truncate text-xs font-bold text-[#17324d]">{item.label}</p>
+            <div className="mt-1 flex items-baseline justify-between gap-2">
+              <span className="text-lg font-semibold text-[#101828]">{item.value}</span>
+              <span className="truncate text-xs font-medium text-[#60758d]">{item.detail}</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ManagementSlaSection({ items = [] }) {
+  return (
+    <section className="rounded-[16px] border border-[#e0e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#142132]">Application Speed & SLA</h2>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <div key={item.key} className="min-w-0 rounded-[12px] border border-[#e5edf4] bg-[#fbfdff] px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-[#17324d]">{item.label}</p>
+                <p className="mt-1 text-2xl font-semibold leading-none text-[#101828]">{item.value}</p>
+                <p className="mt-1 text-xs font-medium text-[#60758d]">{item.target}</p>
+              </div>
+              {item.onTrack !== null ? (
+                <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${item.onTrack ? 'bg-[#ecfdf3] text-[#027a48] ring-[#bdeccb]' : 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]'}`}>
+                  {item.onTrack ? 'On Track' : 'Watch'}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ManagementCommissionSection({ commission = {} }) {
+  const cards = Array.isArray(commission.cards) ? commission.cards : []
+  return (
+    <section className="rounded-[16px] border border-[#e0e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#142132]">Commission & Reconciliation</h2>
+        {commission.unpricedApplications ? <p className="text-xs font-semibold text-[#b54708]">{commission.unpricedApplications} unpriced applications excluded</p> : null}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {cards.map((item) => (
+          <Link key={item.key} to={item.href || '/bond/revenue'} className="min-w-0 rounded-[12px] border border-[#e5edf4] bg-[#fbfffc] px-4 py-3 transition hover:border-[#cbd9e8]">
+            <p className="truncate text-xs font-bold text-[#17324d]">{item.label}</p>
+            <p className="mt-1 text-[clamp(1.35rem,1.8vw,1.8rem)] font-semibold leading-none text-[#101828]">{item.value}</p>
+            <p className="mt-1 truncate text-xs font-medium text-[#60758d]">{item.detail}</p>
+          </Link>
+        ))}
+      </div>
+      {commission.invoiceQueue?.length ? (
+        <div className="mt-3 rounded-[12px] border border-[#e5edf4] bg-[#fbfdff] px-3 py-2">
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-[#71869d]">Ready to invoice</p>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {commission.invoiceQueue.map((item) => (
+              <Link key={item.key} to={item.href || '/bond/revenue'} className="min-w-0 rounded-[10px] bg-white px-3 py-2 ring-1 ring-[#edf2f7]">
+                <p className="truncate text-sm font-semibold text-[#17324d]">{item.partner}</p>
+                <p className="truncate text-xs text-[#60758d]">{item.buyer} · {item.bank}</p>
+                <p className="mt-1 text-sm font-bold text-[#101828]">{item.amount}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function ManagementPerformanceTables({ tables = {} }) {
+  return (
+    <section className="grid gap-3 xl:grid-cols-3">
+      <ManagementTable
+        title="Consultant Performance"
+        viewHref="/bond/consultant-performance"
+        columns={['Consultant', 'New Cases', 'Registered', 'Approval', 'Revenue']}
+        rows={(tables.consultants || []).map((row) => [row.name, row.newCases, row.registered, `${row.approvalRate}%`, row.revenue])}
+      />
+      <ManagementTable
+        title="Top Referral Partners"
+        viewHref="/bond/partners"
+        columns={['Partner', 'Referred', 'Registered', 'Approval', 'Revenue']}
+        rows={(tables.partners || []).map((row) => [row.name, row.referred, row.registered, `${row.approvalRate}%`, row.revenue])}
+      />
+      <ManagementTable
+        title="Bank Performance"
+        viewHref="/bond/banks"
+        columns={['Bank', 'Applications', 'Approved', 'Approval', 'Avg. TAT']}
+        rows={(tables.banks || []).map((row) => [row.name, row.applications, row.approved, `${row.approvalRate}%`, row.avgTat])}
+      />
+    </section>
+  )
+}
+
+function ManagementTable({ title = '', viewHref = '', columns = [], rows = [] }) {
+  return (
+    <div className="min-w-0 rounded-[16px] border border-[#e0e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="truncate text-sm font-semibold text-[#142132]">{title}</h2>
+        <Link to={viewHref} className="shrink-0 text-xs font-bold text-[#204b84]">View all</Link>
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[420px] text-left text-xs">
+          <thead className="text-[#71869d]">
+            <tr className="border-b border-[#e5edf4]">
+              {columns.map((column) => <th key={column} className="py-2 pr-3 font-bold">{column}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#edf2f7] text-[#17324d]">
+            {rows.length ? rows.map((row, index) => (
+              <tr key={`${title}-${index}`}>
+                {row.map((cell, cellIndex) => (
+                  <td key={`${title}-${index}-${cellIndex}`} className={`py-2 pr-3 ${cellIndex === 0 ? 'font-semibold' : 'font-medium'}`}>{cell}</td>
+                ))}
+              </tr>
+            )) : (
+              <tr>
+                <td className="py-4 text-[#60758d]" colSpan={columns.length}>No data yet</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -664,16 +1027,10 @@ function HqNewApplicationsRail({ applications = [] }) {
 }
 
 const BANK_BREAKDOWN_COLORS = ['#24518a', '#17946b', '#b7791f', '#7c3aed']
-const DEMO_BANK_BREAKDOWN_ROWS = [
-  { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5, revenueGenerated: 210000 },
-  { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9, revenueGenerated: 140000 },
-  { bank: 'ABSA', submitted: 5, approvalRate: 64, averageResponseTime: 8, revenueGenerated: 125000 },
-  { bank: 'Standard Bank', submitted: 4, approvalRate: 61, averageResponseTime: 7, revenueGenerated: 98000 },
-]
 
 function buildBankBreakdownRows(bankPerformance = {}, bankDistribution = []) {
   const distributionByBank = new Map((bankDistribution || []).map((row) => [normalizeText(row.bank).toLowerCase(), row]))
-  const sourceRows = (bankPerformance.rows || []).map((row) => {
+  return (bankPerformance.rows || []).map((row) => {
     const distribution = distributionByBank.get(normalizeText(row.bank).toLowerCase()) || {}
     return {
       bank: row.bank || distribution.bank || 'Configured Bank',
@@ -686,14 +1043,7 @@ function buildBankBreakdownRows(bankPerformance = {}, bankDistribution = []) {
       revenue: row.revenueGenerated || row.revenue || row.projectedCommission || distribution.revenue,
       revenueLabel: row.revenueLabel || row.revenueGeneratedLabel || row.projectedCommissionLabel || distribution.revenueLabel,
     }
-  })
-  const rows = [...sourceRows]
-  const existingBanks = new Set(rows.map((row) => normalizeText(row.bank).toLowerCase()))
-  for (const row of DEMO_BANK_BREAKDOWN_ROWS) {
-    if (rows.length >= 4) break
-    if (!existingBanks.has(row.bank.toLowerCase())) rows.push(row)
-  }
-  return rows.slice(0, 4)
+  }).slice(0, 4)
 }
 
 function BankRelationshipBreakdown({ bankPerformance = {}, bankDistribution = [] }) {
@@ -775,9 +1125,6 @@ const SA_PROVINCE_SHAPES = Object.entries(SOUTH_AFRICA_PROVINCE_LABELS).map(([la
   shortLabel: label === 'KwaZulu-Natal' ? 'KZN' : label,
   ...position,
 }))
-
-const DEMO_BUYER_FINANCE_MIX = { bond: 8, cash: 2, hybrid: 3 }
-const DEMO_BUYER_PROFILE_MIX = { individual: 9, company: 2, trust: 1, foreign_buyer: 1 }
 
 function normalizeProvinceKey(value = '') {
   const normalized = normalizeText(value).toLowerCase().replace(/&/g, 'and')
@@ -986,8 +1333,8 @@ function objectEntriesWithValues(items = {}) {
 }
 
 function BuyerStatsVisualRow({ demographics = {}, bottleneckRows = [] }) {
-  const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : DEMO_BUYER_FINANCE_MIX
-  const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : DEMO_BUYER_PROFILE_MIX
+  const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : {}
+  const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : {}
 
   return (
     <section className="grid gap-6 xl:grid-cols-3">
