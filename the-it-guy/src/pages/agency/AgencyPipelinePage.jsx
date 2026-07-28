@@ -74,7 +74,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
@@ -1632,6 +1632,153 @@ function resolveListingImageUrl(listing = {}) {
   return normalizeText(marketing.mediaUrl || listing?.mediaUrl || listing?.coverImageUrl || listing?.thumbnailUrl || resolveMediaUrl(coverImage))
 }
 
+function resolveListingAddressLabel(listing = {}) {
+  return normalizeText(
+    listing?.propertyAddress ||
+      listing?.property_address ||
+      listing?.sellerPropertyAddress ||
+      listing?.seller_property_address ||
+      listing?.address ||
+      listing?.formattedAddress ||
+      listing?.formatted_address ||
+      listing?.addressLine1 ||
+      listing?.address_line_1 ||
+      listing?.streetAddress ||
+      listing?.street_address,
+  )
+}
+
+function resolveRouteLeadStagePatchFromLinkedListing(lead = {}, listing = {}) {
+  const journey = buildSellerJourney({
+    lead: {
+      ...lead,
+      listingId: normalizeText(lead?.listingId || lead?.listing_id || listing?.id || listing?.listingId || listing?.listing_id),
+      mandatePacketId: normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id),
+    },
+    listing,
+    documents: Array.isArray(listing?.documents) ? listing.documents : [],
+  })
+  if (journey?.isSeller && journey?.stage?.label) {
+    return {
+      stage: journey.stage.label,
+      status: normalizeText(journey.stage.status) || journey.stage.label,
+    }
+  }
+
+  const mandateStatus = normalizeKey(listing?.mandateStatus || listing?.mandate_status)
+  const combinedLeadStage = normalizeKey(`${lead?.stage || ''} ${lead?.status || ''}`)
+  const hasSignedMandate = Boolean(
+    mandateStatus.includes('signed') ||
+      mandateStatus.includes('completed') ||
+      normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id),
+  )
+  if (!hasSignedMandate || combinedLeadStage.includes('mandate_signed') || combinedLeadStage.includes('listing')) {
+    return {}
+  }
+  return {
+    stage: 'Mandate Signed',
+    status: 'Signed',
+  }
+}
+
+function enrichRouteLeadWithLinkedListing(lead = {}, listing = null) {
+  if (!lead || !listing) return lead
+  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : null
+  const address = resolveListingAddressLabel(listing)
+  const stagePatch = resolveRouteLeadStagePatchFromLinkedListing(lead, listing)
+  const mandatePacketId = normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id)
+  return {
+    ...lead,
+    ...stagePatch,
+    sellerPropertyAddress: normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address) || address,
+    formattedAddress: normalizeText(lead?.formattedAddress || lead?.formatted_address) || normalizeText(listing?.formattedAddress || listing?.formatted_address),
+    streetAddress: normalizeText(lead?.streetAddress || lead?.street_address) || normalizeText(listing?.streetAddress || listing?.street_address || listing?.addressLine1 || listing?.address_line_1),
+    suburb: normalizeText(lead?.suburb) || normalizeText(listing?.suburb),
+    city: normalizeText(lead?.city) || normalizeText(listing?.city),
+    province: normalizeText(lead?.province) || normalizeText(listing?.province),
+    country: normalizeText(lead?.country) || normalizeText(listing?.country) || 'South Africa',
+    postalCode: normalizeText(lead?.postalCode || lead?.postal_code) || normalizeText(listing?.postalCode || listing?.postal_code),
+    latitude: lead?.latitude ?? listing?.latitude ?? null,
+    longitude: lead?.longitude ?? listing?.longitude ?? null,
+    googlePlaceId: normalizeText(lead?.googlePlaceId || lead?.google_place_id) || normalizeText(listing?.googlePlaceId || listing?.google_place_id),
+    estimatedValue: Number(lead?.estimatedValue || lead?.estimated_value || 0) || Number(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || 0) || 0,
+    listingId: normalizeText(lead?.listingId || lead?.listing_id || listing?.id || listing?.listingId || listing?.listing_id),
+    mandatePacketId,
+    sellerOnboardingStatus: normalizeText(lead?.sellerOnboardingStatus || lead?.seller_onboarding_status || listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || onboarding?.status),
+    sellerOnboardingToken: normalizeText(lead?.sellerOnboardingToken || lead?.seller_onboarding_token || onboarding?.token || listing?.sellerOnboardingToken || listing?.seller_onboarding_token),
+    mandateStatus: normalizeText(lead?.mandateStatus || lead?.mandate_status || listing?.mandateStatus || listing?.mandate_status),
+    sellerOnboarding: {
+      ...(lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}),
+      ...(onboarding || {}),
+    },
+  }
+}
+
+function readRouteLeadLinkedListingSyncValue(lead = {}, key = '') {
+  const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+  return lead?.[key] ?? lead?.[snakeKey]
+}
+
+function addRouteLeadSyncPatchValue(patch, lead = {}, key = '', nextValue, options = {}) {
+  const { numeric = false, allowZero = false } = options
+  if (numeric) {
+    const nextNumber = Number(nextValue)
+    if (!Number.isFinite(nextNumber) || (!allowZero && nextNumber === 0)) return
+    const currentNumber = Number(readRouteLeadLinkedListingSyncValue(lead, key))
+    if (!Number.isFinite(currentNumber) || currentNumber !== nextNumber) {
+      patch[key] = nextNumber
+    }
+    return
+  }
+
+  const nextText = normalizeText(nextValue)
+  if (!nextText) return
+  const currentText = normalizeText(readRouteLeadLinkedListingSyncValue(lead, key))
+  if (currentText !== nextText) {
+    patch[key] = nextText
+  }
+}
+
+function buildRouteLeadLinkedListingSyncPatch(lead = {}, listing = null) {
+  if (!lead || !listing) return {}
+  const patch = {}
+  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : {}
+  const stagePatch = resolveRouteLeadStagePatchFromLinkedListing(lead, listing)
+  addRouteLeadSyncPatchValue(patch, lead, 'stage', stagePatch.stage)
+  addRouteLeadSyncPatchValue(patch, lead, 'status', stagePatch.status)
+  addRouteLeadSyncPatchValue(patch, lead, 'sellerPropertyAddress', resolveListingAddressLabel(listing))
+  addRouteLeadSyncPatchValue(patch, lead, 'formattedAddress', listing?.formattedAddress || listing?.formatted_address || resolveListingAddressLabel(listing))
+  addRouteLeadSyncPatchValue(patch, lead, 'streetAddress', listing?.streetAddress || listing?.street_address || listing?.addressLine1 || listing?.address_line_1)
+  addRouteLeadSyncPatchValue(patch, lead, 'suburb', listing?.suburb)
+  addRouteLeadSyncPatchValue(patch, lead, 'city', listing?.city)
+  addRouteLeadSyncPatchValue(patch, lead, 'province', listing?.province)
+  addRouteLeadSyncPatchValue(patch, lead, 'country', listing?.country || 'South Africa')
+  addRouteLeadSyncPatchValue(patch, lead, 'postalCode', listing?.postalCode || listing?.postal_code)
+  addRouteLeadSyncPatchValue(patch, lead, 'googlePlaceId', listing?.googlePlaceId || listing?.google_place_id)
+  addRouteLeadSyncPatchValue(patch, lead, 'estimatedValue', listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price, { numeric: true })
+  addRouteLeadSyncPatchValue(patch, lead, 'listingId', listing?.id || listing?.listingId || listing?.listing_id)
+  addRouteLeadSyncPatchValue(patch, lead, 'mandatePacketId', listing?.mandatePacketId || listing?.mandate_packet_id)
+  addRouteLeadSyncPatchValue(patch, lead, 'sellerOnboardingToken', onboarding?.token || listing?.sellerOnboardingToken || listing?.seller_onboarding_token)
+  addRouteLeadSyncPatchValue(patch, lead, 'sellerOnboardingStatus', listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || onboarding?.status)
+
+  if (listing?.latitude !== null && listing?.latitude !== undefined && listing?.latitude !== '') {
+    addRouteLeadSyncPatchValue(patch, lead, 'latitude', listing.latitude, { numeric: true, allowZero: true })
+  }
+  if (listing?.longitude !== null && listing?.longitude !== undefined && listing?.longitude !== '') {
+    addRouteLeadSyncPatchValue(patch, lead, 'longitude', listing.longitude, { numeric: true, allowZero: true })
+  }
+
+  return patch
+}
+
 function normalizeAppointmentListingOption(listing = {}) {
   const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
   if (!id) return null
@@ -2857,9 +3004,18 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       ? { ...localRow, ...remoteRow }
       : remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
     const mergedSellerOnboarding = mergeSellerOnboardingSnapshot(baseRow, localRow, remoteRow)
+    const localContactId = normalizeText(localRow?.contactId)
+    const remoteContactId = normalizeText(remoteRow?.contactId)
+    const shouldPreservePersistedContactId =
+      isUuidLike(localContactId) &&
+      remoteContactId.startsWith('contact_') &&
+      normalizeLeadIdentityKey(localRow?.leadId) === normalizeLeadIdentityKey(remoteRow?.leadId)
 
     mergedById.set(key, {
       ...baseRow,
+      contactId: shouldPreservePersistedContactId
+        ? localContactId
+        : normalizeText(baseRow.contactId || localContactId || remoteContactId),
       assignedAgentName: normalizeText(baseRow.assignedAgentName || localRow.assignedAgentName || remoteRow.assignedAgentName),
       assignedAgentEmail: normalizeText(baseRow.assignedAgentEmail || localRow.assignedAgentEmail || remoteRow.assignedAgentEmail).toLowerCase(),
       sellerOnboardingToken: normalizeText(baseRow.sellerOnboardingToken || localRow.sellerOnboardingToken),
@@ -4627,7 +4783,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadTypeView, records.leads, routeLeadId])
 
   useEffect(() => {
-    if (!isLeadWorkspaceRoute || !routeLeadId || routeLeadRecord || !organisationId || !isSupabaseConfigured) return
+    if (!isLeadWorkspaceRoute || !routeLeadId || !organisationId || !isSupabaseConfigured) return
     const hydrationKey = `${organisationId}:${normalizeLeadIdentityKey(routeLeadId)}`
     if (routeLeadHydrationRef.current === hydrationKey) return
     let attempt = 0
@@ -4660,6 +4816,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (resolvedRouteLeadId) {
         setSelectedLeadId(resolvedRouteLeadId)
       }
+      if (linkedListings.length) {
+        setAppointmentListingOptions((previous) => dedupeListingOptions([
+          ...previous,
+          ...linkedListings.map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
+        ]))
+      }
       setRecords((previous) => ({
         ...previous,
         contacts: dedupeByKey(
@@ -4677,6 +4839,77 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ),
       }))
       return true
+    }
+
+    const applySyncedRouteLeadPatch = (leadId, patch = {}) => {
+      const routeLeadKey = normalizeLeadIdentityKey(leadId)
+      if (!routeLeadKey || !Object.keys(patch).length) return
+      const pinnedSnapshot = routeLeadWorkspaceSnapshotRef.current
+      if (pinnedSnapshot?.key === hydrationKey) {
+        routeLeadWorkspaceSnapshotRef.current = {
+          ...pinnedSnapshot,
+          leads: (Array.isArray(pinnedSnapshot.leads) ? pinnedSnapshot.leads : []).map((lead) =>
+            normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey
+              ? { ...lead, ...patch }
+              : lead,
+          ),
+        }
+      }
+      setRecords((previous) => ({
+        ...previous,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+          normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey
+            ? { ...lead, ...patch }
+            : lead,
+        ),
+      }))
+    }
+
+    const syncRouteLeadDenormalizedFields = async (lead = {}, listing = null) => {
+      const leadId = normalizeText(lead?.leadId || lead?.lead_id)
+      if (!leadId || !listing || !isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return
+      const patch = buildRouteLeadLinkedListingSyncPatch(lead, listing)
+      if (!Object.keys(patch).length) return
+      try {
+        const updatedLead = await updateAgencyCrmLeadRecord(organisationId, leadId, patch)
+        if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+        applySyncedRouteLeadPatch(leadId, {
+          ...patch,
+          updatedAt: updatedLead?.updatedAt || new Date().toISOString(),
+        })
+      } catch (syncError) {
+        console.warn('[PIPELINE] lead workspace linked listing sync failed; continuing with hydrated listing data.', syncError)
+      }
+    }
+
+    const hydrateRouteLeadSnapshotLinkedListing = async (snapshot) => {
+      const routeLead = Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null
+      const listingId = normalizeText(snapshot?.listingId || routeLead?.listingId || routeLead?.listing_id)
+      if (!listingId) return snapshot
+      try {
+        const linkedListing = await withPipelineTimeout(
+          getPrivateListing(listingId, { includeRequirementsAndDocuments: false, includeDistributionData: false }),
+          'Linked listing data is taking too long to load.',
+          LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
+        )
+        if (!linkedListing) return snapshot
+        void syncRouteLeadDenormalizedFields(routeLead, linkedListing)
+        return {
+          ...snapshot,
+          leads: (Array.isArray(snapshot.leads) ? snapshot.leads : []).map((lead) =>
+            normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(routeLead?.leadId)
+              ? enrichRouteLeadWithLinkedListing(lead, linkedListing)
+              : lead,
+          ),
+          linkedListings: dedupeByKey([
+            ...(Array.isArray(snapshot.linkedListings) ? snapshot.linkedListings : []),
+            linkedListing,
+          ], (listing) => listing?.id || listing?.listingId || listing?.listing_id),
+        }
+      } catch (linkedListingError) {
+        console.warn('[PIPELINE] lead workspace linked listing hydration failed; continuing with CRM lead snapshot.', linkedListingError)
+        return snapshot
+      }
     }
 
     const hydrateLeadWorkspace = async () => {

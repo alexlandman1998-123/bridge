@@ -1537,12 +1537,55 @@ function isSignedMandateDocument(document = {}) {
   return source.includes('mandate_signature') || source.includes('signed_mandate') || (source.includes('mandate') && source.includes('signed'))
 }
 
+function isPropertyDisclosureRequirement(requirement = {}) {
+  const source = normalizeDocumentMatchKey([
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.label,
+    requirement?.requirement_name,
+    requirement?.name,
+    requirement?.title,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function isPropertyDisclosureDocument(document = {}) {
+  const source = normalizeDocumentMatchKey([
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+    document?.name,
+    document?.document_name,
+    document?.title,
+    document?.type,
+  ].filter(Boolean).join(' '))
+  return source.includes('property_condition_disclosure') ||
+    source.includes('property_disclosure') ||
+    source.includes('condition_disclosure') ||
+    source.includes('seller_disclosure_annexure_a') ||
+    (source.includes('property') && source.includes('disclosure'))
+}
+
+function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
+  if (!document) return ''
+  if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return 'Download Signed Mandate'
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return 'Download Property Disclosure'
+  return ''
+}
+
 function documentMatchesRequirement(document = {}, requirement = {}) {
   const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
   const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
   if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
+  if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
 
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   const documentRequirementKey = normalizeDocumentMatchKey(document?.requirementKey || document?.requirement_key)
@@ -1663,6 +1706,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
+  const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
 
   return {
     id: `required_${key}`,
@@ -1677,13 +1721,13 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
     uploadKey: key,
-    uploadSpec: uploadAllowed
+    uploadSpec: uploadAllowed && !openLabel
       ? {
           type: 'requirement',
           requirementKey: key,
         }
       : null,
-    openLabel: '',
+    openLabel,
     metaLine: toDisplayText(requirement?.requestedBy || requirement?.requested_by_name),
     dueDate: requirement?.dueDate || requirement?.due_date || null,
     requestedBy: requirement?.requestedBy || requirement?.requested_by_name || '',
@@ -1941,6 +1985,7 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
     requirement_key: 'property_condition_disclosure',
     status: 'completed',
     visibility: 'seller_visible',
+    systemGeneratedDocument: true,
     generatedHtml,
     generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
