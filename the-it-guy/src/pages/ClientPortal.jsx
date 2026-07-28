@@ -84,6 +84,7 @@ import {
   isSellerPortalAuthRequiredError,
   isSellerPortalSessionExpiredError,
   requestSellerPortalPasswordRecovery,
+  recordSellerPortalActivationTerms,
   setSellerPortalPassword,
   uploadSellerClientPortalDocument,
   verifySellerPortalPassword,
@@ -104,6 +105,7 @@ import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import {
   formatPlatformFeeAmount,
+  buildPlatformFeeConsentAcceptance,
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
 } from '../lib/platformFeeConsent'
@@ -7632,6 +7634,11 @@ function SellerPortalPasswordGate({
     : 'Create a password before opening your seller portal and document centre.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
+  const sellerPlatformFeeConfig = getPlatformFeeConsentConfig('seller')
+  const sellerPlatformFeeAmount = formatPlatformFeeAmount(
+    sellerPlatformFeeConfig.feeAmount,
+    sellerPlatformFeeConfig.currency,
+  )
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
@@ -7678,6 +7685,24 @@ function SellerPortalPasswordGate({
                 className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
                 placeholder="Re-enter password"
               />
+            </label>
+          ) : null}
+
+          {!passwordSet && !recoveryMode ? (
+            <label className="flex items-start gap-3 rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+              <input
+                type="checkbox"
+                checked={Boolean(form.termsAccepted)}
+                onChange={(event) => onChange('termsAccepted', event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-[#b8c7d8] text-[#2f5478] focus:ring-[#9eb9d4]"
+              />
+              <span className="text-sm leading-6 text-[#425970]">
+                <strong className="block text-[#142132]">{sellerPlatformFeeConfig.title}</strong>
+                {sellerPlatformFeeConfig.body}
+                <span className="mt-2 block text-xs font-semibold text-[#64748b]">
+                  Current disclosure: {sellerPlatformFeeAmount} · Version {sellerPlatformFeeConfig.wordingVersion}
+                </span>
+              </span>
             </label>
           ) : null}
 
@@ -7729,7 +7754,7 @@ function ClientPortal() {
   const [error, setError] = useState('')
   const [sellerPortalAccessToken, setSellerPortalAccessToken] = useState(() => getStoredSellerPortalAccessToken(token))
   const [sellerPortalAuth, setSellerPortalAuth] = useState(null)
-  const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '' })
+  const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '', termsAccepted: false })
   const [sellerPortalPasswordFeedback, setSellerPortalPasswordFeedback] = useState('')
   const [sellerPortalPasswordSaving, setSellerPortalPasswordSaving] = useState(false)
   const [sellerPortalRecoveryNotice, setSellerPortalRecoveryNotice] = useState('')
@@ -7837,7 +7862,7 @@ function ClientPortal() {
     setSellerPortalPasswordFeedback('')
     setSellerPortalRecoveryNotice('')
     setSellerPortalRecoveryRequesting(false)
-    setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
+    setSellerPortalPasswordForm({ password: '', confirmPassword: '', termsAccepted: false })
   }, [token])
 
   useEffect(() => {
@@ -8017,9 +8042,24 @@ function ClientPortal() {
       return
     }
 
+    if (!passwordSet && !recoveryMode && !sellerPortalPasswordForm.termsAccepted) {
+      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms and platform fee disclosure before activating your portal.')
+      return
+    }
+
     try {
       setSellerPortalPasswordSaving(true)
       setSellerPortalPasswordFeedback('')
+      if (!passwordSet && !recoveryMode) {
+        await recordSellerPortalActivationTerms({
+          token,
+          acceptance: buildPlatformFeeConsentAcceptance('seller', {
+            accepted: true,
+            acceptedAt: new Date().toISOString(),
+            acceptedByEmail: String(sellerPortalAuth?.sellerEmail || '').trim(),
+          }),
+        })
+      }
       const session = recoveryMode
         ? await completeSellerPortalPasswordRecovery({ token, password })
         : passwordSet
@@ -8031,7 +8071,7 @@ function ClientPortal() {
       setLoading(true)
       setSellerPortalAccessToken(accessToken)
       setSellerPortalAuth(null)
-      setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
+      setSellerPortalPasswordForm({ password: '', confirmPassword: '', termsAccepted: false })
       setError('')
       if (stablePortalToken && stablePortalToken !== token && stablePortalPath) {
         clearSellerPortalAccessToken(token)
@@ -8042,7 +8082,7 @@ function ClientPortal() {
     } finally {
       setSellerPortalPasswordSaving(false)
     }
-  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, token])
+  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {

@@ -3536,6 +3536,9 @@ function AgentListings({ initialTab = null } = {}) {
                     {action.label}
                   </Button>
                 ))}
+                <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}?tab=seller`)}>
+                  Activate Seller Portal
+                </Button>
                 <Button type="button" size="sm" variant={quickAddSuccess.handoffPlan?.primaryAction ? 'secondary' : 'primary'} onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
               </div>
             </div>

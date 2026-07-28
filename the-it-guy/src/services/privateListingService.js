@@ -2305,6 +2305,15 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           inviteCreatedAt: onboarding.seller_portal_invite_created_at || null,
           inviteExpiresAt: onboarding.seller_portal_invite_expires_at || null,
           inviteConsumedAt: onboarding.seller_portal_invite_consumed_at || null,
+          sellerPortalStatus: onboarding.seller_portal_status || '',
+          activationSource: onboarding.seller_portal_activation_source || '',
+          invitationSentAt: onboarding.seller_portal_invitation_sent_at || null,
+          invitationLastSentAt: onboarding.seller_portal_invitation_last_sent_at || null,
+          invitationCancelledAt: onboarding.seller_portal_invitation_cancelled_at || null,
+          activatedAt: onboarding.seller_portal_activated_at || null,
+          termsAcceptedAt: onboarding.seller_portal_terms_accepted_at || null,
+          termsVersion: onboarding.seller_portal_terms_version || '',
+          termsAcceptanceId: onboarding.seller_portal_terms_acceptance_id || null,
           link: onboarding.token ? buildSellerOnboardingLink(onboarding.token) : '',
           status: onboardingStatus,
           sentAt: onboarding.created_at || null,
@@ -2324,6 +2333,15 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           inviteCreatedAt: null,
           inviteExpiresAt: null,
           inviteConsumedAt: null,
+          sellerPortalStatus: '',
+          activationSource: '',
+          invitationSentAt: null,
+          invitationLastSentAt: null,
+          invitationCancelledAt: null,
+          activatedAt: null,
+          termsAcceptedAt: null,
+          termsVersion: '',
+          termsAcceptanceId: null,
           link: '',
           status: onboardingStatus,
           sentAt: null,
@@ -3136,7 +3154,7 @@ async function hasSellerPortalMandateInviteBeenSent(client, packetId, {
 async function fetchSellerOnboardingForInvite(client, { listingId = '', sellerWorkspaceToken = '' } = {}) {
   const normalizedListingId = normalizeUuid(listingId)
   const normalizedToken = normalizeText(sellerWorkspaceToken)
-  const phase2Columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const phase2Columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_portal_activation_source, seller_portal_status, seller_portal_invitation_sent_at, seller_portal_invitation_last_sent_at, seller_portal_invitation_cancelled_at, seller_portal_activated_at, seller_portal_terms_accepted_at, seller_portal_terms_version, seller_portal_terms_acceptance_id, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
   const legacyColumns = 'id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
   const fetchBy = async (column, value) => {
     let result = await client
@@ -3673,6 +3691,164 @@ export async function issueSellerPortalInvite(token, { ttlHours = 72 } = {}) {
   return data
 }
 
+export async function ensureSellerPortalActivationRecord(
+  listingId,
+  {
+    activationSource = 'existing_listing',
+    sellerContactEmail = '',
+    sellerContactPhone = '',
+    sellerFirstName = '',
+    sellerSurname = '',
+    performedBy = '',
+    expiresInDays = 14,
+  } = {},
+) {
+  const client = requireClient()
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  if (!listing?.id) throw new Error('Private listing not found.')
+
+  const existingQuery = await client
+    .from('private_listing_seller_onboarding')
+    .select('*')
+    .eq('private_listing_id', listing.id)
+    .maybeSingle()
+  if (existingQuery.error && !isMissingTableError(existingQuery.error, 'private_listing_seller_onboarding')) {
+    throw existingQuery.error
+  }
+
+  const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
+    ? existingQuery.data.form_data
+    : {}
+  const listingSellerFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+    ? listing.sellerCanonicalFacts
+    : {}
+  const resolvedSellerFirstName = pickFirstText(
+    sellerFirstName,
+    existingFormData.sellerFirstName,
+    existingFormData.firstName,
+    listingSellerFacts.firstName,
+  )
+  const resolvedSellerSurname = pickFirstText(
+    sellerSurname,
+    existingFormData.sellerSurname,
+    existingFormData.lastName,
+    listingSellerFacts.lastName,
+  )
+  const resolvedSellerEmail = normalizeText(
+    sellerContactEmail ||
+      existingFormData.sellerEmail ||
+      existingFormData.email ||
+      listingSellerFacts.sellerEmail ||
+      listingSellerFacts.email ||
+      listing?.seller?.email,
+  ).toLowerCase()
+  const resolvedSellerPhone = normalizeText(
+    sellerContactPhone ||
+      existingFormData.sellerPhone ||
+      existingFormData.phone ||
+      listingSellerFacts.sellerPhone ||
+      listingSellerFacts.phone ||
+      listingSellerFacts.mobile ||
+      listing?.seller?.phone,
+  )
+  const nowIso = new Date().toISOString()
+  const token = normalizeText(existingQuery.data?.token) || generateSellerOnboardingToken()
+  const expiresAt = new Date(Date.now() + Math.max(1, Number(expiresInDays || 14)) * 24 * 60 * 60 * 1000).toISOString()
+  const portalBranding = await fetchOrganisationBrandingSnapshot(client, listing.organisationId).catch(() => null)
+  const nextFormData = {
+    ...existingFormData,
+    sellerFirstName: resolvedSellerFirstName,
+    firstName: resolvedSellerFirstName,
+    sellerSurname: resolvedSellerSurname,
+    lastName: resolvedSellerSurname,
+    sellerName: pickFirstText(
+      existingFormData.sellerName,
+      listingSellerFacts.fullName,
+      listingSellerFacts.sellerName,
+      [resolvedSellerFirstName, resolvedSellerSurname].filter(Boolean).join(' '),
+      listing?.seller?.name,
+    ),
+    sellerEmail: resolvedSellerEmail,
+    email: resolvedSellerEmail,
+    sellerPhone: resolvedSellerPhone,
+    phone: resolvedSellerPhone,
+    activationSource,
+    sellerPortalActivationSource: activationSource,
+    ...(portalBranding ? { portalBranding } : {}),
+  }
+  const payload = {
+    private_listing_id: listing.id,
+    token,
+    token_expires_at: expiresAt,
+    seller_type: normalizeNullableText(existingQuery.data?.seller_type || listing.sellerType),
+    ownership_structure: normalizeNullableText(existingQuery.data?.ownership_structure),
+    marital_regime: normalizeNullableText(existingQuery.data?.marital_regime),
+    form_data: nextFormData,
+    status: existingQuery.data?.status || 'sent',
+    seller_portal_activation_source: activationSource,
+    seller_portal_status: existingQuery.data?.seller_portal_password_hash ? 'activated' : 'invitation_pending',
+    seller_portal_invitation_created_by: normalizeUuid(performedBy),
+    seller_portal_invitation_last_sent_at: existingQuery.data?.seller_portal_invitation_last_sent_at || null,
+  }
+
+  let upsert = await client
+    .from('private_listing_seller_onboarding')
+    .upsert(payload, { onConflict: 'private_listing_id' })
+    .select('*')
+    .single()
+  if (upsert.error && (
+    isMissingColumnError(upsert.error, 'seller_portal_activation_source') ||
+    isMissingColumnError(upsert.error, 'seller_portal_status') ||
+    isMissingColumnError(upsert.error, 'seller_portal_invitation_created_by') ||
+    isMissingColumnError(upsert.error, 'seller_portal_invitation_last_sent_at')
+  )) {
+    const fallbackPayload = { ...payload }
+    delete fallbackPayload.seller_portal_activation_source
+    delete fallbackPayload.seller_portal_status
+    delete fallbackPayload.seller_portal_invitation_created_by
+    delete fallbackPayload.seller_portal_invitation_last_sent_at
+    upsert = await client
+      .from('private_listing_seller_onboarding')
+      .upsert(fallbackPayload, { onConflict: 'private_listing_id' })
+      .select('*')
+      .single()
+  }
+  if (upsert.error) throw upsert.error
+
+  await updatePrivateListing(listing.id, {
+    sellerOnboardingStatus: listing.sellerOnboardingStatus === 'completed' ? 'completed' : 'sent',
+  }, { includeRequirementsAndDocuments: false }).catch(() => null)
+
+  await createPrivateListingActivity({
+    privateListingId: listing.id,
+    activityType: 'seller_portal_activation_prepared',
+    activityTitle: 'Seller Portal activation prepared',
+    activityDescription: 'A Seller Portal activation record was prepared for this listing.',
+    performedBy: normalizeUuid(performedBy),
+    visibility: 'internal',
+    metadata: {
+      activationSource,
+      sellerEmail: resolvedSellerEmail || null,
+      sellerPhonePresent: Boolean(resolvedSellerPhone),
+      onboardingId: upsert.data?.id || null,
+      preparedAt: nowIso,
+    },
+  }).catch(() => null)
+
+  return {
+    listing,
+    onboarding: upsert.data,
+    token,
+    stablePortalToken: normalizeText(upsert.data?.seller_portal_token) || token,
+    link: buildSellerOnboardingLink(token),
+    clientPortalLink: buildSellerClientPortalLink(normalizeText(upsert.data?.seller_portal_token) || token),
+    sellerEmail: resolvedSellerEmail,
+    sellerPhone: resolvedSellerPhone,
+    sellerName: nextFormData.sellerName,
+    expiresAt,
+  }
+}
+
 export async function setSellerPortalPassword({ token, password } = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -3689,6 +3865,24 @@ export async function setSellerPortalPassword({ token, password } = {}) {
     storeSellerPortalAccessToken(stablePortalToken, data)
   }
   return { ...(data || {}), accessToken }
+}
+
+export async function recordSellerPortalActivationTerms({ token, acceptance = {} } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_record_seller_portal_activation_terms', {
+    p_token: normalizedToken,
+    p_acceptance: acceptance && typeof acceptance === 'object' ? acceptance : {},
+  })
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_record_seller_portal_activation_terms')) {
+      throw new Error('Seller Portal Terms acceptance capture is not ready yet. Apply the seller portal activation migration.')
+    }
+    throw error
+  }
+  return data || { ok: true }
 }
 
 export async function requestSellerPortalPasswordRecovery(token) {

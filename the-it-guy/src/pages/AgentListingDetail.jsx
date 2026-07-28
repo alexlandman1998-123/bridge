@@ -156,6 +156,13 @@ import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../servi
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import { buildSellerDocumentReviewSlaReport } from '../lib/sellerDocumentReviewSla'
 import {
+  SELLER_PORTAL_ACTIVATION_SOURCES,
+  activateSellerPortalForListing,
+  buildSellerPortalInvitationPreview,
+  getSellerPortalStatusLabel,
+  resolveSellerPortalLifecycle,
+} from '../services/sellerPortalActivationService'
+import {
   captureShowDayLead,
   captureShowDayLeadBatch,
   DEFAULT_SHOW_DAY_NEXT_STEP,
@@ -2385,6 +2392,9 @@ function AgentListingDetail() {
   const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+  const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
+  const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
+  const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
   const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
@@ -5602,10 +5612,134 @@ function AgentListingDetail() {
     return sellerPortalAccessState?.valid ? 'Active' : 'Unknown'
   }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
 
+  const sellerPortalLifecycleStatus = useMemo(
+    () => resolveSellerPortalLifecycle({
+      listing: listingRecord,
+      accessState: sellerPortalAccessState,
+      diagnostics: sellerPortalSecurityDiagnostics,
+    }),
+    [listingRecord, sellerPortalAccessState, sellerPortalSecurityDiagnostics],
+  )
+
+  const sellerPortalActivationPreview = useMemo(
+    () => buildSellerPortalInvitationPreview({
+      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+      sellerName: [sellerPortalActivationDraft.firstName, sellerPortalActivationDraft.lastName].filter(Boolean).join(' ') || resolveSellerNameFromListing(listingRecord),
+      propertyAddress: listingRecord?.propertyAddress || listingRecord?.formattedAddress || listingRecord?.listingTitle || listingRecord?.title || 'your property',
+      agencyName: profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9',
+      agentName: listingActor.name || profile?.fullName || profile?.email || '',
+    }),
+    [listingActor.name, listingRecord, profile?.agencyName, profile?.companyName, profile?.email, profile?.fullName, profile?.organisationName, sellerPortalActivationDraft.firstName, sellerPortalActivationDraft.lastName],
+  )
+
   const sellerOnboardingEmailDiagnostics = useMemo(
     () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
     [communicationDeliveryRows],
   )
+
+  function openSellerPortalActivationModal() {
+    const canonicalFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const nameParts = resolveSellerNameFromListing(listingRecord).split(/\s+/).filter(Boolean)
+    setSellerPortalActivationDraft({
+      firstName: toCleanText(canonicalFacts.firstName || sellerFormData?.sellerFirstName || sellerFormData?.firstName || nameParts[0]),
+      lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
+      email: resolveSellerEmailFromListing(listingRecord),
+      phone: resolveSellerPhoneFromListing(listingRecord),
+    })
+    setSellerPortalActivationOpen(true)
+    setDetailError('')
+    setDetailMessage('')
+  }
+
+  function updateSellerPortalActivationDraft(key, value) {
+    setSellerPortalActivationDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleActivateSellerPortal(event) {
+    event.preventDefault()
+    if (!listingRecord?.id) return
+    const firstName = toCleanText(sellerPortalActivationDraft.firstName)
+    const lastName = toCleanText(sellerPortalActivationDraft.lastName)
+    const email = toCleanText(sellerPortalActivationDraft.email).toLowerCase()
+    const phone = toCleanText(sellerPortalActivationDraft.phone)
+    if (!isValidEmail(email)) {
+      setDetailError('Add a valid seller email before sending the Seller Portal invitation.')
+      return
+    }
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+      setDetailError('Seller Portal activation requires a Supabase-backed listing.')
+      return
+    }
+    if (!isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
+      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
+    })) {
+      setDetailError('Sign or upload the seller mandate before activating the Seller Portal for an existing listing.')
+      return
+    }
+
+    setSellerPortalActivationSending(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      const sellerCanonicalFacts = {
+        ...(listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}),
+        firstName,
+        lastName,
+        sellerName: [firstName, lastName].filter(Boolean).join(' '),
+        name: [firstName, lastName].filter(Boolean).join(' '),
+        fullName: [firstName, lastName].filter(Boolean).join(' '),
+        email,
+        sellerEmail: email,
+        phone,
+        sellerPhone: phone,
+        mobile: phone,
+      }
+      const sellerCanonicalFactReadiness = {
+        ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
+        sellerName: Boolean(sellerCanonicalFacts.fullName),
+        sellerEmail: true,
+        sellerPhone: Boolean(phone),
+      }
+      await updatePrivateListing(listingRecord.id, {
+        sellerCanonicalFacts,
+        sellerCanonicalFactReadiness,
+        sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+      }, { includeRequirementsAndDocuments: false }).catch(() => null)
+
+      const result = await activateSellerPortalForListing({
+        listingId: listingRecord.id,
+        activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+        sellerContactEmail: email,
+        sellerContactPhone: phone,
+        sellerFirstName: firstName,
+        sellerSurname: lastName,
+        performedBy: profile?.id || '',
+        agentName: listingActor.name,
+        agentEmail: listingActor.email || profile?.email || '',
+        agentPhone: profile?.phone || profile?.mobile || '',
+        organisationId: listingOrganisationId,
+        agencyName: profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9',
+        propertyAddress: listingRecord?.propertyAddress || listingRecord?.formattedAddress || listingRecord?.listingTitle || listingRecord?.title || 'your property',
+      })
+
+      if (typeof navigator !== 'undefined' && result?.portalLink) {
+        void navigator.clipboard?.writeText(result.portalLink)
+      }
+      setSellerPortalActivationOpen(false)
+      setDetailMessage(`Seller Portal invitation sent to ${email}. Link copied.`)
+      await loadListingData()
+      const token = resolveSellerPortalTokenFromListing(listingRecord)
+      if (token) {
+        void getSellerPortalSecurityDiagnostics(token)
+          .then((diagnostics) => setSellerPortalSecurityDiagnostics(diagnostics || null))
+          .catch(() => null)
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to send the Seller Portal invitation.')
+    } finally {
+      setSellerPortalActivationSending(false)
+    }
+  }
 
   function handleEditSellerProfile() {
     const canonicalFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
@@ -8880,13 +9014,31 @@ function AgentListingDetail() {
 
               <section>
                 <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <h3 className="text-base font-semibold text-[#142132]">Seller Communication</h3>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Portal</p>
+                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Portal Activation</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#607387]">Portal lifecycle is tracked separately from listing and mandate status.</p>
+                    </div>
+                    <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                      sellerPortalLifecycleStatus === 'activated' || sellerPortalLifecycleStatus === 'profile_complete'
+                        ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+                        : sellerPortalLifecycleStatus === 'invitation_sent'
+                          ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#2f5478]'
+                          : 'border-[#f2d0c9] bg-[#fff4f1] text-[#a43f2d]'
+                    }`}>
+                      {getSellerPortalStatusLabel(sellerPortalLifecycleStatus)}
+                    </span>
+                  </div>
                   <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
-                    <CompactSnapshotRow label="Portal Viewed" value={sellerCommunicationMetrics.portalViewedAt ? formatDate(sellerCommunicationMetrics.portalViewedAt) : 'Not viewed'} />
-                    <CompactSnapshotRow label="Last Login" value={sellerCommunicationMetrics.lastLogin ? formatDate(sellerCommunicationMetrics.lastLogin) : 'No login yet'} />
+                    <CompactSnapshotRow label="Seller" value={resolveSellerNameFromListing(listingRecord) || 'Seller pending'} />
+                    <CompactSnapshotRow label="Email" value={resolveSellerEmailFromListing(listingRecord) || 'Email missing'} />
+                    <CompactSnapshotRow label="Mobile" value={resolveSellerPhoneFromListing(listingRecord) || 'Mobile missing'} />
+                    <CompactSnapshotRow label="Invitation Sent" value={listingRecord?.sellerOnboarding?.invitationLastSentAt || listingRecord?.sellerOnboarding?.inviteCreatedAt ? formatDateTime(listingRecord?.sellerOnboarding?.invitationLastSentAt || listingRecord?.sellerOnboarding?.inviteCreatedAt) : 'Not sent'} />
+                    <CompactSnapshotRow label="Activated" value={listingRecord?.sellerOnboarding?.activatedAt || listingRecord?.sellerOnboarding?.termsAcceptedAt || listingRecord?.sellerOnboarding?.inviteConsumedAt ? formatDateTime(listingRecord?.sellerOnboarding?.activatedAt || listingRecord?.sellerOnboarding?.termsAcceptedAt || listingRecord?.sellerOnboarding?.inviteConsumedAt) : 'Not activated'} />
+                    <CompactSnapshotRow label="Terms" value={listingRecord?.sellerOnboarding?.termsAcceptedAt ? `Accepted ${listingRecord?.sellerOnboarding?.termsVersion || ''}`.trim() : 'Not accepted'} />
                     <CompactSnapshotRow label="Portal Access" value={sellerPortalAccessStatus} />
                     <CompactSnapshotRow label="Portal Password" value={sellerPortalPasswordStatus} />
-                    <CompactSnapshotRow label="Unread Messages" value={formatCompactNumber(sellerCommunicationMetrics.unreadMessages)} />
                     <CompactSnapshotRow label="Documents Uploaded" value={formatCompactNumber(sellerCommunicationMetrics.uploadedDocuments)} />
                   </div>
                   <div className="mt-5 border-t border-[#e7edf5] pt-4">
@@ -8992,6 +9144,14 @@ function AgentListingDetail() {
                     </div>
                   </div>
                   <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2 xl:grid-cols-5">
+                    <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
+                      <UserRound size={15} />
+                      {sellerPortalActivationSending
+                        ? 'Sending...'
+                        : sellerPortalLifecycleStatus === 'not_activated' || sellerPortalLifecycleStatus === 'invitation_pending'
+                          ? 'Activate Seller Portal'
+                          : 'Resend Invitation'}
+                    </Button>
                     {resolveSellerPortalTokenFromListing(listingRecord) && sellerPortalAccessState?.linkActive !== false ? (
                       <a href={buildSellerClientPortalLink(resolveSellerPortalTokenFromListing(listingRecord))} target="_blank" rel="noreferrer" onKeyDown={activateAnchorOnSpace} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
                         Open Seller Portal
@@ -9000,8 +9160,8 @@ function AgentListingDetail() {
                     ) : (
                       <Button size="sm" variant="secondary" disabled>Open Seller Portal</Button>
                     )}
-                    <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
-                      {resendingSellerPortalLink ? 'Sending...' : 'Resend Seller Link'}
+                    <Button size="sm" variant="secondary" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
+                      {resendingSellerPortalLink ? 'Sending...' : 'Send Portal Documents Link'}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
                       {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Password'}
@@ -9294,9 +9454,9 @@ function AgentListingDetail() {
                     <FileText size={15} />
                     Create Mandate
                   </Button>
-                  <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
+                  <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />
-                    {resendingSellerPortalLink ? 'Sending...' : (resolveSellerPortalTokenFromListing(listingRecord) ? 'Send Seller Portal Link' : 'Send Seller Onboarding')}
+                    {sellerPortalActivationSending ? 'Sending...' : (resolveSellerPortalTokenFromListing(listingRecord) ? 'Resend Invitation' : 'Activate Seller Portal')}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
                     <ShieldCheck size={15} />
@@ -10255,6 +10415,60 @@ function AgentListingDetail() {
           </section>
         </section>
       ) : null}
+
+      <Modal
+        open={sellerPortalActivationOpen}
+        onClose={() => !sellerPortalActivationSending && setSellerPortalActivationOpen(false)}
+        title="Activate Seller Portal"
+        subtitle="Confirm the seller contact and email preview before sending the secure activation invitation."
+        footer={(
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSellerPortalActivationOpen(false)} disabled={sellerPortalActivationSending}>
+              Cancel
+            </Button>
+            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending}>
+              {sellerPortalActivationSending ? 'Sending...' : 'Send Invitation'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="seller-portal-activation-form" className="space-y-5" onSubmit={handleActivateSellerPortal}>
+          <section className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller first name
+              <Field value={sellerPortalActivationDraft.firstName} onChange={(event) => updateSellerPortalActivationDraft('firstName', event.target.value)} placeholder="Jane" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller surname
+              <Field value={sellerPortalActivationDraft.lastName} onChange={(event) => updateSellerPortalActivationDraft('lastName', event.target.value)} placeholder="Smith" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller email
+              <Field type="email" value={sellerPortalActivationDraft.email} onChange={(event) => updateSellerPortalActivationDraft('email', event.target.value)} placeholder="seller@example.com" required />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller mobile
+              <Field type="tel" value={sellerPortalActivationDraft.phone} onChange={(event) => updateSellerPortalActivationDraft('phone', event.target.value)} placeholder="082 000 0000" />
+            </label>
+          </section>
+
+          <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+            <h4 className="text-sm font-semibold text-[#142132]">Invitation context</h4>
+            <div className="mt-3 grid gap-x-5 md:grid-cols-2">
+              <CompactSnapshotRow label="Property" value={listingRecord?.propertyAddress || listingRecord?.formattedAddress || listingRecord?.listingTitle || 'Property pending'} />
+              <CompactSnapshotRow label="Agency" value={profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9'} />
+              <CompactSnapshotRow label="Assigned agent" value={listingActor.name || 'Agent pending'} />
+              <CompactSnapshotRow label="Listing status" value={formatStatusLabel(listingRecord?.listingStatus || listingRecord?.status || 'unknown')} />
+            </div>
+          </section>
+
+          <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Email preview</p>
+            <h4 className="mt-2 text-sm font-semibold text-[#142132]">{sellerPortalActivationPreview.subject}</h4>
+            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-[#425970]">{sellerPortalActivationPreview.body}</p>
+          </section>
+        </form>
+      </Modal>
 
       <ShowDayLeadCaptureModal
         open={showDayCaptureOpen}

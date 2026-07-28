@@ -283,7 +283,7 @@ Deno.serve(async (req: Request) => {
             ? "seller_portal_link"
             : (payload as SendSellerOnboardingPayload).type,
           emailKind: type === "seller_portal_link"
-            ? "portal_documents"
+            ? normalizeText((payload as SendSellerOnboardingPayload).emailKind) || "portal_documents"
             : (payload as SendSellerOnboardingPayload).emailKind,
         },
       );

@@ -387,7 +387,8 @@ export type SendSellerOnboardingPayload = {
   onboarding_url?: string;
   onboardingLink?: string;
   portalLink?: string;
-  emailKind?: "onboarding" | "portal_documents" | string;
+  emailKind?: "onboarding" | "portal_documents" | "existing_listing" | "seller_lead" | string;
+  activationSource?: "seller_lead" | "existing_listing" | "manual_listing" | "bulk_import" | "agent_invitation" | string;
   transactionReference?: string;
   agentName?: string;
   agentEmail?: string;
