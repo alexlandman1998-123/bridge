@@ -28,12 +28,23 @@ const corePayloadSalesMigration = await readFile(
   'utf8',
 )
 const clientPortalWorkspaceSource = await readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
+const leadWorkspaceTabSelectionBlock = pipelineSource.match(
+  /const handleLeadWorkspaceTabSelection = useCallback\(\(tabKey\) => \{[\s\S]*?\}, \[isLeadWorkspaceRoute\]\)/,
+)?.[0] || ''
 
 assert.match(
   pipelineSource,
   /const localFallbackAvailable = isUnsafeFallbackAllowed\(\)[\s\S]*?const snapshot = localFallbackAvailable \? getAgencyPipelineSnapshot\(orgId\) : createEmptyPipelineSnapshot\(orgId\)/,
   'pipeline reload should avoid reading production-blocked local CRM snapshots before remote data loads',
 )
+assert.match(
+  pipelineSource,
+  /function replaceLeadWorkspaceTabInUrl\(tab = ''\)[\s\S]*?window\.history\.replaceState\(window\.history\.state/,
+  'lead workspace tab switches should update the URL without routing the page',
+)
+assert.ok(leadWorkspaceTabSelectionBlock.includes('replaceLeadWorkspaceTabInUrl(nextTab)'), 'lead workspace tab handler should use the non-routing URL update')
+assert.doesNotMatch(leadWorkspaceTabSelectionBlock, /navigate\(/, 'lead workspace tab handler should not route on tab changes')
+assert.doesNotMatch(leadWorkspaceTabSelectionBlock, /scrollIntoView/, 'lead workspace tab handler should not force a page jump on tab changes')
 assert.match(
   pipelineSource,
   /if \(applyLocalSnapshot && localFallbackAvailable && requestId === reloadRequestRef\.current\)/,

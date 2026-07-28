@@ -7,6 +7,7 @@ import {
 
 export const ATTORNEY_INCOMING_MATTER_NOTIFICATION_EVENTS = Object.freeze({
   primaryAttorneyAssigned: 'AttorneyIncomingMatterPrimaryAssigned',
+  matterReadyForAcceptance: 'AttorneyIncomingMatterReadyForAcceptance',
 })
 
 function compactObject(payload = {}) {
@@ -18,6 +19,13 @@ function normalizeLaneLabel(value = '') {
   if (normalized === 'bond' || normalized === 'bond_attorney') return 'Bond Attorney'
   if (normalized === 'cancellation' || normalized === 'cancellation_attorney') return 'Cancellation Attorney'
   return 'Transfer Attorney'
+}
+
+function normalizeMatterLabel(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'bond' || normalized === 'bond_attorney') return 'Bond'
+  if (normalized === 'cancellation' || normalized === 'cancellation_attorney') return 'Cancellation'
+  return 'Transfer'
 }
 
 function getProfileName(profile = null, fallback = 'Assigned attorney') {
@@ -214,6 +222,76 @@ export async function notifyAttorneyIncomingPrimaryAssignment({
     notification_type: 'attorney_incoming_primary_assigned',
     title: `${laneLabel} assigned`,
     message: `You have been assigned as primary ${laneLabel.toLowerCase()} for this incoming matter.`,
+    is_read: false,
+    read_at: null,
+    dedupe_key: eventKey,
+    event_type: eventType,
+    event_data: eventData,
+  }))
+
+  return { auditEvent, notification, assignee }
+}
+
+export async function notifyAttorneyIncomingMatterReadyForAcceptance({
+  assignment = null,
+  assignmentId = '',
+  transactionId = '',
+  attorneyUserId = '',
+  laneKey = 'transfer',
+  actorUserId = '',
+  source = 'attorney_incoming_sync',
+  client,
+} = {}) {
+  if (!client) throw new Error('Supabase client is required.')
+  const resolvedAssignmentId = normalizeText(assignmentId || assignment?.id)
+  const resolvedTransactionId = normalizeText(transactionId || assignment?.transactionId || assignment?.transaction_id)
+  const resolvedAttorneyUserId = normalizeText(
+    attorneyUserId || assignment?.attorneyUserId || assignment?.attorney_user_id || assignment?.primaryAttorneyId || assignment?.primary_attorney_id,
+  )
+  if (!resolvedAssignmentId || !resolvedTransactionId || !resolvedAttorneyUserId) {
+    return { auditEvent: null, notification: null, assignee: null }
+  }
+
+  const resolvedLane = normalizeText(laneKey || assignment?.laneKey || assignment?.attorneyRole || assignment?.attorney_role || 'transfer')
+  const laneLabel = normalizeMatterLabel(resolvedLane)
+  const resolvedActorUserId = await getActorUserId(client, actorUserId)
+  const assignee = await fetchProfileById(client, resolvedAttorneyUserId)
+  const assigneeName = getProfileName(assignee)
+  const eventType = ATTORNEY_INCOMING_MATTER_NOTIFICATION_EVENTS.matterReadyForAcceptance
+  const eventKey = `attorney_matter_ready:${resolvedAssignmentId}:${resolvedAttorneyUserId}`
+  const message = `Your incoming ${laneLabel.toLowerCase()} matter is ready in Incoming Matters. Open it when you're ready to review and accept it.`
+  const eventData = {
+    eventKey,
+    source,
+    assignmentId: resolvedAssignmentId,
+    attorneyUserId: resolvedAttorneyUserId,
+    attorneyName: assigneeName,
+    attorneyEmail: normalizeText(assignee?.email),
+    laneKey: resolvedLane,
+    laneLabel,
+    status: 'ready_for_acceptance',
+  }
+
+  const auditEvent = await insertTransactionEvent(client, compactObject({
+    transaction_id: resolvedTransactionId,
+    event_type: eventType,
+    event_data: {
+      ...eventData,
+      message,
+      visibility: 'internal',
+    },
+    created_by: resolvedActorUserId || null,
+    created_by_role: 'attorney',
+    visibility_scope: 'internal',
+  }))
+
+  const notification = await insertNotification(client, compactObject({
+    transaction_id: resolvedTransactionId,
+    user_id: resolvedAttorneyUserId,
+    role_type: 'attorney',
+    notification_type: 'attorney_incoming_matter_ready_for_acceptance',
+    title: `${laneLabel} matter ready`,
+    message,
     is_read: false,
     read_at: null,
     dedupe_key: eventKey,

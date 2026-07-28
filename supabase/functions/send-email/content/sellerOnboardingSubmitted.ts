@@ -18,14 +18,14 @@ function normalizePropertyLabel(propertyTitle: string) {
 
 export function buildSellerOnboardingSubmittedSubject(propertyTitle = "") {
   const propertyLabel = normalizePropertyLabel(propertyTitle);
-  return `Seller onboarding submitted: ${propertyLabel}`;
+  return `Seller onboarding received: ${propertyLabel}`;
 }
 
 export function buildSellerOnboardingSubmittedSellerSubject(propertyTitle = "") {
   const propertyLabel = normalizePropertyLabel(propertyTitle);
   return propertyLabel === "property"
-    ? "Thank you - your seller portal is ready"
-    : `Thank you - your seller portal is ready for ${propertyLabel}`;
+    ? "You're in - your seller portal is ready"
+    : `You're in - your seller portal is ready for ${propertyLabel}`;
 }
 
 export function buildSellerOnboardingSubmittedEmailHtml({
@@ -68,7 +68,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
     ? templateOverrides.introParagraphs
     : [
       `${sellerName || "The seller"} has submitted their onboarding for ${propertyLabel}.`,
-      "Please review the submitted details and generate the mandate from the lead workspace.",
+      "Please review the submitted details, make sure everything looks right, and generate the mandate from the lead workspace.",
       "Arch9 keeps the onboarding, mandate, and signing flow tied to the same lead record.",
     ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
@@ -111,9 +111,9 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   return renderBridgeEmailLayout({
     preheader: pickText(
       templateOverrides?.preheader,
-      "The seller has submitted onboarding. Review it and generate the mandate from Arch9.",
+      "The seller has submitted onboarding. Review it and generate the mandate when you're ready.",
     ),
-    title: pickText(templateOverrides?.title, "Seller Onboarding Submitted"),
+    title: pickText(templateOverrides?.title, "Seller Onboarding Received"),
     greeting: `Hi ${pickText(agentName, "there")},`,
     contentHtml,
     securityTitle,
@@ -148,7 +148,7 @@ export function buildSellerOnboardingSubmittedEmailText({
     `Hi ${pickText(agentName, "there")},`,
     "",
     `${sellerName || "The seller"} has submitted their onboarding for ${propertyLabel}.`,
-    "Please review the submission and generate the mandate from the lead workspace.",
+    "Please review the submission, make sure everything looks right, and generate the mandate from the lead workspace.",
     "",
     "What happens next:",
     "1. Open the lead workspace.",
@@ -193,7 +193,7 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
   const propertyLabel = normalizePropertyLabel(propertyTitle);
   const contentHtml = [
     renderBridgeIntroParagraphs([
-      "Thank you - we have received your seller information.",
+      "Thanks - we have received your seller information.",
       "Your agent will review your answers and contact you if anything needs to be added or corrected.",
       "You can use your seller portal to view updates and upload any follow-up documents requested by your property team.",
     ]),
@@ -208,8 +208,8 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
   ].join("");
 
   return renderBridgeEmailLayout({
-    preheader: "Thank you - we have received your seller information. Your seller portal is ready.",
-    title: "Thank you - we received your information",
+    preheader: "Thanks - we have received your seller information. Your seller portal is ready.",
+    title: "Thanks - we received your information",
     greeting: `Hi ${pickText(sellerName, "there")},`,
     contentHtml,
     securityTitle: "Your Secure Seller Portal",
@@ -242,7 +242,7 @@ export function buildSellerOnboardingSubmittedSellerEmailText({
   return [
     `Hi ${pickText(sellerName, "there")},`,
     "",
-    "Thank you - we have received your seller information.",
+    "Thanks - we have received your seller information.",
     "Your agent will review your answers and contact you if anything needs to be added or corrected.",
     "You can use your seller portal to view updates and upload any follow-up documents requested by your property team.",
     "",

@@ -48,17 +48,17 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
 
-  const subject = `Signed ${documentLabel} ready: ${propertyTitle}`;
+  const subject = `All signed: ${propertyTitle} is ready for the next step`;
   const html = renderBridgeEmailLayout({
-    preheader: `The signed ${documentLabel} for ${propertyTitle} is ready to download.`,
-    title: `Signed ${titleLabel} Ready`,
+    preheader: `Nice - the signed ${documentLabel} for ${propertyTitle} is ready to download.`,
+    title: `All signed - ready for the next step`,
     greeting: `Hi ${recipientName || agentName},`,
     contentHtml: [
       renderBridgeIntroParagraphs([
-        `All required signatures for the ${documentLabel} on ${propertyTitle} are complete.`,
+        `Nice - all required signatures for the ${documentLabel} on ${propertyTitle} are complete.`,
         downloadLink
           ? "Use the secure download link below to access the signed PDF."
-          : "The signed mandate record is available in Arch9 for authorised users linked to this workflow.",
+          : "The signed document record is available in Arch9 for authorised users linked to this workflow.",
       ]),
       renderBridgeCta(`Download signed ${documentLabel}`, downloadLink),
       renderBridgeSummaryCard(

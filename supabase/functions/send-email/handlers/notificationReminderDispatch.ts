@@ -275,12 +275,12 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
 
   if (automationKey === "seller_onboarding_reminder") {
     return {
-      title: "Complete your seller onboarding",
+      title: "A quick nudge to finish seller onboarding",
       ctaLabel: "Complete Seller Onboarding",
       greeting,
       organisationName,
       intro: [
-        "This is a quick reminder that your seller onboarding is still outstanding.",
+        "This is a gentle reminder that your seller onboarding is still waiting.",
         "Finishing the form keeps mandate preparation, compliance checks, and document collection moving smoothly.",
       ],
       summaryTitle: "Onboarding Reminder",
@@ -304,15 +304,15 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
     );
     const isReupload = payload.isReupload === true || payload.is_reupload === true;
     return {
-      title: isReupload ? "Please replace a seller document" : "A seller document is needed",
+      title: isReupload ? "Please replace a seller document" : "We still need one seller document",
       ctaLabel: isReupload ? "Replace Document" : "Upload Document",
       greeting,
       organisationName,
       intro: [
         isReupload
-          ? `The previously supplied ${documentName} could not be accepted and needs a replacement.`
-          : `${documentName} is required to keep your property file moving.`,
-        "Upload it securely in your seller document centre. Your agent will be notified when it is received.",
+          ? `The ${documentName} you sent could not be accepted, so we need a replacement.`
+          : `${documentName} is still needed to keep your property file moving.`,
+        "Upload it securely in your seller portal. Your agent will be notified as soon as it lands.",
       ],
       summaryTitle: "Document Request",
       summaryFields: [

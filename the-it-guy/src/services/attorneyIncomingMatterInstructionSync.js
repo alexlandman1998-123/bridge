@@ -4,6 +4,7 @@ import {
   isTransferAttorneyAssignment,
   normalizeAttorneyIncomingInstructionStatus,
 } from '../core/transactions/attorneyIncomingMatterContract'
+import { notifyAttorneyIncomingMatterReadyForAcceptance } from './attorneyIncomingMatterNotificationService'
 import {
   isMissingColumnError,
   isMissingTableError,
@@ -17,6 +18,8 @@ const ASSIGNMENT_SELECT_COLUMNS = [
   'assignment_type',
   'matter_type',
   'attorney_role',
+  'attorney_user_id',
+  'primary_attorney_id',
   'instruction_status',
   'assignment_status',
   'status',
@@ -169,15 +172,40 @@ export async function syncAttorneyIncomingInstructionStatus(client, {
   }
 
   const updates = []
+  const updatedAssignments = []
   for (const assignment of candidates) {
     const updated = await updateAssignmentInstructionStatus(client, assignment.id, updatePayload)
-    if (updated) updates.push(updated)
+    if (updated) {
+      updates.push(updated)
+      updatedAssignments.push(assignment)
+    }
+  }
+
+  const notifications = []
+  if (payload.instruction_status === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance) {
+    for (const assignment of updatedAssignments) {
+      try {
+        const result = await notifyAttorneyIncomingMatterReadyForAcceptance({
+          assignment,
+          assignmentId: assignment.id,
+          transactionId: assignment.transaction_id,
+          attorneyUserId: assignment.attorney_user_id || assignment.primary_attorney_id,
+          laneKey: assignment.assignment_type || assignment.attorney_role,
+          source,
+          client,
+        })
+        if (result?.auditEvent || result?.notification) notifications.push(result)
+      } catch (error) {
+        console.warn('[attorney-incoming] ready-for-acceptance notification skipped', error)
+      }
+    }
   }
 
   return {
     updatedCount: updates.length,
     skippedCount: transferAssignments.length - candidates.length,
     status: payload.instruction_status,
+    notificationCount: notifications.length,
   }
 }
 

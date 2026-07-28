@@ -729,6 +729,14 @@ function resolveLeadWorkspaceTabFromSearch(search = '') {
   return 'overview'
 }
 
+function replaceLeadWorkspaceTabInUrl(tab = '') {
+  if (typeof window === 'undefined') return
+  const nextUrl = new URL(window.location.href)
+  nextUrl.searchParams.set('tab', tab)
+  nextUrl.searchParams.delete('sellerWorkspace')
+  window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+}
+
 const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
   {
     key: 'seller',
@@ -5693,26 +5701,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
     const nextTab = normalizeKey(tabKey) || 'overview'
     setLeadWorkspaceTab(nextTab)
-    if (isLeadWorkspaceRoute && location.pathname) {
-      const params = new URLSearchParams(location.search)
-      params.set('tab', nextTab)
-      params.delete('sellerWorkspace')
-      const nextSearch = params.toString()
-      navigate(
-        {
-          pathname: location.pathname,
-          search: nextSearch ? `?${nextSearch}` : '',
-        },
-        { replace: true },
-      )
-    }
-    if (typeof window === 'undefined' || typeof document === 'undefined') return
-    window.setTimeout(() => {
-      document
-        .querySelector('[data-testid="lead-workspace-tabs"]')
-        ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-    }, 0)
-  }, [isLeadWorkspaceRoute, location.pathname, location.search, navigate])
+    if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl(nextTab)
+  }, [isLeadWorkspaceRoute])
 
   const selectedLeadFinanceIntelligenceSource = useMemo(() => ({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {

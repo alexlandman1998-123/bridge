@@ -1647,6 +1647,171 @@ async function insertPrivateListingDocumentRow(client, payload = {}) {
   }
 }
 
+function getSellerCompletionDocuments(listing = {}) {
+  return [
+    ...(Array.isArray(listing.documents) ? listing.documents : []),
+    ...(Array.isArray(listing.privateListingDocuments) ? listing.privateListingDocuments : []),
+    ...(Array.isArray(listing.private_listing_documents) ? listing.private_listing_documents : []),
+  ]
+}
+
+function getSellerCompletionRequirements(listing = {}) {
+  return [
+    ...(Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []),
+    ...(Array.isArray(listing.document_requirements) ? listing.document_requirements : []),
+  ]
+}
+
+const SELLER_COMPLETION_DOCUMENT_STATUSES = new Set(['uploaded', 'under_review', 'approved', 'completed'])
+
+function sellerCompletionRequirementStatus(requirement = {}) {
+  return normalizeText(requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status).toLowerCase().replace(/[^a-z0-9]+/g, '_')
+}
+
+function sellerCompletionDocumentStatus(document = {}) {
+  return normalizeText(document?.status || document?.review_status || 'uploaded').toLowerCase().replace(/[^a-z0-9]+/g, '_')
+}
+
+function isSellerCompletionRequirementVisible(requirement = {}) {
+  const visibility = normalizeText(requirement?.document_visibility || requirement?.visibility || 'seller_visible').toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  return !['internal', 'internal_only', 'agent_only'].includes(visibility)
+}
+
+function hasSellerCompletionDocument(requirement = {}, documents = []) {
+  return Array.isArray(documents) && documents.some((document) =>
+    documentExactlyMatchesSellerRequirement(document, requirement) &&
+      SELLER_COMPLETION_DOCUMENT_STATUSES.has(sellerCompletionDocumentStatus(document)),
+  )
+}
+
+function sellerDocumentsAreCompleteForCompletionNotification(listing = {}, documents = []) {
+  const requirements = getSellerCompletionRequirements(listing).filter((requirement) =>
+    requirement?.is_required !== false &&
+    requirement?.required !== false &&
+    isSellerCompletionRequirementVisible(requirement) &&
+    !['not_applicable', 'cancelled'].includes(sellerCompletionRequirementStatus(requirement)),
+  )
+  if (!requirements.length) return false
+  return requirements.every((requirement) => hasSellerCompletionDocument(requirement, documents))
+}
+
+function resolveSellerCompletionTransactionId(listing = {}, fallback = '') {
+  return normalizeText(
+    fallback ||
+      listing?.transactionId ||
+      listing?.transaction_id ||
+      listing?.transaction?.id ||
+      '',
+  )
+}
+
+function resolveSellerCompletionAssignedAgentId(listing = {}) {
+  return normalizeText(
+    listing?.assignedAgentId ||
+      listing?.assigned_agent_id ||
+      listing?.assignedAgent?.id ||
+      listing?.assigned_agent?.id ||
+      '',
+  )
+}
+
+async function notifyAgentWhenSellerDocumentsComplete(client, {
+  listing = {},
+  documentRow = null,
+  transactionId = '',
+} = {}) {
+  if (!client?.from || !listing?.id) return null
+
+  const resolvedTransactionId = resolveSellerCompletionTransactionId(listing, transactionId)
+  const resolvedAgentId = resolveSellerCompletionAssignedAgentId(listing)
+  if (!resolvedTransactionId || !resolvedAgentId) return null
+
+  const requirements = getSellerCompletionRequirements(listing)
+  const currentDocuments = getSellerCompletionDocuments(listing)
+  const nextDocuments = documentRow ? [...currentDocuments, documentRow] : currentDocuments
+
+  const beforeReady = sellerDocumentsAreCompleteForCompletionNotification(listing, currentDocuments)
+  const afterReady = sellerDocumentsAreCompleteForCompletionNotification(listing, nextDocuments)
+
+  if (beforeReady || !afterReady) {
+    return null
+  }
+
+  const dedupeKey = `seller-documents-complete:${listing.id}`
+  const existing = await client
+    .from('transaction_notifications')
+    .select('id')
+    .eq('transaction_id', resolvedTransactionId)
+    .eq('user_id', resolvedAgentId)
+    .eq('dedupe_key', dedupeKey)
+    .eq('is_read', false)
+    .maybeSingle()
+
+  if (existing.error) {
+    if (isMissingTableError(existing.error, 'transaction_notifications') || isPermissionDeniedError(existing.error)) {
+      return null
+    }
+    throw existing.error
+  }
+
+  if (existing.data) return existing.data
+
+  const payload = {
+    transaction_id: resolvedTransactionId,
+    user_id: resolvedAgentId,
+    role_type: 'agent',
+    notification_type: 'readiness_updated',
+    title: 'Seller documents are in',
+    message: 'All required seller documents have been uploaded. Review the file and move to the next step.',
+    is_read: false,
+    read_at: null,
+    dedupe_key: dedupeKey,
+    event_type: 'TransactionUpdated',
+    event_data: {
+      trigger: 'seller_documents_complete',
+      listingId: listing.id,
+      transactionId: resolvedTransactionId,
+      documentId: documentRow?.id || null,
+      requirementId: documentRow?.requirement_id || documentRow?.requirementId || null,
+      requirementKey: documentRow?.requirement_key || documentRow?.requirementKey || null,
+      source: 'client_portal_selling',
+      requirementsCount: requirements.length,
+    },
+  }
+
+  let insertResult = await client
+    .from('transaction_notifications')
+    .insert(payload)
+    .select('id, transaction_id, user_id, role_type, notification_type, title, message, created_at')
+    .single()
+
+  if (
+    insertResult.error &&
+    (isMissingColumnError(insertResult.error, 'dedupe_key') ||
+      isMissingColumnError(insertResult.error, 'event_type') ||
+      isMissingColumnError(insertResult.error, 'event_data'))
+  ) {
+    const fallbackPayload = { ...payload }
+    delete fallbackPayload.dedupe_key
+    delete fallbackPayload.event_type
+    delete fallbackPayload.event_data
+    insertResult = await client
+      .from('transaction_notifications')
+      .insert(fallbackPayload)
+      .select('id, transaction_id, user_id, role_type, notification_type, title, message, created_at')
+      .single()
+  }
+
+  if (insertResult.error) {
+    if (isMissingTableError(insertResult.error, 'transaction_notifications') || isPermissionDeniedError(insertResult.error)) {
+      return null
+    }
+    throw insertResult.error
+  }
+
+  return insertResult.data || null
+}
+
 function getPrivateListingMandatePacketId(row = {}, mandatePacket = null) {
   return normalizeText(
     row?.mandate_packet_id ||
@@ -4035,7 +4200,7 @@ async function fetchOnboardingRowsForListings(client, listingIds = []) {
   if (!ids.length) return new Map()
   const query = await client
     .from('private_listing_seller_onboarding')
-    .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
+      .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
     .in('private_listing_id', ids)
     .order('created_at', { ascending: false })
   if (query.error) {
@@ -7389,6 +7554,7 @@ export async function uploadSellerClientPortalDocument({
   if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
     throw rpc.error
   }
+  const usedFallbackUpload = Boolean(rpc.error)
 
   let documentRow = null
   if (!rpc.error) {
@@ -7456,6 +7622,17 @@ export async function uploadSellerClientPortalDocument({
     return false
   })
 
+  if (usedFallbackUpload) {
+    await notifyAgentWhenSellerDocumentsComplete(client, {
+      listing,
+      documentRow,
+      transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',
+    }).catch((error) => {
+      console.warn('[Private Listings] seller document completion notification skipped after fallback upload', error)
+      return null
+    })
+  }
+
   return {
     id: documentRow?.id || filePath,
     name: documentRow?.document_name || file.name || safeOriginalName,
@@ -7483,6 +7660,14 @@ export async function uploadSellerClientPortalDocument({
     sharedDocument: promotedSharedDocument,
   }
 }
+
+export const __privateListingServiceTestUtils = Object.freeze({
+  notifyAgentWhenSellerDocumentsComplete,
+  getSellerCompletionDocuments,
+  getSellerCompletionRequirements,
+  resolveSellerCompletionTransactionId,
+  resolveSellerCompletionAssignedAgentId,
+})
 
 export async function uploadPrivateListingDocument(listingId, file, {
   documentType = 'listing_document',

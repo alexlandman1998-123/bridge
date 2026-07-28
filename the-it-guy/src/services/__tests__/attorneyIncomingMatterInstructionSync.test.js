@@ -24,6 +24,12 @@ class FakeQuery {
     return this
   }
 
+  insert(payload) {
+    this.mode = 'insert'
+    this.payload = payload
+    return this
+  }
+
   eq(column, value) {
     this.filters.push({ column, value })
     return this
@@ -31,6 +37,22 @@ class FakeQuery {
 
   limit() {
     return this
+  }
+
+  maybeSingle() {
+    const result = this.execute()
+    return Promise.resolve({
+      ...result,
+      data: Array.isArray(result.data) ? result.data[0] || null : result.data || null,
+    })
+  }
+
+  single() {
+    const result = this.execute()
+    return Promise.resolve({
+      ...result,
+      data: Array.isArray(result.data) ? result.data[0] || null : result.data || null,
+    })
   }
 
   then(resolve, reject) {
@@ -48,30 +70,53 @@ class FakeQuery {
       }
     }
 
-    if (this.table !== 'transaction_attorney_assignments') {
+    const rows = this.client.tables[this.table]
+    if (!rows) {
       return { data: null, error: new Error(`Unexpected table ${this.table}`) }
     }
 
-    const rows = this.client.rows.filter((row) =>
+    const matchedRows = rows.filter((row) =>
       this.filters.every((filter) => row[filter.column] === filter.value),
     )
 
     if (this.mode === 'update') {
-      rows.forEach((row) => {
+      matchedRows.forEach((row) => {
         Object.assign(row, this.payload)
-        this.client.updates.push({ id: row.id, payload: { ...this.payload } })
+        this.client.updates.push({ table: this.table, id: row.id, payload: { ...this.payload } })
       })
-      return { data: rows.map((row) => ({ id: row.id })), error: null }
+      return { data: matchedRows.map((row) => ({ id: row.id })), error: null }
     }
 
-    return { data: rows.map((row) => ({ ...row })), error: null }
+    if (this.mode === 'insert') {
+      const payloadRows = Array.isArray(this.payload) ? this.payload : [this.payload]
+      const insertedRows = payloadRows.map((payload) => {
+        const row = {
+          id: `${this.table}-${rows.length + 1}`,
+          ...payload,
+        }
+        rows.push(row)
+        this.client.inserts.push({ table: this.table, payload: { ...payload }, row: { ...row } })
+        return { ...row }
+      })
+      return { data: insertedRows, error: null }
+    }
+
+    return { data: matchedRows.map((row) => ({ ...row })), error: null }
   }
 }
 
 function createFakeClient(rows, options = {}) {
+  const assignmentRows = rows.map((row) => ({ ...row }))
   return {
-    rows: rows.map((row) => ({ ...row })),
+    rows: assignmentRows,
+    tables: {
+      transaction_attorney_assignments: assignmentRows,
+      profiles: (options.profiles || []).map((row) => ({ ...row })),
+      transaction_events: (options.transactionEvents || []).map((row) => ({ ...row })),
+      transaction_notifications: (options.transactionNotifications || []).map((row) => ({ ...row })),
+    },
     updates: [],
+    inserts: [],
     missingTable: Boolean(options.missingTable),
     from(table) {
       return new FakeQuery(this, table)
@@ -163,6 +208,49 @@ try {
 
     assert.equal(result.updatedCount, 1)
     assert.equal(client.rows[0].instruction_status, 'ready_for_acceptance')
+  }
+
+  {
+    const client = createFakeClient([
+      {
+        id: 'assign-ready-notify',
+        transaction_id: 'tx-3',
+        assignment_type: 'transfer',
+        attorney_role: 'transfer_attorney',
+        attorney_user_id: 'attorney-user-1',
+        instruction_status: 'awaiting_documents',
+        assignment_status: 'active',
+      },
+    ], {
+      profiles: [{ id: 'attorney-user-1', full_name: 'Naledi Mokoena', email: 'naledi@example.test' }],
+    })
+
+    const result = await syncAttorneyIncomingInstructionStatus(client, {
+      transactionId: 'tx-3',
+      status: 'ready_for_acceptance',
+      occurredAt: '2026-07-09T09:00:00.000Z',
+      source: 'mandate_signed',
+    })
+
+    assert.equal(result.updatedCount, 1)
+    assert.equal(result.notificationCount, 1)
+    assert.equal(client.tables.transaction_events.length, 1)
+    assert.equal(client.tables.transaction_events[0].event_type, 'AttorneyIncomingMatterReadyForAcceptance')
+    assert.equal(client.tables.transaction_notifications.length, 1)
+    assert.equal(client.tables.transaction_notifications[0].user_id, 'attorney-user-1')
+    assert.equal(client.tables.transaction_notifications[0].notification_type, 'attorney_incoming_matter_ready_for_acceptance')
+    assert.equal(client.tables.transaction_notifications[0].title, 'Transfer matter ready')
+    assert.match(client.tables.transaction_notifications[0].message, /Incoming Matters/i)
+
+    const repeat = await syncAttorneyIncomingInstructionStatus(client, {
+      transactionId: 'tx-3',
+      status: 'ready_for_acceptance',
+      occurredAt: '2026-07-09T09:15:00.000Z',
+      source: 'mandate_signed',
+    })
+
+    assert.equal(repeat.updatedCount, 1)
+    assert.equal(client.tables.transaction_notifications.length, 1)
   }
 
   {

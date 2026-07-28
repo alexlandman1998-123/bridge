@@ -517,6 +517,8 @@ declare
   v_listing public.private_listings%rowtype;
   v_requirement public.private_listing_document_requirements%rowtype;
   v_document public.private_listing_documents%rowtype;
+  v_transaction_id uuid;
+  v_completion_dedupe_key text;
   v_requirement_key text := nullif(trim(coalesce(p_requirement_key, '')), '');
   v_access_token text := nullif(trim(coalesce(p_access_token, '')), '');
   v_access_hash text := case when v_access_token is null then null else encode(digest(v_access_token, 'sha256'), 'hex') end;
@@ -594,6 +596,75 @@ begin
         'source', 'client_portal_selling'
       )
     );
+  end if;
+
+  if to_regclass('public.transaction_notifications') is not null then
+    v_transaction_id := public.bridge_resolve_private_listing_transaction_id(v_listing.id);
+    v_completion_dedupe_key := 'seller-documents-complete:' || v_listing.id::text;
+
+    if v_transaction_id is not null
+      and v_listing.assigned_agent_id is not null
+      and not exists (
+        select 1
+        from public.transaction_notifications notification
+        where notification.transaction_id = v_transaction_id
+          and notification.user_id = v_listing.assigned_agent_id
+          and notification.dedupe_key = v_completion_dedupe_key
+          and notification.is_read = false
+      )
+      and not exists (
+        select 1
+        from public.private_listing_document_requirements requirement
+        where requirement.private_listing_id = v_listing.id
+          and requirement.is_required is true
+          and requirement.document_visibility = 'seller_visible'
+          and requirement.status <> 'not_applicable'
+          and not exists (
+            select 1
+            from public.private_listing_documents document
+            where document.private_listing_id = v_listing.id
+              and (
+                document.requirement_id = requirement.id
+                or lower(regexp_replace(coalesce(document.document_type, ''), '[^a-zA-Z0-9]+', '_', 'g')) =
+                   lower(regexp_replace(requirement.requirement_key, '[^a-zA-Z0-9]+', '_', 'g'))
+              )
+              and document.status in ('uploaded', 'under_review', 'approved', 'completed')
+          )
+      ) then
+      insert into public.transaction_notifications (
+        transaction_id,
+        user_id,
+        role_type,
+        notification_type,
+        title,
+        message,
+        is_read,
+        read_at,
+        dedupe_key,
+        event_type,
+        event_data
+      ) values (
+        v_transaction_id,
+        v_listing.assigned_agent_id,
+        'agent',
+        'readiness_updated',
+        'Seller documents are in',
+        'All required seller documents have been uploaded. Review the file and move to the next step.',
+        false,
+        null,
+        v_completion_dedupe_key,
+        'TransactionUpdated',
+        jsonb_build_object(
+          'trigger', 'seller_documents_complete',
+          'listingId', v_listing.id,
+          'transactionId', v_transaction_id,
+          'documentId', v_document.id,
+          'requirementId', v_requirement.id,
+          'requirementKey', v_requirement_key,
+          'source', 'client_portal_selling'
+        )
+      );
+    end if;
   end if;
 
   perform public.bridge_log_client_portal_access_event(p_token, 'document_upload', 'success', v_listing.id, 'uploaded');
