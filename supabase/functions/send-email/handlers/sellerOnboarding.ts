@@ -309,6 +309,8 @@ async function resolveSenderOrganisationBranding(
 ) {
   let senderOrganisationName = fallbackName;
   let senderOrganisationLogoUrl = "";
+  let senderBrandPrimaryColor = "";
+  let senderBrandSecondaryColor = "";
   let supportEmail = "";
   let supportPhone = "";
 
@@ -405,6 +407,10 @@ async function resolveSenderOrganisationBranding(
       settings.agencyOnboarding || settings.agency_onboarding,
     );
     const branding = toRecord(agencyOnboarding.branding || settings.branding);
+    const brandColours = toRecord(
+      branding.brandColours || branding.brand_colours ||
+        branding.brandColors || branding.brand_colors,
+    );
     senderOrganisationLogoUrl = normalizeText(branding.logoDark) ||
       normalizeText(branding.logoDarkUrl) ||
       normalizeText(branding.logoHighContrast) ||
@@ -414,6 +420,21 @@ async function resolveSenderOrganisationBranding(
       normalizeText(branding.logoLight) ||
       normalizeText(branding.logoLightUrl) ||
       senderOrganisationLogoUrl;
+    senderBrandPrimaryColor = normalizeText(brandColours.primary) ||
+      normalizeText(branding.primaryColor) ||
+      normalizeText(branding.primary_color) ||
+      normalizeText(branding.primaryColour) ||
+      normalizeText(branding.primary_colour) ||
+      senderBrandPrimaryColor;
+    senderBrandSecondaryColor = normalizeText(brandColours.secondary) ||
+      normalizeText(brandColours.accent) ||
+      normalizeText(branding.secondaryColor) ||
+      normalizeText(branding.secondary_color) ||
+      normalizeText(branding.secondaryColour) ||
+      normalizeText(branding.secondary_colour) ||
+      normalizeText(branding.accentColor) ||
+      normalizeText(branding.accent_color) ||
+      senderBrandSecondaryColor;
   } else if (settingsQuery.error) {
     console.error(
       "[seller_onboarding] organisation settings lookup failed",
@@ -424,6 +445,8 @@ async function resolveSenderOrganisationBranding(
   return {
     senderOrganisationName,
     senderOrganisationLogoUrl,
+    senderBrandPrimaryColor,
+    senderBrandSecondaryColor,
     supportEmail,
     supportPhone,
   };
@@ -530,6 +553,8 @@ export async function handleSellerOnboardingEmail(
   let templateOverrides = null;
   let senderOrganisationName = organisationName;
   let senderOrganisationLogoUrl = payloadAgencyLogoUrl;
+  let senderBrandPrimaryColor = "";
+  let senderBrandSecondaryColor = "";
   if (organisationId && supabase) {
     try {
       const resolvedOrganisation = await resolveSenderOrganisationBranding(
@@ -541,6 +566,11 @@ export async function handleSellerOnboardingEmail(
       senderOrganisationLogoUrl =
         resolvedOrganisation.senderOrganisationLogoUrl ||
         senderOrganisationLogoUrl;
+      senderBrandPrimaryColor = resolvedOrganisation.senderBrandPrimaryColor ||
+        senderBrandPrimaryColor;
+      senderBrandSecondaryColor =
+        resolvedOrganisation.senderBrandSecondaryColor ||
+        senderBrandSecondaryColor;
       if (!supportEmail) {
         supportEmail = resolvedOrganisation.supportEmail;
       }
@@ -567,6 +597,8 @@ export async function handleSellerOnboardingEmail(
       ...(payload as Record<string, unknown>),
       organisationName: senderOrganisationName || organisationName,
       logoUrl: senderOrganisationLogoUrl,
+      primaryColor: senderBrandPrimaryColor,
+      secondaryColor: senderBrandSecondaryColor,
       supportEmail,
       supportPhone,
     },

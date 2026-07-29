@@ -137,6 +137,11 @@ assertContract(
   /logo_dark_url\)[\s\S]*logo_light_url\)/,
   'Seller-facing onboarding/portal emails should prefer dark-header organisation logos.',
 )
+assertContract(
+  sellerEmailHandler,
+  /brandColours[\s\S]*brand_colours[\s\S]*senderBrandPrimaryColor[\s\S]*senderBrandSecondaryColor/,
+  'Seller-facing onboarding emails should apply the agency onboarding brand colours, not only the generic organisation logo.',
+)
 
 const sellerEmailContent = await readWorkspaceFile('supabase/functions/send-email/content/sellerOnboarding.ts')
 assertContract(
@@ -151,10 +156,10 @@ assertContract(
 )
 for (const token of [
   'buildPremiumSellerOnboardingInvitationHtml',
-  'Complete your seller information',
+  'Complete your seller profile',
   'Seller information',
-  'needs a few details from you before your property sale can move ahead',
-  'This usually takes about 8-10 minutes',
+  'has prepared a secure seller intake for your property sale',
+  'This usually takes about 8 minutes',
   'What you will need',
   'What happens after you submit',
   'If the button does not work, copy this secure link',

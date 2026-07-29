@@ -77,7 +77,7 @@ Deno.test("seller onboarding invitation template renders company branding while 
   assertIncludes(html, "color: #fedcba");
   assertIncludes(
     html,
-    "needs a few details from you before your property sale can move ahead",
+    "has prepared a secure seller intake for your property sale",
   );
   assertNotIncludes(html, ">ARCH9<");
 });

@@ -83,15 +83,15 @@ export function buildSellerOnboardingSubject(
   const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
   const referenceLabel = normalizeReference(transactionReference || "");
   if (propertyLabel && !isGenericPropertyLabel(propertyLabel)) {
-    return `Complete your property profile for ${propertyLabel}`;
+    return `Complete your seller profile for ${propertyLabel}`;
   }
   if (propertyType) {
-    return `Complete your property profile for ${propertyType}`;
+    return `Complete your seller profile for ${propertyType}`;
   }
   if (referenceLabel) {
-    return `Complete your property profile (${referenceLabel})`;
+    return `Complete your seller profile (${referenceLabel})`;
   }
-  return "Complete your property profile";
+  return "Complete your seller profile";
 }
 
 function pickText(value: string | undefined, fallback: string) {
@@ -342,7 +342,7 @@ function pickSellerInvitationTitle(value: string | undefined) {
     normalized === "Your Property Sale Starts Here" ||
     normalized === "Welcome to your property transaction workspace."
   ) {
-    return "Complete your seller information";
+    return "Complete your seller profile";
   }
   return normalized;
 }
@@ -354,7 +354,7 @@ function pickSellerInvitationCta(value: string | undefined) {
     normalized === "Complete Seller Onboarding" ||
     normalized === "Complete Seller Information"
   ) {
-    return "Complete seller information";
+    return "Start seller onboarding";
   }
   return normalized;
 }
@@ -371,7 +371,7 @@ function pickSellerInvitationPreheader(
     normalized ===
       `${agencyName} has prepared your secure seller workspace on Arch9.`
   ) {
-    return `${agencyName} needs a few details to get your property sale ready.`;
+    return `${agencyName} has prepared a secure seller intake for your property sale.`;
   }
   return normalized;
 }
@@ -530,8 +530,8 @@ function buildPremiumSellerOnboardingInvitationHtml({
   },</p>
                 <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">${
     escapeHtml(agencyName)
-  } needs a few details from you before your property sale can move ahead.</p>
-                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Please complete the secure form so your agent can verify the basics, prepare the right documents, and let you know if anything else is needed.</p>
+  } has prepared a secure seller intake for your property sale.</p>
+                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Please complete your seller profile so your agent can confirm ownership details, property facts, and the documents needed for mandate and listing readiness.</p>
 
                 <div style="margin: 26px 0 0;">${
     renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl, primaryColor)
@@ -541,8 +541,8 @@ function buildPremiumSellerOnboardingInvitationHtml({
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 8px; background: #F7FBF9;">
                   <tr>
                     <td style="padding: 18px; font-family: Arial, Helvetica, sans-serif;">
-                      <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.5; color: #17233A; font-weight: 700;">This usually takes about 8-10 minutes.</p>
-                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">You can complete it on any device. Your information is stored securely in Arch9 and is only shared with authorised people working on your sale.</p>
+                      <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.5; color: #17233A; font-weight: 700;">This usually takes about 8 minutes.</p>
+                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">You can complete it on any device. Your information is stored securely in Arch9 and is shared only with authorised people working on your sale.</p>
                     </td>
                   </tr>
                 </table>
@@ -550,21 +550,27 @@ function buildPremiumSellerOnboardingInvitationHtml({
                 <h2 style="margin: 28px 0 12px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What you will need</h2>
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;">
                   ${
-    renderSimpleBullet("Your contact and ownership details.", primaryColor)
-  }
-                  ${
-    renderSimpleBullet("Basic property information.", primaryColor)
+    renderSimpleBullet(
+      "Your contact, FICA, and ownership details.",
+      primaryColor,
+    )
   }
                   ${
     renderSimpleBullet(
-      "Any property or identity documents you already have available.",
+      "Core property information for the sale record.",
+      primaryColor,
+    )
+  }
+                  ${
+    renderSimpleBullet(
+      "Any mandate, rates, levy, bond, or property documents you already have available.",
       primaryColor,
     )
   }
                 </table>
 
                 <h2 style="margin: 20px 0 8px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What happens after you submit</h2>
-                <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">Your agent will review your answers and contact you if anything needs to be added or corrected. After that, they can prepare the next step for your property sale.</p>
+                <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">Your agent will review your answers, confirm anything outstanding, and prepare the next step in the mandate and listing workflow.</p>
                 <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #64748B;">${
     escapeHtml(expiryCopy)
   }</p>
@@ -729,7 +735,7 @@ export function buildSellerOnboardingEmailHtml({
         "Return to the same secure portal for updates and any follow-up document requests.",
       ]
       : [
-        "Complete your seller information.",
+        "Complete your seller profile.",
         "Upload any available property documents.",
         "Your agent reviews everything and prepares the property for listing.",
         "We'll keep you updated as your sale progresses.",
@@ -807,7 +813,7 @@ export function buildSellerOnboardingEmailHtml({
         ? "Activate your Seller Portal"
         : portalDocumentsMode
         ? "Your seller portal is ready"
-        : "Complete your property profile",
+        : "Complete your seller profile",
     ),
     greeting: `Hi ${sellerName || "there"},`,
     contentHtml,
@@ -890,24 +896,24 @@ export function buildSellerOnboardingEmailText({
       "",
       `Hi ${sellerName || "there"},`,
       "",
-      `${agencyName} needs a few details from you before your property sale can move ahead.`,
-      "Please complete the secure form so your agent can verify the basics, prepare the right documents, and let you know if anything else is needed.",
+      `${agencyName} has prepared a secure seller intake for your property sale.`,
+      "Please complete your seller profile so your agent can confirm ownership details, property facts, and the documents needed for mandate and listing readiness.",
       "",
       `${resolvedCtaLabel}:`,
       onboardingLink,
       "",
-      "This usually takes about 8-10 minutes. You can complete it on any device.",
+      "This usually takes about 8 minutes. You can complete it on any device.",
       "",
       "What you will need:",
-      "1. Your contact and ownership details.",
-      "2. Basic property information.",
-      "3. Any property or identity documents you already have available.",
+      "1. Your contact, FICA, and ownership details.",
+      "2. Core property information for the sale record.",
+      "3. Any mandate, rates, levy, bond, or property documents you already have available.",
       "",
       "What happens after you submit:",
-      "Your agent will review your answers and contact you if anything needs to be added or corrected. After that, they can prepare the next step for your property sale.",
+      "Your agent will review your answers, confirm anything outstanding, and prepare the next step in the mandate and listing workflow.",
       "",
       "Security:",
-      "Your information is stored securely in Arch9 and is only shared with authorised people working on your sale.",
+      "Your information is stored securely in Arch9 and is shared only with authorised people working on your sale.",
       formatExpiryCopy(days),
       "",
       propertyLabel && !isGenericPropertyLabel(propertyLabel)
@@ -964,7 +970,7 @@ export function buildSellerOnboardingEmailText({
         "Return to the same secure portal for updates and any follow-up document requests.",
       ]
       : [
-        "Complete your seller information.",
+        "Complete your seller profile.",
         "Upload any available property documents.",
         "Your agent reviews everything and prepares the property for listing.",
         "We'll keep you updated as your sale progresses.",
