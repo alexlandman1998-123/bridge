@@ -26,7 +26,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Field from '../../components/ui/Field'
 import { useOrganisation } from '../../context/OrganisationContext'
@@ -1642,6 +1642,7 @@ function OverviewRow({ label, value, verified = false }) {
 }
 
 export default function SettingsOrganisationPage({ section = 'organisation' }) {
+  const location = useLocation()
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'bond_originator' ? 'bond' : 'agency')
@@ -1725,13 +1726,21 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   })
   const showBrandingOnly = section === 'branding'
   const hasUnsavedChanges = state && initialState ? JSON.stringify(state) !== JSON.stringify(initialState) : false
-  const showPublicIntakeControls = copyKey === 'agency'
+  const showPublicIntakeControls = copyKey === 'agency' || role === 'agent' || role === 'developer'
   const publicIntakeOrganisationName = useMemo(() => getOrganisationDisplayName(form || {}, onboarding || {}), [form, onboarding])
   const publicIntakeHost = useMemo(() => getCurrentPublicHost(), [])
   const publicIntakeUrls = useMemo(
     () => buildAgencyPublicIntakeUrls({ slug: publicIntakeDraft?.slug || '', host: publicIntakeHost }),
     [publicIntakeDraft?.slug, publicIntakeHost],
   )
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || location.hash !== '#public-intake') return undefined
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('public-intake')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, location.hash, publicIntakeLoading, section, showPublicIntakeControls])
 
   useEffect(() => {
     let active = true
@@ -2522,7 +2531,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               />
 
               {showPublicIntakeControls ? (
-                <>
+                <section id="public-intake" className="scroll-mt-24 space-y-6">
                   <PublicIntakeLinkCard
                     canEdit={canEdit}
                     draft={publicIntakeDraft}
@@ -2543,7 +2552,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     performance={publicIntakePerformance}
                     onRefresh={refreshPublicIntakePerformance}
                   />
-                </>
+                </section>
               ) : null}
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
@@ -2987,7 +2996,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             />
 
             {showPublicIntakeControls ? (
-              <>
+              <section id="public-intake" className="scroll-mt-24 space-y-6">
                 <PublicIntakeLinkCard
                   canEdit={canEdit}
                   draft={publicIntakeDraft}
@@ -3008,7 +3017,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   performance={publicIntakePerformance}
                   onRefresh={refreshPublicIntakePerformance}
                 />
-              </>
+              </section>
             ) : null}
 
             {!showBrandingOnly ? (

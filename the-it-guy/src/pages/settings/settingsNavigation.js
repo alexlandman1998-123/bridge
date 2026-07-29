@@ -4,6 +4,7 @@ import {
   FileText,
   History,
   Mail,
+  Megaphone,
   Palette,
   Shield,
   UserCircle2,
@@ -55,6 +56,15 @@ export const SETTINGS_NAV_GROUPS = [
         roles: ['developer', 'agent', 'attorney', 'bond_originator'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'logo colours colors brand portal reports primary icon dark',
+      },
+      {
+        to: '/settings/branding#public-intake',
+        label: 'Public Intake',
+        description: 'Publish buyer and seller intake links for social media and listing enquiries.',
+        icon: Megaphone,
+        roles: ['developer', 'agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'public intake buyer seller social media link enquiries crm lead capture agency website instagram facebook qr',
       },
       {
         to: '/settings/legal-templates',
