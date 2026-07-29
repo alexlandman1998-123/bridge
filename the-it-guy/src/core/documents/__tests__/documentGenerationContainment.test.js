@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isDefaultTemplateRouteFallback,
+  mandateTemplateSelectionMatchesSpecificRoute,
   resolveDocumentConversionHealthPolicy,
   resolvePdfRenderablePacketType,
   resolveSignableTemplatePolicy,
+  selectSignableMandateRouteSelection,
 } from '../documentGenerationContainment.js'
 
 const publishedMandate = {
@@ -108,6 +110,43 @@ test('allows default boilerplate fallbacks while rejecting non-default generic f
       resolutionSource: 'global_default',
     }).ok,
     true,
+  )
+})
+
+test('prefers an allowed platform fallback over a generic org fallback for signable mandate routing', () => {
+  const routeSpecificSelection = {
+    template: { ...publishedMandate, id: 'route-specific' },
+    score: 1005,
+    reasons: ['exact_variant_metadata'],
+  }
+  const orgGenericSelection = {
+    template: {
+      ...publishedMandate,
+      id: 'org-generic',
+      is_default: true,
+      metadata_json: {
+        mandate_template_variant: 'default',
+        template_scope: 'organisation',
+      },
+    },
+    score: 5,
+    reasons: ['wildcard_route'],
+  }
+  const platformFallbackSelection = {
+    template: platformDefaultMandate,
+    score: 5,
+    reasons: ['wildcard_route'],
+  }
+
+  assert.equal(mandateTemplateSelectionMatchesSpecificRoute(routeSpecificSelection), true)
+  assert.equal(mandateTemplateSelectionMatchesSpecificRoute(orgGenericSelection), false)
+  assert.equal(
+    selectSignableMandateRouteSelection([orgGenericSelection, platformFallbackSelection]).template.id,
+    platformDefaultMandate.id,
+  )
+  assert.equal(
+    selectSignableMandateRouteSelection([orgGenericSelection, platformFallbackSelection, routeSpecificSelection]).template.id,
+    'route-specific',
   )
 })
 

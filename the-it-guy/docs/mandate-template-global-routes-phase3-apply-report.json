@@ -1,0 +1,3732 @@
+{
+  "mode": "apply",
+  "status": "RELEASED",
+  "mutatedData": true,
+  "projectRef": "isdowlnollckzvltkasn",
+  "version": "mandate_global_routes_phase3_publish_approval_v1",
+  "phase2Version": "mandate_global_routes_phase2_v1",
+  "routeCount": 8,
+  "actionCount": 0,
+  "sourceTemplateId": "a52e6404-d597-413b-a5d3-ddbd8129461b",
+  "sourceTemplateKey": "mandate_default_v1",
+  "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+  "blockers": [],
+  "targetPlans": [
+    {
+      "routeKey": "company_full_title",
+      "routeLabel": "Company + Full Title",
+      "templateKey": "mandate_company_full_title_v1",
+      "templateId": "613f55be-c53b-4041-a5cc-de9a92677545",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:d65d415014e623b6eb771d83e7ee75f6f1d370429f86f4a2b2a13b62d93b6a91",
+      "reviewEvidenceDigest": "sha256:612f2f35961bb7de170cfbb9a6db7c9eacba09216ac19dc775056f819585175b",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "company_sectional_title",
+      "routeLabel": "Company + Sectional Title",
+      "templateKey": "mandate_company_sectional_title_v1",
+      "templateId": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:b08391426fdbb06e09ba8b0204e2ce72261c2a094a673af46bc57df08b86a997",
+      "reviewEvidenceDigest": "sha256:0cb034d2ea9dd11e5aa311d2d0141167f4339017f15d56c139c7717612468b8d",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "trust_full_title",
+      "routeLabel": "Trust + Full Title",
+      "templateKey": "mandate_trust_full_title_v1",
+      "templateId": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:76a31dcb518d5aa9a672a2d3aedfa824d8a26f9e80e9ccd316914ded2b44e45c",
+      "reviewEvidenceDigest": "sha256:f9c1a0d0e46d4ef6459a0a40e51888a4495b3567828f8a7a46c629ac58b69c99",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "trust_sectional_title",
+      "routeLabel": "Trust + Sectional Title",
+      "templateKey": "mandate_trust_sectional_title_v1",
+      "templateId": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:be7cab3f56a5dd1fbc67a52dc303eba07c7af775ff1af3be6d29c5cfc7f636f4",
+      "reviewEvidenceDigest": "sha256:fb7b637cae434aa38b4418618443ef23130903d5e86f8624c2f6ca91f9f01f84",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "individual_full_title",
+      "routeLabel": "Individual + Full Title",
+      "templateKey": "mandate_individual_full_title_v1",
+      "templateId": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:13d1c2c99572354bdbeed7747259e70d6ad6252e382f94918cdc9c900a526b85",
+      "reviewEvidenceDigest": "sha256:269823b86e35385fd220e242cdd9a8e0b378320f282f11289c653ad65fa41314",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "individual_sectional_title",
+      "routeLabel": "Individual + Sectional Title",
+      "templateKey": "mandate_individual_sectional_title_v1",
+      "templateId": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 12,
+      "expectedSectionCount": 12,
+      "contentDigest": "sha256:7045a85a60a0ae48231240215f8dbe533859f9f43074c5902b08b00e21fc1204",
+      "reviewEvidenceDigest": "sha256:7b92e8b002319452eb0b68fac16d278ce43efda992fb355ecfb84055ba3b0bbe",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "individual_spouse_consent_full_title",
+      "routeLabel": "Married ICOP + Full Title",
+      "templateKey": "mandate_individual_spouse_consent_full_title_v1",
+      "templateId": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 13,
+      "expectedSectionCount": 13,
+      "contentDigest": "sha256:c7f2bd92032872e225253cff9b829e57ffdad8f97116960f17c8e2c51a3e600b",
+      "reviewEvidenceDigest": "sha256:0177afe82a8f5657b0a8db606508ff719e5c1421939c4d94fd9ab70590c6d4fe",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    },
+    {
+      "routeKey": "individual_spouse_consent_sectional_title",
+      "routeLabel": "Married ICOP + Sectional Title",
+      "templateKey": "mandate_individual_spouse_consent_sectional_title_v1",
+      "templateId": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+      "existingStatus": "published",
+      "isActive": true,
+      "isDefault": false,
+      "sectionCount": 13,
+      "expectedSectionCount": 13,
+      "contentDigest": "sha256:2b46571275dfff7564048f9150f009ccef7a10aa64b2e4e013ffc30b7ce007b2",
+      "reviewEvidenceDigest": "sha256:72c4b8c53c30077a33136780b9b0d64a27a3ce381569f9d9ad47fa6a4e796e7a",
+      "b1ManifestDigest": "sha256:b0d8f3e77c395867bf1517f44434578ff127860f8ac5a7839a9d9df90074ab9d",
+      "action": "already_released",
+      "ready": true,
+      "blockers": [],
+      "provenanceCount": 1
+    }
+  ],
+  "applied": {
+    "appliedAt": "2026-07-29T12:50:34.066Z",
+    "published": [],
+    "b3Approvals": [],
+    "b3Result": null,
+    "versions": [
+      {
+        "templateId": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "versionTag": "global-route-phase2-v1"
+      },
+      {
+        "templateId": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "versionTag": "global-route-phase2-v1"
+      }
+    ],
+    "routeSections": [
+      {
+        "id": "e850ae36-b92c-4ac9-a992-8fa6fba833c0",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "fd66bc84-ebca-4e30-9f11-a544dc518098",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "6b6e6ab0-ae17-416c-9870-e38abb3e6633",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "941cdf76-623a-4d05-b161-a7819512edea",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "4214891a-a0b6-42cb-8d84-9be6b3460213",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "3a4e4046-3511-4a42-acb9-bc9cd9629896",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "2bc9e355-df44-4269-a409-3235ffcf1319",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "e6057d5a-05a9-4769-8f05-5d73bf4671a1",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "introduction_purpose",
+        "section_label": "Introduction and Purpose",
+        "section_type": "legal_text",
+        "sort_order": 0,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_introduction_purpose"
+        ],
+        "legal_text": "MANDATE AGREEMENT\n\nThis mandate records the appointment of {{agency_legal_name}} and {{agent_full_name}} to market and negotiate the sale of the property described in this document.\n\nThe Seller confirms that the information supplied for this mandate is true and that the Seller has authority to grant the mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 1,
+          "section_title": "Introduction and Purpose",
+          "required_placeholders": [
+            "mandate_introduction_purpose"
+          ],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "3af74b87-a68f-4b45-8b8f-b93681fe327c",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "ba97b819-df75-449f-9a89-85442ed4f52f",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "2e8e393f-84ef-4360-bc84-8b0285e72314",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "01830c38-bfbe-4c5b-8f61-6578e9546c6f",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "c74981b6-c117-46f1-bdb5-301731f59123",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "d4f8c463-bd60-4d9e-b9f4-48cdcbed42cf",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "d69a78a2-7148-4045-a271-0d85067de162",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "01c88e3b-3b35-4cfb-9b8b-cdefa551eb77",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "parties",
+        "section_label": "Parties",
+        "section_type": "dynamic_fields",
+        "sort_order": 5,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name",
+          "seller_id_number",
+          "seller_email",
+          "agent_full_name",
+          "organisation_name"
+        ],
+        "legal_text": "SELLER\n\nSeller: {{seller_full_name}}\nIdentity / Registration Number: {{seller_id_number}}\nEntity Type: {{seller_entity_type}}\nDomicilium Address: {{seller_domicilium_address}}\nEmail: {{seller_email}}\nTelephone: {{seller_phone}}\n\nAGENCY AND AGENT\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nAgent Email: {{agent_email}}\nAgent Phone: {{agent_phone}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 2,
+          "section_title": "Parties",
+          "required_placeholders": [
+            "seller_full_name",
+            "agent_full_name",
+            "organisation_name"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "003f1d4d-7f7e-48e0-a916-1bffd05927ea",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "seller_individual_capacity_pack",
+        "section_label": "Seller Individual Capacity Pack",
+        "section_type": "legal_text",
+        "sort_order": 20,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_marital_status"
+        ],
+        "legal_text": "SELLER INDIVIDUAL CAPACITY\n\nThe Seller warrants that the recorded marital status is correct and that the Seller has full contractual capacity.\n\nSeller Marital Status\n{{seller_marital_status}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "1764cf99-e0c2-465f-a26e-1f99781e493c",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "seller_individual_capacity_pack",
+        "section_label": "Seller Individual Capacity Pack",
+        "section_type": "legal_text",
+        "sort_order": 20,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_marital_status"
+        ],
+        "legal_text": "SELLER INDIVIDUAL CAPACITY\n\nThe Seller warrants that the recorded marital status is correct and that the Seller has full contractual capacity.\n\nSeller Marital Status\n{{seller_marital_status}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "c69d869d-d745-4cfe-889b-48cbb0d820a1",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "seller_individual_capacity_pack",
+        "section_label": "Seller Individual Capacity Pack",
+        "section_type": "legal_text",
+        "sort_order": 20,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_marital_status"
+        ],
+        "legal_text": "SELLER INDIVIDUAL CAPACITY\n\nThe Seller warrants that the recorded marital status is correct and that the Seller has full contractual capacity.\n\nSeller Marital Status\n{{seller_marital_status}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "d87582b8-1544-4abf-9147-640aa42b4423",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "seller_individual_capacity_pack",
+        "section_label": "Seller Individual Capacity Pack",
+        "section_type": "legal_text",
+        "sort_order": 20,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_marital_status"
+        ],
+        "legal_text": "SELLER INDIVIDUAL CAPACITY\n\nThe Seller warrants that the recorded marital status is correct and that the Seller has full contractual capacity.\n\nSeller Marital Status\n{{seller_marital_status}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "0c154710-773e-4777-b6b9-8e5e06515176",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "seller_company_authority_pack",
+        "section_label": "Seller Company Authority Pack",
+        "section_type": "legal_text",
+        "sort_order": 21,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_company_registration_number",
+          "seller_representative_name",
+          "seller_representative_capacity",
+          "seller_resolution_date",
+          "seller_authority_basis"
+        ],
+        "legal_text": "SELLER COMPANY AUTHORITY\n\nWhere the Seller is a company or close corporation, the signatory warrants that they are duly authorised to bind the Seller.\n\nRegistration Number: {{seller_company_registration_number}}\nRepresentative: {{seller_representative_name}}\nCapacity: {{seller_representative_capacity}}\nResolution Date: {{seller_resolution_date}}\nAuthority Basis: {{seller_authority_basis}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "58a0bfd9-0d90-4e54-bf8c-58b8911e6fcb",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "seller_company_authority_pack",
+        "section_label": "Seller Company Authority Pack",
+        "section_type": "legal_text",
+        "sort_order": 21,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_company_registration_number",
+          "seller_representative_name",
+          "seller_representative_capacity",
+          "seller_resolution_date",
+          "seller_authority_basis"
+        ],
+        "legal_text": "SELLER COMPANY AUTHORITY\n\nWhere the Seller is a company or close corporation, the signatory warrants that they are duly authorised to bind the Seller.\n\nRegistration Number: {{seller_company_registration_number}}\nRepresentative: {{seller_representative_name}}\nCapacity: {{seller_representative_capacity}}\nResolution Date: {{seller_resolution_date}}\nAuthority Basis: {{seller_authority_basis}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "company_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "46ca5784-9b88-404b-9149-cdcfd676abe7",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "seller_trust_authority_pack",
+        "section_label": "Seller Trust Authority Pack",
+        "section_type": "legal_text",
+        "sort_order": 22,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_trust_registration_number",
+          "seller_trustee_names",
+          "seller_representative_name",
+          "seller_representative_capacity",
+          "seller_authority_basis"
+        ],
+        "legal_text": "SELLER TRUST AUTHORITY\n\nThe trustees or authorised representative warrant that the trust is duly authorised to enter into this document.\n\nTrust Registration Number: {{seller_trust_registration_number}}\nTrustees: {{seller_trustee_names}}\nRepresentative: {{seller_representative_name}}\nCapacity: {{seller_representative_capacity}}\nAuthority Basis: {{seller_authority_basis}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "14418455-0b3b-4dc3-bbd4-bd88f52c4b08",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "seller_trust_authority_pack",
+        "section_label": "Seller Trust Authority Pack",
+        "section_type": "legal_text",
+        "sort_order": 22,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_entity_type",
+          "seller_trust_registration_number",
+          "seller_trustee_names",
+          "seller_representative_name",
+          "seller_representative_capacity",
+          "seller_authority_basis"
+        ],
+        "legal_text": "SELLER TRUST AUTHORITY\n\nThe trustees or authorised representative warrant that the trust is duly authorised to enter into this document.\n\nTrust Registration Number: {{seller_trust_registration_number}}\nTrustees: {{seller_trustee_names}}\nRepresentative: {{seller_representative_name}}\nCapacity: {{seller_representative_capacity}}\nAuthority Basis: {{seller_authority_basis}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "trust_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "9cb3b427-31f8-4445-aa34-3d44ca9ec537",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "seller_spouse_consent_pack",
+        "section_label": "Seller Spouse Consent Pack",
+        "section_type": "legal_text",
+        "sort_order": 23,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_spouse_consent_required",
+          "seller_spouse_full_name",
+          "seller_spouse_id_number",
+          "seller_spouse_email"
+        ],
+        "legal_text": "SELLER SPOUSE CONSENT\n\nThe Seller spouse recorded below consents to this document and will sign where required.\n\nSpouse: {{seller_spouse_full_name}}\nID Number: {{seller_spouse_id_number}}\nEmail: {{seller_spouse_email}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "0a67bd83-a417-4d46-b389-c1976e2e74e4",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "seller_spouse_consent_pack",
+        "section_label": "Seller Spouse Consent Pack",
+        "section_type": "legal_text",
+        "sort_order": 23,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_spouse_consent_required",
+          "seller_spouse_full_name",
+          "seller_spouse_id_number",
+          "seller_spouse_email"
+        ],
+        "legal_text": "SELLER SPOUSE CONSENT\n\nThe Seller spouse recorded below consents to this document and will sign where required.\n\nSpouse: {{seller_spouse_full_name}}\nID Number: {{seller_spouse_id_number}}\nEmail: {{seller_spouse_email}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "522ddfb9-3b7e-4bfd-8b43-f31e562bdced",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "a6077835-b66e-48dd-bae0-5fd2c1b78c4c",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "6e1dff62-4f61-4f50-8281-fa6a0106864c",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "5df2b9b5-04a5-4c01-bba9-425734aae521",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "132ac755-044a-4e9f-b7e3-3dca306ad07c",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "fc2e64cb-89eb-4441-aef0-15a8811e03e1",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "aa115bbf-fb0a-4f75-9a3d-b40f63f49dd3",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "ca1a776e-f101-4f5f-82fe-3b5ac7606013",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "property_details",
+        "section_label": "Property Details",
+        "section_type": "dynamic_fields",
+        "sort_order": 35,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_address",
+          "property_type"
+        ],
+        "legal_text": "PROPERTY\n\nAddress: {{property_address}}\nDisplay Address: {{property_display_address}}\nSuburb / City: {{property_suburb}} {{property_city}}\nProperty Type: {{property_type}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 3,
+          "section_title": "Property Details",
+          "required_placeholders": [
+            "property_address"
+          ],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "62b30efa-3643-43b4-b177-51eb6dc97430",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "property_full_title_pack",
+        "section_label": "Full Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 40,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "erf_number",
+          "erf_size",
+          "floor_size",
+          "property_estate_name"
+        ],
+        "legal_text": "FULL TITLE PROPERTY DETAILS\n\nErf Number: {{erf_number}}\nErf Size: {{erf_size}}\nFloor Size: {{floor_size}}\nEstate / HOA: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "c8cffe28-3c95-47b7-9186-5201c0a9b43d",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "property_full_title_pack",
+        "section_label": "Full Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 40,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "erf_number",
+          "erf_size",
+          "floor_size",
+          "property_estate_name"
+        ],
+        "legal_text": "FULL TITLE PROPERTY DETAILS\n\nErf Number: {{erf_number}}\nErf Size: {{erf_size}}\nFloor Size: {{floor_size}}\nEstate / HOA: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "company_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "0e61044a-6591-4136-867a-d29c152ccc5a",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "property_full_title_pack",
+        "section_label": "Full Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 40,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "erf_number",
+          "erf_size",
+          "floor_size",
+          "property_estate_name"
+        ],
+        "legal_text": "FULL TITLE PROPERTY DETAILS\n\nErf Number: {{erf_number}}\nErf Size: {{erf_size}}\nFloor Size: {{floor_size}}\nEstate / HOA: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "60238afd-b631-4f3c-a36c-33e9b46c3fa8",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "property_full_title_pack",
+        "section_label": "Full Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 40,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "erf_number",
+          "erf_size",
+          "floor_size",
+          "property_estate_name"
+        ],
+        "legal_text": "FULL TITLE PROPERTY DETAILS\n\nErf Number: {{erf_number}}\nErf Size: {{erf_size}}\nFloor Size: {{floor_size}}\nEstate / HOA: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "trust_full_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "7c83851a-151e-4be3-b9be-5d43d273d679",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "property_sectional_title_pack",
+        "section_label": "Sectional Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 41,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "property_unit_number",
+          "property_section_number",
+          "sectional_title_number",
+          "property_complex_name",
+          "property_estate_name"
+        ],
+        "legal_text": "SECTIONAL TITLE PROPERTY DETAILS\n\nUnit Number: {{property_unit_number}}\nSection Number: {{property_section_number}}\nSectional Title Number: {{sectional_title_number}}\nScheme / Complex: {{property_complex_name}}\nEstate: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "dc807a6d-b307-48a8-9b13-d56efe9a0ac2",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "property_sectional_title_pack",
+        "section_label": "Sectional Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 41,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "property_unit_number",
+          "property_section_number",
+          "sectional_title_number",
+          "property_complex_name",
+          "property_estate_name"
+        ],
+        "legal_text": "SECTIONAL TITLE PROPERTY DETAILS\n\nUnit Number: {{property_unit_number}}\nSection Number: {{property_section_number}}\nSectional Title Number: {{sectional_title_number}}\nScheme / Complex: {{property_complex_name}}\nEstate: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "909d44d8-696e-4388-9bfd-b35b0106151d",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "property_sectional_title_pack",
+        "section_label": "Sectional Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 41,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "property_unit_number",
+          "property_section_number",
+          "sectional_title_number",
+          "property_complex_name",
+          "property_estate_name"
+        ],
+        "legal_text": "SECTIONAL TITLE PROPERTY DETAILS\n\nUnit Number: {{property_unit_number}}\nSection Number: {{property_section_number}}\nSectional Title Number: {{sectional_title_number}}\nScheme / Complex: {{property_complex_name}}\nEstate: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "056ac250-719d-40af-8155-2c5fb08fdd0d",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "property_sectional_title_pack",
+        "section_label": "Sectional Title Property Pack",
+        "section_type": "legal_text",
+        "sort_order": 41,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "property_title_type",
+          "property_unit_number",
+          "property_section_number",
+          "sectional_title_number",
+          "property_complex_name",
+          "property_estate_name"
+        ],
+        "legal_text": "SECTIONAL TITLE PROPERTY DETAILS\n\nUnit Number: {{property_unit_number}}\nSection Number: {{property_section_number}}\nSectional Title Number: {{sectional_title_number}}\nScheme / Complex: {{property_complex_name}}\nEstate: {{property_estate_name}}",
+        "metadata_json": {
+          "editable": true,
+          "conditional_pack": true,
+          "condition_rule_locked": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "conditional-master-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "conditional_master_version": "conditional-master-v1",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "cd4d47f2-8b8e-45c4-8856-71c77a5d23f7",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "bb83bbf0-e9ef-42e7-827f-583d2f11392a",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "2f7e5188-3a52-4913-b717-90a0b52597c3",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "8e8d1f93-00b1-417a-ac50-8df425d4f919",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "da59df06-9cf8-4c2d-9131-e9ac05c13d1d",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "d3cefb0a-1b9a-475a-b948-c1869ca0d963",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "8af6bc8d-c7a6-49f1-b58b-c6ac1f4fe555",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "b845b5f8-bc54-4058-9d2d-84c12e984782",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "mandate_terms",
+        "section_label": "Mandate Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 60,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "mandate_type",
+          "mandate_start_date",
+          "mandate_end_date",
+          "mandate_authority_granted",
+          "transfer_attorney_company_name",
+          "transfer_attorney_contact_person",
+          "transfer_attorney_email",
+          "transfer_attorney_phone"
+        ],
+        "legal_text": "MANDATE TERMS\n\nMandate Type: {{mandate_type}}\nStart Date: {{mandate_start_date}}\nEnd Date: {{mandate_end_date}}\n\nThe Seller grants the Agency authority to market the Property, introduce prospective purchasers, arrange viewings, receive offers, and assist with transaction administration according to the mandate type selected above.\n\nAuthority Granted: {{mandate_authority_granted}}\nAccess Instructions: {{mandate_access_instructions}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 4,
+          "section_title": "Mandate Terms",
+          "required_placeholders": [
+            "mandate_type",
+            "mandate_authority_granted"
+          ],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "2ae0905d-90f2-420f-97fb-6d8649999901",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "6bcf31b0-9199-4d12-914c-b988015944d5",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "f1890127-4c59-470c-84ae-cd633f899c8e",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "e52beefb-0736-44b8-a848-405644a54155",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "b7f4a595-2ba7-486e-9bc9-5260040fcb34",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "0ece3026-7ad3-4d6b-83c5-1c892e818f6c",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "6972bd03-b222-4e18-b7fd-fa38b70ba6d4",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "def780bc-d3e5-4dfd-b5dc-c90312efe55e",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "commission_terms",
+        "section_label": "Commission Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 61,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "commission_structure",
+          "mandate_commission_percent",
+          "mandate_commission_amount",
+          "vat_handling",
+          "asking_price"
+        ],
+        "legal_text": "COMMISSION\n\nAsking Price: {{asking_price}}\nCommission Structure: {{commission_structure}}\nCommission Percentage: {{mandate_commission_percent}}\nCommission Amount: {{mandate_commission_amount}}\nVAT Treatment: {{vat_handling}}\n\nCommission is earned and payable according to the agreed commission structure when the Seller accepts an offer introduced by the Agency or where commission is otherwise due under this mandate.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 5,
+          "section_title": "Commission Terms",
+          "required_placeholders": [
+            "commission_structure"
+          ],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "c14f4621-9bab-4b85-89b9-a4530a8714f5",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "21176b86-bb73-40ee-9df4-2e4b44118090",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "ce7966ea-506e-4ea4-82c8-61ff1d494c32",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "fc1530e3-3517-4c75-bab9-6aacdc68ee0f",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "0344e53d-3f9b-4619-8a48-e10c8eee911b",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "2f834d76-26b0-4744-98a7-4b414b6b3bd7",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "706f07e9-9e99-4743-9cad-7dcc3f523b87",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "6f751fd9-2f13-447a-beb0-ac9d505e49f2",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "marketing_listing_terms",
+        "section_label": "Marketing / Listing Terms",
+        "section_type": "dynamic_fields",
+        "sort_order": 62,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "asking_price",
+          "mandate_marketing_permissions",
+          "mandate_access_instructions"
+        ],
+        "legal_text": "MARKETING AND LISTING\n\nMarketing Permissions: {{mandate_marketing_permissions}}\nViewing / Access Arrangements: {{mandate_access_instructions}}\n\nThe Agency may prepare marketing material, publish the listing on approved channels, contact prospective purchasers, and present the Property in a professional manner consistent with the Seller instructions.",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 6,
+          "section_title": "Marketing / Listing Terms",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "a972e559-832f-4a51-ada9-2166f72049bb",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "dd7a4b56-f574-4aca-aef6-6478db78d381",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "834ae16a-9443-4101-bd7c-c52c5781437f",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "bf951a33-6147-49e3-a211-ec4c951b6932",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "12db3cbf-db07-4dee-8a4c-6c8d553192de",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "55e17514-50dd-47c4-8db3-22d911176769",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "5eac63f8-3d6c-49c1-a115-a654d6e36687",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "e720a787-9b7b-4f79-b92e-5021d1a70d71",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "special_conditions",
+        "section_label": "Special Conditions",
+        "section_type": "dynamic_fields",
+        "sort_order": 80,
+        "is_required": false,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "special_conditions"
+        ],
+        "legal_text": "SPECIAL CONDITIONS\n\n{{special_conditions}}\n\nAnnexures:\n{{annexures_list}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "section_order": 7,
+          "section_title": "Special Conditions",
+          "required_placeholders": [],
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "eda1d635-91ec-4192-a09d-9c70ab122666",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "c1e380d0-08ff-43c5-a6a1-c1dc0787fccd",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "d0696202-02bb-4e75-b33b-be61d8da5e41",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "448e6622-f427-4dd7-a8ba-2a38d0762c93",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "2abc52da-edec-4fd8-917f-c30063229711",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "f19f07c6-9a10-4d06-ae8f-d276c2b37619",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "8e861a69-19e3-4b8f-b8be-b5899e9e1290",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "4de6473b-064d-4eab-90a4-3b464b29b4fe",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "general_terms",
+        "section_label": "General Legal Terms",
+        "section_type": "legal_text",
+        "sort_order": 81,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "document_reference"
+        ],
+        "legal_text": "GENERAL TERMS\n\nThis mandate is governed by South African law. The parties choose their recorded addresses as domicilium for notices unless changed in writing.\n\nNo amendment, cancellation or waiver is valid unless recorded in writing and accepted by the parties. If any provision is unenforceable, the remaining provisions continue to apply.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "f7c4922a-7cfa-485c-ba2e-8fb3848e83ac",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "8a128b50-257c-48d8-aa83-f2200e00d16f",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "6fdf4ccf-904e-41f8-9b7f-aaf1af30f8dc",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "26741dba-a7f1-4bca-8917-9d60e7474bf7",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "3644afd4-9615-4547-a887-e314db49a495",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      },
+      {
+        "id": "25a65c22-f959-4c9e-9d77-15d81d186e1f",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "72f18870-a395-4775-ac32-6638e43bea73",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "d919d29a-24f8-4c45-9778-a70811ac0375",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "popia_fica",
+        "section_label": "POPIA and FICA",
+        "section_type": "legal_text",
+        "sort_order": 82,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "POPIA AND FICA\n\nThe Seller consents to the processing of personal information reasonably required for marketing, mandate administration, FICA verification, transaction communication, record keeping and related property services.",
+        "metadata_json": {
+          "editable": true,
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "5e7a0894-49fe-414f-9688-54bf7c8f669a",
+        "template_id": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "individual_spouse_consent_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:52.766507+00:00",
+        "updated_at": "2026-07-29T12:37:52.766507+00:00"
+      },
+      {
+        "id": "05804593-893a-4d07-b30e-8381d11080c1",
+        "template_id": "613f55be-c53b-4041-a5cc-de9a92677545",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "company_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:42.718202+00:00",
+        "updated_at": "2026-07-29T12:37:42.718202+00:00"
+      },
+      {
+        "id": "073c06ca-a415-4168-913e-aeb4e2b1dc3b",
+        "template_id": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "individual_spouse_consent_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_spouse_consent_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:51.503139+00:00",
+        "updated_at": "2026-07-29T12:37:51.503139+00:00"
+      },
+      {
+        "id": "8a8d4450-b45b-451a-aac2-73b0ac2738fa",
+        "template_id": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "trust_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:47.096012+00:00",
+        "updated_at": "2026-07-29T12:37:47.096012+00:00"
+      },
+      {
+        "id": "c36ed7ee-6b25-4752-9a68-303b53432c13",
+        "template_id": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "trust_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "trust_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:45.534922+00:00",
+        "updated_at": "2026-07-29T12:37:45.534922+00:00"
+      },
+      {
+        "id": "368d5b2a-ba48-42e2-a499-f66aeb6d9a40",
+        "template_id": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "company_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "company_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:44.18917+00:00",
+        "updated_at": "2026-07-29T12:37:44.18917+00:00"
+      },
+      {
+        "id": "1a4139b2-93d8-49dd-983b-f06c65fa98c4",
+        "template_id": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "individual_full_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_full_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:48.336568+00:00",
+        "updated_at": "2026-07-29T12:37:48.336568+00:00"
+      },
+      {
+        "id": "e142825a-568a-41d7-9f33-beb1250b2253",
+        "template_id": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+        "section_key": "signature_pages",
+        "section_label": "Signature Pages",
+        "section_type": "signature_zone",
+        "sort_order": 100,
+        "is_required": true,
+        "is_repeatable": false,
+        "condition_json": {},
+        "placeholder_keys": [
+          "seller_full_name"
+        ],
+        "legal_text": "SIGNATURES\n\nSeller: {{seller_full_name}}\nSignature: {{seller_signature}}\nInitials: {{seller_initials}}\nDate: {{signed_date}}\n\nWitness: {{witness_signature}}\n\nAgency: {{organisation_name}}\nAgent: {{agent_full_name}}\nFFC Number: {{agent_ffc_number}}",
+        "metadata_json": {
+          "editable": true,
+          "editable_by": [
+            "principal",
+            "super_admin",
+            "admin",
+            "agent"
+          ],
+          "signer_roles": [
+            "seller",
+            "agent",
+            "seller_spouse",
+            "witness"
+          ],
+          "section_order": 8,
+          "section_title": "Signature Pages",
+          "required_placeholders": [
+            "seller_full_name"
+          ],
+          "visible_signing_block": true,
+          "mandateTemplateVariant": "individual_sectional_title",
+          "starter_content_version": "b2-v1",
+          "mandate_template_variant": "individual_sectional_title",
+          "content_gate_repair_version": "mandate-content-gate-v2",
+          "empty_legacy_content_repaired": true,
+          "mandate_global_route_phase2_version": "mandate_global_routes_phase2_v1"
+        },
+        "created_at": "2026-07-29T12:37:50.000089+00:00",
+        "updated_at": "2026-07-29T12:37:50.000089+00:00"
+      }
+    ]
+  }
+}

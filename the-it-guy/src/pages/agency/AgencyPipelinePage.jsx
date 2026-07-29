@@ -13975,12 +13975,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </button>
                     </div>
                     <div className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
-                      <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(520px,1.25fr)] xl:items-center">
+                      <div className="grid gap-6 xl:grid-cols-[minmax(320px,1fr)_auto] xl:items-start">
                         <div className="flex min-w-0 items-center gap-5">
-                          <span className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-[#0b2b4c] text-[1.45rem] font-semibold text-white shadow-[0_12px_24px_rgba(11,43,76,0.18)]">
+                          <span className="grid h-16 w-16 shrink-0 place-items-center rounded-[18px] bg-[#0b2b4c] text-[1.25rem] font-semibold text-white shadow-[0_12px_24px_rgba(11,43,76,0.18)]">
                             {getInitials(selectedLeadDisplayName)}
                           </span>
                           <div className="min-w-0">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7d91a8]">Buyer Lead</p>
                             <div className="flex flex-wrap items-center gap-2">
                               <h1 className="truncate text-[2rem] font-semibold leading-tight text-[#102033]" title={selectedLeadDisplayName}>
                                 {selectedLeadDisplayName}
@@ -14002,35 +14003,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                          {[
-                            ['Buyer Score', selectedLeadBuyerScore, selectedLeadBuyerScore >= 80 ? 'High Potential' : selectedLeadBuyerScore >= 62 ? 'Qualified' : 'Needs Nurture', Gauge],
-                            ['Budget Range', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs capture' : 'Active band', Home],
-                            ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, 'Active signals', Bookmark],
-                            ['Match Score', `${selectedLeadBuyerMatchScore}%`, selectedLeadBuyerMatchScore >= 86 ? 'Strong fit' : 'Good fit', TrendingUp],
-                            ['Urgency', selectedLeadBuyerUrgency, selectedLeadBuyerUrgency === 'High' ? 'Act now' : 'Monitor', Zap],
-                          ].map(([label, value, descriptor, Icon]) => (
-                            <div key={label} className="min-h-[96px] rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4 shadow-[0_8px_18px_rgba(31,54,78,0.025)]">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="truncate text-[12px] font-semibold text-[#526b84]">{label}</p>
-                                {createElement(Icon, { className: 'h-4 w-4 text-[#2f6fb3]' })}
-                              </div>
-                              <p className="mt-3 truncate text-[24px] font-semibold leading-none text-[#102033]" title={String(value)}>{value}</p>
-                              <p className="mt-2 truncate text-[12px] font-medium text-[#6d839b]">{descriptor}</p>
-                            </div>
-                          ))}
+                        <div className="flex min-w-0 flex-col gap-3 xl:items-end">
+                          <div className="inline-flex min-h-11 min-w-0 items-center gap-3 rounded-[14px] border border-[#dbe7f2] bg-[#f8fbff] px-3.5 py-2 text-left text-[#315b7a] shadow-sm">
+                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-white text-current shadow-sm">
+                              <UserRound className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">Assigned Agent</span>
+                              <span className="mt-0.5 block max-w-[220px] truncate text-sm font-semibold">{selectedLeadAssignedAgentLabel}</span>
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 xl:justify-end">
+                            {[
+                              ['Buyer', 'overview'],
+                              ['Matches', 'properties'],
+                              ['Viewings', 'appointments'],
+                              ['Offers', 'offers'],
+                              ['Activity', 'activity'],
+                            ].map(([label, tab]) => (
+                              <button
+                                key={label}
+                                type="button"
+                                onClick={() => setLeadWorkspaceTab(tab)}
+                                className="inline-flex min-h-9 items-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#60758b] shadow-sm transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#163247]"
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="mt-6 grid gap-4 border-t border-[#e5edf6] pt-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="mt-6 space-y-4 border-t border-[#e5edf6] pt-5">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           {[
                             ['Phone', selectedLeadContact?.phone || selectedLead?.phone || 'No phone', Phone],
                             ['Email', selectedLeadContact?.email || selectedLead?.email || 'No email', Mail],
-                            ['Assigned Agent', selectedLeadAssignedAgentLabel, UserRound],
+                            ['Budget', selectedLeadBuyerBudgetLabel, Home],
                             ['Lead Source', selectedLead?.leadSource || 'Not captured', MessageCircle],
                           ].map(([label, value, Icon]) => (
-                            <div key={label} className="flex min-w-0 items-center gap-3">
+                            <div key={label} className="flex min-w-0 items-center gap-3 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5">
                               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#f1f6fb] text-[#315b7a]">
                                 {createElement(Icon, { className: 'h-4 w-4' })}
                               </span>
@@ -14042,7 +14054,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ))}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                           <a
                             href={normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? `tel:${selectedLeadContact?.phone || selectedLead?.phone}` : undefined}
                             className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d2dfec] bg-white px-4 text-sm font-semibold text-[#20364c] shadow-sm transition hover:border-[#aebfd0] ${normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? '' : 'pointer-events-none opacity-50'}`}
@@ -14665,9 +14677,76 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </section>
               {selectedLead && !selectedLeadIsSeller ? (
                 <>
+                  <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <article className="min-h-[210px] rounded-[20px] border border-[#f0d8a8] bg-[#fffaf0] p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <div className="flex h-full min-w-0 flex-col justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#efd18f] bg-white text-[#b76e00]">
+                              <Zap className="h-4 w-4" />
+                            </span>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#60758b]">Next Best Action</p>
+                          </div>
+                          <h2 className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-[#102033]">
+                            {selectedLeadOpenActions.nextDueAction?.label || selectedLeadFinanceReadinessSummary.nextRecommendedAction || 'Keep buyer momentum warm'}
+                          </h2>
+                          <p className="mt-2 text-sm font-medium leading-6 text-[#60758b]">
+                            {selectedLeadOpenActions.nextDueAction?.meta ||
+                              selectedLeadFinanceInsights.recommendations?.[0] ||
+                              'Review the buyer brief, send matching listings, or schedule the next viewing.'}
+                          </p>
+                        </div>
+                        <Button type="button" size="sm" className="min-h-11 w-full rounded-[12px] bg-[#0b2b4c] px-5 shadow-[0_12px_24px_rgba(11,43,76,0.18)] hover:bg-[#08243f] sm:w-fit" onClick={handleBuyerCommandSendListings}>
+                          Send Listings
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </article>
+
+                    <article className="min-h-[210px] rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#60758b]">Buyer Readiness</p>
+                      <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[136px_minmax(0,1fr)] lg:items-center">
+                        <div
+                          className="flex h-32 w-32 shrink-0 items-center justify-center rounded-full"
+                          style={{ background: `conic-gradient(#2563eb ${selectedLeadBuyerScore * 3.6}deg, #e2e8f0 0deg)` }}
+                          aria-label={`Buyer readiness ${selectedLeadBuyerScore}%`}
+                        >
+                          <div className="flex h-[104px] w-[104px] items-center justify-center rounded-full bg-white shadow-inner">
+                            <strong className="text-3xl font-semibold tracking-[-0.045em] text-[#102033]">{selectedLeadBuyerScore}%</strong>
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <h2 className={`text-xl font-semibold tracking-[-0.035em] ${selectedLeadBuyerScore >= 80 ? 'text-[#17643a]' : selectedLeadBuyerScore >= 62 ? 'text-[#1f5f8a]' : 'text-[#b76e00]'}`}>
+                            {selectedLeadBuyerScore >= 80 ? 'Ready To Act' : selectedLeadBuyerScore >= 62 ? 'Nearly Ready' : 'Needs Capture'}
+                          </h2>
+                          <p className="mt-2 text-sm font-medium text-[#60758b]">Lead score, budget, searches, matches, and urgency are grouped here instead of competing in the header.</p>
+                          <dl className="mt-4 grid gap-2 sm:grid-cols-2">
+                            {[
+                              ['Budget', selectedLeadBuyerBudgetLabel, Home],
+                              ['Financing', selectedLeadFinanceReadinessSummary.confidenceLabel || selectedLead?.financeType || 'Not captured', CheckSquare],
+                              ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, Bookmark],
+                              ['Matches', `${selectedLeadBuyerRecommendations.length || leadAppointmentOfferListingOptions.length || 0} total`, TrendingUp],
+                              ['Urgency', selectedLeadBuyerUrgency, Zap],
+                            ].map(([label, value, Icon]) => (
+                              <div key={label} className="flex min-w-0 items-center gap-2 rounded-[12px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2">
+                                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-white text-[#315b7a] shadow-sm">
+                                  {createElement(Icon, { className: 'h-4 w-4' })}
+                                </span>
+                                <span className="min-w-0">
+                                  <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-[#7d91a8]">{label}</dt>
+                                  <dd className="truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value || 'Pending'}</dd>
+                                </span>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      </div>
+                    </article>
+                  </section>
+
                   <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="text-[18px] font-semibold uppercase tracking-[0.08em] text-[#102033]">Deal Journey</h2>
+                      <h2 className="text-[18px] font-semibold uppercase tracking-[0.08em] text-[#102033]">Buyer Journey</h2>
                       <span className="rounded-full border border-[#d8e5f1] bg-[#fbfdff] px-3 py-1 text-[12px] font-semibold text-[#60758b]">
                         {selectedLeadEffectiveLifecycleStage || 'Lead captured'}
                       </span>

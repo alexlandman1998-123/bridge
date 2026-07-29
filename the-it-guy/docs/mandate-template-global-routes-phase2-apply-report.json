@@ -1,0 +1,211 @@
+{
+  "mode": "apply",
+  "status": "APPLIED_DRAFTS",
+  "mutatedData": true,
+  "projectRef": "isdowlnollckzvltkasn",
+  "version": "mandate_global_routes_phase2_v1",
+  "sourceTemplateId": "a52e6404-d597-413b-a5d3-ddbd8129461b",
+  "sourceTemplateKey": "mandate_default_v1",
+  "sourceSectionCount": 16,
+  "routeCount": 8,
+  "actionCount": 8,
+  "blockers": [],
+  "targetPlans": [
+    {
+      "routeKey": "company_full_title",
+      "routeLabel": "Company + Full Title",
+      "sellerProfile": "company",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_company_authority_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_company_full_title_v1",
+      "existingTemplateId": "613f55be-c53b-4041-a5cc-de9a92677545",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "company_sectional_title",
+      "routeLabel": "Company + Sectional Title",
+      "sellerProfile": "company",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_company_authority_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_company_sectional_title_v1",
+      "existingTemplateId": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "trust_full_title",
+      "routeLabel": "Trust + Full Title",
+      "sellerProfile": "trust",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_trust_authority_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_trust_full_title_v1",
+      "existingTemplateId": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "trust_sectional_title",
+      "routeLabel": "Trust + Sectional Title",
+      "sellerProfile": "trust",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_trust_authority_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_trust_sectional_title_v1",
+      "existingTemplateId": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_full_title",
+      "routeLabel": "Individual + Full Title",
+      "sellerProfile": "individual",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_individual_full_title_v1",
+      "existingTemplateId": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_sectional_title",
+      "routeLabel": "Individual + Sectional Title",
+      "sellerProfile": "individual",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_individual_sectional_title_v1",
+      "existingTemplateId": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_spouse_consent_full_title",
+      "routeLabel": "Married ICOP + Full Title",
+      "sellerProfile": "individual_spouse_consent",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "seller_spouse_consent_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_individual_spouse_consent_full_title_v1",
+      "existingTemplateId": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 13
+    },
+    {
+      "routeKey": "individual_spouse_consent_sectional_title",
+      "routeLabel": "Married ICOP + Sectional Title",
+      "sellerProfile": "individual_spouse_consent",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "seller_spouse_consent_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_individual_spouse_consent_sectional_title_v1",
+      "existingTemplateId": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+      "existingStatus": "draft",
+      "action": "update_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 13
+    }
+  ],
+  "applied": [
+    {
+      "routeKey": "company_full_title",
+      "action": "create_draft",
+      "templateId": "613f55be-c53b-4041-a5cc-de9a92677545",
+      "templateKey": "mandate_company_full_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "company_sectional_title",
+      "action": "create_draft",
+      "templateId": "d66e2e6d-89c7-4b22-80d8-8ffa50aac03c",
+      "templateKey": "mandate_company_sectional_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "trust_full_title",
+      "action": "create_draft",
+      "templateId": "8023293d-1bba-4d90-afb8-eafd38ed086f",
+      "templateKey": "mandate_trust_full_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "trust_sectional_title",
+      "action": "create_draft",
+      "templateId": "a4be9b95-57dd-40df-bdaa-e0ac9f295eef",
+      "templateKey": "mandate_trust_sectional_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_full_title",
+      "action": "create_draft",
+      "templateId": "9aaa9388-2b68-4419-bb48-1f9a96435e87",
+      "templateKey": "mandate_individual_full_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_sectional_title",
+      "action": "create_draft",
+      "templateId": "6106bec3-ed73-45d3-9d48-3ded6e0bbfdf",
+      "templateKey": "mandate_individual_sectional_title_v1",
+      "sectionCount": 12
+    },
+    {
+      "routeKey": "individual_spouse_consent_full_title",
+      "action": "create_draft",
+      "templateId": "f7fb09e9-0016-4baa-97e8-f77fd57c5819",
+      "templateKey": "mandate_individual_spouse_consent_full_title_v1",
+      "sectionCount": 13
+    },
+    {
+      "routeKey": "individual_spouse_consent_sectional_title",
+      "action": "create_draft",
+      "templateId": "b0a48905-44a9-467e-85f0-0b34e0f99975",
+      "templateKey": "mandate_individual_spouse_consent_sectional_title_v1",
+      "sectionCount": 13
+    }
+  ]
+}

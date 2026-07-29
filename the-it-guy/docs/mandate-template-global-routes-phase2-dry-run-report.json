@@ -1,0 +1,154 @@
+{
+  "mode": "dry-run",
+  "status": "READY_TO_APPLY",
+  "mutatedData": false,
+  "projectRef": "isdowlnollckzvltkasn",
+  "version": "mandate_global_routes_phase2_v1",
+  "sourceTemplateId": "a52e6404-d597-413b-a5d3-ddbd8129461b",
+  "sourceTemplateKey": "mandate_default_v1",
+  "sourceSectionCount": 16,
+  "routeCount": 8,
+  "actionCount": 8,
+  "blockers": [],
+  "targetPlans": [
+    {
+      "routeKey": "company_full_title",
+      "routeLabel": "Company + Full Title",
+      "sellerProfile": "company",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_company_authority_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_company_full_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "company_sectional_title",
+      "routeLabel": "Company + Sectional Title",
+      "sellerProfile": "company",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_company_authority_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_company_sectional_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "trust_full_title",
+      "routeLabel": "Trust + Full Title",
+      "sellerProfile": "trust",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_trust_authority_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_trust_full_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "trust_sectional_title",
+      "routeLabel": "Trust + Sectional Title",
+      "sellerProfile": "trust",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_trust_authority_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_trust_sectional_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "individual_full_title",
+      "routeLabel": "Individual + Full Title",
+      "sellerProfile": "individual",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_individual_full_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "individual_sectional_title",
+      "routeLabel": "Individual + Sectional Title",
+      "sellerProfile": "individual",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_individual_sectional_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "individual_spouse_consent_full_title",
+      "routeLabel": "Married ICOP + Full Title",
+      "sellerProfile": "individual_spouse_consent",
+      "propertyProfile": "full_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "seller_spouse_consent_pack",
+        "property_full_title_pack"
+      ],
+      "templateKey": "mandate_individual_spouse_consent_full_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    },
+    {
+      "routeKey": "individual_spouse_consent_sectional_title",
+      "routeLabel": "Married ICOP + Sectional Title",
+      "sellerProfile": "individual_spouse_consent",
+      "propertyProfile": "sectional_title",
+      "allowedConditionalPackKeys": [
+        "seller_individual_capacity_pack",
+        "seller_spouse_consent_pack",
+        "property_sectional_title_pack"
+      ],
+      "templateKey": "mandate_individual_spouse_consent_sectional_title_v1",
+      "existingTemplateId": null,
+      "existingStatus": null,
+      "action": "create_draft",
+      "ready": true,
+      "blockers": [],
+      "sectionCount": 0
+    }
+  ],
+  "applied": []
+}

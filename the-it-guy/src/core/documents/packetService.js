@@ -95,9 +95,11 @@ import {
   isDefaultTemplateRouteFallback,
   isPublishedTemplateStatus,
   isSignableDocumentPacketType,
+  mandateTemplateSelectionMatchesSpecificRoute,
   resolveDocumentConversionHealthPolicy,
   resolvePdfRenderablePacketType,
   resolveSignableTemplatePolicy,
+  selectSignableMandateRouteSelection,
 } from './documentGenerationContainment'
 import { assertLegalTemplateApproved, assessLegalTemplateApproval } from './legalTemplateApproval'
 
@@ -925,7 +927,9 @@ async function resolveMandateScenarioTemplateForPacket({
       })
     })
 
-  const selection = scored[0] || null
+  const selection = requiresApprovedAutomaticLegalRoutingTemplate(normalizedPacketType, context)
+    ? selectSignableMandateRouteSelection(scored)
+    : scored[0] || null
   if (!selection?.template?.id) {
     return {
       template: null,
@@ -953,15 +957,7 @@ async function resolveMandateScenarioTemplateForPacket({
     { ...selection, template: hydratedTemplate || selection.template },
     { profile: scenarioProfile },
   )
-  const matchedSpecificRoute = (selection.reasons || []).some((reason) =>
-    [
-      'exact_variant_metadata',
-      'clause_profile_metadata',
-      'seller_profile_metadata',
-      'property_profile_metadata',
-      'template_name_variant_match',
-    ].includes(reason),
-  )
+  const matchedSpecificRoute = mandateTemplateSelectionMatchesSpecificRoute(selection)
   const selectedTemplate = hydratedTemplate || selection.template
 
   return {

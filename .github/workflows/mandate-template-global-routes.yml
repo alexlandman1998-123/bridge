@@ -1,0 +1,41 @@
+name: Mandate template global routes
+
+on:
+  pull_request:
+    paths:
+      - 'the-it-guy/package.json'
+      - 'the-it-guy/package-lock.json'
+      - 'the-it-guy/scripts/mandate-template-global-routes-**'
+      - 'the-it-guy/scripts/mandate-template-routing-phase3.test.mjs'
+      - 'the-it-guy/src/core/documents/**'
+      - '.github/workflows/mandate-template-global-routes.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'the-it-guy/package.json'
+      - 'the-it-guy/package-lock.json'
+      - 'the-it-guy/scripts/mandate-template-global-routes-**'
+      - 'the-it-guy/scripts/mandate-template-routing-phase3.test.mjs'
+      - 'the-it-guy/src/core/documents/**'
+      - '.github/workflows/mandate-template-global-routes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: the-it-guy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - run: npm ci
+      - run: npm run verify:mandate-template-global-routes

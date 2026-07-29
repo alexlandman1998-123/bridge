@@ -28,6 +28,7 @@ export const MANDATE_TEMPLATE_VNEXT_ENFORCEMENT_SCRIPT_CHAIN = Object.freeze([
   'test:mandate-template-approval-release-gate-phase6',
   'test:mandate-template-organisation-sync-phase7',
   'test:mandate-template-forward-enforcement-phase8',
+  'verify:mandate-template-global-routes',
 ])
 
 function text(value) {
@@ -110,7 +111,7 @@ function buildScriptChecks(packageScripts = {}) {
     checks,
     scriptValue(packageScripts, 'verify:mandate-template-vnext') === MANDATE_TEMPLATE_VNEXT_ENFORCEMENT_SCRIPT_CHAIN.map((name) => `npm run ${name}`).join(' && '),
     'PHASE8_VERIFY_CHAIN_BOUND',
-    'verify:mandate-template-vnext runs the full Phase 1-8 mandate vNext enforcement chain.',
+    'verify:mandate-template-vnext runs the full mandate vNext and global route enforcement chain.',
   )
   addCheck(
     checks,

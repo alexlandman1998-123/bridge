@@ -3770,8 +3770,8 @@ function BuyerOutreachProgress({
 
 function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
   return (
-    <section className={`${buyerWorkspaceCardClass} p-2`}>
-      <nav className="flex gap-2 overflow-x-auto" aria-label="Lead section tabs" role="tablist">
+    <section className={`${panelClass} sticky top-0 z-10 p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)]`}>
+      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7" aria-label="Lead section tabs" role="tablist">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
           return (
@@ -3781,10 +3781,10 @@ function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
               role="tab"
               aria-selected={isActive}
               onClick={() => onChange?.(tab.key)}
-              className={`buyer-workspace-tab min-h-12 basis-0 min-w-[150px] flex-1 rounded-2xl px-4 text-center text-sm font-semibold transition ${
+              className={`buyer-workspace-tab flex min-h-10 w-full items-center justify-center rounded-xl px-3 text-center text-sm font-semibold transition ${
                 isActive
-                  ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]'
-                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
+                  ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
               }`}
             >
               {tab.label}
@@ -3796,78 +3796,144 @@ function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
   )
 }
 
-function BuyerHeaderStatusBlock({ icon, label, value, tone = 'slate', helper = '' }) {
+const BUYER_STATUS_SHORTCUTS = [
+  { actionId: 'requirements', label: 'Buyer' },
+  { actionId: 'property_match', label: 'Matches' },
+  { actionId: 'appointments', label: 'Viewings' },
+  { actionId: 'offers', label: 'Offers' },
+  { actionId: 'timeline', label: 'Activity' },
+]
+
+function BuyerLeadActions({ onDelete, onRunCommand }) {
+  const [moreOpen, setMoreOpen] = useState(false)
+  const menuRef = useRef(null)
+  const menuButtonClass = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
+
+  useEffect(() => {
+    if (!moreOpen) return undefined
+    function handlePointerDown(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setMoreOpen(false)
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setMoreOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [moreOpen])
+
+  const run = useCallback((actionId) => {
+    setMoreOpen(false)
+    onRunCommand?.(actionId)
+  }, [onRunCommand])
+
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/80 px-3.5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-        {icon ? createElement(icon, { size: 14, className: 'shrink-0' }) : null}
-        <span className="truncate">{label}</span>
+    <div className="flex items-center justify-start lg:justify-end">
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setMoreOpen((open) => !open)}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800"
+          aria-label="Buyer actions"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+        >
+          Actions
+          <ChevronDown size={16} className={moreOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        </button>
+        {moreOpen ? (
+          <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
+            <button type="button" onClick={() => run('appointments')} className={menuButtonClass} role="menuitem">
+              <CalendarDays size={15} />
+              Schedule Viewing
+            </button>
+            <button type="button" onClick={() => run('property_match')} className={menuButtonClass} role="menuitem">
+              <Send size={15} />
+              Send Listings
+            </button>
+            <button type="button" onClick={() => run('offers')} className={menuButtonClass} role="menuitem">
+              <FileText size={15} />
+              Open Offers
+            </button>
+            <button type="button" onClick={() => run('convert')} className={menuButtonClass} role="menuitem">
+              <ArrowRight size={15} />
+              Convert To Transaction
+            </button>
+            <div className="my-1 h-px bg-slate-100" />
+            <button type="button" onClick={() => run('requirements')} className={menuButtonClass} role="menuitem">
+              <UserRound size={15} />
+              Edit buyer details
+            </button>
+            <button type="button" onClick={() => run('timeline')} className={menuButtonClass} role="menuitem">
+              <Clock3 size={15} />
+              View activity
+            </button>
+            <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`} role="menuitem">
+              <Trash2 size={15} />
+              Delete lead
+            </button>
+          </div>
+        ) : null}
       </div>
-      <div className="mt-2 flex min-w-0 items-center gap-2">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${tone === 'green' ? 'bg-emerald-500' : tone === 'blue' ? 'bg-blue-500' : tone === 'amber' ? 'bg-amber-500' : tone === 'red' ? 'bg-rose-500' : 'bg-slate-300'}`} />
-        <strong className="truncate text-sm font-semibold text-slate-950">{value || '—'}</strong>
-      </div>
-      {helper ? <p className="mt-1 truncate text-xs font-semibold text-slate-500">{helper}</p> : null}
     </div>
   )
 }
 
 function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onBack, onDelete, onRunCommand }) {
-  const [moreOpen, setMoreOpen] = useState(false)
   const capturedDate = formatDate(row.createdAt || row.created_at, 'No created date')
   const sourceLabel = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
   const preferredChannel = formatCleanValue(row.preferredChannel || row.preferred_channel || row.channel || 'WhatsApp')
+  const contextSummary = normalizeText(getLeadContextSummary(row))
   return (
-    <header className={`${buyerWorkspaceCardClass} overflow-visible`}>
-      <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
-        <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
-          <ArrowLeft size={15} />
-          Back to leads
-        </button>
-        <div className="relative">
-          <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
-            More actions
-            <MoreVertical size={15} />
-          </button>
-          {moreOpen ? (
-            <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
-              <button type="button" onClick={() => { setMoreOpen(false); onRunCommand?.('activity') }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
-                <Clock3 size={15} />
-                View activity
-              </button>
-              <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-red-600 hover:bg-red-50" role="menuitem">
-                <Trash2 size={15} />
-                Delete lead
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.9fr)] xl:items-start">
+    <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] sm:p-6`}>
+      <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
+        <ArrowLeft size={15} />
+        Back to leads
+      </button>
+      <div className="grid gap-5 xl:grid-cols-[minmax(320px,1fr)_auto] xl:items-start">
         <div className="flex min-w-0 gap-4">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] bg-slate-950 text-2xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
             {getInitials(row.name)}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusPill tone="blue">Buyer Journey</StatusPill>
-              <StatusPill tone={leadScore >= 65 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
-              <StatusPill tone="blue">Lead Score {leadScore}</StatusPill>
-            </div>
-            <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.05em] text-slate-950">{row.name}</h1>
-            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Buyer Lead</p>
+            <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name || 'Buyer lead'}</h1>
+            <p className="mt-2 truncate text-sm font-semibold text-slate-500">{contextSummary || 'Search requirement not captured'}</p>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
               <span className="inline-flex items-center gap-1.5"><Phone size={15} />{row.phone || 'No phone'}</span>
-              <span className="inline-flex items-center gap-1.5"><Mail size={15} />{row.email || 'No email'}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={15} /><span className="max-w-[280px] truncate">{row.email || 'No email'}</span></span>
               <span className="inline-flex items-center gap-1.5"><MessageSquarePlus size={15} />{preferredChannel}</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
+              <StatusPill>{capturedDate}</StatusPill>
+              <StatusPill tone="blue">{sourceLabel}</StatusPill>
+              <StatusPill tone={lastActivity?.date ? 'green' : 'amber'}>{lastActivity?.date ? formatRelativeTime(lastActivity.date) : 'No activity'}</StatusPill>
+              <StatusPill tone={leadScore >= 65 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3 xl:border-l xl:border-slate-100 xl:pl-6">
-          <BuyerHeaderStatusBlock icon={CalendarDays} label="Lead Captured" value={capturedDate} tone="slate" />
-          <BuyerHeaderStatusBlock icon={Tag} label="Source" value={sourceLabel} tone="blue" />
-          <BuyerHeaderStatusBlock icon={Clock3} label="Last Activity" value={lastActivity?.date ? formatRelativeTime(lastActivity.date) : 'No activity'} tone={lastActivity?.date ? 'green' : 'amber'} helper={lastActivity?.date ? formatDate(lastActivity.date) : ''} />
+        <div className="flex min-w-0 flex-col gap-3 xl:items-end">
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <SellerAssignedAgentIndicator row={row} />
+            <BuyerLeadActions onDelete={onDelete} onRunCommand={onRunCommand} />
+          </div>
+          <div role="list" aria-label="Buyer lead status shortcuts" className="flex w-full flex-wrap gap-2 xl:justify-end">
+            {BUYER_STATUS_SHORTCUTS.map((shortcut) => (
+              <button
+                key={shortcut.actionId}
+                type="button"
+                role="listitem"
+                onClick={() => onRunCommand?.(shortcut.actionId)}
+                className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              >
+                {shortcut.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </header>
@@ -4295,29 +4361,229 @@ function BuyerNextBestActionV2Card({ row, onNavigate, onConvert }) {
     }
     onNavigate?.(command.actionId || 'requirements')
   }
+  const toneClass = command.tone === 'green'
+    ? 'border-emerald-100 bg-emerald-50/70'
+    : command.tone === 'blue'
+      ? 'border-blue-100 bg-blue-50/70'
+      : command.tone === 'red'
+        ? 'border-rose-100 bg-rose-50/70'
+        : 'border-amber-100 bg-amber-50/70'
+  const iconToneClass = command.tone === 'green'
+    ? 'border-emerald-200 text-emerald-600'
+    : command.tone === 'blue'
+      ? 'border-blue-200 text-blue-600'
+      : command.tone === 'red'
+        ? 'border-rose-200 text-rose-600'
+        : 'border-amber-200 text-amber-600'
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-amber-100 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.18),transparent_34%),linear-gradient(180deg,#FFFBEB,#FFFFFF)] p-7 shadow-[0_20px_42px_rgba(15,23,42,0.08)]">
-      <div className="absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-100 bg-white/85 text-amber-600 shadow-sm">
-        <AlertTriangle size={22} />
-      </div>
-      <div className="max-w-[82%]">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Next Action</p>
-        <h2 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.055em] text-slate-950">{command.title}</h2>
-        <p className="mt-3 text-base leading-7 text-slate-600">{command.copy}</p>
-      </div>
-      {command.blockers?.length ? (
-        <div className="mt-6 flex flex-wrap gap-2">
-          {command.blockers.slice(0, 3).map((blocker) => (
-            <span key={blocker} className="rounded-full border border-amber-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-amber-800">
-              {blocker}
-            </span>
-          ))}
+    <section className={`${panelClass} min-h-[210px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6 ${toneClass}`}>
+      <div className="flex h-full min-w-0 flex-col justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className={`flex h-8 w-8 items-center justify-center rounded-xl border bg-white ${iconToneClass}`}><AlertTriangle size={16} /></span>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Next Best Action</p>
+          </div>
+          <h2 className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{command.title}</h2>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{command.copy}</p>
+          {command.blockers?.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {command.blockers.slice(0, 3).map((blocker) => (
+                <span key={blocker} className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                  {blocker}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      <button type="button" onClick={action} className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
-        {command.actionLabel || 'Take action'}
-        <ArrowRight size={16} />
-      </button>
+        <button type="button" onClick={action} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] hover:bg-slate-800 sm:w-fit">
+          {command.actionLabel || 'Take action'}
+          <ArrowRight size={15} />
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function BuyerReadinessScoreCard({ row, workspace = {}, leadScore = 0 }) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  const documents = getBuyerDocumentReadiness(row)
+  const finance = getBuyerFinanceReadiness(row)
+  const matches = getBuyerMatchSummary(row, workspace)
+  const savedSearches = [
+    ...(Array.isArray(workspace.savedSearches) ? workspace.savedSearches : []),
+    ...(Array.isArray(row.savedSearches) ? row.savedSearches : []),
+  ]
+  const activeSavedSearches = savedSearches.filter((item) => item?.active !== false).length
+  const readinessPercent = Math.max(0, Math.min(100, Math.round((leadScore + documents.percent + finance.score) / 3)))
+  const readyLabel = readinessPercent >= 80 ? 'Ready To Act' : readinessPercent >= 60 ? 'Nearly Ready' : 'Needs Capture'
+  const readinessTone = readinessPercent >= 80 ? 'text-emerald-700' : readinessPercent >= 60 ? 'text-blue-700' : 'text-amber-700'
+  const summaryRows = [
+    { icon: Banknote, label: 'Budget', value: getBuyerBudgetLabel(row, requirement) },
+    { icon: CreditCard, label: 'Finance', value: finance.label || getBuyerFinancePositionLabel(row, requirement) },
+    { icon: Search, label: 'Saved Searches', value: activeSavedSearches || 0 },
+    { icon: Target, label: 'Matches', value: matches.total ? `${matches.total} total` : 'No matches' },
+    { icon: Clock3, label: 'Urgency', value: getBuyerUrgencyLabel(row, requirement) },
+  ]
+
+  return (
+    <section className={`${panelClass} min-h-[210px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Buyer Readiness</p>
+      <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[136px_minmax(0,1fr)] lg:items-center">
+        <div
+          className="flex h-32 w-32 shrink-0 items-center justify-center rounded-full"
+          style={{ background: `conic-gradient(#2563eb ${readinessPercent * 3.6}deg, #e2e8f0 0deg)` }}
+          aria-label={`Buyer readiness ${readinessPercent}%`}
+        >
+          <div className="flex h-[104px] w-[104px] items-center justify-center rounded-full bg-white shadow-inner">
+            <strong className="text-3xl font-semibold tracking-[-0.045em] text-slate-950">{readinessPercent}%</strong>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <h2 className={`text-xl font-semibold tracking-[-0.035em] ${readinessTone}`}>{readyLabel}</h2>
+          <p className="mt-2 text-sm font-medium text-slate-500">Lead score, finance position, documents, searches, and matches are now grouped here instead of competing in the header.</p>
+          <dl className="mt-4 grid gap-2 sm:grid-cols-2">
+            {summaryRows.map((item) => (
+              <div key={item.label} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-500 shadow-sm">
+                  {createElement(item.icon, { size: 15 })}
+                </span>
+                <span className="min-w-0">
+                  <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{item.label}</dt>
+                  <dd className="truncate text-sm font-semibold text-slate-950">{item.value || 'Pending'}</dd>
+                </span>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function BuyerAcquisitionActionRow({ row, workspace = {}, leadScore = 0, onNavigate, onConvert }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <BuyerNextBestActionV2Card row={row} onNavigate={onNavigate} onConvert={onConvert} />
+      <BuyerReadinessScoreCard row={row} workspace={workspace} leadScore={leadScore} />
+    </section>
+  )
+}
+
+function BuyerJourneyRail({
+  row,
+  onQualifyBuyer,
+  onMarkReachedOut,
+  onMarkQualified,
+  onScheduleViewing,
+  onMarkViewingCompleted,
+  onCaptureOfferSubmitted,
+  onOpenOffers,
+  onPrepareTransaction,
+}) {
+  const steps = getBuyerOutreachSteps(row)
+  const qualification = getBuyerQualificationState(row)
+  const [markingQualified, setMarkingQualified] = useState(false)
+  const [markingReachedOut, setMarkingReachedOut] = useState(false)
+  const [markError, setMarkError] = useState('')
+  const currentStep = steps.find((step) => !step.done) || steps[steps.length - 1]
+
+  async function markReachedOut() {
+    if (!onMarkReachedOut || row?.firstContactedAt || row?.first_contacted_at || markingReachedOut) return
+    try {
+      setMarkingReachedOut(true)
+      setMarkError('')
+      await onMarkReachedOut()
+    } catch (markErrorResult) {
+      setMarkError(markErrorResult?.message || 'Unable to mark first contact for this buyer.')
+    } finally {
+      setMarkingReachedOut(false)
+    }
+  }
+
+  async function markQualified() {
+    if (!onMarkQualified || qualification.qualified || markingQualified) return
+    try {
+      setMarkingQualified(true)
+      setMarkError('')
+      await onMarkQualified()
+    } catch (markErrorResult) {
+      setMarkError(markErrorResult?.message || 'Unable to mark this buyer as qualified.')
+    } finally {
+      setMarkingQualified(false)
+    }
+  }
+
+  function getStepAction(stepKey) {
+    if (stepKey === 'contacted') return markReachedOut
+    if (stepKey === 'qualified') return qualification.qualified ? onQualifyBuyer : markQualified
+    if (stepKey === 'viewing') return onMarkViewingCompleted
+    if (stepKey === 'offer_submitted') return onCaptureOfferSubmitted
+    if (stepKey === 'offer_accepted') return onOpenOffers
+    if (stepKey === 'won') return onPrepareTransaction
+    return null
+  }
+
+  return (
+    <section id="buyer-journey" className={`${panelClass} scroll-mt-6 flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Buyer Journey</h2>
+          <p className="mt-2 text-xl font-semibold tracking-[-0.035em] text-slate-950">{currentStep?.label || 'Transaction Ready'}</p>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          <StatusPill tone="blue">Lead</StatusPill>
+          {currentStep?.key === 'contacted' ? (
+            <button type="button" onClick={markReachedOut} disabled={markingReachedOut} className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60">
+              {markingReachedOut ? 'Marking...' : 'Mark Reached Out'}
+            </button>
+          ) : null}
+          {currentStep?.key === 'qualified' ? (
+            <>
+              <button type="button" onClick={onQualifyBuyer} className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50">Qualify Buyer</button>
+              <button type="button" onClick={markQualified} disabled={markingQualified} className="inline-flex min-h-9 items-center rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 disabled:opacity-60">
+                {markingQualified ? 'Marking...' : 'Mark Qualified'}
+              </button>
+            </>
+          ) : null}
+          {currentStep?.key === 'viewing' ? (
+            <>
+              <button type="button" onClick={onScheduleViewing} className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50">Schedule Viewing</button>
+              <button type="button" onClick={onMarkViewingCompleted} className="inline-flex min-h-9 items-center rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100">Viewing Done</button>
+            </>
+          ) : null}
+          {currentStep?.key === 'offer_submitted' ? (
+            <button type="button" onClick={onCaptureOfferSubmitted} className="inline-flex min-h-9 items-center rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100">Capture Offer</button>
+          ) : null}
+        </div>
+      </div>
+      {markError ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{markError}</p> : null}
+      <ol className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-7 xl:gap-x-3">
+        {steps.map((step, index, allSteps) => {
+          const isLast = index === allSteps.length - 1
+          const isCurrent = step.key === currentStep?.key && !step.done
+          const stepAction = getStepAction(step.key)
+          const StepElement = stepAction ? 'button' : 'div'
+          return (
+            <li key={step.key} className="relative min-w-0">
+              {!isLast ? <span className={`absolute left-[calc(50%+1.5rem)] top-5 hidden h-px w-[calc(100%-3rem)] xl:block ${step.done ? 'bg-blue-300' : 'bg-slate-200'}`} /> : null}
+              <StepElement
+                type={stepAction ? 'button' : undefined}
+                onClick={stepAction || undefined}
+                className={`relative flex min-h-[124px] w-full min-w-0 flex-col items-center gap-3 text-center ${stepAction ? 'rounded-xl p-1 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100' : ''}`}
+                title={step.hint}
+              >
+                <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${isCurrent ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : step.done ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-300'}`}>
+                  {step.done ? <CheckCircle2 size={16} /> : index + 1}
+                </span>
+                <div className="min-w-0 max-w-full">
+                  <p className={`mx-auto min-h-[2.5rem] max-w-[11rem] break-words text-sm font-semibold leading-5 xl:max-w-[8.5rem] ${isCurrent ? 'text-blue-700' : step.done ? 'text-slate-950' : 'text-slate-500'}`}>{step.label}</p>
+                  <p className="mx-auto mt-1 min-h-[2rem] max-w-[11rem] break-words text-xs font-semibold leading-4 text-slate-500 xl:max-w-[8.5rem]">{step.meta}</p>
+                </div>
+              </StepElement>
+            </li>
+          )
+        })}
+      </ol>
     </section>
   )
 }
@@ -21275,8 +21541,16 @@ function AgentLeadWorkspace() {
     [isSellerLeadWorkspace, tabs],
   )
   const visibleBuyerTabs = useMemo(
-    () => tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)),
-    [tabs],
+    () => [
+      { key: 'overview', label: 'Overview' },
+      { key: 'requirements', label: 'Requirements' },
+      { key: 'property_match', label: 'Matches' },
+      { key: 'appointments', label: 'Appointments' },
+      { key: 'offers', label: 'Offers' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'timeline', label: 'Activity' },
+    ],
+    [],
   )
 
   useEffect(() => {
@@ -22230,6 +22504,26 @@ function AgentLeadWorkspace() {
                 onRunCommand={runBuyerWorkspaceAction}
               />
 
+              <BuyerAcquisitionActionRow
+                row={row}
+                workspace={data || {}}
+                leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
+                onNavigate={runBuyerWorkspaceAction}
+                onConvert={convertBuyerLead}
+              />
+
+              <BuyerJourneyRail
+                row={row}
+                onQualifyBuyer={focusBuyerQualificationSnapshot}
+                onMarkReachedOut={markBuyerReachedOut}
+                onMarkQualified={markBuyerQualified}
+                onScheduleViewing={() => setActiveTab('appointments')}
+                onMarkViewingCompleted={openManualViewingCompleted}
+                onCaptureOfferSubmitted={openBuyerManualOfferCapture}
+                onOpenOffers={() => setActiveTab('offers')}
+                onPrepareTransaction={convertBuyerLead}
+              />
+
               <LeadSectionMenu
                 tabs={visibleBuyerTabs}
                 activeTab={activeTab}
@@ -22237,33 +22531,19 @@ function AgentLeadWorkspace() {
               />
 
               {activeTab === 'overview' ? (
-                <>
-                  <BuyerOutreachProgress
-                    row={row}
-                    onQualifyBuyer={focusBuyerQualificationSnapshot}
-                    onMarkReachedOut={markBuyerReachedOut}
-                    onMarkQualified={markBuyerQualified}
-                    onScheduleViewing={() => setActiveTab('appointments')}
-                    onMarkViewingCompleted={openManualViewingCompleted}
-                    onCaptureOfferSubmitted={openBuyerManualOfferCapture}
-                    onOpenOffers={() => setActiveTab('offers')}
-                    onPrepareTransaction={convertBuyerLead}
-                  />
-
-                  <BuyerLeadOverview
-                    row={row}
-                    workspace={data || {}}
-                    sourceInfo={sourceInfo}
-                    leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
-                    organisationId={organisationId}
-                    actor={actor}
-                    qualificationFocusSignal={qualificationFocusSignal}
-                    onSaved={loadWorkspace}
-                    onNavigate={runBuyerWorkspaceAction}
-                    onConvert={convertBuyerLead}
-                    onBondPartnerReferral={sendBuyerToBondPartner}
-                  />
-                </>
+                <BuyerLeadOverview
+                  row={row}
+                  workspace={data || {}}
+                  sourceInfo={sourceInfo}
+                  leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
+                  organisationId={organisationId}
+                  actor={actor}
+                  qualificationFocusSignal={qualificationFocusSignal}
+                  onSaved={loadWorkspace}
+                  onNavigate={runBuyerWorkspaceAction}
+                  onConvert={convertBuyerLead}
+                  onBondPartnerReferral={sendBuyerToBondPartner}
+                />
               ) : null}
 
               {activeTab === 'requirements' ? (

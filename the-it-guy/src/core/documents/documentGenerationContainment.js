@@ -19,6 +19,14 @@ export const SIGNABLE_DOCUMENT_PACKET_TYPES = PDF_RENDERABLE_DOCUMENT_PACKET_TYP
 
 export const PUBLISHED_TEMPLATE_STATUSES = Object.freeze(['published', 'active', 'approved', 'live'])
 
+export const MANDATE_SPECIFIC_ROUTE_MATCH_REASONS = Object.freeze([
+  'exact_variant_metadata',
+  'clause_profile_metadata',
+  'seller_profile_metadata',
+  'property_profile_metadata',
+  'template_name_variant_match',
+])
+
 function text(value = '') {
   return String(value || '').trim()
 }
@@ -99,6 +107,22 @@ export function isDefaultTemplateRouteFallback(template = {}) {
   return scope === 'global_default' ||
     metadata.platform_default_can_route_without_org_template === true ||
     templateKey === `${packetType}_default_v1`
+}
+
+export function mandateTemplateSelectionMatchesSpecificRoute(selection = {}) {
+  const reasons = Array.isArray(selection?.reasons) ? selection.reasons : []
+  return reasons.some((reason) => MANDATE_SPECIFIC_ROUTE_MATCH_REASONS.includes(text(reason)))
+}
+
+export function selectSignableMandateRouteSelection(scoredSelections = []) {
+  const selections = Array.isArray(scoredSelections)
+    ? scoredSelections.filter((selection) => selection?.template?.id)
+    : []
+  if (!selections.length) return null
+
+  return selections.find(mandateTemplateSelectionMatchesSpecificRoute) ||
+    selections.find((selection) => isDefaultTemplateRouteFallback(selection.template)) ||
+    selections[0]
 }
 
 /**
