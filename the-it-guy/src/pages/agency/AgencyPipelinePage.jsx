@@ -14963,7 +14963,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </section>
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
-                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
+                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4 self-stretch">
                         <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -14990,7 +14990,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
-                        <section className="flex min-h-[318px] min-w-0 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                        <section className="flex min-h-[318px] min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                             <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
                             <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
@@ -14998,7 +14998,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </Button>
                           </div>
                           <div className="min-h-0 flex-1 px-4 py-4">
-                            <div className="grid min-h-0 gap-2.5">
+                            <div className="grid h-full min-h-0 auto-rows-fr gap-2.5">
                               {selectedSellerDocumentCategories.map((category) => {
                                 const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
                                 return (
@@ -15015,11 +15015,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
                                       aria-label={`${category.label} ${category.progress}% complete`}
                                     >
-                                      <span className="grid h-full w-full place-items-center rounded-full bg-white text-center shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
-                                        <span>
-                                          <span className="block text-sm font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
-                                          <span className="mt-0.5 block text-[0.5rem] font-semibold text-[#6d839b]">done</span>
-                                        </span>
+                                      <span className="grid h-full w-full place-items-center rounded-full bg-white text-center text-sm font-semibold leading-none tracking-[-0.04em] text-[#102033] shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
+                                        {category.progress}%
                                       </span>
                                     </span>
                                   </div>
