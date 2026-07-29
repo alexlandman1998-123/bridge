@@ -837,6 +837,71 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId) {
   }
 }
 
+export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadId) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadRouteHydrationSeed')
+  const leadUuid = normalizeLeadUuid(leadId)
+  if (!leadUuid) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+      leadWorkspaceStatus: 'not_found',
+      leadWorkspaceReason: 'invalid_lead_id',
+    }
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading agency CRM lead data.')
+  }
+
+  const leadResult = await fetchLeadRowById(workspaceId, leadUuid)
+  const leadBlocked = leadResult.error && (isPermissionDeniedError(leadResult.error) || isMissingSchemaOrTableError(leadResult.error))
+  if (leadResult.error && !leadBlocked) throw leadResult.error
+
+  let leadRow = !leadBlocked ? leadResult.data : null
+  let leadWorkspaceStatus = leadRow ? 'ready' : ''
+  let leadWorkspaceReason = leadRow ? 'lead_id' : ''
+  let listingResolution = null
+
+  if (!leadBlocked && !leadRow) {
+    listingResolution = await resolveListingDerivedLeadRow(workspaceId, leadUuid)
+    if (listingResolution?.lead) {
+      leadRow = listingResolution.lead
+      leadWorkspaceStatus = 'resolved'
+      leadWorkspaceReason = listingResolution.reason || 'listing_derived_id'
+    }
+  }
+
+  if (leadBlocked || !leadRow) {
+    return {
+      contacts: [],
+      leads: [],
+      leadActivities: [],
+      tasks: [],
+      source: 'remote',
+      leadWorkspaceStatus: leadBlocked ? 'unavailable' : 'not_found',
+      leadWorkspaceReason: leadBlocked ? 'lead_lookup_unavailable' : (listingResolution?.reason || 'lead_not_found'),
+      requestedLeadId: leadUuid,
+      listingId: normalizeText(listingResolution?.listing?.id) || null,
+    }
+  }
+
+  const resolvedLeadId = normalizeLeadUuid(leadRow?.lead_id) || leadUuid
+  return {
+    contacts: [],
+    leads: [mapSupabaseLead(leadRow)],
+    leadActivities: [],
+    tasks: [],
+    source: 'remote',
+    leadWorkspaceStatus,
+    leadWorkspaceReason,
+    requestedLeadId: leadUuid,
+    resolvedLeadId,
+    listingId: normalizeText(listingResolution?.listing?.id) || normalizeText(leadRow?.listing_id) || null,
+  }
+}
+
 export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
   if (!isSupabaseConfigured || !supabase) {
