@@ -20,6 +20,7 @@ export const NOTIFICATION_AUTOMATION_KEYS = Object.freeze({
   AGENT_INVITE_SENT: 'agent_invite_sent',
   BUYER_ONBOARDING_SUBMITTED: 'buyer_onboarding_submitted',
   SELLER_ONBOARDING_SUBMITTED: 'seller_onboarding_submitted',
+  AGENCY_PUBLIC_INTAKE_RECEIVED: 'agency_public_intake_received',
   ATTORNEY_INVITE_ACCEPTED: 'attorney_invite_accepted',
   BOND_ORIGINATOR_INVITE_ACCEPTED: 'bond_originator_invite_accepted',
   AGENT_INVITE_ACCEPTED: 'agent_invite_accepted',
@@ -151,6 +152,16 @@ export const NOTIFICATION_AUTOMATION_DEFINITIONS = Object.freeze([
     implementationStatus: NOTIFICATION_AUTOMATION_STATUSES.ACTIVE,
     defaultEnabled: true,
     communicationTypes: ['seller_onboarding_submitted_agent'],
+  }),
+  definition({
+    key: NOTIFICATION_AUTOMATION_KEYS.AGENCY_PUBLIC_INTAKE_RECEIVED,
+    displayName: 'Agency public intake received',
+    category: NOTIFICATION_AUTOMATION_CATEGORIES.NOTIFICATION,
+    triggerType: 'system_event',
+    recipientRole: 'agent',
+    implementationStatus: NOTIFICATION_AUTOMATION_STATUSES.ACTIVE,
+    defaultEnabled: true,
+    communicationTypes: ['agency_public_intake_received'],
   }),
   definition({
     key: NOTIFICATION_AUTOMATION_KEYS.ATTORNEY_INVITE_ACCEPTED,
@@ -383,6 +394,9 @@ export function resolveNotificationAutomationKey({
   }
   if (normalizedCommunicationType === 'seller_onboarding_submitted_agent') {
     return NOTIFICATION_AUTOMATION_KEYS.SELLER_ONBOARDING_SUBMITTED
+  }
+  if (normalizedCommunicationType === 'agency_public_intake_received') {
+    return NOTIFICATION_AUTOMATION_KEYS.AGENCY_PUBLIC_INTAKE_RECEIVED
   }
   if (normalizedCommunicationType === 'transaction_partner_invitation') {
     if (normalizedRoleType === 'bond_originator') {

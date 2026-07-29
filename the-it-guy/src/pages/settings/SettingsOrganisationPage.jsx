@@ -9,10 +9,14 @@ import {
   FileText,
   GitBranch,
   Globe2,
+  Inbox,
+  Link2,
   Mail,
   MapPin,
+  Megaphone,
   Monitor,
   Palette,
+  Power,
   RotateCcw,
   ShieldCheck,
   Smartphone,
@@ -34,6 +38,14 @@ import {
   updateOrganisationSettings,
   uploadOrganisationBrandingAsset,
 } from '../../lib/settingsApi'
+import {
+  AGENCY_PUBLIC_INTAKE_SOURCE_CHANNELS,
+  buildAgencyPublicIntakeUrls,
+  loadAgencyPublicIntakePerformance,
+  loadAgencyPublicIntakeLink,
+  saveAgencyPublicIntakeLink,
+  suggestAgencyPublicIntakeSlug,
+} from '../../services/agencyPublicIntakeLinkService'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -243,6 +255,40 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
+function getCurrentPublicHost() {
+  if (typeof window === 'undefined') return 'https://app.arch9.co.za'
+  return window.location.origin || 'https://app.arch9.co.za'
+}
+
+function createPublicIntakeDraft(link = null, organisationName = '') {
+  if (link) {
+    return {
+      ...link,
+      enabledIntents: link.enabledIntents?.length ? link.enabledIntents : ['buy', 'sell'],
+      buyerCtaLabel: link.buyerCtaLabel || 'I am looking to buy',
+      sellerCtaLabel: link.sellerCtaLabel || 'I am looking to sell',
+      leadSourceLabel: link.leadSourceLabel || 'Public Intake',
+      sourceChannel: link.sourceChannel || 'other',
+    }
+  }
+  return {
+    id: '',
+    slug: suggestAgencyPublicIntakeSlug(organisationName),
+    status: 'draft',
+    isPrimary: true,
+    heading: 'What can we help you with?',
+    introduction: 'Choose the path that fits you and share a few details.',
+    buyerCtaLabel: 'I am looking to buy',
+    sellerCtaLabel: 'I am looking to sell',
+    enabledIntents: ['buy', 'sell'],
+    leadSourceLabel: 'Public Intake',
+    sourceChannel: 'website',
+    campaignCode: '',
+    privacyPolicyVersion: 'agency-public-intake-v1',
+    consentCopy: '',
+  }
+}
+
 function titleize(value = '') {
   return normalizeText(value)
     .replace(/[_-]/g, ' ')
@@ -440,6 +486,20 @@ function getBrandLastUpdatedLabel(value = '') {
   if (diffDays === 1) return '1 day ago'
   if (diffDays < 30) return `${diffDays} days ago`
   return parsed.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatPublicIntakeContact(row = {}) {
+  return normalizeText(row.contactEmail || row.contactPhone) || 'No contact method'
+}
+
+function formatPublicIntakeBudget(row = {}) {
+  const min = Number(row.budgetMin)
+  const max = Number(row.budgetMax)
+  const formatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
+  if (Number.isFinite(min) && Number.isFinite(max)) return `${formatter.format(min)} - ${formatter.format(max)}`
+  if (Number.isFinite(max)) return `Up to ${formatter.format(max)}`
+  if (Number.isFinite(min)) return `From ${formatter.format(min)}`
+  return ''
 }
 
 function VerificationBadge({ children, verified = false }) {
@@ -1123,6 +1183,329 @@ function OnboardingLandingBrandingCard({
   )
 }
 
+function PublicIntakeStatusPill({ status = 'draft' }) {
+  const normalized = normalizeText(status).toLowerCase() || 'draft'
+  const meta = {
+    active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    draft: 'border-amber-200 bg-amber-50 text-amber-700',
+    disabled: 'border-slate-200 bg-slate-50 text-slate-600',
+    archived: 'border-slate-200 bg-slate-50 text-slate-500',
+  }[normalized] || 'border-slate-200 bg-slate-50 text-slate-600'
+  return (
+    <span className={`inline-flex h-8 items-center justify-center rounded-[10px] border px-3 text-xs font-semibold uppercase tracking-[0.1em] ${meta}`}>
+      {normalized}
+    </span>
+  )
+}
+
+function PublicIntakeUrlRow({ label, value, onCopy, onOpen }) {
+  return (
+    <div className="grid gap-3 rounded-[14px] border border-[#e4ecf5] bg-white p-3 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-center">
+      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">{label}</span>
+      <span className="min-w-0 truncate rounded-[10px] bg-[#f7fafc] px-3 py-2 font-mono text-xs text-[#31455c]">{value || 'Publish the link to generate this URL'}</span>
+      <span className="flex gap-2">
+        <button
+          type="button"
+          disabled={!value}
+          onClick={() => onCopy?.(value, label)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-not-allowed disabled:opacity-45"
+          title={`Copy ${label}`}
+        >
+          <Copy className="h-4 w-4" strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          disabled={!value}
+          onClick={() => onOpen?.(value)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d9e3ef] bg-white text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-not-allowed disabled:opacity-45"
+          title={`Open ${label}`}
+        >
+          <ExternalLink className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </span>
+    </div>
+  )
+}
+
+function PublicIntakeIntentToggle({ intent, label, checked, disabled, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[14px] border border-[#e4ecf5] bg-white px-3 py-3">
+      <span className="text-sm font-semibold text-[#17233a]">{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(intent, event.target.checked)}
+        className="h-5 w-5 rounded border-[#c8d5e3] accent-[#0f7f4f]"
+      />
+    </label>
+  )
+}
+
+function PublicIntakeLinkCard({
+  canEdit,
+  draft,
+  loading,
+  schemaReady,
+  saving,
+  urls,
+  onChange,
+  onCopy,
+  onDisable,
+  onOpen,
+  onSave,
+  onToggleIntent,
+}) {
+  const hasDraft = Boolean(draft)
+  const enabledIntents = draft?.enabledIntents?.length ? draft.enabledIntents : ['buy', 'sell']
+  const active = draft?.status === 'active'
+  const disabled = !canEdit || loading || saving || !schemaReady
+
+  return (
+    <OrganisationCard
+      title="Public Buyer / Seller Intake"
+      description="Create the agency link used on social media, listing enquiries, and public listing catalogues."
+      actions={hasDraft ? <PublicIntakeStatusPill status={draft.status} /> : null}
+    >
+      {!schemaReady ? (
+        <div className="rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+          Public intake storage is not installed in this environment yet. Apply the Phase 1 migration before activating agency links.
+        </div>
+      ) : loading ? (
+        <div className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] px-4 py-5 text-sm font-semibold text-[#60758d]">
+          Loading public intake link...
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-[minmax(180px,260px)_minmax(0,1fr)]">
+            <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-[12px] bg-[#e8f5ee] text-[#0f7f4f]">
+                  <Megaphone className="h-5 w-5" strokeWidth={2} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-[#17233a]">{active ? 'Live intake link' : 'Draft intake link'}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#60758d]">{active ? 'Ready for social and listing traffic.' : 'Publish when the copy and routing are ready.'}</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2">
+                <PublicIntakeIntentToggle intent="buy" label="Buyer intake" checked={enabledIntents.includes('buy')} disabled={disabled} onChange={onToggleIntent} />
+                <PublicIntakeIntentToggle intent="sell" label="Seller intake" checked={enabledIntents.includes('sell')} disabled={disabled} onChange={onToggleIntent} />
+              </div>
+            </section>
+
+            <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <OrganisationField label="Public Slug" id="agency-public-intake-slug">
+                  <Field
+                    id="agency-public-intake-slug"
+                    className={INPUT_CLASS}
+                    value={draft?.slug || ''}
+                    disabled={disabled || active}
+                    onChange={(event) => onChange?.('slug', event.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80))}
+                  />
+                </OrganisationField>
+                <OrganisationField label="Default Source" id="agency-public-intake-source">
+                  <Field
+                    as="select"
+                    id="agency-public-intake-source"
+                    className={INPUT_CLASS}
+                    value={draft?.sourceChannel || 'other'}
+                    disabled={disabled}
+                    onChange={(event) => onChange?.('sourceChannel', event.target.value)}
+                  >
+                    {AGENCY_PUBLIC_INTAKE_SOURCE_CHANNELS.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
+                  </Field>
+                </OrganisationField>
+                <OrganisationField label="Heading" id="agency-public-intake-heading" className="md:col-span-2">
+                  <Field id="agency-public-intake-heading" className={INPUT_CLASS} value={draft?.heading || ''} disabled={disabled} onChange={(event) => onChange?.('heading', event.target.value)} maxLength={160} />
+                </OrganisationField>
+                <OrganisationField label="Introduction" id="agency-public-intake-introduction" className="md:col-span-2">
+                  <textarea
+                    id="agency-public-intake-introduction"
+                    className={`${INPUT_CLASS} min-h-[88px] resize-y py-3`}
+                    value={draft?.introduction || ''}
+                    disabled={disabled}
+                    onChange={(event) => onChange?.('introduction', event.target.value)}
+                    maxLength={1000}
+                  />
+                </OrganisationField>
+                <OrganisationField label="Buyer Button" id="agency-public-intake-buyer-cta">
+                  <Field id="agency-public-intake-buyer-cta" className={INPUT_CLASS} value={draft?.buyerCtaLabel || ''} disabled={disabled} onChange={(event) => onChange?.('buyerCtaLabel', event.target.value)} maxLength={80} />
+                </OrganisationField>
+                <OrganisationField label="Seller Button" id="agency-public-intake-seller-cta">
+                  <Field id="agency-public-intake-seller-cta" className={INPUT_CLASS} value={draft?.sellerCtaLabel || ''} disabled={disabled} onChange={(event) => onChange?.('sellerCtaLabel', event.target.value)} maxLength={80} />
+                </OrganisationField>
+                <OrganisationField label="Campaign Code" id="agency-public-intake-campaign">
+                  <Field id="agency-public-intake-campaign" className={INPUT_CLASS} value={draft?.campaignCode || ''} disabled={disabled} onChange={(event) => onChange?.('campaignCode', event.target.value)} maxLength={80} />
+                </OrganisationField>
+                <OrganisationField label="Lead Source Label" id="agency-public-intake-lead-source">
+                  <Field id="agency-public-intake-lead-source" className={INPUT_CLASS} value={draft?.leadSourceLabel || 'Public Intake'} disabled={disabled} onChange={(event) => onChange?.('leadSourceLabel', event.target.value)} maxLength={120} />
+                </OrganisationField>
+              </div>
+            </section>
+          </div>
+
+          <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-[#17233a]">Distribution URLs</h3>
+                <p className="mt-1 text-sm leading-6 text-[#60758d]">Use these for social profiles, campaigns, and the public listing catalogue.</p>
+              </div>
+              <Link2 className="h-5 w-5 text-[#7b8fa5]" strokeWidth={2} />
+            </div>
+            <div className="grid gap-2">
+              <PublicIntakeUrlRow label="Main" value={urls.intakeUrl} onCopy={onCopy} onOpen={onOpen} />
+              <PublicIntakeUrlRow label="Buyer" value={enabledIntents.includes('buy') ? urls.buyerUrl : ''} onCopy={onCopy} onOpen={onOpen} />
+              <PublicIntakeUrlRow label="Seller" value={enabledIntents.includes('sell') ? urls.sellerUrl : ''} onCopy={onCopy} onOpen={onOpen} />
+              <PublicIntakeUrlRow label="Listings" value={urls.listingsUrl} onCopy={onCopy} onOpen={onOpen} />
+            </div>
+          </section>
+
+          {canEdit ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              {draft?.id && draft.status !== 'disabled' ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onDisable}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#43566d] transition hover:bg-[#f7fafc] disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Power className="h-4 w-4" strokeWidth={2} />
+                  Disable
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onSave?.('draft')}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-wait disabled:opacity-60"
+              >
+                <FileText className="h-4 w-4" strokeWidth={2} />
+                Save Draft
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onSave?.('active')}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white transition hover:bg-[#0d6f45] disabled:cursor-wait disabled:opacity-60"
+              >
+                <ShieldCheck className="h-4 w-4" strokeWidth={2} />
+                {active ? 'Update Live Link' : 'Publish Link'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </OrganisationCard>
+  )
+}
+
+function PublicIntakeMetric({ label, value, helper }) {
+  return (
+    <div className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8fa5]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-[#17233a]">{value}</p>
+      {helper ? <p className="mt-1 text-xs leading-5 text-[#60758d]">{helper}</p> : null}
+    </div>
+  )
+}
+
+function PublicIntakeSubmissionRow({ submission }) {
+  const budget = formatPublicIntakeBudget(submission)
+  return (
+    <div className="grid gap-3 rounded-[14px] border border-[#e4ecf5] bg-white p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <PublicIntakeStatusPill status={submission.status} />
+          <span className="text-sm font-semibold text-[#17233a]">{submission.contactName || `${titleize(submission.intent)} enquiry`}</span>
+          <span className="rounded-[10px] bg-[#eef6f2] px-2 py-1 text-xs font-semibold text-[#0f7f4f]">{titleize(submission.intent)}</span>
+        </div>
+        <p className="mt-2 truncate text-sm text-[#60758d]">{formatPublicIntakeContact(submission)}</p>
+        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9aab]">
+          {titleize(submission.sourceChannel)}{submission.campaignCode ? ` · ${submission.campaignCode}` : ''}{budget ? ` · ${budget}` : ''}
+        </p>
+        {submission.processingError ? <p className="mt-1 text-xs text-rose-700">{submission.processingError}</p> : null}
+      </div>
+      <div className="flex items-center gap-3 text-sm font-semibold text-[#60758d]">
+        {submission.leadId ? (
+          <span className="inline-flex items-center gap-1.5 text-[#0f7f4f]">
+            <CheckCircle2 className="h-4 w-4" strokeWidth={2} />
+            CRM
+          </span>
+        ) : null}
+        <span>{getBrandLastUpdatedLabel(submission.createdAt)}</span>
+      </div>
+    </div>
+  )
+}
+
+function PublicIntakePerformanceCard({ loading, schemaReady, performance, onRefresh }) {
+  const summary = performance?.summary || {}
+  const submissions = performance?.submissions || []
+  const windowDays = performance?.windowDays || 30
+
+  return (
+    <OrganisationCard
+      title="Public Intake Performance"
+      description={`Recent buyer and seller enquiry health across the last ${windowDays} days.`}
+      actions={
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc] disabled:cursor-wait disabled:opacity-60"
+        >
+          <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} strokeWidth={2} />
+          Refresh
+        </button>
+      }
+    >
+      {!schemaReady ? (
+        <div className="rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+          Public intake submission storage is not installed in this environment yet. Apply the Phase 2 migration to view performance.
+        </div>
+      ) : loading ? (
+        <div className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] px-4 py-5 text-sm font-semibold text-[#60758d]">
+          Loading public intake performance...
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-5">
+            <PublicIntakeMetric label="Enquiries" value={summary.total || 0} helper="Received" />
+            <PublicIntakeMetric label="Accepted" value={summary.accepted || 0} helper="CRM-ready" />
+            <PublicIntakeMetric label="Buyers" value={summary.buyer || 0} helper="Buying path" />
+            <PublicIntakeMetric label="Sellers" value={summary.seller || 0} helper="Selling path" />
+            <PublicIntakeMetric label="Review" value={summary.needsReview || 0} helper="Needs attention" />
+          </div>
+
+          <section className="rounded-[16px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-[#17233a]">Recent enquiries</h3>
+                <p className="mt-1 text-sm leading-6 text-[#60758d]">Latest public intake submissions linked to this agency.</p>
+              </div>
+              <Inbox className="h-5 w-5 text-[#7b8fa5]" strokeWidth={2} />
+            </div>
+            {submissions.length ? (
+              <div className="grid gap-2">
+                {submissions.slice(0, 8).map((submission) => (
+                  <PublicIntakeSubmissionRow key={submission.id} submission={submission} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-[#d6e2ee] bg-white px-4 py-6 text-center">
+                <p className="text-sm font-semibold text-[#17233a]">No public intake submissions yet</p>
+                <p className="mt-1 text-sm leading-6 text-[#60758d]">Once the agency shares its link, buyer and seller enquiries will appear here.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </OrganisationCard>
+  )
+}
+
 function BrandingEssentialsCard({
   organisationName,
   logoUrl,
@@ -1280,6 +1663,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [onboardingPreviewType, setOnboardingPreviewType] = useState('buyer')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [publicIntakeDraft, setPublicIntakeDraft] = useState(null)
+  const [publicIntakeLoading, setPublicIntakeLoading] = useState(false)
+  const [publicIntakeSaving, setPublicIntakeSaving] = useState(false)
+  const [publicIntakeSchemaReady, setPublicIntakeSchemaReady] = useState(true)
+  const [publicIntakePerformance, setPublicIntakePerformance] = useState(null)
+  const [publicIntakePerformanceLoading, setPublicIntakePerformanceLoading] = useState(false)
+  const [publicIntakePerformanceSchemaReady, setPublicIntakePerformanceSchemaReady] = useState(true)
 
   useEffect(() => {
     let active = true
@@ -1335,6 +1725,105 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   })
   const showBrandingOnly = section === 'branding'
   const hasUnsavedChanges = state && initialState ? JSON.stringify(state) !== JSON.stringify(initialState) : false
+  const showPublicIntakeControls = copyKey === 'agency'
+  const publicIntakeOrganisationName = useMemo(() => getOrganisationDisplayName(form || {}, onboarding || {}), [form, onboarding])
+  const publicIntakeHost = useMemo(() => getCurrentPublicHost(), [])
+  const publicIntakeUrls = useMemo(
+    () => buildAgencyPublicIntakeUrls({ slug: publicIntakeDraft?.slug || '', host: publicIntakeHost }),
+    [publicIntakeDraft?.slug, publicIntakeHost],
+  )
+
+  useEffect(() => {
+    let active = true
+
+    async function loadPublicIntake() {
+      if (!showPublicIntakeControls || !form?.id) {
+        setPublicIntakeDraft(null)
+        setPublicIntakeSchemaReady(true)
+        setPublicIntakeLoading(false)
+        return
+      }
+
+      try {
+        setPublicIntakeLoading(true)
+        const result = await loadAgencyPublicIntakeLink({ organisationId: form.id })
+        if (!active) return
+        setPublicIntakeSchemaReady(result.schemaReady !== false)
+        setPublicIntakeDraft(createPublicIntakeDraft(result.link, publicIntakeOrganisationName))
+      } catch (loadError) {
+        if (!active) return
+        setError(loadError?.message || 'Public intake link settings could not be loaded.')
+        setPublicIntakeDraft(createPublicIntakeDraft(null, publicIntakeOrganisationName))
+      } finally {
+        if (active) setPublicIntakeLoading(false)
+      }
+    }
+
+    void loadPublicIntake()
+    return () => {
+      active = false
+    }
+  }, [form?.id, publicIntakeOrganisationName, showPublicIntakeControls])
+
+  async function refreshPublicIntakePerformance({ silent = false, intakeLinkId = '' } = {}) {
+    if (!showPublicIntakeControls || !form?.id) {
+      setPublicIntakePerformance(null)
+      setPublicIntakePerformanceSchemaReady(true)
+      return null
+    }
+    try {
+      if (!silent) setPublicIntakePerformanceLoading(true)
+      const result = await loadAgencyPublicIntakePerformance({
+        organisationId: form.id,
+        intakeLinkId: intakeLinkId || publicIntakeDraft?.id || '',
+        windowDays: 30,
+        limit: 50,
+      })
+      setPublicIntakePerformanceSchemaReady(result.schemaReady !== false)
+      setPublicIntakePerformance(result)
+      return result
+    } catch (loadError) {
+      setError(loadError?.message || 'Public intake performance could not be loaded.')
+      return null
+    } finally {
+      if (!silent) setPublicIntakePerformanceLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+
+    async function loadPerformance() {
+      if (!showPublicIntakeControls || !form?.id) {
+        setPublicIntakePerformance(null)
+        setPublicIntakePerformanceSchemaReady(true)
+        setPublicIntakePerformanceLoading(false)
+        return
+      }
+      try {
+        setPublicIntakePerformanceLoading(true)
+        const result = await loadAgencyPublicIntakePerformance({
+          organisationId: form.id,
+          intakeLinkId: publicIntakeDraft?.id || '',
+          windowDays: 30,
+          limit: 50,
+        })
+        if (!active) return
+        setPublicIntakePerformanceSchemaReady(result.schemaReady !== false)
+        setPublicIntakePerformance(result)
+      } catch (loadError) {
+        if (!active) return
+        setError(loadError?.message || 'Public intake performance could not be loaded.')
+      } finally {
+        if (active) setPublicIntakePerformanceLoading(false)
+      }
+    }
+
+    void loadPerformance()
+    return () => {
+      active = false
+    }
+  }, [form?.id, publicIntakeDraft?.id, showPublicIntakeControls])
 
   useEffect(() => {
     if (!hasUnsavedChanges || typeof window === 'undefined') return undefined
@@ -1619,6 +2108,89 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     } catch {
       setMessage(`${hexValue} ready to copy.`)
     }
+  }
+
+  function updatePublicIntakeField(key, value) {
+    setMessage('')
+    setPublicIntakeDraft((previous) => ({
+      ...createPublicIntakeDraft(previous, publicIntakeOrganisationName),
+      [key]: value,
+    }))
+  }
+
+  function togglePublicIntakeIntent(intent, checked) {
+    setMessage('')
+    setError('')
+    const draft = createPublicIntakeDraft(publicIntakeDraft, publicIntakeOrganisationName)
+    const current = draft.enabledIntents?.length ? draft.enabledIntents : ['buy', 'sell']
+    const next = checked
+      ? [...new Set([...current, intent])]
+      : current.filter((item) => item !== intent)
+    if (!next.length) {
+      setError('At least one intake path must stay enabled.')
+      return
+    }
+    setPublicIntakeDraft((previous) => {
+      return {
+        ...createPublicIntakeDraft(previous, publicIntakeOrganisationName),
+        enabledIntents: next,
+      }
+    })
+  }
+
+  async function savePublicIntakeLink(status = 'draft') {
+    if (!canEdit || !form?.id || !publicIntakeDraft) return
+    const slug = normalizeText(publicIntakeDraft.slug)
+    if (slug.length < 3) {
+      setError('Public intake slug must be at least 3 characters.')
+      return
+    }
+    try {
+      setPublicIntakeSaving(true)
+      setError('')
+      setMessage('')
+      const result = await saveAgencyPublicIntakeLink({
+        ...publicIntakeDraft,
+        organisationId: form.id,
+        status,
+      }, {
+        organisationName: publicIntakeOrganisationName,
+      })
+      setPublicIntakeSchemaReady(result.schemaReady !== false)
+      if (result.link) {
+        setPublicIntakeDraft(createPublicIntakeDraft(result.link, publicIntakeOrganisationName))
+        void refreshPublicIntakePerformance({ silent: true, intakeLinkId: result.link.id })
+        setMessage(status === 'active' ? 'Public intake link published.' : status === 'disabled' ? 'Public intake link disabled.' : 'Public intake draft saved.')
+      } else if (result.missingSchema) {
+        setMessage('')
+        setError('Public intake storage is not installed yet. Apply the Phase 1 migration first.')
+      }
+    } catch (saveError) {
+      setError(saveError?.message || 'Public intake link could not be saved.')
+    } finally {
+      setPublicIntakeSaving(false)
+    }
+  }
+
+  async function disablePublicIntakeLink() {
+    await savePublicIntakeLink('disabled')
+  }
+
+  async function copyPublicIntakeUrl(value, label = 'URL') {
+    const url = normalizeText(value)
+    if (!url) return
+    try {
+      await navigator.clipboard?.writeText(url)
+      setMessage(`${label} URL copied.`)
+    } catch {
+      setMessage(`${label} URL ready to copy: ${url}`)
+    }
+  }
+
+  function openPublicIntakeUrl(value) {
+    const url = normalizeText(value)
+    if (!url || typeof window === 'undefined') return
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   function updateOrganisationDefault(key, value) {
@@ -1948,6 +2520,31 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 onColourChange={(key, value) => updateBrandColour(key, value)}
                 onCopyColour={(value) => copyBrandHex(value)}
               />
+
+              {showPublicIntakeControls ? (
+                <>
+                  <PublicIntakeLinkCard
+                    canEdit={canEdit}
+                    draft={publicIntakeDraft}
+                    loading={publicIntakeLoading}
+                    schemaReady={publicIntakeSchemaReady}
+                    saving={publicIntakeSaving}
+                    urls={publicIntakeUrls}
+                    onChange={updatePublicIntakeField}
+                    onCopy={copyPublicIntakeUrl}
+                    onDisable={disablePublicIntakeLink}
+                    onOpen={openPublicIntakeUrl}
+                    onSave={savePublicIntakeLink}
+                    onToggleIntent={togglePublicIntakeIntent}
+                  />
+                  <PublicIntakePerformanceCard
+                    loading={publicIntakePerformanceLoading}
+                    schemaReady={publicIntakePerformanceSchemaReady}
+                    performance={publicIntakePerformance}
+                    onRefresh={refreshPublicIntakePerformance}
+                  />
+                </>
+              ) : null}
 
               <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2388,6 +2985,31 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               onColourChange={(key, value) => updateBrandColour(key, value)}
               onCopyColour={(value) => copyBrandHex(value)}
             />
+
+            {showPublicIntakeControls ? (
+              <>
+                <PublicIntakeLinkCard
+                  canEdit={canEdit}
+                  draft={publicIntakeDraft}
+                  loading={publicIntakeLoading}
+                  schemaReady={publicIntakeSchemaReady}
+                  saving={publicIntakeSaving}
+                  urls={publicIntakeUrls}
+                  onChange={updatePublicIntakeField}
+                  onCopy={copyPublicIntakeUrl}
+                  onDisable={disablePublicIntakeLink}
+                  onOpen={openPublicIntakeUrl}
+                  onSave={savePublicIntakeLink}
+                  onToggleIntent={togglePublicIntakeIntent}
+                />
+                <PublicIntakePerformanceCard
+                  loading={publicIntakePerformanceLoading}
+                  schemaReady={publicIntakePerformanceSchemaReady}
+                  performance={publicIntakePerformance}
+                  onRefresh={refreshPublicIntakePerformance}
+                />
+              </>
+            ) : null}
 
             {!showBrandingOnly ? (
               <>

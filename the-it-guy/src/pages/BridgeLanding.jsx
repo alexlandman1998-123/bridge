@@ -137,6 +137,7 @@ function buildPublicListingUrl(filters = {}) {
   if (filters.minPrice) params.set('minPrice', filters.minPrice)
   if (filters.maxPrice) params.set('maxPrice', filters.maxPrice)
   if (filters.bedrooms) params.set('bedrooms', filters.bedrooms)
+  if (filters.agencySlug) params.set('agencySlug', filters.agencySlug)
   params.set('limit', '24')
   const query = params.toString()
   return `/api/public/listings${query ? `?${query}` : ''}`
@@ -2043,6 +2044,9 @@ function PublicListingsBody() {
       minPrice: '',
       maxPrice: '',
       bedrooms: '',
+      agencySlug: typeof window !== 'undefined'
+        ? String(new URLSearchParams(window.location.search).get('agencySlug') || new URLSearchParams(window.location.search).get('agency') || '').trim()
+        : '',
     }
   }, [])
   const [draftFilters, setDraftFilters] = useState(initialFilters)
@@ -2251,7 +2255,7 @@ function PublicListingDetailBody({ slug }) {
               </div>
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
                 <Button asChild size="lg">
-                  <Link to={`/bridge/contact?listing=${encodeURIComponent(listing.slug)}`}>
+                  <Link to={listing.enquiryUrl || `/bridge/contact?listing=${encodeURIComponent(listing.slug)}`}>
                     Enquire
                     <ArrowRight className="h-4 w-4" />
                   </Link>

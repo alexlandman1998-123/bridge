@@ -71,6 +71,11 @@ function normalizeToken(value = '') {
   return normalizeLower(value).replace(/[\s-]+/g, '_')
 }
 
+function isMissingRelationError(error) {
+  const message = normalizeLower(error?.message)
+  return error?.code === '42P01' || message.includes('does not exist') || message.includes('schema cache')
+}
+
 function toNumber(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : null
@@ -215,6 +220,10 @@ export function mapPublicListingContract({ listing = {}, publication = {}, media
   const videos = media.filter((item) => ['video', 'virtual_tour'].includes(normalizeLower(item.media_type)) && normalizeText(item.file_url))
   const slug = createListingSlug({ listing, publication })
   const publicUrl = `${host.replace(/\/+$/g, '')}/buy/${slug}`
+  const agencySlug = normalizeText(listing.agency_public_intake_slug)
+  const enquiryUrl = agencySlug
+    ? `${host.replace(/\/+$/g, '')}/intake/${encodeURIComponent(agencySlug)}?intent=buy&listing=${encodeURIComponent(slug)}&listingId=${encodeURIComponent(listing.id)}`
+    : ''
 
   return {
     id: listing.id,
@@ -254,7 +263,9 @@ export function mapPublicListingContract({ listing = {}, publication = {}, media
       url: normalizeText(item.file_url),
       caption: normalizeText(item.caption),
     })),
-    agencyName: '',
+    agencyName: normalizeText(listing.agency_public_name),
+    agencySlug,
+    enquiryUrl,
     agentName: '',
     publishedAt: publication.updated_at || publication.created_at || listing.updated_at || listing.created_at || null,
     publicUrl,
@@ -281,6 +292,63 @@ function normalizeOffset(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
   return Math.max(0, Math.round(numeric))
+}
+
+async function resolveAgencyScope(client, agencySlug = '') {
+  const normalizedSlug = normalizeText(agencySlug).toLowerCase()
+  if (!normalizedSlug) return null
+  const result = await client
+    .from('agency_public_intake_links')
+    .select('organisation_id, slug')
+    .eq('slug', normalizedSlug)
+    .eq('status', 'active')
+    .is('disabled_at', null)
+    .maybeSingle()
+  if (result.error) {
+    if (isMissingRelationError(result.error)) return null
+    throw result.error
+  }
+  return result.data || null
+}
+
+async function loadAgencyPublicMetadata(client, organisationIds = []) {
+  const ids = [...new Set(organisationIds.map(normalizeText).filter(Boolean))]
+  if (!ids.length) return new Map()
+  const [linksResult, organisationsResult] = await Promise.all([
+    client
+      .from('agency_public_intake_links')
+      .select('organisation_id, slug')
+      .in('organisation_id', ids)
+      .eq('status', 'active')
+      .is('disabled_at', null)
+      .order('is_primary', { ascending: false })
+      .order('updated_at', { ascending: false }),
+    client
+      .from('organisations')
+      .select('id, name, display_name')
+      .in('id', ids),
+  ])
+  if (linksResult.error && !isMissingRelationError(linksResult.error)) throw linksResult.error
+  if (organisationsResult.error) throw organisationsResult.error
+
+  const metadata = new Map()
+  for (const org of organisationsResult.data || []) {
+    const organisationId = normalizeText(org.id)
+    metadata.set(organisationId, {
+      organisationId,
+      agencyName: normalizeText(org.display_name || org.name),
+      agencySlug: '',
+    })
+  }
+  for (const link of linksResult.error ? [] : linksResult.data || []) {
+    const organisationId = normalizeText(link.organisation_id)
+    if (!organisationId || metadata.get(organisationId)?.agencySlug) continue
+    metadata.set(organisationId, {
+      ...(metadata.get(organisationId) || { organisationId }),
+      agencySlug: normalizeText(link.slug),
+    })
+  }
+  return metadata
 }
 
 function matchesFilters(item = {}, filters = {}) {
@@ -326,6 +394,13 @@ export async function getPublicListings(options = {}) {
   const host = normalizeText(options.host) || 'https://www.arch9.co.za'
   const limit = normalizeLimit(options.limit)
   const offset = normalizeOffset(options.offset)
+  const agencySlug = normalizeText(options.agencySlug)
+  const agencyScope = await resolveAgencyScope(client, agencySlug)
+  if (agencySlug && !agencyScope) {
+    return options.slug
+      ? { listing: null, generatedAt: new Date().toISOString() }
+      : { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
+  }
 
   const publicationResult = await client
     .from('listing_publication_data')
@@ -342,16 +417,31 @@ export async function getPublicListings(options = {}) {
     return { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
   }
 
-  const listingsResult = await client
+  let listingsQuery = client
     .from('private_listings')
     .select(PUBLIC_LISTING_FIELDS)
     .in('id', listingIds)
     .eq('bridge_listing_status', 'published')
     .eq('listing_visibility', 'active_market')
 
+  if (agencyScope?.organisation_id) {
+    listingsQuery = listingsQuery.eq('organisation_id', agencyScope.organisation_id)
+  }
+
+  const listingsResult = await listingsQuery
+
   if (listingsResult.error) throw listingsResult.error
 
-  const listingsById = new Map((listingsResult.data || []).map((row) => [normalizeText(row.id), row]))
+  const listingRows = listingsResult.data || []
+  const agencyMetadata = await loadAgencyPublicMetadata(client, listingRows.map((row) => row.organisation_id))
+  const listingsById = new Map(listingRows.map((row) => {
+    const metadata = agencyMetadata.get(normalizeText(row.organisation_id)) || {}
+    return [normalizeText(row.id), {
+      ...row,
+      agency_public_intake_slug: metadata.agencySlug || '',
+      agency_public_name: metadata.agencyName || '',
+    }]
+  }))
   const mediaResult = await client
     .from('listing_media')
     .select(MEDIA_FIELDS)
