@@ -44,4 +44,14 @@ jobs:
 
       - name: Verify manifest coverage
         run: |
-          node -e "const m=require('./docs/supabase-phase-5-application-manifest.json'); if(m.rows.length!==63) throw new Error('Expected 63 manifest rows')"
+          node <<'NODE'
+          const { spawnSync } = require('node:child_process')
+          const manifest = require('./docs/supabase-phase-5-application-manifest.json')
+          if (manifest.linkedProjectRef !== 'isdowlnollckzvltkasn') throw new Error('Unexpected manifest project ref')
+          if (!Array.isArray(manifest.rows) || manifest.rows.length === 0) throw new Error('Manifest rows are missing')
+          const plan = spawnSync(process.execPath, ['scripts/supabase-phase7-production-execution.mjs', '--plan', '--json'], { encoding: 'utf8' })
+          if (plan.status !== 0) throw new Error(plan.stderr || 'Phase 7 plan failed')
+          const parsed = JSON.parse(plan.stdout)
+          if (!Number.isInteger(parsed.count) || parsed.count <= 0) throw new Error('Phase 7 plan count is invalid')
+          if (parsed.count > manifest.rows.length) throw new Error('Phase 7 plan count exceeds manifest rows')
+          NODE

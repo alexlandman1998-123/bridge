@@ -5,7 +5,6 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import pg from 'pg'
 import { collectRolloutSourceContinuity } from '../the-it-guy/scripts/legal-document-rollout-source-continuity.mjs'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
@@ -287,6 +286,7 @@ function runSupabase(repoRoot, args) {
 }
 
 async function runPgSqlFile(target, filePath) {
+  const { default: pg } = await import('pg')
   const parsed = new URL(target.dbUrl)
   parsed.search = ''
   const client = new pg.Client({
