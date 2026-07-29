@@ -44,6 +44,8 @@ import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
+import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAgentProgressView'
+import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
@@ -10231,6 +10233,18 @@ function AttorneyTransactionDetail() {
     [documentRequests],
   )
   const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
+  const bondOriginatorAgentProgressView =
+    data?.bondOriginatorAgentProgressView ||
+    data?.bond_originator_agent_progress_view ||
+    transaction?.bondOriginatorAgentProgressView ||
+    transaction?.bond_originator_agent_progress_view ||
+    null
+  const bondOriginatorAttorneyHandoffView =
+    data?.bondOriginatorAttorneyHandoffView ||
+    data?.bond_originator_attorney_handoff_view ||
+    transaction?.bondOriginatorAttorneyHandoffView ||
+    transaction?.bond_originator_attorney_handoff_view ||
+    null
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const rawTransactionRolePlayers = data?.transactionRolePlayers || data?.rolePlayers || data?.transaction_role_players
   const transactionRolePlayers = Array.isArray(rawTransactionRolePlayers) ? rawTransactionRolePlayers.filter(Boolean) : EMPTY_ARRAY
@@ -14649,6 +14663,15 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
+            <BondOriginatorAttorneyHandoffView
+              handoffView={bondOriginatorAttorneyHandoffView}
+              transaction={transaction}
+              documents={documents}
+              rolePlayers={transactionRolePlayers}
+              onOpenDocument={handleOpenFinanceDocument}
+              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+            />
+
             {transaction?.id ? (
               <AttorneyMatterAccountsPanel
                 transactionId={transaction.id}
@@ -14913,6 +14936,15 @@ function AttorneyTransactionDetail() {
                     onDraftBrief={handleDraftAttorneyStatusBrief}
                     onOpenWorkspace={openWorkspaceMenu}
                     onOpenTask={(item) => openWorkspaceMenu(getWorkspaceMenuForTask(item))}
+                  />
+                ) : null}
+                {activeWorkspaceMenu === 'overview' && isAgentTransactionView && isBondOrHybridFinance ? (
+                  <BondOriginatorAgentProgressView
+                    progressView={bondOriginatorAgentProgressView}
+                    transaction={transaction}
+                    onOpenFinance={() => openWorkspaceMenu('finance')}
+                    onOpenDocuments={() => openWorkspaceMenu('documents')}
+                    onOpenActivity={() => openWorkspaceMenu('activity')}
                   />
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
@@ -16331,7 +16363,14 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
-            {financeCommandCenterPanel}
+            {isAgentTransactionView ? (
+              <BondOriginatorAgentProgressView
+                progressView={bondOriginatorAgentProgressView}
+                transaction={transaction}
+                onOpenDocuments={() => openWorkspaceMenu('documents')}
+                onOpenActivity={() => openWorkspaceMenu('activity')}
+              />
+            ) : financeCommandCenterPanel}
           </section>
         ) : null}
 

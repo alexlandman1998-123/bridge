@@ -1,72 +1,90 @@
-import type { SendAppointmentEmailPayload } from '../types.ts'
+import type { SendAppointmentEmailPayload } from "../types.ts";
 import {
   buildAppointmentEmailHtml,
   buildAppointmentEmailText,
   buildAppointmentSubject,
-} from '../content/appointment.ts'
-import { sendViaResendApi } from '../services/resend.ts'
-import { jsonResponse } from '../utils/http.ts'
-import { normalizeText } from '../utils/text.ts'
+} from "../content/appointment.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
+import { sendViaResendApi } from "../services/resend.ts";
+import { jsonResponse } from "../utils/http.ts";
+import { normalizeText } from "../utils/text.ts";
 
-function escapeIcsText(value = '') {
-  return String(value || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/\r/g, '')
-    .replace(/\n/g, '\\n')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;')
+function escapeIcsText(value = "") {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r/g, "")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
 }
 
-function formatUtcIcsDate(value = '') {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+function formatUtcIcsDate(value = "") {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
 export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
-  if (payload.attachCalendarInvite === false) return null
-  const date = normalizeText(payload.appointmentDate)
-  const time = normalizeText(payload.appointmentTime).slice(0, 5)
-  if (!date || !time) return null
+  if (payload.attachCalendarInvite === false) return null;
+  const date = normalizeText(payload.appointmentDate);
+  const time = normalizeText(payload.appointmentTime).slice(0, 5);
+  if (!date || !time) return null;
 
-  const start = new Date(`${date}T${time}:00+02:00`)
-  if (Number.isNaN(start.getTime())) return null
-  const endTime = normalizeText(payload.appointmentEndTime).slice(0, 5)
-  const explicitEnd = endTime ? new Date(`${date}T${endTime}:00+02:00`) : null
-  const end = explicitEnd && !Number.isNaN(explicitEnd.getTime()) && explicitEnd.getTime() > start.getTime()
+  const start = new Date(`${date}T${time}:00+02:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const endTime = normalizeText(payload.appointmentEndTime).slice(0, 5);
+  const explicitEnd = endTime ? new Date(`${date}T${endTime}:00+02:00`) : null;
+  const end = explicitEnd && !Number.isNaN(explicitEnd.getTime()) &&
+      explicitEnd.getTime() > start.getTime()
     ? explicitEnd
-    : new Date(start.getTime() + 45 * 60 * 1000)
+    : new Date(start.getTime() + 45 * 60 * 1000);
   const uid = normalizeText(payload.appointmentId)
     ? `bridge-${normalizeText(payload.appointmentId)}@bridge.app`
-    : `bridge-${crypto.randomUUID()}@bridge.app`
-  const title = normalizeText(payload.appointmentTitle || payload.appointmentType || 'Arch9 Appointment')
-  const location = normalizeText(payload.meetingUrl || payload.location || 'To be confirmed')
+    : `bridge-${crypto.randomUUID()}@bridge.app`;
+  const title = normalizeText(
+    payload.appointmentTitle || payload.appointmentType || "Arch9 Appointment",
+  );
+  const location = normalizeText(
+    payload.meetingUrl || payload.location || "To be confirmed",
+  );
   const description = [
     normalizeText(payload.notes),
-    normalizeText(payload.actionLink) ? `Appointment link: ${normalizeText(payload.actionLink)}` : '',
-  ].filter(Boolean).join('\n\n')
-  const organizerEmail = normalizeText(payload.organizerEmail || 'appointments@bridge.co.za')
-  const organizerName = normalizeText(payload.organizerName || 'Arch9')
-  const attendeeEmail = normalizeText(payload.to)
-  const attendeeName = normalizeText(payload.recipientName || payload.to || 'Participant')
-  const timezone = normalizeText(payload.timezone || 'Africa/Johannesburg')
-  const normalizedStatus = normalizeText(payload.status).toLowerCase()
-  const isCancellation = normalizeText(payload.type).toLowerCase() === 'appointment_cancelled' || normalizedStatus.includes('cancel')
-  const method = isCancellation ? 'CANCEL' : 'REQUEST'
+    normalizeText(payload.actionLink)
+      ? `Appointment link: ${normalizeText(payload.actionLink)}`
+      : "",
+  ].filter(Boolean).join("\n\n");
+  const organizerEmail = normalizeText(
+    payload.organizerEmail || "appointments@bridge.co.za",
+  );
+  const organizerName = normalizeText(payload.organizerName || "Arch9");
+  const attendeeEmail = normalizeText(payload.to);
+  const attendeeName = normalizeText(
+    payload.recipientName || payload.to || "Participant",
+  );
+  const timezone = normalizeText(payload.timezone || "Africa/Johannesburg");
+  const normalizedStatus = normalizeText(payload.status).toLowerCase();
+  const isCancellation =
+    normalizeText(payload.type).toLowerCase() === "appointment_cancelled" ||
+    normalizedStatus.includes("cancel");
+  const method = isCancellation ? "CANCEL" : "REQUEST";
   const eventStatus = isCancellation
-    ? 'CANCELLED'
-    : normalizedStatus.includes('pending') || normalizedStatus.includes('request')
-      ? 'TENTATIVE'
-      : 'CONFIRMED'
+    ? "CANCELLED"
+    : normalizedStatus.includes("pending") ||
+        normalizedStatus.includes("request")
+    ? "TENTATIVE"
+    : "CONFIRMED";
 
   const content = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Arch9//Appointments//EN',
-    'CALSCALE:GREGORIAN',
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Arch9//Appointments//EN",
+    "CALSCALE:GREGORIAN",
     `METHOD:${method}`,
     `X-WR-TIMEZONE:${escapeIcsText(timezone)}`,
-    'BEGIN:VEVENT',
+    "BEGIN:VEVENT",
     `UID:${escapeIcsText(uid)}`,
     `DTSTAMP:${formatUtcIcsDate(new Date().toISOString())}`,
     `DTSTART:${formatUtcIcsDate(start.toISOString())}`,
@@ -75,39 +93,75 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     `DESCRIPTION:${escapeIcsText(description)}`,
     `LOCATION:${escapeIcsText(location)}`,
     `STATUS:${eventStatus}`,
-    'SEQUENCE:0',
-    `ORGANIZER;CN=${escapeIcsText(organizerName)}:MAILTO:${escapeIcsText(organizerEmail)}`,
-    attendeeEmail ? `ATTENDEE;CN=${escapeIcsText(attendeeName)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:MAILTO:${escapeIcsText(attendeeEmail)}` : '',
-    normalizeText(payload.actionLink) ? `URL:${escapeIcsText(normalizeText(payload.actionLink))}` : '',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n')
+    "SEQUENCE:0",
+    `ORGANIZER;CN=${escapeIcsText(organizerName)}:MAILTO:${
+      escapeIcsText(organizerEmail)
+    }`,
+    attendeeEmail
+      ? `ATTENDEE;CN=${
+        escapeIcsText(attendeeName)
+      };ROLE=REQ-PARTICIPANT;RSVP=TRUE:MAILTO:${escapeIcsText(attendeeEmail)}`
+      : "",
+    normalizeText(payload.actionLink)
+      ? `URL:${escapeIcsText(normalizeText(payload.actionLink))}`
+      : "",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean).join("\r\n");
 
   return {
-    filename: normalizeText(payload.appointmentId) ? `arch9-appointment-${normalizeText(payload.appointmentId)}.ics` : 'arch9-appointment.ics',
+    filename: normalizeText(payload.appointmentId)
+      ? `arch9-appointment-${normalizeText(payload.appointmentId)}.ics`
+      : "arch9-appointment.ics",
     content: btoa(content),
     content_type: `text/calendar; method=${method}; charset=UTF-8`,
-  }
+  };
 }
 
-export async function handleAppointmentEmail(payload: SendAppointmentEmailPayload) {
-  const resendApiKey = normalizeText(Deno.env.get('RESEND_API_KEY'))
+export async function handleAppointmentEmail(
+  payload: SendAppointmentEmailPayload,
+) {
+  const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
-    return jsonResponse(500, { error: 'Missing RESEND_API_KEY secret.' })
+    return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const to = normalizeText(payload.to)
+  const to = normalizeText(payload.to);
   if (!to) {
-    return jsonResponse(400, { error: 'Missing required field: to' })
+    return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const eventType = normalizeText(payload.type).toLowerCase()
-  const sender =
-    normalizeText(Deno.env.get('RESEND_APPOINTMENTS_FROM_EMAIL')) ||
-    normalizeText(Deno.env.get('RESEND_FROM_EMAIL')) ||
-    'Arch9 Appointments <appointments@bridge.co.za>'
+  const eventType = normalizeText(payload.type).toLowerCase();
+  const rawPayload = payload as Record<string, unknown>;
+  const organisationName = normalizeText(
+    rawPayload.organisationName || rawPayload.organisation_name,
+  ) || "Arch9";
+  const supportEmail = normalizeText(
+    rawPayload.supportEmail || rawPayload.support_email,
+  );
+  const supportPhone = normalizeText(
+    rawPayload.supportPhone || rawPayload.support_phone,
+  );
+  const branding = await resolveEmailBranding({
+    payload: rawPayload,
+    organisationId: normalizeText(
+      rawPayload.organisationId || rawPayload.organisation_id,
+    ),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const baseSender =
+    normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    "Arch9 Appointments <appointments@bridge.co.za>";
+  const sender = formatEmailSender(
+    baseSender,
+    branding.fromName || branding.organisationName,
+  );
 
-  const subject = buildAppointmentSubject(eventType, normalizeText(payload.appointmentType) || 'Appointment')
+  const subject = buildAppointmentSubject(
+    eventType,
+    normalizeText(payload.appointmentType) || "Appointment",
+  );
   const html = buildAppointmentEmailHtml({
     eventType,
     recipientName: normalizeText(payload.recipientName),
@@ -124,7 +178,11 @@ export async function handleAppointmentEmail(payload: SendAppointmentEmailPayloa
     declineLink: normalizeText(payload.declineLink),
     rescheduleLink: normalizeText(payload.rescheduleLink),
     meetingUrl: normalizeText(payload.meetingUrl),
-  })
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
+  });
   const text = buildAppointmentEmailText({
     eventType,
     recipientName: normalizeText(payload.recipientName),
@@ -141,9 +199,12 @@ export async function handleAppointmentEmail(payload: SendAppointmentEmailPayloa
     declineLink: normalizeText(payload.declineLink),
     rescheduleLink: normalizeText(payload.rescheduleLink),
     meetingUrl: normalizeText(payload.meetingUrl),
-  })
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+  });
 
-  const icsAttachment = buildIcsAttachment(payload)
+  const icsAttachment = buildIcsAttachment(payload);
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -153,18 +214,18 @@ export async function handleAppointmentEmail(payload: SendAppointmentEmailPayloa
     html,
     text,
     attachments: icsAttachment ? [icsAttachment] : undefined,
-  })
+  });
 
   if (!emailResult.ok) {
     return jsonResponse(500, {
-      error: emailResult.error?.message || 'Failed to send appointment email.',
+      error: emailResult.error?.message || "Failed to send appointment email.",
       details: emailResult.error,
-    })
+    });
   }
 
   return jsonResponse(200, {
     ok: true,
     type: eventType,
     emailId: emailResult.data?.id || null,
-  })
+  });
 }

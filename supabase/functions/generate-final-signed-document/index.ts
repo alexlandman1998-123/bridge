@@ -578,6 +578,113 @@ function safeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function extractVersionPlannedSigningFields(version: Record<string, unknown>) {
+  const normalizeFields = (source: unknown) => {
+    if (!Array.isArray(source)) return [];
+    return (source as Record<string, unknown>[]).map((field) => {
+      const signerRole = lower(field?.signerRole || field?.signer_role);
+      const fieldType = lower(field?.fieldType || field?.field_type || "signature");
+      const pageNumber = Math.max(1, safeNumber(field?.pageNumber ?? field?.page_number, 1));
+      const xPosition = safeNumber(field?.xPosition ?? field?.x_position, -1);
+      const yPosition = safeNumber(field?.yPosition ?? field?.y_position, -1);
+      const width = safeNumber(field?.width, -1);
+      const height = safeNumber(field?.height, -1);
+      if (!signerRole || !["signature", "initial"].includes(fieldType)) return null;
+      if (![pageNumber, xPosition, yPosition, width, height].every((value) => Number.isFinite(value) && value >= 0)) return null;
+      return {
+        signerRole,
+        fieldType,
+        pageNumber,
+        xPosition,
+        yPosition,
+        width,
+        height,
+      };
+    }).filter(Boolean) as Array<{
+      signerRole: string;
+      fieldType: string;
+      pageNumber: number;
+      xPosition: number;
+      yPosition: number;
+      width: number;
+      height: number;
+    }>;
+  };
+
+  const validationSummary = version?.validation_summary_json && typeof version.validation_summary_json === "object"
+    ? version.validation_summary_json as Record<string, unknown>
+    : {};
+  const nativePdfLayout = validationSummary?.native_pdf_layout && typeof validationSummary.native_pdf_layout === "object"
+    ? validationSummary.native_pdf_layout as Record<string, unknown>
+    : {};
+  const summaryFields = normalizeFields(
+    Array.isArray(nativePdfLayout?.plannedSigningFields)
+      ? nativePdfLayout.plannedSigningFields
+      : nativePdfLayout?.planned_signing_fields,
+  );
+  if (summaryFields.length) return summaryFields;
+
+  const sections = Array.isArray(version?.section_manifest_json)
+    ? version.section_manifest_json as Record<string, unknown>[]
+    : [];
+  return sections.flatMap((section) => {
+    const metadata = section?.metadata && typeof section.metadata === "object"
+      ? section.metadata as Record<string, unknown>
+      : section?.metadata_json && typeof section.metadata_json === "object"
+        ? section.metadata_json as Record<string, unknown>
+        : {};
+    const signing = metadata?.signing && typeof metadata.signing === "object" ? metadata.signing as Record<string, unknown> : {};
+    const source = Array.isArray(section?.signingFields)
+      ? section.signingFields
+      : Array.isArray(section?.signing_fields)
+        ? section.signing_fields
+        : Array.isArray(signing?.signing_fields)
+          ? signing.signing_fields
+          : Array.isArray(metadata?.planned_signing_fields)
+            ? metadata.planned_signing_fields
+            : [];
+
+    return normalizeFields(source);
+  });
+}
+
+function applyAuthoritativeSigningLayout({
+  version,
+  fields,
+}: {
+  version: Record<string, unknown>;
+  fields: Record<string, unknown>[];
+}) {
+  const plannedFields = extractVersionPlannedSigningFields(version);
+  if (!plannedFields.length) return fields;
+
+  const plannedByRoleType = plannedFields.reduce((accumulator, field) => {
+    const key = `${field.signerRole}:${field.fieldType}`;
+    const list = accumulator.get(key) || [];
+    list.push(field);
+    accumulator.set(key, list);
+    return accumulator;
+  }, new Map<string, typeof plannedFields>());
+
+  const consumed = new Map<string, number>();
+  return fields.map((field) => {
+    const key = `${lower(field.signer_role)}:${lower(field.field_type)}`;
+    const candidates = plannedByRoleType.get(key) || [];
+    const index = consumed.get(key) || 0;
+    const planned = candidates[Math.min(index, Math.max(0, candidates.length - 1))];
+    consumed.set(key, index + 1);
+    if (!planned) return field;
+    return {
+      ...field,
+      page_number: planned.pageNumber,
+      x_position: planned.xPosition,
+      y_position: planned.yPosition,
+      width: planned.width,
+      height: planned.height,
+    };
+  });
+}
+
 function fieldIsSignatureLike(field: Record<string, unknown>) {
   const fieldType = lower(field?.field_type);
   return fieldType === "signature" || fieldType === "initial";
@@ -3092,7 +3199,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const signatureFields = requiredFields.filter(fieldIsSignatureLike);
+    const signatureFields = applyAuthoritativeSigningLayout({
+      version,
+      fields: requiredFields.filter(fieldIsSignatureLike),
+    });
     if (!signatureFields.length) {
       return finalisationFailureResponse(409, {
         success: false,

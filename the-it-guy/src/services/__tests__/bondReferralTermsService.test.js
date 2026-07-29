@@ -21,6 +21,7 @@ try {
     rateType: 'percentage',
     percentage: 25,
     status: 'accepted',
+    termsSnapshot: { payoutRecipient: 'agency' },
   })
   assert.equal(terms.status, 'accepted')
   assert.equal(terms.calculationBasis, 'originator_commission')
@@ -44,6 +45,20 @@ try {
   assert.equal(entry.termVersion, 3)
   assert.equal(entry.amountExpected, 4875)
   assert.equal(entry.status, 'expected')
+
+  const splitEntries = service.buildBondReferralLedgerEntries({
+    terms: {
+      ...grossBondTerms,
+      termsSnapshot: { payoutRecipient: 'agency_and_agent' },
+    },
+    application: { id: applicationId, bondAmount: 1000000, grossCommission: 19500 },
+    agency: { id: agencyOrganisationId, name: 'Harcourts Bedfordview' },
+    agent: { id: '55555555-5555-4555-8555-555555555555', name: 'Aisha Agent' },
+  })
+  assert.equal(splitEntries.length, 2)
+  assert.deepEqual(splitEntries.map((row) => row.beneficiaryType), ['agency', 'agent'])
+  assert.equal(splitEntries[0].amountExpected, 3000)
+  assert.equal(splitEntries[1].amountExpected, 3000)
 
   console.log('bondReferralTermsService tests passed')
 } finally {

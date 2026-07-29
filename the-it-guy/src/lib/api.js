@@ -114,6 +114,38 @@ import { buildCanonicalSigningSession } from '../core/documents/signingSessionCo
 import { buildSigningCompletion } from '../core/documents/signingCompletionContract'
 import { getFinanceWorkflowTemplate } from '../core/transactions/financeWorkflow'
 import {
+  BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
+  BOND_APPLICATION_SUBMISSION_STATUSES,
+  BOND_APPLICATION_NORMALIZED_SCHEMA_VERSION,
+  BOND_APPLICATION_NORMALIZED_STORAGE_MODE,
+  BOND_APPLICATION_PARTICIPANT_ROLES,
+  BOND_APPLICATION_PARTICIPANT_STATUSES,
+  BOND_APPLICATION_STATUSES,
+  buildApplicationStateFromNormalizedApplication,
+  buildBondApplicationDeclarationEvidence,
+  buildBondApplicationDocumentChecklist,
+  buildJointBondApplicationSubmissionSnapshot,
+  buildJointSignerManifest,
+  buildNormalizedBondApplicationFromState,
+  buildBondApplicationSubmissionSnapshot,
+  calculateBondApplicationReviewContextHash,
+  canonicalizeBondApplicationSnapshot,
+  createSuretyParticipant,
+  hashLegacyBondApplicationSource,
+  hashBondApplicationSnapshot,
+  loadNormalizedBondApplicationState,
+  markBondApplicationParticipantReady,
+  projectNormalizedBondApplicationToLegacy,
+  resolveBondApplicationDeclarations,
+  resolveBondApplicationDocumentRequirements,
+  resolveBondApplicationSignerIdentity,
+  resolveBondApplicationSignerIdentities,
+  saveNormalizedBondApplicationSection,
+  toLegacyBondApplication,
+  validateBondApplicationSubmissionReadiness,
+} from '../modules/bond/application/index.js'
+import { buildBondApplicationState } from '../modules/bond/application/legacy/bondApplicationLegacyAdapter.js'
+import {
   getAttorneyMockDevelopmentDetail,
   getAttorneyMockTransactionDetail,
   getAttorneyMockTransactionDetailByUnitId,
@@ -31925,6 +31957,8 @@ export async function fetchTransactionById(transactionId) {
       const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], {
         viewer: 'internal',
       })
+      const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
+      const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
       const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
       const liveChecklist = await buildLiveTransactionChecklistData(client, {
         transaction: unitDetail.transaction,
@@ -31944,6 +31978,8 @@ export async function fetchTransactionById(transactionId) {
         transactionEvents,
         transactionProxyUpdates,
         appointments: appointmentsByTransactionId[transactionId] || [],
+        bondOriginatorAgentProgressView,
+        bondOriginatorAttorneyHandoffView,
       }
     }
   }
@@ -32091,6 +32127,8 @@ export async function fetchTransactionById(transactionId) {
     liveChecklist.requiredDocumentChecklist,
   )
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
+  const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
+  const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
 
   return {
     unit: unitQuery.data || null,
@@ -32158,6 +32196,8 @@ export async function fetchTransactionById(transactionId) {
     transactionEvents,
     transactionProxyUpdates,
     appointments: appointmentsByTransactionId[transactionId] || [],
+    bondOriginatorAgentProgressView,
+    bondOriginatorAttorneyHandoffView,
   }
 }
 
@@ -37059,6 +37099,84 @@ async function resolveClientPortalLinkByToken(client, token) {
   return data
 }
 
+async function fetchClientPortalBondOriginatorOfferGrantPackage(client) {
+  const rpc = await client.rpc('bridge_client_portal_bond_originator_offer_grant_package')
+
+  if (rpc.error) {
+    if (
+      isMissingRpcFunctionError(rpc.error, 'bridge_client_portal_bond_originator_offer_grant_package') ||
+      isMissingSchemaError(rpc.error) ||
+      isPermissionDeniedError(rpc.error)
+    ) {
+      return null
+    }
+
+    throw rpc.error
+  }
+
+  if (!rpc.data || typeof rpc.data !== 'object') {
+    return null
+  }
+
+  return rpc.data
+}
+
+async function fetchAgentBondOriginatorProgressView(client, transactionId) {
+  if (!transactionId) {
+    return null
+  }
+
+  const rpc = await client.rpc('bridge_agent_bond_originator_progress_view', {
+    p_transaction_id: transactionId,
+  })
+
+  if (rpc.error) {
+    if (
+      isMissingRpcFunctionError(rpc.error, 'bridge_agent_bond_originator_progress_view') ||
+      isMissingSchemaError(rpc.error) ||
+      isPermissionDeniedError(rpc.error)
+    ) {
+      return null
+    }
+
+    throw rpc.error
+  }
+
+  if (!rpc.data || typeof rpc.data !== 'object') {
+    return null
+  }
+
+  return rpc.data
+}
+
+async function fetchAttorneyBondOriginatorHandoffView(client, transactionId) {
+  if (!transactionId) {
+    return null
+  }
+
+  const rpc = await client.rpc('bridge_attorney_bond_originator_handoff_view', {
+    p_transaction_id: transactionId,
+  })
+
+  if (rpc.error) {
+    if (
+      isMissingRpcFunctionError(rpc.error, 'bridge_attorney_bond_originator_handoff_view') ||
+      isMissingSchemaError(rpc.error) ||
+      isPermissionDeniedError(rpc.error)
+    ) {
+      return null
+    }
+
+    throw rpc.error
+  }
+
+  if (!rpc.data || typeof rpc.data !== 'object') {
+    return null
+  }
+
+  return rpc.data
+}
+
 export async function fetchClientPortalLinks(transactionId) {
   const client = requireClient()
 
@@ -41255,6 +41373,7 @@ export async function fetchClientPortalByToken(token) {
     bondFallbackName: transaction?.bond_originator || '',
     bondFallbackEmail: transaction?.assigned_bond_originator_email || '',
   })
+  const originatorIntakePackage = await fetchClientPortalBondOriginatorOfferGrantPackage(client)
 
   return {
     link,
@@ -41301,6 +41420,8 @@ export async function fetchClientPortalByToken(token) {
     },
     otpPacket,
     attorneyRolePlayers,
+    originatorIntakePackage,
+    bondOriginatorIntakePackage: originatorIntakePackage,
     fundingSources,
     platformFee,
     featureAvailability: {
@@ -43499,6 +43620,182 @@ export async function uploadClientPortalDocument({
       expiresInSeconds: 60,
     }),
   }
+}
+
+export async function reconcileClientPortalBondDocumentRequirements({
+  token,
+  requirements = [],
+  fingerprint = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const transactionId = link?.transaction_id
+  if (!transactionId) return []
+
+  const activeRequirements = Array.isArray(requirements) ? requirements : []
+  const activeKeys = new Set(activeRequirements.map((requirement) => String(requirement?.key || '').trim()).filter(Boolean))
+  const managedPrefix = 'bond_application_'
+  const now = new Date().toISOString()
+  const fullSelect =
+    'id, transaction_id, document_key, document_label, is_required, is_uploaded, status, enabled, group_key, group_label, description, required_from_role, visibility_scope, allow_multiple, uploaded_document_id, uploaded_at, verified_at, rejected_at, notes, sort_order, canonical_requirement_instance_id, created_at, updated_at'
+  const legacySelect =
+    'id, transaction_id, document_key, document_label, is_required, is_uploaded, uploaded_document_id, sort_order, created_at, updated_at'
+
+  let existingQuery = await client
+    .from('transaction_required_documents')
+    .select(fullSelect)
+    .eq('transaction_id', transactionId)
+
+  if (
+    existingQuery.error &&
+    (isMissingColumnError(existingQuery.error, 'status') ||
+      isMissingColumnError(existingQuery.error, 'enabled') ||
+      isMissingColumnError(existingQuery.error, 'group_key') ||
+      isMissingColumnError(existingQuery.error, 'group_label') ||
+      isMissingColumnError(existingQuery.error, 'required_from_role') ||
+      isMissingColumnError(existingQuery.error, 'visibility_scope') ||
+      isMissingColumnError(existingQuery.error, 'allow_multiple') ||
+      isMissingColumnError(existingQuery.error, 'canonical_requirement_instance_id'))
+  ) {
+    existingQuery = await client
+      .from('transaction_required_documents')
+      .select(legacySelect)
+      .eq('transaction_id', transactionId)
+  }
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_required_documents')) return []
+    throw existingQuery.error
+  }
+
+  const existingRows = existingQuery.data || []
+  const existingByKey = new Map(existingRows.map((row) => [String(row.document_key || '').trim(), row]))
+  const upsertRows = activeRequirements.map((requirement, index) => {
+    const key = String(requirement.key || '').trim()
+    const existing = existingByKey.get(key) || {}
+    return {
+      transaction_id: transactionId,
+      document_key: key,
+      document_label: requirement.title || key,
+      is_required: requirement.required !== false,
+      is_uploaded: Boolean(existing.is_uploaded),
+      status: existing.status || (existing.is_uploaded ? 'uploaded' : 'missing'),
+      enabled: true,
+      group_key: 'bond_application_documents',
+      group_label: requirement.category || 'Bond application documents',
+      description: requirement.description || '',
+      required_from_role: 'client',
+      visibility_scope: 'client',
+      allow_multiple: Number(requirement.minimumFileCount || 1) > 1,
+      uploaded_document_id: existing.uploaded_document_id || null,
+      uploaded_at: existing.uploaded_at || null,
+      verified_at: existing.verified_at || null,
+      rejected_at: existing.rejected_at || null,
+      notes: existing.notes || (fingerprint ? `guided_bond_application_v2:${fingerprint}` : null),
+      sort_order: Number(requirement.order || 0) || index + 1,
+      canonical_requirement_instance_id: existing.canonical_requirement_instance_id || null,
+      updated_at: now,
+    }
+  }).filter((row) => row.document_key)
+
+  if (upsertRows.length) {
+    let upsertResult = await client
+      .from('transaction_required_documents')
+      .upsert(upsertRows, { onConflict: 'transaction_id,document_key' })
+
+    if (
+      upsertResult.error &&
+      (isMissingColumnError(upsertResult.error, 'status') ||
+        isMissingColumnError(upsertResult.error, 'enabled') ||
+        isMissingColumnError(upsertResult.error, 'group_key') ||
+        isMissingColumnError(upsertResult.error, 'group_label') ||
+        isMissingColumnError(upsertResult.error, 'required_from_role') ||
+        isMissingColumnError(upsertResult.error, 'visibility_scope') ||
+        isMissingColumnError(upsertResult.error, 'allow_multiple') ||
+        isMissingColumnError(upsertResult.error, 'canonical_requirement_instance_id'))
+    ) {
+      upsertResult = await client
+        .from('transaction_required_documents')
+        .upsert(upsertRows.map((row) => ({
+          transaction_id: row.transaction_id,
+          document_key: row.document_key,
+          document_label: row.document_label,
+          is_required: row.is_required,
+          is_uploaded: row.is_uploaded,
+          uploaded_document_id: row.uploaded_document_id,
+          sort_order: row.sort_order,
+          updated_at: row.updated_at,
+        })), { onConflict: 'transaction_id,document_key' })
+    }
+
+    if (upsertResult.error) {
+      if (isMissingTableError(upsertResult.error, 'transaction_required_documents')) return []
+      throw upsertResult.error
+    }
+  }
+
+  const staleRows = existingRows.filter((row) => {
+    const key = String(row.document_key || '').trim()
+    return key.startsWith(managedPrefix) && !activeKeys.has(key)
+  })
+  for (const staleRow of staleRows) {
+    let staleResult = await client
+      .from('transaction_required_documents')
+      .update({
+        is_required: false,
+        enabled: false,
+        status: staleRow.is_uploaded ? staleRow.status || 'uploaded' : 'not_required',
+        updated_at: now,
+      })
+      .eq('id', staleRow.id)
+
+    if (
+      staleResult.error &&
+      (isMissingColumnError(staleResult.error, 'enabled') ||
+        isMissingColumnError(staleResult.error, 'status'))
+    ) {
+      staleResult = await client
+        .from('transaction_required_documents')
+        .update({
+          is_required: false,
+          updated_at: now,
+        })
+        .eq('id', staleRow.id)
+    }
+    if (staleResult.error && !isMissingTableError(staleResult.error, 'transaction_required_documents')) {
+      throw staleResult.error
+    }
+  }
+
+  let refreshed = await client
+    .from('transaction_required_documents')
+    .select(fullSelect)
+    .eq('transaction_id', transactionId)
+    .order('sort_order', { ascending: true })
+
+  if (
+    refreshed.error &&
+    (isMissingColumnError(refreshed.error, 'status') ||
+      isMissingColumnError(refreshed.error, 'enabled') ||
+      isMissingColumnError(refreshed.error, 'group_key') ||
+      isMissingColumnError(refreshed.error, 'group_label') ||
+      isMissingColumnError(refreshed.error, 'required_from_role') ||
+      isMissingColumnError(refreshed.error, 'visibility_scope') ||
+      isMissingColumnError(refreshed.error, 'allow_multiple') ||
+      isMissingColumnError(refreshed.error, 'canonical_requirement_instance_id'))
+  ) {
+    refreshed = await client
+      .from('transaction_required_documents')
+      .select(legacySelect)
+      .eq('transaction_id', transactionId)
+      .order('sort_order', { ascending: true })
+  }
+  if (refreshed.error) {
+    if (isMissingTableError(refreshed.error, 'transaction_required_documents')) return []
+    throw refreshed.error
+  }
+
+  return normalizeRequiredDocumentRows(refreshed.data || [])
 }
 
 export async function resolveClientPortalFinalSignedDocumentAccess({
@@ -47614,6 +47911,1501 @@ export async function acceptDeveloperPartnerInvitationByToken(token, input = {})
     throw error
   }
   return result.data
+}
+
+function generateBondApplicationSigningToken() {
+  const bytes = new Uint8Array(32)
+  if (typeof crypto?.getRandomValues !== 'function') {
+    return `bondsign${crypto.randomUUID?.().replaceAll('-', '') || Date.now().toString(36)}`
+  }
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function hashBondApplicationParticipantToken(token) {
+  const value = String(token || '').trim()
+  if (globalThis.crypto?.subtle && typeof TextEncoder !== 'undefined') {
+    const encoded = new TextEncoder().encode(value)
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+  return hashBondApplicationSnapshot(value)
+}
+
+function buildBondApplicationSubmissionHtml(snapshot = {}, snapshotHash = '') {
+  const escapeHtml = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+  const rows = [
+    ['Submission version', snapshot.submissionVersion],
+    ['Snapshot hash', snapshotHash],
+    ['Property', snapshot.property?.developmentName || snapshot.property?.propertyReference || snapshot.property?.unitReference],
+    ['Purchase price', snapshot.finance?.purchasePrice],
+    ['Deposit', snapshot.finance?.depositAmount],
+    ['Bond required', snapshot.finance?.requestedBondAmount],
+    ['Applicant', [snapshot.applicant?.personal?.first_name, snapshot.applicant?.personal?.surname].filter(Boolean).join(' ')],
+    ['Email', snapshot.applicant?.contact?.email],
+    ['Income type', snapshot.employmentAndIncome?.employment?.occupation_status],
+    ['Selected banks', (snapshot.selectedBanks || []).join(', ')],
+  ]
+  const declarations = (snapshot.declarations || []).map((item) => `
+    <section>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.text)}</p>
+      <p><strong>Accepted:</strong> ${item.accepted ? 'Yes' : 'No'} ${item.acceptedAt ? `at ${escapeHtml(item.acceptedAt)}` : ''}</p>
+    </section>
+  `).join('')
+  const participants = (snapshot.participants || []).map((participant) => {
+    const answers = participant.answers || {}
+    const personal = answers.personal || answers.personal_contact?.personal || {}
+    const employment = answers.employment || answers.employment_income?.employment || {}
+    const roleLabel = participant.role === 'co_applicant' || participant.participantRole === 'co_applicant'
+      ? 'Co-applicant'
+      : 'Primary applicant'
+    return `<tr><td>${escapeHtml(roleLabel)}</td><td>${escapeHtml([personal.first_name, personal.surname].filter(Boolean).join(' ') || 'Recorded')}<br/>${escapeHtml(employment.occupation_status || '')}</td></tr>`
+  }).join('')
+  const documents = (snapshot.documentManifest || []).map((item) => `
+    <li>${escapeHtml(item.requirementKey)}: ${escapeHtml(item.status || 'recorded')}</li>
+  `).join('')
+  const signatureAreas = (snapshot.signerManifest || [{ participantRole: 'primary_applicant', fullName: '' }]).map((signer) => `
+    <div class="signature">${escapeHtml(signer.participantRole === 'co_applicant' ? 'Co-applicant' : 'Primary applicant')} signature - ${escapeHtml(signer.fullName || '')}</div>
+  `).join('')
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Bond application submission</title>
+    <style>
+      body { font-family: Arial, sans-serif; color: #142132; margin: 36px; line-height: 1.45; }
+      h1 { font-size: 24px; margin-bottom: 8px; }
+      h2 { font-size: 18px; margin-top: 28px; border-bottom: 1px solid #dbe5ef; padding-bottom: 6px; }
+      h3 { font-size: 15px; margin-bottom: 4px; }
+      table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+      td { border: 1px solid #dbe5ef; padding: 8px; vertical-align: top; }
+      td:first-child { width: 34%; font-weight: 700; background: #f8fbff; }
+      .signature { margin-top: 48px; border-top: 1px solid #142132; padding-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>Bond application submission</h1>
+    <p>This document was generated from the immutable application snapshot prepared for signing.</p>
+    <table>
+      <tbody>${rows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value || 'Not provided')}</td></tr>`).join('')}</tbody>
+    </table>
+    ${participants ? `<h2>Participants</h2><table><tbody>${participants}</tbody></table>` : ''}
+    <h2>Declarations</h2>
+    ${declarations}
+    <h2>Document manifest</h2>
+    <ul>${documents}</ul>
+    ${signatureAreas}
+  </body>
+</html>`
+}
+
+async function fetchBondApplicationPortalSubmissionContext(client, token) {
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const [buyerResult, transactionResult, onboardingResult, requiredDocumentsResult, documentsResult, developmentResult] = await Promise.all([
+    link.buyer_id
+      ? client.from('buyers').select('id, name, email').eq('id', link.buyer_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    client
+      .from('transactions')
+      .select('id, development_id, unit_id, buyer_id, organisation_id, assigned_organisation_id, bond_workspace_id, reference, transaction_reference, updated_at')
+      .eq('id', link.transaction_id)
+      .maybeSingle(),
+    client
+      .from('onboarding_form_data')
+      .select('id, transaction_id, purchaser_type, form_data, created_at, updated_at')
+      .eq('transaction_id', link.transaction_id)
+      .maybeSingle(),
+    client
+      .from('transaction_required_documents')
+      .select('*')
+      .eq('transaction_id', link.transaction_id),
+    client
+      .from('documents')
+      .select('*')
+      .eq('transaction_id', link.transaction_id),
+    link.development_id
+      ? client.from('developments').select('id, organisation_id, name').eq('id', link.development_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+  for (const result of [buyerResult, transactionResult, onboardingResult, requiredDocumentsResult, documentsResult, developmentResult]) {
+    if (result.error && !isMissingSchemaError(result.error) && !isPermissionDeniedError(result.error)) throw result.error
+  }
+  const transaction = transactionResult.data || { id: link.transaction_id, development_id: link.development_id, unit_id: link.unit_id, buyer_id: link.buyer_id }
+  const onboardingFormData = onboardingResult.data || { id: null, transaction_id: link.transaction_id, form_data: {} }
+  const portal = {
+    buyer: buyerResult.data || null,
+    transaction,
+    development: developmentResult.data || null,
+    unit: { id: link.unit_id, development: developmentResult.data || null },
+    onboardingFormData: {
+      id: onboardingFormData.id || null,
+      formData: onboardingFormData.form_data || {},
+      updatedAt: onboardingFormData.updated_at || null,
+    },
+  }
+  return {
+    link,
+    buyer: buyerResult.data || null,
+    transaction,
+    development: developmentResult.data || null,
+    onboardingFormData,
+    applicationState: buildBondApplicationState(portal),
+    requiredDocuments: requiredDocumentsResult.data || [],
+    documents: documentsResult.data || [],
+  }
+}
+
+async function fetchLatestClientPortalBondApplicationSubmissionRow(client, transactionId) {
+  const query = await client
+    .from('transaction_bond_application_submissions')
+    .select('*')
+    .eq('transaction_id', transactionId)
+    .order('submission_version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_bond_application_submissions') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) return null
+    throw query.error
+  }
+  return query.data || null
+}
+
+function mapNormalizedBondApplicationRows(applicationRow, participantRows = [], sectionRows = [], requirementRows = []) {
+  if (!applicationRow?.id) return null
+  const participants = (participantRows || []).map((row) => ({
+    id: row.id,
+    participantKey: row.participant_key,
+    role: row.role,
+    ordinal: row.ordinal || 1,
+    personId: row.person_id || null,
+    contactId: row.contact_id || null,
+    status: row.status,
+    invitationStatus: row.invitation_status || null,
+    displayName: row.metadata?.displayName || row.metadata?.display_name || '',
+    email: row.metadata?.email || '',
+    phone: row.metadata?.phone || '',
+    reviewContextHash: row.review_context_hash || null,
+    reviewedRevision: row.reviewed_revision || null,
+    reviewedAt: row.reviewed_at || null,
+    readyAt: row.ready_at || null,
+    awaitingSignatureAt: row.awaiting_signature_at || null,
+    signedAt: row.signed_at || null,
+    completedAt: row.completed_at || null,
+    declinedAt: row.declined_at || null,
+    removedAt: row.removed_at || null,
+    metadata: row.metadata || {},
+  }))
+  const sharedSections = {}
+  const participantSections = {}
+  ;(sectionRows || []).forEach((row) => {
+    if (row.scope === 'application') {
+      sharedSections[row.section_key] = row.answers_json || {}
+      return
+    }
+    const participant = participants.find((item) => item.id === row.participant_id)
+    if (!participant) return
+    participantSections[participant.participantKey] = {
+      ...(participantSections[participant.participantKey] || {}),
+      [row.section_key]: row.answers_json || {},
+    }
+  })
+  return {
+    id: applicationRow.id,
+    transactionId: applicationRow.transaction_id,
+    onboardingFormDataId: applicationRow.onboarding_form_data_id,
+    schemaVersion: applicationRow.schema_version,
+    flowVersion: applicationRow.flow_version,
+    storageMode: applicationRow.storage_mode,
+    status: applicationRow.status,
+    revision: applicationRow.revision,
+    sourceLegacyHash: applicationRow.source_legacy_hash || '',
+    sourceLegacyUpdatedAt: applicationRow.source_legacy_updated_at || null,
+    compatibilityProjectionVersion: applicationRow.compatibility_projection_version || null,
+    compatibilityProjectionHash: applicationRow.compatibility_projection_hash || null,
+    compatibilityProjectedAt: applicationRow.compatibility_projected_at || null,
+    activeSubmissionId: applicationRow.active_submission_id || null,
+    lockedAt: applicationRow.locked_at || null,
+    submittedAt: applicationRow.submitted_at || null,
+    participants,
+    sharedSections,
+    participantSections,
+    documentRequirements: (requirementRows || []).map((row) => ({
+      id: row.id,
+      participantId: row.participant_id || null,
+      requirementKey: row.requirement_key,
+      canonicalDocumentType: row.canonical_document_type,
+      ruleSetVersion: row.rule_set_version,
+      requiredBefore: row.required_before,
+      satisfactionMode: row.satisfaction_mode,
+      status: row.status,
+      source: row.source,
+      transactionRequiredDocumentId: row.transaction_required_document_id || null,
+      metadata: row.metadata || {},
+    })),
+    metadata: applicationRow.metadata || {},
+  }
+}
+
+async function fetchNormalizedBondApplicationBundle(client, transactionId) {
+  const appQuery = await client
+    .from('bond_applications')
+    .select('*')
+    .eq('transaction_id', transactionId)
+    .neq('status', BOND_APPLICATION_STATUSES.cancelled)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (appQuery.error) {
+    if (isMissingTableError(appQuery.error, 'bond_applications') || isPermissionDeniedError(appQuery.error) || isMissingSchemaError(appQuery.error)) return null
+    throw appQuery.error
+  }
+  if (!appQuery.data?.id) return null
+  const [participants, sections, requirements] = await Promise.all([
+    client.from('bond_application_participants').select('*').eq('bond_application_id', appQuery.data.id),
+    client.from('bond_application_sections').select('*').eq('bond_application_id', appQuery.data.id),
+    client.from('bond_application_document_requirements').select('*').eq('bond_application_id', appQuery.data.id),
+  ])
+  for (const result of [participants, sections, requirements]) {
+    if (result.error && !isPermissionDeniedError(result.error) && !isMissingSchemaError(result.error)) throw result.error
+  }
+  return mapNormalizedBondApplicationRows(appQuery.data, participants.data || [], sections.data || [], requirements.data || [])
+}
+
+async function persistNormalizedCompatibilityProjection(client, normalizedApplication, existingFormData = {}) {
+  let baseFormData = existingFormData || {}
+  if (normalizedApplication.onboardingFormDataId && Object.keys(baseFormData).length === 0) {
+    const lookup = await client
+      .from('onboarding_form_data')
+      .select('form_data')
+      .eq('id', normalizedApplication.onboardingFormDataId)
+      .maybeSingle()
+    if (!lookup.error && lookup.data?.form_data) {
+      baseFormData = lookup.data.form_data
+    } else if (lookup.error && !isPermissionDeniedError(lookup.error) && !isMissingSchemaError(lookup.error)) {
+      throw lookup.error
+    }
+  }
+  const legacy = projectNormalizedBondApplicationToLegacy({
+    normalizedApplication,
+    existingLegacy: baseFormData?.bond_application || {},
+  })
+  const projectionHash = await hashBondApplicationSnapshot(legacy)
+  const formData = {
+    ...(baseFormData || {}),
+    bond_application: {
+      ...legacy,
+      _meta: {
+        ...(legacy._meta || {}),
+        normalized_bond_application: {
+          ...(legacy._meta?.normalized_bond_application || {}),
+          projection_hash: projectionHash,
+        },
+      },
+    },
+  }
+  if (normalizedApplication.onboardingFormDataId) {
+    const update = await client
+      .from('onboarding_form_data')
+      .update({ form_data: formData, updated_at: new Date().toISOString() })
+      .eq('id', normalizedApplication.onboardingFormDataId)
+    if (update.error && !isPermissionDeniedError(update.error)) throw update.error
+  }
+  await client
+    .from('bond_applications')
+    .update({
+      compatibility_projection_version: normalizedApplication.revision || 1,
+      compatibility_projection_hash: projectionHash,
+      compatibility_projected_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedApplication.id)
+  return { legacy, projectionHash, formData }
+}
+
+async function insertNormalizedBondApplicationBundle(client, normalizedApplication) {
+  const appInsert = await client
+    .from('bond_applications')
+    .insert({
+      transaction_id: normalizedApplication.transactionId,
+      onboarding_form_data_id: normalizedApplication.onboardingFormDataId || null,
+      schema_version: normalizedApplication.schemaVersion || BOND_APPLICATION_NORMALIZED_SCHEMA_VERSION,
+      flow_version: normalizedApplication.flowVersion || 'phase-6-v1',
+      storage_mode: BOND_APPLICATION_NORMALIZED_STORAGE_MODE,
+      status: normalizedApplication.status || BOND_APPLICATION_STATUSES.draft,
+      revision: normalizedApplication.revision || 1,
+      source_legacy_hash: normalizedApplication.sourceLegacyHash || null,
+      source_legacy_updated_at: normalizedApplication.sourceLegacyUpdatedAt || null,
+      metadata: normalizedApplication.metadata || {},
+    })
+    .select('*')
+    .single()
+  if (appInsert.error) {
+    if (appInsert.error.code === '23505') return fetchNormalizedBondApplicationBundle(client, normalizedApplication.transactionId)
+    throw appInsert.error
+  }
+  const applicationId = appInsert.data.id
+  const participantRows = []
+  for (const participant of normalizedApplication.participants || []) {
+    const insert = await client
+      .from('bond_application_participants')
+      .insert({
+        bond_application_id: applicationId,
+        participant_key: participant.participantKey,
+        role: participant.role,
+        ordinal: participant.ordinal || 1,
+        status: participant.status,
+        invitation_status: participant.invitationStatus || null,
+        person_id: normalizeNullableUuid(participant.personId),
+        contact_id: normalizeNullableUuid(participant.contactId),
+        metadata: {
+          ...(participant.metadata || {}),
+          displayName: participant.displayName || '',
+          email: participant.email || '',
+          phone: participant.phone || '',
+        },
+      })
+      .select('*')
+      .single()
+    if (insert.error && insert.error.code !== '23505') throw insert.error
+    if (insert.data) participantRows.push(insert.data)
+  }
+  const participantByKey = new Map(participantRows.map((row) => [row.participant_key, row]))
+  const sectionRows = []
+  for (const [sectionKey, answers] of Object.entries(normalizedApplication.sharedSections || {})) {
+    const insert = await client
+      .from('bond_application_sections')
+      .insert({
+        bond_application_id: applicationId,
+        scope: 'application',
+        section_key: sectionKey,
+        answers_json: answers || {},
+        status: 'in_progress',
+      })
+      .select('*')
+      .single()
+    if (insert.error && insert.error.code !== '23505') throw insert.error
+    if (insert.data) sectionRows.push(insert.data)
+  }
+  for (const [participantKey, sections] of Object.entries(normalizedApplication.participantSections || {})) {
+    const participant = participantByKey.get(participantKey)
+    if (!participant?.id) continue
+    for (const [sectionKey, answers] of Object.entries(sections || {})) {
+      const insert = await client
+        .from('bond_application_sections')
+        .insert({
+          bond_application_id: applicationId,
+          participant_id: participant.id,
+          scope: 'participant',
+          section_key: sectionKey,
+          answers_json: answers || {},
+          status: 'in_progress',
+        })
+        .select('*')
+        .single()
+      if (insert.error && insert.error.code !== '23505') throw insert.error
+      if (insert.data) sectionRows.push(insert.data)
+    }
+  }
+  return mapNormalizedBondApplicationRows(appInsert.data, participantRows, sectionRows, [])
+}
+
+export async function ensureClientPortalNormalizedBondApplication({
+  token,
+  includeCoApplicant = false,
+  expectedLegacyHash = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  const existing = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  if (existing?.id) return { normalizedApplication: existing, created: false }
+  const legacy = context.onboardingFormData?.form_data?.bond_application || {}
+  const legacyHash = await hashLegacyBondApplicationSource(legacy)
+  if (expectedLegacyHash && expectedLegacyHash !== legacyHash) {
+    const error = new Error('The bond application changed before normalization. Refresh and try again.')
+    error.code = 'STALE_LEGACY_BOND_APPLICATION'
+    throw error
+  }
+  const normalized = buildNormalizedBondApplicationFromState({
+    applicationState: context.applicationState,
+    transactionId: context.transaction.id,
+    onboardingFormDataId: context.onboardingFormData?.id || null,
+    includeCoApplicant,
+    legacyHash,
+    legacyUpdatedAt: context.onboardingFormData?.updated_at || null,
+  })
+  const inserted = await insertNormalizedBondApplicationBundle(client, normalized)
+  await persistNormalizedCompatibilityProjection(client, inserted, context.onboardingFormData?.form_data || {})
+  return { normalizedApplication: inserted, created: true }
+}
+
+export async function fetchClientPortalNormalizedBondApplication({ token } = {}) {
+  const client = requireClientPortalTokenClient(token)
+  let context = null
+  try {
+    context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  } catch (error) {
+    const inviteContext = await resolveBondApplicationParticipantInviteContext(client, token)
+    if (!inviteContext?.normalizedApplication) throw error
+    return {
+      normalizedApplication: inviteContext.normalizedApplication,
+      participantContext: loadNormalizedBondApplicationState({
+        normalizedApplication: inviteContext.normalizedApplication,
+        viewerParticipantKey: inviteContext.participant.participantKey,
+        viewerRole: inviteContext.participant.role,
+      }),
+      invitation: inviteContext.invite,
+    }
+  }
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  if (!normalizedApplication?.id) return { normalizedApplication: null }
+  return {
+    normalizedApplication,
+    participantContext: loadNormalizedBondApplicationState({
+      normalizedApplication,
+      viewerRole: BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant,
+    }),
+  }
+}
+
+async function resolveBondApplicationParticipantInviteContext(client, token) {
+  const tokenHash = await hashBondApplicationParticipantToken(token)
+  const inviteQuery = await client
+    .from('bond_application_participant_invites')
+    .select('*, participant:bond_application_participants(*, application:bond_applications(*))')
+    .eq('token_hash', tokenHash)
+    .maybeSingle()
+  if (inviteQuery.error) throw inviteQuery.error
+  const invite = inviteQuery.data || null
+  if (!invite?.id) throw new Error('Invitation link is invalid.')
+  if (['revoked', 'expired', 'declined', 'superseded'].includes(invite.status)) throw new Error('Invitation link is no longer active.')
+  if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) throw new Error('Invitation link has expired.')
+  const applicationId = invite.participant?.bond_application_id
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, invite.participant?.application?.transaction_id)
+  return {
+    invite,
+    participant: {
+      ...(invite.participant || {}),
+      participantKey: invite.participant?.participant_key,
+    },
+    applicationId,
+    normalizedApplication,
+  }
+}
+
+export async function inviteClientPortalBondApplicationCoApplicant({
+  token,
+  fullName = '',
+  email = '',
+  phone = '',
+  idempotencyKey = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const { normalizedApplication } = await ensureClientPortalNormalizedBondApplication({ token, includeCoApplicant: true })
+  const coParticipant = (normalizedApplication.participants || []).find((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant)
+  if (!coParticipant?.id) throw new Error('Co-applicant participant could not be created.')
+  const rawToken = generateClientPortalToken()
+  const tokenHash = await hashBondApplicationParticipantToken(rawToken)
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+  const existingInvite = await client
+    .from('bond_application_participant_invites')
+    .select('*')
+    .eq('participant_id', coParticipant.id)
+    .in('status', ['pending', 'sent'])
+    .maybeSingle()
+  if (existingInvite.error && !isMissingSchemaError(existingInvite.error)) throw existingInvite.error
+  if (existingInvite.data?.id && idempotencyKey && existingInvite.data.metadata?.idempotencyKey === idempotencyKey) {
+    return { invite: existingInvite.data, reused: true }
+  }
+  if (existingInvite.data?.id) {
+    const revoke = await client
+      .from('bond_application_participant_invites')
+      .update({ status: 'superseded', revoked_at: new Date().toISOString() })
+      .eq('id', existingInvite.data.id)
+    if (revoke.error) throw revoke.error
+  }
+  const inviteInsert = await client
+    .from('bond_application_participant_invites')
+    .insert({
+      participant_id: coParticipant.id,
+      purpose: 'co_applicant_access',
+      token_hash: tokenHash,
+      status: 'sent',
+      delivery_channel: 'email',
+      delivery_destination_reference: normalizeEmailAddress(email) || normalizeNullableText(phone),
+      expires_at: expiresAt,
+      sent_at: new Date().toISOString(),
+      metadata: {
+        idempotencyKey: idempotencyKey || null,
+        displayName: fullName || coParticipant.displayName || '',
+        email: normalizeEmailAddress(email),
+        phone: normalizeNullableText(phone),
+      },
+    })
+    .select('*')
+    .single()
+  if (inviteInsert.error) throw inviteInsert.error
+  await client
+    .from('bond_application_participants')
+    .update({
+      status: BOND_APPLICATION_PARTICIPANT_STATUSES.invited,
+      invitation_status: 'sent',
+      metadata: {
+        ...(coParticipant.metadata || {}),
+        displayName: fullName || coParticipant.displayName || '',
+        email: normalizeEmailAddress(email),
+        phone: normalizeNullableText(phone),
+      },
+    })
+    .eq('id', coParticipant.id)
+  const { token_hash: _tokenHash, ...safeInvite } = inviteInsert.data || {}
+  return {
+    invite: safeInvite,
+    deliveryChannel: 'email',
+    deliveryDestination: normalizeEmailAddress(email) || normalizeNullableText(phone),
+  }
+}
+
+export async function inviteClientPortalBondApplicationSurety({
+  token,
+  fullName = '',
+  email = '',
+  phone = '',
+  relationshipToApplicant = '',
+  idempotencyKey = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const { normalizedApplication } = await ensureClientPortalNormalizedBondApplication({ token })
+  const created = createSuretyParticipant({
+    normalizedApplication,
+    displayName: fullName,
+    email: normalizeEmailAddress(email),
+    phone: normalizeNullableText(phone),
+    relationshipToApplicant,
+  })
+  if (!created.ok) {
+    const error = new Error(created.reason === 'maximum_active_sureties_exceeded'
+      ? 'The current surety rollout allows one active surety.'
+      : 'Surety invitations are not available for this application.')
+    error.code = created.reason
+    throw error
+  }
+  const insertParticipant = await client
+    .from('bond_application_participants')
+    .insert({
+      bond_application_id: normalizedApplication.id,
+      participant_key: created.participant.participantKey,
+      role: created.participant.role,
+      ordinal: created.participant.ordinal || 1,
+      status: BOND_APPLICATION_PARTICIPANT_STATUSES.invited,
+      invitation_status: 'sent',
+      metadata: {
+        ...(created.participant.metadata || {}),
+        displayName: fullName || '',
+        email: normalizeEmailAddress(email),
+        phone: normalizeNullableText(phone),
+      },
+    })
+    .select('*')
+    .single()
+  if (insertParticipant.error) {
+    if (insertParticipant.error.code === '23505' && idempotencyKey) {
+      const existing = await fetchNormalizedBondApplicationBundle(client, normalizedApplication.transactionId)
+      return { normalizedApplication: existing, reused: true }
+    }
+    throw insertParticipant.error
+  }
+  const sections = created.normalizedApplication.participantSections?.[created.participant.participantKey] || {}
+  for (const [sectionKey, answers] of Object.entries(sections)) {
+    const sectionInsert = await client
+      .from('bond_application_sections')
+      .insert({
+        bond_application_id: normalizedApplication.id,
+        participant_id: insertParticipant.data.id,
+        scope: 'participant',
+        section_key: sectionKey,
+        answers_json: answers || {},
+        status: 'in_progress',
+      })
+    if (sectionInsert.error && sectionInsert.error.code !== '23505') throw sectionInsert.error
+  }
+  const rawToken = generateClientPortalToken()
+  const tokenHash = await hashBondApplicationParticipantToken(rawToken)
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+  const inviteInsert = await client
+    .from('bond_application_participant_invites')
+    .insert({
+      participant_id: insertParticipant.data.id,
+      purpose: 'surety_access',
+      token_hash: tokenHash,
+      status: 'sent',
+      delivery_channel: 'email',
+      delivery_destination_reference: normalizeEmailAddress(email) || normalizeNullableText(phone),
+      expires_at: expiresAt,
+      sent_at: new Date().toISOString(),
+      metadata: {
+        idempotencyKey: idempotencyKey || null,
+        displayName: fullName || '',
+        email: normalizeEmailAddress(email),
+        phone: normalizeNullableText(phone),
+        relationshipToApplicant: relationshipToApplicant || null,
+      },
+    })
+    .select('*')
+    .single()
+  if (inviteInsert.error) throw inviteInsert.error
+  const appUpdate = await client
+    .from('bond_applications')
+    .update({
+      revision: created.normalizedApplication.revision,
+      status: created.normalizedApplication.status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedApplication.id)
+  if (appUpdate.error) throw appUpdate.error
+  await persistNormalizedCompatibilityProjection(client, {
+    ...created.normalizedApplication,
+    participants: created.normalizedApplication.participants.map((participant) => (
+      participant.participantKey === created.participant.participantKey
+        ? { ...participant, id: insertParticipant.data.id, status: BOND_APPLICATION_PARTICIPANT_STATUSES.invited, invitationStatus: 'sent' }
+        : participant
+    )),
+  }, {})
+  return {
+    invite: inviteInsert.data,
+    participant: insertParticipant.data,
+    deliveryChannel: 'email',
+    deliveryDestination: normalizeEmailAddress(email) || normalizeNullableText(phone),
+  }
+}
+
+export async function acceptBondApplicationParticipantInvitation({ token } = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await resolveBondApplicationParticipantInviteContext(client, token)
+  const now = new Date().toISOString()
+  const updateInvite = await client
+    .from('bond_application_participant_invites')
+    .update({ status: 'accepted', accepted_at: now })
+    .eq('id', context.invite.id)
+    .select('*')
+    .single()
+  if (updateInvite.error) throw updateInvite.error
+  const updateParticipant = await client
+    .from('bond_application_participants')
+    .update({
+      status: BOND_APPLICATION_PARTICIPANT_STATUSES.inProgress,
+      invitation_status: 'accepted',
+      updated_at: now,
+    })
+    .eq('id', context.participant.id)
+    .select('*')
+    .single()
+  if (updateParticipant.error) throw updateParticipant.error
+  return {
+    invite: updateInvite.data,
+    participant: updateParticipant.data,
+    normalizedApplication: await fetchNormalizedBondApplicationBundle(client, context.normalizedApplication.transactionId),
+  }
+}
+
+export async function saveClientPortalBondApplicationSection({
+  token,
+  sectionKey,
+  scope = 'participant',
+  participantKey = null,
+  answers = {},
+  expectedSectionVersion = null,
+  idempotencyKey = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchClientPortalNormalizedBondApplication({ token })
+  const normalizedApplication = context.normalizedApplication
+  if (!normalizedApplication?.id) throw new Error('Normalized bond application is not available.')
+  const viewer = context.participantContext?.participant || (normalizedApplication.participants || []).find((item) => item.role === BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant)
+  const targetParticipantKey = scope === 'participant' ? (participantKey || viewer?.participantKey || viewer?.participant_key) : null
+  if (scope === 'participant' && targetParticipantKey !== (viewer?.participantKey || viewer?.participant_key)) {
+    throw new Error('You can only update your own application section.')
+  }
+  if (scope === 'application' && viewer?.role !== BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant) {
+    throw new Error('Only the primary applicant can update shared application details.')
+  }
+  const saved = saveNormalizedBondApplicationSection({
+    normalizedApplication,
+    participantKey: targetParticipantKey,
+    sectionKey,
+    scope,
+    answers,
+    expectedSectionVersion,
+    idempotencyKey,
+  })
+  if (!saved.ok) {
+    const error = new Error(saved.message || 'This section was updated elsewhere. Refresh before continuing.')
+    error.code = saved.reason
+    throw error
+  }
+  const sectionWhere = scope === 'application'
+    ? { bond_application_id: normalizedApplication.id, section_key: sectionKey, participant_id: null }
+    : { bond_application_id: normalizedApplication.id, section_key: sectionKey }
+  const participant = (normalizedApplication.participants || []).find((item) => item.participantKey === targetParticipantKey)
+  let query = client
+    .from('bond_application_sections')
+    .update({
+      answers_json: answers || {},
+      version: saved.sectionVersion,
+      updated_at: new Date().toISOString(),
+      status: 'in_progress',
+    })
+    .eq('bond_application_id', sectionWhere.bond_application_id)
+    .eq('section_key', sectionKey)
+  if (scope === 'participant') query = query.eq('participant_id', participant?.id)
+  else query = query.is('participant_id', null)
+  const update = await query
+  if (update.error) throw update.error
+  const appUpdate = await client
+    .from('bond_applications')
+    .update({
+      revision: saved.normalizedApplication.revision,
+      status: saved.normalizedApplication.status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedApplication.id)
+  if (appUpdate.error) throw appUpdate.error
+  await persistNormalizedCompatibilityProjection(client, saved.normalizedApplication, {})
+  return { normalizedApplication: saved.normalizedApplication, sectionVersion: saved.sectionVersion }
+}
+
+export async function markClientPortalBondApplicationParticipantReady({
+  token,
+  reviewContextHash,
+  declarationEvidence = [],
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchClientPortalNormalizedBondApplication({ token })
+  const normalizedApplication = context.normalizedApplication
+  const participantKey = context.participantContext?.participant?.participantKey || context.participantContext?.participant?.participant_key
+  const authoritativeHash = await calculateBondApplicationReviewContextHash(normalizedApplication)
+  if (reviewContextHash && reviewContextHash !== authoritativeHash) {
+    throw new Error('Some application details changed. Please review your information again before signing.')
+  }
+  const marked = markBondApplicationParticipantReady({
+    normalizedApplication,
+    participantKey,
+    reviewContextHash: authoritativeHash,
+    declarationEvidence,
+  })
+  if (!marked.ok) throw new Error('Participant record was not found.')
+  const participant = (marked.normalizedApplication.participants || []).find((item) => item.participantKey === participantKey)
+  const updateParticipant = await client
+    .from('bond_application_participants')
+    .update({
+      status: participant.status,
+      review_context_hash: participant.reviewContextHash,
+      reviewed_revision: participant.reviewedRevision,
+      reviewed_at: participant.reviewedAt,
+      ready_at: participant.readyAt,
+      metadata: participant.metadata || {},
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', participant.id)
+  if (updateParticipant.error) throw updateParticipant.error
+  await client
+    .from('bond_applications')
+    .update({ status: marked.normalizedApplication.status, updated_at: new Date().toISOString() })
+    .eq('id', normalizedApplication.id)
+  return { normalizedApplication: marked.normalizedApplication, reviewContextHash: authoritativeHash, allReady: marked.allReady }
+}
+
+export async function prepareClientPortalJointBondApplicationSubmission({
+  token,
+  idempotencyKey = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const portalContext = await fetchBondApplicationPortalSubmissionContext(client, token)
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, portalContext.transaction.id)
+  if (!normalizedApplication?.id) throw new Error('Normalized bond application is not available.')
+  const activeParticipants = (normalizedApplication.participants || []).filter((participant) => !participant.removedAt && participant.status !== BOND_APPLICATION_PARTICIPANT_STATUSES.removed)
+  const hasPrimary = activeParticipants.some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant)
+  const hasCoApplicant = activeParticipants.some((participant) => participant.role === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant)
+  if (!hasPrimary || !hasCoApplicant) throw new Error('A joint application requires one primary applicant and one co-applicant.')
+  const reviewContextHash = await calculateBondApplicationReviewContextHash(normalizedApplication)
+  const staleParticipant = activeParticipants.find((participant) => participant.status !== BOND_APPLICATION_PARTICIPANT_STATUSES.readyForSubmission || participant.reviewContextHash !== reviewContextHash)
+  if (staleParticipant) {
+    throw new Error('All applicants must review the latest application before signing.')
+  }
+
+  const applicationState = buildApplicationStateFromNormalizedApplication(normalizedApplication)
+  const signerIdentities = resolveBondApplicationSignerIdentities(applicationState).map((identity) => {
+    const participant = activeParticipants.find((item) => item.role === identity.participantRole)
+    return {
+      ...identity,
+      participantId: participant?.id || null,
+      participantKey: participant?.participantKey || null,
+    }
+  })
+  const signerManifest = buildJointSignerManifest({ normalizedApplication, signerIdentities })
+  const sourceHash = await hashBondApplicationSnapshot(projectNormalizedBondApplicationToLegacy({ normalizedApplication }))
+  const existing = await fetchLatestClientPortalBondApplicationSubmissionRow(client, portalContext.transaction.id)
+  if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+    throw new Error('This bond application has already been submitted.')
+  }
+  if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature && existing.bond_application_id === normalizedApplication.id) {
+    return { submission: existing }
+  }
+  const latestVersion = Number(existing?.submission_version || 0) + 1
+  const snapshot = buildJointBondApplicationSubmissionSnapshot({
+    normalizedApplication,
+    signerManifest,
+    submissionVersion: latestVersion,
+    reviewContextHash,
+    source: {
+      onboardingFormDataId: normalizedApplication.onboardingFormDataId,
+      sourceHash,
+    },
+  })
+  const snapshotHash = await hashBondApplicationSnapshot(snapshot)
+  const insert = await client
+    .from('transaction_bond_application_submissions')
+    .insert({
+      transaction_id: portalContext.transaction.id,
+      onboarding_form_data_id: normalizedApplication.onboardingFormDataId || null,
+      bond_application_id: normalizedApplication.id,
+      submission_version: latestVersion,
+      application_schema_version: snapshot.versions.applicationSchemaVersion,
+      flow_version: snapshot.versions.flowVersion,
+      document_rule_set_version: snapshot.versions.documentRuleSetVersion,
+      declaration_contract_version: snapshot.versions.declarationContractVersion,
+      status: BOND_APPLICATION_SUBMISSION_STATUSES.preparing,
+      snapshot_json: snapshot,
+      snapshot_hash: snapshotHash,
+      source_application_hash: sourceHash,
+      source_application_revision: normalizedApplication.revision || 1,
+      review_context_hash: reviewContextHash,
+      declarations_json: snapshot.participants.flatMap((participant) => participant.declarations || []),
+      document_manifest_json: snapshot.documentManifest || [],
+      selected_bank_ids: snapshot.selectedBanks || [],
+      signer_manifest_json: signerManifest,
+      prepared_at: new Date().toISOString(),
+      metadata: {
+        idempotencyKey: idempotencyKey || null,
+        source: 'guided_bond_application_participants_v1',
+      },
+    })
+    .select('*')
+    .single()
+  if (insert.error) {
+    if (insert.error.code === '23505') {
+      return fetchClientPortalBondApplicationSubmission({ token })
+    }
+    throw insert.error
+  }
+  let submission = insert.data
+  const signing = await createOrReuseBondApplicationSigningPacket(client, {
+    submission,
+    context: portalContext,
+    snapshot,
+    snapshotHash,
+    signerIdentity: signerManifest,
+  })
+  const update = await client
+    .from('transaction_bond_application_submissions')
+    .update({
+      status: BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature,
+      generated_document_id: signing.version?.id || null,
+      signing_request_id: signing.packet?.id || null,
+      awaiting_signature_at: new Date().toISOString(),
+    })
+    .eq('id', submission.id)
+    .select('*')
+    .single()
+  if (update.error) throw update.error
+  submission = update.data
+  await client
+    .from('bond_applications')
+    .update({
+      status: BOND_APPLICATION_STATUSES.awaitingSignatures,
+      active_submission_id: submission.id,
+      locked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedApplication.id)
+  for (const signer of signing.signers || []) {
+    const participant = activeParticipants.find((item) => item.participantKey === signer.participantKey)
+    if (!participant?.id) continue
+    await client
+      .from('bond_application_participants')
+      .update({
+        status: BOND_APPLICATION_PARTICIPANT_STATUSES.awaitingSignature,
+        awaiting_signature_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', participant.id)
+  }
+  return {
+    submission: {
+      ...submission,
+      signers: signing.signers,
+      signPath: signing.signPath,
+      sign_path: signing.signPath,
+    },
+  }
+}
+
+async function createOrReuseBondApplicationSigningPacket(client, {
+  submission,
+  context,
+  snapshot,
+  snapshotHash,
+  signerIdentity,
+} = {}) {
+  const sourceContext = {
+    domain: 'guided_bond_application_v2',
+    bondApplicationSubmissionId: submission.id,
+    bondApplicationSubmissionVersion: submission.submission_version,
+    snapshotHash,
+  }
+  const existingPacketQuery = await client
+    .from('document_packets')
+    .select('id, organisation_id, packet_type, status, title, current_version_number')
+    .eq('source_context_json->>bondApplicationSubmissionId', submission.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (existingPacketQuery.error && !isMissingSchemaError(existingPacketQuery.error) && !isPermissionDeniedError(existingPacketQuery.error)) {
+    throw existingPacketQuery.error
+  }
+
+  const organisationId =
+    normalizeNullableUuid(context.transaction?.organisation_id) ||
+    normalizeNullableUuid(context.transaction?.assigned_organisation_id) ||
+    normalizeNullableUuid(context.transaction?.bond_workspace_id) ||
+    normalizeNullableUuid(context.development?.organisation_id)
+  if (!organisationId) {
+    throw new Error('A signing organisation could not be resolved for this application.')
+  }
+
+  let packet = existingPacketQuery.data || null
+  if (!packet?.id) {
+    const packetInsert = await client
+      .from('document_packets')
+      .insert({
+        organisation_id: organisationId,
+        packet_type: 'custom',
+        title: `Bond application submission v${submission.submission_version}`,
+        status: 'signing_prep',
+        transaction_id: context.transaction.id,
+        unit_id: context.link.unit_id || null,
+        source_context_json: sourceContext,
+        branding_snapshot_json: {},
+      })
+      .select('id, organisation_id, packet_type, status, title, current_version_number')
+      .single()
+    if (packetInsert.error) throw packetInsert.error
+    packet = packetInsert.data
+  }
+
+  const html = buildBondApplicationSubmissionHtml(snapshot, snapshotHash)
+  const filePath = `client-portal/${context.transaction.id}/bond-application-submissions/${submission.id}/application.html`
+  const file = new Blob([html], { type: 'text/html' })
+  await uploadToDocumentsBucket(client, filePath, file, { contentType: 'text/html', upsert: true })
+
+  let version = null
+  const existingVersionQuery = await client
+    .from('document_packet_versions')
+    .select('id, packet_id, organisation_id, version_number, render_status, rendered_file_path, rendered_file_name, rendered_file_bucket, rendered_sha256')
+    .eq('packet_id', packet.id)
+    .eq('version_number', 1)
+    .maybeSingle()
+  if (existingVersionQuery.error && !isMissingSchemaError(existingVersionQuery.error) && !isPermissionDeniedError(existingVersionQuery.error)) throw existingVersionQuery.error
+  version = existingVersionQuery.data || null
+  if (!version?.id) {
+    const versionInsert = await client
+      .from('document_packet_versions')
+      .insert({
+        packet_id: packet.id,
+        organisation_id: organisationId,
+        version_number: 1,
+        render_status: 'generated',
+        rendered_file_path: filePath,
+        rendered_file_name: `bond-application-submission-v${submission.submission_version}.html`,
+        rendered_file_bucket: 'documents',
+        rendered_media_type: 'text/html',
+        rendered_sha256: snapshotHash,
+        placeholders_resolved_json: {
+          previewHtml: html,
+          snapshotHash,
+        },
+        section_manifest_json: [
+          { key: 'application', label: 'Application', required: true },
+          { key: 'declarations', label: 'Declarations', required: true },
+          { key: 'signature', label: 'Signature', required: true },
+        ],
+        validation_summary_json: {
+          valid: true,
+          source: 'guided_bond_application_v2',
+        },
+        generated_at: new Date().toISOString(),
+      })
+      .select('id, packet_id, organisation_id, version_number, render_status, rendered_file_path, rendered_file_name, rendered_file_bucket, rendered_sha256')
+      .single()
+    if (versionInsert.error) throw versionInsert.error
+    version = versionInsert.data
+  }
+
+  const signerIdentities = (Array.isArray(signerIdentity) ? signerIdentity : [signerIdentity])
+    .filter((identity) => identity?.required !== false)
+  const signers = []
+  for (const [index, identity] of signerIdentities.entries()) {
+    const signerToken = generateBondApplicationSigningToken()
+    const tokenExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+    const signerRole = identity.signerRole ||
+      (identity.participantRole === 'co_applicant' ? 'purchaser_2' : 'purchaser_1')
+    const signerPayload = {
+      organisation_id: organisationId,
+      packet_id: packet.id,
+      packet_version_id: version.id,
+      signer_role: signerRole,
+      signer_name: identity.fullName,
+      signer_email: normalizeEmailAddress(identity.email),
+      signing_order: identity.signingOrder || 1,
+      status: 'ready_to_send',
+      signing_token: signerToken,
+      token_expires_at: tokenExpiresAt,
+    }
+    let signer = null
+    const existingSignerQuery = await client
+      .from('document_packet_signers')
+      .select('id, signing_token, status, token_expires_at')
+      .eq('packet_id', packet.id)
+      .eq('packet_version_id', version.id)
+      .eq('signer_role', signerRole)
+      .maybeSingle()
+    if (existingSignerQuery.error && !isMissingSchemaError(existingSignerQuery.error) && !isPermissionDeniedError(existingSignerQuery.error)) throw existingSignerQuery.error
+    if (existingSignerQuery.data?.id) {
+      const signerUpdate = await client
+        .from('document_packet_signers')
+        .update({
+          signer_name: signerPayload.signer_name,
+          signer_email: signerPayload.signer_email,
+          signing_token: existingSignerQuery.data.signing_token || signerToken,
+          token_expires_at: existingSignerQuery.data.signing_token ? existingSignerQuery.data.token_expires_at : tokenExpiresAt,
+          status: ['signed', 'declined'].includes(normalizeTextValue(existingSignerQuery.data.status).toLowerCase()) ? existingSignerQuery.data.status : 'ready_to_send',
+        })
+        .eq('id', existingSignerQuery.data.id)
+        .select('id, signer_role, signing_token, status, token_expires_at')
+        .single()
+      if (signerUpdate.error) throw signerUpdate.error
+      signer = signerUpdate.data
+    } else {
+      const signerInsert = await client
+        .from('document_packet_signers')
+        .insert(signerPayload)
+        .select('id, signer_role, signing_token, status, token_expires_at')
+        .single()
+      if (signerInsert.error) throw signerInsert.error
+      signer = signerInsert.data
+    }
+    signers.push({
+      ...signer,
+      participantRole: identity.participantRole || 'primary_applicant',
+      participantKey: identity.participantKey || null,
+    })
+
+    const existingFieldQuery = await client
+      .from('document_signing_fields')
+      .select('id')
+      .eq('packet_id', packet.id)
+      .eq('packet_version_id', version.id)
+      .eq('signer_role', signerRole)
+      .limit(1)
+    if (existingFieldQuery.error && !isMissingSchemaError(existingFieldQuery.error) && !isPermissionDeniedError(existingFieldQuery.error)) throw existingFieldQuery.error
+    if (!existingFieldQuery.data?.length) {
+      const y = 680 - index * 90
+      const fieldInsert = await client
+        .from('document_signing_fields')
+        .insert([
+          {
+            organisation_id: organisationId,
+            packet_id: packet.id,
+            packet_version_id: version.id,
+            signer_role: signerRole,
+            signer_name: identity.fullName,
+            signer_email: normalizeEmailAddress(identity.email),
+            field_type: 'signature',
+            page_number: 1,
+            x_position: 72,
+            y_position: y,
+            width: 220,
+            height: 70,
+            required: true,
+            status: 'pending',
+          },
+          {
+            organisation_id: organisationId,
+            packet_id: packet.id,
+            packet_version_id: version.id,
+            signer_role: signerRole,
+            signer_name: identity.fullName,
+            signer_email: normalizeEmailAddress(identity.email),
+            field_type: 'date',
+            page_number: 1,
+            x_position: 330,
+            y_position: y,
+            width: 120,
+            height: 30,
+            required: true,
+            status: 'pending',
+          },
+        ])
+      if (fieldInsert.error) throw fieldInsert.error
+    }
+  }
+
+  await client.from('document_packets').update({ status: 'sent', current_version_number: 1 }).eq('id', packet.id)
+
+  return {
+    packet,
+    version,
+    signer: signers[0] || null,
+    signers,
+    signPath: signers[0]?.signing_token ? `/sign/${signers[0].signing_token}` : '',
+  }
+}
+
+export async function fetchClientPortalBondApplicationSubmission({ token } = {}) {
+  const client = requireClientPortalTokenClient(token)
+  let context = null
+  let participantRole = BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant
+  try {
+    context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  } catch (error) {
+    const inviteContext = await resolveBondApplicationParticipantInviteContext(client, token)
+    if (!inviteContext?.normalizedApplication) throw error
+    context = {
+      transaction: { id: inviteContext.normalizedApplication.transactionId || inviteContext.normalizedApplication.transaction_id },
+    }
+    participantRole = inviteContext.participant?.role || BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant
+  }
+  const submission = await fetchLatestClientPortalBondApplicationSubmissionRow(client, context.transaction.id)
+  if (!submission?.id) return { submission: null }
+  let signPath = ''
+  if (submission.signing_request_id) {
+    const signerRole = participantRole === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant ? 'purchaser_2' : 'purchaser_1'
+    const signerQuery = await client
+      .from('document_packet_signers')
+      .select('signing_token, token_expires_at, status, signed_at')
+      .eq('packet_id', submission.signing_request_id)
+      .eq('signer_role', signerRole)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!signerQuery.error && normalizeTextValue(signerQuery.data?.status).toLowerCase() === 'signed' && submission.status !== BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+      return finalizeClientPortalBondApplicationSubmission({ token, submissionId: submission.id })
+    }
+    if (!signerQuery.error && signerQuery.data?.signing_token && normalizeTextValue(signerQuery.data.status).toLowerCase() !== 'signed') {
+      signPath = `/sign/${signerQuery.data.signing_token}`
+    }
+  }
+  return { submission: { ...submission, signPath, sign_path: signPath } }
+}
+
+export async function prepareClientPortalBondApplicationSubmission({
+  token,
+  acceptedDeclarations = [],
+  declarationValues = {},
+  expectedSourceHash = '',
+  idempotencyKey = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  const applicationState = context.applicationState
+  const resolvedDocs = resolveBondApplicationDocumentRequirements({ applicationState })
+  const documentChecklist = buildBondApplicationDocumentChecklist({
+    activeRequirements: resolvedDocs.activeRequirements,
+    existingRequiredDocuments: context.requiredDocuments,
+    existingDocuments: context.documents,
+  })
+  const declarations = resolveBondApplicationDeclarations({ applicationState })
+  const signerIdentity = resolveBondApplicationSignerIdentity(applicationState)
+  const readiness = validateBondApplicationSubmissionReadiness({
+    applicationState,
+    documentChecklist,
+    declarations,
+    declarationValues,
+    signerIdentity,
+    latestSaveStatus: 'saved',
+    submission: null,
+  })
+  if (!readiness.ready) {
+    const error = new Error('A few details still need your attention before the application can be signed.')
+    error.issues = readiness.issues
+    throw error
+  }
+
+  const sourceLegacy = toLegacyBondApplication(applicationState)
+  const sourceHash = await hashBondApplicationSnapshot(sourceLegacy)
+  if (expectedSourceHash && expectedSourceHash !== sourceHash) {
+    const error = new Error('The saved application changed after review. Refresh and review the latest information before signing.')
+    error.code = 'STALE_BOND_APPLICATION_SOURCE'
+    throw error
+  }
+
+  const existingSubmitted = await fetchLatestClientPortalBondApplicationSubmissionRow(client, context.transaction.id)
+  if (existingSubmitted?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+    const error = new Error('This bond application has already been submitted.')
+    error.code = 'BOND_APPLICATION_ALREADY_SUBMITTED'
+    throw error
+  }
+  if (existingSubmitted?.status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature && existingSubmitted?.source_application_hash === sourceHash) {
+    const packetSummary = await fetchClientPortalBondApplicationSubmission({ token })
+    return packetSummary
+  }
+
+  const latestVersionQuery = await client
+    .from('transaction_bond_application_submissions')
+    .select('submission_version')
+    .eq('transaction_id', context.transaction.id)
+    .order('submission_version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (latestVersionQuery.error && !isMissingTableError(latestVersionQuery.error, 'transaction_bond_application_submissions')) throw latestVersionQuery.error
+  const nextVersion = Number(latestVersionQuery.data?.submission_version || 0) + 1
+  const now = new Date().toISOString()
+  const snapshot = buildBondApplicationSubmissionSnapshot({
+    applicationState,
+    transaction: context.transaction,
+    submissionVersion: nextVersion,
+    declarations: acceptedDeclarations.length
+      ? acceptedDeclarations
+      : buildBondApplicationDeclarationEvidence({
+          declarations,
+          values: declarationValues,
+          acceptedAt: now,
+          selectedBankIds: applicationState.application.selectedBankIds,
+        }),
+    documentChecklist,
+    signerIdentity,
+    source: {
+      onboardingFormDataId: context.onboardingFormData?.id || null,
+      sourceUpdatedAt: context.onboardingFormData?.updated_at || null,
+      sourceHash,
+    },
+    createdAt: now,
+  })
+  const snapshotHash = await hashBondApplicationSnapshot(snapshot)
+  const insert = await client
+    .from('transaction_bond_application_submissions')
+    .insert({
+      transaction_id: context.transaction.id,
+      onboarding_form_data_id: context.onboardingFormData?.id || null,
+      submission_version: nextVersion,
+      application_schema_version: String(snapshot.versions.applicationSchemaVersion),
+      flow_version: BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
+      document_rule_set_version: snapshot.versions.documentRuleSetVersion,
+      declaration_contract_version: snapshot.versions.declarationContractVersion,
+      status: BOND_APPLICATION_SUBMISSION_STATUSES.preparing,
+      snapshot_json: snapshot,
+      snapshot_hash: snapshotHash,
+      source_application_hash: sourceHash,
+      source_application_updated_at: context.onboardingFormData?.updated_at || null,
+      declarations_json: snapshot.declarations,
+      document_manifest_json: snapshot.documentManifest,
+      selected_bank_ids: snapshot.selectedBanks,
+      signer_manifest_json: snapshot.signerManifest,
+      prepared_at: now,
+      metadata: {
+        idempotencyKey: normalizeTextValue(idempotencyKey) || null,
+        canonicalJsonLength: canonicalizeBondApplicationSnapshot(snapshot).length,
+      },
+    })
+    .select('*')
+    .single()
+  if (insert.error) throw insert.error
+  let submission = insert.data
+  try {
+    const signing = await createOrReuseBondApplicationSigningPacket(client, {
+      submission,
+      context,
+      snapshot,
+      snapshotHash,
+      signerIdentity,
+    })
+    const update = await client
+      .from('transaction_bond_application_submissions')
+      .update({
+        status: BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature,
+        generated_document_id: signing.version?.id || null,
+        signing_request_id: signing.packet?.id || null,
+        awaiting_signature_at: new Date().toISOString(),
+      })
+      .eq('id', submission.id)
+      .select('*')
+      .single()
+    if (update.error) throw update.error
+    submission = { ...update.data, signPath: signing.signPath, sign_path: signing.signPath }
+  } catch (signingError) {
+    await client
+      .from('transaction_bond_application_submissions')
+      .update({
+        status: BOND_APPLICATION_SUBMISSION_STATUSES.failed,
+        failure_stage: 'signing_request_creation',
+        failure_code: signingError?.code || 'signing_request_failed',
+      })
+      .eq('id', submission.id)
+    throw signingError
+  }
+  return { submission, signPath: submission.signPath }
+}
+
+export async function cancelClientPortalBondApplicationSubmission({ token, submissionId } = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  const query = await client
+    .from('transaction_bond_application_submissions')
+    .select('*')
+    .eq('id', submissionId)
+    .eq('transaction_id', context.transaction.id)
+    .maybeSingle()
+  if (query.error) throw query.error
+  if (!query.data) throw new Error('Submission was not found.')
+  if (query.data.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+    throw new Error('A submitted application cannot be reopened from the buyer portal.')
+  }
+  if (query.data.signing_request_id) {
+    await client
+      .from('document_packet_signers')
+      .update({ status: 'expired', signing_token: null, token_expires_at: null })
+      .eq('packet_id', query.data.signing_request_id)
+      .neq('status', 'signed')
+  }
+  const update = await client
+    .from('transaction_bond_application_submissions')
+    .update({
+      status: BOND_APPLICATION_SUBMISSION_STATUSES.cancelled,
+      cancelled_at: new Date().toISOString(),
+    })
+    .eq('id', query.data.id)
+    .select('*')
+    .single()
+  if (update.error) throw update.error
+  return { submission: update.data }
+}
+
+export async function finalizeClientPortalBondApplicationSubmission({ token, submissionId } = {}) {
+  const client = requireClientPortalTokenClient(token)
+  let context = null
+  try {
+    context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  } catch {
+    const inviteContext = await resolveBondApplicationParticipantInviteContext(client, token)
+    context = {
+      transaction: { id: inviteContext.normalizedApplication.transactionId },
+      onboardingFormData: { id: inviteContext.normalizedApplication.onboardingFormDataId, form_data: {} },
+      applicationState: buildApplicationStateFromNormalizedApplication(inviteContext.normalizedApplication),
+      normalizedApplication: inviteContext.normalizedApplication,
+    }
+  }
+  const submissionQuery = await client
+    .from('transaction_bond_application_submissions')
+    .select('*')
+    .eq('id', submissionId)
+    .eq('transaction_id', context.transaction.id)
+    .maybeSingle()
+  if (submissionQuery.error) throw submissionQuery.error
+  const submission = submissionQuery.data
+  if (!submission?.id) throw new Error('Submission was not found.')
+  if (submission.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) return { submission }
+  if (!submission.signing_request_id) throw new Error('Signing request is not linked to this submission.')
+  const signerQuery = await client
+    .from('document_packet_signers')
+    .select('id, signer_role, status, signed_at')
+    .eq('packet_id', submission.signing_request_id)
+    .in('signer_role', ['purchaser_1', 'purchaser_2'])
+  if (signerQuery.error) throw signerQuery.error
+  const signerRows = signerQuery.data || []
+  const expectedSignerCount = Math.max(Array.isArray(submission.signer_manifest_json) ? submission.signer_manifest_json.length : 1, 1)
+  const signedRows = signerRows.filter((row) => normalizeTextValue(row.status).toLowerCase() === 'signed')
+  if (signerRows.length < expectedSignerCount || signedRows.length < expectedSignerCount) {
+    return { submission, finalized: false }
+  }
+  const now = new Date().toISOString()
+  const update = await client
+    .from('transaction_bond_application_submissions')
+    .update({
+      status: BOND_APPLICATION_SUBMISSION_STATUSES.submitted,
+      signed_at: signedRows.map((row) => row.signed_at).filter(Boolean).sort().at(-1) || now,
+      submitted_at: now,
+      signed_document_id: submission.signed_document_id || null,
+    })
+    .eq('id', submission.id)
+    .select('*')
+    .single()
+  if (update.error) throw update.error
+
+  let normalizedApplication = null
+  if (submission.bond_application_id) {
+    normalizedApplication = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  }
+  const legacy = normalizedApplication
+    ? projectNormalizedBondApplicationToLegacy({ normalizedApplication })
+    : toLegacyBondApplication(context.applicationState)
+  const nextLegacy = {
+    ...legacy,
+    status: 'Submitted',
+    submitted_at: now,
+    _meta: {
+      ...(legacy._meta || {}),
+      guided_bond_application_v2: {
+        ...(legacy._meta?.guided_bond_application_v2 || {}),
+        flow_version: BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
+        active_submission_id: update.data.id,
+        active_submission_version: update.data.submission_version,
+        submission_status: BOND_APPLICATION_SUBMISSION_STATUSES.submitted,
+        submitted_at: now,
+      },
+    },
+  }
+  const formData = {
+    ...(context.onboardingFormData?.form_data || {}),
+    bond_application: nextLegacy,
+  }
+  await client
+    .from('onboarding_form_data')
+    .update({ form_data: formData, updated_at: now })
+    .eq('transaction_id', context.transaction.id)
+
+  if (normalizedApplication?.id) {
+    await client
+      .from('bond_applications')
+      .update({
+        status: BOND_APPLICATION_STATUSES.submitted,
+        submitted_at: now,
+        active_submission_id: update.data.id,
+        updated_at: now,
+      })
+      .eq('id', normalizedApplication.id)
+    const signersByRole = new Map(signedRows.map((row) => [
+      row.signer_role === 'purchaser_2' ? BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant : BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant,
+      row,
+    ]))
+    for (const participant of normalizedApplication.participants || []) {
+      const signer = signersByRole.get(participant.role)
+      if (!signer) continue
+      await client
+        .from('bond_application_participants')
+        .update({
+          status: BOND_APPLICATION_PARTICIPANT_STATUSES.completed,
+          signed_at: signer.signed_at || now,
+          completed_at: now,
+          updated_at: now,
+        })
+        .eq('id', participant.id)
+    }
+  }
+
+  return { submission: update.data, finalized: true }
 }
 
 export const EMPTY_STATE = {

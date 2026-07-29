@@ -274,6 +274,16 @@ try {
     assert.equal(managerPreviewSnapshot.totalApplications >= 48, true)
     assert.equal(managerPreviewSnapshot.activeApplications.length > managerSnapshot.activeApplications.length, true)
     assert.equal(managerPreviewSnapshot.hqCommandCentre.pipelineFunnel.stages.every((stage) => stage.conversionRate <= 100), true)
+    assert.ok(managerPreviewSnapshot.managementOverview)
+    assert.equal(managerPreviewSnapshot.managementOverview.kpis.every((item) => item.value && item.value !== 'No data yet'), true)
+    assert.equal(managerPreviewSnapshot.managementOverview.pipeline.every((stage) => stage.count > 0 && stage.loanValueLabel !== 'R 0'), true)
+    assert.equal(managerPreviewSnapshot.managementOverview.summaryStrip.every((item) => item.value && item.value !== 'No data yet'), true)
+    assert.equal(managerPreviewSnapshot.managementOverview.sla.every((item) => item.value && item.value !== 'No data yet' && item.onTrack !== null), true)
+    assert.equal(managerPreviewSnapshot.managementOverview.commission.cards.every((item) => item.value && item.value !== 'No data yet'), true)
+    assert.equal(managerPreviewSnapshot.managementOverview.commission.invoiceQueue.length >= 3, true)
+    assert.equal(managerPreviewSnapshot.managementOverview.performanceTables.consultants.length >= 5, true)
+    assert.equal(managerPreviewSnapshot.managementOverview.performanceTables.partners.length >= 5, true)
+    assert.equal(managerPreviewSnapshot.managementOverview.performanceTables.banks.length >= 5, true)
 
     const hqTrackerSnapshot = await service.getBondTransactionTrackerSnapshot(manager, 'workspace-1', {
       transactions: [

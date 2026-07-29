@@ -10,11 +10,17 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
-export async function handleSellerOfferReviewEmail(payload: SendSellerOfferReviewPayload) {
+export async function handleSellerOfferReviewEmail(
+  payload: SendSellerOfferReviewPayload,
+) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
@@ -37,26 +43,35 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
   const agentName = normalizeText(payload.agentName);
   const expiresAt = normalizeText(payload.expiresAt);
   const note = normalizeText(payload.note);
-  const organisationName =
-    normalizeText(payload.organisationName) ||
+  const organisationName = normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Arch9";
-  const supportEmail =
-    normalizeText(payload.supportEmail) ||
+  const supportEmail = normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
-  const supportPhone =
-    normalizeText(payload.supportPhone) ||
+  const supportPhone = normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender =
+  const rawPayload = payload as Record<string, unknown>;
+  const branding = await resolveEmailBranding({
+    payload: rawPayload,
+    organisationId: normalizeText(
+      rawPayload.organisationId || rawPayload.organisation_id,
+    ),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const subject = `Offer received for ${propertyTitle}`;
   const introParagraphs = [
-    `${agentName || "Your agent"} has sent you a buyer offer to review for ${propertyTitle}.`,
+    `${
+      agentName || "Your agent"
+    } has sent you a buyer offer to review for ${propertyTitle}.`,
     "Open the secure review link below to view the offer and record your decision.",
     note ? `Agent note: ${note}` : "",
   ];
@@ -72,7 +87,9 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
       ],
       "Offer Review Summary",
     ),
-    renderBridgeCta("Review Buyer Offer", reviewLink),
+    renderBridgeCta("Review Buyer Offer", reviewLink, {
+      primaryColor: branding.primaryColor,
+    }),
   ].join("");
   const html = renderBridgeEmailLayout({
     preheader: `A buyer offer is ready for seller review on ${propertyTitle}.`,
@@ -80,16 +97,21 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     greeting: `Hi ${sellerName},`,
     contentHtml,
     securityTitle: "Secure Seller Review",
-    securityBody: "Your offer review link is shared through Arch9 so the offer decision stays connected to the listing, buyer lead, and transaction workflow.",
-    helpBody: "Need help? Reply to this email or contact your agent before making a decision.",
-    organisationName,
-    supportEmail,
-    supportPhone,
+    securityBody:
+      "Your offer review link is shared through Arch9 so the offer decision stays connected to the listing, buyer lead, and transaction workflow.",
+    helpBody:
+      "Need help? Reply to this email or contact your agent before making a decision.",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
   const text = [
     `Hi ${sellerName},`,
     "",
-    `${agentName || "Your agent"} has sent you a buyer offer to review for ${propertyTitle}.`,
+    `${
+      agentName || "Your agent"
+    } has sent you a buyer offer to review for ${propertyTitle}.`,
     note ? `Agent note: ${note}` : null,
     "",
     `Property: ${propertyTitle}`,
@@ -103,17 +125,20 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     "",
     "Need help? Reply to this email or contact your agent before making a decision.",
     "",
-    organisationName,
+    branding.organisationName,
     "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType: "seller_offer_review",
-    recipient: to,
-    recipientRole: "seller",
-    subject,
-    messagePreview: text,
-  });
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "seller_offer_review",
+      recipient: to,
+      recipientRole: "seller",
+      subject,
+      messagePreview: text,
+    },
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -126,11 +151,12 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
 
   if (!emailResult.ok) {
     await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage:
-        emailResult.error?.message || "Failed to send seller offer review email.",
+      errorMessage: emailResult.error?.message ||
+        "Failed to send seller offer review email.",
     });
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send seller offer review email.",
+      error: emailResult.error?.message ||
+        "Failed to send seller offer review email.",
       details: emailResult.error,
     });
   }

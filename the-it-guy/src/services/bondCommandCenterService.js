@@ -27,6 +27,7 @@ import {
 } from './financeIntelligenceService'
 import { resolveEffectiveBondAssignment } from './bondAssignmentService'
 import { getSystemBanks } from './bondOriginatorBankService'
+import { buildBondOriginatorIntakePackageViewModel } from '../modules/bond/integrations'
 
 const PRIORITY_CARD_META = Object.freeze({
   missing_documents: {
@@ -168,6 +169,16 @@ const DATE_RANGE_FILTERS = Object.freeze({
 })
 
 const DEFAULT_DASHBOARD_RANGE_KEY = 'last_30_days'
+
+const MANAGEMENT_PIPELINE_STAGES = Object.freeze([
+  { key: 'application', label: 'Application', href: '/bond/applications?stage=application' },
+  { key: 'at_banks', label: 'At Banks', href: '/bond/applications?stage=at_banks' },
+  { key: 'accepted', label: 'Accepted', href: '/bond/applications?stage=accepted' },
+  { key: 'lodged', label: 'Lodged', href: '/bond/applications?stage=lodged' },
+  { key: 'registered', label: 'Registered', href: '/bond/applications?view=registered' },
+])
+
+const MANAGEMENT_FINAL_STATUSES = new Set(['cancelled', 'declined', 'rejected', 'withdrawn', 'lost', 'duplicate', 'archived'])
 
 const DASHBOARD_ROLE_FOCUS = Object.freeze({
   consultant: {
@@ -586,6 +597,34 @@ function filterRowsByDateRange(rows = [], rangeKey = DEFAULT_DASHBOARD_RANGE_KEY
   })
 }
 
+function filterRowsByPreviousDateRange(rows = [], rangeKey = DEFAULT_DASHBOARD_RANGE_KEY) {
+  const now = new Date()
+  if (rangeKey === 'all_time') return []
+  if (rangeKey === 'this_month') {
+    const currentStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    return rows.filter((row) => {
+      const updatedAt = getDateOrNull(getUpdatedAt(row))
+      return updatedAt ? updatedAt >= previousStart && updatedAt < currentStart : false
+    })
+  }
+  if (rangeKey === 'quarter_to_date') {
+    const quarter = Math.floor(now.getMonth() / 3)
+    const currentStart = new Date(now.getFullYear(), quarter * 3, 1)
+    const previousStart = new Date(now.getFullYear(), (quarter - 1) * 3, 1)
+    return rows.filter((row) => {
+      const updatedAt = getDateOrNull(getUpdatedAt(row))
+      return updatedAt ? updatedAt >= previousStart && updatedAt < currentStart : false
+    })
+  }
+  const currentStart = DATE_RANGE_FILTERS.last_30_days()
+  const previousStart = new Date(currentStart.getTime() - 30 * 24 * 60 * 60 * 1000)
+  return rows.filter((row) => {
+    const updatedAt = getDateOrNull(getUpdatedAt(row))
+    return updatedAt ? updatedAt >= previousStart && updatedAt < currentStart : false
+  })
+}
+
 function cloneRowSafe(row = {}) {
   try {
     return JSON.parse(JSON.stringify(row))
@@ -599,6 +638,181 @@ function cloneRowSafe(row = {}) {
       documentSummary: row?.documentSummary ? { ...row.documentSummary } : null,
     }
   }
+}
+
+function getDemoDate(daysAgo = 0, hour = 10) {
+  const date = new Date()
+  date.setDate(date.getDate() - daysAgo)
+  date.setHours(hour, 0, 0, 0)
+  return date.toISOString()
+}
+
+const MANAGEMENT_DEMO_CONSULTANTS = Object.freeze([
+  'Lindiwe M.',
+  'Thabo K.',
+  'Priya S.',
+  'Johan B.',
+  'Nomsa D.',
+])
+
+const MANAGEMENT_DEMO_PARTNERS = Object.freeze([
+  'Property Hub',
+  'HomeFinders',
+  'Wealth Wise',
+  'Relocate Pro',
+  'MoveEasy',
+])
+
+const MANAGEMENT_DEMO_BANKS = Object.freeze(['Standard Bank', 'Nedbank', 'FNB', 'ABSA', 'Investec'])
+
+const MANAGEMENT_DEMO_STAGE_PLAN = Object.freeze([
+  ['application', 7],
+  ['at_banks', 9],
+  ['accepted', 6],
+  ['lodged', 5],
+  ['registered_ready', 4],
+  ['registered_invoiced', 3],
+  ['registered_paid', 3],
+  ['lost', 3],
+  ['previous_period', 8],
+])
+
+function buildManagementDemoBankSubmissions({ stage = '', bank = '', index = 0, createdAt = '' } = {}) {
+  if (!['at_banks', 'accepted', 'lodged', 'registered_ready', 'registered_invoiced', 'registered_paid', 'lost', 'previous_period'].includes(stage)) return []
+  const secondaryBank = MANAGEMENT_DEMO_BANKS[(index + 1) % MANAGEMENT_DEMO_BANKS.length]
+  const approved = ['accepted', 'lodged', 'registered_ready', 'registered_invoiced', 'registered_paid'].includes(stage)
+  const declined = stage === 'lost'
+  return [bank, secondaryBank].filter(Boolean).map((name, submissionIndex) => ({
+    id: `demo-management-bank-${stage}-${index + 1}-${submissionIndex + 1}`,
+    bank: name,
+    bank_name: name,
+    status: approved && submissionIndex === 0 ? 'approved' : declined ? 'declined' : 'submitted',
+    submitted_at: getDemoDate(Math.max(1, 12 - index), 11),
+    decision_at: approved || declined ? getDemoDate(Math.max(1, 7 - submissionIndex), 14) : null,
+    feedback_received_at: approved || declined ? getDemoDate(Math.max(1, 7 - submissionIndex), 14) : null,
+    approved_at: approved && submissionIndex === 0 ? getDemoDate(Math.max(1, 6 - submissionIndex), 15) : null,
+    declined_at: declined ? getDemoDate(Math.max(1, 5 - submissionIndex), 16) : null,
+    created_at: createdAt,
+  }))
+}
+
+function createManagementDemoRow({ stage = 'application', index = 0, globalIndex = 0 } = {}) {
+  const consultant = MANAGEMENT_DEMO_CONSULTANTS[index % MANAGEMENT_DEMO_CONSULTANTS.length]
+  const partner = MANAGEMENT_DEMO_PARTNERS[(index + globalIndex) % MANAGEMENT_DEMO_PARTNERS.length]
+  const bank = MANAGEMENT_DEMO_BANKS[(index + globalIndex) % MANAGEMENT_DEMO_BANKS.length]
+  const daysAgo = stage === 'previous_period' ? 36 + index * 2 : 1 + (globalIndex % 24)
+  const createdDaysAgo = stage === 'previous_period' ? 43 + index * 2 : 4 + (globalIndex % 21)
+  const createdAt = getDemoDate(createdDaysAgo, 9)
+  const updatedAt = getDemoDate(daysAgo, 15)
+  const bondAmount = 1450000 + (globalIndex % 9) * 185000
+  const commission = stage === 'application' && index % 4 === 0 ? 0 : Math.round(bondAmount * 0.018)
+  const id = `demo-management-${stage}-${index + 1}`
+  const acceptedAt = ['accepted', 'lodged', 'registered_ready', 'registered_invoiced', 'registered_paid'].includes(stage) ? getDemoDate(Math.max(1, daysAgo + 2), 14) : null
+  const registeredAt = ['registered_ready', 'registered_invoiced', 'registered_paid'].includes(stage) ? getDemoDate(Math.max(1, daysAgo), 12) : null
+  const lodgedAt = stage === 'lodged' ? getDemoDate(Math.max(1, daysAgo), 13) : null
+  const lostAt = stage === 'lost' ? getDemoDate(Math.max(1, daysAgo), 16) : null
+  const financeStatus = {
+    application: 'documents_pending',
+    at_banks: 'submitted',
+    accepted: 'approved',
+    lodged: 'approved',
+    registered_ready: 'registered',
+    registered_invoiced: 'registered',
+    registered_paid: 'registered',
+    lost: 'declined',
+    previous_period: index % 2 ? 'approved' : 'submitted',
+  }[stage] || 'documents_pending'
+
+  const transaction = {
+    id,
+    organisation_id: 'workspace-1',
+    bond_workspace_id: 'workspace-1',
+    bond_region_id: `region-${(globalIndex % 4) + 1}`,
+    bond_workspace_unit_id: `branch-${(globalIndex % 5) + 1}`,
+    source: 'demo',
+    __demo: true,
+    isDemo: true,
+    finance_type: 'bond',
+    finance_status: financeStatus,
+    status: lostAt ? 'declined' : registeredAt ? 'registered' : 'active',
+    lifecycle_bucket: 'pipeline',
+    transaction_reference: `DEMO-MGMT-${String(globalIndex + 1).padStart(3, '0')}`,
+    buyer_name: `Demo Buyer ${String(globalIndex + 1).padStart(2, '0')}`,
+    buyer_email: `demo.buyer${globalIndex + 1}@example.test`,
+    buyer_phone: `082555${String(1000 + globalIndex).slice(-4)}`,
+    property_address_line_1: `${12 + globalIndex} Bridge Avenue`,
+    development_name: ['Harbour Quarter', 'Oak Ridge', 'The Parks', 'Urban Nest'][globalIndex % 4],
+    unit_number: `${100 + globalIndex}`,
+    assigned_agent: partner,
+    partner_name: partner,
+    bank,
+    bond_originator: consultant,
+    primary_bond_consultant_user_id: `demo-consultant-${(index % MANAGEMENT_DEMO_CONSULTANTS.length) + 1}`,
+    assigned_bond_originator_email: `${consultant.toLowerCase().replace(/[^a-z]+/g, '.')}@demo.example.test`,
+    sales_price: Math.round(bondAmount / 0.9),
+    bond_amount: bondAmount,
+    accepted_loan_amount: acceptedAt || registeredAt ? bondAmount : null,
+    registered_loan_amount: registeredAt ? bondAmount : null,
+    gross_commission_amount: commission,
+    first_contact_at: getDemoDate(Math.max(1, createdDaysAgo - 1), 10),
+    ready_to_submit_at: ['at_banks', 'accepted', 'lodged', 'registered_ready', 'registered_invoiced', 'registered_paid', 'lost', 'previous_period'].includes(stage) ? getDemoDate(Math.max(1, createdDaysAgo - 3), 12) : null,
+    first_bank_decision_at: ['accepted', 'lodged', 'registered_ready', 'registered_invoiced', 'registered_paid', 'lost'].includes(stage) ? getDemoDate(Math.max(1, daysAgo + 1), 11) : null,
+    accepted_offer_at: acceptedAt,
+    offer_accepted_at: acceptedAt,
+    lodged_at: lodgedAt,
+    registered_at: registeredAt,
+    registration_date: registeredAt,
+    declined_at: lostAt,
+    lost_at: lostAt,
+    invoice_status: stage === 'registered_invoiced' ? 'invoiced' : stage === 'registered_paid' ? 'paid' : '',
+    created_at: createdAt,
+    updated_at: updatedAt,
+  }
+
+  const bankSubmissions = buildManagementDemoBankSubmissions({ stage, bank, index: globalIndex, createdAt })
+
+  return {
+    isDemo: true,
+    __demo: true,
+    source: 'demo',
+    transaction,
+    buyer: {
+      id: `demo-management-buyer-${globalIndex + 1}`,
+      name: transaction.buyer_name,
+      email: transaction.buyer_email,
+      phone: transaction.buyer_phone,
+    },
+    development: {
+      id: `demo-management-development-${(globalIndex % 4) + 1}`,
+      name: transaction.development_name,
+    },
+    unit: {
+      id: `demo-management-unit-${globalIndex + 1}`,
+      unit_number: transaction.unit_number,
+      price: transaction.sales_price,
+    },
+    documentSummary: {
+      uploadedCount: stage === 'application' ? 4 : 8,
+      totalRequired: 8,
+      missingCount: stage === 'application' ? 4 : 0,
+    },
+    bankSubmissions,
+    transaction_bond_applications: bankSubmissions,
+  }
+}
+
+function buildManagementDemoCompletenessRows(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (safeRows.some((row) => normalizeText(row?.transaction?.id).startsWith('demo-management-'))) return safeRows
+
+  let globalIndex = 0
+  const demoRows = MANAGEMENT_DEMO_STAGE_PLAN.flatMap(([stage, count]) => Array.from({ length: count }, (_, index) => {
+    const row = createManagementDemoRow({ stage, index, globalIndex })
+    globalIndex += 1
+    return row
+  }))
+
+  return [...safeRows, ...demoRows]
 }
 
 function buildExpandedBondRows(rows = [], targetCount = 0) {
@@ -714,7 +928,8 @@ async function resolveBondRows(user = {}, workspaceId = '', options = {}) {
 
   const visibleRows = getVisibleRows(user, rows, options)
   const filteredRows = filterDemoBondApplications(visibleRows, { includeDemoRows })
-  const resolvedRows = includeDemoRows ? buildExpandedBondRows(filteredRows, 48) : filteredRows
+  const demoReadyRows = includeDemoRows ? buildManagementDemoCompletenessRows(filteredRows) : filteredRows
+  const resolvedRows = includeDemoRows ? buildExpandedBondRows(demoReadyRows, 48) : filteredRows
   return uniqueByTransaction(resolvedRows)
 }
 
@@ -1297,6 +1512,136 @@ function getNextAction(row = {}) {
   return 'No next action'
 }
 
+function normalizeOriginatorIntakePackageRecord(record = {}) {
+  if (!record || typeof record !== 'object') return null
+  const documentRequests = record.document_requests ||
+    record.documentRequests ||
+    record.transaction_bond_originator_document_requests ||
+    []
+  const progressEvents = record.progress_events ||
+    record.progressEvents ||
+    record.transaction_bond_originator_progress_events ||
+    []
+  const offerCaptures = record.offer_captures ||
+    record.offerCaptures ||
+    record.transaction_bond_originator_bank_offer_captures ||
+    []
+  const grantCaptures = record.grant_captures ||
+    record.grantCaptures ||
+    record.transaction_bond_originator_grant_captures ||
+    []
+  return {
+    id: normalizeText(record.id),
+    transactionId: normalizeText(record.transaction_id || record.transactionId),
+    submissionId: normalizeText(record.submission_id || record.submissionId),
+    destinationKey: normalizeText(record.destination_key || record.destinationKey),
+    destinationType: normalizeText(record.destination_type || record.destinationType),
+    status: normalizeText(record.status),
+    originatorRecipient: {
+      id: normalizeText(record.originator_recipient_id || record.originatorRecipientId),
+      name: normalizeText(record.originator_recipient_name || record.originatorRecipientName || record.originatorRecipient?.name),
+    },
+    packageReadyAt: record.package_ready_at || record.packageReadyAt || record.created_at || record.createdAt || null,
+    acceptedAt: record.accepted_at || record.acceptedAt || null,
+    lastDownloadedAt: record.last_downloaded_at || record.lastDownloadedAt || null,
+    downloadCount: normalizeNumber(record.download_count || record.downloadCount, 0),
+    documentBundleManifest: record.document_bundle_manifest_json || record.documentBundleManifest || {},
+    documentRequests: Array.isArray(documentRequests) ? documentRequests.map((request) => ({
+      id: normalizeText(request.id),
+      exportPackageId: normalizeText(request.export_package_id || request.exportPackageId),
+      transactionId: normalizeText(request.transaction_id || request.transactionId),
+      submissionId: normalizeText(request.submission_id || request.submissionId),
+      participantKey: normalizeText(request.participant_key || request.participantKey),
+      participantRole: normalizeText(request.participant_role || request.participantRole),
+      targetScope: normalizeText(request.target_scope || request.targetScope),
+      requestType: normalizeText(request.request_type || request.requestType),
+      status: normalizeText(request.status),
+      requirementKey: normalizeText(request.requirement_key || request.requirementKey),
+      canonicalDocumentType: normalizeText(request.canonical_document_type || request.canonicalDocumentType),
+      title: normalizeText(request.title),
+      dueAt: request.due_at || request.dueAt || null,
+      createdAt: request.created_at || request.createdAt || null,
+    })) : [],
+    documentRequestSummary: record.document_request_summary_json || record.documentRequestSummary || null,
+    progressEvents: Array.isArray(progressEvents) ? progressEvents.map((event) => ({
+      id: normalizeText(event.id),
+      exportPackageId: normalizeText(event.export_package_id || event.exportPackageId),
+      transactionId: normalizeText(event.transaction_id || event.transactionId),
+      submissionId: normalizeText(event.submission_id || event.submissionId),
+      destinationKey: normalizeText(event.destination_key || event.destinationKey),
+      eventType: normalizeText(event.event_type || event.eventType),
+      status: normalizeText(event.status),
+      title: normalizeText(event.title),
+      summary: normalizeText(event.summary),
+      internalNote: normalizeText(event.internal_note || event.internalNote),
+      occurredAt: event.occurred_at || event.occurredAt || event.created_at || event.createdAt || null,
+      recordedBy: normalizeText(event.recorded_by || event.recordedBy),
+      visibility: {
+        visibleToBuyer: event.visible_to_buyer !== false && event.visibleToBuyer !== false,
+        visibleToAgent: event.visible_to_agent !== false && event.visibleToAgent !== false,
+        visibleToOriginator: event.visible_to_originator !== false && event.visibleToOriginator !== false,
+      },
+      source: normalizeText(event.source),
+      bankWorkflowUnchanged: event.bank_workflow_unchanged !== false && event.bankWorkflowUnchanged !== false,
+    })) : [],
+    progressTimeline: record.progress_timeline_json || record.progressTimeline || null,
+    offerCaptures: Array.isArray(offerCaptures) ? offerCaptures.map((offer) => ({
+      id: normalizeText(offer.id),
+      exportPackageId: normalizeText(offer.export_package_id || offer.exportPackageId),
+      transactionId: normalizeText(offer.transaction_id || offer.transactionId),
+      submissionId: normalizeText(offer.submission_id || offer.submissionId),
+      bankName: normalizeText(offer.bank_name || offer.bankName),
+      offeredAmount: normalizeNumber(offer.offered_amount ?? offer.offeredAmount, null),
+      interestRate: normalizeNumber(offer.interest_rate ?? offer.interestRate, null),
+      monthlyRepayment: normalizeNumber(offer.monthly_repayment ?? offer.monthlyRepayment, null),
+      termMonths: normalizeNumber(offer.term_months ?? offer.termMonths, null),
+      validUntil: offer.valid_until || offer.validUntil || null,
+      quoteDocumentId: normalizeText(offer.quote_document_id || offer.quoteDocumentId),
+      status: normalizeText(offer.status),
+      buyerDecision: normalizeText(offer.buyer_decision || offer.buyerDecision),
+      linkedBondQuoteId: normalizeText(offer.linked_bond_quote_id || offer.linkedBondQuoteId),
+      capturedAt: offer.captured_at || offer.capturedAt || offer.created_at || offer.createdAt || null,
+      publishedAt: offer.published_at || offer.publishedAt || null,
+    })) : [],
+    grantCaptures: Array.isArray(grantCaptures) ? grantCaptures.map((grant) => ({
+      id: normalizeText(grant.id),
+      exportPackageId: normalizeText(grant.export_package_id || grant.exportPackageId),
+      transactionId: normalizeText(grant.transaction_id || grant.transactionId),
+      submissionId: normalizeText(grant.submission_id || grant.submissionId),
+      offerCaptureId: normalizeText(grant.offer_capture_id || grant.offerCaptureId),
+      linkedBondQuoteId: normalizeText(grant.linked_bond_quote_id || grant.linkedBondQuoteId),
+      bankName: normalizeText(grant.bank_name || grant.bankName),
+      approvedAmount: normalizeNumber(grant.approved_amount ?? grant.approvedAmount, null),
+      grantDocumentId: normalizeText(grant.grant_document_id || grant.grantDocumentId),
+      signedGrantDocumentId: normalizeText(grant.signed_grant_document_id || grant.signedGrantDocumentId),
+      status: normalizeText(grant.status),
+      capturedAt: grant.captured_at || grant.capturedAt || grant.created_at || grant.createdAt || null,
+      publishedAt: grant.published_at || grant.publishedAt || null,
+    })) : [],
+    offerGrantSummary: record.offer_grant_summary_json || record.offerGrantSummary || null,
+    participantSummary: record.participant_summary_json || record.participantSummary || {},
+  }
+}
+
+function getOriginatorIntakePackageViewModel(row = {}) {
+  const tx = row?.transaction || {}
+  const candidates = [
+    row.originatorIntakePackage,
+    row.originator_intake_package,
+    tx.originatorIntakePackage,
+    tx.originator_intake_package,
+    ...(Array.isArray(row.transaction_bond_application_export_packages) ? row.transaction_bond_application_export_packages : []),
+    ...(Array.isArray(row.exportPackages) ? row.exportPackages : []),
+    ...(Array.isArray(tx.transaction_bond_application_export_packages) ? tx.transaction_bond_application_export_packages : []),
+    ...(Array.isArray(tx.exportPackages) ? tx.exportPackages : []),
+  ].filter(Boolean)
+  const packageRecord = candidates.find((item) =>
+    normalizeText(item.destination_key || item.destinationKey) === 'bond_originator_intake',
+  )
+  const normalized = normalizeOriginatorIntakePackageRecord(packageRecord)
+  return normalized ? buildBondOriginatorIntakePackageViewModel({ exportPackage: normalized }) : null
+}
+
 function getFinanceTypeLabel(row = {}) {
   const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
   if (financeType === 'combination') return 'Hybrid'
@@ -1341,6 +1686,7 @@ function buildActiveApplicationViewModel(row = {}) {
     statusLabel: status.label,
     statusTone: status.tone,
     nextAction: getNextAction(row),
+    originatorIntakePackage: getOriginatorIntakePackageViewModel(row),
     riskFlags: risk.reasons.slice(0, 2),
     approvalConfidence,
     operationalRisk,
@@ -2196,6 +2542,446 @@ function buildHqCommandCentreSnapshot(rows = [], { bankBreakdown = [], bankLeadT
   }
 }
 
+function isInDateRange(value, rangeKey = DEFAULT_DASHBOARD_RANGE_KEY) {
+  const date = getDateOrNull(value)
+  if (!date) return false
+  const thresholdResolver = DATE_RANGE_FILTERS[rangeKey] || DATE_RANGE_FILTERS[DEFAULT_DASHBOARD_RANGE_KEY]
+  const threshold = thresholdResolver()
+  return threshold ? date >= threshold : true
+}
+
+function isInCurrentYear(value) {
+  const date = getDateOrNull(value)
+  if (!date) return false
+  const now = new Date()
+  return date.getFullYear() === now.getFullYear()
+}
+
+function getRegisteredLoanValue(row = {}) {
+  const tx = row?.transaction || {}
+  return normalizeNumber(
+    tx.registered_loan_amount ??
+      tx.registeredLoanAmount ??
+      tx.registered_bond_amount ??
+      tx.registeredBondAmount ??
+      tx.accepted_loan_amount ??
+      tx.acceptedLoanAmount,
+    getPipelineLoanValue(row),
+  )
+}
+
+function getAcceptedLoanAmount(row = {}) {
+  const tx = row?.transaction || {}
+  return normalizeNumber(
+    tx.accepted_loan_amount ??
+      tx.acceptedLoanAmount ??
+      tx.approved_loan_amount ??
+      tx.approvedLoanAmount ??
+      tx.approved_bond_amount ??
+      tx.approvedBondAmount ??
+      tx.grant_amount ??
+      tx.grantAmount,
+    0,
+  )
+}
+
+function getPipelineLoanValue(row = {}) {
+  const accepted = getAcceptedLoanAmount(row)
+  return accepted > 0 ? accepted : getBondAmount(row)
+}
+
+function getLostAt(row = {}) {
+  const tx = row?.transaction || {}
+  return (
+    tx.lost_at ||
+    tx.withdrawn_at ||
+    tx.cancelled_at ||
+    tx.canceled_at ||
+    tx.declined_at ||
+    tx.archived_at ||
+    null
+  )
+}
+
+function isLostOrWithdrawn(row = {}) {
+  const tx = row?.transaction || {}
+  const status = normalizeLower(tx.status || tx.application_status || tx.finance_status || tx.lifecycle_state || deriveTransactionStatus(row))
+  if (getLostAt(row)) return true
+  if (deriveRiskSignals(row).declined) return true
+  return MANAGEMENT_FINAL_STATUSES.has(status)
+}
+
+function getLodgedAt(row = {}) {
+  const tx = row?.transaction || {}
+  return (
+    tx.lodged_at ||
+    tx.lodgement_at ||
+    tx.lodgement_date ||
+    tx.deeds_lodged_at ||
+    tx.deeds_office_lodged_at ||
+    null
+  )
+}
+
+function getAcceptedOfferAt(row = {}) {
+  const tx = row?.transaction || {}
+  const workflow = getCanonicalBondFinanceWorkflow(row) || {}
+  const approvedQuote = workflow?.approvedQuote || workflow?.summary?.approvedQuote || null
+  return (
+    tx.accepted_offer_at ||
+    tx.offer_accepted_at ||
+    tx.buyer_offer_accepted_at ||
+    approvedQuote?.approved_at ||
+    approvedQuote?.approvedAt ||
+    null
+  )
+}
+
+function getBankSubmissionRows(row = {}) {
+  const tx = row?.transaction || {}
+  return [
+    row?.transaction_bond_applications,
+    row?.bondApplications,
+    row?.bond_applications,
+    row?.bankSubmissions,
+    row?.bank_submissions,
+    tx.transaction_bond_applications,
+    tx.bondApplications,
+    tx.bond_applications,
+    tx.bankSubmissions,
+    tx.bank_submissions,
+  ].find((items) => Array.isArray(items) && items.length) || []
+}
+
+function getBankSubmissionCount(row = {}) {
+  const rows = getBankSubmissionRows(row)
+  if (rows.length) return rows.length
+  const lane = deriveFinanceLaneStage(row).key
+  const stage = resolvePipelineStageKey(row)
+  return ['submitted_to_banks', 'bank_feedback'].includes(lane) || ['submitted', 'bank_feedback'].includes(stage) ? 1 : 0
+}
+
+function hasAcceptedOffer(row = {}) {
+  const tx = row?.transaction || {}
+  if (normalizeText(tx.accepted_bank_submission_id || tx.acceptedBankSubmissionId || tx.accepted_offer_id || tx.acceptedOfferId)) return true
+  if (getAcceptedOfferAt(row)) return true
+  const lane = deriveFinanceLaneStage(row).key
+  return ['quote_accepted', 'bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'bond_instruction_sent'].includes(lane)
+}
+
+function deriveManagementPipelineStage(row = {}) {
+  if (getRegistrationDate(row)) return 'registered'
+  if (isLostOrWithdrawn(row)) return 'lost'
+  const lane = deriveFinanceLaneStage(row).key
+  const transferStage = getAttorneyTransferStage(row)
+  if (getLodgedAt(row) || lane === 'lodgement' || transferStage === 'lodgement') return 'lodged'
+  if (hasAcceptedOffer(row) || isApprovedStage(row)) return 'accepted'
+  if (getBankSubmissionCount(row) > 0) return 'at_banks'
+  return 'application'
+}
+
+function median(values = []) {
+  const numeric = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right)
+  if (!numeric.length) return null
+  const midpoint = Math.floor(numeric.length / 2)
+  return numeric.length % 2 ? numeric[midpoint] : Math.round((numeric[midpoint - 1] + numeric[midpoint]) / 2)
+}
+
+function daysBetween(startValue, endValue) {
+  const start = getTimestamp(startValue)
+  const end = getTimestamp(endValue)
+  if (!start || !end || end < start) return null
+  return Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000)))
+}
+
+function getFirstContactAt(row = {}) {
+  const tx = row?.transaction || {}
+  return tx.first_contact_at || tx.firstContactAt || tx.buyer_contacted_at || tx.buyerContactedAt || tx.intake_contacted_at || null
+}
+
+function getReadyToSubmitAt(row = {}) {
+  const tx = row?.transaction || {}
+  return tx.ready_to_submit_at || tx.readyToSubmitAt || tx.documents_reviewed_at || tx.documentsReviewedAt || tx.application_submitted_at || null
+}
+
+function getFirstBankDecisionAt(row = {}) {
+  const tx = row?.transaction || {}
+  const submissionRows = getBankSubmissionRows(row)
+  const submissionDecision = submissionRows
+    .map((item) => item.feedback_received_at || item.decision_at || item.outcome_at || item.approved_at || item.declined_at)
+    .filter(Boolean)
+    .sort((left, right) => getTimestamp(left) - getTimestamp(right))[0]
+  return tx.first_bank_decision_at || tx.firstBankDecisionAt || tx.bank_feedback_at || submissionDecision || null
+}
+
+function getInvoiceStatus(row = {}) {
+  const tx = row?.transaction || {}
+  return normalizeLower(
+    tx.invoice_status ||
+      tx.commission_invoice_status ||
+      tx.reconciliation_status ||
+      tx.payment_status ||
+      '',
+  )
+}
+
+function isInvoiced(row = {}) {
+  const status = getInvoiceStatus(row)
+  return ['invoiced', 'invoice_sent', 'self_billed', 'paid', 'settled'].includes(status)
+}
+
+function isPaid(row = {}) {
+  const status = getInvoiceStatus(row)
+  return ['paid', 'settled', 'payment_received'].includes(status)
+}
+
+function buildManagementPipeline(rows = [], periodRows = []) {
+  const periodIds = new Set(periodRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean))
+  const buckets = MANAGEMENT_PIPELINE_STAGES.reduce((accumulator, stage) => {
+    accumulator[stage.key] = { ...stage, count: 0, loanValue: 0, bankSubmissions: 0 }
+    return accumulator
+  }, {})
+
+  for (const row of rows) {
+    const stageKey = deriveManagementPipelineStage(row)
+    if (stageKey === 'lost') continue
+    if (stageKey === 'registered' && periodIds.size && !periodIds.has(normalizeText(row?.transaction?.id))) continue
+    const bucket = buckets[stageKey] || buckets.application
+    bucket.count += 1
+    bucket.loanValue += stageKey === 'registered' ? getRegisteredLoanValue(row) : getPipelineLoanValue(row)
+    bucket.bankSubmissions += getBankSubmissionCount(row)
+  }
+
+  return MANAGEMENT_PIPELINE_STAGES.map((stage) => ({
+    ...buckets[stage.key],
+    loanValueLabel: formatCurrency(buckets[stage.key].loanValue),
+    detail: stage.key === 'at_banks' && buckets[stage.key].bankSubmissions
+      ? `${buckets[stage.key].bankSubmissions} bank submissions`
+      : '',
+  }))
+}
+
+function buildManagementSummaryStrip(periodRows = []) {
+  const registeredRows = periodRows.filter((row) => deriveManagementPipelineStage(row) === 'registered')
+  const lostRows = periodRows.filter(isLostOrWithdrawn)
+  const finalOutcomes = registeredRows.length + lostRows.length
+  const conversion = finalOutcomes ? Math.round((registeredRows.length / finalOutcomes) * 100) : null
+  const registrationDurations = registeredRows
+    .map((row) => daysBetween(getApplicationCreatedAt(row), getRegistrationDate(row)))
+    .filter((value) => value !== null)
+  const medianRegistrationDays = median(registrationDurations)
+
+  return [
+    {
+      key: 'overall_conversion',
+      label: 'Overall Conversion',
+      value: conversion === null ? 'No data yet' : `${conversion}%`,
+      detail: finalOutcomes ? `${registeredRows.length} of ${finalOutcomes} final outcomes` : 'No final outcomes in period',
+      href: '/bond/reports?metric=conversion',
+    },
+    {
+      key: 'lost_withdrawn',
+      label: 'Lost / Withdrawn',
+      value: `${lostRows.length} cases`,
+      detail: formatCurrency(lostRows.reduce((sum, row) => sum + getBondAmount(row), 0)),
+      href: '/bond/applications?view=declined',
+    },
+    {
+      key: 'registered_period',
+      label: 'Registered in Period',
+      value: `${registeredRows.length} cases`,
+      detail: formatCurrency(registeredRows.reduce((sum, row) => sum + getRegisteredLoanValue(row), 0)),
+      href: '/bond/applications?view=registered',
+    },
+    {
+      key: 'median_registration',
+      label: 'Median Time to Register',
+      value: medianRegistrationDays === null ? 'No data yet' : `${medianRegistrationDays} days`,
+      detail: 'Application created to registration',
+      href: '/bond/reports?metric=time-to-register',
+    },
+  ]
+}
+
+function buildManagementSla(rows = []) {
+  const activeRows = rows.filter((row) => {
+    const stage = deriveManagementPipelineStage(row)
+    return ['application', 'at_banks', 'accepted', 'lodged'].includes(stage)
+  })
+  const firstContactDays = median(activeRows.map((row) => daysBetween(getApplicationCreatedAt(row), getFirstContactAt(row))).filter((value) => value !== null))
+  const readyToSubmitDays = median(activeRows.map((row) => daysBetween(getApplicationCreatedAt(row), getReadyToSubmitAt(row))).filter((value) => value !== null))
+  const bankDecisionDays = median(activeRows.map((row) => daysBetween(getApplicationCreatedAt(row), getFirstBankDecisionAt(row))).filter((value) => value !== null))
+  const withinSla = activeRows.filter((row) => !deriveRiskSignals(row).overdueDays).length
+  const withinSlaRate = activeRows.length ? Math.round((withinSla / activeRows.length) * 100) : null
+
+  return [
+    { key: 'first_contact', label: 'First Contact', value: firstContactDays === null ? 'No data yet' : `${firstContactDays} days`, target: 'SLA <= 1 day', onTrack: firstContactDays !== null ? firstContactDays <= 1 : null },
+    { key: 'ready_to_submit', label: 'Ready to Submit', value: readyToSubmitDays === null ? 'No data yet' : `${readyToSubmitDays} days`, target: 'SLA <= 5 days', onTrack: readyToSubmitDays !== null ? readyToSubmitDays <= 5 : null },
+    { key: 'first_bank_decision', label: 'First Bank Decision', value: bankDecisionDays === null ? 'No data yet' : `${bankDecisionDays} days`, target: 'SLA <= 7 days', onTrack: bankDecisionDays !== null ? bankDecisionDays <= 7 : null },
+    { key: 'within_sla', label: 'Cases Within SLA', value: withinSlaRate === null ? 'No data yet' : `${withinSlaRate}%`, target: activeRows.length ? `${withinSla} of ${activeRows.length} active cases` : 'No active cases measured', onTrack: withinSlaRate !== null ? withinSlaRate >= 85 : null },
+  ]
+}
+
+function buildManagementCommission(rows = [], periodRows = []) {
+  const openRows = rows.filter((row) => ['application', 'at_banks', 'accepted', 'lodged'].includes(deriveManagementPipelineStage(row)))
+  const forecastRows = openRows.filter((row) => ['application', 'at_banks'].includes(deriveManagementPipelineStage(row)) && getCommissionValue(row) > 0)
+  const committedRows = openRows.filter((row) => ['accepted', 'lodged'].includes(deriveManagementPipelineStage(row)) && getCommissionValue(row) > 0)
+  const registeredRows = periodRows.filter((row) => deriveManagementPipelineStage(row) === 'registered')
+  const readyToInvoiceRows = registeredRows.filter((row) => getCommissionValue(row) > 0 && !isInvoiced(row) && !isPaid(row))
+  const invoicedRows = registeredRows.filter((row) => isInvoiced(row) && !isPaid(row))
+  const paidRows = registeredRows.filter(isPaid)
+  const unpriced = openRows.filter((row) => getCommissionValue(row) <= 0).length
+
+  const make = (key, label, sourceRows, href) => ({
+    key,
+    label,
+    value: sourceRows.length ? formatCurrency(sourceRows.reduce((sum, row) => sum + getCommissionValue(row), 0)) : 'No data yet',
+    detail: `${sourceRows.length} ${sourceRows.length === 1 ? 'application' : 'applications'}`,
+    href,
+  })
+
+  return {
+    unpricedApplications: unpriced,
+    cards: [
+      make('forecast', 'Forecast', forecastRows, '/bond/revenue?view=forecast'),
+      make('committed', 'Committed', committedRows, '/bond/revenue?view=committed'),
+      make('ready_to_invoice', 'Ready to Invoice', readyToInvoiceRows, '/bond/revenue?view=ready-to-invoice'),
+      make('invoiced', 'Invoiced', invoicedRows, '/bond/revenue?view=invoiced'),
+      make('paid', 'Paid in Period', paidRows, '/bond/revenue?view=paid'),
+    ],
+    invoiceQueue: readyToInvoiceRows.slice(0, 6).map((row) => ({
+      key: normalizeText(row?.transaction?.id) || getBuyerName(row),
+      buyer: getBuyerName(row),
+      partner: getPartnerLabel(row),
+      bank: normalizeText(row?.transaction?.bank) || 'Bank pending',
+      amount: formatCurrency(getCommissionValue(row)),
+      href: `/transactions/${encodeURIComponent(normalizeText(row?.transaction?.id))}`,
+    })),
+  }
+}
+
+function buildManagementPerformanceTables(rows = [], bankPerformance = {}) {
+  const consultants = buildTeamPerformance(rows)
+    .map((row) => ({
+      key: row.key,
+      name: row.name,
+      newCases: row.activeFiles,
+      registered: rows.filter((item) => deriveManagementPipelineStage(item) === 'registered' && getDisplayNameFromAssignment(resolveEffectiveBondAssignment(item?.transaction || {}), item, 'consultant') === row.name).length,
+      approvalRate: row.approvalRate,
+      revenue: formatCurrency(rows
+        .filter((item) => getDisplayNameFromAssignment(resolveEffectiveBondAssignment(item?.transaction || {}), item, 'consultant') === row.name)
+        .reduce((sum, item) => sum + getCommissionValue(item), 0)),
+    }))
+    .sort((left, right) => right.newCases - left.newCases)
+    .slice(0, 5)
+
+  const partners = buildHqPartnerPerformance(rows).slice(0, 5).map((row) => ({
+    key: row.key,
+    name: row.partner,
+    referred: row.applicationsReferred,
+    registered: rows.filter((item) => deriveManagementPipelineStage(item) === 'registered' && getPartnerSource(item).name === row.partner).length,
+    approvalRate: row.approvalRate,
+    revenue: row.projectedCommissionLabel,
+  }))
+
+  const banks = (bankPerformance.rows || []).slice(0, 5).map((row) => ({
+    key: row.bank,
+    name: row.bank,
+    applications: normalizeNumber(row.total || row.submitted),
+    approved: normalizeNumber(row.approved),
+    approvalRate: normalizeNumber(row.approvalRate),
+    avgTat: row.averageResponseTime ? `${row.averageResponseTime} days` : 'No data yet',
+  }))
+
+  return { consultants, partners, banks }
+}
+
+function buildBondManagementOverview({
+  allRows = [],
+  periodRows = [],
+  previousRows = [],
+  bankPerformance = {},
+  rangeKey = DEFAULT_DASHBOARD_RANGE_KEY,
+  reportingScope = {},
+} = {}) {
+  const scopedRows = Array.isArray(allRows) ? allRows : []
+  const selectedRows = Array.isArray(periodRows) ? periodRows : []
+  const previous = Array.isArray(previousRows) ? previousRows : []
+  const newBuyerRows = scopedRows.filter((row) => isInDateRange(getApplicationCreatedAt(row), rangeKey))
+  const activeRows = scopedRows.filter((row) => ['application', 'at_banks', 'accepted', 'lodged'].includes(deriveManagementPipelineStage(row)))
+  const decidedRows = selectedRows.filter((row) => isApprovedPortfolioApplication(row) || isLostOrWithdrawn(row))
+  const approvedRows = decidedRows.filter(isApprovedPortfolioApplication)
+  const previousDecidedRows = previous.filter((row) => isApprovedPortfolioApplication(row) || isLostOrWithdrawn(row))
+  const previousApprovalRate = previousDecidedRows.length ? Math.round((previousDecidedRows.filter(isApprovedPortfolioApplication).length / previousDecidedRows.length) * 100) : null
+  const approvalRate = decidedRows.length ? Math.round((approvedRows.length / decidedRows.length) * 100) : null
+  const registeredYtdRows = scopedRows.filter((row) => isInCurrentYear(getRegistrationDate(row)))
+  const commission = buildManagementCommission(scopedRows, selectedRows)
+  const forecastCard = commission.cards.find((card) => card.key === 'forecast') || {}
+  const currentApprovalDelta = approvalRate !== null && previousApprovalRate !== null ? approvalRate - previousApprovalRate : null
+
+  return {
+    metricSources: {
+      newBuyerCases: 'Distinct visible transaction/application rows using application created timestamp in selected period.',
+      activePipeline: 'Open visible applications only, excluding registered/lost/withdrawn/cancelled rows.',
+      approvalRate: 'Approved buyer cases divided by decided buyer cases; each buyer application counted once.',
+      registeredYtd: 'Applications with registration timestamp in the current calendar year.',
+      commissionForecast: 'Stored commission values on open Application/At Banks cases; unpriced cases are excluded.',
+    },
+    filters: {
+      rangeKey,
+      scopeLabel: reportingScope.dashboardMode === 'owner_director' ? 'All Teams' : reportingScope.scopeLevel || 'Current scope',
+      lastUpdatedAt: getLatestActivityAt(scopedRows),
+    },
+    kpis: [
+      {
+        key: 'new_buyer_cases',
+        label: 'New Buyer Cases',
+        value: String(newBuyerRows.length),
+        secondary: formatCurrency(newBuyerRows.reduce((sum, row) => sum + getBondAmount(row), 0)),
+        comparison: previous.length ? `${newBuyerRows.length - previous.length >= 0 ? '+' : ''}${newBuyerRows.length - previous.length} vs previous period` : '',
+        href: '/bond/applications?created=period',
+      },
+      {
+        key: 'active_pipeline',
+        label: 'Active Pipeline',
+        value: String(activeRows.length),
+        secondary: formatCurrency(activeRows.reduce((sum, row) => sum + getPipelineLoanValue(row), 0)),
+        comparison: '',
+        href: '/bond/applications?view=processing',
+      },
+      {
+        key: 'approval_rate',
+        label: 'Any-Bank Approval Rate',
+        value: approvalRate === null ? 'No data yet' : `${approvalRate}%`,
+        secondary: decidedRows.length ? `${approvedRows.length} of ${decidedRows.length} decided buyer cases` : 'No decided cases yet',
+        comparison: currentApprovalDelta === null ? '' : `${currentApprovalDelta >= 0 ? '+' : ''}${currentApprovalDelta} pp vs previous period`,
+        href: '/bond/reports?metric=approval-rate',
+      },
+      {
+        key: 'registered_ytd',
+        label: 'Registered YTD',
+        value: String(registeredYtdRows.length),
+        secondary: formatCurrency(registeredYtdRows.reduce((sum, row) => sum + getRegisteredLoanValue(row), 0)),
+        comparison: 'Current calendar year',
+        href: '/bond/applications?view=registered&period=ytd',
+      },
+      {
+        key: 'commission_forecast',
+        label: 'Commission Forecast',
+        value: forecastCard.value || 'No data yet',
+        secondary: commission.unpricedApplications ? `${commission.unpricedApplications} unpriced applications excluded` : forecastCard.detail || '',
+        comparison: '',
+        href: '/bond/revenue?view=forecast',
+      },
+    ],
+    pipeline: buildManagementPipeline(scopedRows, selectedRows),
+    summaryStrip: buildManagementSummaryStrip(selectedRows),
+    sla: buildManagementSla(scopedRows),
+    commission,
+    performanceTables: buildManagementPerformanceTables(scopedRows, bankPerformance),
+  }
+}
+
 function buildPipelineOverview(rows = []) {
   const byStage = PIPELINE_STAGE_META.reduce((accumulator, stage) => {
     accumulator[stage.key] = {
@@ -2786,6 +3572,8 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const rangeKey = options.rangeKey || DEFAULT_DASHBOARD_RANGE_KEY
   const dateRows = filterRowsByDateRange(allRows, rangeKey)
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
+  const scopedRows = filterRowsByDevelopment(allRows, options.developmentId)
+  const previousRows = filterRowsByDevelopment(filterRowsByPreviousDateRange(allRows, rangeKey), options.developmentId)
   const queues = resolveBondOperationalQueues(user, filteredRows)
   const priorityActions = buildPriorityActions(filteredRows)
   const focus = getRoleFocus(reportingScope)
@@ -2807,6 +3595,7 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
 
   const snapshot = {
     reportingScope,
+    generatedAt: new Date().toISOString(),
     roleFocus: focus,
     userDisplayName: getUserDisplayName(user),
     headerSummary,
@@ -2838,6 +3627,16 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     performanceSnapshot,
     hqCommandCentre: isHqReportingScope(reportingScope)
       ? buildHqCommandCentreSnapshot(filteredRows, { bankBreakdown, bankLeadTimes, heroKpis: executiveAnalytics.heroKpis, reportingScope })
+      : null,
+    managementOverview: isHqReportingScope(reportingScope)
+      ? buildBondManagementOverview({
+          allRows: scopedRows,
+          periodRows: filteredRows,
+          previousRows,
+          bankPerformance: buildHqBankPerformance(bankBreakdown, bankLeadTimes),
+          rangeKey,
+          reportingScope,
+        })
       : null,
     queues,
     developmentOptions: buildBondDevelopmentOptions(dateRows),

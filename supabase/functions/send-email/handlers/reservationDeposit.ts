@@ -5,6 +5,10 @@ import {
   buildReservationDepositSubject,
 } from "../content/reservationDeposit.ts";
 import { buildReservationDepositEmailPayload } from "../services/reservationDepositPayload.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { logReservationDepositSideEffects } from "../services/reservationDepositLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type {
@@ -12,7 +16,11 @@ import type {
   SendReservationDepositPayload,
   TransactionOnboardingRow,
 } from "../types.ts";
-import { isMissingColumnError, isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
+import {
+  isMissingColumnError,
+  isMissingSchemaError,
+  isMissingTableError,
+} from "../utils/db.ts";
 import { jsonResponse } from "../utils/http.ts";
 import {
   buildReservationPaymentReference,
@@ -33,7 +41,10 @@ const DEFAULT_RESERVATION_DETAILS: ReservationPaymentDetails = {
   payment_instructions: "",
 };
 
-async function fetchDevelopmentReservationDefaults(supabase: any, developmentId: string) {
+async function fetchDevelopmentReservationDefaults(
+  supabase: any,
+  developmentId: string,
+) {
   if (!developmentId) {
     return {
       reservationAmount: null,
@@ -54,7 +65,10 @@ async function fetchDevelopmentReservationDefaults(supabase: any, developmentId:
       isMissingSchemaError(settingsQuery.error) ||
       isMissingTableError(settingsQuery.error, "development_settings") ||
       isMissingColumnError(settingsQuery.error, "reservation_deposit_amount") ||
-      isMissingColumnError(settingsQuery.error, "reservation_deposit_payment_details")
+      isMissingColumnError(
+        settingsQuery.error,
+        "reservation_deposit_payment_details",
+      )
     ) {
       return {
         reservationAmount: null,
@@ -92,7 +106,9 @@ async function resolveUploadProofLink({
 
   const onboardingQuery = await supabase
     .from("transaction_onboarding")
-    .select("id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at")
+    .select(
+      "id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at",
+    )
     .eq("transaction_id", transactionId)
     .eq("is_active", true);
 
@@ -103,7 +119,10 @@ async function resolveUploadProofLink({
     ) {
       return "";
     }
-    console.error("Onboarding lookup failed for reservation upload link", onboardingQuery.error);
+    console.error(
+      "Onboarding lookup failed for reservation upload link",
+      onboardingQuery.error,
+    );
     return "";
   }
 
@@ -125,11 +144,15 @@ export async function handleReservationDepositEmail(
 ) {
   const transactionId = normalizeText(payload.transactionId);
   if (!transactionId) {
-    return jsonResponse(400, { error: "Missing required field: transactionId" });
+    return jsonResponse(400, {
+      error: "Missing required field: transactionId",
+    });
   }
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
 
   if (!supabaseUrl || !serviceRoleKey) {
@@ -153,7 +176,7 @@ export async function handleReservationDepositEmail(
   let transactionQuery = await supabase
     .from("transactions")
     .select(
-      "id, development_id, unit_id, buyer_id, transaction_reference, reservation_required, reservation_amount, reservation_status, reservation_payment_details, reservation_requested_at, reservation_email_sent_at",
+      "id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, reservation_required, reservation_amount, reservation_status, reservation_payment_details, reservation_requested_at, reservation_email_sent_at",
     )
     .eq("id", transactionId)
     .maybeSingle();
@@ -161,13 +184,25 @@ export async function handleReservationDepositEmail(
   if (
     transactionQuery.error &&
     (isMissingColumnError(transactionQuery.error, "transaction_reference") ||
-      isMissingColumnError(transactionQuery.error, "reservation_payment_details") ||
-      isMissingColumnError(transactionQuery.error, "reservation_requested_at") ||
-      isMissingColumnError(transactionQuery.error, "reservation_email_sent_at"))
+      isMissingColumnError(
+        transactionQuery.error,
+        "reservation_payment_details",
+      ) ||
+      isMissingColumnError(
+        transactionQuery.error,
+        "reservation_requested_at",
+      ) ||
+      isMissingColumnError(
+        transactionQuery.error,
+        "reservation_email_sent_at",
+      ) ||
+      isMissingColumnError(transactionQuery.error, "organisation_id"))
   ) {
     transactionQuery = await supabase
       .from("transactions")
-      .select("id, development_id, unit_id, buyer_id, reservation_required, reservation_amount, reservation_status")
+      .select(
+        "id, development_id, unit_id, buyer_id, reservation_required, reservation_amount, reservation_status",
+      )
       .eq("id", transactionId)
       .maybeSingle();
   }
@@ -195,9 +230,12 @@ export async function handleReservationDepositEmail(
     });
   }
 
-  const reservationStatus = normalizeReservationStatus(transaction.reservation_status, {
-    required: true,
-  });
+  const reservationStatus = normalizeReservationStatus(
+    transaction.reservation_status,
+    {
+      required: true,
+    },
+  );
 
   if (!payload.resend && reservationStatus === "verified") {
     return jsonResponse(200, {
@@ -210,23 +248,36 @@ export async function handleReservationDepositEmail(
     });
   }
 
-  const [buyerQuery, unitQuery, developmentQuery, defaults, uploadProofLink] = await Promise.all([
-    transaction.buyer_id
-      ? supabase.from("buyers").select("id, name, email").eq("id", transaction.buyer_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    transaction.unit_id
-      ? supabase.from("units").select("id, unit_number").eq("id", transaction.unit_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    transaction.development_id
-      ? supabase.from("developments").select("id, name").eq("id", transaction.development_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    fetchDevelopmentReservationDefaults(supabase, transaction.development_id || ""),
-    resolveUploadProofLink({
-      supabase,
-      transactionId: transaction.id,
-      appBaseUrl,
-    }),
-  ]);
+  const [buyerQuery, unitQuery, developmentQuery, defaults, uploadProofLink] =
+    await Promise.all([
+      transaction.buyer_id
+        ? supabase.from("buyers").select("id, name, email").eq(
+          "id",
+          transaction.buyer_id,
+        ).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      transaction.unit_id
+        ? supabase.from("units").select("id, unit_number").eq(
+          "id",
+          transaction.unit_id,
+        ).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      transaction.development_id
+        ? supabase.from("developments").select("id, name").eq(
+          "id",
+          transaction.development_id,
+        ).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      fetchDevelopmentReservationDefaults(
+        supabase,
+        transaction.development_id || "",
+      ),
+      resolveUploadProofLink({
+        supabase,
+        transactionId: transaction.id,
+        appBaseUrl,
+      }),
+    ]);
 
   if (buyerQuery.error) {
     return jsonResponse(500, {
@@ -257,12 +308,16 @@ export async function handleReservationDepositEmail(
       reason: "missing_buyer_email",
       transactionId: transaction.id,
       recipientEmail: "",
-      error: "Buyer email is missing. Capture buyer email before sending reservation deposit email.",
+      error:
+        "Buyer email is missing. Capture buyer email before sending reservation deposit email.",
     });
   }
 
-  const transactionReservationAmount = normalizeOptionalNumber(transaction.reservation_amount);
-  const resolvedReservationAmount = transactionReservationAmount ?? defaults.reservationAmount;
+  const transactionReservationAmount = normalizeOptionalNumber(
+    transaction.reservation_amount,
+  );
+  const resolvedReservationAmount = transactionReservationAmount ??
+    defaults.reservationAmount;
 
   if (resolvedReservationAmount === null || resolvedReservationAmount <= 0) {
     return jsonResponse(200, {
@@ -284,16 +339,21 @@ export async function handleReservationDepositEmail(
     defaults.reservationPaymentDetails || {},
   );
   const paymentDetails: ReservationPaymentDetails = {
-    account_holder_name:
-      transactionPaymentDetails.account_holder_name || fallbackPaymentDetails.account_holder_name,
-    bank_name: transactionPaymentDetails.bank_name || fallbackPaymentDetails.bank_name,
-    account_number: transactionPaymentDetails.account_number || fallbackPaymentDetails.account_number,
-    branch_code: transactionPaymentDetails.branch_code || fallbackPaymentDetails.branch_code,
-    account_type: transactionPaymentDetails.account_type || fallbackPaymentDetails.account_type,
+    account_holder_name: transactionPaymentDetails.account_holder_name ||
+      fallbackPaymentDetails.account_holder_name,
+    bank_name: transactionPaymentDetails.bank_name ||
+      fallbackPaymentDetails.bank_name,
+    account_number: transactionPaymentDetails.account_number ||
+      fallbackPaymentDetails.account_number,
+    branch_code: transactionPaymentDetails.branch_code ||
+      fallbackPaymentDetails.branch_code,
+    account_type: transactionPaymentDetails.account_type ||
+      fallbackPaymentDetails.account_type,
     payment_reference_format:
-      transactionPaymentDetails.payment_reference_format || fallbackPaymentDetails.payment_reference_format,
-    payment_instructions:
-      transactionPaymentDetails.payment_instructions || fallbackPaymentDetails.payment_instructions,
+      transactionPaymentDetails.payment_reference_format ||
+      fallbackPaymentDetails.payment_reference_format,
+    payment_instructions: transactionPaymentDetails.payment_instructions ||
+      fallbackPaymentDetails.payment_instructions,
   };
 
   const missingPaymentFields = [
@@ -312,7 +372,9 @@ export async function handleReservationDepositEmail(
       transactionId: transaction.id,
       recipientEmail: buyerEmail,
       error:
-        `Reservation payment details are missing (${missingPaymentFields.join(", ")}). ` +
+        `Reservation payment details are missing (${
+          missingPaymentFields.join(", ")
+        }). ` +
         "Update transaction/development reservation payment settings before sending.",
     });
   }
@@ -341,28 +403,68 @@ export async function handleReservationDepositEmail(
     uploadProofLink,
   });
 
-  const sender =
+  const defaultOrganisationName =
+    normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
+    normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
+    "Arch9";
+  const defaultSupportEmail =
+    normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
+    normalizeText(Deno.env.get("SUPPORT_EMAIL")) ||
+    "";
+  const defaultSupportPhone =
+    normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
+    normalizeText(Deno.env.get("SUPPORT_PHONE")) ||
+    "";
+  const branding = await resolveEmailBranding({
+    supabase,
+    organisationId: normalizeText(transaction.organisation_id),
+    payload: payload as Record<string, unknown>,
+    defaults: {
+      organisationName: defaultOrganisationName,
+      supportEmail: defaultSupportEmail,
+      supportPhone: defaultSupportPhone,
+    },
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
     subject: buildReservationDepositSubject(reservationEmailPayload),
-    html: buildReservationDepositEmailHtml(reservationEmailPayload),
-    text: buildReservationDepositEmailText(reservationEmailPayload),
+    html: buildReservationDepositEmailHtml({
+      ...reservationEmailPayload,
+      organisationName: branding.organisationName,
+      supportEmail: branding.supportEmail,
+      supportPhone: branding.supportPhone,
+      branding,
+    }),
+    text: buildReservationDepositEmailText({
+      ...reservationEmailPayload,
+      organisationName: branding.organisationName,
+      supportEmail: branding.supportEmail,
+      supportPhone: branding.supportPhone,
+      branding,
+    }),
   });
 
   if (!emailResult.ok) {
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send reservation deposit email.",
+      error: emailResult.error?.message ||
+        "Failed to send reservation deposit email.",
       details: emailResult.error,
     });
   }
 
-  const nextReservationStatus = reservationStatus === "verified" ? "verified" : "pending";
-  const requestedAt = normalizeText(transaction.reservation_requested_at) || nowIso;
+  const nextReservationStatus = reservationStatus === "verified"
+    ? "verified"
+    : "pending";
+  const requestedAt = normalizeText(transaction.reservation_requested_at) ||
+    nowIso;
   const updatePayload = {
     reservation_status: nextReservationStatus,
     reservation_amount: resolvedReservationAmount,
@@ -396,12 +498,14 @@ export async function handleReservationDepositEmail(
 
   if (updateResult.error) {
     return jsonResponse(500, {
-      error: updateResult.error.message || "Failed to update reservation status after send.",
+      error: updateResult.error.message ||
+        "Failed to update reservation status after send.",
       code: updateResult.error.code || null,
     });
   }
 
-  const normalizedActorRole = normalizeText(payload.actorRole).toLowerCase() || "system";
+  const normalizedActorRole = normalizeText(payload.actorRole).toLowerCase() ||
+    "system";
   const normalizedActorUserId = normalizeText(payload.actorUserId) || null;
   const source = normalizeText(payload.source) || "reservation_deposit_request";
 
@@ -430,7 +534,8 @@ export async function handleReservationDepositEmail(
     transactionId: transaction.id,
     recipientEmail: buyerEmail,
     reservationDepositAmount: resolvedReservationAmount,
-    formattedReservationDepositAmount: reservationEmailPayload.formattedReservationDepositAmount,
+    formattedReservationDepositAmount:
+      reservationEmailPayload.formattedReservationDepositAmount,
     paymentReference,
     status: nextReservationStatus,
     emailSentAt: nowIso,

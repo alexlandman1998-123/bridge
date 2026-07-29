@@ -46,6 +46,8 @@ export const MANDATE_TEMPLATE_CONTENT_SIGNAL_GROUPS = {
       'commission_structure',
       'asking_price',
       'agent_full_name',
+      'organisation_trading_name',
+      'organisation_legal_name',
       'organisation_name',
     ],
     phrases: [

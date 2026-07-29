@@ -10,11 +10,17 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
-export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPayload) {
+export async function handleBuyerOfferLinkEmail(
+  payload: SendBuyerOfferLinkPayload,
+) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
@@ -32,30 +38,43 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
 
   const buyerName = normalizeText(payload.buyerName) || "there";
   const propertyTitle = normalizeText(payload.propertyTitle);
-  const propertyCount = Number.isFinite(payload.propertyCount) ? Number(payload.propertyCount) : 0;
+  const propertyCount = Number.isFinite(payload.propertyCount)
+    ? Number(payload.propertyCount)
+    : 0;
   const agentName = normalizeText(payload.agentName);
   const expiresAt = normalizeText(payload.expiresAt);
   const note = normalizeText(payload.note);
-  const organisationName =
-    normalizeText(payload.organisationName) ||
+  const organisationName = normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Arch9";
-  const supportEmail =
-    normalizeText(payload.supportEmail) ||
+  const supportEmail = normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
-  const supportPhone =
-    normalizeText(payload.supportPhone) ||
+  const supportPhone = normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender =
+  const rawPayload = payload as Record<string, unknown>;
+  const branding = await resolveEmailBranding({
+    payload: rawPayload,
+    organisationId: normalizeText(
+      rawPayload.organisationId || rawPayload.organisation_id,
+    ),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const propertyLabel = propertyTitle ||
-    (propertyCount > 1 ? `${propertyCount} viewed properties` : "the property you viewed");
-  const subject = `Your secure offer link${propertyTitle ? ` for ${propertyTitle}` : ""}`;
+    (propertyCount > 1
+      ? `${propertyCount} viewed properties`
+      : "the property you viewed");
+  const subject = `Your secure offer link${
+    propertyTitle ? ` for ${propertyTitle}` : ""
+  }`;
   const introParagraphs = [
     propertyCount > 1
       ? `Your agent has prepared a secure offer portal for the properties you viewed.`
@@ -67,13 +86,18 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     renderBridgeIntroParagraphs(introParagraphs),
     renderBridgeSummaryCard(
       [
-        { label: propertyCount > 1 ? "Viewed Properties" : "Property", value: propertyLabel },
+        {
+          label: propertyCount > 1 ? "Viewed Properties" : "Property",
+          value: propertyLabel,
+        },
         { label: "Agent", value: agentName },
         { label: "Link Expires", value: expiresAt },
       ],
       "Offer Link Summary",
     ),
-    renderBridgeCta("Open Secure Offer Link", offerLink),
+    renderBridgeCta("Open Secure Offer Link", offerLink, {
+      primaryColor: branding.primaryColor,
+    }),
   ].join("");
   const html = renderBridgeEmailLayout({
     preheader: `Your secure Arch9 offer link is ready for ${propertyLabel}.`,
@@ -81,11 +105,14 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     greeting: `Hi ${buyerName},`,
     contentHtml,
     securityTitle: "Secure Offer Portal",
-    securityBody: "Your offer link is shared through Arch9 so your agent can keep the offer, viewing, and transaction record connected.",
-    helpBody: "Need help? Reply to this email or contact your agent before submitting an offer.",
-    organisationName,
-    supportEmail,
-    supportPhone,
+    securityBody:
+      "Your offer link is shared through Arch9 so your agent can keep the offer, viewing, and transaction record connected.",
+    helpBody:
+      "Need help? Reply to this email or contact your agent before submitting an offer.",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
   const text = [
     `Hi ${buyerName},`,
@@ -104,17 +131,20 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     "",
     "Need help? Reply to this email or contact your agent before submitting an offer.",
     "",
-    organisationName,
+    branding.organisationName,
     "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType: "buyer_offer_link",
-    recipient: to,
-    recipientRole: "buyer",
-    subject,
-    messagePreview: text,
-  });
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "buyer_offer_link",
+      recipient: to,
+      recipientRole: "buyer",
+      subject,
+      messagePreview: text,
+    },
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -127,10 +157,12 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
 
   if (!emailResult.ok) {
     await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage: emailResult.error?.message || "Failed to send buyer offer link email.",
+      errorMessage: emailResult.error?.message ||
+        "Failed to send buyer offer link email.",
     });
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send buyer offer link email.",
+      error: emailResult.error?.message ||
+        "Failed to send buyer offer link email.",
       details: emailResult.error,
     });
   }

@@ -10,6 +10,10 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -62,8 +66,19 @@ export async function handleOfferDecisionNotificationEmail(
   const supportPhone = normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+  const rawPayload = payload as Record<string, unknown>;
+  const branding = await resolveEmailBranding({
+    payload: rawPayload,
+    organisationId: normalizeText(
+      rawPayload.organisationId || rawPayload.organisation_id,
+    ),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const subject = isAcceptedBuyerNotification
     ? `Congratulations, the seller accepted your offer: ${propertyTitle}`
@@ -130,9 +145,10 @@ export async function handleOfferDecisionNotificationEmail(
     helpBody: isAcceptedBuyerNotification
       ? "Your agent will guide you through the next step. You can reply to this email if you need help."
       : nextStep,
-    organisationName,
-    supportEmail,
-    supportPhone,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [
@@ -156,17 +172,20 @@ export async function handleOfferDecisionNotificationEmail(
       ? "Your agent will guide you through the next step. You can reply to this email if you need help."
       : nextStep,
     "",
-    organisationName,
+    branding.organisationName,
     "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType: "offer_decision_notification",
-    recipient: to,
-    recipientRole: recipientRole || "buyer",
-    subject,
-    messagePreview: text,
-  });
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "offer_decision_notification",
+      recipient: to,
+      recipientRole: recipientRole || "buyer",
+      subject,
+      messagePreview: text,
+    },
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -179,8 +198,7 @@ export async function handleOfferDecisionNotificationEmail(
 
   if (!emailResult.ok) {
     await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage:
-        emailResult.error?.message ||
+      errorMessage: emailResult.error?.message ||
         "Failed to send offer decision notification.",
     });
     return jsonResponse(500, {

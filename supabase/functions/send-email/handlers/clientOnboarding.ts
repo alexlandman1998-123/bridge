@@ -9,6 +9,10 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
 import { logOnboardingEmailSideEffects } from "../services/onboardingLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -85,7 +89,10 @@ export async function handleClientOnboardingEmail(
       isMissingColumnError(transactionQuery.error, "listing_id") ||
       isMissingColumnError(transactionQuery.error, "organisation_id") ||
       isMissingColumnError(transactionQuery.error, "accepted_offer_id") ||
-      isMissingColumnError(transactionQuery.error, "originating_buyer_lead_id") ||
+      isMissingColumnError(
+        transactionQuery.error,
+        "originating_buyer_lead_id",
+      ) ||
       isMissingColumnError(transactionQuery.error, "assigned_agent") ||
       isMissingColumnError(transactionQuery.error, "assigned_agent_email")
     )
@@ -268,10 +275,11 @@ export async function handleClientOnboardingEmail(
     }
   }
 
-  const requestedDeliveryMode = normalizeText(payload.deliveryMode).toLowerCase();
-  const deliveryMode = requestedDeliveryMode || persistedDeliveryMode || "digital_portal";
-  const manualHandoff =
-    payload.skipEmail === true ||
+  const requestedDeliveryMode = normalizeText(payload.deliveryMode)
+    .toLowerCase();
+  const deliveryMode = requestedDeliveryMode || persistedDeliveryMode ||
+    "digital_portal";
+  const manualHandoff = payload.skipEmail === true ||
     ["agent_assisted", "hard_copy"].includes(deliveryMode);
 
   const nextOnboardingStatus = resolvedOnboarding.status === "Not Started"
@@ -301,7 +309,8 @@ export async function handleClientOnboardingEmail(
       type: "client_onboarding",
       transactionId: transaction.id,
       recipientEmail: buyerEmail,
-      onboardingUrl: `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`,
+      onboardingUrl:
+        `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`,
       onboardingStatus: nextOnboardingStatus,
       deliveryMode,
       manualHandoff: true,
@@ -344,9 +353,6 @@ export async function handleClientOnboardingEmail(
 
   const onboardingUrl =
     `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`;
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
-
   const transactionReference = normalizeText(transaction.transaction_reference);
   const purchasePriceRaw = Number(
     transaction.purchase_price ?? transaction.sales_price ?? 0,
@@ -361,6 +367,29 @@ export async function handleClientOnboardingEmail(
       : "";
   const subject = normalizeText(templateOverrides?.subject) ||
     buildOnboardingSubject(transactionReference, acceptedOfferOnboarding);
+  const branding = await resolveEmailBranding({
+    supabase,
+    organisationId,
+    payload: {
+      ...(payload as Record<string, unknown>),
+      organisationName,
+      supportEmail,
+      supportPhone,
+    },
+    defaults: {
+      organisationName: defaultOrganisationName,
+      supportEmail: defaultSupportEmail,
+      supportPhone: defaultSupportPhone,
+    },
+  });
+  organisationName = branding.organisationName;
+  supportEmail = branding.supportEmail || supportEmail;
+  supportPhone = branding.supportPhone || supportPhone;
+  const sender = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
   const html = buildOnboardingEmailHtml({
     buyerName,
     clientName: buyerName,
@@ -377,6 +406,7 @@ export async function handleClientOnboardingEmail(
     supportPhone,
     acceptedOffer: acceptedOfferOnboarding,
     templateOverrides: templateOverrides || undefined,
+    branding,
   });
   const text = buildOnboardingEmailText({
     buyerName,
@@ -398,24 +428,27 @@ export async function handleClientOnboardingEmail(
 
   console.log("Sending onboarding email", buyerEmail);
 
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType: "client_onboarding",
-    recipient: buyerEmail,
-    recipientRole: "buyer",
-    subject,
-    messagePreview: text,
-    context: {
-      organisationId,
-      leadId: normalizeText(transactionData?.originating_buyer_lead_id),
-      listingId: normalizeText(transactionData?.listing_id),
-      transactionId: transaction.id,
-      offerId: normalizeText(transactionData?.accepted_offer_id),
-      metadata: {
-        onboardingToken: resolvedOnboarding.token,
-        deliveryMode,
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType: "client_onboarding",
+      recipient: buyerEmail,
+      recipientRole: "buyer",
+      subject,
+      messagePreview: text,
+      context: {
+        organisationId,
+        leadId: normalizeText(transactionData?.originating_buyer_lead_id),
+        listingId: normalizeText(transactionData?.listing_id),
+        transactionId: transaction.id,
+        offerId: normalizeText(transactionData?.accepted_offer_id),
+        metadata: {
+          onboardingToken: resolvedOnboarding.token,
+          deliveryMode,
+        },
       },
     },
-  });
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -429,7 +462,8 @@ export async function handleClientOnboardingEmail(
   if (!emailResult.ok) {
     console.error("Resend failed", emailResult.error);
     await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage: emailResult.error?.message || "Failed to send onboarding email.",
+      errorMessage: emailResult.error?.message ||
+        "Failed to send onboarding email.",
     });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send onboarding email.",

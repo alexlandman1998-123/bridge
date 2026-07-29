@@ -11,6 +11,10 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { ensureCanonicalClientInvite } from "../services/canonicalClientInvite.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -59,24 +63,42 @@ function toRecord(value: unknown): Record<string, unknown> {
 }
 
 function normalizeStatusKey(value: unknown) {
-  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(
+    /^_+|_+$/g,
+    "",
+  );
 }
 
-function listingHasSignedMandateSignal(listing: Record<string, unknown> | null) {
+function listingHasSignedMandateSignal(
+  listing: Record<string, unknown> | null,
+) {
   if (!listing) return false;
   return [
     listing.mandate_status,
     listing.listing_status,
     listing.status,
-  ].some((value) => SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(normalizeStatusKey(value)));
+  ].some((value) =>
+    SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(
+      normalizeStatusKey(value),
+    )
+  );
 }
 
-function packetHasSignedMandateSignal(packet: Record<string, unknown> | null, versions: Record<string, unknown>[] = []) {
-  if (packet && [
-    packet.status,
-    packet.state,
-    packet.packet_status,
-  ].some((value) => SELLER_PORTAL_INVITE_SIGNED_MANDATE_PACKET_STATUS_KEYS.has(normalizeStatusKey(value)))) {
+function packetHasSignedMandateSignal(
+  packet: Record<string, unknown> | null,
+  versions: Record<string, unknown>[] = [],
+) {
+  if (
+    packet && [
+      packet.status,
+      packet.state,
+      packet.packet_status,
+    ].some((value) =>
+      SELLER_PORTAL_INVITE_SIGNED_MANDATE_PACKET_STATUS_KEYS.has(
+        normalizeStatusKey(value),
+      )
+    )
+  ) {
     return true;
   }
 
@@ -104,18 +126,26 @@ async function listingLinkedPacketHasSignedMandateSignal(
     .eq("id", packetId)
     .maybeSingle();
   if (packetQuery.error) {
-    console.error("[seller_onboarding] seller portal invite packet guard lookup failed", packetQuery.error);
+    console.error(
+      "[seller_onboarding] seller portal invite packet guard lookup failed",
+      packetQuery.error,
+    );
     return false;
   }
 
   const versionsQuery = await supabase
     .from("document_packet_versions")
-    .select("id, packet_id, final_signed_file_path, final_signed_file_url, final_signed_document_id, finalised_at")
+    .select(
+      "id, packet_id, final_signed_file_path, final_signed_file_url, final_signed_document_id, finalised_at",
+    )
     .eq("packet_id", packetId)
     .order("version_number", { ascending: false })
     .limit(3);
   if (versionsQuery.error) {
-    console.error("[seller_onboarding] seller portal invite packet version guard lookup failed", versionsQuery.error);
+    console.error(
+      "[seller_onboarding] seller portal invite packet version guard lookup failed",
+      versionsQuery.error,
+    );
     return packetHasSignedMandateSignal(packetQuery.data || null, []);
   }
 
@@ -174,7 +204,10 @@ async function appendSellerPortalInviteGuardBlockedEvent(
     created_at: nowIso,
   });
   if (insert.error) {
-    console.error("[seller_onboarding] seller portal invite blocked event insert failed", insert.error);
+    console.error(
+      "[seller_onboarding] seller portal invite blocked event insert failed",
+      insert.error,
+    );
   }
 }
 
@@ -186,7 +219,8 @@ async function verifySellerPortalInviteAfterSignedMandate(
     return {
       ok: false,
       status: 500,
-      error: "Supabase service role is required before sending seller portal password setup links.",
+      error:
+        "Supabase service role is required before sending seller portal password setup links.",
       code: "seller_portal_invite_guard_unavailable",
     };
   }
@@ -194,34 +228,44 @@ async function verifySellerPortalInviteAfterSignedMandate(
     return {
       ok: false,
       status: 400,
-      error: "Listing id is required before sending seller portal password setup links.",
+      error:
+        "Listing id is required before sending seller portal password setup links.",
       code: "seller_portal_invite_listing_required",
     };
   }
 
   const query = await supabase
     .from("private_listings")
-    .select("id, organisation_id, mandate_status, listing_status, status, mandate_packet_id")
+    .select(
+      "id, organisation_id, mandate_status, listing_status, status, mandate_packet_id",
+    )
     .eq("id", listingId)
     .maybeSingle();
 
   if (query.error) {
-    console.error("[seller_onboarding] seller portal invite mandate guard failed", query.error);
+    console.error(
+      "[seller_onboarding] seller portal invite mandate guard failed",
+      query.error,
+    );
     return {
       ok: false,
       status: 500,
-      error: query.error.message || "Unable to verify signed mandate before sending seller portal link.",
+      error: query.error.message ||
+        "Unable to verify signed mandate before sending seller portal link.",
       code: "seller_portal_invite_guard_failed",
     };
   }
 
   const listing = query.data || null;
   const hasSignedMandateSignal = listingHasSignedMandateSignal(listing) ||
-    (listing ? await listingLinkedPacketHasSignedMandateSignal(supabase, listing) : false);
+    (listing
+      ? await listingLinkedPacketHasSignedMandateSignal(supabase, listing)
+      : false);
 
   if (!hasSignedMandateSignal) {
     const code = "seller_portal_invite_requires_signed_mandate";
-    const error = "Seller portal password setup links are sent only after the seller mandate is signed.";
+    const error =
+      "Seller portal password setup links are sent only after the seller mandate is signed.";
     await appendSellerPortalInviteGuardBlockedEvent(supabase, {
       listing,
       listingId,
@@ -245,10 +289,16 @@ function extractSellerPortalToken(link: string) {
   try {
     const parsed = new URL(normalized);
     const parts = parsed.pathname.split("/").filter(Boolean);
-    return parts[0] === "client" && parts[1] && parts[2] === "selling" ? parts[1] : "";
+    return parts[0] === "client" && parts[1] && parts[2] === "selling"
+      ? parts[1]
+      : "";
   } catch {
-    const parts = normalized.split("?")[0].split("#")[0].split("/").filter(Boolean);
-    return parts[0] === "client" && parts[1] && parts[2] === "selling" ? parts[1] : "";
+    const parts = normalized.split("?")[0].split("#")[0].split("/").filter(
+      Boolean,
+    );
+    return parts[0] === "client" && parts[1] && parts[2] === "selling"
+      ? parts[1]
+      : "";
   }
 }
 
@@ -275,7 +325,8 @@ async function resolveSenderOrganisationBranding(
     isMissingTableError(organisationQuery.error, "organisations") ||
     isMissingSchemaError(organisationQuery.error)
   ) {
-    senderOrganisationName = normalizeText(organisationQuery.data?.display_name) ||
+    senderOrganisationName =
+      normalizeText(organisationQuery.data?.display_name) ||
       normalizeText(organisationQuery.data?.name) ||
       senderOrganisationName;
     supportEmail = normalizeText(organisationQuery.data?.support_email) ||
@@ -285,7 +336,10 @@ async function resolveSenderOrganisationBranding(
       normalizeText(organisationQuery.data?.company_phone) ||
       supportPhone;
   } else if (organisationQuery.error) {
-    console.error("[seller_onboarding] organisation lookup failed", organisationQuery.error);
+    console.error(
+      "[seller_onboarding] organisation lookup failed",
+      organisationQuery.error,
+    );
   }
 
   const logoQuery = await supabase
@@ -303,7 +357,10 @@ async function resolveSenderOrganisationBranding(
     senderOrganisationLogoUrl = normalizeText(logoQuery.data?.logo_url) ||
       senderOrganisationLogoUrl;
   } else if (logoQuery.error) {
-    console.error("[seller_onboarding] organisation logo lookup failed", logoQuery.error);
+    console.error(
+      "[seller_onboarding] organisation logo lookup failed",
+      logoQuery.error,
+    );
   }
 
   const brandingQuery = await supabase
@@ -317,13 +374,18 @@ async function resolveSenderOrganisationBranding(
     isMissingTableError(brandingQuery.error, "organisation_branding") ||
     isMissingSchemaError(brandingQuery.error)
   ) {
-    senderOrganisationName = normalizeText(brandingQuery.data?.organisation_display_name) ||
+    senderOrganisationName =
+      normalizeText(brandingQuery.data?.organisation_display_name) ||
       senderOrganisationName;
-    senderOrganisationLogoUrl = normalizeText(brandingQuery.data?.logo_dark_url) ||
+    senderOrganisationLogoUrl =
+      normalizeText(brandingQuery.data?.logo_dark_url) ||
       normalizeText(brandingQuery.data?.logo_light_url) ||
       senderOrganisationLogoUrl;
   } else if (brandingQuery.error) {
-    console.error("[seller_onboarding] organisation branding lookup failed", brandingQuery.error);
+    console.error(
+      "[seller_onboarding] organisation branding lookup failed",
+      brandingQuery.error,
+    );
   }
 
   const settingsQuery = await supabase
@@ -339,7 +401,9 @@ async function resolveSenderOrganisationBranding(
     isMissingColumnError(settingsQuery.error, "settings_json")
   ) {
     const settings = toRecord(settingsQuery.data?.settings_json);
-    const agencyOnboarding = toRecord(settings.agencyOnboarding || settings.agency_onboarding);
+    const agencyOnboarding = toRecord(
+      settings.agencyOnboarding || settings.agency_onboarding,
+    );
     const branding = toRecord(agencyOnboarding.branding || settings.branding);
     senderOrganisationLogoUrl = normalizeText(branding.logoDark) ||
       normalizeText(branding.logoDarkUrl) ||
@@ -351,7 +415,10 @@ async function resolveSenderOrganisationBranding(
       normalizeText(branding.logoLightUrl) ||
       senderOrganisationLogoUrl;
   } else if (settingsQuery.error) {
-    console.error("[seller_onboarding] organisation settings lookup failed", settingsQuery.error);
+    console.error(
+      "[seller_onboarding] organisation settings lookup failed",
+      settingsQuery.error,
+    );
   }
 
   return {
@@ -362,10 +429,14 @@ async function resolveSenderOrganisationBranding(
   };
 }
 
-export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingPayload) {
+export async function handleSellerOnboardingEmail(
+  payload: SendSellerOnboardingPayload,
+) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
@@ -392,7 +463,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const agentName = normalizeText(payload.agentName);
   const agentEmail = normalizeText(payload.agentEmail ?? payload.agent_email);
   const agentPhone = normalizeText(payload.agentPhone ?? payload.agent_phone);
-  const organisationName = normalizeText(payload.agencyName ?? payload.agency_name) ||
+  const organisationName =
+    normalizeText(payload.agencyName ?? payload.agency_name) ||
     normalizeText(payload.organisationName) ||
     "Arch9";
   const payloadAgencyLogoUrl = normalizeText(
@@ -402,12 +474,16 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const expiryDays = normalizeText(payload.expiryDays ?? payload.expiry_days);
   const expiresAt = normalizeText(payload.expiresAt ?? payload.expires_at);
   const organisationId = normalizeText(payload.organisationId);
-  const requiredDocuments = Array.isArray(payload.requiredDocuments) ? payload.requiredDocuments : [];
+  const requiredDocuments = Array.isArray(payload.requiredDocuments)
+    ? payload.requiredDocuments
+    : [];
   const sellerStructure = payload.sellerStructure || null;
   let supportEmail = normalizeText(payload.supportEmail);
   let supportPhone = normalizeText(payload.supportPhone);
   if (!onboardingLink) {
-    return jsonResponse(400, { error: "Missing required field: onboardingLink" });
+    return jsonResponse(400, {
+      error: "Missing required field: onboardingLink",
+    });
   }
 
   const supabase = supabaseUrl && serviceRoleKey
@@ -417,7 +493,10 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     : null;
   const listingId = normalizeText(payload.listingId);
   if (portalDocumentsMode) {
-    const guard = await verifySellerPortalInviteAfterSignedMandate(supabase, listingId);
+    const guard = await verifySellerPortalInviteAfterSignedMandate(
+      supabase,
+      listingId,
+    );
     if (!guard.ok) {
       return jsonResponse(guard.status || 500, {
         error: guard.error,
@@ -436,10 +515,14 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         organisation_id: organisationId || null,
         listing_id: listingId || null,
         lead_id: normalizeText(payload.leadId) || null,
-        seller_workspace_token: extractSellerPortalToken(legacyOnboardingLink) || null,
+        seller_workspace_token:
+          extractSellerPortalToken(legacyOnboardingLink) || null,
       },
     }).catch((inviteError) => {
-      console.error("[seller_onboarding] canonical seller invite creation failed", inviteError);
+      console.error(
+        "[seller_onboarding] canonical seller invite creation failed",
+        inviteError,
+      );
       return null;
     });
   }
@@ -455,7 +538,8 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         organisationName,
       );
       senderOrganisationName = resolvedOrganisation.senderOrganisationName;
-      senderOrganisationLogoUrl = resolvedOrganisation.senderOrganisationLogoUrl ||
+      senderOrganisationLogoUrl =
+        resolvedOrganisation.senderOrganisationLogoUrl ||
         senderOrganisationLogoUrl;
       if (!supportEmail) {
         supportEmail = resolvedOrganisation.supportEmail;
@@ -469,17 +553,49 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
         portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
       );
     } catch (error) {
-      console.error("[seller_onboarding] template override lookup failed", error);
+      console.error(
+        "[seller_onboarding] template override lookup failed",
+        error,
+      );
     }
   }
 
-  const sender =
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+  const branding = await resolveEmailBranding({
+    supabase: supabase || undefined,
+    organisationId,
+    payload: {
+      ...(payload as Record<string, unknown>),
+      organisationName: senderOrganisationName || organisationName,
+      logoUrl: senderOrganisationLogoUrl,
+      supportEmail,
+      supportPhone,
+    },
+    defaults: {
+      organisationName,
+      logoUrl: payloadAgencyLogoUrl,
+      supportEmail,
+      supportPhone,
+    },
+  });
+  senderOrganisationName = branding.organisationName;
+  senderOrganisationLogoUrl = branding.logoUrl || branding.logoIconUrl ||
+    senderOrganisationLogoUrl;
+  supportEmail = branding.supportEmail || supportEmail;
+  supportPhone = branding.supportPhone || supportPhone;
 
-  const subject =
-    normalizeText(templateOverrides?.subject) ||
-    buildSellerOnboardingSubject(propertyTitle, transactionReference, propertyType, emailKind);
+  const sender = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
+
+  const subject = normalizeText(templateOverrides?.subject) ||
+    buildSellerOnboardingSubject(
+      propertyTitle,
+      transactionReference,
+      propertyType,
+      emailKind,
+    );
   const html = buildSellerOnboardingEmailHtml({
     sellerName,
     propertyTitle,
@@ -500,6 +616,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     templateOverrides: templateOverrides || undefined,
     agentEmail,
     agentPhone,
+    branding,
   });
   const text = buildSellerOnboardingEmailText({
     sellerName,
@@ -524,32 +641,35 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const communicationType = portalDocumentsMode
     ? "seller_portal_link_seller"
     : "seller_onboarding_link_seller";
-  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
-    communicationType,
-    recipient: to,
-    recipientRole: "seller",
-    subject,
-    messagePreview: text,
-    context: {
-      organisationId,
-      leadId: normalizeText(payload.leadId),
-      listingId,
-      metadata: {
-        emailKind,
-        portalDocumentsMode,
-        onboardingLink,
-        canonicalInviteId: canonicalClientInvite?.inviteId || null,
-        canonicalInviteToken: canonicalClientInvite?.token || null,
-        canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
-        legacyOnboardingLink,
-        expiryDays: expiryDays || null,
-        expiresAt: expiresAt || null,
-        agentEmail: agentEmail || null,
-        agentPhone: agentPhone || null,
-        emailPurpose: communicationType,
+  const delivery = await prepareEmailDelivery(
+    payload as Record<string, unknown>,
+    {
+      communicationType,
+      recipient: to,
+      recipientRole: "seller",
+      subject,
+      messagePreview: text,
+      context: {
+        organisationId,
+        leadId: normalizeText(payload.leadId),
+        listingId,
+        metadata: {
+          emailKind,
+          portalDocumentsMode,
+          onboardingLink,
+          canonicalInviteId: canonicalClientInvite?.inviteId || null,
+          canonicalInviteToken: canonicalClientInvite?.token || null,
+          canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
+          legacyOnboardingLink,
+          expiryDays: expiryDays || null,
+          expiresAt: expiresAt || null,
+          agentEmail: agentEmail || null,
+          agentPhone: agentPhone || null,
+          emailPurpose: communicationType,
+        },
       },
     },
-  });
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
@@ -563,12 +683,12 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
 
   if (!emailResult.ok) {
     await markEmailDeliveryFailed(delivery?.id || "", {
-      errorMessage:
-        emailResult.error?.message ||
+      errorMessage: emailResult.error?.message ||
         "Failed to send seller onboarding email.",
     });
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send seller onboarding email.",
+      error: emailResult.error?.message ||
+        "Failed to send seller onboarding email.",
       details: emailResult.error,
     });
   }

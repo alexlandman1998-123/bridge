@@ -2,6 +2,7 @@ import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizont
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
+import { buildBondOriginatorAgentProgressViewModel } from '../modules/bond/integrations'
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
@@ -156,6 +157,18 @@ function getBuyerBondOriginatorRequestSummary(row) {
   }
 }
 
+function getBondOriginatorAgentProgressSummary(row) {
+  const source =
+    row?.bondOriginatorAgentProgressView ||
+    row?.bond_originator_agent_progress_view ||
+    row?.transaction?.bondOriginatorAgentProgressView ||
+    row?.transaction?.bond_originator_agent_progress_view ||
+    null
+  if (!source) return null
+  const model = buildBondOriginatorAgentProgressViewModel({ exportPackage: source })
+  return model.available ? model : null
+}
+
 function getEmptyStateCopy(isPrincipalView) {
   if (isPrincipalView) {
     return 'Transactions will appear here once leads are converted, offers are accepted, or a deal is created directly.'
@@ -180,6 +193,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   const developmentName = String(row?.development?.name || '').trim().toLowerCase()
   const buyerName = String(row?.buyer?.name || '').trim().toLowerCase()
   const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
+  const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
   const searchHaystack = [
     buyerName,
     row?.buyer?.email,
@@ -197,6 +211,9 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
     buyerBondOriginatorRequest?.label,
     buyerBondOriginatorRequest?.summary,
     buyerBondOriginatorRequest?.companyName,
+    bondOriginatorProgress?.statusLabel,
+    bondOriginatorProgress?.headline,
+    bondOriginatorProgress?.summary,
   ]
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean)
@@ -390,6 +407,7 @@ function AgentTransactionsTable({
               const developmentLabel = getDevelopmentLabel(row)
               const transactionReference = row?.transaction?.transaction_reference || row?.transaction?.reference || ''
               const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
+              const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
 
               return (
                 <tr
@@ -440,6 +458,14 @@ function AgentTransactionsTable({
                         <small>{transactionConfidence}% confidence</small>
                       </div>
                       <span className="transaction-progress-stage">{mainStage.label}</span>
+                      {bondOriginatorProgress ? (
+                        <StatusBadge
+                          className="transaction-workflow-chip transaction-chip-muted"
+                          title={bondOriginatorProgress.summary}
+                        >
+                          Bond: {bondOriginatorProgress.statusLabel}
+                        </StatusBadge>
+                      ) : null}
                       <div className="transaction-progress-track" aria-hidden="true">
                         <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
                       </div>

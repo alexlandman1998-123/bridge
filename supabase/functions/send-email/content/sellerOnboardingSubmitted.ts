@@ -1,4 +1,5 @@
 import {
+  type BridgeEmailLayoutBranding,
   renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
@@ -21,7 +22,9 @@ export function buildSellerOnboardingSubmittedSubject(propertyTitle = "") {
   return `Seller onboarding received: ${propertyLabel}`;
 }
 
-export function buildSellerOnboardingSubmittedSellerSubject(propertyTitle = "") {
+export function buildSellerOnboardingSubmittedSellerSubject(
+  propertyTitle = "",
+) {
   const propertyLabel = normalizePropertyLabel(propertyTitle);
   return propertyLabel === "property"
     ? "You're in - your seller portal is ready"
@@ -40,6 +43,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   supportEmail,
   supportPhone,
   templateOverrides,
+  branding,
 }: {
   sellerName: string;
   propertyTitle: string;
@@ -51,6 +55,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   senderOrganisationLogoUrl?: string;
   supportEmail?: string;
   supportPhone?: string;
+  branding?: BridgeEmailLayoutBranding;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -64,14 +69,18 @@ export function buildSellerOnboardingSubmittedEmailHtml({
 }) {
   const propertyLabel = normalizePropertyLabel(propertyTitle);
   const agentLabel = pickText(agentName, "the assigned agent");
-  const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) && templateOverrides.introParagraphs.length
+  const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) &&
+      templateOverrides.introParagraphs.length
     ? templateOverrides.introParagraphs
     : [
-      `${sellerName || "The seller"} has submitted their onboarding for ${propertyLabel}.`,
+      `${
+        sellerName || "The seller"
+      } has submitted their onboarding for ${propertyLabel}.`,
       "Please review the submitted details, make sure everything looks right, and generate the mandate from the lead workspace.",
       "Arch9 keeps the onboarding, mandate, and signing flow tied to the same lead record.",
     ];
-  const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
+  const processSteps = Array.isArray(templateOverrides?.processSteps) &&
+      templateOverrides.processSteps.length
     ? templateOverrides.processSteps
     : [
       "Open the lead workspace.",
@@ -80,7 +89,10 @@ export function buildSellerOnboardingSubmittedEmailHtml({
       "Continue the signing flow once the draft is ready.",
     ];
   const ctaLabel = pickText(templateOverrides?.ctaLabel, "Generate Mandate");
-  const securityTitle = pickText(templateOverrides?.securityTitle, "Submission Review");
+  const securityTitle = pickText(
+    templateOverrides?.securityTitle,
+    "Submission Review",
+  );
   const securityBody = pickText(
     templateOverrides?.securityBody,
     "This handoff is shared securely through Arch9 and is only visible to authorised members of the transaction workspace.",
@@ -105,7 +117,11 @@ export function buildSellerOnboardingSubmittedEmailHtml({
        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
        ${renderBridgeSteps(processSteps)}
      </div>`,
-    actionLink ? renderBridgeCta(ctaLabel, actionLink) : "",
+    actionLink
+      ? renderBridgeCta(ctaLabel, actionLink, {
+        primaryColor: branding?.primaryColor,
+      })
+      : "",
   ].join("");
 
   return renderBridgeEmailLayout({
@@ -124,6 +140,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
     senderOrganisationLogoUrl,
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
+    branding,
   });
 }
 
@@ -147,7 +164,9 @@ export function buildSellerOnboardingSubmittedEmailText({
   return [
     `Hi ${pickText(agentName, "there")},`,
     "",
-    `${sellerName || "The seller"} has submitted their onboarding for ${propertyLabel}.`,
+    `${
+      sellerName || "The seller"
+    } has submitted their onboarding for ${propertyLabel}.`,
     "Please review the submission, make sure everything looks right, and generate the mandate from the lead workspace.",
     "",
     "What happens next:",
@@ -179,6 +198,7 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
   senderOrganisationLogoUrl,
   supportEmail,
   supportPhone,
+  branding,
 }: {
   sellerName: string;
   propertyTitle: string;
@@ -189,6 +209,7 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
   senderOrganisationLogoUrl?: string;
   supportEmail?: string;
   supportPhone?: string;
+  branding?: BridgeEmailLayoutBranding;
 }) {
   const propertyLabel = normalizePropertyLabel(propertyTitle);
   const contentHtml = [
@@ -199,16 +220,22 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
     ]),
     renderBridgeSummaryCard(
       [
-        { label: "Property", value: propertyLabel === "property" ? "" : propertyLabel },
+        {
+          label: "Property",
+          value: propertyLabel === "property" ? "" : propertyLabel,
+        },
         { label: "Agent", value: pickText(agentName, "") },
       ],
       "Submission Received",
     ),
-    renderBridgeCta("Open seller portal", portalLink),
+    renderBridgeCta("Open seller portal", portalLink, {
+      primaryColor: branding?.primaryColor,
+    }),
   ].join("");
 
   return renderBridgeEmailLayout({
-    preheader: "Thanks - we have received your seller information. Your seller portal is ready.",
+    preheader:
+      "Thanks - we have received your seller information. Your seller portal is ready.",
     title: "Thanks - we received your information",
     greeting: `Hi ${pickText(sellerName, "there")},`,
     contentHtml,
@@ -221,6 +248,7 @@ export function buildSellerOnboardingSubmittedSellerEmailHtml({
     senderOrganisationLogoUrl,
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
+    branding,
   });
 }
 

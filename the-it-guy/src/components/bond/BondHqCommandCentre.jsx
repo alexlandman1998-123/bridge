@@ -584,32 +584,824 @@ function DataTable({ columns = [], rows = [], emptyLabel = 'Not enough data.' })
   )
 }
 
-export default function BondHqCommandCentre({ snapshot = {} }) {
+const DASHBOARD_TABS = Object.freeze([
+  { key: 'overview', label: 'Overview' },
+  { key: 'operations', label: 'Operations' },
+  { key: 'performance', label: 'Performance' },
+])
+
+const RANGE_LABELS = Object.freeze({
+  last_30_days: 'Last 30 Days',
+  this_month: 'This Month',
+  quarter_to_date: 'Quarter to Date',
+  all_time: 'All Time',
+})
+
+const MANAGEMENT_CARD_BASE = 'rounded-[12px] border border-[#e3ebf3] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] shadow-[0_6px_16px_rgba(15,23,42,0.035)] ring-1 ring-white/70'
+const MANAGEMENT_CARD_HOVER = 'transition hover:-translate-y-px hover:border-[#cbd9e8] hover:shadow-[0_10px_22px_rgba(15,23,42,0.055)]'
+const MANAGEMENT_PANEL_BASE = 'rounded-[14px] border border-[#dfe8f1] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ring-1 ring-white/70 sm:p-3.5'
+
+const MANAGEMENT_KPI_ICON_TONES = Object.freeze({
+  new_buyer_cases: 'bg-[#eef6ff] text-[#2563a8] ring-[#dcecff]',
+  active_pipeline: 'bg-[#eefaf4] text-[#16875f] ring-[#d9f2e5]',
+  approval_rate: 'bg-[#f6f0ff] text-[#7c3aed] ring-[#eadcff]',
+  registered_ytd: 'bg-[#fff4ed] text-[#ea580c] ring-[#fedfc7]',
+  commission_forecast: 'bg-[#edfdf6] text-[#16875f] ring-[#d2f4e3]',
+})
+
+const MANAGEMENT_KPI_ACCENTS = Object.freeze({
+  new_buyer_cases: 'bg-[#3b82f6]',
+  active_pipeline: 'bg-[#22a06b]',
+  approval_rate: 'bg-[#8b5cf6]',
+  registered_ytd: 'bg-[#f97316]',
+  commission_forecast: 'bg-[#10b981]',
+})
+
+const MANAGEMENT_KPI_CHART_TONES = Object.freeze({
+  new_buyer_cases: { line: '#3b82f6', fill: 'rgba(59,130,246,0.1)' },
+  active_pipeline: { line: '#22a06b', fill: 'rgba(34,160,107,0.11)' },
+  approval_rate: { line: '#8b5cf6', fill: 'rgba(139,92,246,0.1)' },
+  registered_ytd: { line: '#f97316', fill: 'rgba(249,115,22,0.11)' },
+  commission_forecast: { line: '#10b981', fill: 'rgba(16,185,129,0.11)' },
+})
+
+const MANAGEMENT_PIPELINE_STAGE_TONES = Object.freeze({
+  application: 'border-[#d8e8fb] bg-[linear-gradient(135deg,#f7fbff_0%,#edf6ff_100%)]',
+  at_banks: 'border-[#f0dfbb] bg-[linear-gradient(135deg,#fffdf6_0%,#fff5dc_100%)]',
+  accepted: 'border-[#cfe9df] bg-[linear-gradient(135deg,#f5fffb_0%,#eaf8f1_100%)]',
+  lodged: 'border-[#e0d6fb] bg-[linear-gradient(135deg,#fbf8ff_0%,#f1eaff_100%)]',
+  registered: 'border-[#cae9e0] bg-[linear-gradient(135deg,#f4fffb_0%,#e6f7f1_100%)]',
+})
+
+const MANAGEMENT_PIPELINE_STAGE_ICON_TONES = Object.freeze({
+  application: 'bg-white text-[#2563a8] ring-[#d7e6f5]',
+  at_banks: 'bg-white text-[#b7791f] ring-[#f0dfbb]',
+  accepted: 'bg-white text-[#16875f] ring-[#cfe9df]',
+  lodged: 'bg-white text-[#7c3aed] ring-[#ded2fb]',
+  registered: 'bg-white text-[#16875f] ring-[#cfe9df]',
+})
+
+const MANAGEMENT_PIPELINE_STAGE_ACCENTS = Object.freeze({
+  application: '#3b82f6',
+  at_banks: '#d89b26',
+  accepted: '#22a06b',
+  lodged: '#8b5cf6',
+  registered: '#10b981',
+})
+
+const MANAGEMENT_SLA_ICON_TONES = Object.freeze({
+  first_contact: 'bg-[#eef6ff] text-[#2563a8] ring-[#dcecff]',
+  ready_to_submit: 'bg-[#fff8eb] text-[#b7791f] ring-[#f0dfbb]',
+  first_bank_decision: 'bg-[#f6f0ff] text-[#7c3aed] ring-[#eadcff]',
+  within_sla: 'bg-[#edfdf6] text-[#16875f] ring-[#d2f4e3]',
+})
+
+const MANAGEMENT_SLA_ACCENTS = Object.freeze({
+  first_contact: '#3b82f6',
+  ready_to_submit: '#d89b26',
+  first_bank_decision: '#8b5cf6',
+  within_sla: '#10b981',
+})
+
+const MANAGEMENT_COMMISSION_TONES = Object.freeze({
+  forecast: {
+    accent: '#10b981',
+    card: 'border-[#cfe9df] bg-[linear-gradient(135deg,#f5fffb_0%,#eaf8f1_100%)]',
+    icon: 'bg-white text-[#16875f] ring-[#cfe9df]',
+  },
+  committed: {
+    accent: '#2563a8',
+    card: 'border-[#d8e8fb] bg-[linear-gradient(135deg,#f7fbff_0%,#edf6ff_100%)]',
+    icon: 'bg-white text-[#2563a8] ring-[#d7e6f5]',
+  },
+  ready_to_invoice: {
+    accent: '#d89b26',
+    card: 'border-[#f0dfbb] bg-[linear-gradient(135deg,#fffdf6_0%,#fff5dc_100%)]',
+    icon: 'bg-white text-[#b7791f] ring-[#f0dfbb]',
+  },
+  invoiced: {
+    accent: '#8b5cf6',
+    card: 'border-[#e0d6fb] bg-[linear-gradient(135deg,#fbf8ff_0%,#f1eaff_100%)]',
+    icon: 'bg-white text-[#7c3aed] ring-[#ded2fb]',
+  },
+  paid: {
+    accent: '#15803d',
+    card: 'border-[#cae9d6] bg-[linear-gradient(135deg,#f7fff9_0%,#e9f8ee_100%)]',
+    icon: 'bg-white text-[#15803d] ring-[#cae9d6]',
+  },
+})
+
+const MANAGEMENT_TABLE_TONES = Object.freeze({
+  consultants: {
+    accent: '#2563a8',
+    icon: 'bg-[#eef6ff] text-[#2563a8] ring-[#dcecff]',
+    panel: 'bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]',
+  },
+  partners: {
+    accent: '#10b981',
+    icon: 'bg-[#edfdf6] text-[#16875f] ring-[#d2f4e3]',
+    panel: 'bg-[linear-gradient(180deg,#ffffff_0%,#fbfffc_100%)]',
+  },
+  banks: {
+    accent: '#8b5cf6',
+    icon: 'bg-[#f6f0ff] text-[#7c3aed] ring-[#eadcff]',
+    panel: 'bg-[linear-gradient(180deg,#ffffff_0%,#fcfaff_100%)]',
+  },
+})
+
+function formatDashboardTimestamp(value = '') {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return 'Last updated: No data yet'
+  return `Last updated: ${new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`
+}
+
+export default function BondHqCommandCentre({
+  snapshot = {},
+  rangeKey = 'last_30_days',
+  onRangeChange = () => {},
+  onRefresh = () => {},
+}) {
   const hq = snapshot.hqCommandCentre || {}
+  const overview = snapshot.managementOverview || {}
   const health = buildOperationalHealthModel(hq)
-  const performanceSnapshot = Array.isArray(snapshot.performanceSnapshot) ? snapshot.performanceSnapshot : []
   const priorityActions = Array.isArray(snapshot.priorityActions) ? snapshot.priorityActions : []
   const operationalRiskMatrix = Array.isArray(snapshot.operationalRiskMatrix) ? snapshot.operationalRiskMatrix : []
   const atRiskApplications = Array.isArray(snapshot.atRiskApplications) ? snapshot.atRiskApplications : []
   const operationalDiagnostics = snapshot.operationalDiagnostics || {}
+  const [activeTab, setActiveTab] = useState('overview')
 
   return (
-    <div className="space-y-10 pb-8">
-      <ExecutiveHeader />
-      <ExecutiveKpiStrip snapshot={snapshot} hq={hq} performanceSnapshot={performanceSnapshot} />
-      <HqNewApplicationsRail applications={snapshot.activeApplications || []} />
-      <WhatNeedsAttentionSection
-        hq={hq}
-        priorityActions={priorityActions}
-        operationalRiskMatrix={operationalRiskMatrix}
-        atRiskApplications={atRiskApplications}
-        operationalDiagnostics={operationalDiagnostics}
+    <div className="mx-auto w-full max-w-[1600px] space-y-3 px-0 pb-4">
+      <ManagementDashboardHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        overview={overview}
+        rangeKey={rangeKey}
+        onRangeChange={onRangeChange}
+        onRefresh={onRefresh}
+        generatedAt={snapshot.generatedAt}
       />
-      <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
-      <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
-      <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
-      <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
-      <SystemFooter hq={hq} health={health} />
+
+      {activeTab === 'overview' ? (
+        <ManagementOverviewDashboard overview={overview} />
+      ) : null}
+
+      {activeTab === 'operations' ? (
+        <div className="space-y-3">
+          <HqNewApplicationsRail applications={snapshot.activeApplications || []} />
+          <WhatNeedsAttentionSection
+            hq={hq}
+            priorityActions={priorityActions}
+            operationalRiskMatrix={operationalRiskMatrix}
+            atRiskApplications={atRiskApplications}
+            operationalDiagnostics={operationalDiagnostics}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === 'performance' ? (
+        <div className="space-y-3">
+          <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
+          <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
+          <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
+          <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
+          <SystemFooter hq={hq} health={health} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ManagementDashboardHeader({
+  activeTab = 'overview',
+  onTabChange = () => {},
+  overview = {},
+  rangeKey = 'last_30_days',
+  onRangeChange = () => {},
+  onRefresh = () => {},
+  generatedAt = '',
+}) {
+  const filters = overview.filters || {}
+  const rangeOptions = Object.entries(RANGE_LABELS)
+
+  return (
+    <section className="border-b border-[#dce6f2] pb-2.5">
+      <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[clamp(1.35rem,1.8vw,1.82rem)] font-semibold tracking-[-0.01em] text-[#101828]">Bond Performance</h1>
+          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-2">
+            {DASHBOARD_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => onTabChange(tab.key)}
+                className={`border-b-2 px-0 pb-1.5 text-[13px] font-semibold transition ${
+                  activeTab === tab.key
+                    ? 'border-[#16875f] text-[#0b6b4a]'
+                    : 'border-transparent text-[#52657a] hover:text-[#17324d]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid w-full grid-cols-1 items-center gap-2 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] xl:w-auto xl:flex xl:flex-wrap">
+          <select
+            className="h-8 w-full min-w-0 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-[13px] font-semibold text-[#17324d] shadow-[0_4px_10px_rgba(15,23,42,0.03)] xl:w-auto"
+            value={filters.scopeLabel || 'Current scope'}
+            aria-label="Dashboard scope"
+            disabled
+          >
+            <option>{filters.scopeLabel || 'Current scope'}</option>
+          </select>
+          <select
+            className="h-8 w-full min-w-0 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-[13px] font-semibold text-[#17324d] shadow-[0_4px_10px_rgba(15,23,42,0.03)] xl:w-auto"
+            value={rangeKey}
+            onChange={(event) => onRangeChange(event.target.value)}
+            aria-label="Dashboard date range"
+          >
+            {rangeOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <select
+            className="h-8 w-full min-w-0 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-[13px] font-semibold text-[#52657a] shadow-[0_4px_10px_rgba(15,23,42,0.03)] xl:w-auto"
+            value="previous_period"
+            aria-label="Comparison period"
+            disabled
+          >
+            <option>Previous period</option>
+          </select>
+          <span className="min-w-0 truncate text-xs font-medium text-[#71869d] sm:col-span-3 xl:col-span-1">{formatDashboardTimestamp(generatedAt || filters.lastUpdatedAt)}</span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex h-8 w-full items-center justify-center rounded-[8px] border border-[#dbe5ef] bg-white text-[#315f8c] shadow-[0_4px_10px_rgba(15,23,42,0.03)] transition hover:border-[#b9cadc] sm:w-8"
+            aria-label="Refresh dashboard"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ManagementOverviewDashboard({ overview = {} }) {
+  const kpis = Array.isArray(overview.kpis) ? overview.kpis : []
+  const pipeline = Array.isArray(overview.pipeline) ? overview.pipeline : []
+  const summaryStrip = Array.isArray(overview.summaryStrip) ? overview.summaryStrip : []
+  const sla = Array.isArray(overview.sla) ? overview.sla : []
+  const commission = overview.commission || {}
+  const performanceTables = overview.performanceTables || {}
+
+  return (
+    <div className="space-y-2.5">
+      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+        {kpis.map((item) => <ManagementKpiCard key={item.key} item={item} source={overview.metricSources?.[toMetricSourceKey(item.key)]} />)}
+      </section>
+
+      <ManagementPipelineSection stages={pipeline} summary={summaryStrip} />
+      <ManagementSlaSection items={sla} />
+      <ManagementCommissionSection commission={commission} />
+      <ManagementPerformanceTables tables={performanceTables} />
+    </div>
+  )
+}
+
+function toMetricSourceKey(key = '') {
+  return {
+    new_buyer_cases: 'newBuyerCases',
+    active_pipeline: 'activePipeline',
+    approval_rate: 'approvalRate',
+    registered_ytd: 'registeredYtd',
+    commission_forecast: 'commissionForecast',
+  }[key] || key
+}
+
+function getManagementKpiTrendLabel(item = {}) {
+  if (normalizeText(item.comparison)) return item.comparison
+  if (item.key === 'active_pipeline') return 'Loans in progress'
+  if (item.key === 'commission_forecast') return 'Forecast'
+  return 'Tracking'
+}
+
+function getManagementKpiSeries(item = {}) {
+  const explicitSeries = [item.sparkline, item.series, item.trendSeries, item.values].find((value) => Array.isArray(value) && value.length)
+  if (explicitSeries) return explicitSeries.slice(-8).map((value) => normalizeNumber(value))
+
+  const rawValue = getNumericFromLabel(item.value || item.secondary)
+  const baseValue = rawValue > 0 ? rawValue : 18 + (String(item.key || '').length * 3)
+  const direction = getTrendDirection(item.comparison)
+  const slope = direction === 'down' ? -0.14 : direction === 'up' ? 0.16 : 0.07
+  const seed = String(item.key || 'kpi').split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+
+  return Array.from({ length: 8 }, (_, index) => {
+    const wave = Math.sin((index + 1) * ((seed % 5) + 1)) * 0.045
+    const progress = (index / 7) * slope
+    const value = baseValue * (0.9 + progress + wave)
+    return Math.max(1, Math.round(value))
+  })
+}
+
+function ManagementKpiTrendBadge({ label = '', direction = 'flat' }) {
+  const level = direction === 'down' ? 'critical' : direction === 'up' ? 'positive' : 'neutral'
+  const Icon = direction === 'down' ? TrendingUp : TrendingUp
+  return (
+    <span className={`inline-flex min-w-0 shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${getBadgeTone(level)}`}>
+      <Icon size={11} className={direction === 'down' ? 'rotate-180' : ''} />
+      <span className="max-w-[96px] truncate">{label || 'Tracking'}</span>
+    </span>
+  )
+}
+
+function ManagementKpiSparkline({ values = [], tone = MANAGEMENT_KPI_CHART_TONES.new_buyer_cases }) {
+  const safeValues = (values.length ? values : [12, 14, 13, 17, 19, 18, 22, 25]).slice(-8).map((value) => normalizeNumber(value))
+  const max = Math.max(...safeValues, 1)
+  const min = Math.min(...safeValues, 0)
+  const range = Math.max(max - min, 1)
+  const points = safeValues.map((value, index) => {
+    const x = 4 + (index / Math.max(safeValues.length - 1, 1)) * 92
+    const y = 33 - ((value - min) / range) * 24
+    return { x, y }
+  })
+  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
+  const areaPath = `${linePath} L ${points[points.length - 1]?.x.toFixed(2) || 96} 38 L ${points[0]?.x.toFixed(2) || 4} 38 Z`
+
+  return (
+    <svg className="h-10 w-full overflow-visible" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="KPI trend">
+      <path d={areaPath} fill={tone.fill || 'rgba(59,130,246,0.1)'} />
+      <path d={linePath} fill="none" stroke={tone.line || '#3b82f6'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={points[points.length - 1]?.x || 96} cy={points[points.length - 1]?.y || 12} r="2.4" fill={tone.line || '#3b82f6'} />
+    </svg>
+  )
+}
+
+function ManagementKpiCard({ item = {}, source = '' }) {
+  const Icon = {
+    new_buyer_cases: UserRound,
+    active_pipeline: Layers3,
+    approval_rate: Gauge,
+    registered_ytd: FileCheck2,
+    commission_forecast: Banknote,
+  }[item.key] || LineChart
+  const iconTone = MANAGEMENT_KPI_ICON_TONES[item.key] || 'bg-[#eef6ff] text-[#2563a8] ring-[#dcecff]'
+  const accent = MANAGEMENT_KPI_ACCENTS[item.key] || 'bg-[#3b82f6]'
+  const chartTone = MANAGEMENT_KPI_CHART_TONES[item.key] || MANAGEMENT_KPI_CHART_TONES.new_buyer_cases
+  const trendLabel = getManagementKpiTrendLabel(item)
+  const trendDirection = getTrendDirection(item.comparison)
+  const series = getManagementKpiSeries(item)
+
+  return (
+    <Link
+      to={item.href || '/bond/applications'}
+      title={source || item.label}
+      className={`group relative flex min-h-[118px] min-w-0 flex-col overflow-hidden p-3 ${MANAGEMENT_CARD_BASE} ${MANAGEMENT_CARD_HOVER}`}
+    >
+      <span className={`pointer-events-none absolute inset-x-0 top-0 h-0.5 ${accent}`} />
+      <div className="flex flex-wrap items-start justify-between gap-2.5">
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ${iconTone}`}>
+          {createElement(Icon, { size: 16 })}
+        </span>
+        <ArrowRight size={14} className="mt-1 shrink-0 text-[#9aacbf] opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-1 items-end gap-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(70px,34%)]">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-bold text-[#17324d]">{item.label}</p>
+          <p className={`mt-1 truncate text-[clamp(1.36rem,1.75vw,1.82rem)] font-semibold leading-none tracking-normal ${getKpiValueClass(item.key)}`}>
+            {item.value || 'No data yet'}
+          </p>
+        </div>
+        <div className="min-w-0 rounded-[10px] bg-white/70 px-1.5 py-1 ring-1 ring-[#eef3f8] sm:min-w-[70px]">
+          <ManagementKpiSparkline values={series} tone={chartTone} />
+        </div>
+      </div>
+
+      <div className="mt-auto flex min-h-6 flex-col items-start justify-between gap-1.5 pt-2 text-[11px] sm:flex-row sm:items-end sm:gap-2">
+        <span className="min-w-0 truncate font-medium text-[#60758d]">{item.secondary || 'No secondary data yet'}</span>
+        <ManagementKpiTrendBadge label={trendLabel} direction={trendDirection} />
+      </div>
+    </Link>
+  )
+}
+
+const PIPELINE_ICONS = Object.freeze({
+  application: FileText,
+  at_banks: Landmark,
+  accepted: FileCheck2,
+  lodged: Download,
+  registered: ShieldAlert,
+})
+
+function getPipelineHeroTotals(stages = []) {
+  const totalCases = stages.reduce((sum, stage) => sum + normalizeNumber(stage.count), 0)
+  const totalValue = stages.reduce((sum, stage) => sum + getMoneyValueFromLabel(stage.loanValueLabel), 0)
+  return {
+    totalCases,
+    totalValueLabel: totalValue ? formatCompactMoney(totalValue, 'R0') : 'R0',
+  }
+}
+
+function getPipelineStageShapeClass(index = 0, totalStages = 1) {
+  if (totalStages <= 1) return 'xl:[clip-path:polygon(0_0,100%_0,100%_100%,0_100%)]'
+  if (index === 0) return 'xl:[clip-path:polygon(0_0,calc(100%-18px)_0,100%_50%,calc(100%-18px)_100%,0_100%)]'
+  if (index === totalStages - 1) return 'xl:[clip-path:polygon(0_0,100%_0,100%_100%,0_100%,18px_50%)]'
+  return 'xl:[clip-path:polygon(0_0,calc(100%-18px)_0,100%_50%,calc(100%-18px)_100%,0_100%,18px_50%)]'
+}
+
+function ManagementPipelineStageCard({ stage = {}, index = 0, totalStages = 1, totalCases = 0 }) {
+  const Icon = PIPELINE_ICONS[stage.key] || Layers3
+  const tone = MANAGEMENT_PIPELINE_STAGE_TONES[stage.key] || 'border-[#dce6f0] bg-[#f8fbff]'
+  const iconTone = MANAGEMENT_PIPELINE_STAGE_ICON_TONES[stage.key] || 'bg-white text-[#2563a8] ring-[#d7e6f5]'
+  const accent = MANAGEMENT_PIPELINE_STAGE_ACCENTS[stage.key] || '#3b82f6'
+  const count = normalizeNumber(stage.count)
+  const share = totalCases ? Math.max(4, Math.min(100, Math.round((count / totalCases) * 100))) : 0
+
+  return (
+    <Link
+      to={stage.href || '/bond/applications'}
+      className={`group relative min-h-[98px] overflow-hidden rounded-[11px] border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] transition hover:z-10 hover:border-[#b9cadc] hover:shadow-[0_12px_22px_rgba(15,23,42,0.06)] xl:flex-1 xl:rounded-none xl:pl-6 xl:first:rounded-l-[12px] xl:last:rounded-r-[12px] ${tone} ${getPipelineStageShapeClass(index, totalStages)}`}
+      aria-label={`${stage.label}: ${formatNumber(count)} cases`}
+    >
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-white/70" />
+      <span className="pointer-events-none absolute bottom-0 left-0 h-1 transition-all duration-300" style={{ width: `${share}%`, backgroundColor: accent }} />
+      <div className="relative flex h-full items-start gap-2.5">
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ${iconTone}`}>
+          {createElement(Icon, { size: 16 })}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-bold text-[#17324d]">{stage.label}</p>
+          <p className="mt-1 text-[1.6rem] font-semibold leading-none text-[#101828]">{formatNumber(count)}</p>
+          <p className="mt-1 text-[11px] font-semibold text-[#4c6076]">{stage.loanValueLabel || 'No data yet'}</p>
+          {stage.detail ? <p className="mt-1 truncate text-[11px] font-medium text-[#71869d]">{stage.detail}</p> : null}
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+function getManagementPipelineSummaryIcon(item = {}) {
+  if (item.key === 'lost_withdrawn') return AlertTriangle
+  if (item.key === 'registered_period' || item.key === 'registered_this_month') return FileCheck2
+  if (item.key === 'avg_time_to_register' || item.key === 'median_time_to_register') return Clock3
+  return Gauge
+}
+
+function ManagementPipelineSection({ stages = [], summary = [] }) {
+  const totals = getPipelineHeroTotals(stages)
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} overflow-hidden`}>
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-[1rem] font-semibold tracking-normal text-[#142132]">Active Bond Pipeline</h2>
+          <p className="mt-1 text-xs font-medium text-[#60758d]">{formatNumber(totals.totalCases)} cases across {totals.totalValueLabel}</p>
+        </div>
+        <Link to="/bond/pipeline" className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] border border-[#dbe5ef] bg-white px-3 text-xs font-bold text-[#204b84] shadow-[0_4px_10px_rgba(15,23,42,0.03)] transition hover:border-[#b9cadc] sm:w-auto">
+          View pipeline
+          <ArrowRight size={13} />
+        </Link>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:gap-0">
+        {stages.map((stage, index) => (
+          <ManagementPipelineStageCard
+            key={stage.key}
+            stage={stage}
+            index={index}
+            totalStages={stages.length}
+            totalCases={totals.totalCases}
+          />
+        ))}
+      </div>
+
+      <div className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {summary.map((item) => {
+          const Icon = getManagementPipelineSummaryIcon(item)
+          return (
+            <Link key={item.key} to={item.href || '/bond/reports'} className={`min-w-0 px-3 py-2.5 ${MANAGEMENT_CARD_BASE} ${MANAGEMENT_CARD_HOVER}`}>
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-[#f0f7ff] text-[#2563a8] ring-1 ring-[#dcecff]">
+                  <Icon size={14} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-bold text-[#17324d]">{item.label}</p>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="shrink-0 text-[1rem] font-semibold text-[#101828]">{item.value}</span>
+                    <span className="truncate text-xs font-medium text-[#60758d]">{item.detail}</span>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function getManagementSlaIcon(key = '') {
+  return {
+    first_contact: Clock3,
+    ready_to_submit: FileText,
+    first_bank_decision: Landmark,
+    within_sla: ShieldAlert,
+  }[key] || Gauge
+}
+
+function getManagementSlaProgress(item = {}) {
+  const value = getNumericFromLabel(item.value)
+  if (!value) return 0
+  if (item.key === 'within_sla') return Math.max(0, Math.min(100, value))
+  const target = getNumericFromLabel(item.target)
+  if (!target) return 0
+  return Math.max(0, Math.min(100, Math.round((value / target) * 100)))
+}
+
+function getManagementSlaStatusLabel(item = {}) {
+  if (item.onTrack === null || item.onTrack === undefined) return 'Pending'
+  return item.onTrack ? 'On Track' : 'Watch'
+}
+
+function ManagementSlaMetric({ item = {} }) {
+  const Icon = getManagementSlaIcon(item.key)
+  const iconTone = MANAGEMENT_SLA_ICON_TONES[item.key] || 'bg-[#eef6ff] text-[#2563a8] ring-[#dcecff]'
+  const accent = MANAGEMENT_SLA_ACCENTS[item.key] || '#3b82f6'
+  const progress = getManagementSlaProgress(item)
+  const statusLabel = getManagementSlaStatusLabel(item)
+  const badgeTone = item.onTrack === null || item.onTrack === undefined ? 'neutral' : item.onTrack ? 'positive' : 'critical'
+  const barColor = item.onTrack === false ? '#ef4444' : accent
+
+  return (
+    <div className="group relative min-w-0 overflow-hidden rounded-[11px] border border-[#e5edf4] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition hover:border-[#cbd9e8]">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: barColor }} />
+      <div className="flex flex-wrap items-start justify-between gap-2.5">
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ${iconTone}`}>
+          {createElement(Icon, { size: 16 })}
+        </span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${getBadgeTone(badgeTone)}`}>
+          {statusLabel}
+        </span>
+      </div>
+      <div className="mt-2.5 min-w-0">
+        <p className="truncate text-[11px] font-bold text-[#17324d]">{item.label}</p>
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-x-2 gap-y-1">
+          <p className="truncate text-[1.45rem] font-semibold leading-none text-[#101828]">{item.value}</p>
+          <p className="min-w-0 max-w-full truncate text-left text-[11px] font-semibold text-[#60758d] sm:max-w-[58%] sm:text-right">{item.target}</p>
+        </div>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef6]" aria-hidden="true">
+        <span className="block h-full rounded-full transition-all duration-300" style={{ width: `${progress}%`, backgroundColor: barColor }} />
+      </div>
+    </div>
+  )
+}
+
+function ManagementSlaSection({ items = [] }) {
+  const measuredItems = items.filter((item) => item.onTrack !== null && item.onTrack !== undefined)
+  const onTrackCount = measuredItems.filter((item) => item.onTrack).length
+  const overallOnTrack = measuredItems.length ? onTrackCount === measuredItems.length : null
+
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} overflow-hidden`}>
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-[1rem] font-semibold tracking-normal text-[#142132]">Application Speed & SLA</h2>
+          <p className="mt-1 text-xs font-medium text-[#60758d]">{measuredItems.length ? `${onTrackCount} of ${measuredItems.length} targets on track` : 'SLA measurement pending'}</p>
+        </div>
+        <span className={`inline-flex h-8 items-center rounded-[8px] px-3 text-xs font-bold ring-1 ${
+          overallOnTrack === null ? getBadgeTone('neutral') : overallOnTrack ? getBadgeTone('positive') : getBadgeTone('critical')
+        }`}>
+          {overallOnTrack === null ? 'Pending' : overallOnTrack ? 'Healthy' : 'Watch'}
+        </span>
+      </div>
+      <div className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => <ManagementSlaMetric key={item.key} item={item} />)}
+      </div>
+    </section>
+  )
+}
+
+function getManagementCommissionIcon(key = '') {
+  return {
+    forecast: LineChart,
+    committed: FileCheck2,
+    ready_to_invoice: FileText,
+    invoiced: Download,
+    paid: Banknote,
+  }[key] || Banknote
+}
+
+function getManagementCommissionAmount(item = {}) {
+  return getMoneyValueFromLabel(item.value)
+}
+
+function ManagementCommissionCard({ item = {}, maxAmount = 0 }) {
+  const tone = MANAGEMENT_COMMISSION_TONES[item.key] || MANAGEMENT_COMMISSION_TONES.forecast
+  const Icon = getManagementCommissionIcon(item.key)
+  const amount = getManagementCommissionAmount(item)
+  const share = maxAmount ? Math.max(4, Math.min(100, Math.round((amount / maxAmount) * 100))) : 0
+
+  return (
+    <Link
+      to={item.href || '/bond/revenue'}
+      className={`group relative min-w-0 overflow-hidden rounded-[11px] border px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] transition hover:-translate-y-px hover:border-[#b9cadc] hover:shadow-[0_12px_22px_rgba(15,23,42,0.055)] ${tone.card}`}
+    >
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: tone.accent }} />
+      <div className="flex items-start justify-between gap-2.5">
+        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ${tone.icon}`}>
+          {createElement(Icon, { size: 16 })}
+        </span>
+        <ArrowRight size={13} className="mt-1 shrink-0 text-[#8aa0b7] opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+      </div>
+      <div className="mt-2.5 min-w-0">
+        <p className="truncate text-[11px] font-bold text-[#17324d]">{item.label}</p>
+        <p className="mt-1 truncate text-[clamp(1.18rem,1.45vw,1.48rem)] font-semibold leading-none text-[#101828]">{item.value}</p>
+        <p className="mt-1 truncate text-[11px] font-medium text-[#60758d]">{item.detail}</p>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/70 ring-1 ring-white/80" aria-hidden="true">
+        <span className="block h-full rounded-full transition-all duration-300" style={{ width: `${share}%`, backgroundColor: tone.accent }} />
+      </div>
+    </Link>
+  )
+}
+
+function ManagementInvoiceQueue({ items = [] }) {
+  if (!items.length) return null
+
+  return (
+    <div className="mt-2.5 rounded-[11px] border border-[#e5edf4] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#71869d]">Ready to invoice</p>
+        <span className="rounded-full bg-[#fffaeb] px-2 py-0.5 text-[10px] font-semibold text-[#b54708] ring-1 ring-[#fde68a]">
+          {items.length} queued
+        </span>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {items.map((item) => (
+          <Link key={item.key} to={item.href || '/bond/revenue'} className="group min-w-0 rounded-[10px] bg-white px-3 py-2 ring-1 ring-[#edf2f7] transition hover:-translate-y-px hover:ring-[#cbd9e8]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#17324d]">{item.partner}</p>
+                <p className="mt-0.5 truncate text-xs text-[#60758d]">{item.buyer} · {item.bank}</p>
+              </div>
+              <p className="w-fit shrink-0 rounded-full bg-[#edfdf6] px-2 py-0.5 text-[11px] font-bold text-[#16875f] ring-1 ring-[#d2f4e3]">{item.amount}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ManagementCommissionSection({ commission = {} }) {
+  const cards = Array.isArray(commission.cards) ? commission.cards : []
+  const invoiceQueue = Array.isArray(commission.invoiceQueue) ? commission.invoiceQueue : []
+  const maxAmount = Math.max(...cards.map(getManagementCommissionAmount), 1)
+  const trackedAmount = cards.reduce((sum, item) => sum + getManagementCommissionAmount(item), 0)
+  const readyToInvoice = cards.find((item) => item.key === 'ready_to_invoice')
+  const readyToInvoiceAmount = getManagementCommissionAmount(readyToInvoice)
+
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} overflow-hidden`}>
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-[1rem] font-semibold tracking-normal text-[#142132]">Commission & Reconciliation</h2>
+          <p className="mt-1 text-xs font-medium text-[#60758d]">{trackedAmount ? `${formatCompactMoney(trackedAmount, 'R0')} tracked across revenue stages` : 'Revenue stages are building'}</p>
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          {readyToInvoiceAmount ? (
+            <span className="inline-flex h-8 min-w-0 items-center rounded-[8px] bg-[#fffaeb] px-3 text-xs font-bold text-[#b54708] ring-1 ring-[#fde68a]">
+              {readyToInvoice.value} ready
+            </span>
+          ) : null}
+          {commission.unpricedApplications ? (
+            <span className="inline-flex h-8 min-w-0 items-center rounded-[8px] bg-[#fff7ed] px-3 text-xs font-bold text-[#b54708] ring-1 ring-[#fed7aa]">
+              {commission.unpricedApplications} unpriced
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+        {cards.map((item) => <ManagementCommissionCard key={item.key} item={item} maxAmount={maxAmount} />)}
+      </div>
+      <ManagementInvoiceQueue items={invoiceQueue} />
+    </section>
+  )
+}
+
+function ManagementPerformanceTables({ tables = {} }) {
+  const consultantRows = (tables.consultants || []).map((row) => [row.name, row.newCases, row.registered, `${row.approvalRate}%`, row.revenue])
+  const partnerRows = (tables.partners || []).map((row) => [row.name, row.referred, row.registered, `${row.approvalRate}%`, row.revenue])
+  const bankRows = (tables.banks || []).map((row) => [row.name, row.applications, row.approved, `${row.approvalRate}%`, row.avgTat])
+
+  return (
+    <section className="grid gap-2.5 xl:grid-cols-2 2xl:grid-cols-3">
+      <ManagementTable
+        title="Consultant Performance"
+        viewHref="/bond/consultant-performance"
+        icon={UsersRound}
+        tone={MANAGEMENT_TABLE_TONES.consultants}
+        columns={['Consultant', 'New Cases', 'Registered', 'Approval', 'Revenue']}
+        rows={consultantRows}
+        summaryLabel="Team leaders"
+      />
+      <ManagementTable
+        title="Top Referral Partners"
+        viewHref="/bond/partners"
+        icon={Building2}
+        tone={MANAGEMENT_TABLE_TONES.partners}
+        columns={['Partner', 'Referred', 'Registered', 'Approval', 'Revenue']}
+        rows={partnerRows}
+        summaryLabel="Referral quality"
+      />
+      <ManagementTable
+        title="Bank Performance"
+        viewHref="/bond/banks"
+        icon={Landmark}
+        tone={MANAGEMENT_TABLE_TONES.banks}
+        columns={['Bank', 'Applications', 'Approved', 'Approval', 'Avg. TAT']}
+        rows={bankRows}
+        summaryLabel="Bank efficiency"
+      />
+    </section>
+  )
+}
+
+function ManagementTable({ title = '', viewHref = '', icon: Icon = LineChart, tone = MANAGEMENT_TABLE_TONES.consultants, columns = [], rows = [], summaryLabel = '' }) {
+  const topRow = rows[0] || []
+
+  return (
+    <div className={`relative min-w-0 overflow-hidden p-3 ${MANAGEMENT_CARD_BASE} ${tone.panel}`}>
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: tone.accent }} />
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ${tone.icon}`}>
+            {createElement(Icon, { size: 16 })}
+          </span>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-[#142132]">{title}</h2>
+            <p className="mt-0.5 truncate text-[11px] font-medium text-[#60758d]">
+              {rows.length ? `${rows.length} ranked · ${summaryLabel}` : 'No ranked rows yet'}
+            </p>
+          </div>
+        </div>
+        <Link to={viewHref} className="inline-flex h-7 w-full shrink-0 items-center justify-center gap-1 rounded-[8px] border border-[#dbe5ef] bg-white px-2.5 text-xs font-bold text-[#204b84] transition hover:border-[#b9cadc] sm:w-auto">
+          View all
+          <ArrowRight size={12} />
+        </Link>
+      </div>
+
+      {topRow.length ? (
+        <div className="mt-2.5 rounded-[10px] border border-[#e5edf4] bg-white/75 px-3 py-2">
+          <p className="truncate text-[11px] font-bold text-[#71869d]">Top performer</p>
+          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+            <p className="min-w-0 truncate text-sm font-semibold text-[#17324d]">{topRow[0]}</p>
+            <p className="shrink-0 text-xs font-bold" style={{ color: tone.accent }}>{topRow[topRow.length - 1]}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-2.5 overflow-x-auto pb-1">
+        <table className="w-full min-w-[390px] border-separate border-spacing-y-1 text-left text-xs sm:min-w-[430px]">
+          <thead className="text-[#71869d]">
+            <tr>
+              {columns.map((column, index) => (
+                <th key={column} className={`pb-1 pr-2 font-bold sm:pr-3 ${index === 0 ? 'pl-2 text-left' : 'text-right'}`}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="text-[#17324d]">
+            {rows.length ? rows.map((row, index) => (
+              <tr key={`${title}-${index}`}>
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={`${title}-${index}-${cellIndex}`}
+                    className={`bg-[#f8fbfd] py-1.5 pr-2 sm:pr-3 ${cellIndex === 0 ? 'rounded-l-[9px] pl-2 text-left font-semibold' : 'text-right font-medium'} ${cellIndex === row.length - 1 ? 'rounded-r-[9px]' : ''}`}
+                  >
+                    {cellIndex === 0 ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-bold ring-1 ring-[#e1e9f2]" style={{ color: tone.accent }}>{index + 1}</span>
+                        <span className="truncate">{cell}</span>
+                      </span>
+                    ) : cell}
+                  </td>
+                ))}
+              </tr>
+            )) : (
+              <tr>
+                <td className="rounded-[10px] bg-[#f8fbfd] px-3 py-4 text-center font-medium text-[#60758d]" colSpan={columns.length}>No data yet</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -664,16 +1456,10 @@ function HqNewApplicationsRail({ applications = [] }) {
 }
 
 const BANK_BREAKDOWN_COLORS = ['#24518a', '#17946b', '#b7791f', '#7c3aed']
-const DEMO_BANK_BREAKDOWN_ROWS = [
-  { bank: 'Nedbank', submitted: 8, approvalRate: 75, averageResponseTime: 5, revenueGenerated: 210000 },
-  { bank: 'FNB', submitted: 6, approvalRate: 58, averageResponseTime: 9, revenueGenerated: 140000 },
-  { bank: 'ABSA', submitted: 5, approvalRate: 64, averageResponseTime: 8, revenueGenerated: 125000 },
-  { bank: 'Standard Bank', submitted: 4, approvalRate: 61, averageResponseTime: 7, revenueGenerated: 98000 },
-]
 
 function buildBankBreakdownRows(bankPerformance = {}, bankDistribution = []) {
   const distributionByBank = new Map((bankDistribution || []).map((row) => [normalizeText(row.bank).toLowerCase(), row]))
-  const sourceRows = (bankPerformance.rows || []).map((row) => {
+  return (bankPerformance.rows || []).map((row) => {
     const distribution = distributionByBank.get(normalizeText(row.bank).toLowerCase()) || {}
     return {
       bank: row.bank || distribution.bank || 'Configured Bank',
@@ -686,14 +1472,7 @@ function buildBankBreakdownRows(bankPerformance = {}, bankDistribution = []) {
       revenue: row.revenueGenerated || row.revenue || row.projectedCommission || distribution.revenue,
       revenueLabel: row.revenueLabel || row.revenueGeneratedLabel || row.projectedCommissionLabel || distribution.revenueLabel,
     }
-  })
-  const rows = [...sourceRows]
-  const existingBanks = new Set(rows.map((row) => normalizeText(row.bank).toLowerCase()))
-  for (const row of DEMO_BANK_BREAKDOWN_ROWS) {
-    if (rows.length >= 4) break
-    if (!existingBanks.has(row.bank.toLowerCase())) rows.push(row)
-  }
-  return rows.slice(0, 4)
+  }).slice(0, 4)
 }
 
 function BankRelationshipBreakdown({ bankPerformance = {}, bankDistribution = [] }) {
@@ -775,9 +1554,6 @@ const SA_PROVINCE_SHAPES = Object.entries(SOUTH_AFRICA_PROVINCE_LABELS).map(([la
   shortLabel: label === 'KwaZulu-Natal' ? 'KZN' : label,
   ...position,
 }))
-
-const DEMO_BUYER_FINANCE_MIX = { bond: 8, cash: 2, hybrid: 3 }
-const DEMO_BUYER_PROFILE_MIX = { individual: 9, company: 2, trust: 1, foreign_buyer: 1 }
 
 function normalizeProvinceKey(value = '') {
   const normalized = normalizeText(value).toLowerCase().replace(/&/g, 'and')
@@ -986,8 +1762,8 @@ function objectEntriesWithValues(items = {}) {
 }
 
 function BuyerStatsVisualRow({ demographics = {}, bottleneckRows = [] }) {
-  const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : DEMO_BUYER_FINANCE_MIX
-  const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : DEMO_BUYER_PROFILE_MIX
+  const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : {}
+  const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : {}
 
   return (
     <section className="grid gap-6 xl:grid-cols-3">

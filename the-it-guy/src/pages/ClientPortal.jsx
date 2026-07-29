@@ -39,9 +39,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
-import { buildFinanceReadinessPayload } from '../core/finance/financeReadinessSelectors'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
-import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
+import {
+  buildBondApplicationState,
+  buildLegacyBondApplicationDraft,
+  buildLegacyBondApplicationPersistencePayload,
+  calculateLegacyBondApplicationCompletion,
+  getBondApplicationApplicantDefault,
+  normalizeBondOfferDecisionState,
+  resolveGuidedBondApplicationParticipantsFlag,
+  resolveBondApplicationStatus,
+  shouldUseGuidedBondApplicationV2,
+  validateLegacyBondApplicationSubmission,
+} from '../modules/bond/application'
+import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
+import GuidedBondApplication from '../modules/bond/application/guided/GuidedBondApplication'
+import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
@@ -60,9 +73,15 @@ import {
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
+  cancelClientPortalBondApplicationSubmission,
+  fetchClientPortalBondApplicationSubmission,
+  inviteClientPortalBondApplicationCoApplicant,
+  prepareClientPortalBondApplicationSubmission,
+  prepareClientPortalJointBondApplicationSubmission,
   resolveClientPortalFinalSignedDocumentAccess,
   fetchClientPortalMatterFinancialAccounts,
   respondToClientPortalAppointment,
+  reconcileClientPortalBondDocumentRequirements,
   saveClientPortalOnboardingDraft,
   submitClientPortalComment,
   uploadClientPortalMatterFinancialRequestDocument,
@@ -109,6 +128,7 @@ import {
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
 } from '../lib/platformFeeConsent'
+import { FEATURE_FLAGS } from '../lib/featureFlags'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -1220,6 +1240,7 @@ function buildOnboardingDocumentMarkup({
 
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'progress', label: 'Progress', icon: BarChart3 },
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'details', label: 'My Details', icon: User },
   { key: 'account', label: 'Account', icon: HandCoins },
@@ -1229,6 +1250,74 @@ const CLIENT_PORTAL_MENU = [
   { key: 'snags', label: 'Snags', icon: Wrench },
   { key: 'team', label: 'Team', icon: Users },
 ]
+
+const BUYER_PORTAL_NAV_GROUPS = [
+  {
+    label: 'Home',
+    items: [
+      { key: 'overview', label: 'Overview', icon: Home },
+    ],
+  },
+  {
+    label: 'Your Purchase',
+    items: [
+      { key: 'progress', label: 'Progress', icon: BarChart3 },
+      { key: 'appointments', label: 'Appointments', icon: CalendarClock },
+      { key: 'bond_application', label: 'Finance', icon: FileSignature },
+    ],
+  },
+  {
+    label: 'Property',
+    items: [
+      { key: 'documents', label: 'Documents', icon: FileText },
+      { key: 'handover', label: 'Handover', icon: KeyRound },
+      { key: 'snags', label: 'Snags', icon: Wrench },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { key: 'account', label: 'Account', icon: HandCoins },
+      { key: 'details', label: 'My Details', icon: User },
+      { key: 'team', label: 'Team', icon: Users },
+    ],
+  },
+]
+
+const PORTAL_DESIGN_TOKENS = {
+  surface: {
+    card: 'rounded-[24px] border border-[#dbe5ef] bg-white',
+    cardInset: 'rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff]',
+    support: 'rounded-[18px] border border-[#dbe5ef] bg-[linear-gradient(135deg,#f7fffb_0%,#ffffff_100%)]',
+    buyerHero: 'rounded-[20px] border border-[#dbe5ef] bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_58%,#315c7d_100%)]',
+  },
+  shadow: {
+    soft: 'shadow-[0_12px_26px_rgba(15,23,42,0.04)]',
+    card: 'shadow-[0_14px_30px_rgba(15,23,42,0.05)]',
+    strong: 'shadow-[0_18px_36px_rgba(15,23,42,0.06)]',
+    hero: 'shadow-[0_18px_38px_rgba(15,23,42,0.13)]',
+  },
+  text: {
+    heading: 'text-[#142132]',
+    headingDark: 'text-[#102032]',
+    body: 'text-[#64748b]',
+    bodyStrong: 'text-[#52647a]',
+    eyebrow: 'text-[#718196]',
+    action: 'text-[#0f65b7]',
+    brand: 'text-[#063f37]',
+  },
+  pill: {
+    count: 'inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]',
+    status: 'inline-flex items-center rounded-full border border-[#d8e7f7] bg-[#eef5ff] px-3.5 py-2 text-sm font-semibold text-[#0f65b7]',
+  },
+  button: {
+    primary: 'inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] bg-[#123f3a] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0b312d]',
+    secondary: 'inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#d7e2ea] bg-white px-3.5 py-2 text-sm font-semibold text-[#274158] transition hover:border-[#b8cbd9] hover:bg-[#f7fafc]',
+    supportPrimary: 'inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] bg-[#063f37] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#052f2a] disabled:opacity-60',
+    supportSecondary: 'inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] border border-[#dbe5ef] bg-white px-3.5 py-2 text-sm font-semibold text-[#274158] transition hover:border-[#b8cbd9] hover:bg-[#f7fafc] disabled:opacity-60',
+    link: 'inline-flex items-center gap-2 text-sm font-semibold text-[#0f65b7] transition hover:text-[#084d8e]',
+  },
+}
 
 const BOND_APPLICATION_TABS = [
   { key: 'application', label: 'Application' },
@@ -1329,15 +1418,6 @@ const BOND_LEGAL_NOTICE_OPTIONS = [
   { value: 'registered_mail', label: 'Registered mail' },
 ]
 
-const BOND_APPLICATION_STATUS_OPTIONS = [
-  'Not Started',
-  'In Progress',
-  'Submitted',
-  'Under Review',
-  'Approved',
-  'Declined',
-]
-
 const BOND_APPLICATION_BANK_MATCHERS = getSystemBanks().map((bank) => bank.shortName)
 
 function extractBondBankName(value) {
@@ -1345,462 +1425,6 @@ function extractBondBankName(value) {
   const uppercaseSource = source.toUpperCase()
   const match = BOND_APPLICATION_BANK_MATCHERS.find((bankName) => uppercaseSource.includes(bankName.toUpperCase()))
   return match || 'Other'
-}
-
-function resolveBondApplicationStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-  const matched = BOND_APPLICATION_STATUS_OPTIONS.find((status) => status.toLowerCase() === normalized)
-  return matched || 'Not Started'
-}
-
-function normalizeBondOfferDecisionState(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'accepted' || normalized === 'declined' ? normalized : ''
-}
-
-function getBondApplicationApplicantDefault(roleKey, source = {}) {
-  const buyerName = String(source?.buyer?.name || '').trim()
-  const [firstName = '', ...surnameParts] = buyerName.split(/\s+/)
-  const surnameFromBuyer = surnameParts.join(' ')
-  const formData = source?.onboardingFormData?.formData || {}
-
-  if (roleKey === 'co_applicant') {
-    return {
-      key: 'co_applicant',
-      label: 'Co-applicant',
-      title: '',
-      gender: '',
-      first_name: formData.spouse_full_name || '',
-      last_name: '',
-      date_of_birth: '',
-      id_type: '',
-      id_number: formData.spouse_identity_number || '',
-      passport_number: '',
-      passport_country_of_issue: '',
-      refugee_id_card_number: '',
-      sa_citizen: '',
-      nationality: '',
-      city_of_birth: '',
-      country_of_birth: '',
-      sa_permanent_resident: '',
-      temporary_sa_resident: '',
-      permit_type: '',
-      permit_number: '',
-      permit_expiry_date: '',
-      marital_status: formData.marital_status || '',
-      married_anc_register_both_names: '',
-      country_of_marriage: '',
-      number_of_dependants: '',
-      ethnic_group: '',
-      sa_tax_number: '',
-      tax_number_unavailable_reason: '',
-      tax_returns_outside_sa: '',
-      foreign_tax_country: '',
-      foreign_tax_number: '',
-      current_residential_status: '',
-      first_time_home_buyer: '',
-      main_residence: '',
-      highest_level_of_education: '',
-      smoking_tobacco_ecig_declaration: '',
-      email: formData.spouse_email || '',
-      phone: formData.spouse_phone || '',
-    }
-  }
-
-  return {
-    key: 'primary',
-    label: 'Primary applicant',
-    title: '',
-    gender: '',
-    first_name: formData.first_name || firstName,
-    last_name: formData.last_name || surnameFromBuyer,
-    date_of_birth: formData.date_of_birth || '',
-    id_type: formData.identity_number ? 'sa_id' : formData.passport_number ? 'passport' : '',
-    id_number: formData.identity_number || '',
-    passport_number: formData.passport_number || '',
-    passport_country_of_issue: '',
-    refugee_id_card_number: '',
-    sa_citizen: formData.nationality ? 'yes' : '',
-    nationality: formData.nationality || '',
-    city_of_birth: '',
-    country_of_birth: '',
-    sa_permanent_resident: '',
-    temporary_sa_resident: '',
-    permit_type: '',
-    permit_number: '',
-    permit_expiry_date: '',
-    married_anc_register_both_names: '',
-    country_of_marriage: '',
-    number_of_dependants: formData.number_of_dependants || '',
-    ethnic_group: '',
-    sa_tax_number: formData.tax_number || '',
-    tax_number_unavailable_reason: '',
-    tax_returns_outside_sa: '',
-    foreign_tax_country: '',
-    foreign_tax_number: '',
-    current_residential_status: formData.residency_status || '',
-    first_time_home_buyer: formData.first_time_buyer || '',
-    main_residence: formData.primary_residence || '',
-    highest_level_of_education: '',
-    smoking_tobacco_ecig_declaration: '',
-    email: formData.email || source?.buyer?.email || '',
-    phone: formData.phone || source?.buyer?.phone || '',
-    marital_status: formData.marital_status || '',
-  }
-}
-
-function buildBondApplicationDraft(portal) {
-  const formData = portal?.onboardingFormData?.formData || {}
-  const existing = formData.bond_application && typeof formData.bond_application === 'object' ? formData.bond_application : {}
-  const primaryDefault = getBondApplicationApplicantDefault('primary', portal)
-  const coApplicantDefault = getBondApplicationApplicantDefault('co_applicant', portal)
-  const purchasePrice =
-    Number(formData.purchase_price || portal?.transaction?.purchase_price || portal?.transaction?.sales_price || portal?.unit?.price || 0) || 0
-  const financeType = normalizeFinanceType(
-    formData.purchase_finance_type || portal?.transaction?.finance_type || 'bond',
-    { allowUnknown: true },
-  )
-
-  const existingApplicants = Array.isArray(existing.applicants) ? existing.applicants : []
-  const primaryApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'primary') || {}
-  const coApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'co_applicant') || {}
-
-  const defaultSummary = {
-    applicant_name: `${formData.first_name || ''} ${formData.last_name || ''}`.trim() || portal?.buyer?.name || '',
-    has_co_applicant: formData.spouse_full_name || formData.spouse_email || formData.spouse_identity_number ? 'yes' : '',
-    has_surety: '',
-    property_reference: `${portal?.unit?.development?.name || 'Development'} ${portal?.unit?.unit_number ? `• Unit ${portal.unit.unit_number}` : ''}`.trim(),
-    development_name: portal?.unit?.development?.name || '',
-    unit_reference: portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : '',
-    purchase_price: purchasePrice > 0 ? String(purchasePrice) : '',
-    deposit_contribution:
-      formData.deposit_amount ||
-      formData.cash_amount ||
-      (portal?.transaction?.deposit_amount !== null && portal?.transaction?.deposit_amount !== undefined
-        ? String(portal.transaction.deposit_amount)
-        : ''),
-    finance_type: financeType,
-    marital_status: formData.marital_status || '',
-    main_residence: formData.primary_residence || '',
-    first_time_home_buyer: formData.first_time_buyer || '',
-  }
-
-  return {
-    status: resolveBondApplicationStatus(existing.status),
-    submitted_at: existing.submitted_at || '',
-    selected_banks: Array.isArray(existing.selected_banks)
-      ? existing.selected_banks.filter(Boolean)
-      : Array.isArray(existing.selectedBanks)
-        ? existing.selectedBanks.filter(Boolean)
-        : [],
-    applicants: [
-      { ...primaryDefault, ...primaryApplicant, key: 'primary', label: 'Primary applicant' },
-      { ...coApplicantDefault, ...coApplicant, key: 'co_applicant', label: 'Co-applicant' },
-    ],
-    summary: {
-      ...defaultSummary,
-      ...(existing.summary || {}),
-    },
-    contact_address: {
-      home_number: existing?.contact_address?.home_number || '',
-      cellphone_number: existing?.contact_address?.cellphone_number || formData.phone || portal?.buyer?.phone || '',
-      work_number: existing?.contact_address?.work_number || '',
-      email_address: existing?.contact_address?.email_address || formData.email || portal?.buyer?.email || '',
-      fax_number: existing?.contact_address?.fax_number || '',
-      home_language: existing?.contact_address?.home_language || '',
-      correspondence_language: existing?.contact_address?.correspondence_language || '',
-      residential_address_street: existing?.contact_address?.residential_address_street || formData.street_address || '',
-      residential_address_suburb: existing?.contact_address?.residential_address_suburb || formData.suburb || '',
-      residential_address_city: existing?.contact_address?.residential_address_city || formData.city || '',
-      residential_address_country: existing?.contact_address?.residential_address_country || 'South Africa',
-      residential_address_postal_code: existing?.contact_address?.residential_address_postal_code || formData.postal_code || '',
-      residential_years: existing?.contact_address?.residential_years || '',
-      residential_months: existing?.contact_address?.residential_months || '',
-      postal_same_as_residential: existing?.contact_address?.postal_same_as_residential || 'yes',
-      postal_address_street: existing?.contact_address?.postal_address_street || '',
-      postal_address_suburb: existing?.contact_address?.postal_address_suburb || '',
-      postal_address_city: existing?.contact_address?.postal_address_city || '',
-      postal_address_country: existing?.contact_address?.postal_address_country || 'South Africa',
-      postal_address_postal_code: existing?.contact_address?.postal_address_postal_code || '',
-      legal_notice_delivery_method: existing?.contact_address?.legal_notice_delivery_method || '',
-      future_legal_correspondence_same_as_postal: existing?.contact_address?.future_legal_correspondence_same_as_postal || 'yes',
-      future_legal_address_street: existing?.contact_address?.future_legal_address_street || '',
-      future_legal_address_suburb: existing?.contact_address?.future_legal_address_suburb || '',
-      future_legal_address_city: existing?.contact_address?.future_legal_address_city || '',
-      future_legal_address_country: existing?.contact_address?.future_legal_address_country || 'South Africa',
-      future_legal_address_postal_code: existing?.contact_address?.future_legal_address_postal_code || '',
-      is_public_official: existing?.contact_address?.is_public_official || '',
-      associated_with_public_official: existing?.contact_address?.associated_with_public_official || '',
-      public_official_relationship_nature: existing?.contact_address?.public_official_relationship_nature || '',
-      public_official_name: existing?.contact_address?.public_official_name || '',
-    },
-    employment: {
-      primary: {
-        occupation_status: existing?.employment?.primary?.occupation_status || existing?.employment?.employment_status || '',
-        occupational_level: existing?.employment?.primary?.occupational_level || '',
-        nature_of_occupation: existing?.employment?.primary?.nature_of_occupation || existing?.employment?.occupation || '',
-        employer_name: existing?.employment?.primary?.employer_name || existing?.employment?.employer_name || formData.employer_name || '',
-        company_registration_number: existing?.employment?.primary?.company_registration_number || '',
-        employee_number: existing?.employment?.primary?.employee_number || '',
-        employment_years: existing?.employment?.primary?.employment_years || '',
-        employment_months: existing?.employment?.primary?.employment_months || '',
-        works_in_south_africa: existing?.employment?.primary?.works_in_south_africa || '',
-        employer_address_street: existing?.employment?.primary?.employer_address_street || '',
-        employer_address_suburb: existing?.employment?.primary?.employer_address_suburb || '',
-        employer_address_city: existing?.employment?.primary?.employer_address_city || '',
-        employer_address_country: existing?.employment?.primary?.employer_address_country || 'South Africa',
-        employer_address_postal_code: existing?.employment?.primary?.employer_address_postal_code || '',
-        purchase_coincides_job_change: existing?.employment?.primary?.purchase_coincides_job_change || '',
-        previously_employed: existing?.employment?.primary?.previously_employed || '',
-        own_business_income_percent: existing?.employment?.primary?.own_business_income_percent || '',
-        shareholder_in_employer_business: existing?.employment?.primary?.shareholder_in_employer_business || '',
-        shareholding_percent: existing?.employment?.primary?.shareholding_percent || '',
-        previous_employer_1_name: existing?.employment?.primary?.previous_employer_1_name || '',
-        previous_employer_1_duration: existing?.employment?.primary?.previous_employer_1_duration || '',
-        previous_employer_2_name: existing?.employment?.primary?.previous_employer_2_name || '',
-        previous_employer_2_duration: existing?.employment?.primary?.previous_employer_2_duration || '',
-      },
-      co_applicant: {
-        occupation_status: existing?.employment?.co_applicant?.occupation_status || '',
-        occupational_level: existing?.employment?.co_applicant?.occupational_level || '',
-        nature_of_occupation: existing?.employment?.co_applicant?.nature_of_occupation || '',
-        employer_name: existing?.employment?.co_applicant?.employer_name || '',
-        company_registration_number: existing?.employment?.co_applicant?.company_registration_number || '',
-        employee_number: existing?.employment?.co_applicant?.employee_number || '',
-        employment_years: existing?.employment?.co_applicant?.employment_years || '',
-        employment_months: existing?.employment?.co_applicant?.employment_months || '',
-        works_in_south_africa: existing?.employment?.co_applicant?.works_in_south_africa || '',
-        employer_address_street: existing?.employment?.co_applicant?.employer_address_street || '',
-        employer_address_suburb: existing?.employment?.co_applicant?.employer_address_suburb || '',
-        employer_address_city: existing?.employment?.co_applicant?.employer_address_city || '',
-        employer_address_country: existing?.employment?.co_applicant?.employer_address_country || 'South Africa',
-        employer_address_postal_code: existing?.employment?.co_applicant?.employer_address_postal_code || '',
-        purchase_coincides_job_change: existing?.employment?.co_applicant?.purchase_coincides_job_change || '',
-        previously_employed: existing?.employment?.co_applicant?.previously_employed || '',
-        own_business_income_percent: existing?.employment?.co_applicant?.own_business_income_percent || '',
-        shareholder_in_employer_business: existing?.employment?.co_applicant?.shareholder_in_employer_business || '',
-        shareholding_percent: existing?.employment?.co_applicant?.shareholding_percent || '',
-        previous_employer_1_name: existing?.employment?.co_applicant?.previous_employer_1_name || '',
-        previous_employer_1_duration: existing?.employment?.co_applicant?.previous_employer_1_duration || '',
-        previous_employer_2_name: existing?.employment?.co_applicant?.previous_employer_2_name || '',
-        previous_employer_2_duration: existing?.employment?.co_applicant?.previous_employer_2_duration || '',
-      },
-    },
-    credit_history: {
-      currently_under_administration: String(existing?.credit_history?.currently_under_administration || ''),
-      ever_under_administration: String(existing?.credit_history?.ever_under_administration || ''),
-      judgments_taken: String(existing?.credit_history?.judgments_taken || existing?.credit_history?.judgments || ''),
-      currently_under_debt_review: String(existing?.credit_history?.currently_under_debt_review || existing?.credit_history?.under_debt_review || ''),
-      debt_counsellor_name: existing?.credit_history?.debt_counsellor_name || '',
-      debt_counsellor_phone: existing?.credit_history?.debt_counsellor_phone || '',
-      under_debt_rearrangement: String(existing?.credit_history?.under_debt_rearrangement || ''),
-      ever_declared_insolvent: String(existing?.credit_history?.ever_declared_insolvent || existing?.credit_history?.insolvent || ''),
-      insolvency_date: existing?.credit_history?.insolvency_date || '',
-      rehabilitation_date: existing?.credit_history?.rehabilitation_date || '',
-      adverse_credit_listings: String(existing?.credit_history?.adverse_credit_listings || ''),
-      adverse_credit_listing_details: existing?.credit_history?.adverse_credit_listing_details || '',
-      credit_bureau_dispute: String(existing?.credit_history?.credit_bureau_dispute || existing?.credit_history?.disputes || ''),
-      bound_by_surety_agreements: String(existing?.credit_history?.bound_by_surety_agreements || ''),
-      surety_amount: existing?.credit_history?.surety_amount || '',
-      currently_paying_surety_account: String(existing?.credit_history?.currently_paying_surety_account || ''),
-      surety_monthly_instalment: existing?.credit_history?.surety_monthly_instalment || '',
-      surety_details: existing?.credit_history?.surety_details || '',
-      settling_surety_account: String(existing?.credit_history?.settling_surety_account || ''),
-      surety_new_instalment_if_reduced: existing?.credit_history?.surety_new_instalment_if_reduced || '',
-      surety_in_favour_of: existing?.credit_history?.surety_in_favour_of || '',
-    },
-    loan_details: {
-      erf_or_section_number: existing?.loan_details?.erf_or_section_number || portal?.unit?.unit_number || '',
-      street_or_complex: existing?.loan_details?.street_or_complex || portal?.transaction?.property_address_line_1 || formData.street_address || '',
-      suburb: existing?.loan_details?.suburb || portal?.transaction?.suburb || formData.suburb || '',
-      amount_to_be_registered:
-        existing?.loan_details?.amount_to_be_registered ||
-        formData.bond_amount ||
-        (portal?.transaction?.bond_amount !== null && portal?.transaction?.bond_amount !== undefined
-          ? String(portal.transaction.bond_amount)
-          : ''),
-      additional_amount_for_solar_energy: existing?.loan_details?.additional_amount_for_solar_energy || '',
-      solar_energy_loan_amount: existing?.loan_details?.solar_energy_loan_amount || '',
-      solar_loan_term: existing?.loan_details?.solar_loan_term || '',
-      solar_panels_included: existing?.loan_details?.solar_panels_included || '',
-      debit_order_bank_name: existing?.loan_details?.debit_order_bank_name || '',
-      debit_order_account_number: existing?.loan_details?.debit_order_account_number || '',
-      preferred_debit_order_date: existing?.loan_details?.preferred_debit_order_date || '',
-    },
-    income_deductions_expenses: {
-      primary: {
-        gross_salary: existing?.income_deductions_expenses?.primary?.gross_salary || existing?.income?.salary || formData.gross_monthly_income || '',
-        average_commission: existing?.income_deductions_expenses?.primary?.average_commission || existing?.income?.commission || '',
-        investment_income: existing?.income_deductions_expenses?.primary?.investment_income || '',
-        rental_income: existing?.income_deductions_expenses?.primary?.rental_income || existing?.income?.rental_income || '',
-        car_allowance: existing?.income_deductions_expenses?.primary?.car_allowance || '',
-        travel_allowance: existing?.income_deductions_expenses?.primary?.travel_allowance || '',
-        entertainment_allowance: existing?.income_deductions_expenses?.primary?.entertainment_allowance || '',
-        income_from_sureties: existing?.income_deductions_expenses?.primary?.income_from_sureties || '',
-        housing_subsidy: existing?.income_deductions_expenses?.primary?.housing_subsidy || '',
-        maintenance_or_alimony_income: existing?.income_deductions_expenses?.primary?.maintenance_or_alimony_income || '',
-        average_overtime: existing?.income_deductions_expenses?.primary?.average_overtime || '',
-        other_income_description: existing?.income_deductions_expenses?.primary?.other_income_description || '',
-        other_income_value: existing?.income_deductions_expenses?.primary?.other_income_value || existing?.income?.other_income || '',
-        tax_paye: existing?.income_deductions_expenses?.primary?.tax_paye || '',
-        pension: existing?.income_deductions_expenses?.primary?.pension || '',
-        uif: existing?.income_deductions_expenses?.primary?.uif || '',
-        medical_aid: existing?.income_deductions_expenses?.primary?.medical_aid || '',
-        other_deductions_description: existing?.income_deductions_expenses?.primary?.other_deductions_description || '',
-        other_deductions_value: existing?.income_deductions_expenses?.primary?.other_deductions_value || '',
-        rental_expense: existing?.income_deductions_expenses?.primary?.rental_expense || existing?.expenses?.housing || '',
-        maintenance_or_alimony_expense: existing?.income_deductions_expenses?.primary?.maintenance_or_alimony_expense || '',
-        rates_taxes_levies: existing?.income_deductions_expenses?.primary?.rates_taxes_levies || '',
-        water_electricity: existing?.income_deductions_expenses?.primary?.water_electricity || existing?.expenses?.utilities || '',
-        assurance_insurance_funeral_ra: existing?.income_deductions_expenses?.primary?.assurance_insurance_funeral_ra || existing?.expenses?.insurance || '',
-        groceries: existing?.income_deductions_expenses?.primary?.groceries || existing?.expenses?.groceries || '',
-        transport: existing?.income_deductions_expenses?.primary?.transport || existing?.expenses?.transport || '',
-        security: existing?.income_deductions_expenses?.primary?.security || '',
-        education: existing?.income_deductions_expenses?.primary?.education || '',
-        medical_excluding_payroll: existing?.income_deductions_expenses?.primary?.medical_excluding_payroll || '',
-        cellphone_internet: existing?.income_deductions_expenses?.primary?.cellphone_internet || '',
-        dstv_tv: existing?.income_deductions_expenses?.primary?.dstv_tv || '',
-        other_expenses_description: existing?.income_deductions_expenses?.primary?.other_expenses_description || '',
-        other_expenses_value: existing?.income_deductions_expenses?.primary?.other_expenses_value || existing?.expenses?.other_expenses || '',
-      },
-      co_applicant: {
-        gross_salary: existing?.income_deductions_expenses?.co_applicant?.gross_salary || '',
-        average_commission: existing?.income_deductions_expenses?.co_applicant?.average_commission || '',
-        investment_income: existing?.income_deductions_expenses?.co_applicant?.investment_income || '',
-        rental_income: existing?.income_deductions_expenses?.co_applicant?.rental_income || '',
-        car_allowance: existing?.income_deductions_expenses?.co_applicant?.car_allowance || '',
-        travel_allowance: existing?.income_deductions_expenses?.co_applicant?.travel_allowance || '',
-        entertainment_allowance: existing?.income_deductions_expenses?.co_applicant?.entertainment_allowance || '',
-        income_from_sureties: existing?.income_deductions_expenses?.co_applicant?.income_from_sureties || '',
-        housing_subsidy: existing?.income_deductions_expenses?.co_applicant?.housing_subsidy || '',
-        maintenance_or_alimony_income: existing?.income_deductions_expenses?.co_applicant?.maintenance_or_alimony_income || '',
-        average_overtime: existing?.income_deductions_expenses?.co_applicant?.average_overtime || '',
-        other_income_description: existing?.income_deductions_expenses?.co_applicant?.other_income_description || '',
-        other_income_value: existing?.income_deductions_expenses?.co_applicant?.other_income_value || '',
-        tax_paye: existing?.income_deductions_expenses?.co_applicant?.tax_paye || '',
-        pension: existing?.income_deductions_expenses?.co_applicant?.pension || '',
-        uif: existing?.income_deductions_expenses?.co_applicant?.uif || '',
-        medical_aid: existing?.income_deductions_expenses?.co_applicant?.medical_aid || '',
-        other_deductions_description: existing?.income_deductions_expenses?.co_applicant?.other_deductions_description || '',
-        other_deductions_value: existing?.income_deductions_expenses?.co_applicant?.other_deductions_value || '',
-        rental_expense: existing?.income_deductions_expenses?.co_applicant?.rental_expense || '',
-        maintenance_or_alimony_expense: existing?.income_deductions_expenses?.co_applicant?.maintenance_or_alimony_expense || '',
-        rates_taxes_levies: existing?.income_deductions_expenses?.co_applicant?.rates_taxes_levies || '',
-        water_electricity: existing?.income_deductions_expenses?.co_applicant?.water_electricity || '',
-        assurance_insurance_funeral_ra: existing?.income_deductions_expenses?.co_applicant?.assurance_insurance_funeral_ra || '',
-        groceries: existing?.income_deductions_expenses?.co_applicant?.groceries || '',
-        transport: existing?.income_deductions_expenses?.co_applicant?.transport || '',
-        security: existing?.income_deductions_expenses?.co_applicant?.security || '',
-        education: existing?.income_deductions_expenses?.co_applicant?.education || '',
-        medical_excluding_payroll: existing?.income_deductions_expenses?.co_applicant?.medical_excluding_payroll || '',
-        cellphone_internet: existing?.income_deductions_expenses?.co_applicant?.cellphone_internet || '',
-        dstv_tv: existing?.income_deductions_expenses?.co_applicant?.dstv_tv || '',
-        other_expenses_description: existing?.income_deductions_expenses?.co_applicant?.other_expenses_description || '',
-        other_expenses_value: existing?.income_deductions_expenses?.co_applicant?.other_expenses_value || '',
-      },
-    },
-    banking_liabilities: {
-      primary_bank_name: existing?.banking_liabilities?.primary_bank_name || '',
-      primary_account_type: existing?.banking_liabilities?.primary_account_type || '',
-      primary_account_holder_name: existing?.banking_liabilities?.primary_account_holder_name || '',
-      legal_entity_account_name_match: existing?.banking_liabilities?.legal_entity_account_name_match || '',
-      business_bank_account: existing?.banking_liabilities?.business_bank_account || '',
-      primary_account_number: existing?.banking_liabilities?.primary_account_number || '',
-      primary_balance_debit_credit: existing?.banking_liabilities?.primary_balance_debit_credit || '',
-      primary_bank_first_consideration_consent: existing?.banking_liabilities?.primary_bank_first_consideration_consent || '',
-      home_loan_1_bank: existing?.banking_liabilities?.home_loan_1_bank || '',
-      home_loan_1_account_holder_name: existing?.banking_liabilities?.home_loan_1_account_holder_name || '',
-      home_loan_1_account_number: existing?.banking_liabilities?.home_loan_1_account_number || '',
-      home_loan_1_outstanding_balance: existing?.banking_liabilities?.home_loan_1_outstanding_balance || '',
-      home_loan_1_monthly_instalment: existing?.banking_liabilities?.home_loan_1_monthly_instalment || '',
-      home_loan_1_selling_property: existing?.banking_liabilities?.home_loan_1_selling_property || '',
-      home_loan_1_new_instalment_if_reduced: existing?.banking_liabilities?.home_loan_1_new_instalment_if_reduced || '',
-      other_finance_1_bank: existing?.banking_liabilities?.other_finance_1_bank || '',
-      other_finance_1_account_type: existing?.banking_liabilities?.other_finance_1_account_type || '',
-      other_finance_1_current_balance: existing?.banking_liabilities?.other_finance_1_current_balance || '',
-      other_finance_1_monthly_payment: existing?.banking_liabilities?.other_finance_1_monthly_payment || '',
-      other_finance_1_settled: existing?.banking_liabilities?.other_finance_1_settled || '',
-      other_finance_1_business_account: existing?.banking_liabilities?.other_finance_1_business_account || '',
-      other_finance_1_legal_entity_account: existing?.banking_liabilities?.other_finance_1_legal_entity_account || '',
-      retail_account_name: existing?.banking_liabilities?.retail_account_name || '',
-      retail_current_balance: existing?.banking_liabilities?.retail_current_balance || '',
-      retail_monthly_payment: existing?.banking_liabilities?.retail_monthly_payment || '',
-      retail_settled: existing?.banking_liabilities?.retail_settled || '',
-    },
-    assets_liabilities: {
-      fixed_property: existing?.assets_liabilities?.fixed_property || existing?.assets?.property_owned || '',
-      vehicles: existing?.assets_liabilities?.vehicles || '',
-      investments: existing?.assets_liabilities?.investments || existing?.assets?.investments || '',
-      furniture_and_fittings: existing?.assets_liabilities?.furniture_and_fittings || '',
-      other_assets_description: existing?.assets_liabilities?.other_assets_description || '',
-      other_assets_value: existing?.assets_liabilities?.other_assets_value || '',
-      liabilities_total: existing?.assets_liabilities?.liabilities_total || '',
-      other_liabilities_description: existing?.assets_liabilities?.other_liabilities_description || '',
-      other_liabilities_value: existing?.assets_liabilities?.other_liabilities_value || '',
-      total_assets: existing?.assets_liabilities?.total_assets || '',
-      total_liabilities: existing?.assets_liabilities?.total_liabilities || '',
-      net_asset_value: existing?.assets_liabilities?.net_asset_value || existing?.assets?.net_worth || '',
-    },
-    declarations_consents: {
-      loan_processing_consent: Boolean(existing?.declarations_consents?.loan_processing_consent || existing?.consent?.credit_check_consent),
-      credit_bureau_fraud_bank_data_consent: Boolean(existing?.declarations_consents?.credit_bureau_fraud_bank_data_consent || existing?.consent?.credit_check_consent),
-      insurance_third_party_communication_consent: Boolean(existing?.declarations_consents?.insurance_third_party_communication_consent),
-      nhfc_first_home_finance_consent: Boolean(existing?.declarations_consents?.nhfc_first_home_finance_consent),
-      marketing_privacy_preference: existing?.declarations_consents?.marketing_privacy_preference || '',
-      declaration_accepted: Boolean(existing?.declarations_consents?.declaration_accepted || existing?.consent?.declaration_accepted),
-      digital_signature_name: existing?.declarations_consents?.digital_signature_name || `${formData.first_name || ''} ${formData.last_name || ''}`.trim(),
-      digital_signature_date: existing?.declarations_consents?.digital_signature_date || '',
-    },
-    consent: {
-      credit_check_consent: Boolean(
-        existing?.consent?.credit_check_consent ||
-        existing?.declarations_consents?.loan_processing_consent ||
-        existing?.declarations_consents?.credit_bureau_fraud_bank_data_consent,
-      ),
-      declaration_accepted: Boolean(
-        existing?.consent?.declaration_accepted ||
-        existing?.declarations_consents?.declaration_accepted,
-      ),
-    },
-    offers: {
-      accepted_offer_document_id:
-        existing?.offers?.accepted_offer_document_id || existing?.offers?.acceptedOfferDocumentId || '',
-      accepted_bank: existing?.offers?.accepted_bank || existing?.offers?.acceptedBank || '',
-      accepted_at: existing?.offers?.accepted_at || existing?.offers?.acceptedAt || '',
-      decision_state:
-        normalizeBondOfferDecisionState(existing?.offers?.decision_state || existing?.offers?.decisionState) ||
-        (existing?.offers?.accepted_offer_document_id || existing?.offers?.acceptedOfferDocumentId ? 'accepted' : ''),
-      decision_offer_document_id:
-        existing?.offers?.decision_offer_document_id ||
-        existing?.offers?.decisionOfferDocumentId ||
-        existing?.offers?.accepted_offer_document_id ||
-        existing?.offers?.acceptedOfferDocumentId ||
-        '',
-      decision_at:
-        existing?.offers?.decision_at ||
-        existing?.offers?.decisionAt ||
-        existing?.offers?.accepted_at ||
-        existing?.offers?.acceptedAt ||
-        '',
-      declined_offer_document_ids: Array.isArray(existing?.offers?.declined_offer_document_ids)
-        ? existing.offers.declined_offer_document_ids.map((value) => String(value)).filter(Boolean)
-        : Array.isArray(existing?.offers?.declinedOfferDocumentIds)
-          ? existing.offers.declinedOfferDocumentIds.map((value) => String(value)).filter(Boolean)
-          : [],
-      signed_offer_document_id:
-        existing?.offers?.signed_offer_document_id || existing?.offers?.signedOfferDocumentId || '',
-      signed_offer_uploaded_at:
-        existing?.offers?.signed_offer_uploaded_at || existing?.offers?.signedOfferUploadedAt || '',
-    },
-    // Legacy keys kept for backward compatibility with existing reads.
-    income: existing?.income || {},
-    expenses: existing?.expenses || {},
-    assets: existing?.assets || {},
-  }
 }
 
 const MY_DETAILS_SELECT_OPTION_GROUPS = {
@@ -2276,6 +1900,22 @@ const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   currency: 'ZAR',
   maximumFractionDigits: 0,
 })
+
+function formatBondMoneyValue(value, fallback = 'Not provided') {
+  if (value === null || value === undefined || value === '') return fallback
+  const normalized = Number(String(value).replace(/[^\d.-]/g, ''))
+  if (!Number.isFinite(normalized)) return fallback
+  return ZAR_CURRENCY.format(normalized)
+}
+
+function formatBondRateValue(rate, display = '') {
+  const explicitDisplay = String(display || '').trim()
+  if (explicitDisplay) return explicitDisplay
+  if (rate === null || rate === undefined || rate === '') return 'Rate not provided'
+  const normalized = Number(String(rate).replace(/[^\d.-]/g, ''))
+  if (!Number.isFinite(normalized)) return 'Rate not provided'
+  return `${normalized.toFixed(2).replace(/\.?0+$/, '')}%`
+}
 
 function cloneMyDetailsFormData(value) {
   if (typeof structuredClone === 'function') {
@@ -3361,77 +3001,104 @@ function SellerWelcomeHero({
   )
 }
 
-function SellerProgressJourney({ listingProgressModel, saleProgressModel, token, workspaceNavigationScope }) {
-  const defaultWorkflowKey = saleProgressModel?.isStarted ? 'sale' : 'listing'
-  const [activeWorkflowKey, setActiveWorkflowKey] = useState(defaultWorkflowKey)
-  const progressModel = activeWorkflowKey === 'sale' ? saleProgressModel : listingProgressModel
-  const stepCount = Math.max(progressModel?.steps?.length || 0, 1)
-  const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
-  const currentIndex = Math.max(Number(progressModel?.currentIndex || 0), 0)
+function normalizePortalJourneyStep(step = {}, index = 0) {
+  const state = step.state || step.status || ''
+
+  return {
+    id: step.key || step.id || step.label || `portal-journey-step-${index}`,
+    label: step.label || step.title || `Step ${index + 1}`,
+    isComplete: state === 'completed' || state === 'complete',
+    isCurrent: state === 'current' || state === 'blocked',
+  }
+}
+
+function PortalProgressJourney({
+  title,
+  subtitle,
+  statusLabel,
+  steps = [],
+  currentIndex = null,
+  progressPercent = 0,
+  isStarted = true,
+  helperMessage,
+  actionLabel,
+  actionTo = 'progress',
+  tabs = [],
+  activeTabKey = '',
+  onTabChange,
+  tabAriaLabel = 'Portal journey progress',
+  shadowClassName = PORTAL_DESIGN_TOKENS.shadow.card,
+  stepLabelClassName = `mt-3 max-w-[94px] text-[0.82rem] font-semibold leading-5 ${PORTAL_DESIGN_TOKENS.text.heading}`,
+  token,
+  workspaceNavigationScope,
+}) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+  const normalizedSteps = Array.isArray(steps) ? steps.map(normalizePortalJourneyStep) : []
+  const stepCount = Math.max(normalizedSteps.length, 1)
+  const firstCurrentIndex = normalizedSteps.findIndex((step) => step.isCurrent)
+  const resolvedCurrentIndex = currentIndex === null ? Math.max(firstCurrentIndex, 0) : Math.max(Number(currentIndex || 0), 0)
+  const clampedCurrentIndex = Math.min(resolvedCurrentIndex, Math.max(stepCount - 1, 0))
   const lineInset = '60px'
-  const lineProgressRatio = progressModel?.isStarted === false ? 0 : currentIndex / Math.max(stepCount - 1, 1)
+  const rawLineProgressRatio = stepCount > 1 ? clampedCurrentIndex / Math.max(stepCount - 1, 1) : safeProgress / 100
+  const lineProgressRatio = isStarted === false ? 0 : Math.max(0, Math.min(1, rawLineProgressRatio))
   const minRailWidth = Math.max(stepCount * 120, 720)
-  const completionLabel = progressModel?.statusLabel || `${progressModel?.percent || 0}% complete`
 
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+    <section className={`${PORTAL_DESIGN_TOKENS.surface.card} p-6 ${shadowClassName}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">{progressModel?.title || 'Your Progress'}</h2>
-          <p className="mt-1 text-sm leading-6 text-[#64748b]">{progressModel?.description || 'A simple view of where your property sale stands.'}</p>
+          <h2 className={`text-[1.28rem] font-semibold tracking-[-0.03em] ${PORTAL_DESIGN_TOKENS.text.heading}`}>{title}</h2>
+          <p className={`mt-1 text-sm leading-6 ${PORTAL_DESIGN_TOKENS.text.body}`}>{subtitle}</p>
         </div>
-        <span className="inline-flex items-center rounded-full border border-[#d8e7f7] bg-[#eef5ff] px-3.5 py-2 text-sm font-semibold text-[#0f65b7]">
-          {completionLabel}
+        <span className={PORTAL_DESIGN_TOKENS.pill.status}>
+          {statusLabel}
         </span>
       </div>
 
-      <div className="mt-5 inline-flex rounded-[12px] border border-[#dce6ef] bg-[#f5f8fb] p-1" role="tablist" aria-label="Seller journey progress">
-        {[
-          { key: 'listing', label: 'Listing Progress', model: listingProgressModel },
-          { key: 'sale', label: 'Sale Progress', model: saleProgressModel },
-        ].map((workflow) => {
-          const isActive = activeWorkflowKey === workflow.key
-          return (
-            <button
-              key={workflow.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveWorkflowKey(workflow.key)}
-              className={`rounded-[9px] px-3.5 py-2 text-sm font-semibold transition ${isActive ? 'bg-white text-[#123f3a] shadow-[0_3px_10px_rgba(15,23,42,0.1)]' : 'text-[#64748b] hover:text-[#274158]'}`}
-            >
-              {workflow.label}
-              {workflow.key === 'sale' && workflow.model?.isStarted === false ? <span className="ml-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aab]">Next</span> : null}
-            </button>
-          )
-        })}
-      </div>
+      {tabs.length ? (
+        <div className="mt-5 inline-flex rounded-[12px] border border-[#dce6ef] bg-[#f5f8fb] p-1" role="tablist" aria-label={tabAriaLabel}>
+          {tabs.map((tab) => {
+            const isActive = activeTabKey === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onTabChange?.(tab.key)}
+                className={`rounded-[9px] px-3.5 py-2 text-sm font-semibold transition ${isActive ? 'bg-white text-[#123f3a] shadow-[0_3px_10px_rgba(15,23,42,0.1)]' : `${PORTAL_DESIGN_TOKENS.text.body} hover:text-[#274158]`}`}
+              >
+                {tab.label}
+                {tab.badge ? <span className="ml-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aab]">{tab.badge}</span> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="mt-7 overflow-x-auto pb-2">
         <div className="relative px-2 pb-1" style={{ minWidth: `${minRailWidth}px` }}>
           <div className="absolute top-5 h-[2px] rounded-full bg-[#dce6f1]" style={{ left: lineInset, right: lineInset }} />
           <div className="absolute top-5 h-[2px] rounded-full bg-[#16a34a]" style={{ left: lineInset, width: `calc((100% - (${lineInset} * 2)) * ${lineProgressRatio})` }} />
           <div className="grid justify-between gap-0" style={{ gridTemplateColumns: `repeat(${stepCount}, 120px)` }}>
-            {steps.map((stage) => {
-              const isComplete = stage.state === 'completed'
-              const isCurrent = stage.state === 'current'
+            {normalizedSteps.map((stage) => {
               return (
-                <div key={stage.key} className="relative z-10 flex min-w-0 flex-col items-center text-center">
+                <div key={stage.id} className="relative z-10 flex min-w-0 flex-col items-center text-center">
                   <span
                     className={[
                       'inline-flex h-10 w-10 items-center justify-center rounded-full border-4 text-sm transition',
-                      isComplete
+                      stage.isComplete
                         ? 'border-[#16a34a] bg-[#16a34a] text-white'
-                        : isCurrent
+                        : stage.isCurrent
                           ? 'border-[#d8ecff] bg-[#2563eb] text-white shadow-[0_0_0_6px_rgba(37,99,235,0.12)]'
                           : 'border-[#dce6f1] bg-[#eef3f8] text-[#9aacbd]',
                     ].join(' ')}
                   >
-                    {isComplete ? <CheckCircle2 size={18} /> : <span className="h-3 w-3 rounded-full bg-current opacity-80" />}
+                    {stage.isComplete ? <CheckCircle2 size={18} /> : <span className="h-3 w-3 rounded-full bg-current opacity-80" />}
                   </span>
-                  <strong className="mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 text-[#142132]">{stage.label}</strong>
-                  <span className={`mt-1 min-h-[14px] text-[0.7rem] font-semibold ${isCurrent ? 'text-[#2563eb]' : 'text-transparent'}`}>
-                    {isCurrent ? 'Current' : ''}
+                  <strong className={stepLabelClassName}>{stage.label}</strong>
+                  <span className={`mt-1 min-h-[14px] text-[0.7rem] font-semibold ${stage.isCurrent ? 'text-[#2563eb]' : 'text-transparent'}`}>
+                    {stage.isCurrent ? 'Current' : ''}
                   </span>
                 </div>
               )
@@ -3443,17 +3110,50 @@ function SellerProgressJourney({ listingProgressModel, saleProgressModel, token,
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e5edf5] bg-[#f5f9fd] px-4 py-3">
         <p className="flex min-w-0 items-start gap-2 text-sm leading-6 text-[#4f647b]">
           <CheckCircle2 className="mt-0.5 shrink-0 text-[#16a34a]" size={16} />
-          <span>{progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}</span>
+          <span>{helperMessage}</span>
         </p>
         <Link
-          to={getPortalWorkspacePath(token, workspaceNavigationScope, progressModel?.actionTo || 'documents')}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f65b7] transition hover:text-[#084d8e]"
+          to={getPortalWorkspacePath(token, workspaceNavigationScope, actionTo)}
+          className={PORTAL_DESIGN_TOKENS.button.link}
         >
-          {progressModel?.actionLabel || 'View documents'}
+          {actionLabel}
           <ArrowRight size={15} />
         </Link>
       </div>
     </section>
+  )
+}
+
+function SellerProgressJourney({ listingProgressModel, saleProgressModel, token, workspaceNavigationScope }) {
+  const defaultWorkflowKey = saleProgressModel?.isStarted ? 'sale' : 'listing'
+  const [activeWorkflowKey, setActiveWorkflowKey] = useState(defaultWorkflowKey)
+  const progressModel = activeWorkflowKey === 'sale' ? saleProgressModel : listingProgressModel
+  const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
+
+  return (
+    <PortalProgressJourney
+      title={progressModel?.title || 'Your Progress'}
+      subtitle={progressModel?.description || 'A simple view of where your property sale stands.'}
+      statusLabel={progressModel?.statusLabel || `${progressModel?.percent || 0}% complete`}
+      steps={steps}
+      currentIndex={Math.max(Number(progressModel?.currentIndex || 0), 0)}
+      progressPercent={progressModel?.percent || 0}
+      isStarted={progressModel?.isStarted !== false}
+      helperMessage={progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}
+      actionLabel={progressModel?.actionLabel || 'View documents'}
+      actionTo={progressModel?.actionTo || 'documents'}
+      tabs={[
+        { key: 'listing', label: 'Listing Progress' },
+        { key: 'sale', label: 'Sale Progress', badge: saleProgressModel?.isStarted === false ? 'Next' : '' },
+      ]}
+      activeTabKey={activeWorkflowKey}
+      onTabChange={setActiveWorkflowKey}
+      tabAriaLabel="Seller journey progress"
+      shadowClassName={PORTAL_DESIGN_TOKENS.shadow.strong}
+      stepLabelClassName={`mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 ${PORTAL_DESIGN_TOKENS.text.heading}`}
+      token={token}
+      workspaceNavigationScope={workspaceNavigationScope}
+    />
   )
 }
 
@@ -3676,7 +3376,6 @@ function BuyerMobilePortal({
   activeSection,
   developmentName,
   unitLabel,
-  buyerName,
   buyerInitial,
   purchasePriceLabel,
   heroStatusBadge,
@@ -3765,18 +3464,15 @@ function BuyerMobilePortal({
     clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked') ||
     clientJourneySteps[0]
   const safeProgress = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
-  const ringStyle = {
-    background: `conic-gradient(#14263d ${safeProgress * 3.6}deg, #e4e9ef 0deg)`,
-  }
-  const statusClassName = heroStatusBadge?.className || 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Home', icon: Home },
-    { key: 'progress', section: 'progress', label: 'Progress', icon: CheckCircle2 },
+    { key: 'progress', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
     { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
     { key: 'finance', section: financeSectionKey, label: 'Finance', icon: HandCoins },
-    { key: 'more', section: 'team', label: 'More', icon: Settings },
+    { key: 'more', section: 'team', label: 'Team', icon: Users },
   ]
   const visibleTeamMembers = teamMembers.slice(0, 4)
+  const buyerPrimaryContact = visibleTeamMembers.find((member) => member?.email || member?.phone) || visibleTeamMembers[0] || null
   const buyerAppointmentItems = buildBuyerMobileAppointmentItems(appointments)
   const upcomingBuyerAppointments = buyerAppointmentItems.filter((appointment) => {
     if (['completed', 'complete', 'cancelled', 'canceled', 'declined'].includes(appointment.normalizedStatus)) return false
@@ -3941,16 +3637,16 @@ function BuyerMobilePortal({
   const quickActionItems = [
     {
       key: 'documents',
-      label: 'Documents',
+      label: 'Purchase Docs',
       value: missingRequired ? `${missingRequired} required` : 'Ready',
-      detail: missingRequired ? 'Uploads still needed' : 'No required uploads',
+      detail: missingRequired ? 'Buyer uploads needed' : 'No buyer uploads due',
       to: 'documents',
       icon: FileText,
       tone: missingRequired ? 'action' : 'complete',
     },
     {
       key: 'finance',
-      label: 'Finance',
+      label: 'Purchase Finance',
       value: financeTypeLabel,
       detail: financeDocumentCount ? `${financeDocumentCount} account document${financeDocumentCount === 1 ? '' : 's'}` : 'Finance workspace',
       to: financeSectionKey,
@@ -3983,13 +3679,25 @@ function BuyerMobilePortal({
     info: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
     neutral: 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]',
   }
-  const getActionPriorityClasses = (action = {}) => {
-    const normalizedPriority = normalizePortalStatus(action?.priority)
-    if (action?.blocking || normalizedPriority === 'urgent') return 'border-[#f1d4c8] bg-[#fff5f1] text-[#b5472d]'
-    if (normalizedPriority === 'high') return 'border-[#f0d8ae] bg-[#fff8ed] text-[#9a5b0f]'
-    if (normalizedPriority === 'informational') return 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
-    return 'border-[#dde7f1] bg-[#f8fbff] text-[#5f7086]'
-  }
+  const isOverviewSection = mobileSection === 'overview'
+  const primaryBuyerAction = overviewActionItems[0] || null
+  const primaryBuyerActionRoute = String(primaryBuyerAction?.actionRoute || primaryOverviewAction.to || 'progress').trim() || 'progress'
+  const primaryBuyerActionLabel = String(primaryBuyerAction?.actionLabel || primaryOverviewAction.label || 'Open next step').trim()
+  const primaryBuyerActionTitle = primaryBuyerAction?.title || nextStepState.title || 'No further action from your side'
+  const primaryBuyerActionDescription = primaryBuyerAction?.description ||
+    nextStepState.description ||
+    'Everything needed from you is currently up to date. Your transaction team will update this space when the next action is ready.'
+  const primaryBuyerActionDueDateLabel = primaryBuyerAction?.dueDate ? formatShortPortalDate(primaryBuyerAction.dueDate, '') : ''
+  const hasRequiredBuyerAction = Boolean(
+    primaryBuyerAction?.blocking ||
+      nextStepState.requiresAction ||
+      visibleActionItems.length ||
+      missingRequired ||
+      reservationAction?.needsAction,
+  )
+  const buyerDashboardCards = quickActionItems
+    .filter((item) => ['documents', 'finance'].includes(item.key))
+    .slice(0, 2)
 
   useEffect(() => {
     if (!selectedBuyerUploadIsImage || !selectedBuyerUploadFileBlob) {
@@ -4222,161 +3930,186 @@ function BuyerMobilePortal({
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f6f7] font-sans text-[#101823]">
+    <main className="min-h-screen bg-[#f7f8fa] font-sans text-[#101823]">
       <div className="mx-auto min-h-screen w-full max-w-[430px] px-4 pb-28 pt-5">
-        <header className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#88929f]">Buyer Portal</p>
-            <h1 className="mt-1 truncate text-[1.08rem] font-semibold tracking-[-0.02em] text-[#101823]">Arch9</h1>
-          </div>
+        <header className="flex min-h-[44px] items-center justify-end gap-2">
           <div className="flex shrink-0 items-center gap-2">
             <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Contact team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
               <MessageCircle size={18} />
             </Link>
+            {buyerPrimaryContact?.phone ? (
+              <a href={`tel:${buyerPrimaryContact.phone}`} aria-label="Call team" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+                <PhoneCall size={17} />
+              </a>
+            ) : (
+              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'team')} aria-label="Open team contacts" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+                <PhoneCall size={17} />
+              </Link>
+            )}
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-sm font-semibold text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
               {buyerInitial}
             </span>
           </div>
         </header>
 
-        <section className="relative mt-6 overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
-          <div className="absolute inset-x-0 top-0 h-28 bg-[linear-gradient(135deg,rgba(20,38,61,0.08),rgba(126,147,168,0.06),rgba(255,255,255,0))]" aria-hidden="true" />
-          <div className="relative">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-[#687380]">{buyerName}</p>
-                <h2 className="mt-3 max-w-[18rem] text-[2rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#0f172a]">
-                  {developmentName}
-                </h2>
-                <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#35546c]">{unitLabel}</p>
-              </div>
-              <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] ${statusClassName}`}>
-                {heroStatusBadge?.label || 'On Track'}
-              </span>
-            </div>
-
-            <div className="mt-6 flex items-center gap-5">
-              <div className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={ringStyle}>
-                <span className="absolute inset-[7px] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]" />
-                <span className="relative text-[1.35rem] font-semibold tracking-[-0.04em] text-[#101823]">{safeProgress}%</span>
-              </div>
-              <div className="min-w-0 border-l border-[#e2e6ec] pl-5">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8491]">Current stage</p>
-                <p className="mt-2 flex items-center gap-2 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#10213a]">
-                  <span className="h-2 w-2 rounded-full bg-[#1d8b5f]" />
-                  <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
-                </p>
-                <p className="mt-1 text-sm font-medium text-[#6b7280]">Next: {journeyNextStageLabel}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#101823]">Purchase journey</h3>
-            <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{purchasePriceLabel}</span>
-          </div>
-          <ol>
-            {clientJourneySteps.map((step, index) => {
-              const isExpanded = activeStep?.id === step.id
-              const isComplete = step.status === 'complete'
-              const isCurrent = step.status === 'current' || step.status === 'blocked'
-              const isLast = index === clientJourneySteps.length - 1
-              return (
-                <li key={step.id} className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-2">
-                  {!isLast ? <span aria-hidden="true" className={`absolute left-[22px] top-11 h-[calc(100%-22px)] w-px ${isComplete ? 'bg-[#b8d8c9]' : 'bg-[#dfe4ea]'}`} /> : null}
-                  <button
-                    type="button"
-                    onClick={() => setExpandedStepId(step.id)}
-                    className={`relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
-                      isComplete ? 'border-[#8ac6a8] bg-white text-[#257454]' : isCurrent ? 'border-[#14263d] bg-[#14263d] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
-                    }`}
-                    aria-label={`View ${step.label}`}
-                  >
-                    {isComplete ? <CheckCircle2 size={18} /> : index + 1}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedStepId(step.id)}
-                    className={`mb-3 min-h-[44px] min-w-0 rounded-[18px] px-3 py-2.5 text-left transition ${isExpanded ? 'bg-[#f7f9fb] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]' : 'bg-transparent'}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className={`text-base font-semibold tracking-[-0.02em] ${isCurrent ? 'text-[#10213a]' : isComplete ? 'text-[#1f2937]' : 'text-[#7b8491]'}`}>{step.label}</span>
-                      {isCurrent ? <span className="rounded-full bg-[#e8edf3] px-2.5 py-1 text-xs font-semibold text-[#24364d]">Current</span> : null}
-                    </div>
-                    {isExpanded ? (
-                      <div className="mt-1.5">
-                        <p className="text-sm leading-5 text-[#4b5563]">{step.whatHappensNow || step.shortDescription || 'Your team is progressing this step.'}</p>
-                        {step.clientRole ? <p className="mt-1.5 text-xs leading-5 text-[#7b8491]">{step.clientRole}</p> : null}
-                      </div>
-                    ) : null}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-
-        {mobileSection === 'overview' ? (
+        {isOverviewSection ? (
           <>
-            <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#b7791f]">Needs attention</p>
-                <span className="rounded-full border border-[#e6eaf0] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#667085]">
-                  {blockingActionCount} blocking
-                </span>
+            <section className="relative mt-6 min-h-[304px] overflow-hidden rounded-[18px] border border-white/70 bg-[#062b2b] bg-[linear-gradient(135deg,#062b2b_0%,#123a54_64%,#315c7d_100%)] p-6 text-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
+              <div className="relative flex min-h-[256px] flex-col">
+                <p className="text-sm font-medium text-[#a5d8a7]">Buyer Workspace</p>
+                <div className="mt-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="max-w-[19rem] text-[2rem] font-semibold leading-[1.08] tracking-[-0.035em] text-white">
+                      {developmentName}
+                    </h2>
+                    <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#d8e7e5]">{unitLabel}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-white">
+                    {heroStatusBadge?.label || 'On Track'}
+                  </span>
+                </div>
+
+                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/[0.22] pt-5">
+                  <div className="min-w-0">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current purchase stage</p>
+                    <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
+                      <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
+                      <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next milestone: {journeyNextStageLabel}</p>
+                  </div>
+                  <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                    <span className="relative text-center">
+                      <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="mt-4 grid gap-3">
-                {overviewActionItems.map((action) => {
-                  const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
-                  const actionRoute = String(action?.actionRoute || '').trim() || primaryOverviewAction.to || 'overview'
-                  const actionLabel = String(action?.actionLabel || primaryOverviewAction.label || 'Open').trim()
+            </section>
+
+            <section className="mt-4 rounded-[18px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-[1.16rem] font-semibold text-[#101823]">Purchase timeline</h3>
+                <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{purchasePriceLabel}</span>
+              </div>
+              <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-3 [scrollbar-width:none]">
+                {clientJourneySteps.map((step, index) => {
+                  const isExpanded = activeStep?.id === step.id
+                  const isComplete = step.status === 'complete'
+                  const isCurrent = step.status === 'current' || step.status === 'blocked'
                   return (
-                    <article key={action?.id || `${action?.type}-${action?.title}`} className="rounded-[20px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.1em] ${getActionPriorityClasses(action)}`}>
-                          {action?.blocking ? 'Blocking' : toTitleLabel(action?.priority || 'Normal')}
-                        </span>
-                        {dueDateLabel ? <span className="text-[0.7rem] font-semibold text-[#7b8491]">Due {dueDateLabel}</span> : null}
-                      </div>
-                      <h3 className="mt-2 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#101823]">{action?.title || 'Action required'}</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#5f6b7a]">{action?.description || 'Please review this item.'}</p>
-                      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)} className="mt-3 flex min-h-[46px] items-center justify-between rounded-[16px] bg-[#10213a] px-4 text-sm font-semibold text-white">
-                        <span>{actionLabel}</span>
-                        <ChevronRight size={18} />
-                      </Link>
-                    </article>
+                    <li key={step.id} className="relative min-w-[76px]">
+                      {index < clientJourneySteps.length - 1 ? <span aria-hidden="true" className={`absolute left-[48px] top-[19px] h-px w-[62px] ${isComplete ? 'bg-[#9dceb5]' : 'bg-[#dfe4ea]'}`} /> : null}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStepId(step.id)}
+                        className={`relative z-10 mx-auto flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                          isComplete ? 'border-[#63ad73] bg-[#63ad73] text-white' : isCurrent ? 'border-[#063f34] bg-[#063f34] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
+                        }`}
+                        aria-label={`View ${step.label}`}
+                      >
+                        {isComplete ? <CheckCircle2 size={18} /> : index + 1}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStepId(step.id)}
+                        className="mt-2 block w-full text-center"
+                      >
+                        <span className={`block text-[0.69rem] font-semibold leading-4 ${isCurrent || isExpanded ? 'text-[#10213a]' : isComplete ? 'text-[#344054]' : 'text-[#7b8491]'}`}>{step.label}</span>
+                      </button>
+                    </li>
                   )
                 })}
+              </ol>
+              <article className="mt-2 rounded-[16px] border border-[#dfe7ef] bg-[#fbfcfd] p-4">
+                <div className="flex items-start gap-4">
+                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#063f34] text-white">
+                    <CheckCircle2 size={22} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="text-[1.25rem] font-semibold leading-tight text-[#101823]">{activeStep?.label || journeyCurrentStageLabel}</h4>
+                      <span className="shrink-0 rounded-full bg-[#edf7ed] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#4d8a48]">
+                        {activeStep?.status === 'current' || activeStep?.status === 'blocked' ? 'Current step' : 'Overview'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-[#344054]">{activeStep?.whatHappensNow || activeStep?.shortDescription || journeyHeroSubtext}</p>
+                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
+                      <span>{activeStep?.clientRole || 'Your buying team will guide this milestone.'}</span>
+                    </p>
+                    <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#063f34] px-4 text-sm font-semibold text-white">
+                      <span>View tasks</span>
+                      <ChevronRight size={17} />
+                    </Link>
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-4 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Buyer action needed</p>
+                <span className="rounded-full border border-[#8bd985]/[0.45] bg-white/[0.1] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#d8ffd2]">
+                  {blockingActionCount} need action
+                </span>
               </div>
+              <div className="mt-3 flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
+                  {hasRequiredBuyerAction ? <FileText size={20} /> : <ShieldCheck size={20} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{primaryBuyerActionTitle}</h3>
+                  <p className="mt-1 text-sm leading-5 text-[#d8efe3]">{primaryBuyerActionDescription}</p>
+                  {primaryBuyerActionDueDateLabel ? <p className="mt-1.5 text-xs font-semibold text-[#a9ec9c]">Due {primaryBuyerActionDueDateLabel}</p> : null}
+                </div>
+              </div>
+              {hasRequiredBuyerAction ? (
+                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryBuyerActionRoute)} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
+                  <span>{primaryBuyerActionLabel}</span>
+                  <ChevronRight size={18} />
+                </Link>
+              ) : (
+                <div className="mt-3 flex min-h-[44px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
+                  All caught up
+                </div>
+              )}
               {hiddenNextActionCount > 0 ? (
-                <p className="mt-3 text-xs font-medium text-[#667085]">
+                <p className="mt-3 text-xs font-medium text-[#bfeac9]">
                   {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} available in the full workflow.
                 </p>
               ) : null}
             </section>
+
             <section className="mt-4 grid gap-3">
-              <div className="grid grid-cols-3 gap-2">
-                {quickActionItems.map((item) => {
+              <div className="grid grid-cols-2 gap-3">
+                {buyerDashboardCards.map((item) => {
                   const Icon = item.icon
                   return (
-                    <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)} className={`min-w-0 rounded-[20px] border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.045)] ${quickActionToneClasses[item.tone] || quickActionToneClasses.neutral}`}>
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-current shadow-[inset_0_0_0_1px_rgba(255,255,255,0.78)]">
-                        <Icon size={17} />
-                      </span>
-                      <p className="mt-3 text-[0.66rem] font-semibold uppercase tracking-[0.1em] opacity-80">{item.label}</p>
-                      <strong className="mt-1 block truncate text-sm font-semibold tracking-[-0.02em]">{item.value}</strong>
-                      <span className="mt-1 block truncate text-[0.68rem] font-medium opacity-75">{item.detail}</span>
+                    <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.to)} className={`overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)] ${quickActionToneClasses[item.tone] || quickActionToneClasses.neutral}`}>
+                      <div className="p-4">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-white/85 text-current shadow-[inset_0_0_0_1px_rgba(255,255,255,0.78)]">
+                          <Icon size={20} />
+                        </span>
+                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] opacity-80">{item.label}</p>
+                        <strong className="mt-1 block truncate text-2xl font-semibold tracking-[-0.03em]">{item.value}</strong>
+                        <span className="mt-1 block truncate text-xs font-medium opacity-75">{item.detail}</span>
+                      </div>
+                      <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
+                        <span>{item.key === 'finance' ? 'View finance' : 'View documents'}</span>
+                        <ChevronRight size={15} />
+                      </div>
                     </Link>
                   )
                 })}
               </div>
-              <article className="rounded-[24px] border border-white/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+              <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Next milestone</p>
-                    <h3 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.04em] text-[#101823]">{journeyNextStageLabel}</h3>
+                    <h3 className="mt-2 text-[1.18rem] font-semibold tracking-[-0.04em] text-[#101823]">{journeyNextStageLabel}</h3>
                   </div>
                   <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} aria-label="View progress" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]">
                     <ChevronRight size={18} />
@@ -4394,9 +4127,9 @@ function BuyerMobilePortal({
                   </div>
                 ) : null}
               </article>
-              <article className="rounded-[24px] border border-white/80 bg-white/95 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+              <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Recent updates</h3>
+                <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Purchase updates</h3>
                   <span className="text-xs font-semibold text-[#98a2b3]">{visibleRecentUpdates.length || 'No'} items</span>
                 </div>
                 <div className="mt-3 space-y-3">
@@ -4408,7 +4141,7 @@ function BuyerMobilePortal({
                         <p className="mt-0.5 leading-5 text-[#667085]">{item.message || 'Your transaction team posted an update.'}</p>
                       </div>
                     </div>
-                  )) : <p className="text-sm leading-6 text-[#667085]">Updates from your transaction team will appear here.</p>}
+                  )) : <p className="text-sm leading-6 text-[#667085]">Purchase updates from your transaction team will appear here.</p>}
                 </div>
               </article>
             </section>
@@ -4419,7 +4152,7 @@ function BuyerMobilePortal({
           <SellerMobileListCard
             eyebrow="Progress"
             title={activeStep?.label || journeyCurrentStageLabel}
-            emptyText="Your purchase journey will appear here."
+            emptyText="Your purchase timeline will appear here."
             items={clientJourneySteps.map((step) => ({
               id: step.id,
               title: step.label,
@@ -4439,8 +4172,8 @@ function BuyerMobilePortal({
             </h3>
             <p className="mt-1 text-sm leading-6 text-[#667085]">
               {buyerDocumentCounts.action
-                ? `${buyerDocumentCounts.action} buyer document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
-                : 'Review uploaded and approved documents from your transaction team.'}
+                ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
+                : 'Review uploaded and approved purchase documents from your transaction team.'}
             </p>
             <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
               <div className="grid grid-cols-4 gap-1">
@@ -4516,12 +4249,12 @@ function BuyerMobilePortal({
               }) : (
                 <p className="rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
                   {activeBuyerDocumentFilter === 'action'
-                    ? 'No buyer documents need action right now.'
+                    ? 'No purchase documents need action right now.'
                     : activeBuyerDocumentFilter === 'review'
                       ? 'No documents are awaiting review right now.'
                       : activeBuyerDocumentFilter === 'approved'
-                        ? 'Approved buyer documents will appear here.'
-                        : 'Buyer document requests and uploads will appear here.'}
+                        ? 'Approved purchase documents will appear here.'
+                        : 'Purchase document requests and uploads will appear here.'}
                 </p>
               )}
             </div>
@@ -4878,9 +4611,9 @@ function BuyerMobilePortal({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">More</p>
-                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your buyer workspace</h3>
+                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your purchase workspace</h3>
                 <p className="mt-1 text-sm leading-6 text-[#667085]">
-                  Contacts, appointments, handover readiness, settings, and optional buyer tools are grouped here.
+                  Contacts, appointments, handover readiness, settings, and buyer tools are grouped here.
                 </p>
               </div>
               <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'appointments')} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]" aria-label="Open appointments">
@@ -5393,13 +5126,13 @@ function BuyerMobilePortal({
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white/92 px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden" aria-label="Buyer portal mobile navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 lg:hidden" aria-label="Buyer portal mobile navigation">
         <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
           {bottomNavItems.map((item) => {
             const Icon = item.icon
             const isActive = item.key === mobileSection || (item.key === 'more' && mobileSection === 'appointments')
             return (
-              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#f0f3f7] text-[#10213a]' : 'text-[#7b8491] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
+              <Link key={item.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, item.section)} className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[18px] text-[0.72rem] font-semibold transition ${isActive ? 'bg-[#eef8f1] text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}>
                 <Icon size={21} strokeWidth={isActive ? 2.4 : 2} />
                 <span>{item.label}</span>
               </Link>
@@ -6995,8 +6728,8 @@ function SellerNextStepCard({ sellerNextStep, token, workspaceNavigationScope, s
 function SellerSectionHeading({ title, subtitle }) {
   return (
     <div>
-      <h2 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h2>
-      {subtitle ? <p className="mt-1.5 text-sm leading-6 text-[#64748b]">{subtitle}</p> : null}
+      <h2 className={`text-[1.12rem] font-semibold tracking-[-0.03em] ${PORTAL_DESIGN_TOKENS.text.heading}`}>{title}</h2>
+      {subtitle ? <p className={`mt-1.5 text-sm leading-6 ${PORTAL_DESIGN_TOKENS.text.body}`}>{subtitle}</p> : null}
     </div>
   )
 }
@@ -7610,6 +7343,428 @@ function SellerPortalDashboard({
   )
 }
 
+function BuyerOverviewHero({
+  buyerFirstName,
+  buyerName,
+  developmentName,
+  unitLabel,
+  purchasePriceLabel,
+  heroStatusBadge,
+  currentStageLabel,
+  nextStageLabel,
+  progressPercent,
+  timeInStageLabel,
+  stageUpdatedDateLabel,
+  primaryAction,
+  supportContact,
+  financeSectionKey = 'account',
+  token,
+  workspaceNavigationScope,
+}) {
+  const messageAction = supportContact?.email
+    ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
+    : { label: 'Message Team', to: 'team' }
+  const financeAction = { label: 'Open Finance', to: financeSectionKey }
+  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[minmax(520px,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
+      <div className="flex h-full min-w-0 flex-col py-1 xl:py-3">
+        <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
+          Welcome, {buyerFirstName}.
+        </h1>
+        <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
+          Your purchase is moving forward, with finance, transfer, and handover in one place.
+        </p>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
+          See what is needed from you, where the legal and finance work sits, and what happens before key collection.
+        </p>
+
+        <div className="mt-6 flex flex-1">
+          <article className={`flex min-h-[172px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+            <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Your buying team</p>
+            <div className="mt-3 flex min-w-0 items-center gap-4">
+              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-[#e6f2ef] text-lg font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
+                {String(supportContact?.name || supportContact?.title || buyerName || 'Team').trim().charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <strong className="block truncate text-[1.05rem] font-semibold text-[#102032]">{supportContact?.name || supportContact?.title || 'Arch9 Transaction Team'}</strong>
+                <p className="mt-0.5 truncate text-sm text-[#64748b]">{supportContact?.detail || 'Here when your purchase needs help'}</p>
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Purchase support active</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
+              <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.primary}>
+                <ArrowRight size={14} />
+                <span>{primaryAction?.label || 'Open next step'}</span>
+              </SellerPortalAction>
+              <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
+                <MessageCircle size={14} />
+                <span>Message</span>
+              </SellerPortalAction>
+              <SellerPortalAction action={financeAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={PORTAL_DESIGN_TOKENS.button.secondary}>
+                <HandCoins size={14} />
+                <span>Finance</span>
+              </SellerPortalAction>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div className={`relative min-h-[360px] overflow-hidden ${PORTAL_DESIGN_TOKENS.surface.buyerHero} p-6 text-white ${PORTAL_DESIGN_TOKENS.shadow.hero} xl:min-h-[410px]`}>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_83%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_50%,rgba(5,28,34,0.64)_100%)]" aria-hidden="true" />
+        <div className="relative flex h-full min-h-[312px] flex-col">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#a5d8a7]">Buyer Workspace</p>
+              <h2 className="mt-4 max-w-xl text-[2.05rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{developmentName}</h2>
+              <p className="mt-2 text-base font-semibold text-[#d8e7e5]">{unitLabel}</p>
+            </div>
+            <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge?.className || 'border-white/20 bg-white/12 text-white'}`}>
+              {heroStatusBadge?.label || 'On Track'}
+            </span>
+          </div>
+
+          <div className="mt-auto grid gap-4 border-t border-white/[0.2] pt-5 md:grid-cols-[minmax(0,1fr)_120px] md:items-end">
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current purchase stage</p>
+              <p className="mt-2 flex items-center gap-2 text-[1.2rem] font-semibold text-white">
+                <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
+                <span className="min-w-0 truncate">{currentStageLabel}</span>
+              </p>
+              <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next milestone: {nextStageLabel}</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {[
+                  ['Purchase price', purchasePriceLabel],
+                  ['Active for', timeInStageLabel],
+                  ['Updated', stageUpdatedDateLabel],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[12px] border border-white/12 bg-white/[0.08] px-3 py-2">
+                    <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#bcd1d7]">{label}</span>
+                    <strong className="mt-1 block truncate text-sm font-semibold text-white">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div className="relative inline-flex h-[120px] w-[120px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+              <span className="absolute inset-[10px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+              <span className="relative text-center">
+                <span className="block text-[1.7rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                <span className="mt-1 block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function BuyerOverviewActionPanel({
+  actions = [],
+  blockingActionCount = 0,
+  hiddenActionCount = 0,
+  primaryAction = {},
+  nextStepState = {},
+  token,
+  workspaceNavigationScope,
+}) {
+  const visibleActions = actions.slice(0, 4)
+  const fallbackAction = {
+    id: 'buyer-overview-next-step',
+    title: nextStepState?.title || 'Your purchase file is up to date',
+    description: nextStepState?.description || 'Nothing is needed from you right now. Your team will surface the next purchase item here.',
+    actionRoute: primaryAction?.to || 'overview',
+    actionLabel: primaryAction?.label || 'Open',
+    priority: nextStepState?.requiresAction ? 'high' : 'normal',
+    blocking: Boolean(nextStepState?.requiresAction),
+  }
+  const renderedActions = visibleActions.length ? visibleActions : [fallbackAction]
+
+  return (
+    <section className={`${PORTAL_DESIGN_TOKENS.surface.card} p-6 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SellerSectionHeading title="Buyer Actions" subtitle="The purchase items that may unblock finance, transfer, or handover." />
+        <span className={PORTAL_DESIGN_TOKENS.pill.count}>
+          {blockingActionCount} need action
+        </span>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        {renderedActions.map((action) => {
+          const normalizedPriority = normalizePortalStatus(action?.priority)
+          const isBlocking = Boolean(action?.blocking)
+          const pillClasses = isBlocking || normalizedPriority === 'urgent'
+            ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+            : normalizedPriority === 'informational'
+              ? 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
+              : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+          const actionRoute = String(action?.actionRoute || primaryAction?.to || 'overview').trim()
+          const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
+
+          return (
+            <article key={action?.id || `${action?.type}-${action?.title}`} className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-4 py-3.5`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.1em] ${pillClasses}`}>
+                  {isBlocking ? 'Blocking' : toTitleLabel(normalizedPriority || 'Normal')}
+                </span>
+                {dueDateLabel ? <span className="text-[0.68rem] font-medium text-[#6b7d93]">Due {dueDateLabel}</span> : null}
+              </div>
+              <h3 className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#142132]">{action?.title || 'Action required'}</h3>
+              <p className="mt-1 text-sm leading-6 text-[#566b82]">{action?.description || 'Please review this item.'}</p>
+              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)} className="mt-3 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] bg-[#123f3a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0b312d]">
+                {action?.actionLabel || primaryAction?.label || 'Open'}
+                <ChevronRight size={14} />
+              </Link>
+            </article>
+          )
+        })}
+      </div>
+      {hiddenActionCount > 0 ? (
+        <p className="mt-3 text-xs font-medium text-[#6b7d93]">
+          {hiddenActionCount} more action{hiddenActionCount === 1 ? '' : 's'} available in your full workflow.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }) {
+  return (
+    <article className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SellerSectionHeading title="Purchase Dashboard" subtitle="Documents, finance, appointments, handover, and snags at a glance." />
+        <span className={PORTAL_DESIGN_TOKENS.pill.count}>
+          {cards.length} areas
+        </span>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {cards.map((card) => {
+          const Icon = card.icon
+          const toneClasses = card.tone === 'action'
+            ? 'bg-[#fff8ec] text-[#d97706]'
+            : card.tone === 'complete'
+              ? 'bg-[#eff8f1] text-[#347d43]'
+              : 'bg-[#e8f4ff] text-[#12588e]'
+          return (
+            <Link key={card.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, card.to)} className={`flex min-h-[132px] flex-col justify-between ${PORTAL_DESIGN_TOKENS.surface.cardInset} p-4 transition hover:border-[#c9d8e6] hover:bg-white`}>
+              <div className="flex items-start justify-between gap-3">
+                <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>{card.label}</p>
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[11px] ${toneClasses}`}>
+                  <Icon size={15} />
+                </span>
+              </div>
+              <p className={`mt-4 truncate text-2xl font-semibold tracking-[-0.03em] ${PORTAL_DESIGN_TOKENS.text.headingDark}`}>{card.value}</p>
+              <p className={`mt-1 text-xs font-medium leading-5 ${PORTAL_DESIGN_TOKENS.text.body}`}>{card.helper}</p>
+            </Link>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whatsHappeningSummary = [], rolePlayerGuidance = [] }) {
+  return (
+    <article className={`h-full ${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+      <SellerSectionHeading
+        title={stageEducation?.title || 'Purchase milestone in progress'}
+        subtitle={stageEducation?.shortDescription || 'A simple guide to what is happening in your purchase now.'}
+      />
+      <p className={`mt-4 text-sm leading-6 ${PORTAL_DESIGN_TOKENS.text.bodyStrong}`}>
+        {stageEducation?.detailedExplanation || 'Your transaction team will keep this milestone moving and tell you when your input is needed.'}
+      </p>
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What you need to do</p>
+          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatClientNeedsToDo || 'No action is required unless your team requests something.'}</p>
+        </div>
+        <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</p>
+          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatHappensNext || whatHappensNextItems[0] || 'Your team will guide you through the next purchase milestone.'}</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-2">
+        {[...whatHappensNextItems, ...whatsHappeningSummary].slice(0, 4).map((item) => (
+          <p key={item} className="flex items-start gap-2 text-sm leading-6 text-[#52647a]">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#078449]" />
+            <span>{item}</span>
+          </p>
+        ))}
+      </div>
+      {rolePlayerGuidance.length ? (
+        <div className="mt-5 border-t border-[#e5edf2] pt-4">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Role players at this stage</p>
+          <div className="mt-2 grid gap-2">
+            {rolePlayerGuidance.slice(0, 3).map((entry) => (
+              <p key={entry?.key} className="text-sm leading-6 text-[#52647a]">{entry?.explanation}</p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+function BuyerSupportFooter({ supportContact = {}, buyerPortalAccessDescription = '' }) {
+  const messageAction = supportContact?.email
+    ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
+    : { label: 'Message Team', disabled: true }
+  const callAction = supportContact?.phone
+    ? { label: 'Call Team', href: `tel:${supportContact.phone}` }
+    : { label: 'Call Team', disabled: true }
+
+  return (
+    <section className={`${PORTAL_DESIGN_TOKENS.surface.support} px-5 py-4 ${PORTAL_DESIGN_TOKENS.shadow.soft}`}>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#cfe9da] bg-[#eefbf4] text-[#047857]">
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-[#102032]">Your purchase workspace is secure and private.</p>
+            <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#64748b]">{buyerPortalAccessDescription || 'Only people with your secure purchase link can access this workspace.'}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          <SellerPortalAction action={messageAction} className={PORTAL_DESIGN_TOKENS.button.supportPrimary} />
+          <SellerPortalAction action={callAction} className={PORTAL_DESIGN_TOKENS.button.supportSecondary} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function BuyerProgressJourney({
+  progressPercent,
+  currentStageLabel,
+  nextStageLabel,
+  steps = [],
+  primaryAction = {},
+  token,
+  workspaceNavigationScope,
+}) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+  const currentLabel = currentStageLabel || 'Your current milestone'
+  const nextLabel = nextStageLabel || 'The next milestone'
+
+  return (
+    <PortalProgressJourney
+      title="Your Purchase Journey"
+      subtitle="Follow reservation, OTP, finance, transfer, registration, and handover."
+      statusLabel={`${safeProgress}% complete`}
+      steps={steps.slice(0, 7)}
+      progressPercent={safeProgress}
+      helperMessage={`Current milestone: ${currentLabel}. Next milestone: ${nextLabel}.`}
+      actionLabel={primaryAction?.label || 'View tasks'}
+      actionTo={primaryAction?.to || 'progress'}
+      token={token}
+      workspaceNavigationScope={workspaceNavigationScope}
+    />
+  )
+}
+
+function BuyerPortalDashboard({
+  buyerFirstName,
+  buyerName,
+  developmentName,
+  unitLabel,
+  purchasePriceLabel,
+  heroStatusBadge,
+  currentStageLabel,
+  nextStageLabel,
+  progressPercent,
+  timeInStageLabel,
+  stageUpdatedDateLabel,
+  financeSectionKey,
+  nextStepState,
+  primaryAction,
+  blockingActionCount,
+  prioritizedNextActions,
+  hiddenNextActionCount,
+  metricCards,
+  journeySteps,
+  updates,
+  latestUpdatesSubtitle,
+  commentDraft,
+  saving,
+  onCommentDraftChange,
+  onCommentSubmit,
+  onActionClick,
+  stageEducation,
+  whatHappensNextItems,
+  whatsHappeningSummary,
+  rolePlayerGuidance,
+  controlBoard,
+  supportContact,
+  buyerPortalAccessDescription,
+  token,
+  workspaceNavigationScope,
+}) {
+  return (
+    <section className="space-y-6">
+      <BuyerOverviewHero
+        buyerFirstName={buyerFirstName}
+        buyerName={buyerName}
+        developmentName={developmentName}
+        unitLabel={unitLabel}
+        purchasePriceLabel={purchasePriceLabel}
+        heroStatusBadge={heroStatusBadge}
+        currentStageLabel={currentStageLabel}
+        nextStageLabel={nextStageLabel}
+        progressPercent={progressPercent}
+        timeInStageLabel={timeInStageLabel}
+        stageUpdatedDateLabel={stageUpdatedDateLabel}
+        primaryAction={primaryAction}
+        supportContact={supportContact}
+        financeSectionKey={financeSectionKey}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <BuyerOverviewActionPanel
+        actions={prioritizedNextActions}
+        blockingActionCount={blockingActionCount}
+        hiddenActionCount={hiddenNextActionCount}
+        primaryAction={primaryAction}
+        nextStepState={nextStepState}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+      <BuyerOverviewMetricGrid cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
+      <section className="grid gap-5 xl:grid-cols-2">
+        <BuyerProgressJourney
+          progressPercent={progressPercent}
+          currentStageLabel={currentStageLabel}
+          nextStageLabel={nextStageLabel}
+          steps={journeySteps}
+          primaryAction={primaryAction}
+          token={token}
+          workspaceNavigationScope={workspaceNavigationScope}
+        />
+        <LatestUpdatesCard
+          updates={updates}
+          commentDraft={commentDraft}
+          saving={saving}
+          onCommentDraftChange={onCommentDraftChange}
+          onCommentSubmit={onCommentSubmit}
+          onActionClick={onActionClick}
+          heading="Purchase Updates"
+          subtitle={latestUpdatesSubtitle}
+        />
+      </section>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+        <BuyerStageGuide
+          stageEducation={stageEducation}
+          whatHappensNextItems={whatHappensNextItems}
+          whatsHappeningSummary={whatsHappeningSummary}
+          rolePlayerGuidance={rolePlayerGuidance}
+        />
+        <MvpTransactionControlBoard controlBoard={controlBoard} compact />
+      </section>
+      <BuyerSupportFooter supportContact={supportContact} buyerPortalAccessDescription={buyerPortalAccessDescription} />
+    </section>
+  )
+}
+
 function SellerPortalPasswordGate({
   authState = {},
   form,
@@ -7765,6 +7920,7 @@ function ClientPortal() {
   const [activeBondApplicationTab, setActiveBondApplicationTab] = useState('application')
   const [activeBondApplicationSectionTab, setActiveBondApplicationSectionTab] = useState('summary')
   const [activeBondApplicantKey, setActiveBondApplicantKey] = useState('primary')
+  const [guidedBondApplicationSuppressed, setGuidedBondApplicationSuppressed] = useState(false)
   const [bondApplicationDraft, setBondApplicationDraft] = useState(null)
   const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
@@ -8165,6 +8321,10 @@ function ClientPortal() {
     void loadPortal()
   }, [loadPortal])
 
+  useEffect(() => {
+    setGuidedBondApplicationSuppressed(false)
+  }, [token, portal?.transaction?.id])
+
   useTransactionLiveRefresh({
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
     onRefresh: () => loadPortal({ background: true }),
@@ -8181,7 +8341,7 @@ function ClientPortal() {
     setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
     setMyDetailsEditingSection('')
     setMyDetailsSavingSection('')
-    setBondApplicationDraft(buildBondApplicationDraft(portal))
+    setBondApplicationDraft(buildLegacyBondApplicationDraft(portal))
     setBondApplicationDirty(false)
     setActiveBondApplicantKey('primary')
   }, [portal])
@@ -8353,39 +8513,11 @@ function ClientPortal() {
       setBondApplicationSaving(true)
       setError('')
 
-      const timestamp = new Date().toISOString()
-      const nextStatus = submitted
-        ? 'Submitted'
-        : nextDraft.status === 'Not Started' || !nextDraft.status
-          ? 'In Progress'
-          : nextDraft.status
-
-      const draftToPersist = {
-        ...nextDraft,
-        status: nextStatus,
-        submitted_at: submitted ? timestamp : nextDraft.submitted_at || '',
-      }
-
-      const nextFormData = cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {})
-      nextFormData.bond_application = draftToPersist
-      const primaryIncomeExpenses = draftToPersist?.income_deductions_expenses?.primary || {}
-      const primaryEmployment = draftToPersist?.employment?.primary || {}
-      nextFormData.finance_readiness = buildFinanceReadinessPayload({
-        monthlyIncome: primaryIncomeExpenses.gross_salary || draftToPersist?.income?.salary || nextFormData.gross_monthly_income,
-        monthlyDebt:
-          primaryIncomeExpenses.total_monthly_debt ||
-          primaryIncomeExpenses.total_debt_repayments ||
-          draftToPersist?.banking_liabilities?.other_finance_1_monthly_payment,
-        monthlyExpenses: primaryIncomeExpenses.total_monthly_expenses || primaryIncomeExpenses.living_expenses,
-        deposit: draftToPersist?.summary?.deposit_amount || draftToPersist?.summary?.cash_contribution || nextFormData.deposit_amount,
-        employmentType: primaryEmployment.occupation_status || primaryEmployment.employment_type,
-        employmentDurationMonths:
-          (Number(primaryEmployment.employment_years || 0) * 12) + Number(primaryEmployment.employment_months || 0),
-        dependants: draftToPersist?.personal_details?.primary?.dependants || nextFormData.dependants,
-        estimatedPurchaseRange: draftToPersist?.summary?.purchase_price || nextFormData.purchase_price,
-        documentReadiness: submitted ? 1 : 0.5,
-        onboardingCompleteness: submitted ? 1 : 0.65,
-      }, nextFormData).finance_readiness
+      const { draftToPersist, formData: nextFormData } = buildLegacyBondApplicationPersistencePayload({
+        existingFormData: portal?.onboardingFormData?.formData || {},
+        legacyBondApplication: nextDraft,
+        submitted,
+      })
 
       await saveClientPortalOnboardingDraft({
         token,
@@ -8419,23 +8551,89 @@ function ClientPortal() {
     setActiveBondApplicationTab(nextTabKey)
   }
 
+  function handleGuidedBondApplicationSaveAndExit() {
+    navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))
+  }
+
+  function handleGuidedBondApplicationHandoff({ sectionKey = 'income_deductions_expenses' } = {}) {
+    setGuidedBondApplicationSuppressed(true)
+    setActiveBondApplicationTab('application')
+    setActiveBondApplicationSectionTab(sectionKey)
+    setBondApplicationDirty(false)
+    void loadPortal({ background: true })
+  }
+
+  async function handleGuidedBondApplicationDocumentReconciliation({ requirements = [], fingerprint = '' } = {}) {
+    const rows = await reconcileClientPortalBondDocumentRequirements({
+      token,
+      requirements,
+      fingerprint,
+    })
+    setPortal((previous) => previous ? { ...previous, requiredDocuments: rows } : previous)
+    setWorkspaceData((previous) => previous?.documentCenter
+      ? {
+          ...previous,
+          documentCenter: {
+            ...previous.documentCenter,
+            requiredDocuments: rows,
+          },
+        }
+      : previous)
+    return rows
+  }
+
+  async function handleGuidedBondApplicationPrepareSubmission({
+    acceptedDeclarations = [],
+    declarationValues = {},
+    expectedSourceHash = '',
+  } = {}) {
+    const prepare = guidedBondApplicationParticipantFlag.enabled && guidedBondApplicationState?.application?.applicantStructure === 'joint'
+      ? prepareClientPortalJointBondApplicationSubmission
+      : prepareClientPortalBondApplicationSubmission
+    const result = await prepare({
+      token,
+      acceptedDeclarations,
+      declarationValues,
+      expectedSourceHash,
+      idempotencyKey: `guided-bond-submission:${portal?.transaction?.id || token}`,
+    })
+    await loadPortal({ background: true })
+    return result
+  }
+
+  async function handleGuidedBondApplicationRefreshSubmission() {
+    return fetchClientPortalBondApplicationSubmission({ token })
+  }
+
+  async function handleGuidedBondApplicationCancelPendingSubmission({ submissionId } = {}) {
+    const result = await cancelClientPortalBondApplicationSubmission({ token, submissionId })
+    await loadPortal({ background: true })
+    return result
+  }
+
+  async function handleGuidedBondApplicationInviteCoApplicant({
+    fullName = '',
+    email = '',
+    phone = '',
+    idempotencyKey = '',
+  } = {}) {
+    const result = await inviteClientPortalBondApplicationCoApplicant({
+      token,
+      fullName,
+      email,
+      phone,
+      idempotencyKey,
+    })
+    await loadPortal({ background: true })
+    return result
+  }
+
   async function handleBondApplicationSubmit() {
     if (!bondApplicationDraft) return
 
-    const hasConsent = Boolean(
-      bondApplicationDraft?.declarations_consents?.loan_processing_consent &&
-      bondApplicationDraft?.declarations_consents?.credit_bureau_fraud_bank_data_consent &&
-      bondApplicationDraft?.declarations_consents?.declaration_accepted &&
-      String(bondApplicationDraft?.declarations_consents?.digital_signature_name || '').trim() &&
-      String(bondApplicationDraft?.declarations_consents?.digital_signature_date || '').trim(),
-    )
-    if (!hasConsent) {
-      setError('Please complete the declarations, consents, and digital signature before submitting your bond application.')
-      return
-    }
-
-    if (!Array.isArray(bondApplicationDraft.selected_banks) || bondApplicationDraft.selected_banks.length === 0) {
-      setError('Select at least one bank before submitting your bond application.')
+    const validation = validateLegacyBondApplicationSubmission(bondApplicationDraft)
+    if (!validation.valid) {
+      setError(validation.issues[0]?.message || 'Unable to submit your bond application.')
       return
     }
 
@@ -9789,7 +9987,23 @@ function ClientPortal() {
         : reservationProofUploadFeedback.tone === 'loading'
           ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
           : ''
-  const bondApplicationData = bondApplicationDraft || buildBondApplicationDraft(portal)
+  const bondApplicationData = bondApplicationDraft || buildLegacyBondApplicationDraft(portal)
+  const guidedBondApplicationState = buildBondApplicationState(portal)
+  const guidedBondApplicationEligibility = shouldUseGuidedBondApplicationV2({
+    featureFlags: FEATURE_FLAGS,
+    portal,
+    applicationState: guidedBondApplicationState,
+    activeBondApplicationTab,
+  })
+  const guidedBondApplicationParticipantFlag = resolveGuidedBondApplicationParticipantsFlag({
+    featureFlags: FEATURE_FLAGS,
+    portal,
+    applicationState: guidedBondApplicationState,
+  })
+  const shouldRenderGuidedBondApplication =
+    activeBondApplicationTab === 'application' &&
+    !guidedBondApplicationSuppressed &&
+    guidedBondApplicationEligibility.eligible
   const bondApplicationStatus = resolveBondApplicationStatus(bondApplicationData?.status)
   const bondApplicationStatusClasses =
     bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Under Review'
@@ -9849,10 +10063,62 @@ function ClientPortal() {
     signedBondOfferDocuments[0] ||
     null
   const hasSignedAcceptedOfferDocument = hasPersistedPortalDocument(signedAcceptedOfferDocument)
+  const originatorIntakePackageCandidates = [
+    portal?.originatorIntakePackage,
+    portal?.originator_intake_package,
+    portal?.bondOriginatorIntakePackage,
+    portal?.bond_originator_intake_package,
+    portal?.transaction?.originatorIntakePackage,
+    portal?.transaction?.originator_intake_package,
+    ...(Array.isArray(portal?.transaction_bond_application_export_packages) ? portal.transaction_bond_application_export_packages : []),
+    ...(Array.isArray(portal?.exportPackages) ? portal.exportPackages : []),
+    ...(Array.isArray(portal?.transaction?.transaction_bond_application_export_packages) ? portal.transaction.transaction_bond_application_export_packages : []),
+    ...(Array.isArray(portal?.transaction?.exportPackages) ? portal.transaction.exportPackages : []),
+  ].filter(Boolean)
+  const originatorIntakePackage = originatorIntakePackageCandidates.find((item) =>
+    String(item?.destination_key || item?.destinationKey || '').trim() === 'bond_originator_intake',
+  ) || null
+  const bondOriginatorBuyerOfferGrantView = buildBondOriginatorBuyerOfferGrantViewModel({
+    exportPackage: originatorIntakePackage || {},
+    documents: portal?.documents || [],
+    acceptedOfferId: acceptedBondOfferId,
+    declinedOfferIds: Array.from(declinedBondOfferIds),
+    signedOfferDocumentId: bondApplicationData?.offers?.signed_offer_document_id || '',
+  })
+  const originatorCapturedBondOffers = bondOriginatorBuyerOfferGrantView.offers
+  const originatorCapturedBondGrants = bondOriginatorBuyerOfferGrantView.grants
+  const hasOriginatorCapturedBondOffers = originatorCapturedBondOffers.length > 0
+  const displayedBondOfferCards = hasOriginatorCapturedBondOffers
+    ? originatorCapturedBondOffers
+    : bondOfferDocuments.map((offer) => ({
+        ...offer,
+        source: 'legacy_document',
+        quoteDocument: offer.downloadUrl ? { id: offer.id, name: offer.name, url: offer.downloadUrl } : null,
+      }))
+  const displayedAcceptedBondOffer = bondOriginatorBuyerOfferGrantView.acceptedOffer || acceptedBondOffer
   const bondGrantDocuments = bondSharedDocuments.filter((document) => {
     const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
     return /bond/.test(source) && /grant|final approval|instruction/.test(source)
   })
+  const hasOriginatorCapturedBondGrants = originatorCapturedBondGrants.length > 0
+  const displayedBondGrantCards = hasOriginatorCapturedBondGrants
+    ? originatorCapturedBondGrants
+    : bondGrantDocuments.map((document) => ({
+        id: String(document.id),
+        source: 'legacy_document',
+        bankName: extractBondBankName(`${document.category || ''} ${document.name || ''}`),
+        approvedAmount: null,
+        grantReference: '',
+        conditionsSummary: document.category || 'Final approval document shared by your finance team.',
+        grantDocument: {
+          id: String(document.id),
+          name: document.name || 'Bond grant document',
+          category: document.category || 'Grant',
+          uploadedAt: document.created_at || '',
+          url: document.url || '',
+        },
+        status: 'uploaded',
+      }))
   const bondOfferIds = new Set(bondOfferDocuments.map((item) => String(item.id)))
   const bondGrantIds = new Set(bondGrantDocuments.map((item) => String(item.id)))
   const bondSupportingSharedDocuments = bondSharedDocuments.filter((document) => {
@@ -9995,7 +10261,7 @@ function ClientPortal() {
   const documentTabCountByKey = {
     sales: effectiveWorkspace === 'seller' ? salesTabSellerCount : salesTabBuyerCount,
     fica: resolvedFicaRequirements.length,
-    bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
+    bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + displayedBondOfferCards.length + displayedBondGrantCards.length,
     additional: additionalRequestDocuments.length + additionalDocumentRequestsForWorkspace.length + additionalSharedDocuments.length,
     property: propertySharedDocuments.length,
   }
@@ -10043,11 +10309,11 @@ function ClientPortal() {
   const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
   const buyerPortalAccessMethod = 'Secure link'
   const buyerPortalAccessDescription =
-    'This buyer portal opens from your private transaction link. You do not need to create a password for this buyer workspace.'
+    'This purchase workspace opens from your private transaction link. You do not need to create a password for this purchase workspace.'
   const buyerPortalStatusItems = [
     {
       key: 'access',
-      label: 'Portal access',
+      label: 'Workspace access',
       value: 'Link active',
       detail: buyerPortalAccessMethod,
       tone: 'complete',
@@ -10566,6 +10832,7 @@ function ClientPortal() {
       detail: 'Keeps the transaction workspace, documents, and handover records aligned.',
     },
   ]
+  const buyerSupportContact = teamMembers.find((member) => member.email || member.phone) || teamMembers[0] || {}
   const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => {
     if (effectiveWorkspace === 'seller') {
       return false
@@ -10574,7 +10841,16 @@ function ClientPortal() {
     if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
     return true
   })
+  const visibleBuyerMenuItemKeys = new Set(visibleMenuItems.map((item) => item.key))
   const portalNavigationItems = effectiveWorkspace === 'seller' ? SELLER_PORTAL_MENU : visibleMenuItems
+  const portalNavigationGroups = effectiveWorkspace === 'seller'
+    ? SELLER_PORTAL_NAV_GROUPS
+    : BUYER_PORTAL_NAV_GROUPS
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => visibleBuyerMenuItemKeys.has(item.key)),
+        }))
+        .filter((group) => group.items.length)
   const portalAppointments = Array.isArray(workspaceData?.appointments)
     ? workspaceData.appointments
     : (Array.isArray(portal?.appointments) ? portal.appointments : [])
@@ -10627,6 +10903,55 @@ function ClientPortal() {
       }
     : null
   const buyerMobileDocumentItems = buildBuyerMobileDocumentItems(workspaceData?.documentCenter || {})
+  const buyerOverviewMetricCards = [
+    {
+      key: 'documents',
+      label: 'Purchase Docs',
+      value: missingRequired ? `${missingRequired} required` : 'Ready',
+      helper: missingRequired ? 'Buyer uploads needed' : 'No buyer uploads due',
+      to: 'documents',
+      icon: FileText,
+      tone: missingRequired ? 'action' : 'complete',
+    },
+    {
+      key: 'finance',
+      label: 'Purchase Finance',
+      value: buyerFinanceTypeLabel,
+      helper: matterAccountsState.summary?.documentCount
+        ? `${matterAccountsState.summary.documentCount} account document${matterAccountsState.summary.documentCount === 1 ? '' : 's'}`
+        : 'Finance workspace',
+      to: buyerMobileFinanceSectionKey,
+      icon: HandCoins,
+      tone: 'info',
+    },
+    {
+      key: 'appointments',
+      label: 'Buyer Meetings',
+      value: upcomingAppointmentCount ? `${upcomingAppointmentCount} upcoming` : 'None',
+      helper: upcomingAppointmentCount ? 'Review your schedule' : 'No meeting scheduled',
+      to: 'appointments',
+      icon: CalendarClock,
+      tone: upcomingAppointmentCount ? 'info' : 'complete',
+    },
+    {
+      key: 'handover',
+      label: 'Key Handover',
+      value: handoverReadinessStatus,
+      helper: handoverScheduled ? 'Key date on file' : 'Awaiting key date',
+      to: 'handover',
+      icon: KeyRound,
+      tone: handoverCompleted ? 'complete' : 'info',
+    },
+    {
+      key: 'snags',
+      label: 'Snag List',
+      value: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : 'Inactive',
+      helper: portal?.settings?.snag_reporting_enabled ? `${snagResolvedCount} resolved` : 'Not active for this unit',
+      to: 'snags',
+      icon: Wrench,
+      tone: snagOpenCount ? 'action' : 'complete',
+    },
+  ]
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -11141,155 +11466,15 @@ function ClientPortal() {
   const sellerMobileStepLabel = `Step ${sellerMobileCurrentIndex + 1} of ${sellerMobileJourneyStages.length}`
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
-  const hasCoApplicantProfile =
-    normalizePortalStatus(bondApplicationData?.summary?.has_co_applicant) === 'yes' ||
-    Boolean(bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'co_applicant')?.first_name)
-
-  const bondValuePresent = (value) => {
-    if (typeof value === 'boolean') return value
-    if (typeof value === 'number') return Number.isFinite(value)
-    if (Array.isArray(value)) return value.length > 0
-    return String(value || '').trim().length > 0
-  }
-
-  const primaryApplicant = bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'primary') || {}
-  const coApplicant = bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'co_applicant') || {}
-  const personalApplicantChecks = (applicant) => {
-    const checks = [
-      bondValuePresent(applicant?.first_name),
-      bondValuePresent(applicant?.last_name),
-      bondValuePresent(applicant?.date_of_birth),
-      bondValuePresent(applicant?.id_type),
-      bondValuePresent(applicant?.marital_status),
-      bondValuePresent(applicant?.sa_tax_number) || bondValuePresent(applicant?.tax_number_unavailable_reason),
-    ]
-    if (normalizePortalStatus(applicant?.id_type) === 'passport') {
-      checks.push(bondValuePresent(applicant?.passport_number))
-      checks.push(bondValuePresent(applicant?.passport_country_of_issue))
-    } else if (normalizePortalStatus(applicant?.id_type) === 'refugee_id') {
-      checks.push(bondValuePresent(applicant?.refugee_id_card_number))
-    } else {
-      checks.push(bondValuePresent(applicant?.id_number))
-    }
-    if (normalizePortalStatus(applicant?.temporary_sa_resident) === 'yes') {
-      checks.push(bondValuePresent(applicant?.permit_type))
-      checks.push(bondValuePresent(applicant?.permit_number))
-      checks.push(bondValuePresent(applicant?.permit_expiry_date))
-    }
-    return checks
-  }
-
-  const sectionCheckMap = {
-    summary: [
-      bondValuePresent(bondApplicationData?.summary?.applicant_name),
-      bondValuePresent(bondApplicationData?.summary?.property_reference),
-      bondValuePresent(bondApplicationData?.summary?.purchase_price),
-      bondValuePresent(bondApplicationData?.summary?.finance_type),
-      bondValuePresent(bondApplicationData?.summary?.marital_status),
-      bondValuePresent(bondApplicationData?.summary?.main_residence),
-      bondValuePresent(bondApplicationData?.summary?.first_time_home_buyer),
-    ],
-    personal_details: [
-      ...personalApplicantChecks(primaryApplicant),
-      ...(hasCoApplicantProfile ? personalApplicantChecks(coApplicant) : []),
-    ],
-    contact_address: [
-      bondValuePresent(bondApplicationData?.contact_address?.cellphone_number),
-      bondValuePresent(bondApplicationData?.contact_address?.email_address),
-      bondValuePresent(bondApplicationData?.contact_address?.residential_address_street),
-      bondValuePresent(bondApplicationData?.contact_address?.residential_address_city),
-      bondValuePresent(bondApplicationData?.contact_address?.residential_address_postal_code),
-      bondValuePresent(bondApplicationData?.contact_address?.legal_notice_delivery_method),
-    ],
-    employment: [
-      bondValuePresent(bondApplicationData?.employment?.primary?.occupation_status),
-      bondValuePresent(bondApplicationData?.employment?.primary?.occupational_level),
-      bondValuePresent(bondApplicationData?.employment?.primary?.nature_of_occupation),
-      bondValuePresent(bondApplicationData?.employment?.primary?.employment_years) ||
-        bondValuePresent(bondApplicationData?.employment?.primary?.employment_months),
-      ...(hasCoApplicantProfile
-        ? [
-            bondValuePresent(bondApplicationData?.employment?.co_applicant?.occupation_status),
-            bondValuePresent(bondApplicationData?.employment?.co_applicant?.occupational_level),
-          ]
-        : []),
-    ],
-    credit_history: [
-      bondValuePresent(bondApplicationData?.credit_history?.currently_under_administration),
-      bondValuePresent(bondApplicationData?.credit_history?.currently_under_debt_review),
-      bondValuePresent(bondApplicationData?.credit_history?.ever_declared_insolvent),
-      bondValuePresent(bondApplicationData?.credit_history?.bound_by_surety_agreements),
-    ],
-    loan_details: [
-      bondValuePresent(bondApplicationData?.loan_details?.street_or_complex),
-      bondValuePresent(bondApplicationData?.loan_details?.suburb),
-      bondValuePresent(bondApplicationData?.loan_details?.amount_to_be_registered),
-      bondValuePresent(bondApplicationData?.loan_details?.debit_order_bank_name),
-      bondValuePresent(bondApplicationData?.loan_details?.debit_order_account_number),
-      bondValuePresent(bondApplicationData?.loan_details?.preferred_debit_order_date),
-    ],
-    income_deductions_expenses: [
-      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.gross_salary),
-      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.tax_paye),
-      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.groceries),
-      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.transport),
-      ...(hasCoApplicantProfile
-        ? [bondValuePresent(bondApplicationData?.income_deductions_expenses?.co_applicant?.gross_salary)]
-        : []),
-    ],
-    banking_liabilities: [
-      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_bank_name),
-      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_account_type),
-      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_account_number),
-      bondValuePresent(bondApplicationData?.banking_liabilities?.other_finance_1_account_type),
-    ],
-    assets_liabilities: [
-      bondValuePresent(bondApplicationData?.assets_liabilities?.fixed_property),
-      bondValuePresent(bondApplicationData?.assets_liabilities?.vehicles),
-      bondValuePresent(bondApplicationData?.assets_liabilities?.total_assets),
-      bondValuePresent(bondApplicationData?.assets_liabilities?.total_liabilities),
-      bondValuePresent(bondApplicationData?.assets_liabilities?.net_asset_value),
-    ],
-    declarations_consents: [
-      Boolean(bondApplicationData?.declarations_consents?.loan_processing_consent),
-      Boolean(bondApplicationData?.declarations_consents?.credit_bureau_fraud_bank_data_consent),
-      Boolean(bondApplicationData?.declarations_consents?.declaration_accepted),
-      bondValuePresent(bondApplicationData?.declarations_consents?.digital_signature_name),
-      bondValuePresent(bondApplicationData?.declarations_consents?.digital_signature_date),
-    ],
-    documents: [
-      !bondApplicationRequiredDocuments.length ||
-        bondApplicationRequiredDocuments.some((document) => Boolean(document?.complete || document?.uploadedDocumentId)),
-    ],
-  }
-
-  const bondApplicationSectionStatusByKey = Object.fromEntries(
-    BOND_APPLICATION_SECTION_TABS.map((section) => {
-      const checks = sectionCheckMap[section.key] || []
-      const total = checks.length
-      const complete = checks.filter(Boolean).length
-      return [
-        section.key,
-        {
-          total,
-          complete,
-          isComplete: total > 0 && complete === total,
-          hasMissing: total > 0 && complete < total,
-          completionPercent: total > 0 ? Math.round((complete / total) * 100) : 0,
-        },
-      ]
-    }),
-  )
-  const bondApplicationProgressSections = BOND_APPLICATION_SECTION_TABS.filter((section) => section.key !== 'documents')
-  const bondApplicationCompletedCount = bondApplicationProgressSections.filter(
-    (section) => bondApplicationSectionStatusByKey[section.key]?.isComplete,
-  ).length
-  const missingBondApplicationSectionLabels = bondApplicationProgressSections
-    .filter((section) => bondApplicationSectionStatusByKey[section.key]?.hasMissing)
-    .map((section) => section.label)
-  const bondApplicationProgressPercent = bondApplicationProgressSections.length
-    ? Math.round((bondApplicationCompletedCount / bondApplicationProgressSections.length) * 100)
-    : 0
+  const bondApplicationCompletion = calculateLegacyBondApplicationCompletion({
+    application: bondApplicationData,
+    sections: BOND_APPLICATION_SECTION_TABS,
+    requiredDocuments: bondApplicationRequiredDocuments,
+  })
+  const hasCoApplicantProfile = bondApplicationCompletion.hasCoApplicantProfile
+  const bondApplicationSectionStatusByKey = bondApplicationCompletion.sectionStatusByKey
+  const missingBondApplicationSectionLabels = bondApplicationCompletion.missingSectionLabels
+  const bondApplicationProgressPercent = bondApplicationCompletion.progressPercent
   const primaryOverviewAction = {
     to: nextStepState.ctaTo || 'documents',
     label: nextStepState.ctaLabel || 'Open Documents',
@@ -11706,11 +11891,13 @@ function ClientPortal() {
               </div>
             ) : (
             <>
-              <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">Arch9</h1>
-              <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
+              <div className="min-h-[72px]">
+                <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">Arch9</h1>
+                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Buyer Workspace</p>
+              </div>
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
               <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
-                Journey
+                Workspace
               </label>
               <select
                 id="client-journey-selector"
@@ -11793,41 +11980,70 @@ function ClientPortal() {
               </div>
             </nav>
           ) : (
-            <nav className="mt-4 grid gap-1 pb-4">
-              {portalNavigationItems.map((item) => {
-                const Icon = item.icon
-                const isActive = isPortalNavigationItemActive(item, activeSection, location.hash)
-                const navStatus = sidebarStatusByKey[item.key]
+            <nav className="mt-4 grid gap-5 pb-4">
+              {portalNavigationGroups.map((group) => (
+                <div key={group.label}>
+                  <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p>
+                  <div className="grid gap-1">
+                    {group.items.map((item) => {
+                      const Icon = item.icon
+                      const isActive = isPortalNavigationItemActive(item, activeSection, location.hash)
+                      const navStatus = sidebarStatusByKey[item.key]
 
-                return (
-                  <Link
-                    key={item.key}
-                    to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
-                    className={[
-                      'relative flex min-h-[46px] items-center gap-3 rounded-[14px] border px-3 py-2 text-[0.92rem] font-medium transition duration-150 ease-out',
-                      isActive
-                        ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(2,6,23,0.25)] text-white shadow-[inset_3px_0_0_#2fd18a]'
-                        : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
-                    ].join(' ')}
-                  >
-                    <Icon size={16} />
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
-                      {item.label}
-                    </span>
-                    {navStatus ? (
-                      <span
-                        className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
-                          isActive
-                            ? 'border-white/40 bg-white/15 text-white'
-                            : 'border-white/15 bg-[rgba(2,6,23,0.24)] text-[#c0cfde]'
-                        }`}
-                      >
-                        {navStatus}
-                      </span>
-                    ) : null}
-                  </Link>
-                )
-              })}
+                      return (
+                        <Link
+                          key={item.key}
+                          to={getPortalNavigationPath(token, workspaceNavigationScope, item)}
+                          className={[
+                            'relative flex min-h-[44px] items-center gap-3 rounded-[10px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
+                            isActive
+                              ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(22,95,76,0.5)] text-white shadow-[inset_3px_0_0_#2fd18a]'
+                              : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
+                          ].join(' ')}
+                        >
+                          <Icon size={16} />
+                          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                            {item.label}
+                          </span>
+                          {navStatus ? (
+                            <span
+                              className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
+                                isActive
+                                  ? 'border-white/40 bg-white/15 text-white'
+                                  : 'border-white/15 bg-[rgba(2,6,23,0.24)] text-[#c0cfde]'
+                              }`}
+                            >
+                              {navStatus}
+                            </span>
+                          ) : null}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div className="mt-2 rounded-[14px] border border-white/12 bg-[rgba(4,30,28,0.52)] p-3">
+                <p className="text-sm font-semibold text-white">Need help?</p>
+                <p className="mt-1 text-xs leading-5 text-[#c0cfde]">We&apos;re here for you.</p>
+                <div className="mt-3 grid gap-2">
+                  {buyerSupportContact.email ? (
+                    <a href={`mailto:${buyerSupportContact.email}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] bg-[#12a06b] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0f855b]">
+                      <MessageCircle size={14} />
+                      Message Team
+                    </a>
+                  ) : null}
+                  {buyerSupportContact.phone ? (
+                    <a href={`tel:${buyerSupportContact.phone}`} className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-[9px] border border-white/12 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/5">
+                      <PhoneCall size={14} />
+                      Call Team
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-auto px-1 pb-2 pt-4 text-xs leading-5 text-[#d8e5ef]">
+                <p className="font-semibold text-white">Arch9</p>
+                <p className="text-[#a9bdce]">Real Estate</p>
+              </div>
             </nav>
           )}
         </aside>
@@ -11884,7 +12100,7 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
-            {hideSellerWorkspaceHeader ? null : (
+            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
@@ -11899,7 +12115,7 @@ function ClientPortal() {
             </section>
             )}
 
-            {hideSellerWorkspaceHeader ? null : (
+            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
@@ -12047,7 +12263,7 @@ function ClientPortal() {
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-4">
                       <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current purchase stage</span>
                         <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
                       </article>
                       <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
@@ -12298,6 +12514,48 @@ function ClientPortal() {
                 </section>
               ) : (
               <>
+                <BuyerPortalDashboard
+                  buyerFirstName={clientFirstName}
+                  buyerName={buyerName}
+                  developmentName={developmentName}
+                  unitLabel={unitLabel}
+                  purchasePriceLabel={purchasePriceLabel}
+                  heroStatusBadge={heroStatusBadge}
+                  currentStageLabel={journeyCurrentStageLabel}
+                  nextStageLabel={journeyNextStageLabel}
+                  progressPercent={journeyProgressPercent}
+                  timeInStageLabel={timeInStageLabel}
+                  stageUpdatedDateLabel={stageUpdatedDateLabel}
+                  financeSectionKey={buyerMobileFinanceSectionKey}
+                  nextStepState={nextStepState}
+                  primaryAction={primaryOverviewAction}
+                  blockingActionCount={blockingActionCount}
+                  prioritizedNextActions={prioritizedNextActions}
+                  hiddenNextActionCount={hiddenNextActionCount}
+                  metricCards={buyerOverviewMetricCards}
+                  journeyStatus={journeyStatusFlag}
+                  journeySteps={clientJourneySteps}
+                  expandedJourneyStepId={resolvedExpandedJourneyStepId}
+                  onToggleJourneyStep={(stepId) =>
+                    setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
+                  }
+                  updates={latestJourneyFeedItems}
+                  latestUpdatesSubtitle={latestUpdatesSubtitle}
+                  commentDraft={commentDraft}
+                  saving={saving}
+                  onCommentDraftChange={setCommentDraft}
+                  onCommentSubmit={handleSubmitPortalComment}
+                  onActionClick={handleActivityAction}
+                  stageEducation={stageEducation}
+                  whatHappensNextItems={whatHappensNextItems}
+                  whatsHappeningSummary={whatsHappeningSummary}
+                  rolePlayerGuidance={rolePlayerGuidance}
+                  controlBoard={workspaceData?.mvpControlBoard}
+                  supportContact={buyerSupportContact}
+                  buyerPortalAccessDescription={buyerPortalAccessDescription}
+                  token={token}
+                  workspaceNavigationScope={workspaceNavigationScope}
+                />
                 {effectiveWorkspace !== 'seller' && showReservationDepositUploadCard ? (
                   <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                     <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
@@ -12393,233 +12651,6 @@ function ClientPortal() {
                   </section>
                 ) : null}
 
-                <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">What You Need To Do Now</h3>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      {blockingActionCount} blocking
-                    </span>
-                  </div>
-                  {prioritizedNextActions.length ? (
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {prioritizedNextActions.map((action) => {
-                        const normalizedPriority = normalizePortalStatus(action?.priority)
-                        const priorityClasses =
-                          normalizedPriority === 'urgent'
-                            ? 'border-[#f5c9bf] bg-[#fff3ef] text-[#b5472d]'
-                            : normalizedPriority === 'high'
-                              ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
-                              : normalizedPriority === 'informational'
-                                ? 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
-                                : 'border-[#dde7f1] bg-[#f8fbff] text-[#5f7086]'
-                        const toneClasses = action?.blocking
-                          ? 'border-[#f1ddd0] bg-[#fff8f3]'
-                          : 'border-[#dbe5ef] bg-[#fcfdff]'
-                        const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
-                        const actionRoute = String(action?.actionRoute || '').trim() || 'overview'
-                        const actionLabel = String(action?.actionLabel || 'Open').trim()
-                        return (
-                          <article key={action?.id || `${action?.type}-${action?.title}`} className={`rounded-[14px] border px-3.5 py-3 ${toneClasses}`}>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] ${priorityClasses}`}>
-                                {toTitleLabel(normalizedPriority || 'normal')}
-                              </span>
-                              {action?.blocking ? (
-                                <span className="inline-flex items-center rounded-full border border-[#f0d8ae] bg-[#fff6e7] px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#9a5b0f]">
-                                  Blocking
-                                </span>
-                              ) : null}
-                              {dueDateLabel ? (
-                                <span className="text-[0.68rem] font-medium text-[#6b7d93]">Due {dueDateLabel}</span>
-                              ) : null}
-                            </div>
-                            <h4 className="mt-2 text-sm font-semibold text-[#142132]">{action?.title || 'Action required'}</h4>
-                            <p className="mt-1 text-sm leading-6 text-[#566b82]">{action?.description || 'Please review this item.'}</p>
-                            {action?.educationalSummary ? (
-                              <p className="mt-1 text-xs leading-5 text-[#5f738a]">Why this matters: {action.educationalSummary}</p>
-                            ) : null}
-                            <div className="mt-3">
-                              <Link
-                                to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)}
-                                className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                              >
-                                {actionLabel}
-                              </Link>
-                            </div>
-                          </article>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
-                      You have no actions required at the moment.
-                    </p>
-                  )}
-                  {hiddenNextActionCount > 0 ? (
-                    <p className="mt-3 text-xs font-medium text-[#6b7d93]">
-                      {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} are available in your full workflow.
-                    </p>
-                  ) : null}
-                </section>
-
-                <section className="grid gap-6 xl:grid-cols-2">
-                  <MvpTransactionControlBoard controlBoard={workspaceData?.mvpControlBoard} compact />
-                  <PurchaseJourneyCard
-                  progressPercent={journeyProgressPercent}
-                  currentStageLabel={journeyCurrentStageLabel}
-                  nextStageLabel={journeyNextStageLabel}
-                  journeyStatus={journeyStatusFlag}
-                  steps={clientJourneySteps}
-                  expandedStepId={resolvedExpandedJourneyStepId}
-                  title={effectiveWorkspace === 'seller' ? 'Your Sale Journey' : 'Your Purchase Journey'}
-                  subtitle={
-                    effectiveWorkspace === 'seller'
-                      ? 'Track each milestone from seller onboarding to transfer registration.'
-                      : 'Track each milestone from reservation through registration.'
-                  }
-                  onToggleStep={(stepId) =>
-                    setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
-                  }
-                  />
-                  <LatestUpdatesCard
-                  updates={latestJourneyFeedItems}
-                  commentDraft={commentDraft}
-                  saving={saving}
-                  onCommentDraftChange={setCommentDraft}
-                  onCommentSubmit={handleSubmitPortalComment}
-                  onActionClick={handleActivityAction}
-                  heading="Recent Updates"
-                  subtitle={latestUpdatesSubtitle}
-                />
-                </section>
-
-                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Current Stage
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{journeyCurrentStageLabel}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{journeyHeroSubtext}</p>
-                    <p className="mt-3 text-xs font-medium text-[#7b8ca2]">Next: {journeyNextStageLabel}</p>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Next Step For You
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
-                    <div className="mt-4">
-                      <Link
-                        to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryOverviewAction.to)}
-                        className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
-                      >
-                        {primaryOverviewAction.label}
-                      </Link>
-                    </div>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      What Happens Next
-                    </span>
-                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
-                      {whatHappensNextItems.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Handover status</h3>
-                    <div className="mt-3 space-y-2.5 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3.5 text-sm">
-                      <div>
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Estimated handover</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                          {formatClientPortalDate(portal?.handover?.handoverDate, 'Awaiting schedule')}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Status</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{toTitleLabel(handoverStatus)}</strong>
-                      </div>
-                    </div>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Snag summary</h3>
-                    {portal?.settings?.snag_reporting_enabled ? (
-                      <div className="mt-3 grid grid-cols-2 gap-2.5">
-                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Open</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagOpenCount}</strong>
-                        </article>
-                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Resolved</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagResolvedCount}</strong>
-                        </article>
-                      </div>
-                    ) : (
-                      <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
-                        Snag reporting is not active for this transaction.
-                      </p>
-                    )}
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-1">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
-                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
-                      {whatsHappeningSummary.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-3">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                      Stage Guide
-                    </span>
-                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {stageEducation?.title || 'Transaction stage in progress'}
-                    </h3>
-                    <p className="mt-2 text-sm leading-6 text-[#566b82]">
-                      {stageEducation?.detailedExplanation || stageEducation?.shortDescription || 'This stage is currently in progress.'}
-                    </p>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What you need to do</span>
-                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
-                          {stageEducation?.whatClientNeedsToDo || 'No action is required unless your team requests something.'}
-                        </p>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</span>
-                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
-                          {stageEducation?.whatHappensNext || 'Your team will guide you through the next stage.'}
-                        </p>
-                      </article>
-                    </div>
-                    {rolePlayerGuidance.length ? (
-                      <div className="mt-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Role players at this stage</span>
-                        <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[#324559]">
-                          {rolePlayerGuidance.slice(0, 3).map((entry) => (
-                            <li key={entry?.key} className="flex items-start gap-2">
-                              <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                              <span>{entry?.explanation}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </article>
-                </section>
               </>
               )
             ) : null}
@@ -12928,6 +12959,26 @@ function ClientPortal() {
                 </div>
 
                 {activeBondApplicationTab === 'application' ? (
+                  shouldRenderGuidedBondApplication ? (
+                    <GuidedBondApplication
+                      portal={portal}
+                      token={token}
+                      saveClientPortalOnboardingDraft={saveClientPortalOnboardingDraft}
+                      requiredDocuments={portalRequiredDocuments}
+                      documents={portalDocumentLookupRows}
+                      onReconcileDocumentRequirements={handleGuidedBondApplicationDocumentReconciliation}
+                      onUploadRequiredDocument={handleUploadRequiredDocument}
+                      onRefreshDocuments={() => loadPortal({ background: true })}
+                      onPrepareSubmission={handleGuidedBondApplicationPrepareSubmission}
+                      onRefreshSubmission={handleGuidedBondApplicationRefreshSubmission}
+                      onCancelPendingSubmission={handleGuidedBondApplicationCancelPendingSubmission}
+                      participantModeEnabled={guidedBondApplicationParticipantFlag.enabled}
+                      onInviteCoApplicant={handleGuidedBondApplicationInviteCoApplicant}
+                      onBackToPortal={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))}
+                      onSaveAndExit={handleGuidedBondApplicationSaveAndExit}
+                      onLegacyHandoff={handleGuidedBondApplicationHandoff}
+                    />
+                  ) : (
                   <section className="space-y-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -13537,6 +13588,7 @@ function ClientPortal() {
                       </div>
                     </div>
                   </section>
+                  )
                 ) : null}
 
                 {activeBondApplicationTab === 'offers' ? (
@@ -13547,18 +13599,26 @@ function ClientPortal() {
                         {lenderOffersIntroText}
                       </p>
                     </div>
-                    {bondOfferDocuments.length ? (
+                    {displayedBondOfferCards.length ? (
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {bondOfferDocuments.map((offer) => {
-                          const isAccepted = acceptedBondOfferId && String(offer.id) === acceptedBondOfferId
-                          const isDeclined = declinedBondOfferIds.has(String(offer.id))
+                        {displayedBondOfferCards.map((offer) => {
+                          const isAccepted = (acceptedBondOfferId && String(offer.id) === acceptedBondOfferId) || offer.buyerDecision === 'accepted'
+                          const isDeclined = declinedBondOfferIds.has(String(offer.id)) || offer.buyerDecision === 'declined'
+                          const downloadUrl = offer.quoteDocument?.url || offer.downloadUrl || ''
+                          const availableLabel = offer.source === 'originator_capture' ? 'Available' : 'Uploaded'
                           return (
                             <article key={offer.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                               <div className="flex items-start justify-between gap-2">
                                 <div>
                                   <span className="text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{offer.bankName}</span>
-                                  <strong className="mt-1 block text-sm font-semibold text-[#142132]">{offer.name}</strong>
-                                  <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(offer.uploadedAt, 'Recently')}</p>
+                                  <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                                    {offer.source === 'originator_capture' ? 'Bank offer' : offer.name}
+                                  </strong>
+                                  <p className="mt-1 text-xs text-[#6b7d93]">
+                                    {offer.source === 'originator_capture'
+                                      ? `Published ${formatClientPortalDate(offer.publishedAt || offer.capturedAt, 'Recently')}`
+                                      : `Uploaded ${formatClientPortalDate(offer.uploadedAt, 'Recently')}`}
+                                  </p>
                                 </div>
                                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
                                   isAccepted
@@ -13567,13 +13627,39 @@ function ClientPortal() {
                                       ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
                                       : 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
                                 }`}>
-                                  {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : 'Uploaded'}
+                                  {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : availableLabel}
                                 </span>
                               </div>
+                              {offer.source === 'originator_capture' ? (
+                                <dl className="mt-3 grid gap-2 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] p-3 text-xs">
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Amount</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(offer.offeredAmount)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Interest rate</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">
+                                      {formatBondRateValue(offer.interestRate, offer.interestRateDisplay)}
+                                      {offer.interestRateType ? ` ${offer.interestRateType}` : ''}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Monthly repayment</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(offer.monthlyRepayment)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Valid until</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">{formatClientPortalDate(offer.validUntil)}</dd>
+                                  </div>
+                                </dl>
+                              ) : null}
+                              {offer.conditionsSummary ? (
+                                <p className="mt-3 rounded-[12px] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#5f7187]">{offer.conditionsSummary}</p>
+                              ) : null}
                               <div className="mt-4 flex flex-wrap items-center gap-2">
-                                {offer.downloadUrl ? (
+                                {downloadUrl ? (
                                   <a
-                                    href={offer.downloadUrl}
+                                    href={downloadUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
@@ -13616,8 +13702,8 @@ function ClientPortal() {
                     <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                       <h5 className="text-sm font-semibold text-[#142132]">Upload signed accepted offer</h5>
                       <p className="mt-1 text-sm text-[#6b7d93]">
-                        {acceptedBondOffer
-                          ? `Accepted offer: ${acceptedBondOffer.bankName}. Upload your signed copy once complete.`
+                        {displayedAcceptedBondOffer
+                          ? `Accepted offer: ${displayedAcceptedBondOffer.bankName}. Upload your signed copy once complete.`
                           : 'Accept an offer first, then upload your signed copy here.'}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -13626,11 +13712,11 @@ function ClientPortal() {
                           <input
                             type="file"
                             className="hidden"
-                            disabled={!acceptedBondOffer || bondApplicationSaving}
+                            disabled={!displayedAcceptedBondOffer || bondApplicationSaving}
                             onChange={(event) => {
                               const file = event.target.files?.[0]
-                              if (file && acceptedBondOffer) {
-                                void handleUploadSignedBondOffer(file, acceptedBondOffer)
+                              if (file && displayedAcceptedBondOffer) {
+                                void handleUploadSignedBondOffer(file, displayedAcceptedBondOffer)
                               }
                               event.target.value = ''
                             }}
@@ -13674,26 +13760,62 @@ function ClientPortal() {
                         Final bond grant and instruction documents uploaded by your finance team will appear here.
                       </p>
                     </div>
-                    {bondGrantDocuments.length ? (
+                    {displayedBondGrantCards.length ? (
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {bondGrantDocuments.map((document) => (
-                          <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                            <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{extractBondBankName(`${document.category || ''} ${document.name || ''}`)}</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{document.name || 'Bond grant document'}</strong>
-                            <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(document.created_at, 'Recently')}</p>
-                            {document.url ? (
-                              <a
-                                href={document.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
-                              >
-                                <Download size={13} />
-                                Download
-                              </a>
-                            ) : null}
-                          </article>
-                        ))}
+                        {displayedBondGrantCards.map((grant) => {
+                          const grantDocument = grant.grantDocument || {}
+                          const signedGrantDocument = grant.signedGrantDocument || null
+                          return (
+                            <article key={grant.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{grant.bankName}</span>
+                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{grantDocument.name || 'Bond grant document'}</strong>
+                              <p className="mt-1 text-xs text-[#6b7d93]">
+                                {grant.source === 'originator_capture'
+                                  ? `Published ${formatClientPortalDate(grant.publishedAt || grant.capturedAt, 'Recently')}`
+                                  : `Uploaded ${formatClientPortalDate(grantDocument.uploadedAt, 'Recently')}`}
+                              </p>
+                              {grant.source === 'originator_capture' ? (
+                                <dl className="mt-3 grid gap-2 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] p-3 text-xs">
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Approved amount</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(grant.approvedAmount)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Reference</dt>
+                                    <dd className="mt-0.5 font-semibold text-[#20364c]">{grant.grantReference || 'Not provided'}</dd>
+                                  </div>
+                                </dl>
+                              ) : null}
+                              {grant.conditionsSummary ? (
+                                <p className="mt-3 rounded-[12px] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#5f7187]">{grant.conditionsSummary}</p>
+                              ) : null}
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                {grantDocument.url ? (
+                                  <a
+                                    href={grantDocument.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                  >
+                                    <Download size={13} />
+                                    Download grant
+                                  </a>
+                                ) : null}
+                                {signedGrantDocument?.url ? (
+                                  <a
+                                    href={signedGrantDocument.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-[#d5e8dd] bg-[#eef9f3] px-3 py-1.5 text-xs font-semibold text-[#1c7d45]"
+                                  >
+                                    <Download size={13} />
+                                    Signed copy
+                                  </a>
+                                ) : null}
+                              </div>
+                            </article>
+                          )
+                        })}
                       </div>
                     ) : (
                       <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
@@ -14492,31 +14614,62 @@ function ClientPortal() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#6d8197]">Bond Offers</h5>
                   <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#6d8197]">
-                    {bondOfferDocuments.length + bondGrantDocuments.length}
+                    {displayedBondOfferCards.length + displayedBondGrantCards.length}
                   </span>
                 </div>
                 <div className="mt-3 space-y-3">
-                  {bondOfferDocuments.map((offer) => {
-                    const isAccepted = acceptedBondOfferId && String(offer.id) === acceptedBondOfferId
-                    const isDeclined = declinedBondOfferIds.has(String(offer.id))
+                  {displayedBondOfferCards.map((offer) => {
+                    const isAccepted = (acceptedBondOfferId && String(offer.id) === acceptedBondOfferId) || offer.buyerDecision === 'accepted'
+                    const isDeclined = declinedBondOfferIds.has(String(offer.id)) || offer.buyerDecision === 'declined'
+                    const downloadUrl = offer.quoteDocument?.url || offer.downloadUrl || ''
+                    const availableLabel = offer.source === 'originator_capture' ? 'Available' : 'Uploaded'
                     return (
                       <article key={offer.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <span className="text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{offer.bankName}</span>
-                            <strong className="mt-1 block text-sm font-semibold text-[#142132]">{offer.name}</strong>
-                            <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(offer.uploadedAt, 'Recently')}</p>
+                            <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                              {offer.source === 'originator_capture' ? 'Bank offer' : offer.name}
+                            </strong>
+                            <p className="mt-1 text-xs text-[#6b7d93]">
+                              {offer.source === 'originator_capture'
+                                ? `Published ${formatClientPortalDate(offer.publishedAt || offer.capturedAt, 'Recently')}`
+                                : `Uploaded ${formatClientPortalDate(offer.uploadedAt, 'Recently')}`}
+                            </p>
                           </div>
                           <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(
                             isAccepted ? 'Approved' : isDeclined ? 'Rejected' : 'Uploaded',
                           )}`}>
-                            {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : 'Uploaded'}
+                            {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : availableLabel}
                           </span>
                         </div>
+                        {offer.source === 'originator_capture' ? (
+                          <dl className="mt-3 grid gap-2 rounded-[14px] border border-[#e6edf5] bg-white p-3 text-xs sm:grid-cols-2">
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Amount</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(offer.offeredAmount)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Interest</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondRateValue(offer.interestRate, offer.interestRateDisplay)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Repayment</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(offer.monthlyRepayment)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Valid until</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{formatClientPortalDate(offer.validUntil)}</dd>
+                            </div>
+                          </dl>
+                        ) : null}
+                        {offer.conditionsSummary ? (
+                          <p className="mt-3 rounded-[12px] bg-white px-3 py-2 text-xs leading-5 text-[#5f7187]">{offer.conditionsSummary}</p>
+                        ) : null}
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                          {offer.downloadUrl ? (
+                          {downloadUrl ? (
                             <a
-                              href={offer.downloadUrl}
+                              href={downloadUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
@@ -14553,8 +14706,8 @@ function ClientPortal() {
                   <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
                     <strong className="block text-sm font-semibold text-[#142132]">Signed accepted offer</strong>
                     <p className="mt-1 text-sm text-[#6b7d93]">
-                      {acceptedBondOffer
-                        ? `Accepted offer: ${acceptedBondOffer.bankName}. Upload your signed copy once complete.`
+                      {displayedAcceptedBondOffer
+                        ? `Accepted offer: ${displayedAcceptedBondOffer.bankName}. Upload your signed copy once complete.`
                         : 'Accept an offer first, then upload your signed copy here.'}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -14563,11 +14716,11 @@ function ClientPortal() {
                         <input
                           type="file"
                           className="hidden"
-                          disabled={!acceptedBondOffer || bondApplicationSaving}
+                          disabled={!displayedAcceptedBondOffer || bondApplicationSaving}
                           onChange={(event) => {
                             const file = event.target.files?.[0]
-                            if (file && acceptedBondOffer) {
-                              void handleUploadSignedBondOffer(file, acceptedBondOffer)
+                            if (file && displayedAcceptedBondOffer) {
+                              void handleUploadSignedBondOffer(file, displayedAcceptedBondOffer)
                             }
                             event.target.value = ''
                           }}
@@ -14601,27 +14754,56 @@ function ClientPortal() {
                     ) : null}
                   </article>
 
-                  {bondGrantDocuments.map((document) => (
-                    <article key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
-                      <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Bond grant document'}</strong>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Final approval document shared by your finance team.'}</p>
-                      {document.url ? (
-                        <div className="mt-3">
-                          <a
-                            href={document.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
-                          >
-                            <Download size={13} />
-                            Download
-                          </a>
+                  {displayedBondGrantCards.map((grant) => {
+                    const grantDocument = grant.grantDocument || {}
+                    const signedGrantDocument = grant.signedGrantDocument || null
+                    return (
+                      <article key={grant.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                        <strong className="block text-sm font-semibold text-[#142132]">{grantDocument.name || 'Bond grant document'}</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                          {grant.bankName} • {grant.conditionsSummary || 'Final approval document shared by your finance team.'}
+                        </p>
+                        {grant.source === 'originator_capture' ? (
+                          <dl className="mt-3 grid gap-2 rounded-[14px] border border-[#e6edf5] bg-white p-3 text-xs sm:grid-cols-2">
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Approved amount</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{formatBondMoneyValue(grant.approvedAmount)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Reference</dt>
+                              <dd className="mt-0.5 font-semibold text-[#20364c]">{grant.grantReference || 'Not provided'}</dd>
+                            </div>
+                          </dl>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {grantDocument.url ? (
+                            <a
+                              href={grantDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                            >
+                              <Download size={13} />
+                              Download grant
+                            </a>
+                          ) : null}
+                          {signedGrantDocument?.url ? (
+                            <a
+                              href={signedGrantDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#d5e8dd] bg-[#eef9f3] px-3 py-1.5 text-xs font-semibold text-[#1c7d45]"
+                            >
+                              <Download size={13} />
+                              Signed copy
+                            </a>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </article>
-                  ))}
+                      </article>
+                    )
+                  })}
 
-                  {!bondOfferDocuments.length && !bondGrantDocuments.length ? (
+                  {!displayedBondOfferCards.length && !displayedBondGrantCards.length ? (
                     <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm text-[#6b7d93]">
                       No bond offers have been shared yet.
                     </article>
@@ -15185,7 +15367,7 @@ function ClientPortal() {
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Support notes</h4>
               <div className="mt-4 space-y-3">
                 {[
-                  'Keep your buyer portal link private. Anyone who needs access should use the link sent by your transaction team.',
+                  'Keep your purchase workspace link private. Anyone who needs access should use the link sent by your transaction team.',
                   'Use Comments & Updates on the progress page when you want your team to respond inside the shared transaction record.',
                   'Document upload requests will appear automatically in your document workspace as different role players ask for additional items.',
                   'Handover scheduling and warranty information will only appear once your transaction is close enough to occupation or transfer.',

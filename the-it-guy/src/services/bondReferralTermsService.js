@@ -23,6 +23,12 @@ export const BOND_REFERRAL_LEDGER_STATUSES = Object.freeze({
   cancelled: 'cancelled',
 })
 
+export const BOND_REFERRAL_PAYOUT_RECIPIENTS = Object.freeze({
+  agency: 'agency',
+  agent: 'agent',
+  agencyAndAgent: 'agency_and_agent',
+})
+
 const REFERRAL_TERM_SELECT = [
   'id', 'originator_org_id', 'agency_org_id', 'partner_relationship_id', 'version', 'status',
   'calculation_basis', 'rate_type', 'percentage', 'fixed_amount', 'tiers', 'terms_snapshot',
@@ -117,6 +123,13 @@ function normalizeLedgerStatus(value = '', fallback = BOND_REFERRAL_LEDGER_STATU
   return Object.values(BOND_REFERRAL_LEDGER_STATUSES).includes(normalized) ? normalized : fallback
 }
 
+function normalizePayoutRecipient(value = '') {
+  const normalized = normalizeLower(value)
+  return Object.values(BOND_REFERRAL_PAYOUT_RECIPIENTS).includes(normalized)
+    ? normalized
+    : BOND_REFERRAL_PAYOUT_RECIPIENTS.agency
+}
+
 export function normalizeBondReferralTerms(row = {}) {
   const rule = normalizeCommissionRule({
     type: row.rateType || row.rate_type || row.type || COMMISSION_RULE_TYPES.percentage,
@@ -198,6 +211,27 @@ export function buildBondReferralLedgerEntry({ terms = {}, application = {}, ben
     status: normalizeLedgerStatus(status),
     invoiceStatus: normalizeLower(application.invoiceStatus || application.invoice_status || 'not_invoiced') || 'not_invoiced',
   }
+}
+
+export function buildBondReferralLedgerEntries({ terms = {}, application = {}, agency = {}, agent = {}, status = BOND_REFERRAL_LEDGER_STATUSES.expected } = {}) {
+  const normalizedTerms = normalizeBondReferralTerms(terms)
+  const payoutRecipient = normalizePayoutRecipient(normalizedTerms.termsSnapshot?.payoutRecipient || normalizedTerms.termsSnapshot?.payout_recipient)
+  const beneficiaries = []
+  if (payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agency || payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent) {
+    beneficiaries.push({
+      type: COMMISSION_PARTY_TYPES.agency,
+      id: agency.id || agency.agencyOrganisationId || normalizedTerms.agencyOrganisationId,
+      name: agency.name || agency.agencyName || 'Agency referral',
+    })
+  }
+  if (payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agent || payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent) {
+    beneficiaries.push({
+      type: COMMISSION_PARTY_TYPES.agent,
+      id: agent.id || agent.userId || agent.profileId,
+      name: agent.name || agent.fullName || agent.email || 'Agent referral',
+    })
+  }
+  return beneficiaries.map((beneficiary) => buildBondReferralLedgerEntry({ terms: normalizedTerms, application, beneficiary, status }))
 }
 
 function mapTermsForPersistence(terms = {}, context = {}) {

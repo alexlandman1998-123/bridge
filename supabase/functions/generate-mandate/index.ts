@@ -19,6 +19,8 @@ type JsonRecord = Record<string, unknown>;
 type MandateSection = {
   key?: string;
   label?: string;
+  sectionType?: string;
+  section_type?: string;
   content?: string;
   legalText?: string;
   legal_text?: string;
@@ -569,6 +571,19 @@ function sectionContent(section: MandateSection = {}) {
   return String(section.content ?? section.legalText ?? section.legal_text ?? "");
 }
 
+function sectionMetadata(section: MandateSection = {}) {
+  return asRecord(section.metadata || section.metadata_json);
+}
+
+function shouldRenderNativePdfSectionBody(section: MandateSection = {}) {
+  const metadata = sectionMetadata(section);
+  const nativePdfLayout = asRecord(metadata.native_pdf_layout || metadata.nativePdfLayout || metadata.pdf_layout || metadata.pdfLayout);
+  const sectionType = normalizeText(section.sectionType || section.section_type || metadata.section_type).toLowerCase();
+  if (nativePdfLayout.suppress_section_body === true || nativePdfLayout.render_body === false) return false;
+  if (sectionType === "signature_zone" && normalizeText(nativePdfLayout.render_mode).toLowerCase() === "signature_zone_only") return false;
+  return true;
+}
+
 async function resolveFrozenNativeRenderInputD2({ supabase, packetId, templateId, generationPayload, requestedSections, requestedPlaceholders }: {
   supabase: any;
   packetId: string;
@@ -1086,14 +1101,15 @@ async function renderStructuredSectionsToPdfBytes({
 
   const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
     const panelWidth = 210;
-    const panelHeight = 112;
+    const panelHeight = 124;
+    const fieldHeight = 56;
     const panelY = pageHeight - options.panelTop - panelHeight;
     const fieldTop = options.panelTop + 34;
     targetPage.drawRectangle({ x: options.x, y: panelY, width: panelWidth, height: panelHeight, color: rgb(1, 1, 1), borderColor: lineColor, borderWidth: 0.9 });
     targetPage.drawText(options.title, { x: options.x + 12, y: panelY + panelHeight - 22, size: 9.5, font: bold, color: dark });
-    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - 44, width: 186, height: 44, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
-    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 30, size: 7.5, font: regular, color: muted });
-    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 16, size: 8.5, font: bold, color: dark });
+    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - fieldHeight, width: 186, height: fieldHeight, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
+    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 28, size: 7.5, font: regular, color: muted });
+    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 14, size: 8.5, font: bold, color: dark });
     plannedSigningFields.push({
       signerRole: options.signerRole,
       fieldType: "signature",
@@ -1101,7 +1117,7 @@ async function renderStructuredSectionsToPdfBytes({
       xPosition: options.x + 12,
       yPosition: fieldTop,
       width: 186,
-      height: 44,
+      height: fieldHeight,
       required: true,
       label: `${options.title} signature`,
     });
@@ -1113,6 +1129,7 @@ async function renderStructuredSectionsToPdfBytes({
     return normalizedPacketType !== "mandate" || sectionMatchesMandateRoute(section, placeholders);
   });
   for (const [index, section] of visibleSections.entries()) {
+    if (!shouldRenderNativePdfSectionBody(section)) continue;
     const label = normalizeText(section?.label || section?.key) || `Section ${index + 1}`;
     const content = replacePlaceholdersForPdf(section?.content || section?.legalText || section?.legal_text, placeholders);
     if (!content.trim()) continue;
@@ -1123,19 +1140,30 @@ async function renderStructuredSectionsToPdfBytes({
   }
 
   if (normalizedPacketType === "mandate") {
-    addPage();
-    drawCentered(page, "SIGNATURES", pageHeight - 176, bold, 15, dark);
-    drawCentered(page, "The parties sign this mandate using the reserved execution blocks below.", pageHeight - 195, regular, 9.5, muted);
-    const agentName = getPdfPlaceholder(placeholders, "agent_name", "agent.full_name", "signing_agent_name") || "Agent";
-    const sellerName = getPdfPlaceholder(placeholders, "seller_display_name", "seller_name", "seller.full_name") || "Seller";
-    drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop: 235, x: margin, signerRole: "agent" });
-    drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop: 235, x: pageWidth - margin - 210, signerRole: "seller" });
     const spouseName = firstPdfValue(
       getPdfPlaceholder(placeholders, "seller_spouse_name", "spouse_name", "seller.spouse_name"),
       getPdfPlaceholder(placeholders, "purchaser_2_name"),
     );
-    if (!isMissingPdfValue(spouseName)) {
-      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: 382, x: margin, signerRole: "purchaser_2" });
+    const hasSpouseSigner = !isMissingPdfValue(spouseName);
+    const signatureBlockHeight = hasSpouseSigner ? 360 : 220;
+    if (y - signatureBlockHeight < 84) {
+      addPage();
+      y = pageHeight - 150;
+    } else {
+      y -= 22;
+    }
+    const headingTop = Math.max(150, pageHeight - y);
+    drawCentered(page, "SIGNATURES", y, bold, 15, dark);
+    y -= 19;
+    drawCentered(page, "The parties sign this mandate using the reserved execution blocks below.", y, regular, 9.5, muted);
+    y -= 30;
+    const agentName = getPdfPlaceholder(placeholders, "agent_name", "agent.full_name", "signing_agent_name") || "Agent";
+    const sellerName = getPdfPlaceholder(placeholders, "seller_display_name", "seller_name", "seller.full_name") || "Seller";
+    const panelTop = Math.max(headingTop + 59, pageHeight - y);
+    drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop, x: margin, signerRole: "agent" });
+    drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop, x: pageWidth - margin - 210, signerRole: "seller" });
+    if (hasSpouseSigner) {
+      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: panelTop + 150, x: margin, signerRole: "purchaser_2" });
     }
   }
 
@@ -1672,7 +1700,7 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        if (buildPdfConverterUrl()) {
+        if (buildPdfConverterUrl() && packetType !== "mandate") {
           outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
         } else {
           const nativePdf = await renderStructuredSectionsToPdfBytes({

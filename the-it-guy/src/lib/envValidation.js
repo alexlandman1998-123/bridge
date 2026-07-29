@@ -1,4 +1,15 @@
 import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, validateProductionConfiguration } from '../config/productionValidation'
+import {
+  resolveGuidedBondApplicationChangeRequestsFlag,
+  resolveBondApplicationBankAdaptersFlag,
+  resolveBondApplicationExportsFlag,
+  resolveBondApplicationExternalStatusSyncFlag,
+  resolveBondApplicationLiveDeliveryFlag,
+  resolveBondApplicationOobaAdapterFlag,
+  resolveGuidedBondApplicationParticipantsFlag,
+  resolveGuidedBondApplicationSuretiesFlag,
+  resolveGuidedBondApplicationV2Flag,
+} from './guidedBondApplicationFeatureFlag'
 
 function normalize(value) {
   return String(value || '').trim()
@@ -90,6 +101,15 @@ export function getFeatureFlags() {
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
     enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
     enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
+    guidedBondApplicationV2: resolveGuidedBondApplicationV2Flag({ env: import.meta.env }).enabled,
+    guidedBondApplicationParticipantsV1: resolveGuidedBondApplicationParticipantsFlag({ env: import.meta.env }).enabled,
+    guidedBondApplicationSuretiesV1: resolveGuidedBondApplicationSuretiesFlag({ env: import.meta.env }).enabled,
+    guidedBondApplicationChangeRequestsV1: resolveGuidedBondApplicationChangeRequestsFlag({ env: import.meta.env }).enabled,
+    bondApplicationExportsV1: resolveBondApplicationExportsFlag({ env: import.meta.env }).enabled,
+    bondApplicationOobaAdapterV1: resolveBondApplicationOobaAdapterFlag({ env: import.meta.env }).enabled,
+    bondApplicationBankAdaptersV1: resolveBondApplicationBankAdaptersFlag({ env: import.meta.env }).enabled,
+    bondApplicationLiveDeliveryV1: resolveBondApplicationLiveDeliveryFlag({ env: import.meta.env }).enabled,
+    bondApplicationExternalStatusSyncV1: resolveBondApplicationExternalStatusSyncFlag({ env: import.meta.env }).enabled,
     enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
     enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
     allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),

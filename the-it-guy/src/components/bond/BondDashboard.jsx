@@ -50,6 +50,7 @@ const ACTIVE_FILTERS = [
 
 const DEFAULT_RANGE_KEY = 'last_30_days'
 const DEFAULT_RANGE_LABEL = 'Last 30 Days'
+const SUPPORTED_RANGE_KEYS = new Set(['last_30_days', 'this_month', 'quarter_to_date', 'all_time'])
 const MOCK_APPLICATION_QUERY_KEYS = ['mockApplications', 'mockData', 'demoApplications']
 const MOCK_APPLICATION_TRUE_VALUES = new Set(['1', 'true', 'yes', 'applications', 'bond'])
 
@@ -82,7 +83,10 @@ export default function BondDashboard({
   const navigate = useNavigate()
   const safeWorkspaceId = normalizeText(workspaceId)
   const location = useLocation()
-  const [rangeKey] = useState(DEFAULT_RANGE_KEY)
+  const [rangeKey, setRangeKey] = useState(() => {
+    const queryRange = new URLSearchParams(location.search || '').get('range')
+    return SUPPORTED_RANGE_KEYS.has(queryRange) ? queryRange : DEFAULT_RANGE_KEY
+  })
   const developmentId = 'all'
   const mockApplicationsPreview = shouldPreviewMockApplications(location.search)
   const [state, setState] = useState(
@@ -134,6 +138,15 @@ export default function BondDashboard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard()
   }, [loadDashboard])
+
+  const handleRangeChange = useCallback((nextRangeKey) => {
+    const normalized = SUPPORTED_RANGE_KEYS.has(nextRangeKey) ? nextRangeKey : DEFAULT_RANGE_KEY
+    setRangeKey(normalized)
+    const params = new URLSearchParams(location.search || '')
+    if (normalized === DEFAULT_RANGE_KEY) params.delete('range')
+    else params.set('range', normalized)
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+  }, [location.pathname, location.search, navigate])
 
   const snapshot = state.snapshot || {}
   const heroKpis = snapshot.heroKpis || []
@@ -197,7 +210,12 @@ export default function BondDashboard({
             </section>
           ) : null}
           {shouldRenderHqDashboard ? (
-            <BondHqCommandCentre snapshot={snapshot} />
+            <BondHqCommandCentre
+              snapshot={snapshot}
+              rangeKey={rangeKey}
+              onRangeChange={handleRangeChange}
+              onRefresh={loadDashboard}
+            />
           ) : (
             <>
               <KpiStrip items={heroKpis} />
@@ -835,6 +853,14 @@ function ActiveApplicationCard({ application = {} }) {
           <p className="mt-1 line-clamp-2 text-[0.84rem] font-medium leading-5 text-[#35546c]">{application.nextAction || 'No next action'}</p>
         </section>
 
+        {application.originatorIntakePackage ? (
+          <OriginatorIntakePackageMiniCard
+            packageView={application.originatorIntakePackage}
+            applicationHref={application.href}
+            requestDocsHref={application.requestDocsHref || '/documents?role=bond_originator'}
+          />
+        ) : null}
+
         <footer className="mt-4 grid grid-cols-3 gap-2">
           <button type="button" onClick={() => goTo(application.href)} className="h-9 rounded-[11px] bg-[#143250] px-2 text-xs font-semibold text-white transition hover:bg-[#173a5e]">
             Open Application
@@ -853,6 +879,90 @@ function ActiveApplicationCard({ application = {} }) {
         </footer>
       </div>
     </article>
+  )
+}
+
+function OriginatorIntakePackageMiniCard({ packageView = {}, applicationHref = '', requestDocsHref = '' }) {
+  const canAccept = Boolean(packageView.actions?.canAccept)
+  const canDownload = Boolean(packageView.actions?.canDownload)
+  const canRequestMoreDocuments = Boolean(packageView.actions?.canRequestMoreDocuments)
+  const requestSummary = packageView.documentRequestSummary || {}
+  const progressSummary = packageView.progressSummary || {}
+  const offerGrantSummary = packageView.offerGrantSummary || {}
+  const openRequests = Number(requestSummary.open || 0)
+  const awaitingReview = Number(requestSummary.awaitingReview || 0)
+  const capturedOffers = Number(offerGrantSummary.offerCount || 0)
+  const capturedGrants = Number(offerGrantSummary.grantCount || 0)
+  const packageHref = applicationHref ? `${applicationHref}${applicationHref.includes('?') ? '&' : '?'}panel=originator-intake` : ''
+
+  function goTo(href) {
+    if (!href || typeof window === 'undefined') return
+    window.location.assign(href)
+  }
+
+  return (
+    <section className="mt-3 rounded-[13px] border border-[#d7e4f1] bg-[#f8fbff] px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#6f849a]">Originator Package</p>
+          <p className="mt-1 truncate text-[0.84rem] font-semibold text-[#20374f]">{packageView.statusLabel || 'Package preparing'}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#cbd9e8] bg-white px-2 py-1 text-[0.68rem] font-semibold text-[#31506a]">
+          {packageView.documentCounts?.total || 0} docs
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[0.72rem] text-[#60758d]">
+        <span>{packageView.documentCounts?.signedApplicationDocuments || 0} signed app</span>
+        <span>{packageView.documentCounts?.supportingDocuments || 0} supporting</span>
+      </div>
+      {openRequests > 0 ? (
+        <div className="mt-2 rounded-[10px] border border-[#d7e4f1] bg-white px-2 py-1.5 text-[0.7rem] font-semibold text-[#3a5870]">
+          {openRequests} requested doc{openRequests === 1 ? '' : 's'} open
+          {awaitingReview > 0 ? ` • ${awaitingReview} awaiting review` : ''}
+        </div>
+      ) : null}
+      {progressSummary.currentLabel ? (
+        <div className="mt-2 rounded-[10px] border border-[#d7e4f1] bg-white px-2 py-1.5 text-[0.7rem] text-[#536b82]">
+          <span className="font-semibold text-[#2d4b66]">Progress:</span> {progressSummary.currentLabel}
+        </div>
+      ) : null}
+      {capturedOffers > 0 || capturedGrants > 0 ? (
+        <div className="mt-2 grid grid-cols-2 gap-2 text-[0.7rem] text-[#536b82]">
+          <span className="rounded-[10px] border border-[#d7e4f1] bg-white px-2 py-1.5">
+            <strong className="text-[#2d4b66]">{capturedOffers}</strong> offer{capturedOffers === 1 ? '' : 's'}
+          </span>
+          <span className="rounded-[10px] border border-[#d7e4f1] bg-white px-2 py-1.5">
+            <strong className="text-[#2d4b66]">{capturedGrants}</strong> grant{capturedGrants === 1 ? '' : 's'}
+          </span>
+        </div>
+      ) : null}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          disabled={!canAccept}
+          onClick={() => goTo(packageHref)}
+          className="h-8 rounded-[10px] border border-[#cbd9e8] bg-white px-2 text-[0.7rem] font-semibold text-[#24384d] transition hover:border-[#aebfd1] disabled:cursor-not-allowed disabled:bg-[#eef3f8] disabled:text-[#99a8b8]"
+        >
+          Accept
+        </button>
+        <button
+          type="button"
+          disabled={!canDownload}
+          onClick={() => goTo(packageHref)}
+          className="h-8 rounded-[10px] border border-[#cbd9e8] bg-white px-2 text-[0.7rem] font-semibold text-[#24384d] transition hover:border-[#aebfd1] disabled:cursor-not-allowed disabled:bg-[#eef3f8] disabled:text-[#99a8b8]"
+        >
+          Download
+        </button>
+        <button
+          type="button"
+          disabled={!canRequestMoreDocuments}
+          onClick={() => goTo(requestDocsHref)}
+          className="h-8 rounded-[10px] border border-[#cbd9e8] bg-white px-2 text-[0.7rem] font-semibold text-[#24384d] transition hover:border-[#aebfd1] disabled:cursor-not-allowed disabled:bg-[#eef3f8] disabled:text-[#99a8b8]"
+        >
+          Docs
+        </button>
+      </div>
+    </section>
   )
 }
 

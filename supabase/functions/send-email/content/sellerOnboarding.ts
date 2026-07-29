@@ -1,11 +1,14 @@
 import {
+  type BridgeEmailLayoutBranding,
   escapeHtml,
+  renderBridgeBrandMark,
   renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
   renderBridgeSteps,
   renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
+import { normalizeBrandColor } from "../services/emailBranding.ts";
 
 type SellerPortalRequiredDocument = {
   id?: string;
@@ -46,7 +49,8 @@ function resolvePropertyLabel(propertyTitle: string, propertyType = "") {
 function normalizeReference(value: string) {
   const normalized = String(value || "").trim();
   if (!normalized) return "";
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidPattern.test(normalized)) {
     return "";
   }
@@ -62,7 +66,9 @@ export function buildSellerOnboardingSubject(
   const normalizedKind = String(emailKind || "").trim().toLowerCase();
   if (normalizedKind === "existing_listing") {
     const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
-    return `Activate your Seller Portal for ${propertyLabel || "your property"}`;
+    return `Activate your Seller Portal for ${
+      propertyLabel || "your property"
+    }`;
   }
   if (normalizedKind === "portal_documents") {
     const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
@@ -126,19 +132,39 @@ function resolveExpiryDays(expiryDays: unknown, expiresAt: unknown) {
   return 14;
 }
 
-function normalizeRequiredDocuments(value: unknown): SellerPortalRequiredDocument[] {
+function normalizeRequiredDocuments(
+  value: unknown,
+): SellerPortalRequiredDocument[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item) => item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : null)
+    .map((item) =>
+      item && typeof item === "object" && !Array.isArray(item)
+        ? item as Record<string, unknown>
+        : null
+    )
     .filter(Boolean)
     .map((item) => ({
       id: String(item?.id || "").trim(),
-      key: String(item?.key || item?.requirementKey || item?.requirement_key || "").trim(),
-      name: String(item?.name || item?.label || item?.requirementName || item?.requirement_name || item?.key || "").trim(),
-      description: String(item?.description || item?.requirementDescription || item?.requirement_description || "").trim(),
-      priority: String(item?.priority || item?.requestPriority || item?.request_priority || "").trim(),
-      dueDate: String(item?.dueDate || item?.due_date || item?.requestDueDate || item?.request_due_date || "").trim(),
-      isReplacement: item?.isReplacement === true || item?.is_replacement === true,
+      key: String(
+        item?.key || item?.requirementKey || item?.requirement_key || "",
+      ).trim(),
+      name: String(
+        item?.name || item?.label || item?.requirementName ||
+          item?.requirement_name || item?.key || "",
+      ).trim(),
+      description: String(
+        item?.description || item?.requirementDescription ||
+          item?.requirement_description || "",
+      ).trim(),
+      priority: String(
+        item?.priority || item?.requestPriority || item?.request_priority || "",
+      ).trim(),
+      dueDate: String(
+        item?.dueDate || item?.due_date || item?.requestDueDate ||
+          item?.request_due_date || "",
+      ).trim(),
+      isReplacement: item?.isReplacement === true ||
+        item?.is_replacement === true,
     }))
     .filter((item) => item.name || item.key);
 }
@@ -160,16 +186,26 @@ function resolveSellerStructureLabel(value: unknown) {
   ).trim();
 }
 
-function renderRequiredDocumentsHtml(requiredDocuments: unknown, sellerStructure: unknown) {
+function renderRequiredDocumentsHtml(
+  requiredDocuments: unknown,
+  sellerStructure: unknown,
+) {
   const documents = normalizeRequiredDocuments(requiredDocuments);
   if (!documents.length) return "";
   const sellerStructureLabel = resolveSellerStructureLabel(sellerStructure);
   const visibleDocuments = documents.slice(0, 12);
-  const remainingCount = Math.max(0, documents.length - visibleDocuments.length);
+  const remainingCount = Math.max(
+    0,
+    documents.length - visibleDocuments.length,
+  );
   const rows = visibleDocuments.map((document) => {
-    const title = escapeHtml(document.name || document.key || "Requested document");
+    const title = escapeHtml(
+      document.name || document.key || "Requested document",
+    );
     const description = document.description
-      ? `<p style="margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">${escapeHtml(document.description)}</p>`
+      ? `<p style="margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">${
+        escapeHtml(document.description)
+      }</p>`
       : "";
     const badge = document.isReplacement
       ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #fff4e5; color: #9a5a00; font-size: 11px; font-weight: 700;">Replacement needed</span>`
@@ -180,17 +216,28 @@ function renderRequiredDocumentsHtml(requiredDocuments: unknown, sellerStructure
     </li>`;
   }).join("");
   const suffix = remainingCount
-    ? `<p style="margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">Plus ${remainingCount} more item${remainingCount === 1 ? "" : "s"} in your portal checklist.</p>`
+    ? `<p style="margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: #5f7590;">Plus ${remainingCount} more item${
+      remainingCount === 1 ? "" : "s"
+    } in your portal checklist.</p>`
     : "";
   return `<div style="margin: 0 0 16px; padding: 16px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff;">
     <p style="margin: 0 0 6px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Documents requested</p>
-    <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.45; color: #3f5369;">${sellerStructureLabel ? `Based on your ${escapeHtml(sellerStructureLabel.toLowerCase())} onboarding profile, please upload:` : "Please upload the documents that apply to your seller and property profile:"}</p>
+    <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.45; color: #3f5369;">${
+    sellerStructureLabel
+      ? `Based on your ${
+        escapeHtml(sellerStructureLabel.toLowerCase())
+      } onboarding profile, please upload:`
+      : "Please upload the documents that apply to your seller and property profile:"
+  }</p>
     <ul style="margin: 0; padding-left: 20px;">${rows}</ul>
     ${suffix}
   </div>`;
 }
 
-function renderRequiredDocumentsText(requiredDocuments: unknown, sellerStructure: unknown) {
+function renderRequiredDocumentsText(
+  requiredDocuments: unknown,
+  sellerStructure: unknown,
+) {
   const documents = normalizeRequiredDocuments(requiredDocuments);
   if (!documents.length) return [];
   const sellerStructureLabel = resolveSellerStructureLabel(sellerStructure);
@@ -215,28 +262,34 @@ function isHostedRasterImageUrl(value: string) {
   if (!value) return false;
   try {
     const parsed = new URL(value);
-    const isHttpImage = parsed.protocol === "https:" || parsed.protocol === "http:";
+    const isHttpImage = parsed.protocol === "https:" ||
+      parsed.protocol === "http:";
     return isHttpImage && !parsed.pathname.toLowerCase().endsWith(".svg");
   } catch {
     return false;
   }
 }
 
-function renderSellerOnboardingCta(label: string, url: string) {
+function renderSellerOnboardingCta(
+  label: string,
+  url: string,
+  primaryColor = "#006B4D",
+) {
   const safeUrl = escapeHtml(url);
   const safeLabel = escapeHtml(label);
+  const buttonColor = normalizeBrandColor(primaryColor, "#006B4D");
   return `
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" class="arch9-cta-table" style="border-collapse: separate; border-spacing: 0;">
       <tr>
-        <td align="center" bgcolor="#006B4D" style="border-radius: 6px; background: #006B4D;">
+        <td align="center" bgcolor="${buttonColor}" style="border-radius: 6px; background: ${buttonColor};">
           <!--[if mso]>
-          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${safeUrl}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="10%" stroke="f" fillcolor="#006B4D">
+          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${safeUrl}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="10%" stroke="f" fillcolor="${buttonColor}">
             <w:anchorlock/>
             <center style="color:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;">${safeLabel} &rarr;</center>
           </v:roundrect>
           <![endif]-->
           <!--[if !mso]><!-- -->
-          <a href="${safeUrl}" class="arch9-cta-link" style="display: inline-block; min-width: 236px; padding: 16px 18px; border-radius: 6px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 16px; color: #FFFFFF; font-weight: 700; text-align: center; text-decoration: none; background: #006B4D;">
+          <a href="${safeUrl}" class="arch9-cta-link" style="display: inline-block; min-width: 236px; padding: 16px 18px; border-radius: 6px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 16px; color: #FFFFFF; font-weight: 700; text-align: center; text-decoration: none; background: ${buttonColor};">
             ${safeLabel}&nbsp;&nbsp;&rarr;
           </a>
           <!--<![endif]-->
@@ -246,9 +299,18 @@ function renderSellerOnboardingCta(label: string, url: string) {
   `;
 }
 
-function renderAgencyLogo({ agencyName, agencyLogoUrl }: { agencyName: string; agencyLogoUrl?: string }) {
+function renderAgencyLogo(
+  {
+    agencyName,
+    agencyLogoUrl,
+    primaryColor = "#D69E2E",
+  }: { agencyName: string; agencyLogoUrl?: string; primaryColor?: string },
+) {
   const safeAgencyName = escapeHtml(agencyName);
-  const safeLogoUrl = agencyLogoUrl && isHostedRasterImageUrl(agencyLogoUrl) ? escapeHtml(agencyLogoUrl) : "";
+  const accentColor = normalizeBrandColor(primaryColor, "#D69E2E");
+  const safeLogoUrl = agencyLogoUrl && isHostedRasterImageUrl(agencyLogoUrl)
+    ? escapeHtml(agencyLogoUrl)
+    : "";
   if (safeLogoUrl) {
     return `<img src="${safeLogoUrl}" alt="${safeAgencyName} logo" width="150" style="display: block; width: 150px; max-width: 150px; height: auto; border: 0; outline: none; text-decoration: none;" />`;
   }
@@ -259,7 +321,7 @@ function renderAgencyLogo({ agencyName, agencyLogoUrl }: { agencyName: string; a
         <td width="44" valign="middle" style="width: 44px; padding: 0 10px 0 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="40" style="border-collapse: separate; border-spacing: 0;">
             <tr>
-              <td align="center" valign="middle" bgcolor="#FFF8E6" style="width: 40px; height: 40px; border: 1px solid #D69E2E; border-radius: 6px; font-family: Arial, Helvetica, sans-serif; font-size: 22px; line-height: 40px; color: #D69E2E;">
+              <td align="center" valign="middle" bgcolor="#FFF8E6" style="width: 40px; height: 40px; border: 1px solid ${accentColor}; border-radius: 6px; font-family: Arial, Helvetica, sans-serif; font-size: 22px; line-height: 40px; color: ${accentColor};">
                 ${escapeHtml(getInitial(agencyName, "A"))}
               </td>
             </tr>
@@ -297,12 +359,17 @@ function pickSellerInvitationCta(value: string | undefined) {
   return normalized;
 }
 
-function pickSellerInvitationPreheader(value: string | undefined, agencyName: string) {
+function pickSellerInvitationPreheader(
+  value: string | undefined,
+  agencyName: string,
+) {
   const normalized = String(value || "").trim();
   if (
     !normalized ||
-    normalized === "Your agent has invited you to complete seller information for your property." ||
-    normalized === `${agencyName} has prepared your secure seller workspace on Arch9.`
+    normalized ===
+      "Your agent has invited you to complete seller information for your property." ||
+    normalized ===
+      `${agencyName} has prepared your secure seller workspace on Arch9.`
   ) {
     return `${agencyName} needs a few details to get your property sale ready.`;
   }
@@ -313,14 +380,19 @@ function formatExpiryCopy(expiryDays: number) {
   if (!Number.isFinite(expiryDays) || expiryDays <= 0) {
     return "This secure link expires soon.";
   }
-  return `This secure link expires in ${expiryDays} ${expiryDays === 1 ? "day" : "days"}.`;
+  return `This secure link expires in ${expiryDays} ${
+    expiryDays === 1 ? "day" : "days"
+  }.`;
 }
 
-function renderSimpleBullet(copy: string) {
+function renderSimpleBullet(copy: string, primaryColor = "#006B4D") {
+  const bulletColor = normalizeBrandColor(primaryColor, "#006B4D");
   return `
     <tr>
-      <td width="18" valign="top" style="width: 18px; padding: 2px 8px 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.5; color: #006B4D;">&bull;</td>
-      <td valign="top" style="padding: 0 0 8px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.55; color: #334155;">${escapeHtml(copy)}</td>
+      <td width="18" valign="top" style="width: 18px; padding: 2px 8px 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.5; color: ${bulletColor};">&bull;</td>
+      <td valign="top" style="padding: 0 0 8px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.55; color: #334155;">${
+    escapeHtml(copy)
+  }</td>
     </tr>
   `;
 }
@@ -332,11 +404,17 @@ function renderSummaryRows(rows: { label: string; value: string }[]) {
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 22px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC;">
       <tr>
         <td style="padding: 16px 18px; font-family: Arial, Helvetica, sans-serif;">
-          ${visibleRows.map((row, index) => `
-            <p style="margin: ${index === 0 ? "0" : "8px"} 0 0; font-size: 13px; line-height: 1.5; color: #334155;">
-              <strong style="color: #17233A;">${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value)}
+          ${
+    visibleRows.map((row, index) => `
+            <p style="margin: ${
+      index === 0 ? "0" : "8px"
+    } 0 0; font-size: 13px; line-height: 1.5; color: #334155;">
+              <strong style="color: #17233A;">${
+      escapeHtml(row.label)
+    }:</strong> ${escapeHtml(row.value)}
             </p>
-          `).join("")}
+          `).join("")
+  }
         </td>
       </tr>
     </table>
@@ -357,6 +435,7 @@ function buildPremiumSellerOnboardingInvitationHtml({
   ctaLabel,
   preheader,
   title,
+  branding,
 }: {
   sellerName: string;
   agencyName: string;
@@ -371,22 +450,42 @@ function buildPremiumSellerOnboardingInvitationHtml({
   ctaLabel?: string;
   preheader?: string;
   title?: string;
+  branding?: BridgeEmailLayoutBranding;
 }) {
   const resolvedCtaLabel = pickSellerInvitationCta(ctaLabel);
-  const resolvedPreheader = pickSellerInvitationPreheader(preheader, agencyName);
+  const resolvedPreheader = pickSellerInvitationPreheader(
+    preheader,
+    agencyName,
+  );
   const resolvedTitle = pickSellerInvitationTitle(title);
   const greetingName = pickText(sellerName, "there");
   const safeOnboardingUrl = escapeHtml(onboardingUrl);
+  const primaryColor = normalizeBrandColor(branding?.primaryColor, "#071E1A");
+  const secondaryColor = normalizeBrandColor(
+    branding?.secondaryColor,
+    "#006B4D",
+  );
+  const logoUrl = agencyLogoUrl || branding?.logoUrl || branding?.logoIconUrl;
   const expiryCopy = formatExpiryCopy(expiryDays);
-  const questionContact = [agentEmail, agentPhone].map((item) => String(item || "").trim()).filter(Boolean).join(" | ");
+  const questionContact = [agentEmail, agentPhone].map((item) =>
+    String(item || "").trim()
+  ).filter(Boolean).join(" | ");
   const summaryHtml = renderSummaryRows([
     {
       label: "Property",
-      value: propertyLabel && !isGenericPropertyLabel(propertyLabel) ? propertyLabel : "",
+      value: propertyLabel && !isGenericPropertyLabel(propertyLabel)
+        ? propertyLabel
+        : "",
     },
     { label: "Agent", value: agentName || "" },
     { label: "Reference", value: referenceLabel || "" },
   ]);
+  const headerBrandHtml = renderBridgeBrandMark({
+    organisationName: agencyName,
+    logoUrl,
+    primaryColor,
+    onDark: true,
+  });
 
   return `<!doctype html>
 <html>
@@ -416,20 +515,28 @@ function buildPremiumSellerOnboardingInvitationHtml({
         <td align="center" class="arch9-outer" style="padding: 32px 12px;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="arch9-shell" style="width: 600px; max-width: 600px; border-collapse: separate; border-spacing: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
             <tr>
-              <td class="arch9-header" bgcolor="#071E1A" height="72" valign="middle" style="height: 72px; padding: 0 32px; background: #071E1A; font-family: Arial, Helvetica, sans-serif;">
-                <p style="margin: 0; font-size: 20px; line-height: 1; letter-spacing: 0.52em; color: #FFFFFF; font-weight: 700;">ARCH9</p>
+              <td class="arch9-header" bgcolor="${primaryColor}" height="72" valign="middle" style="height: 72px; padding: 0 32px; background: ${primaryColor}; font-family: Arial, Helvetica, sans-serif;">
+                ${headerBrandHtml}
               </td>
             </tr>
             <tr>
               <td class="arch9-padded" style="padding: 36px 32px 0; background: #FFFFFF; font-family: Arial, Helvetica, sans-serif;">
-                <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.12em; color: #006B4D; font-weight: 700; text-transform: uppercase;">Seller information</p>
-                <h1 style="margin: 0; font-size: 30px; line-height: 1.2; color: #17233A; font-weight: 700;">${escapeHtml(resolvedTitle)}</h1>
-                <p style="margin: 22px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Hi ${escapeHtml(greetingName)},</p>
-                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">${escapeHtml(agencyName)} needs a few details from you before your property sale can move ahead.</p>
+                <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.12em; color: ${secondaryColor}; font-weight: 700; text-transform: uppercase;">Seller information</p>
+                <h1 style="margin: 0; font-size: 30px; line-height: 1.2; color: #17233A; font-weight: 700;">${
+    escapeHtml(resolvedTitle)
+  }</h1>
+                <p style="margin: 22px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Hi ${
+    escapeHtml(greetingName)
+  },</p>
+                <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">${
+    escapeHtml(agencyName)
+  } needs a few details from you before your property sale can move ahead.</p>
                 <p style="margin: 10px 0 0; font-size: 16px; line-height: 1.65; color: #334155;">Please complete the secure form so your agent can verify the basics, prepare the right documents, and let you know if anything else is needed.</p>
 
-                <div style="margin: 26px 0 0;">${renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl)}</div>
-                <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">If the button does not work, copy this secure link:<br /><a href="${safeOnboardingUrl}" style="color: #006B4D; text-decoration: underline; word-break: break-all;">${safeOnboardingUrl}</a></p>
+                <div style="margin: 26px 0 0;">${
+    renderSellerOnboardingCta(resolvedCtaLabel, onboardingUrl, primaryColor)
+  }</div>
+                <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">If the button does not work, copy this secure link:<br /><a href="${safeOnboardingUrl}" style="color: ${primaryColor}; text-decoration: underline; word-break: break-all;">${safeOnboardingUrl}</a></p>
 
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 8px; background: #F7FBF9;">
                   <tr>
@@ -442,14 +549,25 @@ function buildPremiumSellerOnboardingInvitationHtml({
 
                 <h2 style="margin: 28px 0 12px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What you will need</h2>
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;">
-                  ${renderSimpleBullet("Your contact and ownership details.")}
-                  ${renderSimpleBullet("Basic property information.")}
-                  ${renderSimpleBullet("Any property or identity documents you already have available.")}
+                  ${
+    renderSimpleBullet("Your contact and ownership details.", primaryColor)
+  }
+                  ${
+    renderSimpleBullet("Basic property information.", primaryColor)
+  }
+                  ${
+    renderSimpleBullet(
+      "Any property or identity documents you already have available.",
+      primaryColor,
+    )
+  }
                 </table>
 
                 <h2 style="margin: 20px 0 8px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What happens after you submit</h2>
                 <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">Your agent will review your answers and contact you if anything needs to be added or corrected. After that, they can prepare the next step for your property sale.</p>
-                <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #64748B;">${escapeHtml(expiryCopy)}</p>
+                <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #64748B;">${
+    escapeHtml(expiryCopy)
+  }</p>
 
                 ${summaryHtml}
 
@@ -458,10 +576,18 @@ function buildPremiumSellerOnboardingInvitationHtml({
                     <td class="arch9-footer-col" width="52%" valign="top" style="width: 52%; padding: 0 20px 0 0; font-family: Arial, Helvetica, sans-serif;">
                       <p style="margin: 0 0 6px; font-size: 14px; line-height: 1.4; color: #17233A; font-weight: 700;">Questions?</p>
                       <p style="margin: 0; font-size: 12px; line-height: 1.55; color: #334155;">Please contact your agent directly or reply to this email.</p>
-                      ${questionContact ? `<p style="margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">${escapeHtml(questionContact)}</p>` : ""}
+                      ${
+    questionContact
+      ? `<p style="margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">${
+        escapeHtml(questionContact)
+      }</p>`
+      : ""
+  }
                     </td>
                     <td class="arch9-footer-col" width="48%" valign="top" align="right" style="width: 48%; padding: 0 0 0 20px;">
-                      ${renderAgencyLogo({ agencyName, agencyLogoUrl })}
+                      ${
+    renderAgencyLogo({ agencyName, agencyLogoUrl: logoUrl, primaryColor })
+  }
                     </td>
                   </tr>
                   <tr>
@@ -500,6 +626,7 @@ export function buildSellerOnboardingEmailHtml({
   requiredDocuments,
   sellerStructure,
   templateOverrides,
+  branding,
 }: {
   sellerName: string;
   propertyTitle: string;
@@ -519,6 +646,7 @@ export function buildSellerOnboardingEmailHtml({
   emailKind?: string;
   requiredDocuments?: SellerPortalRequiredDocument[];
   sellerStructure?: unknown;
+  branding?: BridgeEmailLayoutBranding;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -534,13 +662,18 @@ export function buildSellerOnboardingEmailHtml({
   const referenceLabel = normalizeReference(transactionReference || "");
   const agentLabel = pickText(agentName, "Your agent");
   const normalizedKind = String(emailKind || "").trim().toLowerCase();
-  const portalDocumentsMode = normalizedKind === "portal_documents" || normalizedKind === "existing_listing";
+  const portalDocumentsMode = normalizedKind === "portal_documents" ||
+    normalizedKind === "existing_listing";
   const existingListingMode = normalizedKind === "existing_listing";
 
   if (!portalDocumentsMode) {
     return buildPremiumSellerOnboardingInvitationHtml({
       sellerName,
-      agencyName: pickText(senderOrganisationName || organisationName, "Your agency"),
+      agencyName: pickText(
+        senderOrganisationName || organisationName ||
+          branding?.organisationName,
+        "Your agency",
+      ),
       agencyLogoUrl: senderOrganisationLogoUrl,
       onboardingUrl: onboardingLink,
       expiryDays: resolveExpiryDays(expiryDays, expiresAt),
@@ -552,13 +685,18 @@ export function buildSellerOnboardingEmailHtml({
       ctaLabel: templateOverrides?.ctaLabel,
       preheader: templateOverrides?.preheader,
       title: templateOverrides?.title,
+      branding,
     });
   }
 
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
     ...(existingListingMode
       ? [
-        `${senderOrganisationName || organisationName || "Your agency"} has invited you to activate your secure Seller Portal for ${propertyLabel || "your property"}.`,
+        `${
+          senderOrganisationName || organisationName || "Your agency"
+        } has invited you to activate your secure Seller Portal for ${
+          propertyLabel || "your property"
+        }.`,
         "Your property is already listed. The portal gives you one place to follow the sale, receive updates, upload documents, and track the transaction through to registration.",
         "Activate your portal to create your password and get started.",
       ]
@@ -599,9 +737,16 @@ export function buildSellerOnboardingEmailHtml({
   ]);
   const ctaLabel = pickText(
     templateOverrides?.ctaLabel,
-    existingListingMode ? "Activate Seller Portal" : portalDocumentsMode ? "Set Password & Upload Documents" : "Complete Seller Information",
+    existingListingMode
+      ? "Activate Seller Portal"
+      : portalDocumentsMode
+      ? "Set Password & Upload Documents"
+      : "Complete Seller Information",
   );
-  const securityTitle = pickText(templateOverrides?.securityTitle, "Trust & Security");
+  const securityTitle = pickText(
+    templateOverrides?.securityTitle,
+    "Trust & Security",
+  );
   const securityBody = pickText(
     templateOverrides?.securityBody,
     existingListingMode
@@ -621,10 +766,18 @@ export function buildSellerOnboardingEmailHtml({
        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
        ${renderBridgeSteps(processSteps)}
      </div>`,
-    portalDocumentsMode && !existingListingMode ? renderRequiredDocumentsHtml(requiredDocuments, sellerStructure) : "",
+    portalDocumentsMode && !existingListingMode
+      ? renderRequiredDocumentsHtml(requiredDocuments, sellerStructure)
+      : "",
     `<div style="margin: 0 0 16px; padding: 14px 16px; border: 1px solid #e3eaf1; border-radius: 12px; background: #f6f8fb;">
        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d8096; font-weight: 700;">Estimated Completion Time</p>
-       <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #0f2f4f; font-weight: 700;">${existingListingMode ? "2 Minutes" : portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}</p>
+       <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #0f2f4f; font-weight: 700;">${
+      existingListingMode
+        ? "2 Minutes"
+        : portalDocumentsMode
+        ? "2-5 Minutes"
+        : "5-10 Minutes"
+    }</p>
      </div>`,
     renderBridgeSummaryCard(
       [
@@ -634,7 +787,9 @@ export function buildSellerOnboardingEmailHtml({
       ],
       "Property Summary",
     ),
-    renderBridgeCta(ctaLabel, onboardingLink),
+    renderBridgeCta(ctaLabel, onboardingLink, {
+      primaryColor: branding?.primaryColor,
+    }),
   ].join("");
 
   return renderBridgeEmailLayout({
@@ -646,7 +801,14 @@ export function buildSellerOnboardingEmailHtml({
         ? "Create your seller portal password first, then upload the documents needed for FICA, mandate preparation, and listing readiness."
         : "Your agent has invited you to complete seller information for your property.",
     ),
-    title: pickText(templateOverrides?.title, existingListingMode ? "Activate your Seller Portal" : portalDocumentsMode ? "Your seller portal is ready" : "Complete your property profile"),
+    title: pickText(
+      templateOverrides?.title,
+      existingListingMode
+        ? "Activate your Seller Portal"
+        : portalDocumentsMode
+        ? "Your seller portal is ready"
+        : "Complete your property profile",
+    ),
     greeting: `Hi ${sellerName || "there"},`,
     contentHtml,
     securityTitle,
@@ -657,6 +819,7 @@ export function buildSellerOnboardingEmailHtml({
     senderOrganisationLogoUrl,
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
+    branding,
   });
 }
 
@@ -708,13 +871,16 @@ export function buildSellerOnboardingEmailText({
   const referenceLabel = normalizeReference(transactionReference || "");
   const agentLabel = pickText(agentName, "Your agent");
   const normalizedKind = String(emailKind || "").trim().toLowerCase();
-  const portalDocumentsMode = normalizedKind === "portal_documents" || normalizedKind === "existing_listing";
+  const portalDocumentsMode = normalizedKind === "portal_documents" ||
+    normalizedKind === "existing_listing";
   const existingListingMode = normalizedKind === "existing_listing";
 
   if (!portalDocumentsMode) {
     const agencyName = pickText(organisationName, "Your agency");
     const days = resolveExpiryDays(expiryDays, expiresAt);
-    const resolvedCtaLabel = pickSellerInvitationCta(templateOverrides?.ctaLabel);
+    const resolvedCtaLabel = pickSellerInvitationCta(
+      templateOverrides?.ctaLabel,
+    );
     const questionContact = [
       resolveFirstText(agentEmail, supportEmail),
       resolveFirstText(agentPhone, supportPhone),
@@ -744,10 +910,14 @@ export function buildSellerOnboardingEmailText({
       "Your information is stored securely in Arch9 and is only shared with authorised people working on your sale.",
       formatExpiryCopy(days),
       "",
-      propertyLabel && !isGenericPropertyLabel(propertyLabel) ? `Property: ${propertyLabel}` : null,
+      propertyLabel && !isGenericPropertyLabel(propertyLabel)
+        ? `Property: ${propertyLabel}`
+        : null,
       agentName ? `Agent: ${agentName}` : null,
       referenceLabel ? `Reference: ${referenceLabel}` : null,
-      questionContact ? `Questions: ${questionContact}` : "Questions: Please contact your agent directly or reply to this email.",
+      questionContact
+        ? `Questions: ${questionContact}`
+        : "Questions: Please contact your agent directly or reply to this email.",
       "",
       agencyName,
       "Powered by Arch9",
@@ -757,7 +927,11 @@ export function buildSellerOnboardingEmailText({
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
     ...(existingListingMode
       ? [
-        `${organisationName || "Your agency"} has invited you to activate your secure Seller Portal for ${propertyLabel || "your property"}.`,
+        `${
+          organisationName || "Your agency"
+        } has invited you to activate your secure Seller Portal for ${
+          propertyLabel || "your property"
+        }.`,
         "Your property is already listed. The portal gives you one place to follow the sale, receive updates, upload documents, and track the transaction through to registration.",
         "Activate your portal to create your password and get started.",
       ]
@@ -796,7 +970,14 @@ export function buildSellerOnboardingEmailText({
         "We'll keep you updated as your sale progresses.",
       ]),
   ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, existingListingMode ? "Activate Seller Portal" : portalDocumentsMode ? "Set Password & Upload Documents" : "Complete Seller Information");
+  const ctaLabel = pickText(
+    templateOverrides?.ctaLabel,
+    existingListingMode
+      ? "Activate Seller Portal"
+      : portalDocumentsMode
+      ? "Set Password & Upload Documents"
+      : "Complete Seller Information",
+  );
   const securityBody = pickText(
     templateOverrides?.securityBody,
     existingListingMode
@@ -818,9 +999,20 @@ export function buildSellerOnboardingEmailText({
     "What happens next:",
     ...processSteps.map((line, index) => `${index + 1}. ${line}`),
     "",
-    ...(existingListingMode ? [] : renderRequiredDocumentsText(requiredDocuments, sellerStructure)),
-    ...(portalDocumentsMode && !existingListingMode && normalizeRequiredDocuments(requiredDocuments).length ? [""] : []),
-    `Estimated Completion Time: ${existingListingMode ? "2 Minutes" : portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}`,
+    ...(existingListingMode
+      ? []
+      : renderRequiredDocumentsText(requiredDocuments, sellerStructure)),
+    ...(portalDocumentsMode && !existingListingMode &&
+        normalizeRequiredDocuments(requiredDocuments).length
+      ? [""]
+      : []),
+    `Estimated Completion Time: ${
+      existingListingMode
+        ? "2 Minutes"
+        : portalDocumentsMode
+        ? "2-5 Minutes"
+        : "5-10 Minutes"
+    }`,
     "",
     propertyLabel ? `Property: ${propertyLabel}` : null,
     agentLabel ? `Agent: ${agentLabel}` : null,

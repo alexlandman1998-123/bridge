@@ -79,6 +79,33 @@ function makeSnapshot(overrides = {}) {
         href: '/transactions/11111111-1111-4111-8111-111111111111',
         requestDocsHref: '/documents?role=bond_originator',
         reviewHref: '/bond/pipeline?view=ready-for-submission',
+        originatorIntakePackage: {
+          statusLabel: 'Accepted by originator',
+          documentCounts: {
+            signedApplicationDocuments: 1,
+            supportingDocuments: 4,
+            total: 5,
+          },
+          documentRequestSummary: {
+            open: 2,
+            awaitingReview: 1,
+          },
+          progressSummary: {
+            currentLabel: 'Originator processing',
+            currentStatus: 'in_progress',
+            bankWorkflowUnchanged: true,
+          },
+          offerGrantSummary: {
+            offerCount: 2,
+            grantCount: 1,
+            bankWorkflowUnchanged: true,
+          },
+          actions: {
+            canAccept: false,
+            canDownload: true,
+            canRequestMoreDocuments: true,
+          },
+        },
         filterKeys: ['all', 'awaiting_docs'],
       },
     ],
@@ -286,6 +313,64 @@ function makeSnapshot(overrides = {}) {
     connectedPartners: [
       { key: 'partner-1', name: 'Aurum Bond Originators', type: 'Bond Originator', activeFiles: 12, conversionRate: 76, avgRegistrationDays: 38 },
     ],
+    managementOverview: {
+      metricSources: {
+        newBuyerCases: 'Created in selected period',
+        activePipeline: 'Open visible applications',
+        approvalRate: 'Approved buyer cases divided by decided buyer cases',
+        registeredYtd: 'Registration timestamp in current year',
+        commissionForecast: 'Stored commission values on open applications',
+      },
+      filters: {
+        rangeKey: 'last_30_days',
+        scopeLabel: 'All Teams',
+        lastUpdatedAt: '2026-07-05T10:00:00.000Z',
+      },
+      kpis: [
+        { key: 'new_buyer_cases', label: 'New Buyer Cases', value: '42', secondary: 'R 24 600 000', comparison: '+6 vs previous period', href: '/bond/applications?created=period' },
+        { key: 'active_pipeline', label: 'Active Pipeline', value: '118', secondary: 'R 36 800 000', href: '/bond/applications?view=processing' },
+        { key: 'approval_rate', label: 'Any-Bank Approval Rate', value: '64%', secondary: '32 of 50 decided buyer cases', comparison: '+6 pp vs previous period', href: '/bond/reports?metric=approval-rate' },
+        { key: 'registered_ytd', label: 'Registered YTD', value: '276', secondary: 'R 181 000 000', comparison: 'Current calendar year', href: '/bond/applications?view=registered&period=ytd' },
+        { key: 'commission_forecast', label: 'Commission Forecast', value: 'R 2 480 000', secondary: '3 unpriced applications excluded', href: '/bond/revenue?view=forecast' },
+      ],
+      pipeline: [
+        { key: 'application', label: 'Application', count: 32, loanValueLabel: 'R 24 600 000', href: '/bond/applications?stage=application' },
+        { key: 'at_banks', label: 'At Banks', count: 41, loanValueLabel: 'R 36 800 000', detail: '126 bank submissions', href: '/bond/applications?stage=at_banks' },
+        { key: 'accepted', label: 'Accepted', count: 21, loanValueLabel: 'R 20 400 000', href: '/bond/applications?stage=accepted' },
+        { key: 'lodged', label: 'Lodged', count: 14, loanValueLabel: 'R 15 700 000', href: '/bond/applications?stage=lodged' },
+        { key: 'registered', label: 'Registered', count: 10, loanValueLabel: 'R 11 300 000', href: '/bond/applications?view=registered' },
+      ],
+      summaryStrip: [
+        { key: 'overall_conversion', label: 'Overall Conversion', value: '31%', detail: '10 of 32 final outcomes', href: '/bond/reports?metric=conversion' },
+        { key: 'lost_withdrawn', label: 'Lost / Withdrawn', value: '6 cases', detail: 'R 2 100 000', href: '/bond/applications?view=declined' },
+        { key: 'registered_period', label: 'Registered in Period', value: '10 cases', detail: 'R 11 700 000', href: '/bond/applications?view=registered' },
+        { key: 'median_registration', label: 'Median Time to Register', value: '32 days', detail: 'Application created to registration', href: '/bond/reports?metric=time-to-register' },
+      ],
+      sla: [
+        { key: 'first_contact', label: 'First Contact', value: '0.9 days', target: 'SLA <= 1 day', onTrack: true },
+        { key: 'ready_to_submit', label: 'Ready to Submit', value: '3.2 days', target: 'SLA <= 5 days', onTrack: true },
+        { key: 'first_bank_decision', label: 'First Bank Decision', value: '6.1 days', target: 'SLA <= 7 days', onTrack: true },
+        { key: 'within_sla', label: 'Cases Within SLA', value: '86%', target: '102 of 118 active cases', onTrack: true },
+      ],
+      commission: {
+        unpricedApplications: 3,
+        cards: [
+          { key: 'forecast', label: 'Forecast', value: 'R 2 480 000', detail: '118 applications', href: '/bond/revenue?view=forecast' },
+          { key: 'committed', label: 'Committed', value: 'R 1 720 000', detail: '74 applications', href: '/bond/revenue?view=committed' },
+          { key: 'ready_to_invoice', label: 'Ready to Invoice', value: 'R 846 000', detail: '18 applications', href: '/bond/revenue?view=ready-to-invoice' },
+          { key: 'invoiced', label: 'Invoiced', value: 'R 612 000', detail: '12 applications', href: '/bond/revenue?view=invoiced' },
+          { key: 'paid', label: 'Paid in Period', value: 'R 438 000', detail: '9 applications', href: '/bond/revenue?view=paid' },
+        ],
+        invoiceQueue: [
+          { key: 'invoice-1', buyer: 'Client One', partner: 'Prime Realty', bank: 'Nedbank', amount: 'R 42 000', href: '/transactions/tx-1' },
+        ],
+      },
+      performanceTables: {
+        consultants: [{ key: 'lindiwe', name: 'Lindiwe M.', newCases: 12, registered: 8, approvalRate: 67, revenue: 'R 312k' }],
+        partners: [{ key: 'property-hub', name: 'Property Hub', referred: 16, registered: 8, approvalRate: 63, revenue: 'R 408k' }],
+        banks: [{ key: 'standard-bank', name: 'Standard Bank', applications: 18, approved: 12, approvalRate: 67, avgTat: '4.6 days' }],
+      },
+    },
     totalApplications: 3,
     emptyState: {
       title: 'No applications require attention right now',
@@ -341,7 +426,6 @@ function makeSnapshot(overrides = {}) {
     assert.match(commandCenterMarkup, /4 awaiting docs • 2 ready/)
     assert.match(commandCenterMarkup, /Healthy against target/)
 
-    assert.match(commandCenterMarkup, /Live operational movement across active bond applications/)
     assert.match(commandCenterMarkup, /All/)
     assert.match(commandCenterMarkup, /Awaiting Docs/)
     assert.match(commandCenterMarkup, /Ready For Review/)
@@ -353,6 +437,12 @@ function makeSnapshot(overrides = {}) {
     assert.match(commandCenterMarkup, /Open Application/)
     assert.match(commandCenterMarkup, /Request Docs/)
     assert.match(commandCenterMarkup, /Review/)
+    assert.match(commandCenterMarkup, /2 requested docs open/)
+    assert.match(commandCenterMarkup, /1 awaiting review/)
+    assert.match(commandCenterMarkup, /Progress:/)
+    assert.match(commandCenterMarkup, /Originator processing/)
+    assert.match(commandCenterMarkup, /2<\/strong> offers/)
+    assert.match(commandCenterMarkup, /1<\/strong> grant/)
 
     assert.match(commandCenterMarkup, /Bank Approval Breakdown/)
     assert.match(commandCenterMarkup, /Bank Lead Times/)
@@ -479,50 +569,55 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /HQ Command Centre/)
     assert.doesNotMatch(hqMarkup, /National overview of applications, pipeline performance and operational risk/)
     assert.doesNotMatch(hqMarkup, /Live operational command layer/)
-    assert.match(hqMarkup, /Date Range/)
-    assert.match(hqMarkup, /Filters/)
-    assert.match(hqMarkup, /Refresh/)
-    assert.match(hqMarkup, /Export/)
+    assert.match(hqMarkup, /Bond Performance/)
+    assert.match(hqMarkup, /Overview/)
+    assert.match(hqMarkup, /Operations/)
+    assert.match(hqMarkup, /Performance/)
+    assert.match(hqMarkup, /All Teams/)
+    assert.match(hqMarkup, /Last 30 Days/)
+    assert.match(hqMarkup, /Previous period/)
+    assert.match(hqMarkup, /Refresh dashboard/)
     assert.doesNotMatch(hqMarkup, /National Bond Command Centre/)
     assert.doesNotMatch(hqMarkup, /Executive view of national bond performance, pipeline, revenue and risk/)
-    assert.doesNotMatch(hqMarkup, /Last 30 Days/)
     assert.doesNotMatch(hqMarkup, /All Regions/)
     assert.doesNotMatch(hqMarkup, /Export report/)
     assert.doesNotMatch(hqMarkup, /National Command Centre/)
-    assert.match(hqMarkup, /Executive Summary/)
-    assert.match(hqMarkup, /Revenue forecast leads the book/)
-    assert.match(hqMarkup, /Revenue Forecast/)
-    assert.match(hqMarkup, /R22\.96m/)
-    assert.match(hqMarkup, /R7\.65m vs last month/)
-    assert.match(hqMarkup, /Applications/)
-    assert.match(hqMarkup, /90 active applications/)
-    assert.match(hqMarkup, /3 approved • 87 pending/)
-    assert.match(hqMarkup, /Avg Approval Time/)
-    assert.match(hqMarkup, /46 days/)
-    assert.match(hqMarkup, /What Needs Attention/)
-    assert.match(hqMarkup, /Clear action cues for the desk/)
-    assert.match(hqMarkup, /Missing Documents/)
-    assert.match(hqMarkup, /Bank Feedback/)
-    assert.match(hqMarkup, /Awaiting Client/)
-    assert.match(hqMarkup, /Valuation Outstanding/)
-    assert.match(hqMarkup, /Grant Evidence/)
-    assert.match(hqMarkup, /Regional Performance/)
-    assert.match(hqMarkup, /Live performance across your national network/)
-    assert.match(hqMarkup, /View all regions/)
-    assert.match(hqMarkup, /Gauteng/)
-    assert.match(hqMarkup, /Bank Relationship Breakdown/)
-    assert.match(hqMarkup, /Manage banks/)
-    assert.match(hqMarkup, /ABSA/)
+    assert.match(hqMarkup, /New Buyer Cases/)
+    assert.match(hqMarkup, /Active Pipeline/)
+    assert.match(hqMarkup, /Any-Bank Approval Rate/)
+    assert.match(hqMarkup, /Registered YTD/)
+    assert.match(hqMarkup, /Commission Forecast/)
+    assert.match(hqMarkup, /R 2 480 000/)
+    assert.match(hqMarkup, /3 unpriced applications excluded/)
+    assert.match(hqMarkup, /Active Bond Pipeline/)
+    assert.match(hqMarkup, /Application/)
+    assert.match(hqMarkup, /At Banks/)
+    assert.match(hqMarkup, /126 bank submissions/)
+    assert.match(hqMarkup, /Accepted/)
+    assert.match(hqMarkup, /Lodged/)
+    assert.match(hqMarkup, /Registered/)
+    assert.match(hqMarkup, /Overall Conversion/)
+    assert.match(hqMarkup, /Lost \/ Withdrawn/)
+    assert.match(hqMarkup, /Registered in Period/)
+    assert.match(hqMarkup, /Median Time to Register/)
+    assert.match(hqMarkup, /Application Speed &amp; SLA/)
+    assert.match(hqMarkup, /First Contact/)
+    assert.match(hqMarkup, /Ready to Submit/)
+    assert.match(hqMarkup, /First Bank Decision/)
+    assert.match(hqMarkup, /Cases Within SLA/)
+    assert.match(hqMarkup, /Commission &amp; Reconciliation/)
+    assert.match(hqMarkup, /Ready to Invoice/)
+    assert.match(hqMarkup, /Prime Realty/)
+    assert.match(hqMarkup, /Consultant Performance/)
+    assert.match(hqMarkup, /Top Referral Partners/)
+    assert.match(hqMarkup, /Bank Performance/)
+    assert.match(hqMarkup, /Lindiwe M\./)
+    assert.match(hqMarkup, /Property Hub/)
     assert.match(hqMarkup, /Standard Bank/)
-    assert.match(hqMarkup, /South Africa Regional Heatmap/)
-    assert.match(hqMarkup, /Regional health overview/)
-    assert.match(hqMarkup, /Collapsed view/)
-    assert.match(hqMarkup, /View Heatmap/)
-    assert.doesNotMatch(hqMarkup, /Heatmap Key/)
-    assert.match(hqMarkup, /Buyer Finance Mix/)
-    assert.match(hqMarkup, /Buyer Profile Mix/)
-    assert.match(hqMarkup, /Application Bottlenecks/)
-    assert.match(hqMarkup, /Missing Documents/)
+    assert.doesNotMatch(hqMarkup, /What Needs Attention/)
+    assert.doesNotMatch(hqMarkup, /South Africa Regional Heatmap/)
+    assert.doesNotMatch(hqMarkup, /Buyer Finance Mix/)
+    assert.doesNotMatch(hqMarkup, /Application Bottlenecks/)
     assert.doesNotMatch(hqMarkup, /Top Regions/)
     assert.doesNotMatch(hqMarkup, /Top Consultants/)
     assert.doesNotMatch(hqMarkup, /Top Banks/)
@@ -535,15 +630,11 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Revenue Projection/)
     assert.doesNotMatch(hqMarkup, /Commission Breakdown/)
     assert.doesNotMatch(hqMarkup, /Revenue Trend/)
-    assert.match(hqMarkup, /Applications/)
-    assert.match(hqMarkup, /Approval Rate/)
-    assert.match(hqMarkup, /Revenue/)
-    assert.match(hqMarkup, /Data freshness/)
     assert.doesNotMatch(hqMarkup, /Bond Originator HQ/)
     assert.doesNotMatch(hqMarkup, /Company-wide view of applications, revenue, approvals, partner performance, and operational risk/)
     assert.doesNotMatch(hqMarkup, /National Pipeline Funnel/)
     assert.doesNotMatch(hqMarkup, /Live operational movement across active bond applications/)
-    assert.doesNotMatch(hqMarkup, /Client One/)
+    assert.match(hqMarkup, /Client One/)
     assert.doesNotMatch(hqMarkup, /Open Application/)
     assert.doesNotMatch(hqMarkup, /Buyer Type Mix/)
     assert.doesNotMatch(hqMarkup, /Readiness Quality Mix/)
@@ -553,15 +644,12 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
 
     const hqOrder = [
-      'Executive Summary',
-      'Revenue Forecast',
-      'What Needs Attention',
-      'Regional Performance',
-      'Bank Relationship Breakdown',
-      'South Africa Regional Heatmap',
-      'Buyer Finance Mix',
-      'Application Bottlenecks',
-      'Data freshness',
+      'Bond Performance',
+      'New Buyer Cases',
+      'Active Bond Pipeline',
+      'Application Speed',
+      'Commission &amp; Reconciliation',
+      'Consultant Performance',
     ]
     let previousHqIndex = -1
     for (const label of hqOrder) {
@@ -582,9 +670,9 @@ function makeSnapshot(overrides = {}) {
         reportingScope: makeSnapshot().reportingScope,
       },
     })
-    assert.match(emptyActiveMarkup, /No active bond applications/)
-    assert.match(emptyActiveMarkup, /Accepted and assigned bond applications will appear here once they move into processing/)
-    assert.match(emptyActiveMarkup, /View New Applications/)
+    assert.match(emptyActiveMarkup, /No new bond applications/)
+    assert.match(emptyActiveMarkup, /New and assigned bond applications will appear here as buyer onboarding reaches the bond team/)
+    assert.match(emptyActiveMarkup, /Open Applications/)
 
     const emptyMarkup = render(BondDashboard, {
       user: { role: 'bond_originator' },
@@ -595,6 +683,7 @@ function makeSnapshot(overrides = {}) {
         snapshot: makeSnapshot({
           totalApplications: 0,
           attentionCount: 0,
+          activeApplications: [],
           priorityActions: [],
           pipelineOverview: [],
           teamWorkload: [],
@@ -605,7 +694,7 @@ function makeSnapshot(overrides = {}) {
         reportingScope: makeSnapshot().reportingScope,
       },
     })
-    assert.match(emptyMarkup, /All operational queues are clear/)
+    assert.match(emptyMarkup, /No new bond applications/)
 
     const missingWorkspaceMarkup = render(BondDashboard, {
       user: { role: 'bond_originator' },

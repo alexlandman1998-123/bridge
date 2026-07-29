@@ -1,0 +1,234 @@
+{
+  "mode": "dry-run",
+  "status": "DRY_RUN_READY",
+  "mutatedData": false,
+  "expectedContentDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65",
+  "targetCount": 9,
+  "actionCount": 0,
+  "alreadySyncedCount": 9,
+  "organisations": [
+    {
+      "id": "76d75072-d1b1-4d72-923a-6a91b7eb313b",
+      "name": "Alexagency",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "5b706de0-ce2d-4087-a55e-59e448c5e134",
+      "name": "Bridge9 Realty",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "ec425107-297b-48ea-81ee-5bf97da5e829",
+      "name": "Bridge9 Realty",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "cfc87922-6675-43ac-9893-88fa69933a13",
+      "name": "DaAgency",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "e265bf30-acf8-4513-ba57-96c493658e40",
+      "name": "DaAgency",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "cbb39de7-1023-4bf0-9f78-a0b760b7b22a",
+      "name": "DaAgency",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "name": "Kingstons Real Estate",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+      "name": "Produktive Realty",
+      "type": "agency",
+      "status": "active"
+    },
+    {
+      "id": "54c58314-51dd-4cae-8aa5-a0a41ef55968",
+      "name": "Testing Agency",
+      "type": "agency",
+      "status": "active"
+    }
+  ],
+  "targetPlans": [
+    {
+      "organisationId": "76d75072-d1b1-4d72-923a-6a91b7eb313b",
+      "organisationName": "Alexagency",
+      "action": "already_synced",
+      "existingTemplateId": "513cb9f9-617f-4255-b338-35e1230604f6",
+      "existingTemplateKey": "mandate_vnext_76d75072_d1b1_4d_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "5b706de0-ce2d-4087-a55e-59e448c5e134",
+      "organisationName": "Bridge9 Realty",
+      "action": "already_synced",
+      "existingTemplateId": "9cefb9f9-c418-4bab-89b5-d404fd2ad541",
+      "existingTemplateKey": "mandate_default_v1_org_1781459966945_vnext_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "ec425107-297b-48ea-81ee-5bf97da5e829",
+      "organisationName": "Bridge9 Realty",
+      "action": "already_synced",
+      "existingTemplateId": "91a113f4-9e0d-4ca4-889f-16c843f883cf",
+      "existingTemplateKey": "mandate_vnext_ec425107_297b_48_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "cfc87922-6675-43ac-9893-88fa69933a13",
+      "organisationName": "DaAgency",
+      "action": "already_synced",
+      "existingTemplateId": "1886a6c2-5a87-4cae-a75a-de7aa46edfe0",
+      "existingTemplateKey": "mandate_vnext_cfc87922_6675_43_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "e265bf30-acf8-4513-ba57-96c493658e40",
+      "organisationName": "DaAgency",
+      "action": "already_synced",
+      "existingTemplateId": "e9c8af93-0d93-41b3-9a97-1e3de6bb3257",
+      "existingTemplateKey": "mandate_vnext_e265bf30_acf8_45_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "cbb39de7-1023-4bf0-9f78-a0b760b7b22a",
+      "organisationName": "DaAgency",
+      "action": "already_synced",
+      "existingTemplateId": "c1d9a390-169f-4a4d-9198-cd86d5bca01e",
+      "existingTemplateKey": "mandate_vnext_cbb39de7_1023_4b_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "organisationName": "Kingstons Real Estate",
+      "action": "already_synced",
+      "existingTemplateId": "096b510d-ad50-4af5-b167-697353c7e625",
+      "existingTemplateKey": "mandate_default_v1_draft_1783857886291_native_v4_mrvrgiui_vnext_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+      "organisationName": "Produktive Realty",
+      "action": "already_synced",
+      "existingTemplateId": "cab65b21-d73e-4965-aca8-6861a1da58e2",
+      "existingTemplateKey": "mandate_default_v1_agency_1783884563249_vnext_91924c1d5d84",
+      "ready": true
+    },
+    {
+      "organisationId": "54c58314-51dd-4cae-8aa5-a0a41ef55968",
+      "organisationName": "Testing Agency",
+      "action": "already_synced",
+      "existingTemplateId": "7a217490-d061-47be-9ec2-aa12662c817d",
+      "existingTemplateKey": "mandate_vnext_54c58314_51dd_4c_91924c1d5d84",
+      "ready": true
+    }
+  ],
+  "actions": [],
+  "blockers": [],
+  "applied": [],
+  "appliedTemplates": [
+    {
+      "id": "e9c8af93-0d93-41b3-9a97-1e3de6bb3257",
+      "organisationId": "e265bf30-acf8-4513-ba57-96c493658e40",
+      "templateKey": "mandate_vnext_e265bf30_acf8_45_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "cab65b21-d73e-4965-aca8-6861a1da58e2",
+      "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+      "templateKey": "mandate_default_v1_agency_1783884563249_vnext_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "513cb9f9-617f-4255-b338-35e1230604f6",
+      "organisationId": "76d75072-d1b1-4d72-923a-6a91b7eb313b",
+      "templateKey": "mandate_vnext_76d75072_d1b1_4d_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "9cefb9f9-c418-4bab-89b5-d404fd2ad541",
+      "organisationId": "5b706de0-ce2d-4087-a55e-59e448c5e134",
+      "templateKey": "mandate_default_v1_org_1781459966945_vnext_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "91a113f4-9e0d-4ca4-889f-16c843f883cf",
+      "organisationId": "ec425107-297b-48ea-81ee-5bf97da5e829",
+      "templateKey": "mandate_vnext_ec425107_297b_48_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "1886a6c2-5a87-4cae-a75a-de7aa46edfe0",
+      "organisationId": "cfc87922-6675-43ac-9893-88fa69933a13",
+      "templateKey": "mandate_vnext_cfc87922_6675_43_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "c1d9a390-169f-4a4d-9198-cd86d5bca01e",
+      "organisationId": "cbb39de7-1023-4bf0-9f78-a0b760b7b22a",
+      "templateKey": "mandate_vnext_cbb39de7_1023_4b_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "096b510d-ad50-4af5-b167-697353c7e625",
+      "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+      "templateKey": "mandate_default_v1_draft_1783857886291_native_v4_mrvrgiui_vnext_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    },
+    {
+      "id": "7a217490-d061-47be-9ec2-aa12662c817d",
+      "organisationId": "54c58314-51dd-4cae-8aa5-a0a41ef55968",
+      "templateKey": "mandate_vnext_54c58314_51dd_4c_91924c1d5d84",
+      "status": "draft",
+      "isActive": false,
+      "isDefault": false,
+      "sectionCount": 16,
+      "sourceDigest": "sha256:91924c1d5d84ca75471825a0976f9ecc463d51b38567ca0e311e4956bdcb6b65"
+    }
+  ]
+}

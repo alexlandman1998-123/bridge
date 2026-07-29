@@ -1,4 +1,5 @@
 import {
+  type BridgeEmailLayoutBranding,
   renderBridgeBullets,
   renderBridgeCta,
   renderBridgeEmailLayout,
@@ -49,6 +50,7 @@ export function buildOnboardingEmailHtml({
   supportPhone,
   acceptedOffer = false,
   templateOverrides,
+  branding,
 }: {
   buyerName: string;
   clientName?: string;
@@ -64,6 +66,7 @@ export function buildOnboardingEmailHtml({
   supportEmail?: string;
   supportPhone?: string;
   acceptedOffer?: boolean;
+  branding?: BridgeEmailLayoutBranding;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -140,7 +143,9 @@ export function buildOnboardingEmailHtml({
       ],
       "Property / Transaction Summary",
     ),
-    renderBridgeCta(ctaLabel, onboardingUrl),
+    renderBridgeCta(ctaLabel, onboardingUrl, {
+      primaryColor: branding?.primaryColor,
+    }),
   ].join("");
 
   return renderBridgeEmailLayout({
@@ -171,6 +176,7 @@ export function buildOnboardingEmailHtml({
     organisationName: organisationName || "Arch9",
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
+    branding,
   });
 }
 

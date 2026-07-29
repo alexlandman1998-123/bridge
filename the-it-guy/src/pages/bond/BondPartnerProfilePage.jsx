@@ -28,8 +28,10 @@ import {
 } from '../../services/partnerAttributionService'
 import {
   BOND_REFERRAL_TERM_STATUSES,
+  acceptBondReferralTerms,
   listBondReferralTerms,
   proposeBondReferralTerms,
+  rejectBondReferralTerms,
 } from '../../services/bondReferralTermsService'
 
 const PROFILE_TABS = [
@@ -102,7 +104,27 @@ function referralBasisLabel(value = '') {
   return 'Manual base'
 }
 
-function ReferralTermsSection({ terms = [], loading = false, error = '', draft = {}, onDraftChange, onPropose, saving = false, canPropose = false }) {
+function referralRecipientLabel(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'agent') return 'Individual agent'
+  if (normalized === 'agency_and_agent') return 'Agency and individual agent'
+  return 'Agency'
+}
+
+function ReferralTermsSection({
+  terms = [],
+  loading = false,
+  error = '',
+  draft = {},
+  onDraftChange,
+  onPropose,
+  onAccept,
+  onReject,
+  saving = false,
+  respondingTermId = '',
+  canPropose = false,
+  canRespond = false,
+}) {
   if (loading) return <PageCard><p className="text-sm text-[#60758d]">Loading commercial terms…</p></PageCard>
   return (
     <div className="space-y-6">
@@ -116,7 +138,7 @@ function ReferralTermsSection({ terms = [], loading = false, error = '', draft =
 
       {canPropose ? (
         <PageCard>
-          <form className="grid gap-4 md:grid-cols-[1.1fr_1fr_1fr_auto] md:items-end" onSubmit={onPropose}>
+          <form className="grid gap-4 md:grid-cols-[1.1fr_1fr_1fr_1.1fr_auto] md:items-end" onSubmit={onPropose}>
             <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
               Basis
               <select value={draft.calculationBasis} onChange={(event) => onDraftChange('calculationBasis', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]">
@@ -133,13 +155,30 @@ function ReferralTermsSection({ terms = [], loading = false, error = '', draft =
               </select>
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
-              {draft.rateType === 'fixed' ? 'Amount (ZAR)' : 'Kickback (%)'}
+              {draft.rateType === 'fixed' ? 'Amount (ZAR)' : 'Referral commission (%)'}
               <input type="number" min="0" step="0.01" required value={draft.rate} onChange={(event) => onDraftChange('rate', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+              Payout recipient
+              <select value={draft.payoutRecipient || 'agency'} onChange={(event) => onDraftChange('payoutRecipient', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]">
+                <option value="agency">Agency</option>
+                <option value="agent">Individual agent</option>
+                <option value="agency_and_agent">Agency and individual agent</option>
+              </select>
             </label>
             <button type="submit" disabled={saving} className="h-11 rounded-[10px] bg-[#10243a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? 'Proposing…' : 'Propose terms'}
             </button>
           </form>
+        </PageCard>
+      ) : null}
+
+      {canRespond ? (
+        <PageCard className="border-[#dbeafe] bg-[#f8fbff]">
+          <p className="text-sm font-semibold text-[#10243a]">Agency acceptance</p>
+          <p className="mt-2 text-sm leading-6 text-[#60758d]">
+            Proposed terms become active only after an agency principal accepts them. Reject a proposal if the recipient, rate or calculation basis is not correct.
+          </p>
         </PageCard>
       ) : null}
 
@@ -155,15 +194,28 @@ function ReferralTermsSection({ terms = [], loading = false, error = '', draft =
           <div className="mt-5 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-[#dbe5f0] text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa7]">
-                <tr><th className="px-3 py-3">Version</th><th className="px-3 py-3">Terms</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Accepted</th></tr>
+                <tr><th className="px-3 py-3">Version</th><th className="px-3 py-3">Terms</th><th className="px-3 py-3">Recipient</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Accepted</th><th className="px-3 py-3">Action</th></tr>
               </thead>
               <tbody>
                 {terms.map((term) => (
                   <tr key={term.id || term.version} className="border-b border-[#edf1f5] last:border-0">
                     <td className="px-3 py-4 font-semibold text-[#10243a]">v{term.version}</td>
                     <td className="px-3 py-4 text-[#52677f]">{term.rateType === 'fixed' ? formatMoneyValue(term.fixedAmount) : `${term.percentage}%`} of {referralBasisLabel(term.calculationBasis)}</td>
+                    <td className="px-3 py-4 text-[#52677f]">{referralRecipientLabel(term.termsSnapshot?.payoutRecipient)}</td>
                     <td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${referralTermStatusClass(term.status)}`}>{statusLabel(term.status)}</span></td>
                     <td className="px-3 py-4 text-[#52677f]">{term.agencyAcceptedAt ? formatDate(term.agencyAcceptedAt) : 'Awaiting agency principal'}</td>
+                    <td className="px-3 py-4">
+                      {canRespond && term.status === BOND_REFERRAL_TERM_STATUSES.proposed ? (
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" disabled={respondingTermId === term.id} onClick={() => onAccept(term)} className="rounded-[10px] bg-[#17613d] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">
+                            Accept
+                          </button>
+                          <button type="button" disabled={respondingTermId === term.id} onClick={() => onReject(term)} className="rounded-[10px] border border-[#f1d0d0] bg-white px-3 py-2 text-xs font-semibold text-[#9e2f2f] disabled:opacity-60">
+                            Reject
+                          </button>
+                        </div>
+                      ) : <span className="text-[#8aa0b3]">No action</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1628,7 +1680,8 @@ export default function BondPartnerProfilePage() {
   const [referralTermsLoading, setReferralTermsLoading] = useState(false)
   const [referralTermsError, setReferralTermsError] = useState('')
   const [referralTermsSaving, setReferralTermsSaving] = useState(false)
-  const [referralTermsDraft, setReferralTermsDraft] = useState({ calculationBasis: 'originator_commission', rateType: 'percentage', rate: '25' })
+  const [referralTermsRespondingId, setReferralTermsRespondingId] = useState('')
+  const [referralTermsDraft, setReferralTermsDraft] = useState({ calculationBasis: 'originator_commission', rateType: 'percentage', rate: '25', payoutRecipient: 'agency' })
 
   const currentOrganisationId = useMemo(
     () => getCurrentOrganisationId({ organisation, workspace, currentMembership }),
@@ -1819,6 +1872,16 @@ export default function BondPartnerProfilePage() {
       partnerRelationshipId: normalizeText(relationship.id || relationshipId),
     }
   }, [currentOrganisationId, profile, relationshipId])
+  const canProposeReferralTerms = Boolean(
+    referralTermsScope.originatorOrganisationId &&
+      referralTermsScope.agencyOrganisationId &&
+      normalizeText(currentOrganisationId) === normalizeText(referralTermsScope.originatorOrganisationId),
+  )
+  const canRespondToReferralTerms = Boolean(
+    referralTermsScope.originatorOrganisationId &&
+      referralTermsScope.agencyOrganisationId &&
+      normalizeText(currentOrganisationId) === normalizeText(referralTermsScope.agencyOrganisationId),
+  )
 
   useEffect(() => {
     if (activeTab !== 'terms' || !referralTermsScope.originatorOrganisationId || !referralTermsScope.agencyOrganisationId) return undefined
@@ -1909,12 +1972,49 @@ export default function BondPartnerProfilePage() {
         rateType: referralTermsDraft.rateType,
         percentage: isFixed ? 0 : Number(referralTermsDraft.rate || 0),
         fixedAmount: isFixed ? Number(referralTermsDraft.rate || 0) : 0,
+        termsSnapshot: {
+          payoutRecipient: referralTermsDraft.payoutRecipient || 'agency',
+        },
       }, referralTermsContext)
       setReferralTerms((current) => [created, ...current.filter((term) => term.id !== created.id)])
     } catch (saveError) {
       setReferralTermsError(saveError?.message || 'Referral terms could not be proposed.')
     } finally {
       setReferralTermsSaving(false)
+    }
+  }
+
+  async function handleAcceptReferralTerms(term) {
+    if (!term?.id) return
+    try {
+      setReferralTermsRespondingId(term.id)
+      setReferralTermsError('')
+      const accepted = await acceptBondReferralTerms(term.id, referralTermsContext)
+      setReferralTerms((current) => current.map((item) => (
+        item.id === accepted.id
+          ? accepted
+          : item.status === BOND_REFERRAL_TERM_STATUSES.accepted
+            ? { ...item, status: BOND_REFERRAL_TERM_STATUSES.superseded, supersededAt: accepted.agencyAcceptedAt }
+            : item
+      )))
+    } catch (acceptError) {
+      setReferralTermsError(acceptError?.message || 'Referral terms could not be accepted.')
+    } finally {
+      setReferralTermsRespondingId('')
+    }
+  }
+
+  async function handleRejectReferralTerms(term) {
+    if (!term?.id) return
+    try {
+      setReferralTermsRespondingId(term.id)
+      setReferralTermsError('')
+      const rejected = await rejectBondReferralTerms(term.id, 'Rejected from agency partner terms screen.', referralTermsContext)
+      setReferralTerms((current) => current.map((item) => (item.id === rejected.id ? rejected : item)))
+    } catch (rejectError) {
+      setReferralTermsError(rejectError?.message || 'Referral terms could not be rejected.')
+    } finally {
+      setReferralTermsRespondingId('')
     }
   }
 
@@ -2204,8 +2304,12 @@ export default function BondPartnerProfilePage() {
             draft={referralTermsDraft}
             onDraftChange={handleReferralTermsDraftChange}
             onPropose={handleProposeReferralTerms}
+            onAccept={handleAcceptReferralTerms}
+            onReject={handleRejectReferralTerms}
             saving={referralTermsSaving}
-            canPropose={Boolean(referralTermsScope.originatorOrganisationId && referralTermsScope.agencyOrganisationId)}
+            respondingTermId={referralTermsRespondingId}
+            canPropose={canProposeReferralTerms}
+            canRespond={canRespondToReferralTerms}
           />
         ) : null}
 
