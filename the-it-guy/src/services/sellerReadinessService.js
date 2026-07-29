@@ -254,6 +254,9 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
   const contactReady = hasContact({ lead, contact })
   const addressReady = Boolean(propertyAddress({ lead, listing: listing || {} }))
   if (!contactReady) blockers.push(blocker('missing_seller_contact', 'Missing Seller Contact', 'seller', 'contact_seller', 'blocked', 'Your agent needs seller contact details.'))
+  if (contactReady && !onboardingSent(resolvedJourney) && !hasProgressedPastOnboarding(resolvedJourney)) {
+    blockers.push(blocker('seller_onboarding_not_sent', 'Seller Onboarding Not Sent', 'onboarding', 'send_seller_onboarding', 'blocked', 'Send seller onboarding so the seller can provide property details and documents.'))
+  }
   if (!addressReady) blockers.push(blocker('missing_property_address', 'Missing Property Address', 'seller', 'capture_property_address', 'blocked', 'Your agent needs the property address.'))
 
   if (onboardingSubmissionStillBlocking(resolvedJourney) && resolvedJourney.mandateStatus === 'not_started') {
@@ -320,6 +323,7 @@ export function getNextSellerAction(args = {}) {
   const blockers = getSellerBlockers({ ...args, journey })
   const blocking = blockers.find((item) => item.severity === 'blocked') || blockers[0] || null
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
+  if (blocking?.id === 'seller_onboarding_not_sent') return action('send_seller_onboarding', 'Send Seller Onboarding', true, '', { blocker: blocking })
   if (blocking?.id === 'missing_property_address') return action('capture_property_address', 'Capture Property Address', true, '', { blocker: blocking })
   if (blocking?.id === 'seller_onboarding_not_submitted') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: blocking })
   if (blocking?.id === 'mandate_not_generated') return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
@@ -329,7 +333,7 @@ export function getNextSellerAction(args = {}) {
   if (journey.listingCreated) return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), blockers.find((item) => item.category === 'listing_live')?.label || '', { blocker: blockers.find((item) => item.category === 'listing_live') || null })
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (journey.mandateStatus === 'sent') return action('check_signature_status', 'Track Signature', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
-  if (!onboardingSent(journey)) return action('open_seller_portal', 'Send Seller Onboarding')
+  if (!onboardingSent(journey)) return action('send_seller_onboarding', 'Send Seller Onboarding')
   if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
   if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (onboardingSubmitted(journey)) return action('generate_mandate', 'Generate Mandate')
@@ -384,7 +388,7 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
   ]
   const stageKey = resolvedJourney.stage?.key || 'contacted'
   const stageActions = stageKey === 'contacted'
-    ? [make('open_seller_portal', 'Send Seller Onboarding', true), ...always]
+    ? [make('send_seller_onboarding', 'Send Seller Onboarding', true), ...always]
     : stageKey === 'seller_onboarding_sent'
         ? [
           make('open_seller_portal', 'Open Seller Portal', true),

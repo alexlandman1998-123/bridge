@@ -3870,7 +3870,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadDeleteModal, setLeadDeleteModal] = useState({
     open: false,
     leadId: '',
-    confirmText: '',
     error: '',
   })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
@@ -5695,7 +5694,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!routeLeadId || hasExplicitLeadWorkspaceTab || !selectedLeadIsSeller) return
-    setLeadWorkspaceTab('property')
+    setLeadWorkspaceTab('overview')
   }, [hasExplicitLeadWorkspaceTab, routeLeadId, selectedLeadIsSeller])
 
   const handleLeadWorkspaceTabSelection = useCallback((tabKey) => {
@@ -6885,7 +6884,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedSellerReadinessRequirements = useMemo(() => {
     const listingItems = selectedSellerReadiness.listingReadiness?.items || []
-    const hasPropertyDetails = Boolean(normalizeText(selectedLeadPropertyLabel) && selectedLeadPropertyLabel !== 'Not captured')
+    const propertyDetailAddress = normalizeText(
+      selectedLeadLinkedListing?.propertyAddress ||
+        selectedLeadLinkedListing?.property_address ||
+        selectedLeadLinkedListing?.address ||
+        selectedLeadLinkedListing?.addressLine1 ||
+        selectedLeadLinkedListing?.address_line_1 ||
+        selectedLeadLinkedListing?.formattedAddress ||
+        selectedLeadLinkedListing?.formatted_address ||
+        selectedLead?.sellerPropertyAddress ||
+        selectedLead?.seller_property_address ||
+        selectedLead?.streetAddress ||
+        selectedLead?.street_address ||
+        selectedLead?.addressLine1 ||
+        selectedLead?.address_line_1 ||
+        selectedLead?.formattedAddress ||
+        selectedLead?.formatted_address,
+    )
+    const hasPropertyDetails = Boolean(propertyDetailAddress)
     const marketingItems = listingItems.filter((item) => ['photos', 'description', 'pricing', 'visibility'].includes(normalizeKey(item?.key)))
     const missingMarketingItems = marketingItems.filter((item) => !item.complete)
     const marketingComplete = marketingItems.length ? missingMarketingItems.length === 0 : false
@@ -6933,7 +6949,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     selectedLead,
     selectedLeadLinkedListing,
-    selectedLeadPropertyLabel,
     selectedSellerJourney.documentsOutstanding,
     selectedSellerJourney.documentsSubmitted,
     selectedSellerJourney.mandateStatus,
@@ -10365,6 +10380,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('documents')
       return
     }
+    if (id === 'send_seller_onboarding') {
+      void handleSendSellerOnboarding()
+      return
+    }
     if (id === 'capture_property_address') {
       setLeadWorkspaceTab('overview')
       setLeadForm((previous) => ({
@@ -12362,7 +12381,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setLeadDeleteModal({
       open: true,
       leadId: normalizeText(leadId),
-      confirmText: '',
       error: '',
     })
   }
@@ -12433,10 +12451,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleDeleteLead() {
     const leadId = normalizeText(leadDeleteModal.leadId)
     if (!leadId) return
-    if (normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE') {
-      setError('Type DELETE to permanently delete this lead.')
-      return
-    }
 
     const leadIdentityKey = normalizeLeadIdentityKey(leadId)
     const leadForDelete = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId || row?.id) === leadIdentityKey) || null
@@ -12492,7 +12506,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ),
         deals: previous.deals.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
       }))
-      setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })
+      setLeadDeleteModal({ open: false, leadId: '', error: '' })
       if (selectedLeadId === leadId) {
         setSelectedLeadId('')
         if (isLeadWorkspaceRoute) navigate('/pipeline/leads')
@@ -14805,36 +14819,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
-                        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
-                            <h3 className="text-base font-semibold text-[#102033]">Documents</h3>
-                            <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('documents')}>
+                        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-5">
+                            <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
+                            <Button type="button" size="sm" variant="secondary" className="min-h-11 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
                               View All Documents
                             </Button>
                           </div>
                           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
                             <div className="grid gap-3 sm:grid-cols-2">
                               {selectedSellerDocumentCategories.map((category) => {
-                                const chartColor = category.progress >= 100 ? '#0f8f59' : '#f5a400'
+                                const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
                                 return (
-                                  <div key={category.key} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-semibold text-[#20364c]">{category.label}</p>
-                                        <p className="mt-1 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
-                                      </div>
-                                      <span
-                                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full p-1"
-                                        style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e4ebf3 0deg)` }}
-                                        aria-label={`${category.label} ${category.progress}% complete`}
-                                      >
-                                        <span className="grid h-full w-full place-items-center rounded-full bg-white text-[0.62rem] font-bold tracking-[-0.02em] text-[#20364c]">
-                                          {category.progress}%
+                                  <div key={category.key} className="min-w-0 rounded-[18px] border border-[#e4edf6] bg-[#fbfdff] px-4 py-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                                    <p className="min-h-6 text-center text-base font-semibold leading-6 text-[#20364c]">{category.label}</p>
+                                    <span
+                                      className="mx-auto mt-4 grid h-24 w-24 place-items-center rounded-full p-3"
+                                      style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
+                                      aria-label={`${category.label} ${category.progress}% complete`}
+                                    >
+                                      <span className="grid h-full w-full place-items-center rounded-full bg-white text-center shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
+                                        <span>
+                                          <span className="block text-3xl font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
+                                          <span className="mt-1 block text-xs font-semibold text-[#6d839b]">complete</span>
                                         </span>
                                       </span>
-                                    </div>
-                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-                                      <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#f5a400]'}`} style={{ width: `${category.progress}%` }} />
+                                    </span>
+                                    <p className="mt-4 text-sm font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                      <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
                                     </div>
                                   </div>
                                 )
@@ -17606,7 +17619,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={leadDeleteModal.open}
-        onClose={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })}
+        onClose={() => setLeadDeleteModal({ open: false, leadId: '', error: '' })}
         title="Delete Lead"
         subtitle="Permanently remove this lead from the pipeline. Archive instead if you want to preserve the full history."
         className="max-w-lg"
@@ -17620,16 +17633,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               {leadDeleteModal.error}
             </div>
           ) : null}
-          <Field
-            placeholder="Type DELETE to confirm"
-            value={leadDeleteModal.confirmText}
-            onChange={(event) => setLeadDeleteModal((previous) => ({ ...previous, confirmText: event.target.value, error: '' }))}
-          />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })}>
+            <Button type="button" variant="secondary" onClick={() => setLeadDeleteModal({ open: false, leadId: '', error: '' })}>
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleDeleteLead()} disabled={normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE'}>
+            <Button type="button" onClick={() => void handleDeleteLead()}>
               Delete Lead
             </Button>
           </div>

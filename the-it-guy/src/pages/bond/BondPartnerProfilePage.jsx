@@ -104,10 +104,14 @@ function referralBasisLabel(value = '') {
   return 'Manual base'
 }
 
-function referralRecipientLabel(value = '') {
+function referralRecipientLabel(value = '', snapshot = {}) {
   const normalized = normalizeText(value).toLowerCase()
   if (normalized === 'agent') return 'Individual agent'
-  if (normalized === 'agency_and_agent') return 'Agency and individual agent'
+  if (normalized === 'agency_and_agent') {
+    const agencyShare = Number(snapshot.agencySharePercentage ?? snapshot.agency_share_percentage ?? 50)
+    const agentShare = Number(snapshot.agentSharePercentage ?? snapshot.agent_share_percentage ?? 50)
+    return `Agency ${agencyShare}% / agent ${agentShare}%`
+  }
   return 'Agency'
 }
 
@@ -169,6 +173,18 @@ function ReferralTermsSection({
             <button type="submit" disabled={saving} className="h-11 rounded-[10px] bg-[#10243a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? 'Proposing…' : 'Propose terms'}
             </button>
+            {draft.payoutRecipient === 'agency_and_agent' ? (
+              <div className="grid gap-4 md:col-span-5 md:grid-cols-2">
+                <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+                  Agency share (%)
+                  <input type="number" min="0" max="100" step="1" required value={draft.agencySharePercentage ?? 50} onChange={(event) => onDraftChange('agencySharePercentage', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]" />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold text-[#223b54]">
+                  Agent share (%)
+                  <input type="number" min="0" max="100" step="1" required value={draft.agentSharePercentage ?? 50} onChange={(event) => onDraftChange('agentSharePercentage', event.target.value)} className="h-11 rounded-[10px] border border-[#dbe5f0] bg-white px-3 text-sm font-medium text-[#223b54]" />
+                </label>
+              </div>
+            ) : null}
           </form>
         </PageCard>
       ) : null}
@@ -201,7 +217,7 @@ function ReferralTermsSection({
                   <tr key={term.id || term.version} className="border-b border-[#edf1f5] last:border-0">
                     <td className="px-3 py-4 font-semibold text-[#10243a]">v{term.version}</td>
                     <td className="px-3 py-4 text-[#52677f]">{term.rateType === 'fixed' ? formatMoneyValue(term.fixedAmount) : `${term.percentage}%`} of {referralBasisLabel(term.calculationBasis)}</td>
-                    <td className="px-3 py-4 text-[#52677f]">{referralRecipientLabel(term.termsSnapshot?.payoutRecipient)}</td>
+                    <td className="px-3 py-4 text-[#52677f]">{referralRecipientLabel(term.termsSnapshot?.payoutRecipient, term.termsSnapshot)}</td>
                     <td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${referralTermStatusClass(term.status)}`}>{statusLabel(term.status)}</span></td>
                     <td className="px-3 py-4 text-[#52677f]">{term.agencyAcceptedAt ? formatDate(term.agencyAcceptedAt) : 'Awaiting agency principal'}</td>
                     <td className="px-3 py-4">
@@ -1681,7 +1697,7 @@ export default function BondPartnerProfilePage() {
   const [referralTermsError, setReferralTermsError] = useState('')
   const [referralTermsSaving, setReferralTermsSaving] = useState(false)
   const [referralTermsRespondingId, setReferralTermsRespondingId] = useState('')
-  const [referralTermsDraft, setReferralTermsDraft] = useState({ calculationBasis: 'originator_commission', rateType: 'percentage', rate: '25', payoutRecipient: 'agency' })
+  const [referralTermsDraft, setReferralTermsDraft] = useState({ calculationBasis: 'originator_commission', rateType: 'percentage', rate: '25', payoutRecipient: 'agency', agencySharePercentage: '50', agentSharePercentage: '50' })
 
   const currentOrganisationId = useMemo(
     () => getCurrentOrganisationId({ organisation, workspace, currentMembership }),
@@ -1966,6 +1982,11 @@ export default function BondPartnerProfilePage() {
       setReferralTermsSaving(true)
       setReferralTermsError('')
       const isFixed = referralTermsDraft.rateType === 'fixed'
+      const agencyShare = Number(referralTermsDraft.agencySharePercentage ?? 50)
+      const agentShare = Number(referralTermsDraft.agentSharePercentage ?? 50)
+      if (referralTermsDraft.payoutRecipient === 'agency_and_agent' && Math.round((agencyShare + agentShare) * 100) / 100 !== 100) {
+        throw new Error('Agency and agent shares must add up to 100%.')
+      }
       const created = await proposeBondReferralTerms({
         ...referralTermsScope,
         calculationBasis: referralTermsDraft.calculationBasis,
@@ -1974,6 +1995,8 @@ export default function BondPartnerProfilePage() {
         fixedAmount: isFixed ? Number(referralTermsDraft.rate || 0) : 0,
         termsSnapshot: {
           payoutRecipient: referralTermsDraft.payoutRecipient || 'agency',
+          agencySharePercentage: referralTermsDraft.payoutRecipient === 'agency_and_agent' ? agencyShare : null,
+          agentSharePercentage: referralTermsDraft.payoutRecipient === 'agency_and_agent' ? agentShare : null,
         },
       }, referralTermsContext)
       setReferralTerms((current) => [created, ...current.filter((term) => term.id !== created.id)])

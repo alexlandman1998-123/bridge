@@ -49,7 +49,7 @@ try {
   const splitEntries = service.buildBondReferralLedgerEntries({
     terms: {
       ...grossBondTerms,
-      termsSnapshot: { payoutRecipient: 'agency_and_agent' },
+      termsSnapshot: { payoutRecipient: 'agency_and_agent', agencySharePercentage: 60, agentSharePercentage: 40 },
     },
     application: { id: applicationId, bondAmount: 1000000, grossCommission: 19500 },
     agency: { id: agencyOrganisationId, name: 'Harcourts Bedfordview' },
@@ -57,8 +57,8 @@ try {
   })
   assert.equal(splitEntries.length, 2)
   assert.deepEqual(splitEntries.map((row) => row.beneficiaryType), ['agency', 'agent'])
-  assert.equal(splitEntries[0].amountExpected, 3000)
-  assert.equal(splitEntries[1].amountExpected, 3000)
+  assert.equal(splitEntries[0].amountExpected, 1800)
+  assert.equal(splitEntries[1].amountExpected, 1200)
 
   console.log('bondReferralTermsService tests passed')
 } finally {

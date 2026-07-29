@@ -130,6 +130,12 @@ function normalizePayoutRecipient(value = '') {
     : BOND_REFERRAL_PAYOUT_RECIPIENTS.agency
 }
 
+function normalizeSharePercentage(value, fallback = 100) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(0, Math.min(100, parsed))
+}
+
 export function normalizeBondReferralTerms(row = {}) {
   const rule = normalizeCommissionRule({
     type: row.rateType || row.rate_type || row.type || COMMISSION_RULE_TYPES.percentage,
@@ -215,13 +221,21 @@ export function buildBondReferralLedgerEntry({ terms = {}, application = {}, ben
 
 export function buildBondReferralLedgerEntries({ terms = {}, application = {}, agency = {}, agent = {}, status = BOND_REFERRAL_LEDGER_STATUSES.expected } = {}) {
   const normalizedTerms = normalizeBondReferralTerms(terms)
-  const payoutRecipient = normalizePayoutRecipient(normalizedTerms.termsSnapshot?.payoutRecipient || normalizedTerms.termsSnapshot?.payout_recipient)
+  const snapshot = normalizedTerms.termsSnapshot || {}
+  const payoutRecipient = normalizePayoutRecipient(snapshot.payoutRecipient || snapshot.payout_recipient)
+  const agencyShare = payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent
+    ? normalizeSharePercentage(snapshot.agencySharePercentage ?? snapshot.agency_share_percentage, 50)
+    : 100
+  const agentShare = payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent
+    ? normalizeSharePercentage(snapshot.agentSharePercentage ?? snapshot.agent_share_percentage, 100 - agencyShare)
+    : 100
   const beneficiaries = []
   if (payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agency || payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent) {
     beneficiaries.push({
       type: COMMISSION_PARTY_TYPES.agency,
       id: agency.id || agency.agencyOrganisationId || normalizedTerms.agencyOrganisationId,
       name: agency.name || agency.agencyName || 'Agency referral',
+      sharePercentage: agencyShare,
     })
   }
   if (payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agent || payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent) {
@@ -229,9 +243,18 @@ export function buildBondReferralLedgerEntries({ terms = {}, application = {}, a
       type: COMMISSION_PARTY_TYPES.agent,
       id: agent.id || agent.userId || agent.profileId,
       name: agent.name || agent.fullName || agent.email || 'Agent referral',
+      sharePercentage: agentShare,
     })
   }
-  return beneficiaries.map((beneficiary) => buildBondReferralLedgerEntry({ terms: normalizedTerms, application, beneficiary, status }))
+  return beneficiaries.map((beneficiary) => {
+    const entry = buildBondReferralLedgerEntry({ terms: normalizedTerms, application, beneficiary, status })
+    const share = payoutRecipient === BOND_REFERRAL_PAYOUT_RECIPIENTS.agencyAndAgent ? beneficiary.sharePercentage : 100
+    return {
+      ...entry,
+      sharePercentage: share,
+      amountExpected: money(entry.amountExpected * (share / 100)),
+    }
+  })
 }
 
 function mapTermsForPersistence(terms = {}, context = {}) {

@@ -598,9 +598,9 @@ export default function BondRevenueManagementPage() {
         }
       }
     }
-    if (canManagePayouts && workspaceId) void loadReferralReconciliation()
+    if (workspaceId) void loadReferralReconciliation()
     return () => { cancelled = true }
-  }, [canManagePayouts, refreshKey, workspaceId])
+  }, [refreshKey, workspaceId])
 
   function refresh() {
     setNotice('Commercial dashboard refreshed.')
@@ -850,8 +850,8 @@ export default function BondRevenueManagementPage() {
           />
         </Section>
 
-        {canManagePayouts ? (
-          <Section title="Agency Referral Reconciliation" subtitle="Accepted partner terms, expected referral commission, invoices and payment status." icon={ReceiptText}>
+        {workspaceId ? (
+          <Section title="Agency And Agent Referral Reconciliation" subtitle="Accepted partner terms, expected referral commission, invoices and payment status. Visibility follows the referral ledger permissions." icon={ReceiptText}>
             {referralReconciliationError ? <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{referralReconciliationError}</p> : null}
             <div className="mb-6 grid gap-4 md:grid-cols-4">
               <MetricCard label="Expected" value={formatMoney(referralReconciliation.totals.expected)} trend={`${referralReconciliation.rows.length} applications`} />
@@ -865,7 +865,9 @@ export default function BondRevenueManagementPage() {
               emptyDescription="Accepted terms create an immutable snapshot when an application is connected to the agency; that snapshot is then used for reconciliation."
               columns={[
                 { key: 'applicationId', label: 'Application', render: (row) => row.application_id },
-                { key: 'beneficiaryName', label: 'Agency / Agent', render: (row) => row.beneficiary_name },
+                { key: 'beneficiaryName', label: 'Agency / Agent', render: (row) => <div><p className="font-semibold text-slate-900">{row.beneficiary_name}</p><p className="text-xs text-slate-500">{formatPartyType(row.beneficiary_type)}</p></div> },
+                { key: 'bondAmount', label: 'Bond Amount', render: (row) => formatMoney(row.bond_amount) },
+                { key: 'basis', label: 'Basis', render: (row) => formatBasis(row.calculation_basis) },
                 { key: 'amountExpected', label: 'Expected', render: (row) => formatMoney(row.amount_expected) },
                 { key: 'amountConfirmed', label: 'Confirmed', render: (row) => formatMoney(row.amount_confirmed) },
                 { key: 'invoiceStatus', label: 'Invoice', render: (row) => <StatusPill status={row.invoice_status} /> },
