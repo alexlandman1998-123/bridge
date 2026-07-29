@@ -476,14 +476,14 @@ export default function PublicAgencyIntakePage() {
             <h1 className="mt-4 text-[3rem] font-semibold leading-none text-white sm:text-[4.3rem]">
               {submitted ? 'Thank you.' : intent === 'sell' ? 'Tell us about your property.' : intent === 'buy' ? 'Tell us what you want to buy.' : intake.intake.heading || 'What can we help you with?'}
             </h1>
-            <p className="mt-5 max-w-[560px] text-base font-medium leading-7 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:text-lg sm:leading-8">
+            <p className={`${submitted || intent ? 'block' : 'hidden'} mt-5 max-w-[560px] text-base font-medium leading-7 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:block sm:text-lg sm:leading-8`}>
               {submitted
                 ? `${agencyName} has received your details.`
                 : intent
                   ? 'Share the basics and the team will pick it up.'
                   : intake.intake.introduction || 'Choose the path that fits you and share a few details.'}
             </p>
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
+            <div className="mt-7 hidden gap-3 sm:grid sm:grid-cols-3">
               {[
                 { icon: BadgeCheck, label: 'Quick details' },
                 { icon: Sparkles, label: 'Personal response' },
