@@ -167,9 +167,12 @@ function BrandMark({ agency = {} }) {
 
   if (agency.logoUrl && !logoFailed) {
     return (
-      <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-white/95 p-2 shadow-[0_18px_44px_rgba(0,0,0,0.22)] sm:h-20 sm:w-20">
-        <img src={agency.logoUrl} alt={`${name} logo`} className="h-full w-full object-contain" onError={() => setLogoFailed(true)} />
-      </div>
+      <img
+        src={agency.logoUrl}
+        alt={`${name} logo`}
+        className="block h-14 max-w-[170px] object-contain drop-shadow-[0_10px_26px_rgba(0,0,0,0.3)] sm:h-16 sm:max-w-[220px]"
+        onError={() => setLogoFailed(true)}
+      />
     )
   }
 
@@ -212,7 +215,9 @@ function UnavailableState({ error, onRetry }) {
   )
 }
 
-function IntentChoice({ intent, title, copy, icon: Icon, image, onClick }) {
+function IntentChoice({ intent, title, copy, icon, image, onClick }) {
+  const Icon = icon
+
   return (
     <button
       type="button"
@@ -220,13 +225,14 @@ function IntentChoice({ intent, title, copy, icon: Icon, image, onClick }) {
       className="group relative min-h-[320px] overflow-hidden rounded-lg border border-white/15 bg-white/10 text-left text-white shadow-[0_30px_90px_rgba(0,0,0,0.22)] transition hover:-translate-y-1 hover:border-white/30 focus:outline-none focus:ring-4 focus:ring-white/30"
     >
       <span className="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-105" style={{ backgroundImage: `url("${image}")` }} />
-      <span className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/42 to-black/12" />
+      <span className="absolute inset-0 bg-black/35" />
+      <span className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-black/28" />
       <span className="relative flex min-h-[320px] flex-col justify-end p-5 sm:p-6">
-        <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/14 text-[var(--intake-accent)] backdrop-blur">
+        <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-black/44 text-[var(--intake-accent)] backdrop-blur">
           <Icon size={24} aria-hidden="true" />
         </span>
-        <span className="mt-5 block text-3xl font-semibold leading-tight">{title}</span>
-        <span className="mt-3 block max-w-[360px] text-sm leading-6 text-white/76">{copy}</span>
+        <span className="mt-5 block text-3xl font-semibold leading-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">{title}</span>
+        <span className="mt-3 block max-w-[360px] text-sm font-medium leading-6 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.72)]">{copy}</span>
         <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--intake-accent)]">
           Start <ArrowRight size={17} aria-hidden="true" />
         </span>
@@ -306,7 +312,9 @@ export default function PublicAgencyIntakePage() {
     }
   }, [intake?.agency?.name])
 
-  const enabledIntents = intake?.intake?.enabledIntents?.length ? intake.intake.enabledIntents : ['buy', 'sell']
+  const enabledIntents = useMemo(() => (
+    intake?.intake?.enabledIntents?.length ? intake.intake.enabledIntents : ['buy', 'sell']
+  ), [intake?.intake?.enabledIntents])
   const theme = useMemo(() => buildTheme(intake?.agency || {}), [intake?.agency])
 
   useEffect(() => {
@@ -449,16 +457,8 @@ export default function PublicAgencyIntakePage() {
 
       <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 py-5 sm:px-8 lg:px-10">
         <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <BrandMark agency={intake.agency} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white/78">{agencyName}</p>
-              <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--intake-accent)]">
-                <ShieldCheck size={14} aria-hidden="true" /> Secure intake
-              </p>
-            </div>
-          </div>
-          <span className="hidden text-xs font-semibold uppercase tracking-[0.16em] text-white/54 sm:inline">Powered by ARCH9</span>
+          <BrandMark agency={intake.agency} />
+          <span className="hidden text-xs font-semibold uppercase tracking-[0.16em] text-white/78 drop-shadow sm:inline">Powered by ARCH9</span>
         </header>
 
         <section className="grid flex-1 items-center gap-8 py-9 lg:grid-cols-[minmax(0,0.82fr)_minmax(460px,1fr)] lg:gap-12">
@@ -476,7 +476,7 @@ export default function PublicAgencyIntakePage() {
             <h1 className="mt-4 text-[3rem] font-semibold leading-none text-white sm:text-[4.3rem]">
               {submitted ? 'Thank you.' : intent === 'sell' ? 'Tell us about your property.' : intent === 'buy' ? 'Tell us what you want to buy.' : intake.intake.heading || 'What can we help you with?'}
             </h1>
-            <p className="mt-5 max-w-[560px] text-base leading-7 text-white/76 sm:text-lg sm:leading-8">
+            <p className="mt-5 max-w-[560px] text-base font-medium leading-7 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:text-lg sm:leading-8">
               {submitted
                 ? `${agencyName} has received your details.`
                 : intent
@@ -491,9 +491,9 @@ export default function PublicAgencyIntakePage() {
               ].map((item) => {
                 const Icon = item.icon
                 return (
-                  <div key={item.label} className="flex min-h-[60px] items-center gap-3 rounded-lg border border-white/12 bg-white/10 px-3 backdrop-blur">
+                  <div key={item.label} className="flex min-h-[60px] items-center gap-3 rounded-lg border border-white/20 bg-black/20 px-3 backdrop-blur">
                     <Icon className="text-[var(--intake-accent)]" size={18} aria-hidden="true" />
-                    <span className="text-sm font-semibold text-white/82">{item.label}</span>
+                    <span className="text-sm font-semibold text-white">{item.label}</span>
                   </div>
                 )
               })}
@@ -642,7 +642,7 @@ export default function PublicAgencyIntakePage() {
           </div>
         </section>
 
-        <footer className="grid gap-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-xs text-white/62 sm:grid-cols-3">
+        <footer className="grid gap-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-xs font-medium text-white/82 sm:grid-cols-3">
           <span className="inline-flex items-center gap-2"><MapPin size={14} aria-hidden="true" /> {intake.agency?.website || agencyName}</span>
           <span className="inline-flex items-center gap-2"><BedDouble size={14} aria-hidden="true" /> Buyer requirements</span>
           <span className="inline-flex items-center gap-2"><Bath size={14} aria-hidden="true" /> Seller enquiries</span>
