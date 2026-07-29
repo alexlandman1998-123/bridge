@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import {
   createListingSlug,
+  getPublicListings,
   isPublicListingEligible,
   mapPublicListingContract,
 } from '../services/publicListingsService.js'
 
 const validListing = {
   id: '11111111-2222-3333-4444-555555555555',
+  organisation_id: 'org-1',
   listing_status: 'active',
   listing_visibility: 'active_market',
   bridge_listing_status: 'published',
@@ -87,6 +89,7 @@ const contract = mapPublicListingContract({
 
 assert.deepEqual(Object.keys(contract).sort(), [
   'agencyName',
+  'agencySlug',
   'agentName',
   'amenities',
   'askingPrice',
@@ -95,6 +98,7 @@ assert.deepEqual(Object.keys(contract).sort(), [
   'coverImageUrl',
   'description',
   'erfSize',
+  'enquiryUrl',
   'features',
   'floorPlans',
   'floorSize',
@@ -118,7 +122,110 @@ assert.deepEqual(Object.keys(contract).sort(), [
 
 assert.equal(contract.slug, 'modern-family-home-bedfordview-gauteng-11111111')
 assert.equal(contract.publicUrl, 'https://www.arch9.co.za/buy/modern-family-home-bedfordview-gauteng-11111111')
+assert.equal(contract.agencySlug, '')
+assert.equal(contract.enquiryUrl, '')
 assert.equal(contract.coverImageUrl, 'https://cdn.example.com/cover.jpg')
 assert.equal(contract.features.length, 2)
+
+const agencyContract = mapPublicListingContract({
+  listing: {
+    ...validListing,
+    agency_public_intake_slug: 'kingstons',
+    agency_public_name: 'Kingstons Real Estate',
+  },
+  publication: validPublication,
+  media: validMedia,
+  host: 'https://www.arch9.co.za/',
+})
+
+assert.equal(agencyContract.agencyName, 'Kingstons Real Estate')
+assert.equal(agencyContract.agencySlug, 'kingstons')
+assert.equal(
+  agencyContract.enquiryUrl,
+  'https://www.arch9.co.za/intake/kingstons?intent=buy&listing=modern-family-home-bedfordview-gauteng-11111111&listingId=11111111-2222-3333-4444-555555555555',
+)
+
+function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-1', slug: 'kingstons' } } = {}) {
+  const calls = []
+  const results = {
+    agency_public_intake_links: { data: agencyScope ? [agencyScope] : [], error: null },
+    listing_publication_data: { data: [validPublication], error: null },
+    private_listings: { data: [validListing], error: null },
+    listing_media: { data: validMedia, error: null },
+    organisations: { data: [{ id: 'org-1', name: 'Kingstons Real Estate' }], error: null },
+  }
+
+  function createBuilder(table) {
+    const call = { table, filters: [] }
+    calls.push(call)
+    return {
+      select(fields) {
+        call.select = fields
+        return this
+      },
+      eq(field, value) {
+        call.filters.push(['eq', field, value])
+        return this
+      },
+      is(field, value) {
+        call.filters.push(['is', field, value])
+        return this
+      },
+      in(field, value) {
+        call.filters.push(['in', field, value])
+        return this
+      },
+      order(field, options) {
+        call.filters.push(['order', field, options])
+        return this
+      },
+      limit(value) {
+        call.limit = value
+        return this
+      },
+      maybeSingle() {
+        call.single = true
+        return Promise.resolve({ data: agencyScope, error: null })
+      },
+      then(resolve, reject) {
+        return Promise.resolve(results[table] || { data: [], error: null }).then(resolve, reject)
+      },
+    }
+  }
+
+  return {
+    calls,
+    from(table) {
+      return createBuilder(table)
+    },
+  }
+}
+
+const scopedClient = createFakePublicListingsClient()
+const scopedListings = await getPublicListings({
+  client: scopedClient,
+  agencySlug: 'kingstons',
+  host: 'https://www.arch9.co.za',
+})
+
+assert.equal(scopedListings.count, 1)
+assert.equal(scopedListings.items[0].agencySlug, 'kingstons')
+assert.equal(scopedListings.items[0].agencyName, 'Kingstons Real Estate')
+assert.equal(scopedListings.items[0].enquiryUrl.includes('/intake/kingstons?intent=buy'), true)
+assert.deepEqual(
+  scopedClient.calls
+    .find((call) => call.table === 'private_listings')
+    .filters
+    .find((filter) => filter[0] === 'eq' && filter[1] === 'organisation_id'),
+  ['eq', 'organisation_id', 'org-1'],
+)
+
+const missingAgencyListings = await getPublicListings({
+  client: createFakePublicListingsClient({ agencyScope: null }),
+  agencySlug: 'missing-agency',
+})
+
+assert.equal(missingAgencyListings.count, 0)
+assert.deepEqual(missingAgencyListings.items, [])
 
 console.log('publicListingsService tests passed')
