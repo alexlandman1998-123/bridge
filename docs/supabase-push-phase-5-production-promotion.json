@@ -328,7 +328,7 @@
     {
       "version": "202607250001",
       "stream": "other",
-      "file": "202607250001_seller_portal_payload_optional_enrichment_guard.sql",
+      "file": "202607250007_seller_portal_payload_optional_enrichment_guard.sql",
       "action": "repair_only_after_smoke",
       "route": "repair_only",
       "productionRoute": "production_no_sql_record_after_smoke",
