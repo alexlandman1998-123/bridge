@@ -14904,7 +14904,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </section>
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4 xl:h-[430px]">
+                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
                         <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -14931,34 +14931,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
-                        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
+                        <section className="flex min-h-[318px] min-w-0 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                             <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
                             <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
                               View All Documents
                             </Button>
                           </div>
-                          <div className="min-h-0 flex-1 overflow-hidden px-5 py-4">
-                            <div className="grid h-full min-h-0 gap-3 sm:grid-cols-2 sm:grid-rows-2">
+                          <div className="min-h-0 flex-1 px-4 py-4">
+                            <div className="grid h-full min-h-0 auto-rows-fr gap-2.5 sm:grid-cols-2">
                               {selectedSellerDocumentCategories.map((category) => {
                                 const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
                                 return (
-                                  <div key={category.key} className="flex min-h-0 min-w-0 flex-col justify-between rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-3 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                                    <p className="min-h-5 text-center text-sm font-semibold leading-5 text-[#20364c]">{category.label}</p>
+                                  <div key={category.key} className="flex min-h-[116px] min-w-0 flex-col rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                                    <p className="line-clamp-2 min-h-8 text-center text-sm font-semibold leading-4 text-[#20364c]">{category.label}</p>
                                     <span
-                                      className="mx-auto mt-2 grid h-16 w-16 place-items-center rounded-full p-2"
+                                      className="mx-auto mt-1 grid h-11 w-11 place-items-center rounded-full p-1.5"
                                       style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
                                       aria-label={`${category.label} ${category.progress}% complete`}
                                     >
                                       <span className="grid h-full w-full place-items-center rounded-full bg-white text-center shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
                                         <span>
-                                          <span className="block text-xl font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
-                                          <span className="mt-0.5 block text-[0.62rem] font-semibold text-[#6d839b]">complete</span>
+                                          <span className="block text-base font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
+                                          <span className="mt-0.5 block text-[0.54rem] font-semibold text-[#6d839b]">complete</span>
                                         </span>
                                       </span>
                                     </span>
-                                    <p className="mt-2 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
-                                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                    <p className="mt-1 text-xs font-semibold leading-4 text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
                                       <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
                                     </div>
                                   </div>
