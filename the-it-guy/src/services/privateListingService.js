@@ -6614,13 +6614,13 @@ async function acceptSellerPlatformFeeConsent(client, {
       listing?.sellerName ||
       '',
   )
-  const relatedDocumentId = normalizeText(
+  const relatedDocumentId = normalizeUuid(
     formData.propertyDisclosure?.generatedDocument?.id ||
       formData.propertyDisclosure?.generated_document?.id ||
       formData.platformFeeConsent?.relatedDocumentId ||
       formData.platformFeeConsent?.related_document_id ||
       '',
-  )
+  ) || ''
 
   const { data, error } = await client.rpc('bridge_accept_seller_platform_fee_consent', {
     p_token: normalizeText(token || onboarding?.token || listing?.sellerOnboarding?.token),
@@ -6640,10 +6640,35 @@ async function acceptSellerPlatformFeeConsent(client, {
     if (isMissingRpcError(error, 'bridge_accept_seller_platform_fee_consent') || isMissingSchemaError(error)) {
       throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
     }
+    if (isDeferredSellerPlatformFeeConsentError(error)) {
+      console.warn('[Private Listings] seller platform fee consent transaction projection deferred', {
+        reason: buildSupabaseErrorSummary(error),
+      })
+      return {
+        deferred: true,
+        reason: 'transaction_not_linked',
+        message: normalizeText(error.message || 'Seller platform fee consent requires a linked transaction.'),
+      }
+    }
     throw error
   }
 
   return data
+}
+
+function isDeferredSellerPlatformFeeConsentError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const text = [
+    error.message,
+    error.details,
+    error.hint,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  return (
+    code === '22023' &&
+    text.includes('seller platform fee consent') &&
+    text.includes('linked transaction')
+  )
 }
 
 function readAcceptedPreferredTransferAttorney(formData = {}) {
@@ -7662,6 +7687,7 @@ export async function uploadSellerClientPortalDocument({
 }
 
 export const __privateListingServiceTestUtils = Object.freeze({
+  acceptSellerPlatformFeeConsent,
   notifyAgentWhenSellerDocumentsComplete,
   getSellerCompletionDocuments,
   getSellerCompletionRequirements,
