@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const MANIFEST_PATH = path.join('docs', 'supabase-phase-5-application-manifest.json')
+const CLEARANCE_DIR = path.join('docs', 'non-runnable-clearance')
 const JSON_REPORT_PATH = path.join('docs', 'supabase-push-phase-2-stream-plans.json')
 const MARKDOWN_REPORT_PATH = path.join('docs', 'supabase-push-phase-2-stream-plans-report.md')
 
@@ -48,6 +49,21 @@ function countBy(rows, key) {
   }, {})
 }
 
+function approvedCorrectiveSubstitutions(repoRoot, manifestRows) {
+  return manifestRows.filter((row) => {
+    if (row.action !== 'corrective_migration_required') return false
+    const clearanceFile = path.join(repoRoot, CLEARANCE_DIR, `${row.version}-${row.stream}.json`)
+    if (!existsSync(clearanceFile)) return false
+    const clearance = readJson(clearanceFile)
+    const blockers = Array.isArray(clearance.blockers) ? clearance.blockers : []
+    return clearance.clearanceDecision === 'apply_corrective_after_dependency_check'
+      && String(clearance.correctiveVersion || '').trim()
+      && String(clearance.approvedBy || '').trim()
+      && String(clearance.approvedAt || '').trim()
+      && blockers.length === 0
+  }).length
+}
+
 function markdownTable(headers, rows) {
   const line = (cells) => `| ${cells.join(' | ')} |`
   return [
@@ -86,6 +102,7 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | --- | --- |
 | Manifest rows | ${result.manifestRowCount} |
 | Planned rows | ${result.plannedRowCount} |
+| Approved corrective substitutions | ${result.approvedCorrectiveSubstitutions} |
 | Streams | ${result.streams.length} |
 
 ## Streams
@@ -127,13 +144,14 @@ function main() {
     generatedAt: new Date().toISOString(),
     manifestRowCount: manifest.rows.length,
     plannedRowCount: rows.length,
+    approvedCorrectiveSubstitutions: approvedCorrectiveSubstitutions(repoRoot, manifest.rows),
     streams: plans.map(({ stream, count, actionCounts }) => ({ stream, count, actionCounts })),
     actionCounts: countBy(rows, 'action'),
     objectStatusCounts: countBy(rows, 'objectStatus'),
     rows,
   }
 
-  if (result.plannedRowCount !== result.manifestRowCount) {
+  if (result.plannedRowCount + result.approvedCorrectiveSubstitutions !== result.manifestRowCount) {
     throw new Error(`Planned row count ${result.plannedRowCount} does not match manifest row count ${result.manifestRowCount}.`)
   }
 

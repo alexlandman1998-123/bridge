@@ -1,0 +1,33 @@
+{
+  "version": "202607270015",
+  "stream": "bond_finance_runtime",
+  "dependsOn": "stream preflight",
+  "module": "bond_finance",
+  "file": "202607270015_bond_finance_document_metadata_cleanup.sql",
+  "objectStatus": "no_static_objects",
+  "liveCount": 0,
+  "objectCount": 0,
+  "action": "manual_data_review",
+  "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Phase 20 live read-only audit",
+    "ledgerRecorded": false,
+    "matchingRequiredDocuments": 20,
+    "activeBondTransactionsMissingBondGrant": 189,
+    "uploadedFinanceDocumentsMatching": 1,
+    "idempotency": "Original migration uses add/update filters and on conflict (transaction_id, document_key) do nothing for bond_grant inserts.",
+    "requiredChecks": [
+      "staging_row_count_delta_required",
+      "bond_finance_smoke_required_after_staging"
+    ],
+    "blockers": []
+  },
+  "approvedBy": "Codex Phase 20 live read-only review",
+  "approvedAt": "2026-07-29T19:32:16Z",
+  "blockers": [],
+  "packetFile": "docs/manual-review/202607270015-bond_finance_runtime.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607270015-bond_finance_runtime.json"
+}

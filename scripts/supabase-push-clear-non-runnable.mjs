@@ -331,6 +331,29 @@ function correctiveStatus(repoRoot, row, existingClearance) {
   }
 }
 
+function manualStatus(existingClearance, fallbackReview) {
+  const decision = String(existingClearance.clearanceDecision || '').trim()
+  const approved = String(existingClearance.approvedBy || '').trim() && String(existingClearance.approvedAt || '').trim()
+  const existingBlockers = Array.isArray(existingClearance.blockers) ? existingClearance.blockers : []
+  if (RUNNABLE_CLEARANCE_DECISIONS.has(decision) && approved && existingBlockers.length === 0) {
+    return {
+      decision,
+      review: existingClearance.manualReview || { checked: true, decision, blockers: [] },
+      blockers: [],
+    }
+  }
+  return {
+    decision: fallbackReview.decision,
+    review: fallbackReview,
+    blockers: [
+      ...fallbackReview.blockers,
+      ...(RUNNABLE_CLEARANCE_DECISIONS.has(fallbackReview.decision) && !approved
+        ? ['manual_clearance_approval_pending']
+        : []),
+    ],
+  }
+}
+
 function packetMarkdown(row) {
   const objectRows = row.objects.map((object) => [
     `\`${object.objectType}\``,
@@ -465,22 +488,18 @@ function buildResult(repoRoot, options) {
     const corrective = row.action === 'corrective_migration_required'
       ? correctiveStatus(repoRoot, row, existingClearance)
       : null
+    const manual = row.action === 'manual_data_review'
+      ? manualStatus(existingClearance, manualMandate)
+      : null
     const clearanceDecision = row.action === 'manual_data_review'
-      ? manualMandate.decision
+      ? manual.decision
       : corrective.clearanceDecision
-    const manualApproved = String(existingClearance.approvedBy || '').trim()
-      && String(existingClearance.approvedAt || '').trim()
     const correctiveMigrationFile = corrective?.correctiveMigrationFile || existingClearance.correctiveMigrationFile || ''
     const correctiveVersion = corrective?.correctiveVersion || existingClearance.correctiveVersion || null
     const definitionDiffReviewedBy = corrective?.definitionDiffReviewedBy || existingClearance.definitionDiffReviewedBy || ''
     const correctiveMigrationReviewedBy = corrective?.correctiveMigrationReviewedBy || existingClearance.correctiveMigrationReviewedBy || ''
     const blockers = row.action === 'manual_data_review'
-      ? [
-          ...manualMandate.blockers,
-          ...(RUNNABLE_CLEARANCE_DECISIONS.has(clearanceDecision) && !manualApproved
-            ? ['manual_clearance_approval_pending']
-            : []),
-        ]
+      ? manual.blockers
       : corrective.blockers
     const packetFile = packetPath(row)
     const packet = {
@@ -490,7 +509,7 @@ function buildResult(repoRoot, options) {
       liveCount,
       missingCount,
       objects,
-      manualReview: row.action === 'manual_data_review' ? manualMandate : null,
+      manualReview: row.action === 'manual_data_review' ? manual.review : null,
       approvedBy: existingClearance.approvedBy || '',
       approvedAt: existingClearance.approvedAt || '',
       correctiveMigrationFile,

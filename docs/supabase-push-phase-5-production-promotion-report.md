@@ -1,6 +1,6 @@
 # Supabase Push Phase 5 Production Promotion Report
 
-Generated: 2026-07-25T19:22:27.238Z
+Generated: 2026-07-29T19:45:01.899Z
 
 ## Scope
 
@@ -10,9 +10,9 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 
 | Field | Value |
 | --- | --- |
-| Rows considered | 21 |
-| Ready for production | 21 |
-| Blocked | 0 |
+| Rows considered | 32 |
+| Ready for production | 0 |
+| Blocked | 32 |
 | Production env configured | No |
 | Production recovery locked | Yes |
 
@@ -20,60 +20,49 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 
 | Production Route | Rows |
 | --- | --- |
-| `production_apply_sql` | 17 |
-| `production_no_sql_record_after_smoke` | 4 |
+| `production_apply_sql` | 26 |
+| `production_no_sql_record_after_smoke` | 6 |
 
 ## Work Queue
 
 | Version | Stream | Production Route | Ready | Staging Evidence | Blockers |
 | --- | --- | --- | --- | --- | --- |
-| `202607220001` | `legal_document_runtime` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202607220001-legal_document_runtime.json` | None |
-| `202607220002` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220002-legal_document_runtime.json` | None |
-| `202607220003` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220003-legal_document_runtime.json` | None |
-| `202607250002` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607250002-legal_document_runtime.json` | None |
-| `202607220005` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220005-legal_document_runtime.json` | None |
-| `202607250003` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607250003-legal_document_runtime.json` | None |
-| `202607250004` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607250004-legal_document_runtime.json` | None |
-| `202607220008` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220008-legal_document_runtime.json` | None |
-| `202607220009` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220009-legal_document_runtime.json` | None |
-| `202607220010` | `legal_document_runtime` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202607220010-legal_document_runtime.json` | None |
-| `202607220011` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220011-legal_document_runtime.json` | None |
-| `202607220012` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220012-legal_document_runtime.json` | None |
-| `202607230004` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607230004-legal_document_runtime.json` | None |
-| `202607230005` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607230005-legal_document_runtime.json` | None |
-| `202607250006` | `legal_document_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607250006-legal_document_runtime.json` | None |
-| `202607250005` | `seller_transaction_continuity` | `production_apply_sql` | Yes | `docs/staging-evidence/202607250005-seller_transaction_continuity.json` | None |
-| `202607220013` | `bond_finance_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220013-bond_finance_runtime.json` | None |
-| `202607220014` | `bond_finance_runtime` | `production_apply_sql` | Yes | `docs/staging-evidence/202607220014-bond_finance_runtime.json` | None |
-| `202607230013` | `attorney_workflow_runtime` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202607230013-attorney_workflow_runtime.json` | None |
-| `202607240001` | `workspace_profile_management` | `production_apply_sql` | Yes | `docs/staging-evidence/202607240001-workspace_profile_management.json` | None |
-| `202607250001` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202607250001-other.json` | None |
+| `202607270013` | `legal_document_runtime` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607270013-legal_document_runtime.json` | `staging_evidence_missing` |
+| `202607270015` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607270015-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280003` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280003-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280004` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280004-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280005` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280005-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280006` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280006-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280007` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280007-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280008` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280008-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280009` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280009-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280010` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280010-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280011` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280011-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280012` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280012-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280013` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280013-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280014` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280014-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607280015` | `bond_finance_runtime` | `production_apply_sql` | No | `docs/staging-evidence/202607280015-bond_finance_runtime.json` | `staging_evidence_missing` |
+| `202607260008` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607260008-other.json` | `staging_evidence_missing` |
+| `202607270002` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607270002-other.json` | `staging_evidence_missing` |
+| `202607270009` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607270009-other.json` | `staging_evidence_missing` |
+| `202607270010` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607270010-other.json` | `staging_evidence_missing` |
+| `202607270011` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607270011-other.json` | `staging_evidence_missing` |
+| `202607290005` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607290005-other.json` | `staging_evidence_missing` |
+| `202607270014` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202607270014-other.json` | `staging_evidence_missing` |
+| `202607280002` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280002-other.json` | `staging_evidence_missing` |
+| `202607280016` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280016-other.json` | `staging_evidence_missing` |
+| `202607280017` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280017-other.json` | `staging_evidence_missing` |
+| `202607280018` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280018-other.json` | `staging_evidence_missing` |
+| `202607280019` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280019-other.json` | `staging_evidence_missing` |
+| `202607280020` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280020-other.json` | `staging_evidence_missing` |
+| `202607280021` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280021-other.json` | `staging_evidence_missing` |
+| `202607280022` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280022-other.json` | `staging_evidence_missing` |
+| `202607280023` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280023-other.json` | `staging_evidence_missing` |
+| `202607280024` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202607280024-other.json` | `staging_evidence_missing` |
 
 ## Commands
 
-| Version | Command |
-| --- | --- |
-| `202607220001` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220001 --staging-evidence docs/staging-evidence/202607220001-legal_document_runtime.json --production-evidence docs/production-evidence/202607220001-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220002` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220002 --staging-evidence docs/staging-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220002 --staging-evidence docs/staging-evidence/202607220002-legal_document_runtime.json --production-evidence docs/production-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220003` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220003 --staging-evidence docs/staging-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220003 --staging-evidence docs/staging-evidence/202607220003-legal_document_runtime.json --production-evidence docs/production-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250002` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250002 --staging-evidence docs/staging-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250002 --staging-evidence docs/staging-evidence/202607250002-legal_document_runtime.json --production-evidence docs/production-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220005` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220005 --staging-evidence docs/staging-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220005 --staging-evidence docs/staging-evidence/202607220005-legal_document_runtime.json --production-evidence docs/production-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250003` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250003 --staging-evidence docs/staging-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250003 --staging-evidence docs/staging-evidence/202607250003-legal_document_runtime.json --production-evidence docs/production-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250004` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250004 --staging-evidence docs/staging-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250004 --staging-evidence docs/staging-evidence/202607250004-legal_document_runtime.json --production-evidence docs/production-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220008` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220008 --staging-evidence docs/staging-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220008 --staging-evidence docs/staging-evidence/202607220008-legal_document_runtime.json --production-evidence docs/production-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220009` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220009 --staging-evidence docs/staging-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220009 --staging-evidence docs/staging-evidence/202607220009-legal_document_runtime.json --production-evidence docs/production-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220010` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220010 --staging-evidence docs/staging-evidence/202607220010-legal_document_runtime.json --production-evidence docs/production-evidence/202607220010-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220011` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220011 --staging-evidence docs/staging-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220011 --staging-evidence docs/staging-evidence/202607220011-legal_document_runtime.json --production-evidence docs/production-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220012` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220012 --staging-evidence docs/staging-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220012 --staging-evidence docs/staging-evidence/202607220012-legal_document_runtime.json --production-evidence docs/production-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607230004` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607230004 --staging-evidence docs/staging-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230004 --staging-evidence docs/staging-evidence/202607230004-legal_document_runtime.json --production-evidence docs/production-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607230005` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607230005 --staging-evidence docs/staging-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230005 --staging-evidence docs/staging-evidence/202607230005-legal_document_runtime.json --production-evidence docs/production-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250006` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250006 --staging-evidence docs/staging-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250006 --staging-evidence docs/staging-evidence/202607250006-legal_document_runtime.json --production-evidence docs/production-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250005` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607250005 --staging-evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250005 --staging-evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --production-evidence docs/production-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220013` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220013 --staging-evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220013 --staging-evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --production-evidence docs/production-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607220014` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607220014 --staging-evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607220014 --staging-evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --production-evidence docs/production-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607230013` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607230013 --staging-evidence docs/staging-evidence/202607230013-attorney_workflow_runtime.json --production-evidence docs/production-evidence/202607230013-attorney_workflow_runtime.json --confirm APPLY_TO_PRODUCTION` |
-| `202607240001` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607240001 --staging-evidence docs/staging-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607240001 --staging-evidence docs/staging-evidence/202607240001-workspace_profile_management.json --production-evidence docs/production-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_PRODUCTION` |
-| `202607250001` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250001 --staging-evidence docs/staging-evidence/202607250001-other.json --production-evidence docs/production-evidence/202607250001-other.json --confirm APPLY_TO_PRODUCTION` |
+No production commands are enabled yet because no rows have complete staging evidence.
 
 ## Required Environment Before Promotion
 

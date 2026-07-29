@@ -1,6 +1,6 @@
 # Supabase Push Phase 3 Action Routing Report
 
-Generated: 2026-07-25T19:10:00.590Z
+Generated: 2026-07-29T19:37:20.952Z
 
 ## Scope
 
@@ -10,77 +10,99 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 
 | Field | Value |
 | --- | --- |
-| Rows | 21 |
-| Runner-eligible rows | 21 |
+| Rows | 32 |
+| Runner-eligible rows | 32 |
 | Blocked rows | 0 |
-| SQL-allowed rows | 17 |
-| Ledger-allowed rows | 21 |
+| SQL-allowed rows | 26 |
+| Ledger-allowed rows | 32 |
 
 ## Actions
 
 | Action | Rows |
 | --- | --- |
-| `apply_original_after_dependency_check` | 17 |
-| `repair_only_after_smoke` | 4 |
+| `apply_original_after_dependency_check` | 26 |
+| `repair_only_after_smoke` | 6 |
 
 ## Routes
 
 | Route | Rows |
 | --- | --- |
-| `apply_original` | 17 |
-| `repair_only` | 4 |
+| `apply_original` | 26 |
+| `repair_only` | 6 |
 
 ## Work Queue
 
 | Version | Stream | Action | Route | Blocked | SQL Allowed | Ledger Allowed | File |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `202607220001` | `legal_document_runtime` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607220001_document_workspace_status_phase2.sql` |
-| `202607220002` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220002_authoritative_mandate_signing_delivery_phase0.sql` |
-| `202607220003` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220003_signable_packet_sent_phase1.sql` |
-| `202607250002` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607250002_corrective_canonical_otp_signing_phase2.sql` |
-| `202607220005` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220005_canonical_otp_seal_atomic_recovery.sql` |
-| `202607250003` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607250003_corrective_visual_signature_evidence.sql` |
-| `202607250004` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607250004_corrective_legal_runtime_metadata_immutability.sql` |
-| `202607220008` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220008_phase4_legal_template_release_integrity.sql` |
-| `202607220009` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220009_phase4_legal_release_provenance.sql` |
-| `202607220010` | `legal_document_runtime` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607220010_phase4_seller_portal_final_artifact_fence.sql` |
-| `202607220011` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220011_phase4_legal_release_persistence_fence.sql` |
-| `202607220012` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220012_phase5_legal_document_health_incident_integrity.sql` |
-| `202607230004` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607230004_phase5_pilot_release_trace_integrity.sql` |
-| `202607230005` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607230005_phase6_successor_release_epoch_integrity.sql` |
-| `202607250006` | `legal_document_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607250006_corrective_global_mandate_platform_default_revision.sql` |
-| `202607250005` | `seller_transaction_continuity` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607250005_corrective_seller_document_transaction_continuity.sql` |
-| `202607220013` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220013_bond_application_consent_and_finance_document_audit.sql` |
-| `202607220014` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607220014_bond_partner_referral_terms_and_ledger.sql` |
-| `202607230013` | `attorney_workflow_runtime` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607230013_attorney_workflow_step_completion_advance.sql` |
-| `202607240001` | `workspace_profile_management` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607240001_agent_profile_management_rpc.sql` |
-| `202607250001` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607250001_seller_portal_payload_optional_enrichment_guard.sql` |
+| `202607270013` | `legal_document_runtime` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607270013_final_mandate_completion_terminal_state.sql` |
+| `202607270015` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607270015_bond_finance_document_metadata_cleanup.sql` |
+| `202607280003` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280003_guided_bond_application_phase5_submissions.sql` |
+| `202607280004` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280004_guided_bond_application_phase6_participants.sql` |
+| `202607280005` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280005_guided_bond_application_phase7_sureties_revisions.sql` |
+| `202607280006` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280006_guided_bond_application_phase8_external_exports.sql` |
+| `202607280007` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280007_guided_bond_application_phase8a_originator_intake.sql` |
+| `202607280008` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280008_guided_bond_application_phase8b_originator_document_requests.sql` |
+| `202607280009` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280009_guided_bond_application_phase8c_originator_progress_tracking.sql` |
+| `202607280010` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280010_guided_bond_application_phase8d_originator_offers_grants.sql` |
+| `202607280011` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280011_guided_bond_application_phase8e_buyer_offer_grant_experience.sql` |
+| `202607280012` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280012_guided_bond_application_phase8f_agent_progress_view.sql` |
+| `202607280013` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280013_guided_bond_application_phase8g_attorney_handoff.sql` |
+| `202607280014` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280014_guided_bond_application_phase8h_recipient_specific_formats.sql` |
+| `202607280015` | `bond_finance_runtime` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280015_guided_bond_application_phase8i_governance_reporting.sql` |
+| `202607260008` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607260008_document_packet_hot_lookup_indexes.sql` |
+| `202607270002` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607270002_agency_lead_workspace_hot_path_indexes.sql` |
+| `202607270009` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607270009_client_portal_bootstrap_hot_path_indexes.sql` |
+| `202607270010` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607270010_seller_document_completion_notification.sql` |
+| `202607270011` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607270011_attorney_transaction_key_dates.sql` |
+| `202607290005` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607290005_corrective_canonical_matter_lifecycle_stages.sql` |
+| `202607270014` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `202607270014_certify_native_structured_legal_pdf.sql` |
+| `202607280002` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280002_email_notification_branding_readiness.sql` |
+| `202607280016` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280016_originator_rollout_phase_r1_internal_readiness.sql` |
+| `202607280017` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280017_originator_rollout_phase_r2_workspace_mvp.sql` |
+| `202607280018` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280018_originator_rollout_phase_r3_document_requests.sql` |
+| `202607280019` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280019_originator_rollout_phase_r4_progress_tracking.sql` |
+| `202607280020` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280020_originator_rollout_phase_r5_offers_grants_capture.sql` |
+| `202607280021` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280021_originator_rollout_phase_r6_one_originator_pilot.sql` |
+| `202607280022` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280022_originator_rollout_phase_r7_operational_hardening.sql` |
+| `202607280023` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql` |
+| `202607280024` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql` |
 
 ## Commands
 
 | Version | Command |
 | --- | --- |
-| `202607220001` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220001 --evidence docs/staging-evidence/202607220001-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220002` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220002 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220002 --evidence docs/staging-evidence/202607220002-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220003` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220003 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220003 --evidence docs/staging-evidence/202607220003-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250002` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250002 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250002 --evidence docs/staging-evidence/202607250002-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220005` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220005 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220005 --evidence docs/staging-evidence/202607220005-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250003` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250003 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250003 --evidence docs/staging-evidence/202607250003-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250004` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250004 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250004 --evidence docs/staging-evidence/202607250004-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220008` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220008 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220008 --evidence docs/staging-evidence/202607220008-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220009` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220009 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220009 --evidence docs/staging-evidence/202607220009-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220010` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220010 --evidence docs/staging-evidence/202607220010-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220011` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220011 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220011 --evidence docs/staging-evidence/202607220011-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220012` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220012 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220012 --evidence docs/staging-evidence/202607220012-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607230004` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607230004 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230004 --evidence docs/staging-evidence/202607230004-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607230005` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607230005 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230005 --evidence docs/staging-evidence/202607230005-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250006` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250006 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250006 --evidence docs/staging-evidence/202607250006-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250005` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607250005 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250005 --evidence docs/staging-evidence/202607250005-seller_transaction_continuity.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220013` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220013 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220013 --evidence docs/staging-evidence/202607220013-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607220014` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607220014 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607220014 --evidence docs/staging-evidence/202607220014-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607230013` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607230013 --evidence docs/staging-evidence/202607230013-attorney_workflow_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607240001` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607240001 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607240001 --evidence docs/staging-evidence/202607240001-workspace_profile_management.json --confirm APPLY_TO_STAGING_ONLY` |
-| `202607250001` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607250001 --evidence docs/staging-evidence/202607250001-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270013` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270013 --evidence docs/staging-evidence/202607270013-legal_document_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270015` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607270015 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270015 --evidence docs/staging-evidence/202607270015-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280003` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280003 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280003 --evidence docs/staging-evidence/202607280003-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280004` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280004 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280004 --evidence docs/staging-evidence/202607280004-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280005` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280005 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280005 --evidence docs/staging-evidence/202607280005-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280006` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280006 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280006 --evidence docs/staging-evidence/202607280006-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280007` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280007 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280007 --evidence docs/staging-evidence/202607280007-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280008` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280008 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280008 --evidence docs/staging-evidence/202607280008-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280009` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280009 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280009 --evidence docs/staging-evidence/202607280009-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280010` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280010 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280010 --evidence docs/staging-evidence/202607280010-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280011` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280011 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280011 --evidence docs/staging-evidence/202607280011-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280012` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280012 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280012 --evidence docs/staging-evidence/202607280012-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280013` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280013 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280013 --evidence docs/staging-evidence/202607280013-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280014` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280014 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280014 --evidence docs/staging-evidence/202607280014-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280015` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280015 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280015 --evidence docs/staging-evidence/202607280015-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607260008` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607260008 --evidence docs/staging-evidence/202607260008-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270002` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270002 --evidence docs/staging-evidence/202607270002-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270009` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270009 --evidence docs/staging-evidence/202607270009-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270010` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270010 --evidence docs/staging-evidence/202607270010-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270011` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607270011 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270011 --evidence docs/staging-evidence/202607270011-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607290005` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607290005 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607290005 --evidence docs/staging-evidence/202607290005-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607270014` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270014 --evidence docs/staging-evidence/202607270014-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280002` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280002 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280002 --evidence docs/staging-evidence/202607280002-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280016` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280016 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280016 --evidence docs/staging-evidence/202607280016-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280017` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280017 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280017 --evidence docs/staging-evidence/202607280017-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280018` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280018 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280018 --evidence docs/staging-evidence/202607280018-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280019` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280019 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280019 --evidence docs/staging-evidence/202607280019-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280020` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280020 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280020 --evidence docs/staging-evidence/202607280020-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280021` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280021 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280021 --evidence docs/staging-evidence/202607280021-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280022` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280022 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280022 --evidence docs/staging-evidence/202607280022-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280023` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280023 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280023 --evidence docs/staging-evidence/202607280023-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607280024` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280024 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280024 --evidence docs/staging-evidence/202607280024-other.json --confirm APPLY_TO_STAGING_ONLY` |
 
 ## Next Step
 

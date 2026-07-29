@@ -1,0 +1,36 @@
+{
+  "version": "202607270011",
+  "stream": "other",
+  "dependsOn": "202607270010",
+  "module": "transaction_network",
+  "file": "202607270011_attorney_transaction_key_dates.sql",
+  "objectStatus": "no_static_objects",
+  "liveCount": 0,
+  "objectCount": 0,
+  "action": "manual_data_review",
+  "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Phase 20 live read-only audit",
+    "ledgerRecorded": false,
+    "columnsExpected": 17,
+    "columnsMissing": 16,
+    "columnsAlreadyCorrect": [
+      "target_registration_date"
+    ],
+    "idempotency": "Original migration uses add column if not exists for every key-date column and only adds comments.",
+    "requiredChecks": [
+      "staging_schema_diff_required",
+      "transaction_detail_smoke_required_after_staging",
+      "attorney_workspace_smoke_required_after_staging"
+    ],
+    "blockers": []
+  },
+  "approvedBy": "Codex Phase 20 live read-only review",
+  "approvedAt": "2026-07-29T19:32:16Z",
+  "blockers": [],
+  "packetFile": "docs/manual-review/202607270011-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607270011-other.json"
+}

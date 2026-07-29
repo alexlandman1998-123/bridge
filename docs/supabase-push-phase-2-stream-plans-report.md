@@ -1,6 +1,6 @@
 # Supabase Push Phase 2 Stream Plans Report
 
-Generated: 2026-07-25T17:17:27.300Z
+Generated: 2026-07-29T19:36:34.408Z
 
 ## Scope
 
@@ -10,50 +10,55 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 
 | Field | Value |
 | --- | --- |
-| Manifest rows | 25 |
-| Planned rows | 25 |
-| Streams | 6 |
+| Manifest rows | 33 |
+| Planned rows | 32 |
+| Approved corrective substitutions | 1 |
+| Streams | 3 |
 
 ## Streams
 
 | Stream | Rows | Actions |
 | --- | --- | --- |
-| `legal_document_runtime` | 18 | `repair_only_after_smoke`: 2<br>`apply_original_after_dependency_check`: 16 |
-| `seller_transaction_continuity` | 1 | `apply_original_after_dependency_check`: 1 |
-| `bond_finance_runtime` | 2 | `apply_original_after_dependency_check`: 2 |
-| `attorney_workflow_runtime` | 1 | `repair_only_after_smoke`: 1 |
-| `workspace_profile_management` | 1 | `apply_original_after_dependency_check`: 1 |
-| `other` | 2 | `repair_only_after_smoke`: 1<br>`apply_original_after_dependency_check`: 1 |
+| `legal_document_runtime` | 1 | `repair_only_after_smoke`: 1 |
+| `bond_finance_runtime` | 14 | `apply_original_after_dependency_check`: 14 |
+| `other` | 17 | `repair_only_after_smoke`: 5<br>`apply_original_after_dependency_check`: 12 |
 
 ## Work Queue
 
 | Version | Stream | Depends On | Action | Object Status | File |
 | --- | --- | --- | --- | --- | --- |
-| `202607220001` | `legal_document_runtime` | `stream preflight` | `repair_only_after_smoke` | `all_live` | `202607220001_document_workspace_status_phase2.sql` |
-| `202607220002` | `legal_document_runtime` | `202607220001` | `apply_original_after_dependency_check` | `none_live` | `202607220002_authoritative_mandate_signing_delivery_phase0.sql` |
-| `202607220003` | `legal_document_runtime` | `202607220002` | `apply_original_after_dependency_check` | `none_live` | `202607220003_signable_packet_sent_phase1.sql` |
-| `202607250002` | `legal_document_runtime` | `202607220003` | `apply_original_after_dependency_check` | `partial_live` | `202607250002_corrective_canonical_otp_signing_phase2.sql` |
-| `202607220005` | `legal_document_runtime` | `202607220004` | `apply_original_after_dependency_check` | `none_live` | `202607220005_canonical_otp_seal_atomic_recovery.sql` |
-| `202607250003` | `legal_document_runtime` | `202607220005` | `apply_original_after_dependency_check` | `partial_live` | `202607250003_corrective_visual_signature_evidence.sql` |
-| `202607250004` | `legal_document_runtime` | `202607220006` | `apply_original_after_dependency_check` | `partial_live` | `202607250004_corrective_legal_runtime_metadata_immutability.sql` |
-| `202607220008` | `legal_document_runtime` | `202607220007` | `apply_original_after_dependency_check` | `none_live` | `202607220008_phase4_legal_template_release_integrity.sql` |
-| `202607220009` | `legal_document_runtime` | `202607220008` | `apply_original_after_dependency_check` | `none_live` | `202607220009_phase4_legal_release_provenance.sql` |
-| `202607220010` | `legal_document_runtime` | `202607220009` | `repair_only_after_smoke` | `all_live` | `202607220010_phase4_seller_portal_final_artifact_fence.sql` |
-| `202607220011` | `legal_document_runtime` | `202607220010` | `apply_original_after_dependency_check` | `none_live` | `202607220011_phase4_legal_release_persistence_fence.sql` |
-| `202607220012` | `legal_document_runtime` | `202607220011` | `apply_original_after_dependency_check` | `none_live` | `202607220012_phase5_legal_document_health_incident_integrity.sql` |
-| `202607230004` | `legal_document_runtime` | `202607220012` | `apply_original_after_dependency_check` | `none_live` | `202607230004_phase5_pilot_release_trace_integrity.sql` |
-| `202607230005` | `legal_document_runtime` | `202607230004` | `apply_original_after_dependency_check` | `none_live` | `202607230005_phase6_successor_release_epoch_integrity.sql` |
-| `202607240002` | `legal_document_runtime` | `202607230005` | `apply_original_after_dependency_check` | `no_static_objects` | `202607240002_global_mandate_platform_default_phase2.sql` |
-| `202607250002` | `legal_document_runtime` | `202607240002` | `apply_original_after_dependency_check` | `partial_live` | `202607250002_corrective_canonical_otp_signing_phase2.sql` |
-| `202607250003` | `legal_document_runtime` | `202607250002` | `apply_original_after_dependency_check` | `partial_live` | `202607250003_corrective_visual_signature_evidence.sql` |
-| `202607250004` | `legal_document_runtime` | `202607250003` | `apply_original_after_dependency_check` | `partial_live` | `202607250004_corrective_legal_runtime_metadata_immutability.sql` |
-| `202607250005` | `seller_transaction_continuity` | `stream preflight` | `apply_original_after_dependency_check` | `partial_live` | `202607250005_corrective_seller_document_transaction_continuity.sql` |
-| `202607220013` | `bond_finance_runtime` | `stream preflight` | `apply_original_after_dependency_check` | `none_live` | `202607220013_bond_application_consent_and_finance_document_audit.sql` |
-| `202607220014` | `bond_finance_runtime` | `202607220013` | `apply_original_after_dependency_check` | `none_live` | `202607220014_bond_partner_referral_terms_and_ledger.sql` |
-| `202607230013` | `attorney_workflow_runtime` | `stream preflight` | `repair_only_after_smoke` | `all_live` | `202607230013_attorney_workflow_step_completion_advance.sql` |
-| `202607240001` | `workspace_profile_management` | `stream preflight` | `apply_original_after_dependency_check` | `none_live` | `202607240001_agent_profile_management_rpc.sql` |
-| `202607250001` | `other` | `stream preflight` | `repair_only_after_smoke` | `all_live` | `202607250001_seller_portal_payload_optional_enrichment_guard.sql` |
-| `202607250005` | `other` | `202607250001` | `apply_original_after_dependency_check` | `partial_live` | `202607250005_corrective_seller_document_transaction_continuity.sql` |
+| `202607270013` | `legal_document_runtime` | `stream preflight` | `repair_only_after_smoke` | `all_live` | `202607270013_final_mandate_completion_terminal_state.sql` |
+| `202607270015` | `bond_finance_runtime` | `stream preflight` | `apply_original_after_dependency_check` | `no_static_objects` | `202607270015_bond_finance_document_metadata_cleanup.sql` |
+| `202607280003` | `bond_finance_runtime` | `202607270015` | `apply_original_after_dependency_check` | `none_live` | `202607280003_guided_bond_application_phase5_submissions.sql` |
+| `202607280004` | `bond_finance_runtime` | `202607280003` | `apply_original_after_dependency_check` | `none_live` | `202607280004_guided_bond_application_phase6_participants.sql` |
+| `202607280005` | `bond_finance_runtime` | `202607280004` | `apply_original_after_dependency_check` | `none_live` | `202607280005_guided_bond_application_phase7_sureties_revisions.sql` |
+| `202607280006` | `bond_finance_runtime` | `202607280005` | `apply_original_after_dependency_check` | `none_live` | `202607280006_guided_bond_application_phase8_external_exports.sql` |
+| `202607280007` | `bond_finance_runtime` | `202607280006` | `apply_original_after_dependency_check` | `none_live` | `202607280007_guided_bond_application_phase8a_originator_intake.sql` |
+| `202607280008` | `bond_finance_runtime` | `202607280007` | `apply_original_after_dependency_check` | `none_live` | `202607280008_guided_bond_application_phase8b_originator_document_requests.sql` |
+| `202607280009` | `bond_finance_runtime` | `202607280008` | `apply_original_after_dependency_check` | `none_live` | `202607280009_guided_bond_application_phase8c_originator_progress_tracking.sql` |
+| `202607280010` | `bond_finance_runtime` | `202607280009` | `apply_original_after_dependency_check` | `none_live` | `202607280010_guided_bond_application_phase8d_originator_offers_grants.sql` |
+| `202607280011` | `bond_finance_runtime` | `202607280010` | `apply_original_after_dependency_check` | `none_live` | `202607280011_guided_bond_application_phase8e_buyer_offer_grant_experience.sql` |
+| `202607280012` | `bond_finance_runtime` | `202607280011` | `apply_original_after_dependency_check` | `none_live` | `202607280012_guided_bond_application_phase8f_agent_progress_view.sql` |
+| `202607280013` | `bond_finance_runtime` | `202607280012` | `apply_original_after_dependency_check` | `none_live` | `202607280013_guided_bond_application_phase8g_attorney_handoff.sql` |
+| `202607280014` | `bond_finance_runtime` | `202607280013` | `apply_original_after_dependency_check` | `none_live` | `202607280014_guided_bond_application_phase8h_recipient_specific_formats.sql` |
+| `202607280015` | `bond_finance_runtime` | `202607280014` | `apply_original_after_dependency_check` | `none_live` | `202607280015_guided_bond_application_phase8i_governance_reporting.sql` |
+| `202607260008` | `other` | `stream preflight` | `repair_only_after_smoke` | `all_live` | `202607260008_document_packet_hot_lookup_indexes.sql` |
+| `202607270002` | `other` | `202607260008` | `repair_only_after_smoke` | `all_live` | `202607270002_agency_lead_workspace_hot_path_indexes.sql` |
+| `202607270009` | `other` | `202607270002` | `repair_only_after_smoke` | `all_live` | `202607270009_client_portal_bootstrap_hot_path_indexes.sql` |
+| `202607270010` | `other` | `202607270009` | `repair_only_after_smoke` | `all_live` | `202607270010_seller_document_completion_notification.sql` |
+| `202607270011` | `other` | `202607270010` | `apply_original_after_dependency_check` | `no_static_objects` | `202607270011_attorney_transaction_key_dates.sql` |
+| `202607290005` | `other` | `202607270011` | `apply_original_after_dependency_check` | `partial_live` | `202607290005_corrective_canonical_matter_lifecycle_stages.sql` |
+| `202607270014` | `other` | `202607270012` | `repair_only_after_smoke` | `all_live` | `202607270014_certify_native_structured_legal_pdf.sql` |
+| `202607280002` | `other` | `202607270014` | `apply_original_after_dependency_check` | `none_live` | `202607280002_email_notification_branding_readiness.sql` |
+| `202607280016` | `other` | `202607280002` | `apply_original_after_dependency_check` | `none_live` | `202607280016_originator_rollout_phase_r1_internal_readiness.sql` |
+| `202607280017` | `other` | `202607280016` | `apply_original_after_dependency_check` | `none_live` | `202607280017_originator_rollout_phase_r2_workspace_mvp.sql` |
+| `202607280018` | `other` | `202607280017` | `apply_original_after_dependency_check` | `none_live` | `202607280018_originator_rollout_phase_r3_document_requests.sql` |
+| `202607280019` | `other` | `202607280018` | `apply_original_after_dependency_check` | `none_live` | `202607280019_originator_rollout_phase_r4_progress_tracking.sql` |
+| `202607280020` | `other` | `202607280019` | `apply_original_after_dependency_check` | `none_live` | `202607280020_originator_rollout_phase_r5_offers_grants_capture.sql` |
+| `202607280021` | `other` | `202607280020` | `apply_original_after_dependency_check` | `none_live` | `202607280021_originator_rollout_phase_r6_one_originator_pilot.sql` |
+| `202607280022` | `other` | `202607280021` | `apply_original_after_dependency_check` | `none_live` | `202607280022_originator_rollout_phase_r7_operational_hardening.sql` |
+| `202607280023` | `other` | `202607280022` | `apply_original_after_dependency_check` | `none_live` | `202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql` |
+| `202607280024` | `other` | `202607280023` | `apply_original_after_dependency_check` | `none_live` | `202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql` |
 
 ## Next Step
 

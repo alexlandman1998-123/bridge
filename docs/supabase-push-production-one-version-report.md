@@ -1,26 +1,27 @@
 # Supabase Production One-Version Promotion
 
-Generated: 2026-07-25T19:39:14.090Z
+Generated: 2026-07-29T19:45:16.503Z
 
 ## Selected Version
 
 | Field | Value |
 | --- | --- |
-| Status | `PROMOTION_MUTATION_SUCCEEDED` |
-| Mode | `record_applied` |
-| Version | `202607250001` |
-| Stream | `other` |
+| Status | `PROMOTION_BLOCKED` |
+| Mode | `plan` |
+| Version | `202607270013` |
+| Stream | `legal_document_runtime` |
 | Route | `production_no_sql_record_after_smoke` |
-| Ready from Phase 5 | Yes |
-| Mutation attempted | Yes |
-| Mutation succeeded | Yes |
+| Ready from Phase 5 | No |
+| Mutation attempted | No |
+| Mutation succeeded | Not attempted |
 
 ## Blockers
 
-None
+- `phase5_production_promotion_not_ready`
+- `phase5_staging_evidence_missing`
 
 ## Commands
 
-- `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607250001 --staging-evidence docs/staging-evidence/202607250001-other.json --production-evidence docs/production-evidence/202607250001-other.json --confirm APPLY_TO_PRODUCTION`
+No commands are enabled for this selected version.
 
 Use this wrapper for one migration version at a time. It delegates mutations to `scripts/supabase-phase7-production-execution.mjs` only after Phase 5 marks the selected version ready.

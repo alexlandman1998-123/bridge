@@ -39,6 +39,7 @@ function clearancePath(row) {
 }
 
 function approvedClearanceAction(repoRoot, row) {
+  if (row.originalAction && !['manual_data_review', 'corrective_migration_required'].includes(row.action)) return null
   const clearanceAction = ['manual_data_review', 'corrective_migration_required'].includes(row.action)
     ? row.action
     : row.originalAction

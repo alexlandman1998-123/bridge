@@ -1,0 +1,23 @@
+{
+  "version": "202607290005",
+  "stream": "other",
+  "file": "202607290005_corrective_canonical_matter_lifecycle_stages.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": false,
+  "promotionBlockers": [
+    "staging_evidence_missing"
+  ],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ]
+}

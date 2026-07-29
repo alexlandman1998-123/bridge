@@ -1,6 +1,6 @@
 # Supabase Ledger Drift Resolution
 
-Generated: 2026-07-25T17:19:39.016Z
+Generated: 2026-07-29T19:49:24.697Z
 
 ## Decision
 
@@ -8,42 +8,49 @@ Generated: 2026-07-25T17:19:39.016Z
 | --- | --- |
 | Status | `LEDGER_DRIFT_BLOCKED` |
 | Resolved | No |
-| Pure local-only rows | 25 |
+| Pure local-only rows | 32 |
 | Pure remote-only rows | 0 |
 | Divergent rows | 0 |
 | Reviewed split rows | 17 |
 | Unresolved split rows | 0 |
-| Blockers | 128 |
+| Blockers | 64 |
 
 ## Pure Local-Only
 
 | Version | Stream | Resolution | Blockers | Command |
 | --- | --- | --- | --- | --- |
-| `202607220001` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220001 --plan` |
-| `202607220002` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220002 --plan` |
-| `202607220003` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220003 --plan` |
-| `202607220004` | `legal_document_runtime` | `superseded_by_corrective_promotion_plan` | None | `npm run supabase:push:promote-one -- --version 202607250002 --plan` |
-| `202607220005` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220005 --plan` |
-| `202607220006` | `legal_document_runtime` | `superseded_by_corrective_promotion_plan` | None | `npm run supabase:push:promote-one -- --version 202607250003 --plan` |
-| `202607220007` | `legal_document_runtime` | `superseded_by_corrective_promotion_plan` | None | `npm run supabase:push:promote-one -- --version 202607250004 --plan` |
-| `202607220008` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220008 --plan` |
-| `202607220009` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220009 --plan` |
-| `202607220010` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220010 --plan` |
-| `202607220011` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220011 --plan` |
-| `202607220012` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220012 --plan` |
-| `202607220013` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220013 --plan` |
-| `202607220014` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607220014 --plan` |
-| `202607230001` | `seller_transaction_continuity` | `superseded_by_corrective_promotion_plan` | None | `npm run supabase:push:promote-one -- --version 202607250005 --plan` |
-| `202607230004` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607230004 --plan` |
-| `202607230005` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607230005 --plan` |
-| `202607230013` | `attorney_workflow_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607230013 --plan` |
-| `202607240001` | `workspace_profile_management` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607240001 --plan` |
-| `202607240002` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607240002 --plan` |
-| `202607250001` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607250001 --plan` |
-| `202607250002` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607250002 --plan` |
-| `202607250003` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607250003 --plan` |
-| `202607250004` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607250004 --plan` |
-| `202607250005` | `seller_transaction_continuity` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_ledger_not_recorded`<br>`phase5_catalog_checks_pending`<br>`phase5_behavior_checks_pending`<br>`phase5_rollback_or_no_residue_pending`<br>`phase5_approver_pending`<br>`phase5_production_recovery_not_locked` | `npm run supabase:push:promote-one -- --version 202607250005 --plan` |
+| `202607260008` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607260008 --plan` |
+| `202607270002` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270002 --plan` |
+| `202607270009` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270009 --plan` |
+| `202607270010` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270010 --plan` |
+| `202607270011` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270011 --plan` |
+| `202607270013` | `legal_document_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270013 --plan` |
+| `202607270014` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270014 --plan` |
+| `202607270015` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607270015 --plan` |
+| `202607280002` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280002 --plan` |
+| `202607280003` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280003 --plan` |
+| `202607280004` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280004 --plan` |
+| `202607280005` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280005 --plan` |
+| `202607280006` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280006 --plan` |
+| `202607280007` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280007 --plan` |
+| `202607280008` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280008 --plan` |
+| `202607280009` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280009 --plan` |
+| `202607280010` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280010 --plan` |
+| `202607280011` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280011 --plan` |
+| `202607280012` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280012 --plan` |
+| `202607280013` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280013 --plan` |
+| `202607280014` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280014 --plan` |
+| `202607280015` | `bond_finance_runtime` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280015 --plan` |
+| `202607280016` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280016 --plan` |
+| `202607280017` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280017 --plan` |
+| `202607280018` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280018 --plan` |
+| `202607280019` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280019 --plan` |
+| `202607280020` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280020 --plan` |
+| `202607280021` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280021 --plan` |
+| `202607280022` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280022 --plan` |
+| `202607280023` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280023 --plan` |
+| `202607280024` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607280024 --plan` |
+| `202607290005` | `other` | `promotion_blocked_by_phase5` | `production_promotion_not_ready`<br>`phase5_staging_evidence_missing` | `npm run supabase:push:promote-one -- --version 202607290005 --plan` |
 
 ## Pure Remote-Only
 
@@ -65,7 +72,7 @@ No rows.
 | `202606040005` | `workspace_platform` | `confirmed_live_split` | Yes | None |
 | `202606050001` | `bond_finance` | `confirmed_live_manual_sql` | Yes | None |
 | `202606080002` | `commercial` | `confirmed_live_split` | Yes | None |
-| `202606090010` | `other` | `confirmed_superseded_split` | Yes | None |
+| `202606090010` | `other` | `confirmed_live_split` | Yes | None |
 | `202606110004` | `commercial` | `confirmed_live_split` | Yes | None |
 | `202606110005` | `commercial` | `confirmed_live_split` | Yes | None |
 | `202606110006` | `commercial` | `confirmed_live_split` | Yes | None |

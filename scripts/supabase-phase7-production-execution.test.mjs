@@ -26,47 +26,47 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 21)
+assert.equal(JSON.parse(plan.stdout).count, 32)
 const planRows = JSON.parse(plan.stdout).rows
-assert.ok(planRows.some((row) => row.version === '202607250006' && row.originalVersion === '202607240002'))
-assert.ok(planRows.some((row) => row.version === '202607250005' && row.originalVersion === '202607230001'))
+assert.ok(planRows.some((row) => row.version === '202607270015' && row.originalAction === 'manual_data_review' && row.action === 'apply_original_after_dependency_check'))
+assert.ok(planRows.some((row) => row.version === '202607290005' && row.originalVersion === '202607270012' && row.action === 'apply_original_after_dependency_check'))
 
 const streamPlan = run(['--plan', '--stream', 'bond_finance_runtime', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
-assert.equal(JSON.parse(streamPlan.stdout).count, 2)
+assert.equal(JSON.parse(streamPlan.stdout).count, 14)
 
 const missingConfirmation = run(['--apply-sql', '--version', '202607240001'])
 assert.equal(missingConfirmation.status, 1)
 assert.match(missingConfirmation.stderr, /production mutations require/i)
 
 const correctiveReplay = run([
-  '--apply-sql', '--version', '202607230001', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '202607270012', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(correctiveReplay.status, 1)
-assert.match(correctiveReplay.stderr, /Expected one manifest row for 202607230001; found 0/)
-
-const manualReplay = run([
-  '--apply-sql', '--version', '202607240002', '--confirm', 'APPLY_TO_PRODUCTION',
-])
-assert.equal(manualReplay.status, 1)
-assert.match(manualReplay.stderr, /Expected one manifest row for 202607240002; found 0/)
+assert.match(correctiveReplay.stderr, /Expected one manifest row for 202607270012; found 0/)
 
 const repairOnlyReplay = run([
-  '--apply-sql', '--version', '202607230013', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '202607270013', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(repairOnlyReplay.status, 1)
 assert.match(repairOnlyReplay.stderr, /Refusing production SQL replay for manifest action repair_only_after_smoke/)
 
 const missingStagingEvidence = run([
-  '--apply-sql', '--version', '202607240001', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '202607280003', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(missingStagingEvidence.status, 1)
 assert.match(missingStagingEvidence.stderr, /--staging-evidence is required/)
 
+const clearedManualMissingStagingEvidence = run([
+  '--apply-sql', '--version', '202607270015', '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(clearedManualMissingStagingEvidence.status, 1)
+assert.match(clearedManualMissingStagingEvidence.stderr, /--staging-evidence is required/)
+
 const tempDir = mkdtempSync(path.join(os.tmpdir(), 'phase7-production-gate-'))
 const stagingEvidencePath = path.join(tempDir, 'staging-evidence.json')
 writeFileSync(stagingEvidencePath, JSON.stringify({
-  version: '202607240001',
+  version: '202607280003',
   stagingProjectRef: 'stagingtestref',
   stagingLedgerRecorded: true,
   catalogChecks: 'pass',
@@ -77,7 +77,7 @@ writeFileSync(stagingEvidencePath, JSON.stringify({
 
 const wrongProject = run(
   [
-    '--apply-sql', '--version', '202607240001', '--staging-evidence', stagingEvidencePath,
+    '--apply-sql', '--version', '202607280003', '--staging-evidence', stagingEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   { SUPABASE_PRODUCTION_PROJECT_REF: 'wrongprojectref' },
@@ -87,7 +87,7 @@ assert.match(wrongProject.stderr, /SUPABASE_PRODUCTION_PROJECT_REF must equal/)
 
 const missingRecovery = run(
   [
-    '--apply-sql', '--version', '202607240001', '--staging-evidence', stagingEvidencePath,
+    '--apply-sql', '--version', '202607280003', '--staging-evidence', stagingEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   {

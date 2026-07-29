@@ -172,7 +172,7 @@ function executableCloseoutScope(repoRoot, manifest) {
     }
   }
   const promotion = JSON.parse(readFileSync(absolutePromotionPath, 'utf8'))
-  const rows = Array.isArray(promotion.rows) ? promotion.rows.filter((row) => row.readyForProduction === true) : []
+  const rows = Array.isArray(promotion.rows) ? promotion.rows : []
   const correctiveMappings = approvedCorrectiveClearances(repoRoot)
     .filter((item) => rows.some((row) => row.version === item.correctiveVersion))
   return {
@@ -417,7 +417,7 @@ function report(result) {
         `\`${row.stream}\``,
         `\`${row.evidenceStatus}\``,
         `\`${row.action}\``,
-        `\`${row.objectStatus}\``,
+        `\`${row.objectStatus || 'n/a'}\``,
         `\`${row.file}\``,
       ]),
   )

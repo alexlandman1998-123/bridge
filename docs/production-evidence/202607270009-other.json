@@ -1,0 +1,23 @@
+{
+  "version": "202607270009",
+  "stream": "other",
+  "file": "202607270009_client_portal_bootstrap_hot_path_indexes.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": false,
+  "promotionBlockers": [
+    "staging_evidence_missing"
+  ],
+  "notes": [
+    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
+  ]
+}
