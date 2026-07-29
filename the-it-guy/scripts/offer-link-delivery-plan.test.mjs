@@ -8,6 +8,8 @@ try {
   const email = resolveOfferLinkDeliveryPlan({ clientIntakePreference: 'digital_portal', notificationMode: 'email', email: 'buyer@example.test' })
   assert.equal(email.deliversLink, true)
   assert.deepEqual(email.channels, ['email'])
+  assert.equal(email.experience.label, 'Offer + Onboarding Link')
+  assert.deepEqual(email.experience.dataBuckets, ['buyer_onboarding', 'residential_offer_terms', 'condition_requests'])
 
   const whatsapp = resolveOfferLinkDeliveryPlan({ clientIntakePreference: 'digital_portal', notificationMode: 'whatsapp', phone: '27820000000' })
   assert.equal(whatsapp.deliversLink, true)
@@ -20,6 +22,7 @@ try {
   const hardCopy = resolveOfferLinkDeliveryPlan({ clientIntakePreference: 'hard_copy' })
   assert.equal(hardCopy.deliversLink, false)
   assert.equal(hardCopy.handoffRequired, true)
+  assert.equal(hardCopy.experience.buyerFacingTitle, 'Make an Offer')
 } finally {
   await server.close()
 }

@@ -5,6 +5,8 @@ import { prepareAgentLegalHandoff } from '../services/agentLegalHandoffService.j
 import { getListingReadinessSummary } from './privateListingRequirementEngine.js'
 import { updatePrivateListing } from '../services/privateListingService.js'
 import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mvpAcceptedOfferConversionReceipt.js'
+import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
+import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -1024,6 +1026,22 @@ function buildAppointmentViewedListingUpsert(payload = {}) {
 function buildOfferInsert(payload = {}) {
   const status = normalizeOfferStatus(payload?.status)
   const nowIso = new Date().toISOString()
+  const conditionsJson = mergeResidentialOfferTermsIntoConditions(
+    jsonObject(payload?.conditions || payload?.conditionsJson),
+    {
+      ...(payload?.conditions || payload?.conditionsJson || {}),
+      offerAmount: payload?.offerAmount,
+      depositAmount: payload?.depositAmount,
+      financeType: payload?.financeType,
+      cashContribution: payload?.cashComponent,
+      bondAmount: payload?.bondComponent,
+      expiryDate: payload?.expiryDate,
+    },
+    {
+      source: payload?.conditionsJson?.source || payload?.conditions?.source || 'canonical_offer',
+      captureMethod: payload?.conditionsJson?.capturedByAgent || payload?.conditions?.capturedByAgent ? 'agent_assisted' : 'agent_preparation',
+    },
+  )
   return {
     organisation_id: toNullableUuid(payload?.organisationId),
     offer_token: normalizeText(payload?.offerToken) || createOfferAccessToken(),
@@ -1040,7 +1058,7 @@ function buildOfferInsert(payload = {}) {
     finance_type: normalizeText(payload?.financeType) || null,
     cash_component: money(payload?.cashComponent),
     bond_component: money(payload?.bondComponent),
-    conditions_json: jsonObject(payload?.conditions || payload?.conditionsJson),
+    conditions_json: conditionsJson,
     expiry_date: normalizeDate(payload?.expiryDate),
     sent_to_buyer_at: status === OFFER_STATUS.SENT_TO_BUYER ? (normalizeDate(payload?.sentToBuyerAt) || nowIso) : normalizeDate(payload?.sentToBuyerAt),
     buyer_viewed_at: status === OFFER_STATUS.BUYER_VIEWED ? (normalizeDate(payload?.buyerViewedAt) || nowIso) : normalizeDate(payload?.buyerViewedAt),
@@ -1183,6 +1201,24 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
   if (!fullName || !email || !phone || !offerAmount || offerAmount <= 0) {
     throw new Error('Buyer details and offer amount are required.')
   }
+  const buyerSubmittedAt = new Date().toISOString()
+  const conditionsJson = mergeResidentialOfferTermsIntoConditions(
+    context.canonicalOffer.conditions || {},
+    {
+      ...submission,
+      fullName,
+      email,
+      phone,
+      offerAmount,
+      financeType: normalizedFinanceType,
+      buyerSubmittedAt,
+    },
+    {
+      source: 'canonical_buyer_offer_link',
+      captureMethod: 'buyer_self_service',
+      capturedAt: buyerSubmittedAt,
+    },
+  )
   return updateCanonicalOfferStatus(context.canonicalOffer.id, 'submitted', {
     organisationId: context.canonicalOffer.organisationId,
     patch: {
@@ -1192,38 +1228,12 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
       cash_component: money(submission?.cashContribution),
       bond_component: money(submission?.bondAmount),
       conditions_json: {
-        ...(context.canonicalOffer.conditions || {}),
-        buyerName: fullName,
-        buyerEmail: email,
-        buyerPhone: phone,
-        buyerIdNumber: normalizeText(submission?.idNumber),
-        buyerType: normalizeText(submission?.buyerType || submission?.purchaserType),
-        purchaserType: normalizeText(submission?.purchaserType || submission?.buyerType),
-        purchaserEntityName: normalizeText(submission?.purchaserEntityName),
-        financeType: normalizedFinanceType,
-        proofOfFundsUrl: normalizeText(submission?.proofOfFundsUrl),
-        proofOfFundsReference: normalizeText(submission?.proofOfFundsReference),
-        preApprovalReference: normalizeText(submission?.preApprovalReference),
-        suspensiveConditions: normalizeText(submission?.suspensiveConditions),
-        subjectToSale: submission?.subjectToSale === true,
-        subjectSaleProperty: normalizeText(submission?.subjectSaleProperty),
-        subjectSaleTimeline: normalizeText(submission?.subjectSaleTimeline),
-        occupationDate: normalizeText(submission?.occupationDate),
-        occupationalRent: submission?.occupationalRent === true,
-        occupationalRentPayable: submission?.occupationalRent === true,
-        occupationalRentAmount: money(submission?.occupationalRentAmount),
-        includedFixtures: normalizeText(submission?.includedFixtures),
-        excludedFixtures: normalizeText(submission?.excludedFixtures),
-        specialConditions: normalizeText(submission?.specialConditions),
-        depositDueDate: normalizeText(submission?.depositDueDate),
-        bondApprovalDeadline: normalizeText(submission?.bondApprovalDeadline),
-        expiryTime: normalizeText(submission?.expiryTime),
-        needsBondAssistance: submission?.needsBondAssistance === true,
-        buyerSubmittedAt: new Date().toISOString(),
+        ...conditionsJson,
+        buyerSubmittedAt,
         verification: submission?.verification || {},
       },
-      buyer_submitted_at: new Date().toISOString(),
-      submitted_at: new Date().toISOString(),
+      buyer_submitted_at: buyerSubmittedAt,
+      submitted_at: buyerSubmittedAt,
     },
   })
 }
@@ -1487,6 +1497,44 @@ export async function updateCanonicalOfferStatus(offerId, status, { organisation
   }
 
   return mappedOffer
+}
+
+export async function reviewCanonicalOfferConditions({
+  offerId = '',
+  organisationId = '',
+  decision = 'approve',
+  revisedConditions = {},
+  note = '',
+  actor = null,
+} = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Offer condition review requires the canonical Supabase offers table.')
+  }
+  const scopedOfferId = toNullableUuid(offerId)
+  const scopedOrganisationId = toNullableUuid(organisationId)
+  if (!scopedOfferId || !scopedOrganisationId) return null
+  const { data, error } = await supabase
+    .from('offers')
+    .select('*')
+    .eq('id', scopedOfferId)
+    .eq('organisation_id', scopedOrganisationId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Offer not found.')
+
+  const offer = mapOfferDbRow(data)
+  const patch = buildResidentialOfferConditionReviewPatch({
+    offer,
+    decision,
+    revisedConditions,
+    actor,
+    note,
+  })
+  return updateCanonicalOfferStatus(scopedOfferId, decision === 'request_changes' ? OFFER_STATUS.CHANGES_REQUESTED : OFFER_STATUS.AGENT_REVIEW, {
+    organisationId: scopedOrganisationId,
+    actor,
+    patch,
+  })
 }
 
 export async function createOfferSellerReviewSession(payload = {}, { actor = null } = {}) {

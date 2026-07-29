@@ -1,3 +1,5 @@
+import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
+
 function text(value) {
   return String(value ?? '').trim()
 }
@@ -13,6 +15,33 @@ export function buildAgentAssistedOfferEntry({ buyer = {}, draft = {}, now = new
   const financeType = text(draft.financeType).toLowerCase() || 'cash'
   const blockers = []
   if (!offerAmount) blockers.push('Enter the buyer’s offer amount before saving an agent-assisted offer.')
+  const conditionsJson = mergeResidentialOfferTermsIntoConditions(
+    {
+      clientIntakePreference: 'agent_assisted',
+      offerEntryMode: 'agent_assisted',
+      agentAssisted: true,
+      agentCapturedAt: now,
+      buyerName: text(buyer.name),
+      buyerEmail: text(buyer.email).toLowerCase(),
+      buyerPhone: text(buyer.phone),
+      specialConditions: text(draft.specialConditions),
+    },
+    {
+      ...draft,
+      fullName: text(buyer.name),
+      email: text(buyer.email).toLowerCase(),
+      phone: text(buyer.phone),
+      offerAmount,
+      depositAmount,
+      financeType,
+      specialConditions: text(draft.specialConditions),
+    },
+    {
+      source: 'agent_assisted_offer_entry',
+      captureMethod: 'agent_assisted',
+      capturedAt: now,
+    },
+  )
 
   return {
     ok: blockers.length === 0,
@@ -21,16 +50,7 @@ export function buildAgentAssistedOfferEntry({ buyer = {}, draft = {}, now = new
       offerAmount,
       depositAmount: depositAmount || null,
       financeType,
-      conditionsJson: {
-        clientIntakePreference: 'agent_assisted',
-        offerEntryMode: 'agent_assisted',
-        agentAssisted: true,
-        agentCapturedAt: now,
-        buyerName: text(buyer.name),
-        buyerEmail: text(buyer.email).toLowerCase(),
-        buyerPhone: text(buyer.phone),
-        specialConditions: text(draft.specialConditions),
-      },
+      conditionsJson,
     },
   }
 }

@@ -1,6 +1,12 @@
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadTask, updateAgencyCrmLeadRecord } from './agencyCrmRepository'
 import { refreshBridgeIntelligenceForLifecycleEvent } from './bridgeIntelligenceEngine'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import {
+  RESIDENTIAL_OFFER_STAGE_TRANSITIONS,
+  RESIDENTIAL_OFFER_STAGES,
+  getResidentialOfferStage,
+  normalizeResidentialOfferStageKey,
+} from '../core/offers/residentialOfferLifecycle'
 import { canAdvanceWorkflowStage } from '../services/documents/canonicalWorkflowGateService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -8,8 +14,12 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 export const WORKFLOW_EVENTS = {
   VIEWING_CREATED: 'viewing_created',
   VIEWING_COMPLETED: 'viewing_completed',
+  OFFER_ONBOARDING_LINK_SENT: 'offer_onboarding_link_sent',
   OFFER_CREATED: 'offer_created',
   OFFER_SUBMITTED: 'offer_submitted',
+  AGENT_CONDITION_REVIEW_REQUIRED: 'agent_condition_review_required',
+  OTP_READY_TO_GENERATE: 'otp_ready_to_generate',
+  OTP_GENERATED: 'otp_generated',
   OFFER_COUNTERED: 'offer_countered',
   OFFER_ACCEPTED: 'offer_accepted',
   ONBOARDING_STARTED: 'onboarding_started',
@@ -19,33 +29,20 @@ export const WORKFLOW_EVENTS = {
 }
 
 export const BUYER_WORKFLOW_STAGES = [
-  'New Lead',
-  'Contacted',
-  'Qualified',
-  'Viewing Scheduled',
-  'Viewing Completed',
-  'Offer Draft',
-  'Offer Submitted',
-  'Negotiating',
-  'Offer Accepted',
-  'Onboarding',
+  ...RESIDENTIAL_OFFER_STAGES.map((stage) => stage.label),
   'Finance',
   'Transfer',
   'Registered',
-  'Lost',
 ]
 
 const BUYER_STAGE_TRANSITIONS = {
-  'New Lead': ['Contacted', 'Qualified', 'Lost'],
-  Contacted: ['Qualified', 'Viewing Scheduled', 'Lost'],
-  Qualified: ['Viewing Scheduled', 'Offer Draft', 'Lost'],
-  'Viewing Scheduled': ['Viewing Completed', 'Lost'],
-  'Viewing Completed': ['Offer Draft', 'Offer Submitted', 'Lost'],
-  'Offer Draft': ['Offer Submitted', 'Lost'],
-  'Offer Submitted': ['Negotiating', 'Offer Accepted', 'Lost'],
-  Negotiating: ['Offer Submitted', 'Offer Accepted', 'Lost'],
-  'Offer Accepted': ['Onboarding', 'Lost'],
-  Onboarding: ['Finance', 'Lost'],
+  ...Object.fromEntries(
+    Object.entries(RESIDENTIAL_OFFER_STAGE_TRANSITIONS).map(([fromKey, toKeys]) => [
+      getResidentialOfferStage(fromKey).label,
+      toKeys.map((toKey) => getResidentialOfferStage(toKey).label),
+    ]),
+  ),
+  'Transaction Live': ['Finance'],
   Finance: ['Transfer', 'Lost'],
   Transfer: ['Registered', 'Lost'],
   Registered: [],
@@ -59,11 +56,17 @@ const STAGE_REQUIREMENTS = {
   'Offer Submitted': [
     { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before moving to Offer Submitted.' },
   ],
-  'Offer Accepted': [
-    { type: 'offer', key: 'accepted_offer', message: 'An accepted offer is required before moving to Offer Accepted.' },
+  'Agent Review Required': [
+    { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before agent condition review.' },
   ],
-  Onboarding: [
-    { type: 'offer', key: 'accepted_offer', message: 'An accepted offer is required before starting buyer onboarding.' },
+  'Ready to Generate OTP': [
+    { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before OTP generation readiness.' },
+  ],
+  'Signed by All Parties': [
+    { type: 'offer', key: 'accepted_offer', message: 'A seller-accepted, all-party signed OTP is required before the lead becomes a transaction.' },
+  ],
+  'Transaction Live': [
+    { type: 'transaction', key: 'transaction_created', message: 'A transaction created from the signed OTP is required before Transaction Live.' },
   ],
   Finance: [
     { type: 'transaction', key: 'transaction_created', message: 'A transaction created from an accepted offer is required before Finance.' },
@@ -82,22 +85,30 @@ const AUTOMATION_TASKS = {
       priority: 'High',
     },
     {
-      title: 'Prepare offer next step',
-      description: 'If the buyer is interested, create an offer draft from the buyer workspace.',
+      title: 'Send Offer + Onboarding link',
+      description: 'If the buyer is interested, send one secure link for buyer profile, finance readiness, and residential offer terms.',
+      dueDays: 1,
+      priority: 'Medium',
+    },
+  ],
+  [WORKFLOW_EVENTS.OFFER_ONBOARDING_LINK_SENT]: [
+    {
+      title: 'Monitor Offer + Onboarding link',
+      description: 'Confirm the buyer completes profile, finance readiness, and offer terms from the secure link.',
       dueDays: 1,
       priority: 'Medium',
     },
   ],
   [WORKFLOW_EVENTS.OFFER_SUBMITTED]: [
     {
-      title: 'Review submitted offer',
-      description: 'Check price, suspensive conditions, finance type, expiry, and supporting documents.',
+      title: 'Review buyer conditions',
+      description: 'Check only buyer-supplied suspensive/special conditions, fixtures requests, occupation requests, and other free-text terms before OTP generation.',
       dueDays: 1,
       priority: 'High',
     },
     {
-      title: 'Contact seller about offer',
-      description: 'Prepare seller feedback and route the offer for seller decision.',
+      title: 'Prepare OTP generation readiness',
+      description: 'Confirm buyer profile, finance route, offer terms, seller/property facts, and approved condition wording are ready for OTP generation.',
       dueDays: 1,
       priority: 'High',
     },
@@ -202,13 +213,18 @@ function isMissingColumnError(error) {
 
 export function normalizeBuyerWorkflowStage(stage, fallback = 'New Lead') {
   const normalized = normalizeText(stage)
-  if (!normalized || normalized === 'Lead') return fallback
+  if (!normalized || normalizeLower(normalized) === 'lead') return normalizeText(fallback) === 'New Lead' ? 'Lead' : fallback
+  const residentialKey = normalizeResidentialOfferStageKey(normalized, '')
+  if (residentialKey) return getResidentialOfferStage(residentialKey).label
   return BUYER_WORKFLOW_STAGES.find((candidate) => normalizeLower(candidate) === normalizeLower(normalized)) || fallback
 }
 
 export function isBuyerWorkflowStage(stage) {
   const normalized = normalizeText(stage)
-  return normalized === 'Lead' || BUYER_WORKFLOW_STAGES.some((candidate) => normalizeLower(candidate) === normalizeLower(normalized))
+  return Boolean(normalized) && (
+    normalizeResidentialOfferStageKey(normalized, '') ||
+    BUYER_WORKFLOW_STAGES.some((candidate) => normalizeLower(candidate) === normalizeLower(normalized))
+  )
 }
 
 function resolveActorRole(actor = {}) {

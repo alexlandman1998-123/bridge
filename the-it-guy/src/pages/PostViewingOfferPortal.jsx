@@ -364,7 +364,7 @@ function PostViewingOfferPortal() {
       await sendAgentOfferSubmittedNotification(result?.offer).catch((notificationError) => {
         console.warn('[OFFER PORTAL] agent offer submission notification failed', notificationError)
       })
-      setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
+      setSuccessMessage('Offer + onboarding submitted successfully. The agent will review any conditions before OTP generation.')
       setRefreshKey((value) => value + 1)
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit offer right now.')
@@ -449,10 +449,10 @@ function PostViewingOfferPortal() {
           <div className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6e8198]">Arch9 offer portal</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6e8198]">Offer + Onboarding link</p>
                 <h1 className="mt-2 text-2xl font-semibold text-[#102033] sm:text-3xl">Make an offer on a viewed property</h1>
                 <p className="mt-2 max-w-[620px] text-sm leading-6 text-[#61738a]">
-                  Review the properties from your viewing session and submit an offer on one or more of them.
+                  Review the properties from your viewing session, confirm your buyer details, and submit residential offer terms from one secure flow.
                 </p>
               </div>
               <span className="inline-flex items-center gap-2 rounded-full border border-[#cfe8dc] bg-[#eefbf4] px-3 py-1 text-xs font-semibold text-[#17643a]">
@@ -776,11 +776,11 @@ function PostViewingOfferPortal() {
             </label>
 
             <p className="rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] px-4 py-3 text-sm leading-6 text-[#44566c]">
-              Your agent will review the offer before sending it to the seller. Formal legal documentation will follow if the offer is accepted.
+              Your agent will review only the condition and special-request wording before OTP generation. Formal seller routing happens after the OTP is generated and signed by the buyer.
             </p>
 
             <Button type="submit" className="w-full justify-center" disabled={submitting || !selectedListingId || !properties.length || !canSubmitSelectedPropertyOffer}>
-              {submitting ? 'Submitting offer...' : selectedPropertyLifecycle?.effectiveStatus === 'countered' ? 'Submit revised offer' : 'Submit offer'}
+              {submitting ? 'Submitting offer...' : selectedPropertyLifecycle?.effectiveStatus === 'countered' ? 'Submit revised offer' : 'Submit offer + onboarding'}
             </Button>
           </form>
         </section>

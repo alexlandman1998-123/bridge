@@ -274,6 +274,19 @@ function createEmptyPipelineSnapshot(organisationId = '') {
   }
 }
 
+function hasPipelineSnapshotRows(snapshot = {}) {
+  return [
+    snapshot.contacts,
+    snapshot.leads,
+    snapshot.leadActivities,
+    snapshot.tasks,
+    snapshot.appointments,
+    snapshot.transactions,
+    snapshot.deals,
+    snapshot.inboundLeadEmails,
+  ].some((rows) => Array.isArray(rows) && rows.length > 0)
+}
+
 const LEAD_LOST_REASON_OPTIONS = [
   'No response',
   'Not interested',
@@ -4169,7 +4182,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const reloadRecords = useCallback(
     async (orgId, options = {}) => {
-      const { applyLocalSnapshot = true } = options && typeof options === 'object' ? options : {}
+      const {
+        applyLocalSnapshot = true,
+        deferEmptyLocalSnapshot = false,
+        onPrimaryRecordsReady = null,
+      } = options && typeof options === 'object' ? options : {}
       if (reloadTimerRef.current && typeof window !== 'undefined') {
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
@@ -4265,12 +4282,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      if (applyLocalSnapshot && localFallbackAvailable && requestId === reloadRequestRef.current) {
+      let primaryRecordsReady = false
+      const markPrimaryRecordsReady = () => {
+        if (primaryRecordsReady) return
+        primaryRecordsReady = true
+        if (typeof onPrimaryRecordsReady === 'function') {
+          onPrimaryRecordsReady()
+        }
+      }
+
+      if (
+        applyLocalSnapshot &&
+        localFallbackAvailable &&
+        requestId === reloadRequestRef.current &&
+        (!deferEmptyLocalSnapshot || hasPipelineSnapshotRows(snapshot))
+      ) {
         applySnapshotRecords(snapshot)
+        markPrimaryRecordsReady()
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
-          const [crmSnapshot, inboundLeadEmails] = await Promise.all([
+          const [crmSnapshot, inboundLeadEmails, privateListings] = await Promise.all([
             withPipelineTimeout(
               listAgencyCrmLeadContacts(orgId),
               'Lead data is taking too long to load.',
@@ -4282,6 +4314,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               PIPELINE_CRM_RECORDS_TIMEOUT_MS,
             ).catch((captureLoadError) => {
               console.warn('[PIPELINE] inbound lead email load failed; continuing without captured enquiry rows.', captureLoadError)
+              return []
+            }),
+            withPipelineTimeout(
+              getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
+              'Private listing data is taking too long to load.',
+              PIPELINE_RECORDS_TIMEOUT_MS,
+            ).catch((listingLoadError) => {
+              console.warn('[PIPELINE] private listing fallback load failed; continuing with CRM leads only.', listingLoadError)
               return []
             }),
           ])
@@ -4304,27 +4344,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             applySnapshotRecords(mergedSnapshot)
           }
 
-          let privateListingFallbackContacts = []
-          let privateListingFallbackLeads = []
-          try {
-            const privateListings = await withPipelineTimeout(
-              getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
-              'Private listing data is taking too long to load.',
-              PIPELINE_RECORDS_TIMEOUT_MS,
-            )
-            listingOptionsForAppointments = dedupeListingOptions([
-              ...listingOptionsForAppointments,
-              ...(Array.isArray(privateListings) ? privateListings : []).map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
-            ])
-            privateListingFallbackLeads = (Array.isArray(privateListings) ? privateListings : [])
-              .map((listing) => mapPrivateListingToLeadFallback(listing))
-              .filter(Boolean)
-            privateListingFallbackContacts = (Array.isArray(privateListings) ? privateListings : [])
-              .map((listing) => mapPrivateListingToContactFallback(listing))
-              .filter(Boolean)
-          } catch (listingLoadError) {
-            console.warn('[PIPELINE] private listing fallback load failed; continuing with CRM leads only.', listingLoadError)
-          }
+          const privateListingRows = Array.isArray(privateListings) ? privateListings : []
+          listingOptionsForAppointments = dedupeListingOptions([
+            ...listingOptionsForAppointments,
+            ...privateListingRows.map((listing) => normalizeAppointmentListingOption(listing)).filter(Boolean),
+          ])
+          const privateListingFallbackLeads = privateListingRows
+            .map((listing) => mapPrivateListingToLeadFallback(listing))
+            .filter(Boolean)
+          const privateListingFallbackContacts = privateListingRows
+            .map((listing) => mapPrivateListingToContactFallback(listing))
+            .filter(Boolean)
 
           const mergedContactsForFiltering = dedupeByKey(
             [...(crmSnapshot.contacts || []), ...privateListingFallbackContacts],
@@ -4352,10 +4382,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
           if (requestId === reloadRequestRef.current) {
             applySnapshotRecords(mergedSnapshot)
+            markPrimaryRecordsReady()
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; no local CRM fallback will be loaded.', dbLoadError)
+          markPrimaryRecordsReady()
         }
+      } else {
+        markPrimaryRecordsReady()
       }
       let appointmentRows = []
       try {
@@ -4377,12 +4411,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         buildLocalCalendarAppointments({ organisationId: orgId, currentAgent, includeAll: isPrincipal }),
       )
 
-      if (requestId !== reloadRequestRef.current) return
+      if (requestId !== reloadRequestRef.current) {
+        markPrimaryRecordsReady()
+        return
+      }
       setAppointmentListingOptions(dedupeListingOptions([
         ...listingOptionsForAppointments,
         ...buildListingOptionsFromLeads(mergedSnapshot.leads),
       ]))
       applySnapshotRecords(mergedSnapshot, appointmentRows)
+      markPrimaryRecordsReady()
     },
     [currentAgent, isPrincipal],
   )
@@ -4531,7 +4569,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } else if (isLeadWorkspaceRoute && routeLeadId) {
         scheduleRecordsReload(storageOrgId, 1200)
       } else {
-        void reloadRecords(storageOrgId)
+        await new Promise((resolve) => {
+          let resolved = false
+          const resolveOnce = () => {
+            if (resolved) return
+            resolved = true
+            resolve()
+          }
+          void reloadRecords(storageOrgId, {
+            deferEmptyLocalSnapshot: true,
+            onPrimaryRecordsReady: resolveOnce,
+          }).catch((recordsLoadError) => {
+            console.warn('[PIPELINE] initial lead records load failed.', recordsLoadError)
+            resolveOnce()
+          })
+        })
       }
       if (!resolvedOrgId && !contextError) {
         setError('Organisation membership is not active for this account yet. Add/accept your organisation membership, then refresh.')
@@ -7303,11 +7355,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       property: selectedLeadOfferCentreProperty,
       transaction: selectedLeadLinkedTransaction,
       offer: {
+        ...(selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer || {}),
         buyerName: normalizeText(offerLinkForm.buyerName || selectedLeadContactName),
         buyerEmail: normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email),
         buyerPhone: normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone),
-        financeType: normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
-        purchasePrice: normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
+        financeType: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.financeType || selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
+        purchasePrice: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.offerAmount || selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
       },
       deliveryMode,
       deliveryLabel: getClientIntakePreferenceLabel(deliveryMode),
@@ -7326,10 +7379,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     organisationName,
     profile,
     selectedLead,
+    selectedLeadAcceptedOffer,
     selectedLeadActiveViewing,
     selectedLeadBuyerBudgetLabel,
     selectedLeadContact,
     selectedLeadContactName,
+    selectedLeadLifecycleDiagnosticOffer,
     selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
     selectedLeadOtpTemplateReadiness,
@@ -7388,11 +7443,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           property: selectedLeadOfferCentreProperty,
           transaction: selectedLeadLinkedTransaction,
           offer: {
+            ...(selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer || {}),
             buyerName: normalizeText(offerLinkForm.buyerName || selectedLeadContactName),
             buyerEmail: normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email),
             buyerPhone: normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone),
-            financeType: normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
-            purchasePrice: normalizeText(selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
+            financeType: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.financeType || selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
+            purchasePrice: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.offerAmount || selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
           },
           deliveryMode,
           deliveryLabel: getClientIntakePreferenceLabel(deliveryMode),
@@ -7444,11 +7500,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     otpQuickStartOpen,
     profile,
     selectedLead,
+    selectedLeadAcceptedOffer,
     selectedLeadActiveViewing,
     selectedLeadBuyerBudgetLabel,
     selectedLeadContact,
     selectedLeadContactName,
     selectedLeadIsSeller,
+    selectedLeadLifecycleDiagnosticOffer,
     selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
   ])
@@ -14848,8 +14906,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </section>
               ) : null}
               {selectedLead ? (
-                <div className={`mt-6 grid gap-6 ${!selectedLeadIsSeller && (leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity') ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
-                  <div className="space-y-6">
+                <div className={`mt-6 grid min-w-0 gap-6 ${!selectedLeadIsSeller && (leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity') ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+                  <div className="min-w-0 space-y-6">
                   {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (
                   <div className="space-y-6">
                     <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="seller-journey-overview">
@@ -14903,7 +14961,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
 
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-3">
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
                       <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
                         <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -14939,28 +14997,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </Button>
                           </div>
                           <div className="min-h-0 flex-1 px-4 py-4">
-                            <div className="grid h-full min-h-0 auto-rows-fr gap-2.5 sm:grid-cols-2">
+                            <div className="grid min-h-0 gap-2.5">
                               {selectedSellerDocumentCategories.map((category) => {
                                 const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
                                 return (
-                                  <div key={category.key} className="flex min-h-[116px] min-w-0 flex-col rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                                    <p className="line-clamp-2 min-h-8 text-center text-sm font-semibold leading-4 text-[#20364c]">{category.label}</p>
+                                  <div key={category.key} className="grid min-h-[68px] min-w-0 grid-cols-[minmax(0,1fr)_52px] items-center gap-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold leading-5 text-[#20364c]" title={category.label}>{category.label}</p>
+                                      <p className="mt-1 text-xs font-semibold leading-4 text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                        <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
+                                      </div>
+                                    </div>
                                     <span
-                                      className="mx-auto mt-1 grid h-11 w-11 place-items-center rounded-full p-1.5"
+                                      className="grid h-12 w-12 place-items-center rounded-full p-1.5"
                                       style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
                                       aria-label={`${category.label} ${category.progress}% complete`}
                                     >
                                       <span className="grid h-full w-full place-items-center rounded-full bg-white text-center shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
                                         <span>
-                                          <span className="block text-base font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
-                                          <span className="mt-0.5 block text-[0.54rem] font-semibold text-[#6d839b]">complete</span>
+                                          <span className="block text-sm font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
+                                          <span className="mt-0.5 block text-[0.5rem] font-semibold text-[#6d839b]">done</span>
                                         </span>
                                       </span>
                                     </span>
-                                    <p className="mt-1 text-xs font-semibold leading-4 text-[#6d839b]">{category.completed} of {category.total} complete</p>
-                                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-                                      <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
-                                    </div>
                                   </div>
                                 )
                               })}

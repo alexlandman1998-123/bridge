@@ -191,7 +191,7 @@ function TrustItem({ children }) {
 }
 
 function ProgressDots({ step }) {
-  const labels = ['Offer', 'Details', 'Review']
+  const labels = ['Offer', 'Buyer', 'Review']
   return (
     <div className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur md:hidden">
       <div className="mx-auto flex max-w-md items-center justify-between">
@@ -304,7 +304,7 @@ function BuyerOfferSubmission() {
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
-  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer Securely'
+  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
   const offerStrength = useMemo(() => {
     const hasBuyerDetails = Boolean(form.fullName && form.email && form.phone)
     const checks = [
@@ -427,7 +427,7 @@ function BuyerOfferSubmission() {
       await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
         console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
       })
-      setSuccessMessage('Offer submitted successfully. The agent will review and forward it to the seller.')
+      setSuccessMessage('Offer + onboarding submitted successfully. The agent will review any conditions before OTP generation.')
       setRefreshKey((value) => value + 1)
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit offer right now.')
@@ -612,7 +612,7 @@ function BuyerOfferSubmission() {
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">What Happens Next?</h2>
       <div className="mt-5 flex gap-3 overflow-x-auto pb-1">
-        {['Submit Offer', 'Seller Reviews', 'Counter Offer', 'Offer Accepted', 'OTP Generated'].map((item, index) => (
+        {['Submit Offer + Onboarding', 'Agent Reviews Conditions', 'OTP Generated', 'Buyer Signs', 'Seller Accepts'].map((item, index) => (
           <div key={item} className="min-w-[150px] rounded-[18px] bg-[#F7F7F4] p-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F7A5A] text-sm font-bold text-white">{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -683,9 +683,9 @@ function BuyerOfferSubmission() {
           <header className="rounded-[26px] border border-[#E5E7EB] bg-white p-5 md:p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#0F7A5A]">Secure Buyer Offer</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">Submit Your Offer</h1>
-                <p className="mt-2 text-base font-medium text-[#6B7280]">Submit your offer for seller review.</p>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#0F7A5A]">Secure Offer + Onboarding</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">Make an Offer</h1>
+                <p className="mt-2 text-base font-medium text-[#6B7280]">Complete your buyer details, finance route and residential offer terms in one secure flow.</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-3 md:flex md:flex-wrap md:justify-end">
                 {[

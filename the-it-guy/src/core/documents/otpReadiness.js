@@ -1,4 +1,5 @@
 import { resolveLegalDocumentScenarioProfile } from './legalDocumentScenarioProfile.js'
+import { resolveResidentialOfferConditionReview } from '../offers/residentialOfferConditionReview.js'
 
 const PARTY_CLAUSE_PROFILE_LABELS = Object.freeze({
   company: 'Company',
@@ -60,6 +61,42 @@ function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return ''
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
+}
+
+function readOfferConditions(offer = {}) {
+  return asPlainObject(offer.conditions || offer.conditionsJson || offer.conditions_json)
+}
+
+function readResidentialOfferTerms(offer = {}) {
+  const conditions = readOfferConditions(offer)
+  return asPlainObject(conditions.residentialOfferTerms || offer.residentialOfferTerms || offer.offer?.residentialOfferTerms)
+}
+
+function readOfferTermValue(offer = {}, path = [], fallback = '') {
+  const terms = readResidentialOfferTerms(offer)
+  let cursor = terms
+  for (const segment of path) {
+    cursor = cursor?.[segment]
+    if (cursor === null || cursor === undefined) break
+  }
+  return cursor === null || cursor === undefined || cursor === '' ? fallback : cursor
+}
+
+function normalizeOfferStatus(value = '') {
+  return normalizeText(value).toLowerCase()
+}
+
+function hasSubmittedOfferStatus(value = '') {
+  const status = normalizeOfferStatus(value)
+  return [
+    'submitted',
+    'agent_review',
+    'ready_to_generate_otp',
+    'sent_to_seller',
+    'seller_viewed',
+    'accepted',
+    'converted_to_transaction',
+  ].includes(status)
 }
 
 function labelFromKey(value = '') {
@@ -266,7 +303,14 @@ export function resolveOtpReadiness({
   const transactionRecord = asPlainObject(transaction)
   const offerRecord = asPlainObject(offer)
   const onboardingRecord = asPlainObject(onboardingFormData)
+  const offerConditions = readOfferConditions(offerRecord)
+  const residentialOfferTerms = readResidentialOfferTerms(offerRecord)
+  const offerStatus = normalizeOfferStatus(offerRecord.status || offerRecord.offerStatus || offerRecord.workflowStatus)
+  const conditionReview = resolveResidentialOfferConditionReview(offerRecord)
   const buyerName = firstTextValue(
+    readOfferTermValue(offerRecord, ['buyer', 'fullName']),
+    offerConditions.buyerName,
+    offerConditions.fullName,
     offerRecord.buyerName,
     offerRecord.buyer_name,
     [contactRecord.firstName, contactRecord.lastName].map(normalizeText).filter(Boolean).join(' '),
@@ -274,8 +318,24 @@ export function resolveOtpReadiness({
     leadRecord.buyer_name,
     leadRecord.name,
   )
-  const buyerEmail = firstTextValue(offerRecord.buyerEmail, offerRecord.buyer_email, contactRecord.email, leadRecord.email).toLowerCase()
-  const buyerPhone = firstTextValue(offerRecord.buyerPhone, offerRecord.buyer_phone, contactRecord.phone, leadRecord.phone)
+  const buyerEmail = firstTextValue(
+    readOfferTermValue(offerRecord, ['buyer', 'email']),
+    offerConditions.buyerEmail,
+    offerConditions.email,
+    offerRecord.buyerEmail,
+    offerRecord.buyer_email,
+    contactRecord.email,
+    leadRecord.email,
+  ).toLowerCase()
+  const buyerPhone = firstTextValue(
+    readOfferTermValue(offerRecord, ['buyer', 'phone']),
+    offerConditions.buyerPhone,
+    offerConditions.phone,
+    offerRecord.buyerPhone,
+    offerRecord.buyer_phone,
+    contactRecord.phone,
+    leadRecord.phone,
+  )
   const propertyLabel = firstTextValue(
     propertyRecord.title,
     propertyRecord.listingTitle,
@@ -288,8 +348,11 @@ export function resolveOtpReadiness({
   )
   const purchasePrice = parseCurrencyAmount(
     firstTextValue(
+      readOfferTermValue(offerRecord, ['finance', 'offerAmount']),
       offerRecord.purchasePrice,
       offerRecord.purchase_price,
+      offerRecord.offerAmount,
+      offerRecord.offer_amount,
       offerRecord.offerPrice,
       offerRecord.offer_price,
       propertyRecord.price,
@@ -303,6 +366,18 @@ export function resolveOtpReadiness({
   )
   const agentEmail = firstTextValue(leadRecord.assignedAgentEmail, leadRecord.assigned_agent_email, agentRecord.email).toLowerCase()
   const agentName = firstTextValue(leadRecord.assignedAgentName, leadRecord.assigned_agent_name, agentRecord.fullName, agentRecord.name, agentRecord.email)
+  const financeType = firstTextValue(
+    readOfferTermValue(offerRecord, ['finance', 'financeType']),
+    offerConditions.financeType,
+    offerRecord.financeType,
+    offerRecord.finance_type,
+    leadRecord.financeType,
+    leadRecord.finance_type,
+    leadRecord.preferredFinanceType,
+    leadRecord.preferred_finance_type,
+    transactionRecord.finance_type,
+    transactionRecord.financeType,
+  )
   const templateContext = buildOtpTemplateContext({
     leadRecord,
     contactRecord,
@@ -311,7 +386,11 @@ export function resolveOtpReadiness({
     agencyRecord: asPlainObject(agency),
     propertyRecord,
     transactionRecord,
-    offerRecord,
+    offerRecord: {
+      ...offerRecord,
+      financeType: financeType || offerRecord.financeType || offerRecord.finance_type,
+      purchaserType: readOfferTermValue(offerRecord, ['capacity', 'purchaserType'], offerConditions.purchaserType || offerConditions.buyerType || offerRecord.purchaserType || offerRecord.buyerEntityType),
+    },
     onboardingFormData: onboardingRecord,
     buyerName,
     buyerEmail,
@@ -354,6 +433,30 @@ export function resolveOtpReadiness({
       { optional: !requiresDigitalContact },
     ),
     buildReadinessRow('property', 'Property', propertyLabel || 'Missing property', Boolean(propertyLabel || propertyRecord.id)),
+    buildReadinessRow(
+      'offer_status',
+      'Offer submitted',
+      offerStatus ? labelFromKey(offerStatus) : 'Offer + Onboarding not submitted',
+      hasSubmittedOfferStatus(offerStatus),
+    ),
+    buildReadinessRow(
+      'offer_terms',
+      'Residential offer terms',
+      residentialOfferTerms.version
+        ? `Captured: ${labelFromKey(residentialOfferTerms.source || 'offer onboarding')}`
+        : 'Residential offer terms not captured',
+      Boolean(residentialOfferTerms.version),
+    ),
+    buildReadinessRow(
+      'condition_review',
+      'Condition wording',
+      conditionReview.readyForOtpGeneration
+        ? 'Agent-approved wording ready for OTP'
+        : conditionReview.reviewRequired
+          ? 'Agent must approve or rewrite buyer wording before OTP generation'
+          : 'Condition wording not ready',
+      conditionReview.readyForOtpGeneration,
+    ),
     buildReadinessRow('price', 'Price context', formatCurrency(purchasePrice) || 'Not captured', purchasePrice > 0, { optional: true }),
     buildReadinessRow('viewing', 'Viewing context', viewingLabel || 'No completed viewing linked', Boolean(hasViewingContext), { optional: true }),
     buildReadinessRow('delivery', 'Delivery', deliveryLabel || labelFromKey(deliveryMode) || 'Delivery not selected', Boolean(deliveryMode)),
@@ -380,6 +483,12 @@ export function resolveOtpReadiness({
       buyerPhone,
       propertyLabel,
       purchasePrice,
+      offerStatus,
+      offerSubmitted: hasSubmittedOfferStatus(offerStatus),
+      residentialOfferTermsVersion: normalizeText(residentialOfferTerms.version),
+      conditionReviewStatus: conditionReview.status,
+      conditionReviewReady: conditionReview.readyForOtpGeneration,
+      approvedConditionWording: conditionReview.approvedConditionWording,
       agentName,
       agentEmail,
       legalRouteReady: legalRouteReadiness.complete,

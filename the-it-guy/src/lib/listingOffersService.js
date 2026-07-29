@@ -2,6 +2,8 @@ import { generateId, readAgentPrivateListings, writeAgentPrivateListings } from 
 import { updateCanonicalOfferStatus } from './buyerLifecycleService'
 import { isUnsafeFallbackAllowed } from './envValidation'
 import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
+import { buildResidentialOfferTermsSnapshot, mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
+import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
 const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
@@ -374,6 +376,10 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
   const previous = existingForInvite[0] || null
   const threadId = previous?.threadId || generateId('offer_thread')
   const version = previous ? Number(previous.version || 0) + 1 : 1
+  const residentialOfferTerms = buildResidentialOfferTermsSnapshot(submission, {
+    source: mode === 'counter_response' ? 'buyer_counter_response' : 'buyer_offer_link',
+    captureMethod: 'buyer_self_service',
+  })
 
   const nextRecord = {
     id: generateId('offer_record'),
@@ -420,6 +426,8 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
       excludedFixtures: String(submission?.excludedFixtures || '').trim(),
       specialConditions: String(submission?.specialConditions || '').trim(),
       expiryDate: String(submission?.expiryDate || expiryIso(7)).trim(),
+      residentialOfferTermsVersion: residentialOfferTerms.version,
+      residentialOfferTerms,
     },
     buyerAcknowledgements: {
       sellerReview: Boolean(submission?.acknowledgeSellerReview),
@@ -464,20 +472,11 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
         finance_type: nextRecord.offer.financeType,
         bond_component: nextRecord.offer.bondAmount,
         cash_component: nextRecord.offer.cashContribution,
-        conditions_json: {
-          suspensiveConditions: nextRecord.offer.suspensiveConditions,
-          subjectToSale: nextRecord.offer.subjectToSale,
-          subjectSaleProperty: nextRecord.offer.subjectSaleProperty,
-          subjectSaleTimeline: nextRecord.offer.subjectSaleTimeline,
-          occupationDate: nextRecord.offer.occupationDate,
-          occupationalRent: nextRecord.offer.occupationalRent,
-          occupationalRentPayable: nextRecord.offer.occupationalRent,
-          needsBondAssistance: nextRecord.offer.needsBondAssistance,
-          includedFixtures: nextRecord.offer.includedFixtures,
-          excludedFixtures: nextRecord.offer.excludedFixtures,
-          specialConditions: nextRecord.offer.specialConditions,
-          proofOfFundsUrl: nextRecord.offer.proofOfFundsUrl,
-        },
+        conditions_json: mergeResidentialOfferTermsIntoConditions({}, submission, {
+          source: nextRecord.source,
+          captureMethod: 'buyer_self_service',
+          capturedAt: nextRecord.submittedAt,
+        }),
         expiry_date: nextRecord.offer.expiryDate || null,
       },
     })
@@ -488,7 +487,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
   return nextRecord
 }
 
-export function markOfferAgentAction(offerId, action, notes = '') {
+export function markOfferAgentAction(offerId, action, notes = '', options = {}) {
   const records = getOfferRecords()
   let target = null
   const nowIso = new Date().toISOString()
@@ -501,6 +500,23 @@ export function markOfferAgentAction(offerId, action, notes = '') {
       next.status = OFFER_WORKFLOW_STATUS.SELLER_REVIEW
       next.sellerReviewAt = nowIso
       next.agentNotes = [record.agentNotes, String(notes || '').trim() || 'Offer forwarded to seller.'].filter(Boolean).join(' ')
+    } else if (action === 'approve_condition_wording' || action === 'rewrite_condition_wording') {
+      const patch = buildResidentialOfferConditionReviewPatch({
+        offer: record,
+        decision: 'approve',
+        revisedConditions: options?.revisedConditions || {},
+        actor: options?.actor || {},
+        note: notes || 'Condition wording approved for OTP generation.',
+        now: nowIso,
+      })
+      next.status = OFFER_WORKFLOW_STATUS.AGENT_REVIEW
+      next.offer = {
+        ...(record.offer || {}),
+        ...(patch.conditions_json || {}),
+        residentialOfferTermsVersion: patch.conditions_json?.residentialOfferTermsVersion,
+        residentialOfferTerms: patch.conditions_json?.residentialOfferTerms,
+      }
+      next.agentNotes = [record.agentNotes, String(notes || '').trim() || 'Condition wording approved for OTP generation.'].filter(Boolean).join(' ')
     } else if (action === 'reject_invalid') {
       next.status = OFFER_WORKFLOW_STATUS.REJECTED
       next.agentNotes = [record.agentNotes, String(notes || '').trim() || 'Offer rejected as invalid by agent.'].filter(Boolean).join(' ')
@@ -508,7 +524,21 @@ export function markOfferAgentAction(offerId, action, notes = '') {
       next.status = OFFER_WORKFLOW_STATUS.AGENT_REVIEW
       next.agentNotes = [record.agentNotes, String(notes || '').trim() || 'Offer marked incomplete by agent.'].filter(Boolean).join(' ')
     } else if (action === 'request_clarification') {
-      next.status = OFFER_WORKFLOW_STATUS.AGENT_REVIEW
+      const patch = buildResidentialOfferConditionReviewPatch({
+        offer: record,
+        decision: 'request_changes',
+        revisedConditions: options?.revisedConditions || {},
+        actor: options?.actor || {},
+        note: notes || 'Clarification requested from buyer.',
+        now: nowIso,
+      })
+      next.status = OFFER_WORKFLOW_STATUS.CHANGES_REQUESTED
+      next.offer = {
+        ...(record.offer || {}),
+        ...(patch.conditions_json || {}),
+        residentialOfferTermsVersion: patch.conditions_json?.residentialOfferTermsVersion,
+        residentialOfferTerms: patch.conditions_json?.residentialOfferTerms,
+      }
       next.agentNotes = [record.agentNotes, String(notes || '').trim() || 'Clarification requested from buyer.'].filter(Boolean).join(' ')
     }
     return next
