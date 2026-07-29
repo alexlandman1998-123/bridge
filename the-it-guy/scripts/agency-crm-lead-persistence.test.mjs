@@ -51,6 +51,17 @@ try {
   assert.equal(remotePayload.assigned_agent_id, assignedUserId)
   assert.equal(remotePayload.assigned_agent_email, 'casey@example.com')
   assert.equal(remotePayload.created_by, actorId)
+  assert.equal(remotePayload.ownership_status, 'awaiting_assignment')
+
+  const contactedPayload = buildRemoteLeadCreatePayload({
+    ...lead,
+    stage: 'Contacted',
+    status: 'Active',
+    firstContactedAt: '2026-07-29T07:40:00.000Z',
+    ownershipStatus: 'contacted',
+  }, organisationId, { id: actorId })
+  assert.equal(contactedPayload.first_contacted_at, '2026-07-29T07:40:00.000Z')
+  assert.equal(contactedPayload.ownership_status, 'contacted')
 
   const { lead: fallbackLead } = buildLocalLeadAndContactRows({
     contact: {

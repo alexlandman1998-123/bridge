@@ -1,3 +1,7 @@
+import { normalizeResidentialOfferStageKey, RESIDENTIAL_OFFER_STAGE_KEYS } from '../core/offers/residentialOfferLifecycle.js'
+import { buildSellerReadinessSummary } from './sellerReadinessService.js'
+import { isSellerLead } from './sellerJourneyService.js'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -72,12 +76,39 @@ function getAppointmentLabel(appointment = {}) {
 }
 
 function getStageAction(lead = {}) {
-  const stage = normalizeLower(lead?.stage || lead?.status)
-  if (stage.includes('offer')) return 'Convert offer to transaction'
+  const rawStage = normalizeText(lead?.stage || lead?.status)
+  const stageKey = normalizeResidentialOfferStageKey(rawStage, '')
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.viewingCompleted) return 'Send Offer + Onboarding link'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent) return 'Wait for buyer to submit Offer + Onboarding'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted) return 'Review buyer conditions before OTP generation'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired) return 'Approve or rewrite buyer conditions'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp) return 'Generate OTP'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated) return 'Send OTP for buyer signature'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.buyerSigned) return 'Complete agent/principal signature'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.agentSigned) return 'Send signed OTP to seller'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.sentToSeller) return 'Follow up seller signature'
+  if (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties) return 'Convert signed OTP to transaction'
+  const stage = normalizeLower(rawStage)
+  if (stage.includes('offer')) return 'Review buyer conditions before OTP generation'
   if (stage.includes('appointment') || stage.includes('viewing')) return 'Follow up after viewing'
   if (stage.includes('contacted') || stage.includes('qualified') || stage.includes('follow-up')) return 'Schedule viewing'
   if (stage.includes('lost')) return 'Archived'
   return 'Call lead'
+}
+
+function getSellerStageAction(lead = {}, appointments = [], options = {}) {
+  if (!isSellerLead(lead)) return ''
+  const summary = buildSellerReadinessSummary({
+    lead,
+    contact: options?.contact || lead?.contact || {},
+    appointments,
+    listing: options?.listing || options?.linkedListing || lead?.listing || null,
+    mandatePacket: options?.mandatePacket || null,
+    mandatePacketStatus: options?.mandatePacketStatus || lead?.mandatePacketStatus || lead?.mandate_packet_status || null,
+    documents: Array.isArray(options?.documents) ? options.documents : [],
+    journey: options?.journey || null,
+  })
+  return normalizeText(summary?.nextAction?.label || summary?.kpis?.find((item) => item?.key === 'next_action')?.value)
 }
 
 export function resolveLeadNextStep(lead = {}, tasks = [], appointments = [], options = {}) {
@@ -104,6 +135,9 @@ export function resolveLeadNextStep(lead = {}, tasks = [], appointments = [], op
 
   const nextTask = openTasks[0]
   if (nextTask?.title) return `Next task: ${normalizeText(nextTask.title)}`
+
+  const sellerAction = getSellerStageAction(lead, appointments, { ...options, contact })
+  if (sellerAction) return sellerAction
 
   return getStageAction(lead)
 }

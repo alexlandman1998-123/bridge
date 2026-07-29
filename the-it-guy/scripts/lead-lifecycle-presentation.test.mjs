@@ -7,16 +7,33 @@ import {
 } from '../src/services/leadLifecyclePresentationService.js'
 
 assert.equal(normalizeLeadLifecycleStageKey('New Lead'), 'lead')
+assert.equal(normalizeLeadLifecycleStageKey('Offer Link Sent'), 'offer_onboarding_link_sent')
+assert.equal(normalizeLeadLifecycleStageKey('Offer Accepted'), 'signed_by_all_parties')
 
 const buyerViewing = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Appointment Scheduled',
 })
-assert.equal(buyerViewing.label, 'Appointment Scheduled')
+assert.equal(buyerViewing.label, 'Viewing Scheduled')
 assert.equal(buyerViewing.funnelStage, 'Viewing Scheduled')
 assert.equal(buyerViewing.columnId, 'viewing_contacted')
 assert.equal(buyerViewing.stageTone.iconKey, 'calendar')
 assert.equal(buyerViewing.reporting.appointmentScheduled, true)
+
+const offerLinkSent = resolveLeadLifecyclePresentation({
+  leadCategory: 'buyer',
+  stage: 'Offer Link Sent',
+})
+assert.equal(offerLinkSent.label, 'Offer + Onboarding Link Sent')
+assert.equal(offerLinkSent.funnelStage, 'Offer Link Sent')
+assert.equal(offerLinkSent.columnId, 'offer')
+
+const otpReady = resolveLeadLifecyclePresentation({
+  leadCategory: 'buyer',
+  stage: 'Ready to Generate OTP',
+})
+assert.equal(otpReady.columnId, 'offer')
+assert.equal(otpReady.funnelStage, 'OTP Ready')
 
 const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',
@@ -24,6 +41,26 @@ const sellerMandate = resolveLeadLifecyclePresentation({
 })
 assert.equal(sellerMandate.columnId, 'mandate_sent')
 assert.equal(sellerMandate.reporting.contacted, false)
+
+const sellerNewLead = resolveLeadLifecyclePresentation({
+  leadCategory: 'seller',
+  stage: 'New Lead',
+  status: 'New',
+})
+assert.equal(sellerNewLead.key, 'new_lead')
+assert.equal(sellerNewLead.label, 'New Lead')
+assert.equal(sellerNewLead.funnelStage, 'New Lead')
+assert.equal(sellerNewLead.columnId, 'lead')
+
+const sellerOnboardingSent = resolveLeadLifecyclePresentation({
+  leadCategory: 'seller',
+  stage: 'Onboarding Sent',
+  status: 'Sent',
+})
+assert.equal(sellerOnboardingSent.key, 'seller_onboarding_sent')
+assert.equal(sellerOnboardingSent.label, 'Onboarding Sent')
+assert.equal(sellerOnboardingSent.funnelStage, 'Onboarding Sent')
+assert.equal(sellerOnboardingSent.columnId, 'lead')
 
 const converted = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',

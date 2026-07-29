@@ -15,6 +15,7 @@ const baseLead = {
 }
 
 const expectedStepKeys = [
+  'new_lead',
   'contacted',
   'seller_onboarding_sent',
   'seller_onboarding_submitted',
@@ -42,8 +43,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 
 {
   const stage = getSellerJourneyStage({ lead: baseLead })
-  assert.equal(stage.key, 'contacted')
-  assert.equal(stage.label, 'Contacted')
+  assert.equal(stage.key, 'new_lead')
+  assert.equal(stage.label, 'New Lead')
 }
 
 {
@@ -51,8 +52,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
   })
-  assert.equal(stage.key, 'contacted')
-  assert.equal(stage.status, 'Active')
+  assert.equal(stage.key, 'new_lead')
+  assert.equal(stage.status, 'New')
 }
 
 {
@@ -60,8 +61,8 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
     lead: baseLead,
     appointments: [{ appointmentType: 'other', customTypeLabel: 'Seller Appointment', status: 'confirmed', dateTime: '2026-06-03T10:00:00Z' }],
   })
-  assert.equal(stage.key, 'contacted')
-  assert.equal(stage.status, 'Active')
+  assert.equal(stage.key, 'new_lead')
+  assert.equal(stage.status, 'New')
 }
 
 {
@@ -69,7 +70,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_consultation', status: 'completed', completedAt: '2026-06-03T12:00:00Z' }],
   })
-  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.stage.key, 'new_lead')
   assert.equal(journey.steps.some((step) => step.key === 'appointment_valuation'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(journey, 'valuationAppointment'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(journey, 'valuationStatus'), false)
@@ -154,7 +155,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   assert.equal(journey.onboardingSent, true)
   assert.equal(journey.onboardingSubmitted, true)
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
-  assertJourneyStepStates(journey, 'seller_onboarding_submitted', ['contacted', 'seller_onboarding_sent'])
+  assertJourneyStepStates(journey, 'seller_onboarding_submitted', ['new_lead', 'contacted', 'seller_onboarding_sent'])
   assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'current')
   assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
 }
@@ -325,9 +326,9 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 {
   const journeyCases = [
     {
-      currentKey: 'contacted',
+      currentKey: 'new_lead',
       args: { lead: baseLead },
-      completed: ['contacted'],
+      completed: [],
     },
     {
       currentKey: 'seller_onboarding_sent',
@@ -340,7 +341,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
           sellerOnboardingStatus: 'sent',
         },
       },
-      completed: ['contacted'],
+      completed: ['new_lead', 'contacted'],
     },
     {
       currentKey: 'seller_onboarding_submitted',
@@ -353,7 +354,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
           sellerOnboardingStatus: 'completed',
         },
       },
-      completed: ['contacted', 'seller_onboarding_sent'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent'],
     },
     {
       currentKey: 'mandate_sent',
@@ -365,7 +366,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
         },
         mandatePacketStatus: { packet: { id: 'packet-matrix-sent', status: 'sent' } },
       },
-      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted'],
     },
     {
       currentKey: 'mandate_signed',
@@ -377,7 +378,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
         },
         mandatePacketStatus: { packet: { id: 'packet-matrix-signed', status: 'completed' }, signingSummary: { allSignersSigned: true } },
       },
-      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent'],
     },
     {
       currentKey: 'listing_created',
@@ -394,7 +395,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
           mandateStatus: 'signed',
         },
       },
-      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'],
     },
     {
       currentKey: 'listing_live',
@@ -412,7 +413,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
           mandateStatus: 'signed',
         },
       },
-      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created'],
     },
     {
       currentKey: 'documents_submitted',
@@ -438,7 +439,7 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
           ],
         },
       },
-      completed: ['contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created', 'listing_live'],
+      completed: ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created', 'listing_live'],
     },
   ]
 

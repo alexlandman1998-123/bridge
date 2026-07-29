@@ -480,6 +480,11 @@ alter table if exists leads add column if not exists lead_direction text not nul
 alter table if exists leads add column if not exists lead_source text not null default 'Other';
 alter table if exists leads add column if not exists stage text not null default 'New Lead';
 alter table if exists leads add column if not exists status text not null default 'New Lead';
+alter table if exists leads add column if not exists assigned_queue_id text;
+alter table if exists leads add column if not exists assigned_at timestamptz;
+alter table if exists leads add column if not exists first_contacted_at timestamptz;
+alter table if exists leads add column if not exists sla_due_at timestamptz;
+alter table if exists leads add column if not exists ownership_status text not null default 'awaiting_assignment';
 alter table if exists leads add column if not exists priority text not null default 'Medium';
 alter table if exists leads add column if not exists budget numeric(14, 2);
 alter table if exists leads add column if not exists area_interest text;
@@ -517,6 +522,20 @@ alter table if exists leads
   add constraint leads_seller_onboarding_status_check
   check (seller_onboarding_status in ('not_started', 'sent', 'in_progress', 'completed', 'rejected'));
 
+alter table if exists leads drop constraint if exists leads_ownership_status_check;
+alter table if exists leads
+  add constraint leads_ownership_status_check
+  check (
+    ownership_status in (
+      'awaiting_assignment',
+      'assigned',
+      'contacted',
+      'working',
+      'dormant',
+      'escalated'
+    )
+  );
+
 create index if not exists leads_org_idx on leads (organisation_id);
 create index if not exists leads_org_agent_idx on leads (organisation_id, assigned_agent_id);
 create index if not exists leads_org_stage_idx on leads (organisation_id, stage);
@@ -524,6 +543,10 @@ create index if not exists leads_org_source_idx on leads (organisation_id, lead_
 create index if not exists leads_org_listing_idx on leads (organisation_id, listing_id);
 create index if not exists leads_org_enquired_listing_id_idx on leads (organisation_id, enquired_listing_id);
 create index if not exists leads_org_seller_onboarding_token_idx on leads (organisation_id, seller_onboarding_token);
+create index if not exists leads_assignment_owner_idx on leads (organisation_id, assigned_agent_id, assigned_queue_id);
+create index if not exists leads_assignment_sla_idx on leads (organisation_id, ownership_status, sla_due_at);
+create index if not exists leads_assigned_at_idx on leads (organisation_id, assigned_at desc);
+create index if not exists leads_first_contacted_at_idx on leads (organisation_id, first_contacted_at desc) where first_contacted_at is not null;
 
 create table if not exists lead_activities (
   activity_id uuid primary key default gen_random_uuid(),

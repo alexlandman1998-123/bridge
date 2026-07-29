@@ -28,21 +28,49 @@ const baseLead = {
 {
   const readiness = getSellerReadiness({ lead: baseLead })
   assert.equal(readiness.readinessStatus, 'ready')
-  assert.equal(readiness.nextAction.id, 'open_seller_portal')
-  assert.equal(readiness.actions.find((item) => item.id === 'open_seller_portal').primary, true)
+  assert.equal(readiness.nextAction.id, 'contact_seller')
+  assert.equal(readiness.nextAction.label, 'Contact Seller')
+  assert.equal(readiness.actions.find((item) => item.id === 'contact_seller').primary, true)
   assert.equal(readiness.actions.some((item) => item.id === 'schedule_valuation'), false)
 }
 
 {
   const journey = buildSellerJourney({
-    lead: baseLead,
+    lead: { ...baseLead, stage: 'Contacted', status: 'Active' },
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
   })
-  const readiness = getSellerReadiness({ lead: baseLead, journey })
-  assert.equal(readiness.nextAction.id, 'open_seller_portal')
+  const readiness = getSellerReadiness({ lead: { ...baseLead, stage: 'Contacted', status: 'Active' }, journey })
+  assert.equal(readiness.nextAction.id, 'send_seller_onboarding')
   assert.equal(readiness.nextAction.label, 'Send Seller Onboarding')
   assert.equal(readiness.actions.some((item) => item.id === 'mark_valuation_complete'), false)
   assert.equal(readiness.actions.some((item) => item.id === 'open_appointment'), false)
+}
+
+{
+  const phaseMapLead = { ...baseLead, stage: 'Contacted', status: 'Active' }
+  const cases = [
+    ['new_lead', { key: 'new_lead', label: 'New Lead', status: 'New' }, 'contact_seller', 'Contact Seller'],
+    ['contacted', { key: 'contacted', label: 'Contacted', status: 'Active' }, 'send_seller_onboarding', 'Send Seller Onboarding'],
+    ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'open_seller_portal', 'Track Seller Onboarding'],
+    ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'generate_mandate', 'Generate Mandate'],
+    ['mandate_sent', { key: 'mandate_sent', label: 'Mandate Sent', status: 'Sent' }, 'check_signature_status', 'Track Signature'],
+    ['mandate_signed', { key: 'mandate_signed', label: 'Mandate Signed', status: 'Signed' }, 'create_listing', 'Create Listing'],
+  ]
+  for (const [stageKey, stage, expectedId, expectedLabel] of cases) {
+    const journey = {
+      isSeller: true,
+      stage,
+      stageKey,
+      onboardingSent: ['seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'].includes(stageKey),
+      onboardingSubmitted: ['seller_onboarding_submitted', 'mandate_sent', 'mandate_signed'].includes(stageKey),
+      mandateStatus: stageKey === 'mandate_sent' ? 'sent' : stageKey === 'mandate_signed' ? 'signed' : 'not_started',
+      listingCreated: false,
+      listingLive: false,
+    }
+    const nextAction = getNextSellerAction({ lead: phaseMapLead, contact: { phone: phaseMapLead.sellerPhone }, journey })
+    assert.equal(nextAction.id, expectedId, `${stageKey} should map to ${expectedId}`)
+    assert.equal(nextAction.label, expectedLabel, `${stageKey} should label ${expectedLabel}`)
+  }
 }
 
 {
@@ -50,7 +78,7 @@ const baseLead = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
-  assert.equal(getNextSellerAction(args).id, 'open_seller_portal')
+  assert.equal(getNextSellerAction(args).id, 'send_mandate')
 }
 
 {
@@ -60,8 +88,8 @@ const baseLead = {
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
   assert.equal(canSendMandate(args), false)
-  assert.equal(getNextSellerAction(args).id, 'open_seller_portal')
-  assert.equal(getNextSellerAction(args).label, 'Send Seller Onboarding')
+  assert.equal(getNextSellerAction(args).id, 'send_mandate')
+  assert.equal(getNextSellerAction(args).label, 'Send Mandate')
   assert.equal(getSellerReadiness(args).actions.some((item) => item.id === 'mark_valuation_complete'), false)
 }
 
@@ -132,7 +160,10 @@ const baseLead = {
     appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'completed' }, signingSummary: { allSignersSigned: true } },
   }
-  assert.equal(getNextSellerAction(args).id, 'open_documents')
+  const nextAction = getNextSellerAction(args)
+  assert.equal(nextAction.id, 'create_listing')
+  assert.equal(nextAction.label, 'Create Listing')
+  assert.equal(nextAction.reason, 'Required Documents Missing')
 }
 
 {
@@ -191,8 +222,8 @@ const baseLead = {
 
 {
   const summary = buildSellerReadinessSummary({ lead: baseLead })
-  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Send Seller Onboarding')
-  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Send Seller Onboarding')
+  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Contact Seller')
+  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Contact Seller')
 }
 
 console.log('seller readiness tests passed')

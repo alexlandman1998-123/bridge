@@ -43,5 +43,45 @@ assert.equal(
 
 assert.equal(
   resolveLeadNextStep({ stage: 'Offer Submitted', phone: '+27820000000' }, [], [], { now }),
-  'Convert offer to transaction',
+  'Review buyer conditions before OTP generation',
+)
+
+assert.equal(
+  resolveLeadNextStep({ stage: 'Viewing Completed', phone: '+27820000000' }, [], [], { now }),
+  'Send Offer + Onboarding link',
+)
+
+assert.equal(
+  resolveLeadNextStep({ stage: 'Ready to Generate OTP', phone: '+27820000000' }, [], [], { now }),
+  'Generate OTP',
+)
+
+assert.equal(
+  resolveLeadNextStep({ leadCategory: 'seller', stage: 'New Lead', phone: '+27820000000' }, [], [], { now }),
+  'Contact Seller',
+)
+
+assert.equal(
+  resolveLeadNextStep({ leadCategory: 'seller', stage: 'Contacted', phone: '+27820000000' }, [], [], { now }),
+  'Send Seller Onboarding',
+)
+
+assert.equal(
+  resolveLeadNextStep(
+    { leadCategory: 'seller', stage: 'Onboarding Sent', status: 'Sent', phone: '+27820000000', sellerOnboardingStatus: 'sent' },
+    [],
+    [],
+    { now },
+  ),
+  'Track Seller Onboarding',
+)
+
+assert.equal(
+  resolveLeadNextStep(
+    { leadCategory: 'seller', stage: 'Onboarding Submitted', status: 'Submitted', phone: '+27820000000', sellerOnboardingStatus: 'completed' },
+    [],
+    [],
+    { now },
+  ),
+  'Generate Mandate',
 )

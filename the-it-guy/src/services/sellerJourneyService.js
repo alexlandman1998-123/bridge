@@ -43,9 +43,10 @@ function firstDate(...values) {
 }
 
 export const SELLER_JOURNEY_STAGES = [
+  { key: 'new_lead', label: 'New Lead' },
   { key: 'contacted', label: 'Contacted' },
-  { key: 'seller_onboarding_sent', label: 'Seller Onboarding Sent' },
-  { key: 'seller_onboarding_submitted', label: 'Seller Onboarding Submitted' },
+  { key: 'seller_onboarding_sent', label: 'Onboarding Sent' },
+  { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted' },
   { key: 'mandate_sent', label: 'Mandate Sent' },
   { key: 'mandate_signed', label: 'Mandate Signed' },
   { key: 'listing_created', label: 'Listing Created' },
@@ -63,6 +64,11 @@ const STAGE_LABEL_INDEX = new Map(
 const STAGE_KEY_BY_TOKEN = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.key).toLowerCase(), stage.key]))
 const STAGE_KEY_BY_LABEL = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normalizeText(stage.label).toLowerCase(), stage.key]))
 const SELLER_JOURNEY_STAGE_ALIASES = new Map([
+  ['lead', 'new_lead'],
+  ['new', 'new_lead'],
+  ['new_lead', 'new_lead'],
+  ['seller_lead', 'new_lead'],
+  ['lead_created', 'new_lead'],
   ['appointment_valuation', 'contacted'],
   ['valuation', 'contacted'],
   ['seller_valuation', 'contacted'],
@@ -80,6 +86,7 @@ const SELLER_JOURNEY_STAGE_ALIASES = new Map([
 ])
 
 const SELLER_JOURNEY_STATUS_RANKS = {
+  new_lead: { new: 1, created: 1, lead: 1, active: 1 },
   contacted: { active: 1, contacted: 1, initial: 1, start: 1 },
   seller_onboarding_sent: { draft: 1, pending: 1, sent: 2, opened: 2, in_progress: 3, active: 3 },
   seller_onboarding_submitted: { sent: 1, in_progress: 1, submitted: 2, completed: 2, under_review: 2 },
@@ -91,6 +98,7 @@ const SELLER_JOURNEY_STATUS_RANKS = {
 }
 
 const SELLER_JOURNEY_DEFAULT_STATUS_BY_STAGE = {
+  new_lead: 'New',
   contacted: 'Active',
   seller_onboarding_sent: 'Sent',
   seller_onboarding_submitted: 'Submitted',
@@ -117,7 +125,7 @@ function resolveSellerJourneyStageKey(value = '') {
 }
 
 function normalizeSellerStageRank(stage = '', text = '') {
-  const stageKey = resolveSellerJourneyStageKey(stage) || normalizeSellerJourneyToken(stage) || 'contacted'
+  const stageKey = resolveSellerJourneyStageKey(stage) || normalizeSellerJourneyToken(stage) || 'new_lead'
   const statusMap = SELLER_JOURNEY_STATUS_RANKS[stageKey]
   const normalized = normalizeSellerJourneyToken(text)
   if (!statusMap || !normalized) return 1
@@ -150,8 +158,8 @@ export function getSellerJourneyStageFromLead(lead = {}) {
       ?? STAGE_TOKEN_INDEX.get(normalizeSellerJourneyToken(lead?.status || '').toLowerCase())
       ?? 0
   return {
-    key: SELLER_JOURNEY_STAGES[stageIndex]?.key || 'contacted',
-    label: SELLER_JOURNEY_STAGES[stageIndex]?.label || 'Contacted',
+    key: SELLER_JOURNEY_STAGES[stageIndex]?.key || 'new_lead',
+    label: SELLER_JOURNEY_STAGES[stageIndex]?.label || 'New Lead',
     status: normalizeText(lead?.status || lead?.stage || ''),
     index: stageIndex,
   }
@@ -176,7 +184,7 @@ export function buildSellerJourneyProgressPatch({ lead = {}, targetStage = '', t
 
   const next = SELLER_JOURNEY_STAGES[targetIndex]
   return {
-    stage: next?.label || SELLER_JOURNEY_STAGES[targetIndex]?.label || 'Contacted',
+    stage: next?.label || SELLER_JOURNEY_STAGES[targetIndex]?.label || 'New Lead',
     status: targetStatus || normalizeSellerJourneyDefaultStatus(targetKey),
   }
 }
@@ -203,7 +211,6 @@ const SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS = new Set([
   'listing_live',
   'all_documents_submitted',
   'documents_submitted',
-  'active',
   'under_offer',
   'transaction_created',
   'sold',
@@ -293,7 +300,6 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       listing?.lifecycleStatus ||
       listing?.lifecycle_status,
   )
-  const explicitPendingOnboardingStatus = Boolean(status && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status))
   const durableSubmitted = hasSellerOnboardingDurableSubmissionEvidence({ lead, listing })
   const listingLifecycleImpliesSubmitted = durableSubmitted && ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle)
   const sent = Boolean(
@@ -441,7 +447,7 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   }
   if (!derivedStage && onboardingSignals.submitted) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_submitted', 'Submitted')
   if (!derivedStage && onboardingSignals.sent) derivedStage = sellerJourneyStageSnapshot('seller_onboarding_sent', onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent')
-  const evidenceStage = derivedStage || sellerJourneyStageSnapshot('contacted', 'Active')
+  const evidenceStage = derivedStage || sellerJourneyStageSnapshot('new_lead', 'New')
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
   const canUseLeadStageAsProgressFloor =
@@ -648,11 +654,11 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && (mandateStatus === 'not_started' || mandateStatus === 'draft') },
     { id: 'send_mandate', label: 'Send Mandate', enabled: onboardingSubmittedForProgress && mandateStatus === 'draft' },
-    { id: 'view_signing_status', label: 'View Signing Status', enabled: mandateStatus !== 'not_started' },
+    { id: 'view_signing_status', label: 'Track Signature', enabled: mandateStatus !== 'not_started' },
     { id: 'create_listing', label: 'Create Listing', enabled: !listingCreated },
     { id: 'open_listing', label: 'Open Listing', enabled: listingCreated },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateStatus === 'signed' },
-    { id: 'open_seller_portal', label: 'Open Seller Portal', enabled: Boolean(sellerPortalToken) },
+    { id: 'open_seller_portal', label: 'Track Seller Onboarding', enabled: Boolean(sellerPortalToken) },
   ].map((action) => ({
     ...action,
     disabled: !action.enabled,
@@ -672,7 +678,7 @@ export function getSellerJourneyStatus(args = {}) {
 }
 
 export function buildSellerJourney({ lead = {}, contact = {}, listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [] } = {}) {
-  const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket }) || { key: 'contacted', label: 'Contacted', status: '' }
+  const stage = getSellerJourneyStage({ lead, listing, mandatePacketStatus, mandatePacket }) || { key: 'new_lead', label: 'New Lead', status: '' }
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -682,11 +688,20 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
   const documentsSubmitted = sellerDocuments.length > 0 && documentsOutstanding === 0
   const leadStage = getSellerJourneyStageFromLead(lead)
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
+  const contactedIndex = STAGE_INDEX.get('contacted') ?? 1
   const onboardingSubmittedForProgress = onboardingSignals.submitted ||
     leadStageIndex >= (STAGE_INDEX.get('seller_onboarding_submitted') ?? 2)
+  const contactedForProgress = Boolean(
+    leadStageIndex >= contactedIndex ||
+      onboardingSignals.sent ||
+      mandateStatus !== 'not_started' ||
+      listingCreated,
+  )
   const evidence = {
-    contacted: isSellerLead(lead),
-    contactedStatus: 'Active',
+    new_lead: isSellerLead(lead),
+    new_leadStatus: 'Created',
+    contacted: contactedForProgress,
+    contactedStatus: contactedForProgress ? 'Active' : '',
     seller_onboarding_sent: onboardingSignals.sent,
     seller_onboarding_sentStatus: onboardingSignals.status === 'in_progress' ? 'In Progress' : onboardingSignals.sent ? 'Sent' : '',
     seller_onboarding_submitted: onboardingSubmittedForProgress,

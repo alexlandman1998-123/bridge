@@ -26,6 +26,8 @@ const LEAD_SELECT_FIELDS_EXTENDED =
   `${LEAD_SELECT_FIELDS_SELLER_BRIDGE}, enquired_listing_id, enquired_property_title, enquired_property_address, enquired_property_price, source_reference_id, raw_enquiry_payload`
 const LEAD_SELECT_FIELDS_LOCATION =
   `${LEAD_SELECT_FIELDS_EXTENDED}, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id`
+const LEAD_SELECT_FIELDS_ASSIGNMENT =
+  `${LEAD_SELECT_FIELDS_LOCATION}, assigned_at, first_contacted_at, ownership_status, sla_due_at, assigned_queue_id`
 const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
@@ -41,6 +43,13 @@ const LEAD_LOCATION_DB_COLUMNS = [
   'latitude',
   'longitude',
   'google_place_id',
+]
+const LEAD_ASSIGNMENT_DB_COLUMNS = [
+  'assigned_at',
+  'first_contacted_at',
+  'ownership_status',
+  'sla_due_at',
+  'assigned_queue_id',
 ]
 
 function normalizeText(value) {
@@ -151,6 +160,11 @@ function mapSupabaseLead(row = {}) {
     leadSource: normalizeText(row?.lead_source) || 'Other',
     stage: normalizeText(row?.stage) || 'New Lead',
     status: normalizeText(row?.status) || normalizeText(row?.stage) || 'New Lead',
+    assignedAt: row?.assigned_at || null,
+    firstContactedAt: row?.first_contacted_at || null,
+    ownershipStatus: normalizeText(row?.ownership_status),
+    slaDueAt: row?.sla_due_at || null,
+    assignedQueueId: normalizeText(row?.assigned_queue_id),
     priority: normalizeText(row?.priority) || 'Medium',
     budget: Number(row?.budget || 0) || 0,
     areaInterest: normalizeText(row?.area_interest),
@@ -443,6 +457,11 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'leadSource')) corePayload.lead_source = normalizeText(patch.leadSource) || 'Other'
   if (hasOwn(patch, 'stage')) corePayload.stage = normalizeText(patch.stage) || 'New Lead'
   if (hasOwn(patch, 'status')) corePayload.status = normalizeText(patch.status) || normalizeText(patch.stage) || 'New Lead'
+  if (hasOwn(patch, 'assignedAt')) corePayload.assigned_at = patch.assignedAt || null
+  if (hasOwn(patch, 'firstContactedAt')) corePayload.first_contacted_at = patch.firstContactedAt || null
+  if (hasOwn(patch, 'ownershipStatus')) corePayload.ownership_status = normalizeText(patch.ownershipStatus) || null
+  if (hasOwn(patch, 'slaDueAt')) corePayload.sla_due_at = patch.slaDueAt || null
+  if (hasOwn(patch, 'assignedQueueId')) corePayload.assigned_queue_id = normalizeText(patch.assignedQueueId) || null
   if (hasOwn(patch, 'priority')) corePayload.priority = normalizeText(patch.priority) || 'Medium'
   if (hasOwn(patch, 'budget')) corePayload.budget = Number(patch.budget || 0) || 0
   if (hasOwn(patch, 'areaInterest')) corePayload.area_interest = normalizeText(patch.areaInterest) || null
@@ -513,6 +532,11 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
     lead_source: normalizeText(lead.leadSource) || 'Other',
     stage: normalizeText(lead.stage) || 'New Lead',
     status: normalizeText(lead.status) || 'New Lead',
+    assigned_at: lead.assignedAt || null,
+    first_contacted_at: lead.firstContactedAt || null,
+    ownership_status: normalizeText(lead.ownershipStatus) || 'awaiting_assignment',
+    sla_due_at: lead.slaDueAt || null,
+    assigned_queue_id: normalizeText(lead.assignedQueueId) || null,
     priority: normalizeText(lead.priority) || 'Medium',
     budget: Number(lead.budget || 0) || 0,
     area_interest: normalizeText(lead.areaInterest) || null,
@@ -545,7 +569,10 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
 }
 
 async function selectLeadsWithCompatibility(queryBuilderFactory) {
-  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_LOCATION)
+  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_ASSIGNMENT)
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_LOCATION)
+  }
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
   }
@@ -857,6 +884,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         'assigned_user_id',
         'assigned_agent_email',
         'created_by',
+        ...LEAD_ASSIGNMENT_DB_COLUMNS,
         ...LEAD_LOCATION_DB_COLUMNS,
         'enquired_listing_id',
         'enquired_property_title',
@@ -884,6 +912,9 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         delete legacyLeadPayload.branch_id
         delete legacyLeadPayload.assigned_user_id
         delete legacyLeadPayload.created_by
+        for (const column of LEAD_ASSIGNMENT_DB_COLUMNS) {
+          delete legacyLeadPayload[column]
+        }
         for (const column of LEAD_LOCATION_DB_COLUMNS) {
           delete legacyLeadPayload[column]
         }
@@ -1088,6 +1119,9 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
 
     if (updateResult.error && isMissingColumnError(updateResult.error)) {
       const compatibleCorePayload = { ...corePayload }
+      for (const column of LEAD_ASSIGNMENT_DB_COLUMNS) {
+        delete compatibleCorePayload[column]
+      }
       for (const column of LEAD_LOCATION_DB_COLUMNS) {
         delete compatibleCorePayload[column]
       }

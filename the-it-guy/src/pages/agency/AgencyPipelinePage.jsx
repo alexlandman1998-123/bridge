@@ -3123,7 +3123,7 @@ function mapPrivateListingToLeadFallback(listing = {}) {
     leadCategory: 'seller',
     leadDirection: 'Inbound',
     leadSource: 'Seller Onboarding',
-    stage: isCompleted ? 'Seller Onboarding Submitted' : onboardingStatus ? 'Seller Onboarding Sent' : 'Lead',
+    stage: isCompleted ? 'Onboarding Submitted' : onboardingStatus ? 'Onboarding Sent' : 'Lead',
     status: isCompleted ? 'Submitted' : onboardingStatus ? 'Sent' : 'Lead',
     priority: 'Medium',
     budget: Number(formData.askingPrice || listing?.askingPrice || listing?.estimatedValue || 0) || 0,
@@ -3457,6 +3457,27 @@ const LEAD_ACTIVITY_OUTCOME_OPTIONS = [
   'Wants callback',
   'Requested OTP',
   'Completed',
+]
+
+const SELLER_CONTACT_FEEDBACK_DEFAULTS = {
+  open: false,
+  leadId: '',
+  method: 'Call',
+  outcome: 'Reached seller',
+  notes: '',
+  saving: false,
+  error: '',
+}
+
+const SELLER_CONTACT_METHOD_OPTIONS = ['Call', 'WhatsApp', 'Email', 'Other']
+
+const SELLER_CONTACT_OUTCOME_OPTIONS = [
+  'Reached seller',
+  'Left message',
+  'No answer',
+  'Requested callback',
+  'Not interested',
+  'Wrong contact details',
 ]
 
 const LEAD_ACTIVITY_SUGGESTION_CHIPS = [
@@ -3872,6 +3893,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     leadId: '',
     error: '',
   })
+  const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [financeReadinessForm, setFinanceReadinessForm] = useState(FINANCE_READINESS_FORM_DEFAULTS)
@@ -4621,7 +4643,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       try {
         await updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
-          stage: 'Seller Onboarding Submitted',
+          stage: 'Onboarding Submitted',
           status: 'Submitted',
           sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
           sellerOnboardingToken: submittedToken,
@@ -4642,7 +4664,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
         await createAgencyCrmLeadActivity(organisationId, lead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Seller Onboarding Submitted',
+          activityType: 'Onboarding Submitted',
           activityNote: 'Seller onboarding was completed.',
           outcome: 'Seller onboarding submitted',
         }, { actor: currentAgent })
@@ -5832,7 +5854,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           new Date().toISOString()
         const listingId = normalizeText(onboardingContext?.listing?.id || linkedListingId)
         const patch = {
-          stage: 'Seller Onboarding Submitted',
+          stage: 'Onboarding Submitted',
           status: 'Submitted',
           sellerOnboardingStatus: 'completed',
           listingId: listingId || normalizeText(selectedLead?.listingId),
@@ -5858,7 +5880,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, patch)
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Seller Onboarding Submitted',
+          activityType: 'Onboarding Submitted',
           activityNote: 'Seller onboarding was completed.',
           outcome: 'Seller onboarding submitted',
         }, { actor: currentAgent })
@@ -6837,6 +6859,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadLinkedListing,
   ])
+  const selectedSellerJourneyStageKey = normalizeKey(selectedSellerJourney?.stage?.key || selectedSellerJourney?.stageKey || selectedSellerJourney?.stage?.label)
+  const selectedSellerCanSendOnboarding = !selectedLeadIsSeller || selectedSellerJourneyStageKey !== 'new_lead'
+  const selectedLeadSellerOnboardingCommandLabel = selectedSellerCanSendOnboarding
+    ? selectedLeadSellerOnboardingActionLabel
+    : 'Contact Seller First'
 
   const selectedSellerDocumentCategories = useMemo(
     () => buildSellerLeadDocumentCategories(selectedSellerJourney?.documents || []),
@@ -9366,6 +9393,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!selectedLeadIsSeller) return
+    if (!selectedSellerCanSendOnboarding) {
+      setMessage('Contact seller before sending onboarding.')
+      openSellerContactFeedbackModal()
+      return
+    }
     const preferredAttorneyId = normalizeText(preferredAttorney?.id || preferredAttorney?.preferredPartnerId)
     if (!preferredAttorneyId) {
       await requestSellerOnboardingAttorneySelection()
@@ -9508,7 +9540,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: 'Seller Onboarding Sent',
+        stage: 'Onboarding Sent',
         status: 'Sent',
         sellerOnboardingToken: token,
         sellerOnboardingLink: onboardingLink,
@@ -9537,7 +9569,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
             ? {
                 ...lead,
-                stage: 'Seller Onboarding Sent',
+                stage: 'Onboarding Sent',
                 status: 'Sent',
                 sellerOnboardingToken: token,
                 sellerOnboardingLink: onboardingLink,
@@ -9555,7 +9587,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Seller Onboarding Sent',
+        activityType: 'Onboarding Sent',
         activityNote: `Seller onboarding was sent to ${sellerName} with ${preferredAttorney.companyName || 'the selected firm'} nominated as transferring attorney.`,
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
@@ -10349,18 +10381,98 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function openSellerContactFeedbackModal() {
+    if (!selectedLead?.leadId) {
+      setError('Select a seller lead before logging contact.')
+      return
+    }
+    const hasPhone = Boolean(normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone))
+    const hasEmail = Boolean(normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email))
+    setSellerContactFeedbackModal({
+      ...SELLER_CONTACT_FEEDBACK_DEFAULTS,
+      open: true,
+      leadId: selectedLead.leadId,
+      method: hasPhone ? 'Call' : hasEmail ? 'Email' : 'Other',
+    })
+    setError('')
+  }
+
+  function closeSellerContactFeedbackModal() {
+    if (sellerContactFeedbackModal.saving) return
+    setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
+  }
+
+  async function handleSubmitSellerContactFeedback(event) {
+    event.preventDefault()
+    const leadId = normalizeText(sellerContactFeedbackModal.leadId || selectedLead?.leadId)
+    if (!organisationId || !leadId) return
+
+    const method = normalizeText(sellerContactFeedbackModal.method) || 'Call'
+    const outcome = normalizeText(sellerContactFeedbackModal.outcome)
+    const notes = normalizeText(sellerContactFeedbackModal.notes)
+    if (!outcome) {
+      setSellerContactFeedbackModal((previous) => ({ ...previous, error: 'Choose the contact outcome before saving.' }))
+      return
+    }
+
+    const contactedAt = new Date().toISOString()
+    const activityType = method === 'Other' ? 'Seller Contact' : `Seller Contact - ${method}`
+    const activityNote = notes || `${selectedLeadDisplayName || 'Seller'} contacted via ${method}. Outcome: ${outcome}.`
+
+    setSellerContactFeedbackModal((previous) => ({ ...previous, saving: true, error: '' }))
+    try {
+      await updateAgencyCrmLeadRecord(organisationId, leadId, {
+        stage: 'Contacted',
+        status: 'Active',
+        firstContactedAt: selectedLead?.firstContactedAt || selectedLead?.first_contacted_at || contactedAt,
+        ownershipStatus: 'contacted',
+      })
+      await createAgencyCrmLeadActivity(organisationId, leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType,
+        activityNote,
+        outcome,
+        activityDate: contactedAt,
+      }, { actor: currentAgent })
+
+      setRecords((previous) => ({
+        ...previous,
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(leadId)
+            ? {
+                ...lead,
+                stage: 'Contacted',
+                status: 'Active',
+                firstContactedAt: lead?.firstContactedAt || lead?.first_contacted_at || contactedAt,
+                ownershipStatus: 'contacted',
+                updatedAt: contactedAt,
+              }
+            : lead
+        )),
+      }))
+      setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
+      setError('')
+      setMessage('Seller contact logged. Next best action is now Send Seller Onboarding.')
+      scheduleRecordsReload(organisationId, 850)
+    } catch (contactError) {
+      const errorMessage = contactError?.message || 'Unable to save seller contact feedback.'
+      setSellerContactFeedbackModal((previous) => ({ ...previous, saving: false, error: errorMessage }))
+      setError(errorMessage)
+    }
+  }
+
+  function handleSellerOnboardingCommand() {
+    if (!selectedSellerCanSendOnboarding) {
+      openSellerContactFeedbackModal()
+      return
+    }
+    void handleSendSellerOnboarding()
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
     if (id === 'contact_seller') {
-      const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone).replace(/[^\d+]/g, '')
-      const email = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
-      if (phone && typeof window !== 'undefined') {
-        window.open(`https://wa.me/${phone.replace(/^\+/, '')}`, '_blank', 'noopener,noreferrer')
-        return
-      }
-      if (email && typeof window !== 'undefined') {
-        window.location.href = `mailto:${email}`
-      }
+      openSellerContactFeedbackModal()
       return
     }
     if (id === 'open_timeline') {
@@ -14069,17 +14181,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          },
 	                                        },
 	                                        {
-	                                          label: selectedLeadSellerOnboardingActionLabel,
+	                                          label: selectedLeadSellerOnboardingCommandLabel,
 	                                          Icon: Mail,
 	                                          tone: 'text-[#29435d]',
 	                                          disabled: isSellerOnboardingSending,
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
-	                                            void handleSendSellerOnboarding()
+	                                            handleSellerOnboardingCommand()
 	                                          },
 	                                        },
 	                                        {
-	                                          label: 'Open Seller Portal',
+	                                          label: 'Track Seller Onboarding',
 	                                          Icon: ExternalLink,
 	                                          tone: 'text-[#29435d]',
 	                                          disabled: !normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token),
@@ -14792,7 +14904,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </section>
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4">
+                      <div className="flex min-h-[430px] min-w-0 flex-col gap-4 xl:h-[430px]">
                         <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div className="min-w-0">
@@ -14820,33 +14932,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </section>
 
                         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-5">
-                            <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
-                            <Button type="button" size="sm" variant="secondary" className="min-h-11 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
+                          <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                            <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
+                            <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
                               View All Documents
                             </Button>
                           </div>
-                          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-                            <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="min-h-0 flex-1 overflow-hidden px-5 py-4">
+                            <div className="grid h-full min-h-0 gap-3 sm:grid-cols-2 sm:grid-rows-2">
                               {selectedSellerDocumentCategories.map((category) => {
                                 const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'
                                 return (
-                                  <div key={category.key} className="min-w-0 rounded-[18px] border border-[#e4edf6] bg-[#fbfdff] px-4 py-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                                    <p className="min-h-6 text-center text-base font-semibold leading-6 text-[#20364c]">{category.label}</p>
+                                  <div key={category.key} className="flex min-h-0 min-w-0 flex-col justify-between rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-3 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                                    <p className="min-h-5 text-center text-sm font-semibold leading-5 text-[#20364c]">{category.label}</p>
                                     <span
-                                      className="mx-auto mt-4 grid h-24 w-24 place-items-center rounded-full p-3"
+                                      className="mx-auto mt-2 grid h-16 w-16 place-items-center rounded-full p-2"
                                       style={{ background: `conic-gradient(${chartColor} ${category.progress * 3.6}deg, #e5ecf5 0deg)` }}
                                       aria-label={`${category.label} ${category.progress}% complete`}
                                     >
                                       <span className="grid h-full w-full place-items-center rounded-full bg-white text-center shadow-[inset_0_0_18px_rgba(31,54,78,0.025)]">
                                         <span>
-                                          <span className="block text-3xl font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
-                                          <span className="mt-1 block text-xs font-semibold text-[#6d839b]">complete</span>
+                                          <span className="block text-xl font-semibold leading-none tracking-[-0.04em] text-[#102033]">{category.progress}%</span>
+                                          <span className="mt-0.5 block text-[0.62rem] font-semibold text-[#6d839b]">complete</span>
                                         </span>
                                       </span>
                                     </span>
-                                    <p className="mt-4 text-sm font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
-                                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e4ebf3]">
+                                    <p className="mt-2 text-xs font-semibold text-[#6d839b]">{category.completed} of {category.total} complete</p>
+                                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4ebf3]">
                                       <span className={`block h-full rounded-full ${category.progress >= 100 ? 'bg-[#0f8f59]' : 'bg-[#315b7a]'}`} style={{ width: `${category.progress}%` }} />
                                     </div>
                                   </div>
@@ -16635,9 +16747,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadDisplayName}</h4>
                           <p className="mt-1 text-sm leading-6 text-[#60758b]">Seller contact, source, ownership, and onboarding status.</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
-                          {selectedLeadSellerOnboardingActionLabel}
-                        </Button>
+	                        <Button type="button" size="sm" variant="secondary" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
+	                          {selectedLeadSellerOnboardingCommandLabel}
+	                        </Button>
                       </div>
                       <div className="mt-6 grid gap-x-10 gap-y-6 md:grid-cols-2">
                         {[
@@ -16958,9 +17070,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <span className="inline-flex min-h-10 items-center rounded-full border border-[#dbe7f2] bg-white px-4 text-sm font-semibold text-[#31506b]">
                                 {selectedSellerDocumentSummary.completed} of {selectedSellerDocumentSummary.total} complete
                               </span>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendSellerOnboarding()} disabled={isSellerOnboardingSending}>
-                                {selectedLeadSellerOnboardingActionLabel}
-                              </Button>
+	                              <Button type="button" size="sm" variant="secondary" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
+	                                {selectedLeadSellerOnboardingCommandLabel}
+	                              </Button>
                             </div>
                           </div>
                           <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e6edf5]">
@@ -17578,11 +17690,79 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ) : null}
           </section>
         </>
-      )}
+	      )}
 
-      <Modal
-        open={leadArchiveModal.open}
-        onClose={() => setLeadArchiveModal((previous) => ({ ...previous, open: false }))}
+	      <Modal
+	        open={sellerContactFeedbackModal.open}
+	        onClose={closeSellerContactFeedbackModal}
+	        title="Contact Seller"
+	        subtitle="Log the first seller contact so the journey can move to onboarding."
+	        className="max-w-lg"
+	      >
+	        <form className="grid gap-4" onSubmit={handleSubmitSellerContactFeedback}>
+	          <div className="rounded-[16px] border border-[#dbe7f2] bg-[#f8fbfd] px-4 py-3">
+	            <p className="text-sm font-semibold text-[#20364c]">{selectedLeadDisplayName}</p>
+	            <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-[#60758b]">
+	              {[
+	                ['Phone', normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone)],
+	                ['Email', normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)],
+	              ].filter(([, value]) => value).map(([label, value]) => (
+	                <span key={label} className="rounded-full bg-white px-3 py-1 ring-1 ring-[#e2ebf4]">
+	                  {label}: {value}
+	                </span>
+	              ))}
+	            </div>
+	          </div>
+
+	          <div className="grid gap-3 md:grid-cols-2">
+	            <Field
+	              as="select"
+	              value={sellerContactFeedbackModal.method}
+	              onChange={(event) => setSellerContactFeedbackModal((previous) => ({ ...previous, method: event.target.value, error: '' }))}
+	            >
+	              {SELLER_CONTACT_METHOD_OPTIONS.map((option) => (
+	                <option key={option} value={option}>{option}</option>
+	              ))}
+	            </Field>
+	            <Field
+	              as="select"
+	              value={sellerContactFeedbackModal.outcome}
+	              onChange={(event) => setSellerContactFeedbackModal((previous) => ({ ...previous, outcome: event.target.value, error: '' }))}
+	            >
+	              {SELLER_CONTACT_OUTCOME_OPTIONS.map((option) => (
+	                <option key={option} value={option}>{option}</option>
+	              ))}
+	            </Field>
+	          </div>
+
+	          <Field
+	            as="textarea"
+	            rows={4}
+	            placeholder="Feedback or notes from the contact"
+	            value={sellerContactFeedbackModal.notes}
+	            onChange={(event) => setSellerContactFeedbackModal((previous) => ({ ...previous, notes: event.target.value, error: '' }))}
+	          />
+
+	          {sellerContactFeedbackModal.error ? (
+	            <div className="rounded-[14px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">
+	              {sellerContactFeedbackModal.error}
+	            </div>
+	          ) : null}
+
+	          <div className="flex justify-end gap-2">
+	            <Button type="button" variant="secondary" onClick={closeSellerContactFeedbackModal} disabled={sellerContactFeedbackModal.saving}>
+	              Cancel
+	            </Button>
+	            <Button type="submit" disabled={sellerContactFeedbackModal.saving}>
+	              {sellerContactFeedbackModal.saving ? 'Saving...' : 'Confirm Contact'}
+	            </Button>
+	          </div>
+	        </form>
+	      </Modal>
+
+	      <Modal
+	        open={leadArchiveModal.open}
+	        onClose={() => setLeadArchiveModal((previous) => ({ ...previous, open: false }))}
         title="Archive Lead"
         subtitle="Move this lead out of the active pipeline while keeping the full activity history."
         className="max-w-lg"

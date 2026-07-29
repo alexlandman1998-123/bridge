@@ -1,4 +1,9 @@
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory.js'
+import {
+  RESIDENTIAL_OFFER_STAGE_KEYS,
+  getResidentialOfferStage,
+  normalizeResidentialOfferStageKey,
+} from '../core/offers/residentialOfferLifecycle.js'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -6,6 +11,10 @@ function normalizeText(value = '') {
 
 function normalizeKey(value = '') {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeToken(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
 function titleCase(value = '') {
@@ -17,11 +26,61 @@ function titleCase(value = '') {
     .join(' ')
 }
 
+const SELLER_LIFECYCLE_STAGES = Object.freeze({
+  new_lead: 'New Lead',
+  contacted: 'Contacted',
+  seller_onboarding_sent: 'Onboarding Sent',
+  seller_onboarding_submitted: 'Onboarding Submitted',
+  mandate_sent: 'Mandate Sent',
+  mandate_signed: 'Mandate Signed',
+  listing_created: 'Listing Created',
+  listing_live: 'Listing Live',
+  documents_submitted: 'All Documents Submitted',
+})
+
+const SELLER_LIFECYCLE_STAGE_ALIASES = Object.freeze({
+  lead: 'new_lead',
+  new: 'new_lead',
+  new_lead: 'new_lead',
+  seller_lead: 'new_lead',
+  lead_created: 'new_lead',
+  contacted: 'contacted',
+  active: 'contacted',
+  onboarding_sent: 'seller_onboarding_sent',
+  seller_onboarding_sent: 'seller_onboarding_sent',
+  onboarding_submitted: 'seller_onboarding_submitted',
+  onboarding_completed: 'seller_onboarding_submitted',
+  seller_onboarding_submitted: 'seller_onboarding_submitted',
+  seller_onboarding_completed: 'seller_onboarding_submitted',
+  mandate_generated: 'mandate_sent',
+  mandate_ready: 'mandate_sent',
+  mandate_sent: 'mandate_sent',
+  mandate_signed: 'mandate_signed',
+  listing_created: 'listing_created',
+  converted_to_listing: 'listing_created',
+  listing_live: 'listing_live',
+  listing_active: 'listing_live',
+  all_documents_submitted: 'documents_submitted',
+  documents_submitted: 'documents_submitted',
+})
+
+function normalizeSellerLifecycleStageKey(value = '') {
+  const token = normalizeToken(value)
+  if (!token) return ''
+  return SELLER_LIFECYCLE_STAGE_ALIASES[token] || ''
+}
+
+function resolveSellerLifecycleStageKey(lead = {}, rawStage = '') {
+  return normalizeSellerLifecycleStageKey(rawStage)
+    || normalizeSellerLifecycleStageKey(lead?.stage)
+    || normalizeSellerLifecycleStageKey(lead?.status)
+}
+
 export function normalizeLeadLifecycleStageKey(value = '') {
   const normalized = normalizeKey(value)
-  if (!normalized) return 'lead'
-  if (['canvassing', 'prospecting', 'new_prospect', 'new prospect', 'new_lead', 'new lead'].includes(normalized)) return 'lead'
-  return normalized
+  if (!normalized) return RESIDENTIAL_OFFER_STAGE_KEYS.lead
+  if (['canvassing', 'prospecting', 'new_prospect', 'new prospect', 'new_lead', 'new lead'].includes(normalized)) return RESIDENTIAL_OFFER_STAGE_KEYS.lead
+  return normalizeResidentialOfferStageKey(normalized, normalized)
 }
 
 function resolveLeadCategory(lead = {}) {
@@ -29,8 +88,19 @@ function resolveLeadCategory(lead = {}) {
 }
 
 function resolveFunnelStage(lead = {}) {
+  if (resolveLeadCategory(lead) === 'seller') {
+    const sellerStageKey = resolveSellerLifecycleStageKey(lead, lead?.stage || lead?.status)
+    if (sellerStageKey) return SELLER_LIFECYCLE_STAGES[sellerStageKey] || 'New Lead'
+  }
   const normalizedStage = normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
-  if (normalizedStage === 'lead') return 'Lead'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.lead) return 'Lead'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent) return 'Offer Link Sent'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted) return 'Offer Submitted'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired) return 'Agent Review'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp) return 'OTP Ready'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated) return 'OTP Generated'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties) return 'Signed OTP'
+  if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.transactionLive) return 'Converted'
   const stage = normalizeText(lead?.stage || lead?.status).toLowerCase()
   if (!stage) return 'Cold'
   if (stage.includes('lost')) return 'Archived'
@@ -48,19 +118,32 @@ function resolveFunnelStage(lead = {}) {
 }
 
 function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
-  const stage = normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
-  const status = normalizeLeadLifecycleStageKey(lead?.status)
-  const combined = `${stage} ${status}`
   const isSellerLead = resolveLeadCategory(lead) === 'seller'
+  const sellerStageKey = isSellerLead ? resolveSellerLifecycleStageKey(lead, lead?.stage || lead?.status) : ''
+  const stage = sellerStageKey || normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
+  const status = normalizeLeadLifecycleStageKey(lead?.status)
+  const sellerStageLabel = sellerStageKey ? normalizeKey(SELLER_LIFECYCLE_STAGES[sellerStageKey]) : ''
+  const combined = `${stage} ${status} ${normalizeKey(lead?.stage)} ${normalizeKey(lead?.status)} ${sellerStageLabel}`
 
   if (combined.includes('lost') || combined.includes('archive')) return 'lost'
   if (combined.includes('registered') || combined.includes('closed')) return 'registered'
   if (combined.includes('transfer')) return 'transfer'
   if (combined.includes('finance') || combined.includes('bond')) return 'finance'
+  if (!isSellerLead && (
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp) ||
+    combined.includes('negotiating')
+  )) return 'offer'
   if (
     combined.includes('deal') ||
-    combined.includes('otp') ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.buyerSigned) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.agentSigned) ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.sentToSeller) ||
     combined.includes('transaction') ||
+    combined.includes(RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties) ||
     linkedDeal
   ) return 'deal_otp'
   if (isSellerLead) {
@@ -69,6 +152,12 @@ function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
     if (combined.includes('mandate signed')) return 'mandate_signed'
     if (combined.includes('mandate sent') || combined.includes('mandate generated') || combined.includes('mandate ready')) return 'mandate_sent'
     if (combined.includes('valuation') || combined.includes('appointment') || combined.includes('viewing')) return 'valuation_scheduled'
+    if (
+      combined.includes('onboarding') ||
+      combined.includes('contacted') ||
+      combined.includes('new_lead') ||
+      combined.includes('lead')
+    ) return 'lead'
   }
   if (combined.includes('offer') || combined.includes('negotiating')) return 'offer'
   if (
@@ -93,7 +182,7 @@ function resolveStageTone(label = '') {
   if (stage.includes('follow')) {
     return { iconKey: 'clock', className: 'border-[#f7e7bf] bg-[#fff9eb] text-[#b67b13]' }
   }
-  if (stage.includes('submit') || stage.includes('onboarding')) {
+  if (stage.includes('submit') || stage.includes('onboarding') || stage.includes('offer +')) {
     return { iconKey: 'check', className: 'border-[#d7e6fb] bg-[#eef5ff] text-[#2f69dc]' }
   }
   if (stage.includes('complete') || stage.includes('qualified') || stage.includes('signed') || stage.includes('listing')) {
@@ -120,14 +209,18 @@ function resolveStatusMeta(lead = {}, funnelStage = '') {
 }
 
 function resolveReportingFlags(label = '') {
-  const stage = normalizeKey(label)
+  const stage = normalizeLeadLifecycleStageKey(label)
   const contactedStages = new Set([
     'contacted',
     'qualified',
-    'appointment scheduled',
-    'appointment completed',
-    'offer submitted',
-    'offer accepted',
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingScheduled,
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingCompleted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired,
+    RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp,
+    RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated,
+    RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties,
     'follow-up',
     'negotiating',
     'deal created',
@@ -135,20 +228,28 @@ function resolveReportingFlags(label = '') {
   ])
   const qualifiedStages = new Set([
     'qualified',
-    'appointment scheduled',
-    'appointment completed',
-    'offer submitted',
-    'offer accepted',
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingScheduled,
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingCompleted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired,
+    RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp,
+    RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated,
+    RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties,
     'follow-up',
     'negotiating',
     'deal created',
     'converted to transaction',
   ])
   const appointmentStages = new Set([
-    'appointment scheduled',
-    'appointment completed',
-    'offer submitted',
-    'offer accepted',
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingScheduled,
+    RESIDENTIAL_OFFER_STAGE_KEYS.viewingCompleted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent,
+    RESIDENTIAL_OFFER_STAGE_KEYS.offerSubmitted,
+    RESIDENTIAL_OFFER_STAGE_KEYS.agentReviewRequired,
+    RESIDENTIAL_OFFER_STAGE_KEYS.readyToGenerateOtp,
+    RESIDENTIAL_OFFER_STAGE_KEYS.otpGenerated,
+    RESIDENTIAL_OFFER_STAGE_KEYS.signedByAllParties,
     'follow-up',
     'negotiating',
     'deal created',
@@ -157,27 +258,31 @@ function resolveReportingFlags(label = '') {
   const contacted = contactedStages.has(stage)
   const qualified = qualifiedStages.has(stage)
   const appointmentScheduled = appointmentStages.has(stage)
-  const dealCreated = stage === 'deal created' || stage === 'converted to transaction'
+  const dealCreated = stage === 'deal created' || stage === 'converted to transaction' || stage === RESIDENTIAL_OFFER_STAGE_KEYS.transactionLive
   return { contacted, qualified, appointmentScheduled, dealCreated }
 }
 
 export function resolveLeadLifecyclePresentation(lead = {}, options = {}) {
   const rawStage = normalizeText(options?.stage || lead?.stage || lead?.status)
-  const stageKey = normalizeLeadLifecycleStageKey(rawStage)
+  const category = resolveLeadCategory(lead)
+  const sellerStageKey = category === 'seller' ? resolveSellerLifecycleStageKey(lead, rawStage) : ''
+  const stageKey = sellerStageKey || normalizeLeadLifecycleStageKey(rawStage)
   const funnelStage = resolveFunnelStage({ ...lead, stage: rawStage || lead?.stage, status: lead?.status })
-  const label = stageKey === 'lead'
+  const residentialStage = sellerStageKey ? null : getResidentialOfferStage(stageKey)
+  const sellerLabel = sellerStageKey ? SELLER_LIFECYCLE_STAGES[sellerStageKey] : ''
+  const label = sellerLabel || (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.lead
     ? 'Lead'
-    : normalizeText(options?.label || rawStage || funnelStage || 'Lead') || titleCase(stageKey)
+    : normalizeText(options?.label || residentialStage?.label || rawStage || funnelStage || 'Lead') || titleCase(stageKey))
   const tone = resolveStageTone(label)
   return {
     key: stageKey,
     label,
     funnelStage,
     columnId: resolveColumnId(lead, options),
-    category: resolveLeadCategory(lead),
+    category,
     stageTone: tone,
     statusMeta: resolveStatusMeta(lead, funnelStage),
-    reporting: resolveReportingFlags(label),
+    reporting: resolveReportingFlags(stageKey),
   }
 }
 
