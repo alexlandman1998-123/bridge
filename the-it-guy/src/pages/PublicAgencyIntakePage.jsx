@@ -382,9 +382,9 @@ function IntakeOptionCard({ title, description, cta, icon, image, imagePosition 
   const content = (
     <>
       <span className="absolute inset-0 z-0 bg-cover bg-center transition duration-500 group-hover:scale-[1.03]" style={{ backgroundImage: `url("${image}")`, backgroundPosition: imagePosition }} />
-      <span className="absolute inset-0 z-10 bg-black/55" />
-      <span className="absolute inset-0 z-10 bg-gradient-to-r from-black/90 via-black/70 to-black/50" />
-      <span className="absolute inset-0 z-10 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+      <span className="absolute inset-0 z-10 bg-black/35" />
+      <span className="absolute inset-0 z-10 bg-gradient-to-r from-black/80 via-black/55 to-black/25" />
+      <span className="absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
       <span className="relative z-20 flex min-h-[214px] flex-col justify-end p-6">
         <span className="mb-6 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--agency-primary)]/74 text-[var(--agency-accent)] shadow-[0_14px_34px_rgba(0,0,0,0.22)] backdrop-blur">
           <Icon size={28} strokeWidth={2.1} aria-hidden="true" />
