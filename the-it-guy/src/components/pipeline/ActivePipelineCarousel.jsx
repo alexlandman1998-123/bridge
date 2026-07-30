@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, ChevronLeft, ChevronRight, Home, User2 } from 'lucide-react'
+import { Building2, CalendarDays, ChevronLeft, ChevronRight, Home, User2, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const currencyCompact = new Intl.NumberFormat('en-ZA', {
@@ -243,6 +243,8 @@ export function ActivePipelineCard({ mode, record, onOpenRecord }) {
   const ownerRole = normalizeText(record.ownerRoleLabel) || (mode.startsWith('commercial') ? 'Broker' : 'Agent')
   const clientLabel = normalizeText(record.clientLabel) || 'Client'
   const clientName = normalizeText(record.clientName) || 'Client pending'
+  const secondaryClientLabel = normalizeText(record.secondaryClientLabel)
+  const secondaryClientName = normalizeText(record.secondaryClientName)
 
   return (
     <button
@@ -285,6 +287,14 @@ export function ActivePipelineCard({ mode, record, onOpenRecord }) {
             <span className="font-medium text-[#5d7288]">{clientLabel}:</span> <span className="text-[#203247]">{clientName}</span>
           </p>
         </div>
+        {secondaryClientLabel && secondaryClientName ? (
+          <div className="flex items-center gap-2 text-[12px] text-[#4a5f78]">
+            <Users size={14} className="shrink-0 text-[#70839a]" />
+            <p className="truncate" title={`${secondaryClientLabel}: ${secondaryClientName}`}>
+              <span className="font-medium text-[#5d7288]">{secondaryClientLabel}:</span> <span className="text-[#203247]">{secondaryClientName}</span>
+            </p>
+          </div>
+        ) : null}
       </div>
     </button>
   )

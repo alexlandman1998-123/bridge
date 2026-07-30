@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizontal, Plus, Search } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Building2, CheckCircle2, Home, MoreHorizontal, Plus, Search, UserRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
@@ -54,6 +54,99 @@ function formatRelativeDate(value) {
   return `${days} days ago`
 }
 
+function formatUpdatedAt(value) {
+  const label = formatRelativeDate(value)
+  if (label === 'No update') return label
+  return `Updated ${label.toLowerCase()}`
+}
+
+function formatDisplayLabel(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getFirstImageUrl(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const next = getFirstImageUrl(item)
+      if (next) return next
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    return (
+      value.url ||
+      value.src ||
+      value.imageUrl ||
+      value.image_url ||
+      value.publicUrl ||
+      value.public_url ||
+      value.signedUrl ||
+      value.signed_url ||
+      value.fileUrl ||
+      value.file_url ||
+      ''
+    )
+  }
+  return ''
+}
+
+function getPropertyImageUrl(row) {
+  return getFirstImageUrl([
+    row?.propertyImage,
+    row?.imageUrl,
+    row?.thumbnailUrl,
+    row?.transaction?.property_image_url,
+    row?.transaction?.listing_image_url,
+    row?.transaction?.image_url,
+    row?.transaction?.cover_image_url,
+    row?.unit?.image_url,
+    row?.unit?.cover_image_url,
+    row?.unit?.primary_image_url,
+    row?.unit?.images,
+    row?.unit?.gallery_images,
+    row?.development?.image_url,
+    row?.development?.cover_image_url,
+    row?.development?.hero_image_url,
+  ])
+}
+
+function getPropertyDisplay(row) {
+  const unitLabel = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : ''
+  const addressLine = row?.transaction?.property_address_line_1 || row?.property?.address_line_1 || ''
+  const suburb = row?.transaction?.suburb || row?.property?.suburb || row?.development?.suburb || ''
+  const description = row?.transaction?.property_description || row?.unit?.name || row?.unit?.title || ''
+  const development = row?.development?.name || ''
+  const title = addressLine || unitLabel || description || 'Property pending'
+  const secondary = suburb || development || (title !== description ? description : '') || 'Listing / development pending'
+  return { title, secondary }
+}
+
+function getPropertyTypeLabel(row) {
+  return formatDisplayLabel(
+    row?.transaction?.property_type ||
+      row?.transaction?.transaction_type ||
+      row?.unit?.property_type ||
+      row?.unit?.type ||
+      row?.development?.property_type ||
+      '',
+  )
+}
+
+function getInitials(value) {
+  const words = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (!words.length) return 'BP'
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')
+}
+
 function formatMainStage(row) {
   const key = String(row?.mainStage || row?.transaction?.current_main_stage || '').trim() || getMainStageFromDetailedStage(row?.stage || '')
   if (!key) return { key: '', label: 'Unmapped', tone: 'default' }
@@ -68,17 +161,14 @@ function formatMainStage(row) {
   }
 }
 
-function getPropertyLabel(row) {
-  const unitLabel = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : ''
-  const addressLabel = [
-    row?.transaction?.property_address_line_1,
-    row?.transaction?.suburb,
-  ].filter(Boolean).join(', ')
-  return unitLabel || addressLabel || 'Property pending'
-}
-
-function getDevelopmentLabel(row) {
-  return row?.development?.name || row?.transaction?.property_description || 'Listing / development pending'
+function getStageBadgeClass(mainStageKey = '') {
+  const normalized = String(mainStageKey || '').toUpperCase()
+  if (normalized === 'REG') return 'transaction-property-badge-green'
+  if (normalized === 'XFER') return 'transaction-property-badge-blue'
+  if (normalized === 'FIN' || normalized === 'DEP') return 'transaction-property-badge-amber'
+  if (normalized === 'ATTY') return 'transaction-property-badge-purple'
+  if (normalized === 'OTP') return 'transaction-property-badge-green'
+  return 'transaction-property-badge-neutral'
 }
 
 function getProgressPercent(row, mainStageKey = '') {
@@ -383,11 +473,10 @@ function AgentTransactionsTable({
         <DataTableInner className={`units-table agent-transactions-table transaction-ops-table${compactLayout ? ' agent-transactions-compact-table' : ''}`.trim()}>
           <thead>
             <tr>
-              <th className="agent-transactions-sticky-first">Listing / Development</th>
-              <th>Client</th>
+              <th className="agent-transactions-sticky-first">Property</th>
+              <th>Buyer</th>
               <th>Progress</th>
               <th>Health</th>
-              <th>Last Updated</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -403,11 +492,13 @@ function AgentTransactionsTable({
               const velocity = calculateTransactionVelocity(row)
               const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
               const buyerName = row?.buyer?.name || 'Buyer pending'
-              const propertyLabel = getPropertyLabel(row)
-              const developmentLabel = getDevelopmentLabel(row)
+              const propertyDisplay = getPropertyDisplay(row)
+              const propertyImageUrl = getPropertyImageUrl(row)
+              const propertyTypeLabel = getPropertyTypeLabel(row)
               const transactionReference = row?.transaction?.transaction_reference || row?.transaction?.reference || ''
               const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
               const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
+              const healthLabel = health.label === 'Attention' ? 'Needs Attention' : health.label
 
               return (
                 <tr
@@ -426,29 +517,52 @@ function AgentTransactionsTable({
                   tabIndex={canOpenRow ? 0 : -1}
                   role={canOpenRow ? 'button' : undefined}
                 >
-                  <td className="agent-transactions-sticky-first" data-label="Listing / Development">
-                    <div className="transaction-list-cell">
-                      <strong className="transaction-cell-primary" title={propertyLabel}>{propertyLabel}</strong>
-                      <small className="transaction-cell-secondary" title={developmentLabel}>{developmentLabel}</small>
-                      {transactionReference ? (
-                        <small className="transaction-cell-meta" title={transactionReference}>Ref {transactionReference}</small>
-                      ) : null}
-                      {buyerBondOriginatorRequest?.requested ? (
-                        <StatusBadge
-                          className={`transaction-workflow-chip buyer-originator-request-chip ${
-                            buyerBondOriginatorRequest.actionRequired ? 'transaction-chip-watch' : 'transaction-chip-muted'
-                          }`.trim()}
-                          title={buyerBondOriginatorRequest.summary}
-                        >
-                          {buyerBondOriginatorRequest.actionRequired ? 'Buyer originator review' : buyerBondOriginatorRequest.label}
-                        </StatusBadge>
-                      ) : null}
+                  <td className="agent-transactions-sticky-first" data-label="Property">
+                    <div className="transaction-property-cell">
+                      <span className="transaction-property-thumb" aria-hidden="true">
+                        {propertyImageUrl ? (
+                          <img src={propertyImageUrl} alt="" loading="lazy" />
+                        ) : (
+                          <span className="transaction-property-placeholder">
+                            <Home size={24} />
+                          </span>
+                        )}
+                      </span>
+                      <span className="transaction-property-copy">
+                        <strong className="transaction-property-title" title={propertyDisplay.title}>{propertyDisplay.title}</strong>
+                        <small className="transaction-property-suburb" title={propertyDisplay.secondary}>{propertyDisplay.secondary}</small>
+                        <span className={`transaction-property-badge ${getStageBadgeClass(mainStage.key)}`}>{mainStage.label}</span>
+                        {transactionReference ? (
+                          <small className="transaction-property-ref" title={transactionReference}>Ref {transactionReference}</small>
+                        ) : null}
+                        {buyerBondOriginatorRequest?.requested ? (
+                          <StatusBadge
+                            className={`transaction-workflow-chip buyer-originator-request-chip ${
+                              buyerBondOriginatorRequest.actionRequired ? 'transaction-chip-watch' : 'transaction-chip-muted'
+                            }`.trim()}
+                            title={buyerBondOriginatorRequest.summary}
+                          >
+                            {buyerBondOriginatorRequest.actionRequired ? 'Buyer originator review' : buyerBondOriginatorRequest.label}
+                          </StatusBadge>
+                        ) : null}
+                      </span>
                     </div>
                   </td>
-                  <td data-label="Client">
-                    <div className="transaction-list-cell">
-                      <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
-                      <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
+                  <td data-label="Buyer">
+                    <div className="transaction-buyer-profile">
+                      <span className="transaction-buyer-avatar" aria-hidden="true">
+                        {buyerName === 'Buyer pending' ? <UserRound size={18} /> : getInitials(buyerName)}
+                      </span>
+                      <span className="transaction-buyer-copy">
+                        <strong className="transaction-buyer-name" title={buyerName}>{buyerName}</strong>
+                        <small className="transaction-buyer-meta" title={row?.buyer?.email || row?.buyer?.phone || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
+                        {propertyTypeLabel ? (
+                          <small className="transaction-buyer-type">
+                            <Building2 size={13} />
+                            {propertyTypeLabel}
+                          </small>
+                        ) : null}
+                      </span>
                     </div>
                   </td>
                   <td data-label="Progress">
@@ -469,15 +583,17 @@ function AgentTransactionsTable({
                       <div className="transaction-progress-track" aria-hidden="true">
                         <span style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }} />
                       </div>
+                      <span className="transaction-updated-label">{formatUpdatedAt(updatedAt)}</span>
                     </div>
                   </td>
                   <td data-label="Health">
-                    <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{health.label}</StatusBadge>
+                    <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{healthLabel}</StatusBadge>
                   </td>
-                  <td data-label="Last Updated">
-                    <span className="transaction-cell-secondary">{formatRelativeDate(updatedAt)}</span>
-                  </td>
-                  <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
+                  <td
+                    data-label="Actions"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
                     <div className="transaction-row-actions">
                       {row?.transaction?.id ? (
                         <Button
@@ -490,11 +606,11 @@ function AgentTransactionsTable({
                           Open
                         </Button>
                       ) : null}
-                      {onDeleteTransaction && row?.transaction?.id ? (
-                        <details className="transaction-row-menu">
-                          <summary aria-label="More transaction actions">
-                            <MoreHorizontal size={16} />
-                          </summary>
+                      <details className="transaction-row-menu">
+                        <summary aria-label="More transaction actions">
+                          <MoreHorizontal size={16} />
+                        </summary>
+                        {onDeleteTransaction && row?.transaction?.id ? (
                           <button
                             type="button"
                             className="transaction-row-menu-item danger"
@@ -503,8 +619,10 @@ function AgentTransactionsTable({
                           >
                             {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
                           </button>
-                        </details>
-                      ) : null}
+                        ) : (
+                          <span className="transaction-row-menu-item is-muted">No extra actions</span>
+                        )}
+                      </details>
                     </div>
                   </td>
                 </tr>
@@ -515,9 +633,9 @@ function AgentTransactionsTable({
       )}
 
       {!loading && filteredRows.length > pageSize ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-borderDefault pt-4">
-          <p className="text-sm text-textMuted">Page {currentPage} of {totalPages}</p>
-          <div className="flex items-center gap-2">
+        <div className="agent-transactions-pagination">
+          <p>Page {currentPage} of {totalPages}</p>
+          <div>
             <Button
               type="button"
               variant="secondary"

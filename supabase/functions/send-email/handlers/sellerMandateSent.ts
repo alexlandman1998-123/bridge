@@ -1,14 +1,18 @@
 import { createClient } from "supabase";
 import type { SendSellerMandateSentPayload } from "../types.ts";
 import {
+  escapeHtml,
   renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
   renderBridgeSteps,
-  renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
@@ -59,12 +63,14 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
+  const supabase = organisationId && supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : null;
   let templateOverrides = null;
-  if (organisationId && supabaseUrl && serviceRoleKey) {
+  if (organisationId && supabase) {
     try {
-      const supabase = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
       templateOverrides = await fetchOrganisationEmailTemplateOverride(
         supabase,
         organisationId,
@@ -78,6 +84,33 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
+  const branding = await resolveEmailBranding({
+    supabase: supabase || undefined,
+    organisationId,
+    payload: payload as Record<string, unknown>,
+    defaults: {
+      organisationName,
+      supportEmail,
+      supportPhone,
+    },
+  });
+  const brandedSender = formatEmailSender(
+    sender,
+    branding.fromName || branding.organisationName,
+  );
+  const agentLabel = agentName ? ` ${agentName}` : " your agent";
+  const propertyContext = [
+    propertyTitle && propertyTitle !== "your property"
+      ? `the property at ${propertyTitle}`
+      : "your property",
+    askingPrice !== "TBC" ? `listed at ${askingPrice}` : "",
+    !isOtp && (mandateStartDate !== "TBC" || mandateEndDate !== "TBC")
+      ? `with a mandate period of ${mandateStartDate} to ${mandateEndDate}`
+      : "",
+  ].filter(Boolean).join(", ");
+  const contextSentence = propertyContext
+    ? `This relates to ${propertyContext}.`
+    : "";
 
   const subject = isReminder
     ? `Just a nudge: ${mandateType} still needs your signature for ${propertyTitle}`
@@ -98,8 +131,13 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
         isOtp ? "Please review the offer carefully before signing." : "Please review and sign first. The seller will receive their signing invitation automatically after your signature is complete.",
       ]
       : [
-        `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
-        `Arch9 keeps the ${isOtp ? "offer" : "mandate"} workflow connected between you, your agent, and the supporting transaction team.`,
+        isOtp
+          ? `Your offer to purchase for ${propertyTitle} is ready for secure review and signature.`
+          : `Your mandate for ${propertyTitle} is ready for secure review and signature.`,
+        isOtp
+          ? "The offer records the buyer's proposed terms. Please read it carefully before signing, and ask your agent if anything is unclear."
+          : `The mandate gives${agentLabel} the authority to move ahead with the listing process on the agreed terms. Please read it carefully before signing, and ask your agent if anything is unclear.`,
+        contextSentence,
       ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
     ? templateOverrides.processSteps
@@ -110,29 +148,33 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
         isOtp ? "Sign the offer when the details are correct." : "Sign the mandate so the seller can receive their signing invitation.",
       ]
       : [
-        `Open the secure ${isOtp ? "offer" : "mandate"} link.`,
-        `Review the ${isOtp ? "offer" : "mandate"} details and signature areas.`,
-        `Sign the ${isOtp ? "offer" : "mandate"}, or contact your agent if anything needs attention.`,
+        `Open the secure ${isOtp ? "offer" : "mandate"} link and review the document.`,
+        "Check that the property, parties, pricing, and signature details look right.",
+        `Sign when you are comfortable, or reply to this email/contact your agent if something needs attention.`,
+        isOtp
+          ? "After signing, the transaction team will continue with offer review and the next transaction steps."
+          : "After signing, your agent can continue with the listing and any outstanding seller-readiness steps.",
       ];
   const ctaLabel = normalizeText(templateOverrides?.ctaLabel) ||
     (isOtp ? "Review & Sign Offer" : recipientRole === "agent" ? "Review & Sign as Agent" : "Review & Sign Mandate");
   const contentHtml = [
     renderBridgeIntroParagraphs(introParagraphs),
-    renderBridgeSummaryCard(
-      [
-        { label: "Property", value: propertyTitle },
-        { label: "Asking Price", value: askingPrice },
-        ...(!isOtp ? [{ label: "Mandate Period", value: `${mandateStartDate} to ${mandateEndDate}` }] : []),
-        { label: "Agent", value: agentName },
-      ],
-      isOtp ? "Offer Summary" : "Mandate Summary",
-    ),
-    `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
+    `<h2 style="margin: 22px 0 10px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What happens next</h2>
+     <p style="margin: 0 0 12px; font-size: 15px; line-height: 1.65; color: #1f3347;">${
+      escapeHtml(
+        recipientRole === "agent"
+          ? isOtp
+            ? "Once you sign, the offer can continue through the controlled transaction workflow."
+            : "Once you sign, the seller receives their own signing invitation so the mandate can move forward without manual chasing."
+          : isOtp
+          ? "Once your signature is complete, the offer is returned to the transaction team for the next review step."
+          : "Once your signature is complete, your agent can continue preparing the listing and will come back to you if anything still needs attention.",
+      )
+    }</p>
        ${renderBridgeSteps(processSteps)}
-     </div>`,
+     `,
     portalLink
-      ? renderBridgeCta(ctaLabel, portalLink)
+      ? renderBridgeCta(ctaLabel, portalLink, { primaryColor: branding.primaryColor })
       : `<p style="margin: 0 0 18px; font-size: 14px; line-height: 1.6; color: #9a3412;">Your secure ${isOtp ? "offer" : "mandate"} link is currently unavailable. Please contact your agent to resend it.</p>`,
   ].join("");
   const html = renderBridgeEmailLayout({
@@ -146,9 +188,10 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     securityTitle: normalizeText(templateOverrides?.securityTitle) || (isOtp ? "Secure Offer Review" : "Secure Mandate Review"),
     securityBody: normalizeText(templateOverrides?.securityBody) || `Your ${isOtp ? "offer" : "mandate"} is shared through a secure Arch9 link. Only authorised parties involved in your transaction can access this workflow.`,
     helpBody: normalizeText(templateOverrides?.helpBody) || "Need help? Reply to this email or contact your agent directly before signing.",
-    organisationName,
-    supportEmail,
-    supportPhone,
+    organisationName: branding.organisationName || organisationName,
+    supportEmail: branding.supportEmail || supportEmail,
+    supportPhone: branding.supportPhone || supportPhone,
+    branding,
   });
   const text = [
     `Hi ${recipientName},`,
@@ -157,20 +200,28 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is still waiting for your signature. Your secure link remains active.`
       : recipientRole === "agent"
       ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency signature. The seller will be invited after you sign.`
-      : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
+      : isOtp
+      ? `Your offer to purchase for ${propertyTitle} is ready for secure review and signature.`
+      : `Your mandate for ${propertyTitle} is ready for secure review and signature.`,
     "",
-    `${isOtp ? "Offer" : "Mandate"} Summary:`,
-    `Property: ${propertyTitle}`,
-    `Asking Price: ${askingPrice}`,
-    !isOtp ? `Mandate Period: ${mandateStartDate} to ${mandateEndDate}` : null,
-    agentName ? `Agent: ${agentName}` : null,
+    recipientRole === "agent"
+      ? isOtp
+        ? "Please review and sign so the offer can continue through the controlled transaction workflow."
+        : "Please review and sign first. The seller will receive their signing invitation automatically after your signature is complete."
+      : isOtp
+      ? "The offer records the buyer's proposed terms. Please read it carefully before signing, and ask your agent if anything is unclear."
+      : `The mandate gives${agentLabel} the authority to move ahead with the listing process on the agreed terms. Please read it carefully before signing, and ask your agent if anything is unclear.`,
+    contextSentence || null,
     "",
-    portalLink ? `Review & Sign ${isOtp ? "Offer" : "Mandate"}:` : `Your secure ${isOtp ? "offer" : "mandate"} link is currently unavailable. Please contact your agent to resend it.`,
+    "What happens next:",
+    ...processSteps.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    portalLink ? `${ctaLabel}:` : `Your secure ${isOtp ? "offer" : "mandate"} link is currently unavailable. Please contact your agent to resend it.`,
     portalLink || null,
     "",
     "Need help? Reply to this email or contact your agent directly before signing.",
     "",
-    organisationName,
+    branding.organisationName || organisationName,
     "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
@@ -182,7 +233,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
-    from: sender,
+    from: brandedSender,
     to,
     subject,
     html,

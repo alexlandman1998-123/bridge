@@ -211,6 +211,11 @@ function isMissingSourceError(error) {
   )
 }
 
+function isServerSourceError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  return status >= 500
+}
+
 function getMissingColumnName(error) {
   const message = normalizeText(error?.message)
   if (!message) return ''
@@ -229,7 +234,16 @@ function removeColumnFromSelect(fields, columnName) {
   return nextParts.length === parts.length ? fields : nextParts.join(', ')
 }
 
-async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+function logUnavailableDashboardSource(message, table, error) {
+  const detail = { table, message: error?.message }
+  if (isServerSourceError(error)) {
+    console.warn(message, detail)
+  } else {
+    console.debug(message, detail)
+  }
+}
+
+async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
@@ -251,15 +265,15 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isMissingSourceError(error) && !(tolerateServerErrors && isServerSourceError(error))) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Source unavailable; using empty result.', { table, message: lastError?.message })
+  logUnavailableDashboardSource('[PrincipalDashboard] Source unavailable; using empty result.', table, lastError)
   return []
 }
 
-async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000 } = {}) {
+async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
@@ -282,11 +296,11 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error)) throw error
+      if (!isMissingSourceError(error) && !(tolerateServerErrors && isServerSourceError(error))) throw error
       break
     }
   }
-  console.debug('[PrincipalDashboard] Scoped source unavailable; using empty result.', { table, message: lastError?.message })
+  logUnavailableDashboardSource('[PrincipalDashboard] Scoped source unavailable; using empty result.', table, lastError)
   return []
 }
 
@@ -1684,7 +1698,7 @@ async function getPrincipalDashboardDataUncached({
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
-    safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
+    [],
     safeSelect('organisation_users', PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
     safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
@@ -1749,7 +1763,12 @@ async function getPrincipalDashboardDataUncached({
   const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
   const effectivePacketIds = new Set(effectiveDocumentPackets.map((packet) => normalizeText(packet.id)).filter(Boolean))
-  const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], { idColumn: 'packet_id', order: 'created_at', limit: 300 })
+  const linkedPacketEvents = await safeSelectByIds('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', [...effectivePacketIds], {
+    idColumn: 'packet_id',
+    order: 'created_at',
+    limit: 300,
+    tolerateServerErrors: true,
+  })
   const effectivePacketEvents = dedupeRowsById([...packetEvents, ...linkedPacketEvents])
     .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])

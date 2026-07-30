@@ -52,6 +52,16 @@ try {
     /safeSelect\(\s*'organisation_users',\s*PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS,/,
     'organisation users must use the production-compatible projection contract',
   )
+  assert.doesNotMatch(
+    serviceSource,
+    /safeSelect\(\s*'document_packet_events'/,
+    'principal dashboard must not issue an org-wide document_packet_events query during initial load',
+  )
+  assert.match(
+    serviceSource,
+    /safeSelectByIds\(\s*'document_packet_events'[\s\S]*tolerateServerErrors:\s*true/,
+    'packet event evidence should be packet-scoped and non-fatal when the event feed is unavailable',
+  )
 
   const transactionFields = PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS
     .flatMap((variant) => variant.split(',').map((field) => field.trim()).filter(Boolean))
