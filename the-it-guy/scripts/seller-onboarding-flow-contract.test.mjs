@@ -109,11 +109,52 @@ test('resolves the married sectional title branch contract', () => {
   assert.equal(flow.seller_branch_label, 'Married')
   assert.equal(flow.property_branch_label, 'Sectional Title')
   assert.ok(flow.required_fields.includes('seller.marital_regime'))
+  assert.ok(flow.required_fields.includes('seller.spouse.email'))
   assert.ok(flow.required_fields.includes('property.category'))
   assert.ok(flow.required_fields.includes('property.structure_type'))
+  assert.equal(flow.required_fields.includes('property.erf_number'), false)
   assert.ok(flow.document_triggers.includes('title_deed_copy'))
   assert.ok(flow.document_triggers.includes('body_corporate_details'))
   assert.ok(flow.document_triggers.includes('gas_compliance_certificate'))
+})
+
+test('does not require spouse email when married out of community', () => {
+  const flow = resolveSellerOnboardingFlowContract(
+    {
+      ownershipType: 'married_anc',
+      maritalRegime: 'anc',
+      propertyCategory: 'residential',
+      propertyStructureType: 'sectional_title',
+    },
+    listing,
+  )
+
+  assert.equal(flow.seller_branch, 'married')
+  assert.equal(flow.required_fields.includes('seller.spouse.email'), false)
+})
+
+test('does not require erf number for non-title land structures', () => {
+  const vacantLandOther = resolveSellerOnboardingFlowContract(
+    {
+      ownershipType: 'individual',
+      propertyCategory: 'vacant_land',
+      propertyStructureType: 'other',
+    },
+    listing,
+  )
+  const agriculturalOther = resolveSellerOnboardingFlowContract(
+    {
+      ownershipType: 'individual',
+      propertyCategory: 'agricultural',
+      propertyStructureType: 'other',
+    },
+    listing,
+  )
+
+  assert.equal(vacantLandOther.property_branch, 'vacant_land')
+  assert.equal(agriculturalOther.property_branch, 'agricultural')
+  assert.equal(vacantLandOther.required_fields.includes('property.erf_number'), false)
+  assert.equal(agriculturalOther.required_fields.includes('property.erf_number'), false)
 })
 
 test('resolves broad property category before residential structure refinements', () => {
@@ -169,6 +210,9 @@ test('resolves split seller owner entity and structure fields', () => {
   assert.equal(foreignCompanyFlow.seller_branch, 'company')
   assert.ok(foreignCompanyFlow.required_fields.includes('seller.owner_entity_type'))
   assert.ok(foreignCompanyFlow.required_fields.includes('seller.owner_structure_type'))
+  assert.ok(foreignCompanyFlow.required_fields.includes('seller.company.authorised_signatory.capacity'))
+  assert.ok(foreignCompanyFlow.required_fields.includes('seller.company.resolution_date'))
+  assert.ok(foreignCompanyFlow.required_fields.includes('seller.company.authority_basis'))
   assert.ok(foreignCompanyFlow.optional_fields.includes('seller.foreign_owner_country'))
   assert.ok(foreignCompanyFlow.document_triggers.includes('company_registration'))
 
@@ -230,6 +274,7 @@ test('shares visible and required fields through the flow helper', () => {
   assert.ok(flow.visible_fields.includes('seller.owner_structure_type'))
   assert.ok(flow.visible_fields.includes('property.category'))
   assert.ok(flow.visible_fields.includes('property.address.line_1'))
+  assert.ok(flow.visible_fields.includes('property.erf_number'))
   assert.ok(flow.visible_fields.includes('property.address.postal_code'))
   assert.ok(flow.visible_fields.includes('property.estate.name'))
   assert.ok(flow.visible_fields.includes('property.estate.hoa_contact.name'))
@@ -238,8 +283,11 @@ test('shares visible and required fields through the flow helper', () => {
   assert.ok(flow.visible_fields.includes('seller.trust.authorised_trustee.phone'))
   assert.ok(flow.required_fields.includes('seller.trust.name'))
   assert.ok(flow.required_fields.includes('seller.trust.registration_number'))
+  assert.ok(flow.required_fields.includes('seller.trust.authorised_trustee.capacity'))
+  assert.ok(flow.required_fields.includes('seller.trust.authority_basis'))
   assert.ok(flow.required_fields.includes('property.category'))
   assert.ok(flow.required_fields.includes('property.structure_type'))
+  assert.ok(flow.required_fields.includes('property.erf_number'))
   assert.ok(flow.required_fields.includes('property.rates_taxes'))
   assert.ok(flow.required_fields.includes('property.levies_or_not_applicable'))
   assert.ok(flow.required_fields.includes('property.utilities.water_billing_type'))

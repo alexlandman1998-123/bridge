@@ -35,6 +35,21 @@ function humanizeIssueText(value = '') {
     .trim()
 }
 
+function normalizeIssueKey(value = '') {
+  return normalizeText(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+}
+
+function issueIdentity(entry = null) {
+  if (!entry || typeof entry === 'string') return ''
+  const rawKey = entry.placeholderKey || entry.placeholder_key || entry.field || entry.key || ''
+  return normalizeIssueKey(rawKey)
+}
+
 function issueMessage(entry = null) {
   if (!entry) return ''
   if (typeof entry === 'string') return humanizeIssueText(entry)
@@ -50,26 +65,58 @@ function issueMessage(entry = null) {
   )
 }
 
+function issueIsOptional(entry = null) {
+  if (!entry || typeof entry === 'string') return false
+  if (entry.required === false || entry.isRequired === false || entry.is_required === false) return true
+  const message = normalizeText(entry.message)
+  return /^Optional\s/i.test(message)
+}
+
+function collectUniqueIssueMessages(groups = []) {
+  const seen = new Set()
+  const messages = []
+  for (const group of groups) {
+    for (const entry of Array.isArray(group) ? group : []) {
+      if (issueIsOptional(entry)) continue
+      const message = issueMessage(entry)
+      if (!message) continue
+      const identity = issueIdentity(entry)
+      const key = identity ? `field|${identity}` : `message|${normalizeIssueKey(message)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      messages.push(message)
+    }
+  }
+  return messages.slice(0, 8)
+}
+
 function collectIssueMessages(error = null) {
-  const candidates = [
-    ...(Array.isArray(error?.details?.issues) ? error.details.issues : []),
-    ...(Array.isArray(error?.details?.blockingIssues) ? error.details.blockingIssues : []),
-    ...(Array.isArray(error?.details?.missingFields) ? error.details.missingFields : []),
-    ...(Array.isArray(error?.details?.missingPlaceholders) ? error.details.missingPlaceholders : []),
-    ...(Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts) ? error.validation.legalDocumentMissingRoutingFacts : []),
-    ...(Array.isArray(error?.validation?.missingPlaceholders) ? error.validation.missingPlaceholders : []),
-    ...(Array.isArray(error?.validation?.critical) ? error.validation.critical : []),
-    ...(Array.isArray(error?.validation?.mandateValidation?.missingRequiredFields)
+  return collectUniqueIssueMessages([
+    Array.isArray(error?.details?.blockingIssues) ? error.details.blockingIssues : [],
+    Array.isArray(error?.validation?.critical) ? error.validation.critical : [],
+    Array.isArray(error?.validation?.legalScenarioValidation?.issues)
+      ? error.validation.legalScenarioValidation.issues
+      : [],
+    Array.isArray(error?.validation?.legalDocumentMissingRoutingFacts)
+      ? error.validation.legalDocumentMissingRoutingFacts
+      : [],
+    Array.isArray(error?.validation?.conditionalPackMissingPlaceholders)
+      ? error.validation.conditionalPackMissingPlaceholders
+      : [],
+    Array.isArray(error?.validation?.mandateValidation?.missingRequiredFields)
       ? error.validation.mandateValidation.missingRequiredFields
-      : []),
-    ...(Array.isArray(error?.validation?.mandateValidation?.missingFields)
+      : [],
+    Array.isArray(error?.validation?.mandateValidation?.missingFields)
       ? error.validation.mandateValidation.missingFields
-      : []),
-    ...(Array.isArray(error?.validation?.sellerValidation?.missingRequiredFields)
+      : [],
+    Array.isArray(error?.validation?.sellerValidation?.missingRequiredFields)
       ? error.validation.sellerValidation.missingRequiredFields
-      : []),
-  ]
-  return [...new Set(candidates.map(issueMessage).filter(Boolean))].slice(0, 8)
+      : [],
+    Array.isArray(error?.details?.issues) ? error.details.issues : [],
+    Array.isArray(error?.details?.missingFields) ? error.details.missingFields : [],
+    Array.isArray(error?.details?.missingPlaceholders) ? error.details.missingPlaceholders : [],
+    Array.isArray(error?.validation?.missingPlaceholders) ? error.validation.missingPlaceholders : [],
+  ])
 }
 
 function appendIssueSummary(message = '', issues = []) {

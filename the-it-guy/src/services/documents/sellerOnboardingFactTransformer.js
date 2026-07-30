@@ -153,12 +153,14 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
     email: normalizeText(entry.email),
     phone: normalizeText(entry.phone),
     residential_address: normalizeText(entry.residential_address || entry.residentialAddress || entry.address),
+    capacity: normalizeText(entry.capacity || entry.role_capacity || entry.roleCapacity),
     role_title: normalizeText(entry.role_title || entry.roleTitle || defaultRoleTitle),
     signing_authority: normalizeBoolean(entry.signing_authority ?? entry.signingAuthority, false),
     ownership_share: normalizeNumber(entry.ownership_share || entry.ownershipShare),
     consent_to_sell: normalizeBoolean(entry.consent_to_sell ?? entry.consentToSell, false),
     authority_details: normalizeText(entry.authority_details || entry.authorityDetails),
   }
+  if (!record.capacity) delete record.capacity
   if (!record.role_title) delete record.role_title
   return record
 }
@@ -451,11 +453,14 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         director_email: normalizeText(form.companyDirectorEmail),
         director_phone: normalizeText(form.companyDirectorPhone),
         registered_address: normalizeText(form.companyRegisteredAddress || form.residentialAddress),
+        resolution_date: normalizeDate(form.companyResolutionDate || form.company_resolution_date),
+        authority_basis: normalizeText(form.companyAuthorityBasis || form.company_authority_basis),
         directors: companyDirectors,
         director_count: companyDirectors.length,
         authorised_signatory: normalizePersonRecord(
           {
             name: form.authorisedSignatoryName || form.companyDirectorName || companyDirectors[0]?.full_name,
+            capacity: form.authorisedSignatoryCapacity,
             email: form.authorisedSignatoryEmail || form.companyDirectorEmail || companyDirectors[0]?.email,
             phone: form.authorisedSignatoryPhone || form.companyDirectorPhone || companyDirectors[0]?.phone,
             residentialAddress: form.authorisedSignatoryAddress || form.companyRegisteredAddress || form.residentialAddress,
@@ -474,11 +479,13 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         trustee_email: normalizeText(form.trusteeEmail),
         trustee_phone: normalizeText(form.trusteePhone),
         registered_address: normalizeText(form.trustRegisteredAddress || form.residentialAddress),
+        authority_basis: normalizeText(form.trustAuthorityBasis || form.trust_authority_basis),
         trustees: trustTrustees,
         trustee_count: trustTrustees.length,
         authorised_trustee: normalizePersonRecord(
           {
             name: form.authorisedTrusteeName || form.trusteeName || trustTrustees[0]?.full_name,
+            capacity: form.authorisedTrusteeCapacity,
             email: form.authorisedTrusteeEmail || form.trusteeEmail || trustTrustees[0]?.email,
             phone: form.authorisedTrusteePhone || form.trusteePhone || trustTrustees[0]?.phone,
             residentialAddress: form.authorisedTrusteeAddress || form.trustRegisteredAddress || form.residentialAddress,
@@ -762,16 +769,22 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(sellerBranch === 'married' && !facts.seller?.marital_regime, 'marital_regime_missing', 'Marital regime is required for married sellers.'))
   push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.name, 'spouse_name_missing', 'Spouse name is required for married sellers.'))
   push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.id_number, 'spouse_id_missing', 'Spouse ID number is required for married sellers.'))
+  push(missingIf(sellerBranch === 'married' && facts.seller?.marital_regime === 'in_community' && !facts.seller?.spouse?.email, 'spouse_email_missing', 'Spouse email is required when spouse consent is required.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.name, 'company_name_missing', 'Company name is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registration_number, 'company_registration_missing', 'Company registration number is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registered_address, 'company_registered_address_missing', 'Company registered address is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !(Array.isArray(facts.seller?.company?.directors) && facts.seller.company.directors.length), 'company_director_missing', 'At least one company director is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !hasValue(facts.seller?.company?.authorised_signatory?.name || facts.seller?.company?.director_name), 'company_signatory_missing', 'Primary authorised signatory details are required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !hasValue(facts.seller?.company?.authorised_signatory?.capacity), 'company_signatory_capacity_missing', 'Authorised signatory capacity is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !hasValue(facts.seller?.company?.resolution_date), 'company_resolution_date_missing', 'Company resolution date is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !hasValue(facts.seller?.company?.authority_basis), 'company_authority_basis_missing', 'Company authority basis is required for company sellers.'))
   push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.name, 'trust_name_missing', 'Trust name is required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.registration_number, 'trust_registration_missing', 'Trust registration number is required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.registered_address, 'trust_registered_address_missing', 'Trust registered address is required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !(Array.isArray(facts.seller?.trust?.trustees) && facts.seller.trust.trustees.length), 'trustee_details_missing', 'At least one trustee is required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authorised_trustee?.name || facts.seller?.trust?.trustee_name), 'trust_authority_missing', 'Primary trustee details are required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authorised_trustee?.capacity), 'trustee_capacity_missing', 'Authorised trustee capacity is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authority_basis), 'trust_authority_basis_missing', 'Trust authority basis is required for trust sellers.'))
   push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.executor_name, 'executor_details_missing', 'Executor details are required for deceased estate sellers.'))
   push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.authority_details, 'deceased_estate_authority_missing', 'Authority details are required for deceased estate sellers.'))
   push(missingIf(sellerBranch === 'power_of_attorney' && !facts.seller?.power_of_attorney?.representative_name, 'power_of_attorney_missing', 'Representative details are required for power of attorney sellers.'))

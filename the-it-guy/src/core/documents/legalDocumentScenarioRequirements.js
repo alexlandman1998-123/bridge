@@ -35,7 +35,7 @@ const FIELD_DEFINITIONS = Object.freeze({
   propertyTitleType: { label: 'Property title type', group: 'Property' },
   unitNumber: { label: 'Section or unit number', group: 'Sectional title' },
   complexName: { label: 'Scheme or complex name', group: 'Sectional title' },
-  erfNumber: { label: 'Erf number', group: 'Full title' },
+  erfNumber: { label: 'Title / ERF / portion number', group: 'Full title' },
   purchasePrice: { label: 'Purchase price', group: 'Finance' },
   bondAmount: { label: 'Bond amount', group: 'Finance' },
   cashAmount: { label: 'Cash contribution', group: 'Finance' },

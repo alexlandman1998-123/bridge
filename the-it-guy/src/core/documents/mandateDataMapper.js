@@ -425,7 +425,18 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}, mandateD
       onboarding.trusteeName,
     ),
     resolutionDate: firstText(mandateDraft.sellerResolutionDate, mandateDraft.resolutionDate, onboarding.resolutionDate, onboarding.resolution_date, onboarding.companyResolutionDate, onboarding.company_resolution_date),
-    authorityBasis: firstText(mandateDraft.sellerAuthorityBasis, mandateDraft.authorityBasis, onboarding.authorityBasis, onboarding.authority_basis, onboarding.authorityGranted, onboarding.authority_granted),
+    authorityBasis: firstText(
+      mandateDraft.sellerAuthorityBasis,
+      mandateDraft.authorityBasis,
+      onboarding.authorityBasis,
+      onboarding.authority_basis,
+      onboarding.companyAuthorityBasis,
+      onboarding.company_authority_basis,
+      onboarding.trustAuthorityBasis,
+      onboarding.trust_authority_basis,
+      onboarding.authorityGranted,
+      onboarding.authority_granted,
+    ),
     multipleOwners: Array.isArray(mandateDraft.sellerParties)
       ? mandateDraft.sellerParties
       : Array.isArray(onboarding.multipleOwners) ? onboarding.multipleOwners : [],

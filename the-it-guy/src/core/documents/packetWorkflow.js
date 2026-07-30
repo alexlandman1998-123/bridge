@@ -923,7 +923,7 @@ const MANDATE_SECTION_DEFINITIONS = [
     condition: ({ placeholders }) => isFullTitleMandateProperty({ placeholders }),
     placeholders: [
       ['property_title_type', 'Title Type'],
-      ['erf_number', 'Erf Number'],
+      ['erf_number', 'Title / ERF / Portion Number'],
       ['erf_size', 'Erf Size'],
       ['floor_size', 'Floor Size'],
       ['property_estate_name', 'Estate / HOA'],

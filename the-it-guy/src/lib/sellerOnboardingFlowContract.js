@@ -98,6 +98,7 @@ const CORE_PROPERTY_RULES = Object.freeze({
     'property.address.province',
     'property.address.postal_code',
     'property.municipality',
+    'property.erf_number',
     'property.rates_taxes',
     'property.levies',
     'property.levies_not_applicable',
@@ -676,6 +677,40 @@ function mergeUnique(...groups) {
   return merged
 }
 
+function propertyRequiresErfNumber(propertyModel = {}) {
+  const structureType = normalizeSellerStructureType(propertyModel.structure_type, { fallback: '' })
+  return (
+    ['full_title', 'freehold', 'agricultural_holding'].includes(structureType)
+  )
+}
+
+function sellerRequiresSpouseEmailForMandate(ownershipModel = {}, form = {}, source = {}) {
+  const branch = normalizeKey(ownershipModel.branch || resolveSellerBranch(form, {}, source))
+  const structureType = normalizeKey(ownershipModel.structure_type || form?.ownerStructureType || form?.ownershipType)
+  const maritalRegime = normalizeKey(
+    form?.maritalRegime ||
+      form?.marriageRegime ||
+      source?.seller?.marital_regime ||
+      source?.seller?.marital_status ||
+      '',
+  )
+  const spouseConsentRequired = normalizeBoolean(
+    form?.spouseConsentRequired ??
+      form?.spouse_consent_required ??
+      source?.seller?.spouse_consent_required ??
+      false,
+  )
+
+  return branch === 'married' && (
+    structureType === 'married_cop' ||
+    maritalRegime === 'in_community' ||
+    maritalRegime === 'community_of_property' ||
+    maritalRegime.includes('in_community') ||
+    maritalRegime.includes('community_of_property') ||
+    spouseConsentRequired
+  )
+}
+
 function normalizeFactsSource(form = {}, listing = {}, facts = {}) {
   if (facts && typeof facts === 'object' && Object.keys(facts).length) return facts
   const listingFacts = listing?.sellerOnboarding?.canonicalFacts
@@ -1173,6 +1208,12 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
   const estateOverlayDefinition = propertyModel.estate_or_hoa && propertyBranch !== 'estate_hoa'
     ? PROPERTY_BRANCH_RULES.estate_hoa
     : null
+  const mandateRequiredPropertyFields = propertyRequiresErfNumber(resolvedPropertyModel)
+    ? ['property.erf_number']
+    : []
+  const mandateRequiredSellerFields = sellerRequiresSpouseEmailForMandate(resolvedOwnershipModel, form, source)
+    ? ['seller.spouse.email']
+    : []
   const dynamicTriggers = collectDynamicTriggers(form, source)
   const sellerFacingQuestions = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.sellerFacingQuestions,
@@ -1184,9 +1225,11 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
   const requiredFields = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.requiredFields,
     sellerDefinition.requiredFields,
+    mandateRequiredSellerFields,
     CORE_PROPERTY_RULES.requiredFields,
     propertyDefinition.requiredFields,
     estateOverlayDefinition?.requiredFields,
+    mandateRequiredPropertyFields,
   ))
   const optionalFields = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.optionalFields,

@@ -508,9 +508,9 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
   },
   {
     key: 'erf_number',
-    label: 'ERF Number',
+    label: 'Title / ERF / Portion Number',
     category: 'Property Details',
-    description: 'ERF/Lot reference where available.',
+    description: 'Registered title, ERF, lot, farm, or portion reference where available.',
     dataSource: 'unit metadata or onboarding data',
     required: false,
     packetTypes: ['mandate', 'otp'],

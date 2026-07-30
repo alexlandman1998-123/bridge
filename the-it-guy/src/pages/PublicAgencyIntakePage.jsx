@@ -78,6 +78,19 @@ const TIMELINES = [
   ['3_6_months', '3-6 months'],
   ['6_plus_months', '6+ months'],
 ]
+const BUYER_BUDGET_RANGES = [
+  { label: 'Below R1m', min: '', max: '1000000' },
+  { label: 'R1m - R1.5m', min: '1000000', max: '1500000' },
+  { label: 'R1.5m - R2m', min: '1500000', max: '2000000' },
+  { label: 'R2m - R2.5m', min: '2000000', max: '2500000' },
+  { label: 'R2.5m - R3m', min: '2500000', max: '3000000' },
+  { label: 'R3m - R3.5m', min: '3000000', max: '3500000' },
+  { label: 'R3.5m - R4m', min: '3500000', max: '4000000' },
+  { label: 'R4m - R4.5m', min: '4000000', max: '4500000' },
+  { label: 'R4.5m - R5m', min: '4500000', max: '5000000' },
+  { label: 'R5m+', min: '5000000', max: '' },
+]
+const BEDROOM_OPTIONS = ['1', '2', '3', '4']
 const BUYER_STEPS = [
   { id: 'budget', label: 'Search', title: 'Buying budget', summary: 'Share the range and requirements you have in mind.' },
   { id: 'listings', label: 'Listings', title: 'Listings you like', summary: 'Choose any properties that catch your eye. This step is optional.' },
@@ -260,6 +273,71 @@ function SelectInput({ label, required = false, icon, children, className = '', 
         </select>
       </span>
     </label>
+  )
+}
+
+function OptionButtonGroup({ label, icon, options = [], value = '', onChange, columns = 'grid-cols-2 sm:grid-cols-4' }) {
+  const Icon = icon
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="flex items-center gap-2">
+        {Icon ? <Icon className="text-slate-400" size={18} strokeWidth={1.9} aria-hidden="true" /> : null}
+        <FieldLabel>{label}</FieldLabel>
+      </legend>
+      <div className={`grid gap-2 ${columns}`}>
+        {options.map((option) => {
+          const optionValue = typeof option === 'string' ? option : option.value
+          const optionLabel = typeof option === 'string' ? (option ? `${option}+` : 'Any') : option.label
+          const active = String(value || '') === String(optionValue || '')
+          return (
+            <button
+              key={optionValue || 'any'}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(active ? '' : optionValue)}
+              className={`min-h-12 rounded-lg border px-3 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
+                active
+                  ? 'border-[var(--intake-primary)] bg-[var(--intake-primary)] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
+              }`}
+            >
+              {optionLabel}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
+function BudgetRangeSelector({ valueMin = '', valueMax = '', onSelect }) {
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="flex items-center gap-2">
+        <Banknote className="text-slate-400" size={18} strokeWidth={1.9} aria-hidden="true" />
+        <FieldLabel>Price range</FieldLabel>
+      </legend>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {BUYER_BUDGET_RANGES.map((range) => {
+          const active = String(valueMin || '') === range.min && String(valueMax || '') === range.max
+          return (
+            <button
+              key={`${range.min}-${range.max || 'plus'}`}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelect(range)}
+              className={`min-h-12 rounded-lg border px-3 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
+                active
+                  ? 'border-[var(--intake-primary)] bg-[var(--intake-primary)] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
+              }`}
+            >
+              {range.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }
 
@@ -756,6 +834,15 @@ export default function PublicAgencyIntakePage() {
     if (formError) setFormError('')
   }
 
+  function updateBudgetRange(range) {
+    setForm((previous) => ({
+      ...previous,
+      budgetMin: range?.min || '',
+      budgetMax: range?.max || '',
+    }))
+    if (formError) setFormError('')
+  }
+
   function chooseIntent(nextIntent) {
     setIntent(nextIntent)
     setBuyerStep(BUYER_STEPS[0].id)
@@ -1044,24 +1131,25 @@ export default function PublicAgencyIntakePage() {
 
                       {buyerStep === 'budget' ? (
                         <>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <TextInput icon={Banknote} prefix="R" label="Minimum budget" value={form.budgetMin} onChange={(event) => updateForm('budgetMin', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="1500000" />
-                            <TextInput icon={Banknote} prefix="R" label="Maximum budget" value={form.budgetMax} onChange={(event) => updateForm('budgetMax', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="2500000" />
-                          </div>
+                          <BudgetRangeSelector valueMin={form.budgetMin} valueMax={form.budgetMax} onSelect={updateBudgetRange} />
                           <TextInput icon={MapPin} label="Preferred areas" value={form.areas} onChange={(event) => updateForm('areas', event.target.value)} maxLength={500} placeholder="Suburbs or areas" />
                           <div className="grid gap-4 sm:grid-cols-3">
                             <SelectInput icon={Home} label="Property type" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
                               {PROPERTY_TYPES.map((type) => <option key={type || 'any'} value={type}>{type || 'Any type'}</option>)}
-                            </SelectInput>
-                            <SelectInput icon={BedDouble} label="Bedrooms" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)}>
-                              <option value="">Any</option>
-                              {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}+</option>)}
                             </SelectInput>
                             <SelectInput icon={Bath} label="Bathrooms" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)}>
                               <option value="">Any</option>
                               {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value}+</option>)}
                             </SelectInput>
                           </div>
+                          <OptionButtonGroup
+                            icon={BedDouble}
+                            label="Bedrooms"
+                            options={BEDROOM_OPTIONS}
+                            value={form.bedrooms}
+                            onChange={(value) => updateForm('bedrooms', value)}
+                            columns="grid-cols-4"
+                          />
                           <div className="grid gap-4 sm:grid-cols-2">
                             <SelectInput icon={ShieldCheck} label="Finance" value={form.financeStatus} onChange={(event) => updateForm('financeStatus', event.target.value)}>
                               {FINANCE_STATUSES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}

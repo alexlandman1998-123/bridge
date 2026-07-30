@@ -1211,6 +1211,22 @@ function getOwnershipBranch(value = '') {
   return normalized || 'individual'
 }
 
+function mandateRequiresSpouseEmail(form = {}, ownershipBranch = '') {
+  if (ownershipBranch !== 'married') return false
+  const ownershipType = String(form.ownershipType || '').trim().toLowerCase()
+  const ownerStructureType = String(form.ownerStructureType || '').trim().toLowerCase()
+  const maritalRegime = String(form.maritalRegime || form.marriageRegime || '').trim().toLowerCase()
+  return (
+    ownershipType === 'married_cop' ||
+    ownerStructureType === 'married_cop' ||
+    maritalRegime === 'in_community' ||
+    maritalRegime === 'community_of_property' ||
+    maritalRegime.includes('in_community') ||
+    maritalRegime.includes('community_of_property') ||
+    Boolean(form.spouseConsentRequired || form.spouse_consent_required)
+  )
+}
+
 function resolveSellerResidentialAddress(form = {}) {
   return String(
     form.residentialAddress ||
@@ -1629,9 +1645,12 @@ function normalizeFormData(listing) {
     companyDirectorPhone: existing.companyDirectorPhone || companyDirectors[0]?.phone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
     companyRegisteredAddress: existing.companyRegisteredAddress || canonicalFacts?.seller?.company?.registered_address || existing.residentialAddress || '',
     authorisedSignatoryName: existing.authorisedSignatoryName || canonicalFacts?.seller?.company?.authorised_signatory?.name || '',
+    authorisedSignatoryCapacity: existing.authorisedSignatoryCapacity || canonicalFacts?.seller?.company?.authorised_signatory?.capacity || '',
     authorisedSignatoryEmail: existing.authorisedSignatoryEmail || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
     authorisedSignatoryPhone: existing.authorisedSignatoryPhone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
     authorisedSignatoryAddress: existing.authorisedSignatoryAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || '',
+    companyResolutionDate: existing.companyResolutionDate || canonicalFacts?.seller?.company?.resolution_date || '',
+    companyAuthorityBasis: existing.companyAuthorityBasis || canonicalFacts?.seller?.company?.authority_basis || '',
 
     trustName: existing.trustName || canonicalFacts?.seller?.trust?.name || existing.entityName || '',
     trustRegistrationNumber: existing.trustRegistrationNumber || canonicalFacts?.seller?.trust?.registration_number || existing.entityRegistrationNumber || '',
@@ -1641,9 +1660,11 @@ function normalizeFormData(listing) {
     trusteePhone: existing.trusteePhone || trustTrustees[0]?.phone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
     trustRegisteredAddress: existing.trustRegisteredAddress || canonicalFacts?.seller?.trust?.registered_address || existing.residentialAddress || '',
     authorisedTrusteeName: existing.authorisedTrusteeName || canonicalFacts?.seller?.trust?.authorised_trustee?.name || '',
+    authorisedTrusteeCapacity: existing.authorisedTrusteeCapacity || canonicalFacts?.seller?.trust?.authorised_trustee?.capacity || '',
     authorisedTrusteeEmail: existing.authorisedTrusteeEmail || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
     authorisedTrusteePhone: existing.authorisedTrusteePhone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
     authorisedTrusteeAddress: existing.authorisedTrusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || '',
+    trustAuthorityBasis: existing.trustAuthorityBasis || canonicalFacts?.seller?.trust?.authority_basis || '',
 
     executors: estateExecutors,
     executorName: existing.executorName || estateExecutors[0]?.name || canonicalFacts?.seller?.deceased_estate?.executor_name || '',
@@ -2997,6 +3018,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
   const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
   const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
+  const mandateRequiresErfNumber = useMemo(() => {
+    const structureType = normalizePropertyStructureType(form?.propertyStructureType, { fallback: '' })
+    return (
+      ['full_title', 'freehold', 'estate', 'agricultural_holding'].includes(structureType)
+    )
+  }, [form?.propertyStructureType])
+  const mandateRequiresSellerSpouseEmail = useMemo(
+    () => mandateRequiresSpouseEmail(form, ownershipBranch),
+    [form, ownershipBranch],
+  )
 
   function buildCanonicalPayload(nextForm = form, options = {}) {
     if (!areCanonicalSellerFactsEnabled()) return {}
@@ -3736,6 +3767,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
         return 'Spouse name and spouse ID number are required for married ownership.'
       }
+      if (mandateRequiresSellerSpouseEmail && !form.spouseEmail) {
+        return 'Spouse email is required for mandate generation when spouse consent is required.'
+      }
 
       if (ownershipBranch === 'company') {
         if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
@@ -3746,6 +3780,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
         if (!form.authorisedSignatoryName) {
           return 'Primary authorised signatory details are required for a company seller.'
+        }
+        if (!form.authorisedSignatoryCapacity || !form.companyResolutionDate || !form.companyAuthorityBasis) {
+          return 'Authorised signatory capacity, resolution date, and authority basis are required for company mandate generation.'
         }
       }
 
@@ -3758,6 +3795,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
         if (!form.authorisedTrusteeName) {
           return 'Primary trustee details are required for a trust seller.'
+        }
+        if (!form.authorisedTrusteeCapacity || !form.trustAuthorityBasis) {
+          return 'Authorised trustee capacity and authority basis are required for trust mandate generation.'
         }
       }
 
@@ -3827,6 +3867,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       if (missingAddressItems.length) {
         return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
+      }
+      if (mandateRequiresErfNumber && !form.erfNumber) {
+        return 'Title / ERF / portion number is required for mandate generation on this property type.'
       }
       const sectionalIdentifier = form.sectionNumber || form.unitNumber
       if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
@@ -3913,6 +3956,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
           return 'Spouse name and spouse ID number are required for married ownership.'
         }
+        if (mandateRequiresSellerSpouseEmail && !form.spouseEmail) {
+          return 'Spouse email is required for mandate generation when spouse consent is required.'
+        }
         if (ownershipBranch === 'company') {
           if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
             return 'Company name, registration number, and registered address are required.'
@@ -3921,6 +3967,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Please add at least one company director with a name and surname.'
           }
           if (!form.authorisedSignatoryName) return 'Primary authorised signatory details are required for a company seller.'
+          if (!form.authorisedSignatoryCapacity || !form.companyResolutionDate || !form.companyAuthorityBasis) {
+            return 'Authorised signatory capacity, resolution date, and authority basis are required for company mandate generation.'
+          }
         }
         if (ownershipBranch === 'trust') {
           if (!form.trustName || !form.trustRegistrationNumber || !form.trustRegisteredAddress) {
@@ -3930,6 +3979,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Please add at least one trustee with a name and surname.'
           }
           if (!form.authorisedTrusteeName) return 'Primary trustee details are required for a trust seller.'
+          if (!form.authorisedTrusteeCapacity || !form.trustAuthorityBasis) {
+            return 'Authorised trustee capacity and authority basis are required for trust mandate generation.'
+          }
         }
         if (ownershipBranch === 'deceased_estate' && (!form.executorName || !form.estateReference || !form.executorAuthorityDetails)) {
           return 'Executor, estate reference, and authority details are required for a deceased estate seller.'
@@ -4722,7 +4774,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={form.spouseIdNumber} onChange={(event) => handleFormUpdate('spouseIdNumber', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Spouse Email (optional)
+                        {mandateRequiresSellerSpouseEmail ? 'Spouse Email' : 'Spouse Email (optional)'}
                         <input className={DETAIL_INPUT_CLASS} type="email" inputMode="email" autoComplete="email" value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4812,6 +4864,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Full name
                           <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryName} onChange={(event) => handleFormUpdate('authorisedSignatoryName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Capacity
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryCapacity} onChange={(event) => handleFormUpdate('authorisedSignatoryCapacity', event.target.value)} placeholder="Director" />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Resolution Date
+                          <input className={DETAIL_INPUT_CLASS} type="date" value={form.companyResolutionDate} onChange={(event) => handleFormUpdate('companyResolutionDate', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Authority Basis
+                          <input className={DETAIL_INPUT_CLASS} value={form.companyAuthorityBasis} onChange={(event) => handleFormUpdate('companyAuthorityBasis', event.target.value)} placeholder="Board resolution" />
                         </label>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Email
@@ -4909,6 +4973,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Full name
                           <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeName} onChange={(event) => handleFormUpdate('authorisedTrusteeName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Capacity
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeCapacity} onChange={(event) => handleFormUpdate('authorisedTrusteeCapacity', event.target.value)} placeholder="Trustee" />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                          Authority Basis
+                          <input className={DETAIL_INPUT_CLASS} value={form.trustAuthorityBasis} onChange={(event) => handleFormUpdate('trustAuthorityBasis', event.target.value)} placeholder="Trustee resolution / letters of authority" />
                         </label>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Email
@@ -5393,7 +5465,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.country} onChange={(event) => handlePropertyAddressUpdate({ country: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Erf Number (optional)
+                        {mandateRequiresErfNumber ? 'Title / ERF / portion number' : 'Title / ERF / portion number (optional)'}
                         <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} />
                       </label>
                     </div>

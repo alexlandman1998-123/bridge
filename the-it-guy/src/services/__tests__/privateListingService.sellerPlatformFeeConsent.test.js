@@ -68,6 +68,26 @@ try {
   assert.equal(deferredClient.calls[0].name, 'bridge_accept_seller_platform_fee_consent')
   assert.equal(deferredClient.calls[0].payload.p_acceptance.relatedDocumentId, '')
 
+  const timeoutClient = createMockRpcClient({
+    data: null,
+    error: {
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+    },
+  })
+  const timeoutResult = await __privateListingServiceTestUtils.acceptSellerPlatformFeeConsent(timeoutClient, {
+    token: 'seller-token',
+    formData: acceptedFormData,
+    listing: {
+      seller: { name: 'Jane Seller', email: 'jane@example.com', phone: '+27000000000' },
+    },
+  })
+
+  assert.equal(timeoutResult.deferred, true)
+  assert.equal(timeoutResult.reason, 'projection_timeout')
+  assert.equal(timeoutClient.calls.length, 1)
+  assert.equal(timeoutClient.calls[0].name, 'bridge_accept_seller_platform_fee_consent')
+
   const uncheckedClient = createMockRpcClient({ data: null, error: null })
   await assert.rejects(
     () => __privateListingServiceTestUtils.acceptSellerPlatformFeeConsent(uncheckedClient, {

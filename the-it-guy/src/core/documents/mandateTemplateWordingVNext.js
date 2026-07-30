@@ -302,7 +302,7 @@ Title Type: {{property_title_type}}`,
 
 Where applicable, the full title property particulars below form part of the Property description.
 
-Erf Number: {{erf_number}}
+Title / ERF / Portion Number: {{erf_number}}
 Erf Size: {{erf_size}}
 Floor Size: {{floor_size}}
 Estate / HOA: {{property_estate_name}}`,

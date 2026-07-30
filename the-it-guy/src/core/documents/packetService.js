@@ -123,7 +123,7 @@ function asPlainObject(value) {
 
 const LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED = readBooleanFlag(
   import.meta.env.VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED,
-  false,
+  true,
 )
 
 function throwContainmentPolicyFailure(policy = {}) {

@@ -29,6 +29,10 @@ const companyFullTitle = mapSellerOnboardingToMandateData({
     companyName: 'Example Seller Pty Ltd',
     companyRegistrationNumber: '2024/123456/07',
     companyDirectorName: 'Pat Director',
+    authorisedSignatoryName: 'Pat Director',
+    authorisedSignatoryCapacity: 'Director',
+    companyResolutionDate: '2026-07-30',
+    companyAuthorityBasis: 'Board resolution approving the mandate',
     authorisedRepresentativeCapacity: 'Director',
     propertyType: 'residential',
     propertyStructureType: 'freehold',
@@ -41,6 +45,9 @@ assert.equal(companyFullTitle.placeholders.seller_clause_profile, 'company')
 assert.equal(companyFullTitle.placeholders.property_title_type, 'full_title')
 assert.equal(companyFullTitle.placeholders.property_clause_profile, 'full_title')
 assert.equal(companyFullTitle.placeholders.mandate_template_variant, 'company_full_title')
+assert.equal(companyFullTitle.placeholders.seller_representative_capacity, 'Director')
+assert.equal(companyFullTitle.placeholders.seller_resolution_date, '2026-07-30')
+assert.equal(companyFullTitle.placeholders.seller_authority_basis, 'Board resolution approving the mandate')
 assert.match(companyFullTitle.placeholders.mandate_active_clause_packs, /seller_company_authority_pack/)
 assert.match(companyFullTitle.placeholders.mandate_active_clause_packs, /property_full_title_pack/)
 assert.doesNotMatch(companyFullTitle.placeholders.mandate_active_clause_packs, /property_sectional_title_pack/)

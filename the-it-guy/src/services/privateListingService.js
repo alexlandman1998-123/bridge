@@ -811,6 +811,21 @@ function isPermissionDeniedError(error) {
   )
 }
 
+function isStatementTimeoutError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const text = [
+    error.message,
+    error.details,
+    error.hint,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  return (
+    code === '57014' ||
+    text.includes('statement timeout') ||
+    text.includes('canceling statement due to statement timeout')
+  )
+}
+
 const MISSING_PRIVATE_LISTING_TABLE_CACHE = new Set()
 
 function getMissingTableCacheKey(tableName = '') {
@@ -6640,14 +6655,14 @@ async function acceptSellerPlatformFeeConsent(client, {
     if (isMissingRpcError(error, 'bridge_accept_seller_platform_fee_consent') || isMissingSchemaError(error)) {
       throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
     }
-    if (isDeferredSellerPlatformFeeConsentError(error)) {
+    if (isDeferredSellerPlatformFeeConsentError(error) || isStatementTimeoutError(error)) {
       console.warn('[Private Listings] seller platform fee consent transaction projection deferred', {
         reason: buildSupabaseErrorSummary(error),
       })
       return {
         deferred: true,
-        reason: 'transaction_not_linked',
-        message: normalizeText(error.message || 'Seller platform fee consent requires a linked transaction.'),
+        reason: isStatementTimeoutError(error) ? 'projection_timeout' : 'transaction_not_linked',
+        message: normalizeText(error.message || 'Seller platform fee consent projection was deferred.'),
       }
     }
     throw error
