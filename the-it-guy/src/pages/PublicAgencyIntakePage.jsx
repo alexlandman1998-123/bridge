@@ -242,32 +242,32 @@ function FieldIcon({ icon: Icon }) {
   )
 }
 
-function TextInput({ label, required = false, icon, prefix = '', className = '', ...props }) {
+function TextInput({ label, required = false, icon, prefix = '', compact = false, className = '', ...props }) {
   const hasAdornment = Boolean(icon || prefix)
   return (
-    <label className={`grid gap-2 ${className}`}>
+    <label className={`grid ${compact ? 'gap-1.5' : 'gap-2'} ${className}`}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <span className="group flex min-h-14 items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10">
+      <span className={`group flex ${compact ? 'min-h-12' : 'min-h-14'} items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10`}>
         <FieldIcon icon={icon} />
         {prefix ? <span className={`${icon ? '' : 'pl-4'} pr-2 text-sm font-semibold text-slate-500`}>{prefix}</span> : null}
         <input
           {...props}
-          className={`min-h-14 min-w-0 flex-1 bg-transparent py-3 pr-4 text-base text-slate-900 outline-none placeholder:text-slate-400 ${hasAdornment ? '' : 'pl-4'}`}
+          className={`${compact ? 'min-h-12 py-2 text-[15px]' : 'min-h-14 py-3 text-base'} min-w-0 flex-1 bg-transparent pr-4 text-slate-900 outline-none placeholder:text-slate-400 ${hasAdornment ? '' : 'pl-4'}`}
         />
       </span>
     </label>
   )
 }
 
-function SelectInput({ label, required = false, icon, children, className = '', ...props }) {
+function SelectInput({ label, required = false, icon, children, compact = false, className = '', ...props }) {
   return (
-    <label className={`grid gap-2 ${className}`}>
+    <label className={`grid ${compact ? 'gap-1.5' : 'gap-2'} ${className}`}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <span className="group flex min-h-14 items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10">
+      <span className={`group flex ${compact ? 'min-h-12' : 'min-h-14'} items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10`}>
         <FieldIcon icon={icon} />
         <select
           {...props}
-          className={`min-h-14 min-w-0 flex-1 bg-transparent py-3 pr-4 text-base text-slate-900 outline-none ${icon ? '' : 'pl-4'}`}
+          className={`${compact ? 'min-h-12 py-2 text-[15px]' : 'min-h-14 py-3 text-base'} min-w-0 flex-1 bg-transparent pr-4 text-slate-900 outline-none ${icon ? '' : 'pl-4'}`}
         >
           {children}
         </select>
@@ -295,7 +295,7 @@ function OptionButtonGroup({ label, icon, options = [], value = '', onChange, co
               type="button"
               aria-pressed={active}
               onClick={() => onChange(active ? '' : optionValue)}
-              className={`min-h-12 rounded-lg border px-3 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
+              className={`min-h-11 rounded-lg border px-2.5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
                 active
                   ? 'border-[var(--intake-primary)] bg-[var(--intake-primary)] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
@@ -312,7 +312,7 @@ function OptionButtonGroup({ label, icon, options = [], value = '', onChange, co
 
 function BudgetRangeSelector({ valueMin = '', valueMax = '', onSelect }) {
   return (
-    <fieldset className="grid gap-2">
+    <fieldset className="grid gap-1.5">
       <legend className="flex items-center gap-2">
         <Banknote className="text-slate-400" size={18} strokeWidth={1.9} aria-hidden="true" />
         <FieldLabel>Price range</FieldLabel>
@@ -326,7 +326,7 @@ function BudgetRangeSelector({ valueMin = '', valueMax = '', onSelect }) {
               type="button"
               aria-pressed={active}
               onClick={() => onSelect(range)}
-              className={`min-h-12 rounded-lg border px-3 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
+              className={`min-h-11 rounded-lg border px-2.5 text-[13px] font-semibold sm:text-sm transition focus:outline-none focus:ring-4 focus:ring-[var(--intake-primary)]/10 ${
                 active
                   ? 'border-[var(--intake-primary)] bg-[var(--intake-primary)] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
@@ -1093,13 +1093,13 @@ export default function PublicAgencyIntakePage() {
               <SuccessState agencyName={agencyName} intent={intent} duplicate={submittedDuplicate} onReset={resetFlow} />
             ) : intent ? (
               <section className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-lg border border-white/18 bg-white text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:min-h-0 sm:p-6' : 'rounded-lg border border-white/18 bg-white p-5 text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-6'}`}>
-                <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-5 p-5 sm:p-0' : 'space-y-5'}`} onSubmit={handleFormSubmit} noValidate>
+                <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-4 p-4 sm:gap-5 sm:p-0' : 'space-y-5'}`} onSubmit={handleFormSubmit} noValidate>
                   <div>
                     <h2 className="text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : currentBuyerStep.title}</h2>
                     {intent === 'buy' ? (
                       <>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">{currentBuyerStep.summary}</p>
-                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step {buyerStepIndex + 1} of {BUYER_STEPS.length}</p>
+                        <p className="mt-1.5 text-sm leading-6 text-slate-500">{currentBuyerStep.summary}</p>
+                        <p className="mt-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step {buyerStepIndex + 1} of {BUYER_STEPS.length}</p>
                       </>
                     ) : null}
                   </div>
@@ -1132,12 +1132,12 @@ export default function PublicAgencyIntakePage() {
                       {buyerStep === 'budget' ? (
                         <>
                           <BudgetRangeSelector valueMin={form.budgetMin} valueMax={form.budgetMax} onSelect={updateBudgetRange} />
-                          <TextInput icon={MapPin} label="Preferred areas" value={form.areas} onChange={(event) => updateForm('areas', event.target.value)} maxLength={500} placeholder="Suburbs or areas" />
-                          <div className="grid gap-4 sm:grid-cols-3">
-                            <SelectInput icon={Home} label="Property type" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                          <TextInput compact icon={MapPin} label="Preferred areas" value={form.areas} onChange={(event) => updateForm('areas', event.target.value)} maxLength={500} placeholder="Suburbs or areas" />
+                          <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+                            <SelectInput compact icon={Home} label="Property type" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
                               {PROPERTY_TYPES.map((type) => <option key={type || 'any'} value={type}>{type || 'Any type'}</option>)}
                             </SelectInput>
-                            <SelectInput icon={Bath} label="Bathrooms" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)}>
+                            <SelectInput compact icon={Bath} label="Bathrooms" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)}>
                               <option value="">Any</option>
                               {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value}+</option>)}
                             </SelectInput>
@@ -1150,11 +1150,11 @@ export default function PublicAgencyIntakePage() {
                             onChange={(value) => updateForm('bedrooms', value)}
                             columns="grid-cols-4"
                           />
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <SelectInput icon={ShieldCheck} label="Finance" value={form.financeStatus} onChange={(event) => updateForm('financeStatus', event.target.value)}>
+                          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+                            <SelectInput compact icon={ShieldCheck} label="Finance" value={form.financeStatus} onChange={(event) => updateForm('financeStatus', event.target.value)}>
                               {FINANCE_STATUSES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
                             </SelectInput>
-                            <SelectInput icon={CalendarDays} label="Timeline" value={form.buyerTimeline} onChange={(event) => updateForm('buyerTimeline', event.target.value)}>
+                            <SelectInput compact icon={CalendarDays} label="Timeline" value={form.buyerTimeline} onChange={(event) => updateForm('buyerTimeline', event.target.value)}>
                               {TIMELINES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
                             </SelectInput>
                           </div>

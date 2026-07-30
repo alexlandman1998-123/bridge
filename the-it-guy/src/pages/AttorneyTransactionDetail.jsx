@@ -5465,61 +5465,96 @@ function ArchlineMatterHeader({
   onMoreActions,
 }) {
   const metadata = [
-    { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound },
-    { key: 'seller', label: 'Seller', value: seller || 'Seller pending', icon: UserCircle },
-    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured', icon: BriefcaseBusiness },
-    { key: 'date', label: 'Instruction Date', value: instructionDate || 'Not set', icon: CalendarCheck2 },
-    { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign },
+    { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound, helper: 'Purchaser' },
+    { key: 'seller', label: 'Seller', value: seller || 'Seller pending', icon: UserCircle, helper: 'Transferor' },
+    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured', icon: CircleDollarSign, helper: 'Consideration' },
+    { key: 'date', label: 'Instruction Date', value: instructionDate || 'Not set', icon: CalendarCheck2, helper: 'Opened' },
+    { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign, helper: 'Instruction source' },
   ]
   const propertyDisplay = property || 'Property pending'
 
   return (
     <header className="no-print -mx-3 border-b border-slate-200/70 bg-slate-50/55 px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-4">
-        <section className="rounded-[24px] border border-slate-200/75 bg-white px-6 py-6 shadow-[0_20px_60px_rgba(15,23,42,0.055)] md:px-9 md:py-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <section className="relative overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:px-6 md:py-6">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
+
+          <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
             <div className="min-w-0">
-              <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 transition hover:text-emerald-700">
-                <ChevronRight size={15} className="rotate-180" />
-                {backLabel || 'Back to Matters'}
-              </Link>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <h1 className="break-words text-[2rem] font-semibold leading-none tracking-[-0.02em] text-slate-950 md:text-[2.45rem]">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Link
+                  to={backPath}
+                  className="inline-flex items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white/90 px-3.5 py-2 text-sm font-semibold text-[#4f647a] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-white hover:text-[#142132]"
+                >
+                  <ChevronRight size={15} className="rotate-180" />
+                  {backLabel || 'Back to Matters'}
+                </Link>
+                <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.7rem] font-semibold uppercase text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  Legal Matter Workspace
+                </span>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <h1 className="break-words text-[2.15rem] font-semibold leading-none text-[#142132] md:text-[2.55rem]">
                   {reference || 'Matter'}
                 </h1>
                 <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
               </div>
+
+              <div className="mt-5 flex max-w-5xl items-start gap-3">
+                <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eef8f1] text-emerald-800">
+                  <MapPin size={23} />
+                </span>
+                <div className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase text-[#8496ab]">Property</span>
+                  <h2 className="mt-1 line-clamp-2 text-balance text-[1.25rem] font-semibold leading-[1.35] text-[#142132] md:text-[1.65rem]">
+                    {propertyDisplay}
+                  </h2>
+                </div>
+              </div>
             </div>
-            <button
-              type="button"
-              className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-950 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
-              onClick={onMoreActions}
-            >
-              More Actions
-              <MoreHorizontal size={17} />
-            </button>
+
+            <aside className="rounded-[20px] border border-[#dfe8f2] bg-[#f8fbfd] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase text-[#7c8ea4]">Matter Health</span>
+                  <strong className="mt-1.5 block truncate text-[1.35rem] font-semibold text-[#142132]">
+                    {statusLabel || 'In Progress'}
+                  </strong>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    {instructionDate ? `Instruction opened ${instructionDate}` : 'Instruction date pending'}
+                  </p>
+                </div>
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-emerald-100 bg-emerald-50 text-emerald-800">
+                  <FileCheck2 size={18} />
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                onClick={onMoreActions}
+              >
+                More Actions
+                <MoreHorizontal size={16} />
+              </button>
+            </aside>
           </div>
 
-          <div className="mt-7 flex max-w-5xl items-start gap-4">
-            <span className="mt-1 inline-flex size-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-800">
-              <MapPin size={25} />
-            </span>
-            <h2 className="line-clamp-2 text-balance text-[1.45rem] font-semibold leading-[1.35] tracking-[-0.02em] text-slate-950 md:text-[1.85rem]">
-              {propertyDisplay}
-            </h2>
-          </div>
-
-          <div className="mt-9 grid gap-5 border-t border-slate-100 pt-6 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {metadata.map((item) => {
               const Icon = item.icon
               return (
-                <div key={item.key} className="flex min-w-0 items-start gap-3 lg:border-r lg:border-slate-100 lg:pr-5 last:lg:border-r-0">
-                  <Icon size={19} className="mt-0.5 shrink-0 text-slate-700" />
-                  <div className="min-w-0">
-                    <span className="block text-xs font-semibold text-slate-500">{item.label}</span>
-                    <strong className="mt-2 block truncate text-sm font-semibold leading-5 text-slate-950">{item.value}</strong>
+                <article key={item.key} className="flex min-h-[84px] min-w-0 items-start gap-3 rounded-[18px] border border-[#e0e8f1] bg-white/90 px-4 py-3.5 shadow-[0_10px_26px_rgba(15,23,42,0.04)]">
+                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[#edf4fb] text-[#35546c]">
+                    <Icon size={17} />
+                  </span>
+                  <div className="min-w-0 pt-0.5">
+                    <span className="block text-[0.68rem] font-semibold uppercase text-[#7b8ca2]">{item.label}</span>
+                    <strong className="mt-1.5 block truncate text-[0.98rem] font-semibold leading-5 text-[#142132]">{item.value}</strong>
+                    <span className="mt-1 block truncate text-xs text-[#71839a]">{item.helper}</span>
                   </div>
-                </div>
+                </article>
               )
             })}
           </div>
@@ -5720,7 +5755,6 @@ function ArchlineWorkflowWorkspace({
   onUploadDocument,
   onAddNote,
   onOpenDocuments,
-  onOpenParties,
 }) {
   const [statusDraft, setStatusDraft] = useState({ open: false, step: null, status: 'completed', note: '' })
   const canUpdateSteps = typeof onUpdateStep === 'function'
@@ -6027,6 +6061,7 @@ function ArchlineTransferWorkspace({
   onUploadDocument,
   onAddNote,
   onOpenDocuments,
+  onOpenParties,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState('')
   const [search, setSearch] = useState('')
@@ -6744,7 +6779,7 @@ function ArchlineTransferWorkspace({
                 {(viewModel.selectedTaskContext.keyDates || []).slice(0, 6).map((item) => (
                   <div key={item.key || item.label} className="flex items-center justify-between gap-3 py-3 text-sm">
                     <span className="text-slate-600">{item.label}</span>
-                    <strong className="text-right font-medium text-slate-950">{value}</strong>
+                    <strong className="text-right font-medium text-slate-950">{item.value || item.date || 'Not set'}</strong>
                   </div>
                 ))}
               </div>
