@@ -105,6 +105,86 @@ function normalizeArray(value) {
   return []
 }
 
+function pickFirstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function normalizeMediaUrl(item = {}) {
+  return pickFirstText(item.url, item.fileUrl, item.file_url, item.publicUrl, item.public_url, item.signedUrl, item.signed_url)
+}
+
+function normalizeMediaCandidates(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null
+      const url = normalizeMediaUrl(item)
+      if (!url) return null
+      return {
+        id: normalizeText(item.id || item.path || item.filePath || item.file_path || `media-${index + 1}`),
+        listing_id: normalizeText(item.listing_id || item.listingId),
+        media_type: normalizeText(item.media_type || item.mediaType || 'image') || 'image',
+        file_url: url,
+        caption: normalizeText(item.caption || item.label || item.name),
+        sort_order: Number(item.sort_order ?? item.sortOrder ?? index) || 0,
+        is_cover: Boolean(item.is_cover ?? item.isCover),
+      }
+    })
+    .filter(Boolean)
+}
+
+function extractFormDataMediaRows(formData = {}, listing = {}) {
+  const source = formData && typeof formData === 'object' ? formData : {}
+  const gallery = normalizeMediaCandidates(
+    source.imageGallery ||
+      source.image_gallery ||
+      source.galleryImages ||
+      source.gallery_images ||
+      source.images ||
+      source.photos ||
+      source.marketing?.imageGallery ||
+      source.marketing?.image_gallery ||
+      source.marketing?.galleryImages ||
+      source.marketing?.gallery_images ||
+      [],
+  )
+  const coverImageId = normalizeText(source.coverImageId || source.cover_image_id)
+  const listingId = normalizeText(listing.id || listing.listing_id)
+  const directCoverUrl = pickFirstText(
+    source.heroImageUrl,
+    source.hero_image_url,
+    source.coverImageUrl,
+    source.cover_image_url,
+    source.primaryImageUrl,
+    source.primary_image_url,
+    source.mainImageUrl,
+    source.main_image_url,
+    source.imageUrl,
+    source.image_url,
+    source.marketing?.mediaUrl,
+    source.marketing?.media_url,
+  )
+  const rows = gallery.map((item, index) => ({
+    ...item,
+    listing_id: item.listing_id || listingId,
+    is_cover: item.is_cover || (coverImageId ? normalizeText(item.id) === coverImageId : index === 0),
+  }))
+  if (directCoverUrl && !rows.some((item) => item.file_url === directCoverUrl)) {
+    rows.unshift({
+      listing_id: listingId,
+      media_type: 'image',
+      file_url: directCoverUrl,
+      caption: 'Property image',
+      sort_order: -1,
+      is_cover: true,
+    })
+  }
+  return rows
+}
+
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {}
   return Object.fromEntries(
@@ -330,6 +410,15 @@ function groupByListingId(rows = []) {
   }, new Map())
 }
 
+function groupOnboardingByListingId(rows = []) {
+  return rows.reduce((map, row) => {
+    const listingId = normalizeText(row.private_listing_id || row.privateListingId)
+    if (!listingId || map.has(listingId)) return map
+    map.set(listingId, row)
+    return map
+  }, new Map())
+}
+
 function normalizeLimit(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return DEFAULT_LIMIT
@@ -481,7 +570,7 @@ export async function getPublicListings(options = {}) {
       return { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
     }
 
-    const [publicationResult, mediaResult, agencyMetadata] = await Promise.all([
+    const [publicationResult, mediaResult, onboardingResult, agencyMetadata] = await Promise.all([
       client
         .from('listing_publication_data')
         .select(PUBLICATION_FIELDS)
@@ -492,11 +581,17 @@ export async function getPublicListings(options = {}) {
         .select(MEDIA_FIELDS)
         .in('listing_id', listingIds)
         .order('sort_order', { ascending: true }),
+      client
+        .from('private_listing_seller_onboarding')
+        .select('private_listing_id, form_data, updated_at')
+        .in('private_listing_id', listingIds)
+        .order('updated_at', { ascending: false }),
       loadAgencyPublicMetadata(client, [agencyScope.organisation_id]),
     ])
 
     if (publicationResult.error) throw publicationResult.error
     if (mediaResult.error) throw mediaResult.error
+    if (onboardingResult.error && !isMissingRelationError(onboardingResult.error)) throw onboardingResult.error
 
     const publicationsByListingId = new Map()
     for (const publication of publicationResult.data || []) {
@@ -504,6 +599,7 @@ export async function getPublicListings(options = {}) {
       if (listingId && !publicationsByListingId.has(listingId)) publicationsByListingId.set(listingId, publication)
     }
     const mediaByListingId = groupByListingId(mediaResult.data || [])
+    const onboardingByListingId = groupOnboardingByListingId(onboardingResult.error ? [] : onboardingResult.data || [])
     const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
     const filterOptions = createAgencyIntakeFilterOptions(options)
     const items = listingRows
@@ -515,7 +611,9 @@ export async function getPublicListings(options = {}) {
         }
         if (!isAgencyIntakeListingEligible({ listing })) return null
         const publication = createAgencyIntakePublication(listing, publicationsByListingId.get(normalizeText(listing.id)) || {})
-        const media = mediaByListingId.get(normalizeText(listing.id)) || []
+        const onboarding = onboardingByListingId.get(normalizeText(listing.id)) || {}
+        const onboardingMedia = extractFormDataMediaRows(onboarding.form_data, listing)
+        const media = onboardingMedia.length ? onboardingMedia : mediaByListingId.get(normalizeText(listing.id)) || []
         return mapPublicListingContract({ listing, publication, media, host })
       })
       .filter(Boolean)

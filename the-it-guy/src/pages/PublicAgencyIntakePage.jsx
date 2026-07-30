@@ -74,9 +74,9 @@ const TIMELINES = [
   ['6_plus_months', '6+ months'],
 ]
 const BUYER_STEPS = [
-  { id: 'contact', label: 'Contact', title: 'Contact details', summary: 'Tell us how the agency should reach you.' },
-  { id: 'budget', label: 'Budget', title: 'Buying budget', summary: 'Share the range and requirements you have in mind.' },
+  { id: 'budget', label: 'Search', title: 'Buying budget', summary: 'Share the range and requirements you have in mind.' },
   { id: 'listings', label: 'Listings', title: 'Listings you like', summary: 'Choose any properties that catch your eye. This step is optional.' },
+  { id: 'contact', label: 'Contact', title: 'Contact details', summary: 'Tell us how the agency should reach you.' },
   { id: 'final', label: 'Submit', title: 'Final details', summary: 'Add anything useful before sending your enquiry.' },
 ]
 const MAX_SELECTED_LISTINGS = 24
@@ -1016,27 +1016,18 @@ export default function PublicAgencyIntakePage() {
 
                       {buyerStep === 'listings' ? (
                         <div className="flex min-h-0 flex-1 flex-col gap-4">
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {form.selectedListings.length
-                                    ? `${form.selectedListings.length} selected`
-                                    : 'No listings selected yet'}
-                                </p>
-                                <p className="mt-1 text-xs leading-5 text-slate-500">Pick favourites now, or continue without selecting any.</p>
-                              </div>
-                              {form.selectedListings.length ? (
-                                <button
-                                  type="button"
-                                  onClick={() => updateForm('selectedListings', [])}
-                                  className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
-                                >
-                                  Clear
-                                </button>
-                              ) : null}
+                          {form.selectedListings.length ? (
+                            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-sm font-semibold text-slate-900">{form.selectedListings.length} selected</p>
+                              <button
+                                type="button"
+                                onClick={() => updateForm('selectedListings', [])}
+                                className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                              >
+                                Clear
+                              </button>
                             </div>
-                          </div>
+                          ) : null}
 
                           {listingLoading ? (
                             <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500" role="status">
@@ -1047,7 +1038,7 @@ export default function PublicAgencyIntakePage() {
                               {listingError} You can still continue without selecting a listing.
                             </div>
                           ) : listingOptions.length ? (
-                            <div className="grid min-h-[260px] max-h-[40dvh] flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain pr-1 sm:max-h-[min(58dvh,620px)] sm:grid-cols-2 sm:pr-2">
+                            <div className="grid min-h-[260px] max-h-[52dvh] flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain pr-1 sm:max-h-[min(58dvh,620px)] sm:grid-cols-2 sm:pr-2">
                               {listingOptions.map((listing) => {
                                 const key = listingKey(listing)
                                 const selected = form.selectedListings.some((item) => listingKey(item) === key)
@@ -1122,7 +1113,7 @@ export default function PublicAgencyIntakePage() {
                         </div>
                       ) : null}
 
-                      <div className="sticky bottom-0 z-20 -mx-5 mt-auto grid gap-3 border-t border-slate-200 bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-18px_34px_rgba(15,23,42,0.12)] backdrop-blur sm:static sm:mx-0 sm:mt-0 sm:grid-cols-[auto_1fr] sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none">
+                      <div className="sticky bottom-0 z-20 -mx-5 mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-18px_34px_rgba(15,23,42,0.12)] backdrop-blur sm:static sm:mx-0 sm:mt-0 sm:grid-cols-[auto_1fr] sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none">
                         <button
                           type="button"
                           onClick={() => (buyerStepIndex === 0 ? resetFlow() : moveBuyerStep(-1))}

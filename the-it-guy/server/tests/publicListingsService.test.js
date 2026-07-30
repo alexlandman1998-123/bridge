@@ -161,6 +161,7 @@ function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-
     listing_publication_data: { data: [validPublication], error: null },
     private_listings: { data: [validListing], error: null },
     listing_media: { data: validMedia, error: null },
+    private_listing_seller_onboarding: { data: [], error: null },
     organisations: { data: [{ id: 'org-1', name: 'Kingstons Real Estate' }], error: null },
     ...overrides,
   }
@@ -286,6 +287,69 @@ assert.equal(agencyIntakeListings.count, 1, 'agency intake should show active ag
 assert.equal(agencyIntakeListings.items[0].title, 'Active App Listing')
 assert.equal(agencyIntakeListings.items[0].askingPrice, 2100000)
 assert.equal(agencyIntakeListings.items[0].coverImageUrl, '')
+
+const agencyIntakeListingsWithOnboardingMedia = await getPublicListings({
+  client: createFakePublicListingsClient({
+    overrides: {
+      listing_publication_data: { data: [{ ...validPublication, listing_id: intakeListing.id, title: '', status: 'Draft' }], error: null },
+      private_listings: { data: [intakeListing], error: null },
+      listing_media: { data: [], error: null },
+      private_listing_seller_onboarding: {
+        data: [{
+          private_listing_id: intakeListing.id,
+          form_data: {
+            imageGallery: [
+              {
+                id: 'fresh-cover',
+                url: 'https://cdn.example.com/fresh-intake-cover.jpg',
+                name: 'Updated lounge',
+              },
+            ],
+            coverImageId: 'fresh-cover',
+          },
+          updated_at: '2026-07-30T08:00:00.000Z',
+        }],
+        error: null,
+      },
+    },
+  }),
+  agencySlug: 'kingstons',
+  audience: 'agency-intake',
+})
+
+assert.equal(
+  agencyIntakeListingsWithOnboardingMedia.items[0].coverImageUrl,
+  'https://cdn.example.com/fresh-intake-cover.jpg',
+  'agency intake should use seller-onboarding media for active listings before public publication',
+)
+
+const agencyIntakeListingsPreferFreshOnboardingMedia = await getPublicListings({
+  client: createFakePublicListingsClient({
+    overrides: {
+      listing_publication_data: { data: [{ ...validPublication, listing_id: intakeListing.id, title: '', status: 'Draft' }], error: null },
+      private_listings: { data: [intakeListing], error: null },
+      listing_media: { data: [{ ...validMedia[0], listing_id: intakeListing.id, file_url: 'https://cdn.example.com/stale-distribution-cover.jpg' }], error: null },
+      private_listing_seller_onboarding: {
+        data: [{
+          private_listing_id: intakeListing.id,
+          form_data: {
+            coverImageUrl: 'https://cdn.example.com/current-onboarding-cover.jpg',
+          },
+          updated_at: '2026-07-30T09:00:00.000Z',
+        }],
+        error: null,
+      },
+    },
+  }),
+  agencySlug: 'kingstons',
+  audience: 'agency-intake',
+})
+
+assert.equal(
+  agencyIntakeListingsPreferFreshOnboardingMedia.items[0].coverImageUrl,
+  'https://cdn.example.com/current-onboarding-cover.jpg',
+  'agency intake should prefer current onboarding media over stale distribution media',
+)
 
 const createAgencyIntakeClient = () => createFakePublicListingsClient({
   overrides: {
