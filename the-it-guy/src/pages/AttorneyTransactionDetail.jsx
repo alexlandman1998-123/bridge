@@ -17,13 +17,17 @@ import {
   FileCheck2,
   FileText,
   Filter,
+  ExternalLink,
   Landmark,
+  Link2,
+  Mail,
   ListChecks,
   LockKeyhole,
   MapPin,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
+  Phone,
   Plus,
   Search,
   Send,
@@ -1523,6 +1527,12 @@ function getAttorneyRoleWorkspaceContent(workflow = {}) {
 function countNumber(value = 0) {
   const count = Number(value || 0)
   return Number.isFinite(count) ? count : 0
+}
+
+function totalDocsLabel(completed = 0, total = 0) {
+  const safeTotal = countNumber(total)
+  if (!safeTotal) return undefined
+  return `${countNumber(completed)}/${safeTotal}`
 }
 
 function roleWorkspaceRequirementComplete(requirement = {}) {
@@ -5411,12 +5421,14 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
 
 const ARCHLINE_TAB_ICONS = {
   overview: Workflow,
+  tasks: Clock3,
   documents: FileText,
   transfer: Workflow,
   finance: CircleDollarSign,
   cancellation: X,
   activity: Activity,
   roleplayers: UsersRound,
+  parties: UsersRound,
 }
 
 function ArchlineStatusPill({ children, tone = 'success' }) {
@@ -5454,114 +5466,198 @@ function ArchlineMatterHeader({
   reference,
   statusLabel,
   property,
-  buyer,
-  seller,
+  propertyType,
+  propertyImageUrl = '',
   purchasePrice,
+  daysOpenLabel,
   instructionDate,
-  source,
+  matterChips = [],
+  workflow = null,
   tabs = [],
   activeTab,
   onTabChange,
+  onSharePortal,
+  onCall,
+  onEmail,
   onMoreActions,
+  onViewProperty,
 }) {
-  const metadata = [
-    { key: 'buyer', label: 'Buyer', value: buyer || 'Buyer pending', icon: UserRound, helper: 'Purchaser' },
-    { key: 'seller', label: 'Seller', value: seller || 'Seller pending', icon: UserCircle, helper: 'Transferor' },
-    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured', icon: CircleDollarSign, helper: 'Consideration' },
-    { key: 'date', label: 'Instruction Date', value: instructionDate || 'Not set', icon: CalendarCheck2, helper: 'Opened' },
-    { key: 'source', label: 'Source', value: source || 'Not captured', icon: AtSign, helper: 'Instruction source' },
-  ]
   const propertyDisplay = property || 'Property pending'
+  const propertyParts = String(propertyDisplay).split(',').map((item) => item.trim()).filter(Boolean)
+  const propertyPrimary = propertyParts.slice(0, 2).join(', ') || propertyDisplay
+  const propertySecondary = propertyParts.slice(2, 4).join(', ')
+  const propertyTertiary = propertyParts.slice(4).join(', ')
+  const metricRows = [
+    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured' },
+    { key: 'property-type', label: 'Property Type', value: propertyType || 'Not captured' },
+    { key: 'days-open', label: 'Days Open', value: daysOpenLabel || 'TBD' },
+    { key: 'instruction-date', label: 'Instruction Date', value: instructionDate || 'TBD' },
+  ]
+  const chips = matterChips.filter((item) => item?.label)
+  const workflowKey = workflow?.detailKey === 'bond-cancellation'
+    ? 'cancellation'
+    : workflow?.detailKey === 'bond-registration'
+      ? 'bond'
+      : 'transfer'
+  const workflowSteps = buildLegalWorkflowProgressSteps({
+    workflowKey,
+    lane: workflow?.lane,
+    facts: workflow?.facts || {},
+  })
+  const visibleWorkflowSteps = workflowSteps.length
+    ? workflowSteps
+    : [
+        { key: 'instruction', label: 'Instruction', displayStatus: 'completed' },
+        { key: 'documents', label: 'Documents', displayStatus: 'in_progress', isCurrent: true },
+        { key: 'registration', label: 'Registration', displayStatus: 'not_started' },
+      ]
 
   return (
-    <header className="no-print -mx-3 border-b border-slate-200/70 bg-slate-50/55 px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
-      <div className="mx-auto max-w-[1680px] space-y-4">
-        <section className="relative overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:px-6 md:py-6">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
-
-          <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Link
-                  to={backPath}
-                  className="inline-flex items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white/90 px-3.5 py-2 text-sm font-semibold text-[#4f647a] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-white hover:text-[#142132]"
-                >
-                  <ChevronRight size={15} className="rotate-180" />
-                  {backLabel || 'Back to Matters'}
-                </Link>
-                <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.7rem] font-semibold uppercase text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  Legal Matter Workspace
-                </span>
-              </div>
-
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <h1 className="break-words text-[2.15rem] font-semibold leading-none text-[#142132] md:text-[2.55rem]">
-                  {reference || 'Matter'}
-                </h1>
-                <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
-              </div>
-
-              <div className="mt-5 flex max-w-5xl items-start gap-3">
-                <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eef8f1] text-emerald-800">
-                  <MapPin size={23} />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-[0.68rem] font-semibold uppercase text-[#8496ab]">Property</span>
-                  <h2 className="mt-1 line-clamp-2 text-balance text-[1.25rem] font-semibold leading-[1.35] text-[#142132] md:text-[1.65rem]">
-                    {propertyDisplay}
-                  </h2>
-                </div>
-              </div>
+    <header className="no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
+      <div className="mx-auto max-w-[1680px] space-y-5">
+        <section className="rounded-[24px] border border-slate-200/80 bg-white px-4 py-4 shadow-[0_16px_36px_rgba(15,23,42,0.045)] md:px-6 md:py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <Link
+                to={backPath}
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-3.5 text-sm font-semibold text-[#243b5a] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+              >
+                <ChevronRight size={15} className="rotate-180" />
+                {backLabel || 'Back to Matters'}
+              </Link>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Legal Matter Workspace</span>
             </div>
-
-            <aside className="rounded-[20px] border border-[#dfe8f2] bg-[#f8fbfd] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="block text-[0.68rem] font-semibold uppercase text-[#7c8ea4]">Matter Health</span>
-                  <strong className="mt-1.5 block truncate text-[1.35rem] font-semibold text-[#142132]">
-                    {statusLabel || 'In Progress'}
-                  </strong>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                    {instructionDate ? `Instruction opened ${instructionDate}` : 'Instruction date pending'}
-                  </p>
-                </div>
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-emerald-100 bg-emerald-50 text-emerald-800">
-                  <FileCheck2 size={18} />
-                </span>
-              </div>
-
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50" onClick={onSharePortal}>
+                <Link2 size={15} />
+                Share Portal
+              </button>
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
+                <Phone size={16} />
+              </button>
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
+                <Mail size={16} />
+              </button>
               <button
                 type="button"
-                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-4 text-sm font-semibold text-[#142132] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
                 onClick={onMoreActions}
               >
                 More Actions
                 <MoreHorizontal size={16} />
               </button>
-            </aside>
+            </div>
           </div>
 
-          <div className="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {metadata.map((item) => {
-              const Icon = item.icon
-              return (
-                <article key={item.key} className="flex min-h-[84px] min-w-0 items-start gap-3 rounded-[18px] border border-[#e0e8f1] bg-white/90 px-4 py-3.5 shadow-[0_10px_26px_rgba(15,23,42,0.04)]">
-                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[#edf4fb] text-[#35546c]">
-                    <Icon size={17} />
-                  </span>
-                  <div className="min-w-0 pt-0.5">
-                    <span className="block text-[0.68rem] font-semibold uppercase text-[#7b8ca2]">{item.label}</span>
-                    <strong className="mt-1.5 block truncate text-[0.98rem] font-semibold leading-5 text-[#142132]">{item.value}</strong>
-                    <span className="mt-1 block truncate text-xs text-[#71839a]">{item.helper}</span>
-                  </div>
+          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.72fr)_minmax(540px,0.52fr)] xl:items-start">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="break-words text-[2.35rem] font-semibold leading-none tracking-[-0.04em] text-[#142132] md:text-[3rem]">
+                  {reference || 'Matter'}
+                </h1>
+                <button type="button" className="inline-flex size-9 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-50" aria-label="Favourite matter" title="Favourite matter">
+                  <Star size={20} />
+                </button>
+                <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
+              </div>
+              {chips.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {chips.map((chip) => {
+                    const Icon = chip.icon || FileText
+                    return (
+                      <span key={chip.key || chip.label} className="inline-flex h-8 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-xs font-semibold text-[#35546c]">
+                        <Icon size={14} />
+                        {chip.label}
+                      </span>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {metricRows.map((item) => (
+                <article key={item.key} className="min-w-0 border-slate-200 py-1 sm:border-l sm:pl-5">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">{item.label}</span>
+                  <strong className="mt-1 block truncate text-base font-semibold text-[#142132]" title={item.value}>{item.value}</strong>
                 </article>
-              )
-            })}
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-center">
+            <div className="h-[132px] w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:w-[260px]">
+              {propertyImageUrl ? (
+                <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_22%_18%,rgba(8,123,75,0.22),transparent_30%),linear-gradient(135deg,#f6faf8,#e8eef5)] p-4 text-center">
+                  <div>
+                    <Building2 size={28} className="mx-auto text-emerald-800" />
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Property image pending</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex min-w-0 flex-1 items-start gap-4">
+              <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-[#eef8f1] text-emerald-800">
+                <MapPin size={23} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="line-clamp-2 text-balance text-[1.35rem] font-semibold leading-[1.25] tracking-[-0.03em] text-[#142132] md:text-[1.65rem]">
+                  {propertyPrimary}
+                </h2>
+                {propertySecondary ? <p className="mt-1 text-base font-medium text-[#243b5a]">{propertySecondary}</p> : null}
+                {propertyTertiary ? <p className="mt-1 text-sm text-[#60758d]">{propertyTertiary}</p> : null}
+                <button type="button" className="mt-4 inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3.5 text-sm font-semibold text-[#142132] transition hover:bg-slate-50" onClick={onViewProperty}>
+                  View Property
+                  <ExternalLink size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
-        <nav className="rounded-[24px] border border-slate-200/75 bg-white px-3 shadow-[0_18px_44px_rgba(15,23,42,0.045)] sm:px-5" aria-label="Matter navigation">
-          <div className="grid min-w-max gap-1 overflow-x-auto md:min-w-full" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(136px, 1fr))` }}>
+        <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
+          <div className="overflow-x-auto px-1 pb-1">
+            <div className="grid min-w-[760px] items-start gap-0" style={{ gridTemplateColumns: `repeat(${visibleWorkflowSteps.length}, minmax(112px, 1fr))` }}>
+              {visibleWorkflowSteps.map((stage, index) => {
+                const completed = stage.displayStatus === 'completed'
+                const blocked = stage.displayStatus === 'blocked'
+                const current = stage.isCurrent || ['in_progress', 'waiting'].includes(stage.displayStatus)
+                const statusLabel = completed
+                  ? formatDate(stage.completedAt, 'Completed')
+                  : blocked
+                    ? 'Blocked'
+                    : current
+                      ? 'In Progress'
+                      : 'Pending'
+                return (
+                  <div key={stage.key || stage.stepKey || index} className="relative grid justify-items-center gap-2 text-center">
+                    {index > 0 ? <span className={`absolute right-1/2 top-3.5 h-px w-full ${completed || current ? 'bg-emerald-700' : 'border-t border-dashed border-slate-300'}`} /> : null}
+                    <span className={`relative z-10 inline-flex size-8 items-center justify-center rounded-full border-2 bg-white ${
+                      completed
+                        ? 'border-emerald-700 bg-emerald-700 text-white'
+                        : blocked
+                          ? 'border-red-500 text-red-600'
+                          : current
+                            ? 'border-emerald-700 text-emerald-800'
+                            : 'border-slate-300 text-slate-400'
+                    }`}>
+                      {completed ? <CheckCircle2 size={16} /> : blocked ? <AlertTriangle size={15} /> : null}
+                    </span>
+                    <div className="min-w-0 px-2">
+                      <strong className={`block truncate text-xs font-semibold ${completed || current ? 'text-[#142132]' : 'text-slate-600'}`}>{stage.label || getWorkflowStepLabel(stage)}</strong>
+                      <span className="mt-1 block truncate text-xs text-[#60758d]">{statusLabel}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
+        <nav className="sticky top-0 z-20 overflow-hidden rounded-[20px] border border-slate-200/75 bg-white px-3 shadow-[0_14px_32px_rgba(15,23,42,0.045)] sm:px-5" aria-label="Matter navigation">
+          <div className="flex min-w-0 gap-1 overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = ARCHLINE_TAB_ICONS[tab.id] || FileText
               const active = tab.id === activeTab
@@ -5569,10 +5665,10 @@ function ArchlineMatterHeader({
                 <button
                   key={tab.id}
                   type="button"
-                  className={`relative inline-flex h-16 min-w-0 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 ${
+                  className={`relative inline-flex h-16 min-w-[136px] flex-1 items-center justify-center gap-2 border-b-2 px-3 text-sm font-semibold transition focus-visible:outline-none ${
                     active
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                      ? 'border-emerald-700 text-emerald-800'
+                      : 'border-transparent text-slate-600 hover:border-slate-200 hover:text-slate-950'
                   }`}
                   aria-current={active ? 'page' : undefined}
                   onClick={() => onTabChange?.(tab.id)}
@@ -5580,7 +5676,6 @@ function ArchlineMatterHeader({
                   <Icon size={17} className="shrink-0" />
                   <span className="min-w-0 truncate">{tab.label}</span>
                   {tab.count ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[0.68rem] text-slate-600">{tab.count}</span> : null}
-                  {active ? <span className="absolute bottom-0 left-6 right-6 h-0.5 rounded-full bg-emerald-700" /> : null}
                 </button>
               )
             })}
@@ -5591,150 +5686,250 @@ function ArchlineMatterHeader({
   )
 }
 
-function ArchlineProgressRing({ completed = 0, total = 0, label = 'Complete' }) {
-  const percent = total ? Math.round((completed / total) * 100) : 0
-  return (
-    <div className="flex items-center gap-5">
-      <div
-        className="relative flex size-28 shrink-0 items-center justify-center rounded-full"
-        style={{ background: `conic-gradient(#087b4b ${percent}%, #e8edf2 0)` }}
-      >
-        <div className="flex size-20 flex-col items-center justify-center rounded-full bg-white">
-          <strong className="text-xl font-semibold text-slate-950">{completed} / {total || 0}</strong>
-          <span className="text-xs font-medium text-slate-500">{label}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function ArchlineOverviewWorkspace({
   lifecycleProgress,
-  roleplayerItems = [],
+  contactRows = [],
   requiredDocuments = [],
   documentHealthSummary = {},
   activityFeed = [],
   keyDates = [],
   financialRows = [],
+  taskItems = [],
+  overviewNextActions = [],
+  workflows = [],
   onOpenWorkspace,
   onAddNote,
+  onRunTask,
 }) {
-  const progressStages = [
-    { key: 'instruction', label: 'Instruction' },
-    { key: 'documents', label: 'Documents' },
-    { key: 'finance', label: 'Finance' },
-    { key: 'transfer', label: 'Transfer' },
-    { key: 'registration', label: 'Registration' },
-    { key: 'post_registration', label: 'Post Registration' },
-  ]
-  const currentIndex = Math.max(0, progressStages.findIndex((stage) => stage.key === lifecycleProgress?.currentStage))
   const completedDocs = documentHealthSummary.uploadedCount || 0
   const totalDocs = documentHealthSummary.requiredCount || requiredDocuments.length || 0
+  const missingDocs = documentHealthSummary.missingCount || 0
+  const queueItems = taskItems.length ? taskItems : overviewNextActions
+  const nextAction = queueItems[0] || overviewNextActions[0] || null
+  const taskPreviewRows = queueItems.slice(0, 4)
+  const activityRows = activityFeed.slice(0, 5)
+  const activeWorkflows = workflows.filter((workflow) => workflow?.required)
+  const blockedWorkflowCount = activeWorkflows.reduce((total, workflow) => total + (Array.isArray(workflow?.blockers) ? workflow.blockers.length : 0), 0)
+  const outstandingTasks = queueItems.length
+  const riskCount = blockedWorkflowCount + missingDocs
+  const healthStatus = riskCount
+    ? blockedWorkflowCount
+      ? 'Attention Required'
+      : 'At Risk'
+    : outstandingTasks
+      ? 'In Progress'
+      : 'Healthy'
+  const healthTone = riskCount ? 'text-amber-700' : 'text-emerald-800'
+  const lodgementDate = keyDates.find(([label]) => /lodge/i.test(label))?.[1] || 'TBD'
+  const registrationDate = keyDates.find(([label]) => /registration/i.test(label))?.[1] || 'TBD'
+  const financialTotal = financialRows.find(([label]) => /purchase/i.test(label))?.[1] || financialRows[0]?.[1] || 'Not captured'
+  const peopleRows = contactRows
+    .filter((row) => {
+      const contact = String(row.contact || '').trim().toLowerCase()
+      const email = String(row.email || '').trim().toLowerCase()
+      const phone = String(row.phone || '').trim().toLowerCase()
+      return contact && contact !== 'not assigned' || email && email !== 'not captured' || phone && phone !== 'not captured'
+    })
+    .slice(0, 8)
+  const supportingReasons = [
+    blockedWorkflowCount ? `${blockedWorkflowCount} workflow blocker${blockedWorkflowCount === 1 ? '' : 's'}` : 'No active workflow blockers visible',
+    missingDocs ? `${missingDocs} required document${missingDocs === 1 ? '' : 's'} missing` : 'Document requirements on track',
+    outstandingTasks ? `${outstandingTasks} outstanding action${outstandingTasks === 1 ? '' : 's'}` : 'No immediate action required',
+  ]
+  const documentProgress = totalDocs ? Math.round((completedDocs / totalDocs) * 100) : 0
+  const taskProgress = outstandingTasks ? Math.max(8, Math.min(90, 100 - (outstandingTasks * 12))) : 100
+
+  const runTask = (item) => {
+    if (!item) return
+    if (onRunTask) {
+      onRunTask(item)
+      return
+    }
+    onOpenWorkspace?.(item.actionTarget || item.primaryActionTarget || 'tasks')
+  }
 
   return (
     <section className="space-y-5">
-      <ArchlinePanel title="Matter Progress" className="p-5">
-        <div className="overflow-x-auto px-1 pb-3 pt-6">
-          <div className="grid min-w-[720px] grid-cols-6 items-start gap-0">
-            {progressStages.map((stage, index) => {
-              const completed = index < currentIndex
-              const current = index === currentIndex
-              return (
-                <div key={stage.key} className="relative grid justify-items-center gap-3 text-center">
-                  {index > 0 ? <span className={`absolute right-1/2 top-5 h-0.5 w-full ${completed || current ? 'bg-emerald-700' : 'bg-slate-200'}`} /> : null}
-                  <span className={`relative z-10 inline-flex size-10 items-center justify-center rounded-full border bg-white ${
-                    completed ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 text-emerald-800 ring-4 ring-emerald-50' : 'border-slate-300 text-slate-500'
-                  }`}>
-                    {completed ? <CheckCircle2 size={18} /> : <FileText size={17} />}
-                  </span>
-                  <div>
-                    <strong className={`block text-sm ${completed || current ? 'text-emerald-800' : 'text-slate-700'}`}>{stage.label}</strong>
-                    <span className="mt-1 block text-xs text-slate-500">{current ? 'In Progress' : completed ? 'Completed' : 'Pending'}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        <div className="mt-6 flex flex-col gap-3 rounded-[18px] border border-emerald-100/80 bg-emerald-50/35 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-800 shadow-sm">
-              <CalendarDays size={21} />
-            </span>
-            <div>
-              <strong className="block text-sm font-semibold text-slate-950">You are currently in the {progressStages[currentIndex]?.label || 'workflow'} stage.</strong>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the next actions and clear any open document or workflow items.'}</p>
-            </div>
-          </div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>
-            View Transfer Timeline
-            <ChevronRight size={14} />
-          </Button>
-        </div>
-      </ArchlinePanel>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <ArchlinePanel title="Key Dates" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>} className="p-5">
-          <div className="divide-y divide-slate-100">
-            {keyDates.slice(0, 5).map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                <span className="font-medium text-slate-600">{label}</span>
-                <strong className="text-right font-medium text-slate-950">{value}</strong>
-              </div>
-            ))}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Financial Summary" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('finance')}>View all</Button>} className="p-5">
-          <div className="divide-y divide-slate-100">
-            {financialRows.slice(0, 5).map(([label, value, emphasis]) => (
-              <div key={label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                <span className="font-medium text-slate-600">{label}</span>
-                <strong className={`text-right font-semibold ${emphasis ? 'text-emerald-800' : 'text-slate-950'}`}>{value}</strong>
-              </div>
-            ))}
-          </div>
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Parties" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all</Button>} className="p-5">
-          <div className="divide-y divide-slate-100">
-            {roleplayerItems.slice(0, 4).map((item) => (
-              <button key={item.key} type="button" className="flex w-full items-center justify-between gap-3 py-2.5 text-left" onClick={() => onOpenWorkspace?.('stakeholders')}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><UsersRound size={15} /></span>
-                  <span className="min-w-0">
-                    <span className="block text-xs text-slate-500">{item.label}</span>
-                    <strong className="block truncate text-sm font-medium text-slate-950">{item.value}</strong>
-                  </span>
+      <div className="grid gap-4 xl:grid-cols-[minmax(260px,0.9fr)_minmax(360px,1.25fr)_minmax(260px,0.85fr)]">
+        <ArchlinePanel className="flex min-h-[230px] flex-col p-5">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#35546c]">Next Action</span>
+          {nextAction ? (
+            <>
+              <div className="mt-5 flex items-start gap-4">
+                <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-emerald-50 text-emerald-800">
+                  <Phone size={26} />
                 </span>
-                <ChevronRight size={14} className="shrink-0 text-slate-400" />
-              </button>
-            ))}
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{nextAction.title || 'Review matter action'}</h3>
+                  <p className="mt-1 line-clamp-3 text-sm leading-6 text-[#60758d]">{nextAction.description || lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the current workflow item and keep the matter moving.'}</p>
+                </div>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <div className="rounded-[12px] border border-slate-200 bg-white px-3 py-2">
+                  <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase text-[#60758d]"><Clock3 size={13} /> Estimated Time</span>
+                  <strong className="mt-1 block text-sm text-[#142132]">3 min</strong>
+                </div>
+                <div className="rounded-[12px] border border-slate-200 bg-white px-3 py-2">
+                  <span className="text-[0.68rem] font-semibold uppercase text-[#60758d]">Priority</span>
+                  <strong className="mt-1 block text-sm text-[#142132]">{toTitle(nextAction.priority || 'medium')}</strong>
+                </div>
+              </div>
+              <div className="mt-auto flex flex-wrap items-center gap-2 pt-5">
+                <Button type="button" size="sm" onClick={() => runTask(nextAction)}>
+                  {nextAction.action || nextAction.command?.label || 'Complete Action'}
+                  <CheckCircle2 size={14} />
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>
+                  <Clock3 size={14} />
+                  Snooze
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="mt-5 rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm leading-6 text-[#60758d]">
+              <strong className="block text-[#142132]">No immediate action required.</strong>
+              The matter is currently waiting on the next workflow event.
+            </div>
+          )}
+        </ArchlinePanel>
+
+        <ArchlinePanel
+          title="Today's Tasks"
+          action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>View all tasks</Button>}
+          className="p-5"
+        >
+          <div className="divide-y divide-slate-100">
+            {taskPreviewRows.length ? taskPreviewRows.map((item) => {
+              const meta = getAttorneyQueuePriorityMeta(item)
+              return (
+                <button key={item.id || item.title} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={() => runTask(item)}>
+                  <span className="inline-flex size-5 shrink-0 items-center justify-center rounded border border-slate-300 bg-white" />
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm font-semibold text-[#142132]">{item.title}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-[#60758d]">{item.workflow?.title || item.workflow || item.kindLabel || 'Matter task'}</span>
+                  </span>
+                  <span className={`shrink-0 text-xs font-semibold ${meta.text}`}>{item.dueDate ? formatDate(item.dueDate) : item.status === 'due_today' ? 'Today' : toTitle(item.status || 'Open')}</span>
+                </button>
+              )
+            }) : (
+              <p className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-[#60758d]">No outstanding tasks are visible right now.</p>
+            )}
+          </div>
+        </ArchlinePanel>
+
+        <ArchlinePanel
+          title="Latest Activity"
+          action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>}
+          className="p-5"
+        >
+          <div className="space-y-3">
+            {activityRows.length ? activityRows.map((entry) => (
+              <article key={entry.id} className="flex gap-3">
+                <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-50 text-[#35546c]">
+                  <Activity size={15} />
+                </span>
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm font-semibold text-[#142132]">{entry.title || entry.body || 'Matter update'}</strong>
+                  <p className="mt-0.5 truncate text-xs text-[#60758d]">
+                    {entry.authorName || 'Matter team'} {entry.createdAt ? `· ${formatDateTime(entry.createdAt)}` : ''}
+                  </p>
+                </div>
+              </article>
+            )) : (
+              <p className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-[#60758d]">No matter activity has been recorded yet.</p>
+            )}
           </div>
         </ArchlinePanel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ArchlinePanel title="Matter Notes" action={<Button type="button" variant="ghost" size="sm" onClick={onAddNote}>Add Note</Button>} className="p-4">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700">
-            {activityFeed[0]?.body || activityFeed[0]?.title || 'No notes have been recorded yet.'}
-          </div>
-          {activityFeed[0]?.createdAt ? <p className="mt-3 text-xs text-slate-500">Last updated {formatDateTime(activityFeed[0].createdAt)}</p> : null}
-        </ArchlinePanel>
-
-        <ArchlinePanel title="Document Checklist" className="p-4">
-          <div className="flex items-center justify-between gap-4">
-            <ArchlineProgressRing completed={completedDocs} total={totalDocs} label="Complete" />
-            <div className="grid gap-2 text-sm">
-              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Completed</span><strong>{completedDocs}</strong></span>
-              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Outstanding</span><strong>{documentHealthSummary.missingCount || 0}</strong></span>
-              <span className="flex items-center justify-between gap-5"><span className="text-slate-600">Not Required</span><strong>{Math.max(totalDocs - completedDocs - (documentHealthSummary.missingCount || 0), 0)}</strong></span>
+      <ArchlinePanel className="p-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(180px,0.8fr)_repeat(5,minmax(120px,1fr))]">
+          <div className="flex items-center gap-4 border-slate-200 lg:border-r lg:pr-5">
+            <span className={`inline-flex size-16 shrink-0 items-center justify-center rounded-full border-4 border-emerald-100 bg-white text-lg font-semibold ${healthTone}`}>
+              {healthStatus === 'Healthy' ? <CheckCircle2 size={28} /> : <AlertTriangle size={28} />}
+            </span>
+            <div>
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#60758d]">Matter Health</span>
+              <strong className={`mt-1 block text-lg font-semibold ${healthTone}`}>{healthStatus}</strong>
+              <ul className="mt-2 space-y-1 text-xs leading-5 text-[#60758d]">
+                {supportingReasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
             </div>
           </div>
-          <Button type="button" variant="ghost" size="sm" className="mt-4 w-full justify-center" onClick={() => onOpenWorkspace?.('documents')}>
-            View Checklist
-          </Button>
-        </ArchlinePanel>
+          {[
+            ['Estimated Lodgement', lodgementDate, ''],
+            ['Estimated Registration', registrationDate, ''],
+            ['Financial Summary', financialTotal, 'Current / estimated'],
+            ['Documents', totalDocs ? `${completedDocs} / ${totalDocs}` : 'Not configured', 'Complete'],
+            ['Tasks', String(outstandingTasks), 'Outstanding'],
+            ['Risks / Blockers', String(riskCount), riskCount ? 'Require attention' : 'Clear'],
+          ].map(([label, value, helper]) => (
+            <button key={label} type="button" className="min-w-0 rounded-[14px] border border-transparent px-2 py-2 text-left transition hover:border-slate-200 hover:bg-slate-50" onClick={() => {
+              if (/document/i.test(label)) onOpenWorkspace?.('documents')
+              else if (/task/i.test(label)) onOpenWorkspace?.('tasks')
+              else if (/financial/i.test(label)) onOpenWorkspace?.('finance')
+              else if (/risk|lodgement|registration/i.test(label)) onOpenWorkspace?.('transfer')
+            }}>
+              <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#60758d]">{label}</span>
+              <strong className="mt-1 block truncate text-base font-semibold text-[#142132]">{value}</strong>
+              {helper ? <span className="mt-1 block truncate text-xs text-[#60758d]">{helper}</span> : null}
+              {/document/i.test(label) && totalDocs ? (
+                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <span className="block h-full rounded-full bg-emerald-700" style={{ width: `${documentProgress}%` }} />
+                </span>
+              ) : null}
+              {/task/i.test(label) ? (
+                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <span className="block h-full rounded-full bg-amber-500" style={{ width: `${taskProgress}%` }} />
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </ArchlinePanel>
+
+      <ArchlinePanel title="People on This Matter" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all</Button>} className="p-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {peopleRows.length ? peopleRows.map((row) => {
+            const initials = String(row.contact || row.company || row.role || '?')
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join('')
+              .toUpperCase()
+            return (
+              <article key={row.key || row.role} className="min-w-0 rounded-[16px] border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-[#142132]">{initials}</span>
+                  <div className="min-w-0">
+                    <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">{row.role}</span>
+                    <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{row.contact}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-[#60758d]">{row.company}</span>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-[#60758d]">
+                  {row.phone && row.phone !== 'Not captured' ? <p className="truncate">{row.phone}</p> : null}
+                  {row.email && row.email !== 'Not captured' ? <p className="truncate">{row.email}</p> : null}
+                  <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">{row.status || 'Active'}</span>
+                </div>
+              </article>
+            )
+          }) : (
+            <p className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-[#60758d]">No linked roleplayers are available for this matter yet.</p>
+          )}
+        </div>
+      </ArchlinePanel>
+
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onAddNote}>
+          <MessageSquarePlus size={14} />
+          Add Note
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => onOpenWorkspace?.('documents')}>
+          <Upload size={14} />
+          Upload Document
+        </Button>
       </div>
     </section>
   )
@@ -12805,13 +13000,20 @@ function AttorneyTransactionDetail() {
   }, [legalWorkflowModels])
   const archlineWorkspaceTabs = useMemo(() => [
     { id: 'overview', label: 'Overview' },
-    { id: 'documents', label: 'Documents' },
+    { id: 'tasks', label: 'Tasks', count: overviewNextActions.length || undefined },
     { id: 'transfer', label: 'Transfer' },
     { id: 'finance', label: 'Attorney Finance' },
+    { id: 'documents', label: 'Documents', count: totalDocsLabel(documentHealthSummary.uploadedCount || 0, documentHealthSummary.requiredCount || requiredDocumentRows.length || 0) },
     ...(requiresCancellationWorkflow ? [{ id: 'cancellation', label: 'Cancellation', count: 1 }] : []),
     { id: 'activity', label: 'Activity' },
-    { id: 'roleplayers', label: 'Role Players' },
-  ], [requiresCancellationWorkflow])
+    { id: 'roleplayers', label: 'Parties' },
+  ], [
+    documentHealthSummary.requiredCount,
+    documentHealthSummary.uploadedCount,
+    overviewNextActions.length,
+    requiredDocumentRows.length,
+    requiresCancellationWorkflow,
+  ])
   const archlineActiveWorkspaceTab = useMemo(() => {
     if (activeLegalWorkflowDetailKey === 'bond-cancellation') return 'cancellation'
     if (activeLegalWorkflowDetailKey === 'bond-registration') return 'finance'
@@ -12935,14 +13137,6 @@ function AttorneyTransactionDetail() {
     () => buildAttorneyDailyActionQueueItems(legalWorkflowModels),
     [legalWorkflowModels],
   )
-  const archlineSourceLabel =
-    transaction?.source ||
-    transaction?.lead_source ||
-    transaction?.source_name ||
-    transaction?.assigned_agency ||
-    assignedAgent?.organisationName ||
-    'Not captured'
-
   async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note) {
     const lane = workflow?.lane || null
     if (!lane) return false
@@ -13042,6 +13236,42 @@ function AttorneyTransactionDetail() {
       visible: requiresCancellationAttorneyCard,
     },
   ].filter((item) => item.visible !== false)
+  const archlineMatterChips = useMemo(() => [
+    archlineTransferWorkflow ? { key: 'transfer', label: 'Transfer', icon: Workflow } : null,
+    isBondOrHybridFinance ? { key: 'bond', label: 'Bond', icon: Landmark } : null,
+    requiresCancellationWorkflow ? { key: 'cancellation', label: 'Cancellation', icon: X } : null,
+    displayPurchasePriceValue >= 10_000_000 ? { key: 'high-value', label: 'High Value', icon: Star } : null,
+  ].filter(Boolean), [
+    archlineTransferWorkflow,
+    displayPurchasePriceValue,
+    isBondOrHybridFinance,
+    requiresCancellationWorkflow,
+  ])
+  const archlinePrimaryContact = useMemo(() => {
+    const rows = transactionContactRows.filter((row) => row?.contact && row.contact !== 'Not assigned')
+    return (
+      rows.find((row) => /buyer/i.test(row.role) && (row.phone !== 'Not captured' || row.email !== 'Not captured')) ||
+      rows.find((row) => row.phone && row.phone !== 'Not captured') ||
+      rows.find((row) => row.email && row.email !== 'Not captured') ||
+      null
+    )
+  }, [transactionContactRows])
+  const handleArchlineCallPrimaryContact = useCallback(() => {
+    const phone = String(archlinePrimaryContact?.phone || '').trim()
+    if (!phone || phone === 'Not captured') {
+      openWorkspaceMenu('stakeholders')
+      return
+    }
+    window.location.href = `tel:${phone.replace(/\s+/g, '')}`
+  }, [archlinePrimaryContact?.phone, openWorkspaceMenu])
+  const handleArchlineEmailPrimaryContact = useCallback(() => {
+    const email = String(archlinePrimaryContact?.email || '').trim()
+    if (!email || email === 'Not captured') {
+      openWorkspaceMenu('stakeholders')
+      return
+    }
+    window.location.href = `mailto:${email}`
+  }, [archlinePrimaryContact?.email, openWorkspaceMenu])
   const filteredActivityFeed = useMemo(
     () =>
       activityFeed.filter((entry) => {
@@ -14430,15 +14660,20 @@ function AttorneyTransactionDetail() {
             reference={workspaceReference}
             statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
             property={propertyAddress || matterHeadline}
-            buyer={buyerDisplayName}
-            seller={sellerDisplayName}
+            propertyType={toTitle(transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure || 'Not captured')}
             purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
+            daysOpenLabel={daysBetween(transaction?.instruction_date || transaction?.created_at)}
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')}
-            source={archlineSourceLabel}
+            matterChips={archlineMatterChips}
+            workflow={archlineTransferWorkflow}
             tabs={archlineWorkspaceTabs}
             activeTab={archlineActiveWorkspaceTab}
             onTabChange={handleArchlineTabChange}
+            onSharePortal={() => handleOverviewActionTarget('buyer_portal')}
+            onCall={handleArchlineCallPrimaryContact}
+            onEmail={handleArchlineEmailPrimaryContact}
             onMoreActions={() => openWorkspaceMenu('tasks')}
+            onViewProperty={() => openWorkspaceMenu('overview')}
           />
           {onboardingActionMessage ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
@@ -14632,16 +14867,17 @@ function AttorneyTransactionDetail() {
           <ArchlineOverviewWorkspace
             lifecycleProgress={displayedLifecycleProgress}
             overviewNextActions={overviewNextActions}
-            roleplayerItems={archlinePartyItems}
+            contactRows={transactionContactRows}
             requiredDocuments={requiredDocumentRows}
             documentHealthSummary={documentHealthSummary}
             activityFeed={overviewConversationEntries}
             keyDates={archlineKeyDates}
             financialRows={archlineFinancialRows}
+            taskItems={archlineTaskQueueItems}
+            workflows={legalWorkflowModels}
             onOpenWorkspace={openWorkspaceMenu}
-            onUploadDocument={() => openDocumentUploadModal()}
             onAddNote={handleQuickAddWorkflowNote}
-            onRequestDocuments={handleQuickRequestDocuments}
+            onRunTask={handleArchlineTaskCommand}
           />
         ) : null}
 
