@@ -13,11 +13,23 @@ import { handleSellerOnboardingEmail } from "../send-email/handlers/sellerOnboar
 
 type JsonRecord = Record<string, unknown>;
 type SupabaseAdminClient = ReturnType<typeof createClient<any, "public", any>>;
+type SellerPortalRequiredDocument = {
+  id?: string;
+  key?: string;
+  name?: string;
+  description?: string;
+  priority?: string;
+  dueDate?: string;
+  isReplacement?: boolean;
+};
 
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT = "seller_portal_invite_ready_after_mandate_signed";
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SENT_EVENT = "seller_portal_invite_sent_after_mandate_signed";
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = "seller_portal_invite_skipped_after_mandate_signed";
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = "seller_portal_invite_failed_after_mandate_signed";
+const SELLER_POST_MANDATE_OUTSTANDING_REQUIREMENT_STATUSES = new Set(["required", "requested", "rejected"]);
+const SELLER_POST_MANDATE_SATISFYING_DOCUMENT_STATUSES = new Set(["uploaded", "under_review", "approved", "completed", "verified"]);
+const SELLER_POST_MANDATE_VISIBLE_SCOPES = new Set(["", "seller", "seller_visible", "client", "client_visible"]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1847,18 +1859,244 @@ async function resolveSellerPortalInviteOnboarding({
   return null;
 }
 
+function normalizeRequirementKey(value: unknown) {
+  return normalizeText(value)
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function explicitFalse(value: unknown) {
+  return value === false || ["false", "no", "0"].includes(normalizeRequirementKey(value));
+}
+
+function sellerRequirementId(requirement: Record<string, unknown>) {
+  return firstText(requirement.id, requirement.requirementId, requirement.requirement_id);
+}
+
+function sellerRequirementKey(requirement: Record<string, unknown>) {
+  return normalizeRequirementKey(firstText(
+    requirement.requirementKey,
+    requirement.requirement_key,
+    requirement.documentKey,
+    requirement.document_key,
+    requirement.key,
+    requirement.type,
+    requirement.requirementName,
+    requirement.requirement_name,
+    requirement.label,
+  ));
+}
+
+function sellerRequirementStatus(requirement: Record<string, unknown>) {
+  return normalizeRequirementKey(firstText(
+    requirement.status,
+    requirement.requirementStatus,
+    requirement.requirement_status,
+    "required",
+  ));
+}
+
+function sellerDocumentStatus(document: Record<string, unknown>) {
+  return normalizeRequirementKey(firstText(
+    document.status,
+    document.documentStatus,
+    document.document_status,
+    document.reviewStatus,
+    document.review_status,
+    "uploaded",
+  ));
+}
+
+function sellerDocumentMatchesRequirement(document: Record<string, unknown>, requirement: Record<string, unknown>) {
+  const expectedId = sellerRequirementId(requirement);
+  const linkedId = firstText(
+    document.requirementId,
+    document.requirement_id,
+    document.documentRequirementId,
+    document.document_requirement_id,
+  );
+  if (expectedId && linkedId && expectedId === linkedId) return true;
+
+  const expectedCanonicalId = firstText(
+    requirement.canonicalRequirementInstanceId,
+    requirement.canonical_requirement_instance_id,
+  );
+  const documentCanonicalId = firstText(
+    document.canonicalRequirementInstanceId,
+    document.canonical_requirement_instance_id,
+  );
+  if (expectedCanonicalId && documentCanonicalId && expectedCanonicalId === documentCanonicalId) return true;
+
+  const expectedKey = sellerRequirementKey(requirement);
+  const linkedKey = normalizeRequirementKey(firstText(
+    document.requirementKey,
+    document.requirement_key,
+    document.documentType,
+    document.document_type,
+    document.category,
+    document.type,
+  ));
+  return Boolean(expectedKey && linkedKey && expectedKey === linkedKey);
+}
+
+function sellerRequirementHasSatisfyingDocument(requirement: Record<string, unknown>, documents: Record<string, unknown>[]) {
+  return documents.some((document) =>
+    sellerDocumentMatchesRequirement(document, requirement) &&
+    SELLER_POST_MANDATE_SATISFYING_DOCUMENT_STATUSES.has(sellerDocumentStatus(document))
+  );
+}
+
+function normalizeSellerPortalRequiredDocument(requirement: Record<string, unknown>): SellerPortalRequiredDocument {
+  const status = sellerRequirementStatus(requirement);
+  const key = sellerRequirementKey(requirement);
+  return {
+    id: sellerRequirementId(requirement),
+    key,
+    name: firstText(
+      requirement.requirementName,
+      requirement.requirement_name,
+      requirement.name,
+      requirement.label,
+      key,
+    ),
+    description: firstText(
+      requirement.requirementDescription,
+      requirement.requirement_description,
+      requirement.description,
+      requirement.note,
+    ),
+    priority: normalizeRequirementKey(firstText(
+      requirement.requestPriority,
+      requirement.request_priority,
+      requirement.priority,
+      requirement.requirement_level,
+      status === "rejected" ? "blocker" : "required",
+    )),
+    dueDate: firstText(
+      requirement.requestDueDate,
+      requirement.request_due_date,
+      requirement.dueDate,
+      requirement.due_date,
+    ),
+    isReplacement: status === "rejected",
+  };
+}
+
+async function selectSellerPortalRowsWithFallback(
+  supabase: any,
+  tableName: string,
+  listingId: string,
+  selectColumns: string[],
+) {
+  let lastError: unknown = null;
+  for (const columns of selectColumns) {
+    const query = await supabase
+      .from(tableName)
+      .select(columns)
+      .eq("private_listing_id", listingId);
+    if (!query.error) return (query.data || []) as Record<string, unknown>[];
+    lastError = query.error;
+  }
+  console.error(`[mandate-signing] ${tableName} lookup failed`, lastError);
+  return [];
+}
+
+async function resolveSellerPortalRequiredDocuments({
+  supabase,
+  listingId,
+}: {
+  supabase: any;
+  listingId: string;
+}) {
+  const normalizedListingId = uuidOrNull(listingId);
+  if (!normalizedListingId) return [];
+
+  const [requirements, documents] = await Promise.all([
+    selectSellerPortalRowsWithFallback(supabase, "private_listing_document_requirements", normalizedListingId, [
+      "id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, request_priority, request_due_date, canonical_requirement_instance_id",
+      "id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required",
+      "id, private_listing_id, requirement_key, status, is_required",
+    ]),
+    selectSellerPortalRowsWithFallback(supabase, "private_listing_documents", normalizedListingId, [
+      "id, private_listing_id, requirement_id, requirement_key, document_type, document_name, status, review_status, canonical_requirement_instance_id",
+      "id, private_listing_id, requirement_id, requirement_key, document_type, document_name, status, review_status",
+      "id, private_listing_id, requirement_key, document_type, status",
+    ]),
+  ]);
+
+  return requirements
+    .filter((requirement) => {
+      const key = sellerRequirementKey(requirement);
+      const visibility = normalizeRequirementKey(firstText(
+        requirement.documentVisibility,
+        requirement.document_visibility,
+        requirement.visibility,
+        requirement.visibilityScope,
+        requirement.visibility_scope,
+      ));
+      if (!SELLER_POST_MANDATE_VISIBLE_SCOPES.has(visibility)) return false;
+      if (explicitFalse(requirement.required) || explicitFalse(requirement.is_required) || explicitFalse(requirement.applicable)) return false;
+      if (key === "signed_mandate") return false;
+      if (!SELLER_POST_MANDATE_OUTSTANDING_REQUIREMENT_STATUSES.has(sellerRequirementStatus(requirement))) return false;
+      return !sellerRequirementHasSatisfyingDocument(requirement, documents);
+    })
+    .map(normalizeSellerPortalRequiredDocument)
+    .sort((left, right) => {
+      const replacementRank = Number(Boolean(right.isReplacement)) - Number(Boolean(left.isReplacement));
+      if (replacementRank) return replacementRank;
+      const priorityRank: Record<string, number> = { blocker: 0, required: 1, recommended: 2, optional: 3 };
+      const leftPriority = priorityRank[normalizeRequirementKey(left.priority)] ?? 4;
+      const rightPriority = priorityRank[normalizeRequirementKey(right.priority)] ?? 4;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return normalizeText(left.name).localeCompare(normalizeText(right.name));
+    });
+}
+
+function resolveSellerStructureLabel(onboarding: Record<string, unknown>, formData: Record<string, unknown>) {
+  const sellerType = normalizeRequirementKey(firstText(
+    onboarding.seller_type,
+    onboarding.sellerType,
+    formData.sellerType,
+    formData.seller_type,
+    formData.ownershipType,
+    formData.ownership_type,
+  ));
+  const marital = normalizeRequirementKey(firstText(onboarding.marital_regime, onboarding.maritalRegime, formData.maritalRegime, formData.marital_regime));
+  const labels: Record<string, string> = {
+    company: "Company seller",
+    trust: "Trust seller",
+    deceased_estate: "Deceased estate seller",
+    multiple_individuals: "Multiple individual sellers",
+    multiple_owners: "Multiple individual sellers",
+    power_of_attorney: "Power of attorney seller",
+    married: "Individual seller",
+    individual: "Individual seller",
+  };
+  const base = labels[sellerType] || "Seller";
+  if (sellerType === "individual" || sellerType === "married") {
+    if (["married_in_community", "in_community"].includes(marital)) return `${base} - married in community of property`;
+    if (["antenuptial_contract", "married_out_of_community", "out_of_community"].includes(marital)) return `${base} - married out of community of property`;
+    if (marital === "foreign_marriage") return `${base} - foreign marriage`;
+  }
+  return base;
+}
+
 function buildSellerPortalInviteEmailPayload({
   packet,
   listing,
   onboarding,
   allSigners,
   organisationId,
+  requiredDocuments = [],
 }: {
   packet: Record<string, unknown>;
   listing: Record<string, unknown>;
   onboarding: Record<string, unknown>;
   allSigners: Record<string, unknown>[];
   organisationId: string;
+  requiredDocuments?: SellerPortalRequiredDocument[];
 }) {
   const { sourceContext, nestedSource, sourceLead, formData, placeholders } = resolveSellerPortalSourceContext(packet);
   const onboardingFormData = {
@@ -1866,6 +2104,7 @@ function buildSellerPortalInviteEmailPayload({
     ...asRecord(onboarding.form_data),
     ...asRecord(onboarding.formData),
   };
+  const sellerStructureLabel = resolveSellerStructureLabel(onboarding, onboardingFormData);
   const sellerSigner = (allSigners || []).find((item) => isMandateSeller(item.signer_role)) || {};
   const token = firstText(
     onboarding.token,
@@ -1940,6 +2179,16 @@ function buildSellerPortalInviteEmailPayload({
       transactionReference: firstText(listing.listing_reference, sourceContext.transactionReference, sourceContext.transaction_reference),
       agentName: firstText(sourceContext.assignedAgentName, nestedSource.assignedAgentName, "Your agent"),
       supportEmail: firstText(listing.assigned_agent_email, sourceContext.assignedAgentEmail, nestedSource.assignedAgentEmail).toLowerCase(),
+      requiredDocuments,
+      outstandingDocumentCount: requiredDocuments.length,
+      sellerStructure: {
+        sellerType: firstText(onboarding.seller_type, onboardingFormData.sellerType, onboardingFormData.seller_type),
+        ownershipStructure: firstText(onboarding.ownership_structure, onboardingFormData.ownershipStructure, onboardingFormData.ownership_structure),
+        maritalRegime: firstText(onboarding.marital_regime, onboardingFormData.maritalRegime, onboardingFormData.marital_regime),
+        label: sellerStructureLabel,
+      },
+      documentPackSource: "persisted_requirements",
+      documentPackRequirementKeys: requiredDocuments.map((document) => normalizeRequirementKey(document.key)).filter(Boolean),
     },
     reason: "",
     token,
@@ -2099,12 +2348,17 @@ async function sendSellerPortalInviteAfterMandateSigned({
     });
     return { skipped: true, reason: "seller_onboarding_missing" };
   }
+  const requiredDocuments = await resolveSellerPortalRequiredDocuments({
+    supabase,
+    listingId: normalizeText(listing.id),
+  });
   const { payload, reason, token } = buildSellerPortalInviteEmailPayload({
     packet,
     listing,
     onboarding,
     allSigners,
     organisationId,
+    requiredDocuments,
   });
 
   if (!payload) {
@@ -2172,6 +2426,9 @@ async function sendSellerPortalInviteAfterMandateSigned({
       recipientEmailPresent: true,
       deliveryId: normalizeText(emailResult.body?.deliveryId) || null,
       canonicalInviteId: normalizeText(emailResult.body?.canonicalInviteId) || null,
+      outstandingDocumentCount: requiredDocuments.length,
+      outstandingDocumentKeys: requiredDocuments.map((document) => normalizeRequirementKey(document.key)).filter(Boolean),
+      documentPackSource: "persisted_requirements",
     },
   });
 

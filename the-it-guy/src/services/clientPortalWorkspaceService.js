@@ -1610,6 +1610,10 @@ function toDisplayText(value = '', fallback = '') {
   return normalized || fallback
 }
 
+function compactDisplayText(values = []) {
+  return values.map((value) => toDisplayText(value)).filter(Boolean).join(', ')
+}
+
 function getDocumentLookupKeys(document = {}) {
   return [
     document?.id,
@@ -1954,6 +1958,104 @@ function resolveSellerPortalPropertyDisclosure(portalData = {}) {
   return candidates.find((candidate) => isPlainObject(candidate)) || null
 }
 
+function resolveSellerPortalDisclosureBranding(portalData = {}, formData = {}, listing = {}) {
+  const candidates = [
+    formData?.portalBranding,
+    formData?.portal_branding,
+    portalData?.branding,
+    portalData?.portalBranding,
+    portalData?.portal_branding,
+    portalData?.activeSellingContext?.branding,
+    portalData?.active_selling_context?.branding,
+    listing?.branding,
+  ].filter(isPlainObject)
+  const merged = Object.assign({}, ...candidates)
+  const organisationName = toDisplayText(
+    merged.organisationName ||
+      merged.organisation_name ||
+      merged.agencyName ||
+      merged.agency_name ||
+      listing?.organisationName ||
+      listing?.organisation_name ||
+      listing?.agencyName ||
+      listing?.agency_name,
+  )
+  const logoLightUrl = toDisplayText(
+    merged.logoLightUrl ||
+      merged.logo_light_url ||
+      merged.logoLight ||
+      listing?.agencyLogoLightUrl ||
+      listing?.agency_logo_light_url ||
+      listing?.organisationLogoLightUrl ||
+      listing?.organisation_logo_light_url,
+  )
+  const logoDarkUrl = toDisplayText(
+    merged.logoDarkUrl ||
+      merged.logo_dark_url ||
+      merged.logoDark ||
+      listing?.agencyLogoDarkUrl ||
+      listing?.agency_logo_dark_url ||
+      listing?.organisationLogoDarkUrl ||
+      listing?.organisation_logo_dark_url,
+  )
+  const logoUrl = toDisplayText(
+    logoLightUrl ||
+      merged.logoUrl ||
+      merged.logo_url ||
+      merged.organisationLogoUrl ||
+      merged.organisation_logo_url ||
+      listing?.agencyLogoUrl ||
+      listing?.agency_logo_url ||
+      listing?.organisationLogoUrl ||
+      listing?.organisation_logo_url ||
+      logoDarkUrl,
+  )
+
+  return {
+    ...merged,
+    organisationName,
+    agencyName: organisationName,
+    logoUrl,
+    logoLightUrl,
+    logoDarkUrl,
+    website: toDisplayText(merged.website || merged.organisationWebsite || merged.organisation_website || listing?.organisationWebsite || listing?.website),
+    email: toDisplayText(merged.email || merged.organisationEmail || merged.organisation_email || listing?.organisationEmail || listing?.agencyEmail),
+    phone: toDisplayText(merged.phone || merged.telephone || merged.organisationPhone || merged.organisation_phone || listing?.organisationPhone || listing?.agencyPhone),
+    physicalAddress: toDisplayText(
+      merged.physicalAddress ||
+        merged.physical_address ||
+        merged.organisationPhysicalAddress ||
+        merged.organisation_physical_address ||
+        merged.address ||
+        listing?.organisationPhysicalAddress ||
+        listing?.organisation_physical_address ||
+        listing?.agencyAddress ||
+        listing?.agency_address,
+    ),
+  }
+}
+
+function resolveSellerPortalDisclosurePropertyAddress(listing = {}, formData = {}) {
+  return toDisplayText(
+    formData?.propertyAddress ||
+      formData?.property_address ||
+      formData?.propertyDisplayAddress ||
+      formData?.property_display_address ||
+      listing?.propertyAddress ||
+      listing?.property_address ||
+      listing?.displayAddress ||
+      listing?.display_address ||
+      listing?.address ||
+      compactDisplayText([
+        listing?.streetAddress || listing?.street_address,
+        listing?.suburb,
+        listing?.city || listing?.town,
+        listing?.province,
+        listing?.postalCode || listing?.postal_code,
+      ]),
+  )
+}
+
 function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceMode = 'buying') {
   if (workspaceMode !== 'selling') return null
   const formData = resolveSellerPortalFormData(portalData)
@@ -1972,6 +2074,17 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
     propertyId: toDisplayText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
     listingId: toDisplayText(generatedDocument.listingId || listing?.id),
     transactionId: toDisplayText(generatedDocument.transactionId || portalData?.transaction?.id),
+    propertyAddress: resolveSellerPortalDisclosurePropertyAddress(listing, formData),
+    documentReference: toDisplayText(
+      listing?.listingReference ||
+        listing?.listing_reference ||
+        listing?.reference ||
+        listing?.privateListingReference ||
+        listing?.private_listing_reference ||
+        generatedDocument.listingId ||
+        listing?.id,
+    ),
+    branding: resolveSellerPortalDisclosureBranding(portalData, formData, listing),
   }
   const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
   const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-disclosure-annexure-a.pdf')

@@ -908,6 +908,7 @@ async function renderStructuredSectionsToPdfBytes({
   packetId?: string;
 }): Promise<StructuredPdfRenderResult> {
   const pdf = await PDFDocument.create();
+  void packetId;
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const pageWidth = 595.28;
@@ -942,7 +943,12 @@ async function renderStructuredSectionsToPdfBytes({
     getPdfPlaceholder(placeholders, "organisation_logo_url", "agency_logo_url", "organisation.logo_url"),
   );
   const logoImage = await embedPdfLogo(pdf, logoUrl);
-  const documentReference = getPdfPlaceholder(placeholders, "document_reference", "packet_reference", "transaction_reference", "packet_id") || packetId || title;
+  const agencyWebsite = firstPdfValue(
+    branding?.website,
+    branding?.organisationWebsite,
+    branding?.organisation_website,
+    getPdfPlaceholder(placeholders, "agency_website", "organisation_website", "organisation.website"),
+  );
   const normalizedPacketType = normalizeText(packetType).toLowerCase();
   const safeTitle = normalizedPacketType === "mandate"
     ? "Mandate Agreement"
@@ -957,7 +963,7 @@ async function renderStructuredSectionsToPdfBytes({
     firstPdfValue(branding?.physicalAddress, branding?.physical_address, branding?.organisationPhysicalAddress, branding?.organisation_physical_address, branding?.address, getPdfPlaceholder(placeholders, "agency_address", "organisation_physical_address", "organisation.physical_address")),
     firstPdfValue(branding?.email, branding?.organisationEmail, branding?.organisation_email, branding?.contactEmail, getPdfPlaceholder(placeholders, "agency_email", "organisation_email", "organisation.email")),
     firstPdfValue(branding?.telephone, branding?.phoneNumber, branding?.phone_number, branding?.phone, branding?.organisationPhone, branding?.organisation_phone, getPdfPlaceholder(placeholders, "agency_phone", "organisation_phone", "organisation.phone")),
-    firstPdfValue(branding?.website, branding?.organisationWebsite, branding?.organisation_website, getPdfPlaceholder(placeholders, "agency_website", "organisation_website", "organisation.website")),
+    agencyWebsite,
   ]
     .map((value, index) => {
       const text = normalizePdfText(value);
@@ -1029,7 +1035,6 @@ async function renderStructuredSectionsToPdfBytes({
       }
     }
     drawCentered(targetPage, safeTitle.toUpperCase(), pageHeight - 95, bold, 17, dark);
-    drawCentered(targetPage, documentReference, pageHeight - 114, regular, 8.5, muted);
     targetPage.drawLine({ start: { x: margin, y: pageHeight - 128 }, end: { x: pageWidth - margin, y: pageHeight - 128 }, thickness: 0.6, color: lineColor });
     targetPage.drawLine({ start: { x: margin, y: 58 }, end: { x: pageWidth - margin, y: 58 }, thickness: 0.6, color: lineColor });
   };
@@ -1037,8 +1042,10 @@ async function renderStructuredSectionsToPdfBytes({
     const footerLeft = orgName.length > 34 ? `${orgName.slice(0, 31)}...` : orgName;
     targetPage.drawText(footerLeft, { x: margin, y: footerY, size: 7.5, font: bold, color: muted });
     drawCentered(targetPage, `Page ${index + 1} of ${total}`, footerY, regular, 7.5, muted);
-    const ref = documentReference.length > 30 ? `${documentReference.slice(0, 27)}...` : documentReference;
-    targetPage.drawText(ref, { x: pageWidth - margin - regular.widthOfTextAtSize(ref, 7.5), y: footerY, size: 7.5, font: regular, color: muted });
+    const footerRight = agencyWebsite.length > 38 ? `${agencyWebsite.slice(0, 35)}...` : agencyWebsite;
+    if (footerRight) {
+      targetPage.drawText(footerRight, { x: pageWidth - margin - regular.widthOfTextAtSize(footerRight, 7.5), y: footerY, size: 7.5, font: regular, color: muted });
+    }
   };
   drawChrome(page);
 
@@ -1070,7 +1077,7 @@ async function renderStructuredSectionsToPdfBytes({
   };
   const drawDetailPanel = () => {
     const panelTop = y;
-    const panelHeight = 98;
+    const panelHeight = 116;
     const columnWidth = (maxWidth - 16) / 2;
     const leftX = margin + 12;
     const rightX = margin + 12 + columnWidth + 16;
@@ -1088,12 +1095,12 @@ async function renderStructuredSectionsToPdfBytes({
     ];
     details.forEach(([label, value], index) => {
       const colX = index % 2 === 0 ? leftX : rightX;
-      const rowY = panelTop - 22 - Math.floor(index / 2) * 29;
+      const rowY = panelTop - 21 - Math.floor(index / 2) * 36;
       page.drawText(label, { x: colX, y: rowY, size: 7.5, font: bold, color: muted });
       const resolved = normalizePdfText(value) || "-";
-      const lines = wrapPdfLine(resolved, regular, 9.2, columnWidth - 8).slice(0, 2);
+      const lines = wrapPdfLine(resolved, regular, 9, columnWidth - 10).slice(0, 2);
       lines.forEach((line, lineIndex) => {
-        page.drawText(line, { x: colX, y: rowY - 13 - lineIndex * 11, size: 9.2, font: regular, color: dark });
+        page.drawText(line, { x: colX, y: rowY - 15 - lineIndex * 11, size: 9, font: regular, color: dark });
       });
     });
     y -= panelHeight + 26;
@@ -1101,15 +1108,28 @@ async function renderStructuredSectionsToPdfBytes({
 
   const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
     const panelWidth = 210;
-    const panelHeight = 124;
-    const fieldHeight = 56;
+    const panelHeight = 154;
+    const fieldHeight = 50;
     const panelY = pageHeight - options.panelTop - panelHeight;
     const fieldTop = options.panelTop + 34;
+    const signatureFieldY = pageHeight - fieldTop - fieldHeight;
     targetPage.drawRectangle({ x: options.x, y: panelY, width: panelWidth, height: panelHeight, color: rgb(1, 1, 1), borderColor: lineColor, borderWidth: 0.9 });
     targetPage.drawText(options.title, { x: options.x + 12, y: panelY + panelHeight - 22, size: 9.5, font: bold, color: dark });
-    targetPage.drawRectangle({ x: options.x + 12, y: pageHeight - fieldTop - fieldHeight, width: 186, height: fieldHeight, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
-    targetPage.drawText("Signature", { x: options.x + 12, y: panelY + 28, size: 7.5, font: regular, color: muted });
-    targetPage.drawText(normalizePdfText(options.name) || options.role, { x: options.x + 12, y: panelY + 14, size: 8.5, font: bold, color: dark });
+    targetPage.drawRectangle({ x: options.x + 12, y: signatureFieldY, width: 186, height: fieldHeight, borderColor: rgb(0.55, 0.62, 0.72), borderWidth: 0.8 });
+    const lineLeft = options.x + 12;
+    const lineRight = options.x + 198;
+    const lineRows = [
+      { label: "Signature", y: panelY + 55, value: "" },
+      { label: "Name", y: panelY + 35, value: normalizePdfText(options.name) || options.role },
+      { label: "Signed", y: panelY + 15, value: "" },
+    ];
+    lineRows.forEach((row) => {
+      targetPage.drawLine({ start: { x: lineLeft, y: row.y }, end: { x: lineRight, y: row.y }, thickness: 0.6, color: lineColor });
+      targetPage.drawText(row.label, { x: lineLeft, y: row.y - 8, size: 6.7, font: regular, color: muted });
+      if (row.value) {
+        targetPage.drawText(row.value, { x: lineLeft + 42, y: row.y + 3, size: 8.4, font: bold, color: dark });
+      }
+    });
     plannedSigningFields.push({
       signerRole: options.signerRole,
       fieldType: "signature",
@@ -1145,7 +1165,7 @@ async function renderStructuredSectionsToPdfBytes({
       getPdfPlaceholder(placeholders, "purchaser_2_name"),
     );
     const hasSpouseSigner = !isMissingPdfValue(spouseName);
-    const signatureBlockHeight = hasSpouseSigner ? 360 : 220;
+    const signatureBlockHeight = hasSpouseSigner ? 430 : 260;
     if (y - signatureBlockHeight < 84) {
       addPage();
       y = pageHeight - 150;
@@ -1163,7 +1183,7 @@ async function renderStructuredSectionsToPdfBytes({
     drawSignaturePanel(page, { title: "Agent signer", name: agentName, role: "Agent", panelTop, x: margin, signerRole: "agent" });
     drawSignaturePanel(page, { title: "Seller signer", name: sellerName, role: "Seller", panelTop, x: pageWidth - margin - 210, signerRole: "seller" });
     if (hasSpouseSigner) {
-      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: panelTop + 150, x: margin, signerRole: "purchaser_2" });
+      drawSignaturePanel(page, { title: "Seller spouse signer", name: spouseName, role: "Seller spouse", panelTop: panelTop + 182, x: margin, signerRole: "purchaser_2" });
     }
   }
 

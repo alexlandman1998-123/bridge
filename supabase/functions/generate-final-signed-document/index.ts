@@ -1120,33 +1120,13 @@ function drawVisibleSignatureFingerprint({
   sha256: string;
   reserveForSignedDate?: boolean;
 }) {
-  const pageWidth = page.getWidth();
-  const pageHeight = page.getHeight();
-  const labelWidth = 184;
-  const labelX = Math.max(4, Math.min(x, pageWidth - labelWidth));
-  const belowY = y - (reserveForSignedDate ? 24 : 11);
-  const above = belowY < 9;
-  const firstLineY = above
-    ? Math.min(pageHeight - 12, y + height + 8)
-    : belowY;
-  const secondLineY = above
-    ? Math.min(pageHeight - 6, firstLineY + 5.5)
-    : Math.max(3, firstLineY - 5.5);
-  const safeSha256 = lower(sha256);
-  page.drawText(`SHA-256: ${safeSha256.slice(0, 32)}`, {
-    x: labelX,
-    y: firstLineY,
-    size: 4.8,
-    font,
-    color: rgb(0.22, 0.27, 0.34),
-  });
-  page.drawText(safeSha256.slice(32), {
-    x: labelX,
-    y: secondLineY,
-    size: 4.8,
-    font,
-    color: rgb(0.22, 0.27, 0.34),
-  });
+  void page;
+  void font;
+  void x;
+  void y;
+  void height;
+  void sha256;
+  void reserveForSignedDate;
 }
 
 function buildSignedFileName(packetType: string, versionNumber: number) {
@@ -2408,11 +2388,6 @@ async function buildFallbackMandatePdfBytes({
     agencyFspNumber ? `FSP: ${agencyFspNumber}` : "",
     firstMeaningfulPdfText(placeholders.agency_address, placeholders.organisation_physical_address, placeholders["organisation.physical_address"]),
   ].filter((line) => !isEmptyPdfValue(line));
-  const documentReference =
-    firstPdfText(placeholders.document_reference, placeholders.transaction_reference) ||
-    firstPdfText(packet.title) ||
-    "Mandate Agreement";
-
   const drawRightAlignedLine = ({
     page,
     text,
@@ -2541,13 +2516,6 @@ async function buildFallbackMandatePdfBytes({
     size: 28,
     font: boldFont,
     color: navy,
-  });
-  firstPage.drawText(`Document reference: ${documentReference}`, {
-    x: pageWidth / 2 - regularFont.widthOfTextAtSize(`Document reference: ${documentReference}`, 12) / 2,
-    y: pageHeight - 252,
-    size: 12,
-    font: regularFont,
-    color: muted,
   });
   firstPage.drawLine({
     start: { x: marginX, y: pageHeight - 290 },
@@ -3335,9 +3303,10 @@ Deno.serve(async (req: Request) => {
               ? `Signed: ${signedDate.toISOString().slice(0, 10)}`
               : "";
           if (signedDateText) {
+            const signedDateY = y > 58 ? y - 50 : Math.max(0, y - 12);
             page.drawText(signedDateText, {
-              x,
-              y: Math.max(0, y - 12),
+              x: width >= 120 ? x + 42 : x,
+              y: signedDateY,
               size: 8,
               font: dateFont,
               color: rgb(0.18, 0.24, 0.32),

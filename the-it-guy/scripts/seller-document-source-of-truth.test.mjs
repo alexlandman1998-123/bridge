@@ -27,6 +27,10 @@ const listing = {
   listingStatus: 'active',
   sellerOnboardingStatus: 'completed',
   mandateStatus: 'signed',
+  organisationName: 'Produktive Real Estate',
+  agencyLogoUrl: '/assets/produktive-logo.png',
+  organisationWebsite: 'https://produktiverealty.co.za/',
+  agencyEmail: 'alex-produktive.training@arch9.test',
   sellerOnboarding: {
     status: 'completed',
     formData: {
@@ -107,6 +111,9 @@ assert.equal(propertyDisclosure.status, 'completed')
 assert.equal(propertyDisclosure.statusBucket, 'approved')
 assert.equal(propertyDisclosure.hasUpload, true)
 assert.match(propertyDisclosure.upload.generatedHtml, /Declaration by Seller/)
+assert.match(propertyDisclosure.upload.generatedHtml, /Produktive Real Estate/)
+assert.match(propertyDisclosure.upload.generatedHtml, /produktive-logo\.png/)
+assert.doesNotMatch(propertyDisclosure.upload.generatedHtml, />Agency Workspace</)
 assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.pdf')
 
 const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')

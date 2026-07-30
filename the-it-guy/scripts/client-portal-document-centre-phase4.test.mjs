@@ -146,6 +146,10 @@ test('seller generated mandate and property disclosure expose the correct downlo
   const model = buildDocumentCenter({
     listing: {
       id: 'listing-sale-documents',
+      organisationName: 'Produktive Real Estate',
+      agencyLogoUrl: '/assets/produktive-logo.png',
+      organisationWebsite: 'https://produktiverealty.co.za/',
+      agencyEmail: 'alex-produktive.training@arch9.test',
       sellerOnboarding: {
         formData: {
           sellerName: 'Mia Seller',
@@ -196,6 +200,9 @@ test('seller generated mandate and property disclosure expose the correct downlo
   assert.equal(Boolean(disclosureSaleDocument), true)
   assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')
   assert.equal(generatedDisclosure.generatedFileName, 'seller-disclosure-annexure-a.pdf')
+  assert.match(generatedDisclosure.generatedHtml, /Produktive Real Estate/)
+  assert.match(generatedDisclosure.generatedHtml, /produktive-logo\.png/)
+  assert.doesNotMatch(generatedDisclosure.generatedHtml, />Agency Workspace</)
   assert.equal(Boolean(completedDisclosureRequirement), true)
   assert.equal(Boolean(completedDisclosureRequirement.uploadSpec), false)
   assert.equal(completedDisclosureRequirement.downloadableDocument?.generatedFileName, 'seller-disclosure-annexure-a.pdf')

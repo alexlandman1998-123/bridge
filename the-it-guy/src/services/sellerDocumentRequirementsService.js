@@ -32,6 +32,123 @@ function unwrapSellerOnboardingFormCandidate(candidate = null) {
   return candidate
 }
 
+function compactTextParts(values = []) {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(', ')
+}
+
+function resolveSellerDocumentBranding(listing = {}, formData = {}) {
+  const listingBranding = isPlainObject(listing?.branding) ? listing.branding : {}
+  const portalBranding = isPlainObject(formData?.portalBranding)
+    ? formData.portalBranding
+    : isPlainObject(formData?.portal_branding)
+      ? formData.portal_branding
+      : {}
+  const organisationName = normalizeText(firstPresent(
+    portalBranding.organisationName,
+    portalBranding.organisation_name,
+    portalBranding.agencyName,
+    portalBranding.agency_name,
+    listingBranding.organisationName,
+    listingBranding.organisation_name,
+    listingBranding.agencyName,
+    listingBranding.agency_name,
+    listing?.organisationName,
+    listing?.organisation_name,
+    listing?.agencyName,
+    listing?.agency_name,
+    listing?.agencyOrganisation,
+    listing?.agency_organisation,
+  ))
+  const logoLightUrl = normalizeText(firstPresent(
+    portalBranding.logoLightUrl,
+    portalBranding.logo_light_url,
+    portalBranding.logoLight,
+    listingBranding.logoLightUrl,
+    listingBranding.logo_light_url,
+    listingBranding.logoLight,
+    listing?.agencyLogoLightUrl,
+    listing?.agency_logo_light_url,
+    listing?.organisationLogoLightUrl,
+    listing?.organisation_logo_light_url,
+  ))
+  const logoDarkUrl = normalizeText(firstPresent(
+    portalBranding.logoDarkUrl,
+    portalBranding.logo_dark_url,
+    portalBranding.logoDark,
+    listingBranding.logoDarkUrl,
+    listingBranding.logo_dark_url,
+    listingBranding.logoDark,
+    listing?.agencyLogoDarkUrl,
+    listing?.agency_logo_dark_url,
+    listing?.organisationLogoDarkUrl,
+    listing?.organisation_logo_dark_url,
+  ))
+  const logoUrl = normalizeText(firstPresent(
+    logoLightUrl,
+    portalBranding.logoUrl,
+    portalBranding.logo_url,
+    portalBranding.organisationLogoUrl,
+    portalBranding.organisation_logo_url,
+    listingBranding.logoUrl,
+    listingBranding.logo_url,
+    listingBranding.organisationLogoUrl,
+    listingBranding.organisation_logo_url,
+    listing?.agencyLogoUrl,
+    listing?.agency_logo_url,
+    listing?.organisationLogoUrl,
+    listing?.organisation_logo_url,
+    logoDarkUrl,
+  ))
+  const physicalAddress = normalizeText(firstPresent(
+    portalBranding.physicalAddress,
+    portalBranding.physical_address,
+    portalBranding.organisationPhysicalAddress,
+    portalBranding.organisation_physical_address,
+    listingBranding.physicalAddress,
+    listingBranding.physical_address,
+    listingBranding.address,
+    listing?.organisationPhysicalAddress,
+    listing?.organisation_physical_address,
+    listing?.agencyAddress,
+    listing?.agency_address,
+  ))
+
+  return {
+    ...listingBranding,
+    ...portalBranding,
+    organisationName,
+    agencyName: organisationName,
+    logoUrl,
+    logoLightUrl,
+    logoDarkUrl,
+    website: normalizeText(firstPresent(portalBranding.website, portalBranding.organisationWebsite, listingBranding.website, listing?.organisationWebsite, listing?.website)),
+    email: normalizeText(firstPresent(portalBranding.email, portalBranding.organisationEmail, listingBranding.email, listing?.organisationEmail, listing?.agencyEmail)),
+    phone: normalizeText(firstPresent(portalBranding.phone, portalBranding.telephone, portalBranding.organisationPhone, listingBranding.phone, listingBranding.telephone, listing?.organisationPhone, listing?.agencyPhone)),
+    physicalAddress,
+  }
+}
+
+function resolveSellerDocumentPropertyAddress(listing = {}, formData = {}) {
+  return normalizeText(firstPresent(
+    formData?.propertyAddress,
+    formData?.property_address,
+    formData?.propertyDisplayAddress,
+    formData?.property_display_address,
+    listing?.propertyAddress,
+    listing?.property_address,
+    listing?.displayAddress,
+    listing?.display_address,
+    listing?.address,
+    compactTextParts([
+      listing?.streetAddress || listing?.street_address,
+      listing?.suburb,
+      listing?.city || listing?.town,
+      listing?.province,
+      listing?.postalCode || listing?.postal_code,
+    ]),
+  ))
+}
+
 export function normalizeSellerDocumentRequirementStatus(status = '') {
   const normalized = normalizeKey(status)
   if (['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable', 'cancelled'].includes(normalized)) {
@@ -1041,6 +1158,17 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     propertyId: normalizeText(generatedDocument.propertyId || listing?.propertyProfileId || listing?.property_profile_id),
     listingId: normalizeText(generatedDocument.listingId || listing?.id || listing?.private_listing_id),
     transactionId: normalizeText(generatedDocument.transactionId || listing?.transactionId || listing?.transaction_id),
+    propertyAddress: resolveSellerDocumentPropertyAddress(listing, formData),
+    documentReference: normalizeText(firstPresent(
+      listing?.listingReference,
+      listing?.listing_reference,
+      listing?.reference,
+      listing?.privateListingReference,
+      listing?.private_listing_reference,
+      generatedDocument.listingId,
+      listing?.id,
+    )),
+    branding: resolveSellerDocumentBranding(listing, formData),
   }
   const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.pdf'
 

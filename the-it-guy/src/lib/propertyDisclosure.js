@@ -216,6 +216,10 @@ function firstNonEmpty(...values) {
   return ''
 }
 
+function compactDocumentText(values = []) {
+  return values.map((value) => normalizeText(value)).filter(Boolean).join(', ')
+}
+
 function isImageSignature(value = '') {
   return /^data:image\//i.test(normalizeText(value))
 }
@@ -231,6 +235,18 @@ function resolveDocumentAssetUrl(value = '', assetBaseUrl = '') {
 
 function resolvePropertyDisclosureBranding(context = {}) {
   const branding = context.branding && typeof context.branding === 'object' ? context.branding : {}
+  const address = firstNonEmpty(
+    branding.physicalAddress,
+    branding.physical_address,
+    branding.organisationPhysicalAddress,
+    branding.organisation_physical_address,
+    branding.address,
+    context.physicalAddress,
+    context.physical_address,
+    context.organisationPhysicalAddress,
+    context.organisation_physical_address,
+    compactDocumentText([branding.addressLine1, branding.addressLine2, branding.city, branding.province, branding.postalCode]),
+  )
   const organisationName = firstNonEmpty(
     branding.organisationName,
     branding.organisation_name,
@@ -248,29 +264,63 @@ function resolvePropertyDisclosureBranding(context = {}) {
       branding.logoLight,
       branding.organisationLogoUrl,
       branding.organisation_logo_url,
+      branding.agencyLogoUrl,
+      branding.agency_logo_url,
       branding.logoUrl,
       branding.logo_url,
       branding.logoDarkUrl,
+      branding.logo_dark_url,
       branding.logoDark,
+      branding.agencyLogoDarkUrl,
+      branding.agency_logo_dark_url,
       context.logoUrl,
     ),
     context.assetBaseUrl,
   )
+  const companyDetails = [
+    organisationName,
+    firstNonEmpty(branding.website, branding.organisationWebsite, branding.organisation_website, context.website, context.organisationWebsite),
+    firstNonEmpty(branding.email, branding.organisationEmail, branding.organisation_email, context.email, context.organisationEmail),
+    address,
+    firstNonEmpty(
+      branding.telephone,
+      branding.phoneNumber,
+      branding.phone_number,
+      branding.phone,
+      branding.organisationPhone,
+      branding.organisation_phone,
+      context.telephone,
+      context.phoneNumber,
+      context.phone,
+    ),
+  ].filter(Boolean)
 
   return {
     organisationName,
     agencyLogoUrl,
+    companyDetails,
   }
+}
+
+function renderDisclosureCompanyDetails(items = [], fallback = '', className = 'company-details') {
+  const rows = items.length ? items : [normalizeText(fallback)].filter(Boolean)
+  if (!rows.length) return ''
+  return `<span class="${className}">${rows.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</span>`
 }
 
 function renderDisclosureHeader(branding = {}) {
   const agencyBrand = branding.agencyLogoUrl
     ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
     : escapeHtml(branding.organisationName)
+  const detailRows = Array.isArray(branding.companyDetails) ? branding.companyDetails : []
+  const companyDetails = detailRows.length > 1 || branding.agencyLogoUrl
+    ? renderDisclosureCompanyDetails(detailRows, branding.organisationName)
+    : ''
 
   return `
     <header class="doc-header">
       <span class="agency-brand">${agencyBrand}</span>
+      ${companyDetails}
     </header>
   `
 }
@@ -279,11 +329,16 @@ function renderDisclosureFooter(branding = {}, pageNumber = 1, pageTotal = 1) {
   const agencyBrand = branding.agencyLogoUrl
     ? `<img src="${escapeHtml(branding.agencyLogoUrl)}" alt="${escapeHtml(branding.organisationName)} logo" />`
     : escapeHtml(branding.organisationName)
+  const detailRows = Array.isArray(branding.companyDetails) ? branding.companyDetails : []
+  const footerDetails = detailRows.length > 1 || branding.agencyLogoUrl
+    ? renderDisclosureCompanyDetails(detailRows.slice(0, 2), branding.organisationName, 'footer-company')
+    : ''
 
   return `
     <footer class="doc-footer">
       <span class="footer-brand">${agencyBrand}</span>
       <span class="page-no">Page ${pageNumber} of ${pageTotal}</span>
+      ${footerDetails}
     </footer>
   `
 }
@@ -545,9 +600,11 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
     .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
     .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
-    .doc-header { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
-    .agency-brand { display: inline-flex; align-items: center; justify-content: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; padding: 13mm 18mm 7mm; border-bottom: 1px solid #d7d7d7; }
+    .agency-brand { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
     .agency-brand img { max-width: 54mm; max-height: 17mm; object-fit: contain; }
+    .company-details { display: grid; justify-items: end; gap: 1px; max-width: 74mm; color: #43546a; font-size: 8.3pt; line-height: 1.25; text-align: right; }
+    .company-details span:first-child { color: #111827; font-weight: 800; }
     .doc-title { padding: 8mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
     .doc-title h1 { margin: 0; color: #111827; font-size: 22px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
     .doc-title p { margin: 6px 0 0; color: #5c6670; font-size: 11.5px; line-height: 1.45; }
@@ -586,6 +643,8 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .footer-brand { display: inline-flex; align-items: center; min-width: 34mm; max-width: 48mm; }
     .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
     .page-no { flex: 1; text-align: center; font-weight: 700; }
+    .footer-company { display: grid; justify-items: end; min-width: 34mm; max-width: 55mm; text-align: right; line-height: 1.25; }
+    .footer-company span:first-child { color: #111827; font-weight: 700; }
     @media print {
       body { background: #fff; }
       .property-disclosure-document, .property-disclosure-page { margin: 0; box-shadow: none; }
