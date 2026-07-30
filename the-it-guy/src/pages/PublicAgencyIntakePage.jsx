@@ -28,10 +28,11 @@ import {
   submitAgencyPublicIntake,
 } from '../services/agencyPublicIntakeService'
 
+const AGENCY_INTAKE_BACKGROUND_IMAGE = '/brand/agency-intake-buy.jpg'
 const BACKGROUND_IMAGES = {
-  buy: '/brand/agency-intake-buy.jpg',
-  sell: '/brand/agency-intake-sell.jpg',
-  contact: '/brand/agency-intake-contact.jpg',
+  buy: AGENCY_INTAKE_BACKGROUND_IMAGE,
+  sell: AGENCY_INTAKE_BACKGROUND_IMAGE,
+  contact: AGENCY_INTAKE_BACKGROUND_IMAGE,
 }
 
 const INITIAL_FORM = Object.freeze({
