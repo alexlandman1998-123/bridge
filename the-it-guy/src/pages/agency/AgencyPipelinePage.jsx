@@ -97,6 +97,7 @@ import {
   freezeEditableDocumentRevisionForRender,
   listDocumentPackets,
   persistGeneratedPdfToTransaction,
+  resolveWorkspaceFinalSignedDocumentAccess,
   saveSigningFieldPlacement,
   verifyFrozenEditableRenderOutput,
   verifyServerAttestedNativePdfRender,
@@ -883,6 +884,127 @@ function getSellerLeadDocumentCanonicalLabel(row = {}) {
   return row?.label || row?.title || row?.document_name || row?.name || 'Seller document'
 }
 
+function getSellerLeadDocumentCanonicalKey(row = {}) {
+  const source = normalizeKey([
+    row?.key,
+    row?.requirementKey,
+    row?.requirement_key,
+    row?.documentType,
+    row?.document_type,
+    row?.document_category,
+    row?.category,
+    row?.label,
+    row?.title,
+    row?.document_name,
+    row?.name,
+  ].filter(Boolean).join(' '))
+  if (source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('signed') && source.includes('mandate'))) return 'signed_mandate'
+  if (
+    source.includes('property_condition_disclosure') ||
+    source.includes('condition_disclosure') ||
+    source.includes('seller_declaration') ||
+    source.includes('seller_disclosure') ||
+    (source.includes('disclosure') && (source.includes('property') || source.includes('seller')))
+  ) return 'property_condition_disclosure'
+  return normalizeKey(row?.key || row?.requirementKey || row?.requirement_key || row?.label || row?.title || row?.id)
+}
+
+function getSellerLeadDocumentStatusRank(status = '') {
+  const normalized = normalizeKey(status)
+  if (/(approved|complete|completed|signed|verified|accepted|done|fully_signed)/.test(normalized)) return 5
+  if (/(review|submitted|received|uploaded|processing)/.test(normalized)) return 4
+  if (/(rejected|declined|failed|invalid)/.test(normalized)) return 3
+  if (/(required|requested|pending|missing|outstanding)/.test(normalized)) return 1
+  return normalized ? 2 : 0
+}
+
+function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
+  const existingRequired = existing.required !== false
+  const incomingRequired = incoming.required !== false
+  const base = existingRequired || !incomingRequired ? existing : incoming
+  const overlay = base === existing ? incoming : existing
+  const existingStatusRank = getSellerLeadDocumentStatusRank(existing.status || existing.statusLabel)
+  const incomingStatusRank = getSellerLeadDocumentStatusRank(incoming.status || incoming.statusLabel)
+  const statusSource = incomingStatusRank > existingStatusRank ? incoming : existing
+  const url = firstWorkspaceText(
+    incoming.url,
+    incoming.fileUrl,
+    incoming.file_url,
+    incoming.downloadUrl,
+    incoming.download_url,
+    existing.url,
+    existing.fileUrl,
+    existing.file_url,
+    existing.downloadUrl,
+    existing.download_url,
+  )
+  const generatedHtml = firstWorkspaceText(incoming.generatedHtml, incoming.generated_html, existing.generatedHtml, existing.generated_html)
+  const generatedFileName = firstWorkspaceText(incoming.generatedFileName, incoming.generated_file_name, existing.generatedFileName, existing.generated_file_name)
+  const packetId = firstWorkspaceText(incoming.packetId, incoming.packet_id, existing.packetId, existing.packet_id)
+  const packetVersionId = firstWorkspaceText(incoming.packetVersionId, incoming.packet_version_id, existing.packetVersionId, existing.packet_version_id)
+  const canonicalKey = getSellerLeadDocumentCanonicalKey(base) || getSellerLeadDocumentCanonicalKey(overlay)
+  const canonicalLabel = canonicalKey === 'signed_mandate'
+    ? 'Signed Mandate'
+    : canonicalKey === 'property_condition_disclosure'
+      ? 'Seller Declaration / Disclosure'
+      : base.label || base.title || overlay.label || overlay.title
+
+  return {
+    ...overlay,
+    ...base,
+    id: base.id || overlay.id,
+    key: canonicalKey || base.key || overlay.key,
+    requirementKey: canonicalKey || base.requirementKey || overlay.requirementKey,
+    requirement_key: canonicalKey || base.requirement_key || overlay.requirement_key,
+    title: canonicalLabel,
+    label: canonicalLabel,
+    required: existingRequired || incomingRequired,
+    status: statusSource.status || statusSource.statusLabel || base.status,
+    statusLabel: statusSource.statusLabel || statusSource.status || base.statusLabel,
+    url,
+    fileUrl: url,
+    file_url: url,
+    downloadUrl: url,
+    download_url: url,
+    generatedHtml,
+    generated_html: generatedHtml,
+    generatedFileName,
+    generated_file_name: generatedFileName,
+    uploadedFileName: firstWorkspaceText(incoming.uploadedFileName, existing.uploadedFileName, generatedFileName),
+    packetId,
+    packet_id: packetId,
+    packetVersionId,
+    packet_version_id: packetVersionId,
+    canonicalFinalArtifact: Boolean(
+      canonicalKey === 'signed_mandate' &&
+        packetId &&
+        packetVersionId &&
+        (incoming.canonicalFinalArtifact || existing.canonicalFinalArtifact || !url),
+    ),
+  }
+}
+
+function dedupeSellerLeadDocumentRows(rows = []) {
+  const mergedRows = []
+  const indexByKey = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row !== 'object') continue
+    const key = getSellerLeadDocumentCanonicalKey(row) || normalizeKey(row.id || row.label || row.title)
+    if (!key) {
+      mergedRows.push(row)
+      continue
+    }
+    if (!indexByKey.has(key)) {
+      indexByKey.set(key, mergedRows.length)
+      mergedRows.push(row)
+      continue
+    }
+    const index = indexByKey.get(key)
+    mergedRows[index] = mergeSellerLeadDocumentRows(mergedRows[index], row)
+  }
+  return mergedRows
+}
+
 function buildSellerLeadMandatePacketForDocuments({
   mandatePacketStatus = null,
   lead = {},
@@ -1030,13 +1152,16 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
   const generatedHtml = firstWorkspaceText(upload.generatedHtml, row.generatedHtml, row.generated_html, originalDocument.generatedHtml, originalDocument.generated_html)
   const generatedFileName = firstWorkspaceText(upload.generatedFileName, row.generatedFileName, row.generated_file_name, originalDocument.generatedFileName, originalDocument.generated_file_name)
   const status = normalizeText(row?.status || (row?.complete ? 'completed' : 'required'))
+  const packetId = firstWorkspaceText(row?.packetId, row?.packet_id, upload.packetId, upload.packet_id, originalDocument.packetId, originalDocument.packet_id)
+  const packetVersionId = firstWorkspaceText(row?.packetVersionId, row?.packet_version_id, upload.packetVersionId, upload.packet_version_id, originalDocument.packetVersionId, originalDocument.packet_version_id)
+  const canonicalKey = getSellerLeadDocumentCanonicalKey({ ...row, key, label })
 
   return {
     ...row,
     id: normalizeText(row?.id) || key || label,
-    key,
-    requirementKey: key,
-    requirement_key: key,
+    key: canonicalKey || key,
+    requirementKey: canonicalKey || key,
+    requirement_key: canonicalKey || key,
     title: label,
     label,
     category,
@@ -1055,6 +1180,11 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
     generatedFileName,
     generated_file_name: generatedFileName,
     uploadedFileName: firstWorkspaceText(upload.fileName, row.uploadedFileName, originalDocument.fileName, originalDocument.file_name, originalDocument.document_name, generatedFileName),
+    packetId,
+    packet_id: packetId,
+    packetVersionId,
+    packet_version_id: packetVersionId,
+    canonicalFinalArtifact: Boolean(canonicalKey === 'signed_mandate' && packetId && packetVersionId && !url),
     originalDocument,
   }
 }
@@ -1110,7 +1240,7 @@ function buildSellerLeadDocumentRowsFromSource({
     mandatePacket: buildSellerLeadMandatePacketForDocuments({ mandatePacketStatus, lead: leadRecord, listing: listingRecord }),
   })
 
-  return source.rows.map(mapSellerLeadDocumentSourceRow)
+  return dedupeSellerLeadDocumentRows(source.rows.map(mapSellerLeadDocumentSourceRow))
 }
 
 function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-document.html') {
@@ -1128,6 +1258,116 @@ function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-doc
   const url = URL.createObjectURL(blob)
   targetWindow.location.href = url
   window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
+}
+
+function sanitizeSellerLeadDownloadFileName(value = '', fallback = 'seller-document.pdf') {
+  const normalized = normalizeText(value)
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return normalized || fallback
+}
+
+function toSellerLeadPdfFileName(value = '', fallback = 'seller-document.pdf') {
+  const raw = sanitizeSellerLeadDownloadFileName(value || fallback, fallback)
+  return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
+}
+
+async function triggerSellerLeadBrowserDownload(url = '', fileName = 'seller-document.pdf') {
+  const downloadUrl = normalizeText(url)
+  if (!downloadUrl) throw new Error('The download link is not available yet.')
+  if (typeof document === 'undefined') return
+
+  const safeFileName = sanitizeSellerLeadDownloadFileName(fileName)
+  let objectUrl = ''
+  let href = downloadUrl
+  try {
+    if (typeof fetch === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        const response = await fetch(downloadUrl)
+        if (!response.ok) throw new Error('The document could not be downloaded.')
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        href = objectUrl
+      } catch (downloadError) {
+        if (downloadError?.message === 'The document could not be downloaded.') throw downloadError
+        console.warn('[AgencyPipelinePage] Falling back to direct document download.', downloadError)
+      }
+    }
+
+    const anchor = document.createElement('a')
+    anchor.href = href
+    anchor.download = safeFileName
+    anchor.rel = 'noopener'
+    anchor.style.display = 'none'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    if (objectUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+}
+
+async function downloadGeneratedSellerLeadDocumentPdf(markup = '', fileName = 'seller-document.pdf') {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF downloads are only available in the browser.')
+  }
+
+  let pdfStage = null
+  let styleElement = null
+  try {
+    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+    const pdfDocument = new window.DOMParser().parseFromString(String(markup || ''), 'text/html')
+    const style = pdfDocument.head.querySelector('style')
+    styleElement = document.createElement('style')
+    styleElement.setAttribute('data-seller-lead-generated-document-pdf-style', 'true')
+    styleElement.textContent = style?.textContent || ''
+    pdfStage = document.createElement('div')
+    pdfStage.setAttribute('data-seller-lead-generated-document-pdf-stage', 'true')
+    pdfStage.style.position = 'fixed'
+    pdfStage.style.left = '-10000px'
+    pdfStage.style.top = '0'
+    pdfStage.style.width = '210mm'
+    pdfStage.style.background = '#ffffff'
+    pdfStage.style.pointerEvents = 'none'
+    pdfStage.innerHTML = pdfDocument.body.innerHTML
+    document.head.appendChild(styleElement)
+    document.body.appendChild(pdfStage)
+
+    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
+      if (image.complete) return Promise.resolve()
+      return new Promise((resolve) => {
+        image.onload = resolve
+        image.onerror = resolve
+      })
+    })
+    await Promise.all(imageLoads)
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+
+    const exportTarget = pdfStage.querySelector('.property-disclosure-document') || pdfStage
+    await html2pdf()
+      .set({
+        margin: 0,
+        filename: toSellerLeadPdfFileName(fileName),
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: 1123,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(exportTarget)
+      .save()
+  } finally {
+    pdfStage?.remove()
+    styleElement?.remove()
+  }
 }
 
 function buildSellerLeadDocumentCategories(documents = []) {
@@ -4116,6 +4356,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -11545,6 +11786,71 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!opened) window.location.href = signedUrl
   }
 
+  async function handleOpenSellerLeadFinalSignedDocument(documentRow = {}) {
+    const packetId = normalizeText(documentRow?.packetId || documentRow?.packet_id)
+    const versionId = normalizeText(documentRow?.packetVersionId || documentRow?.packet_version_id)
+    const openingKey = normalizeText(documentRow?.id || documentRow?.key || `${packetId}:${versionId}`)
+    if (!packetId || !versionId) {
+      setError('Signed mandate PDF is not available yet. Complete all signatures and finalize the signed record first.')
+      return
+    }
+
+    try {
+      setError('')
+      setOpeningSellerLeadDocumentId(openingKey)
+      const access = await resolveWorkspaceFinalSignedDocumentAccess({
+        packetId,
+        versionId,
+        download: true,
+      })
+      const downloadUrl = normalizeText(access?.finalArtifact?.downloadUrl)
+      if (access?.available !== true || !downloadUrl) {
+        throw new Error(access?.message || 'The signed mandate PDF is still being securely published.')
+      }
+      await triggerSellerLeadBrowserDownload(
+        downloadUrl,
+        access?.finalArtifact?.fileName || documentRow?.uploadedFileName || documentRow?.label || 'Signed Mandate.pdf',
+      )
+    } catch (openError) {
+      setError(openError?.message || 'Unable to open the signed mandate right now.')
+    } finally {
+      setOpeningSellerLeadDocumentId('')
+    }
+  }
+
+  async function handleDownloadSellerLeadDocumentUrl(documentRow = {}) {
+    const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.url || documentRow?.downloadUrl)
+    const documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
+    try {
+      setError('')
+      setOpeningSellerLeadDocumentId(openingKey)
+      await triggerSellerLeadBrowserDownload(
+        documentUrl,
+        documentRow.uploadedFileName || documentRow.generatedFileName || documentRow.label || documentRow.title || 'seller-document.pdf',
+      )
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download this document right now.')
+    } finally {
+      setOpeningSellerLeadDocumentId('')
+    }
+  }
+
+  async function handleDownloadGeneratedSellerLeadDocument(documentRow = {}, generatedHtml = '') {
+    const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.label)
+    try {
+      setError('')
+      setOpeningSellerLeadDocumentId(openingKey)
+      await downloadGeneratedSellerLeadDocumentPdf(
+        generatedHtml,
+        documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.pdf`,
+      )
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download this document PDF right now.')
+    } finally {
+      setOpeningSellerLeadDocumentId('')
+    }
+  }
+
   async function handleUpdateParticipantRsvp(participant, nextStatus) {
     if (!organisationId || !selectedAppointmentId || !participant?.participantId) return
     try {
@@ -17482,7 +17788,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
                                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
                                         const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
+                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
                                         const documentActionLabel = ['signed_mandate', 'property_condition_disclosure'].includes(documentKey) ? 'Download' : 'Open'
+                                        const shouldDownloadDocument = documentActionLabel === 'Download'
                                         return (
                                           <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
                                             <div className="flex min-w-0 items-center gap-3">
@@ -17497,19 +17806,50 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             <div className="flex items-center gap-2">
                                               <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
                                               {documentUrl ? (
-                                                <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
-                                                  {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
-                                                </a>
+                                                shouldDownloadDocument ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => void handleDownloadSellerLeadDocumentUrl(documentRow)}
+                                                    disabled={openingCanonicalArtifact}
+                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3] disabled:cursor-not-allowed disabled:opacity-70"
+                                                  >
+                                                    {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                  </button>
+                                                ) : (
+                                                  <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
+                                                    {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                  </a>
+                                                )
                                               ) : generatedHtml ? (
+                                                shouldDownloadDocument ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => void handleDownloadGeneratedSellerLeadDocument(documentRow, generatedHtml)}
+                                                    disabled={openingCanonicalArtifact}
+                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3] disabled:cursor-not-allowed disabled:opacity-70"
+                                                  >
+                                                    {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => openSellerLeadGeneratedDocumentHtml(
+                                                      generatedHtml,
+                                                      documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.html`,
+                                                    )}
+                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                                  >
+                                                    {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                  </button>
+                                                )
+                                              ) : canOpenCanonicalFinalArtifact ? (
                                                 <button
                                                   type="button"
-                                                  onClick={() => openSellerLeadGeneratedDocumentHtml(
-                                                    generatedHtml,
-                                                    documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.html`,
-                                                  )}
-                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                                  onClick={() => void handleOpenSellerLeadFinalSignedDocument(documentRow)}
+                                                  disabled={openingCanonicalArtifact}
+                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3] disabled:cursor-not-allowed disabled:opacity-70"
                                                 >
-                                                  {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                  {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
                                                 </button>
                                               ) : null}
                                             </div>
