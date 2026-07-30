@@ -138,6 +138,12 @@ verify_jwt = false
 import_map = "./functions/legal-document-watchdog/deno.json"
 entrypoint = "./functions/legal-document-watchdog/index.ts"
 
+[functions.legal-document-job-runner]
+enabled = true
+verify_jwt = true
+import_map = "./functions/legal-document-job-runner/deno.json"
+entrypoint = "./functions/legal-document-job-runner/index.ts"
+
 [functions.resolve-signer-token]
 enabled = true
 verify_jwt = false

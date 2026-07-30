@@ -2581,6 +2581,20 @@ export async function getDocumentGeneratorLaunchChain({ packetId, versionId } = 
   return data
 }
 
+export async function listLegalDocumentJobsForPacket({ packetId, limit = 10 } = {}) {
+  const client = requireClient()
+  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
+  const { data, error } = await client.rpc('bridge_list_legal_document_jobs_for_packet_phase1', {
+    p_packet_id: packetId,
+    p_limit: Math.min(Math.max(1, Math.trunc(Number(limit || 10))), 50),
+  })
+  if (error) throw error
+  if (data?.contract !== 'legal-document-job-phase1-list-v1' || !Array.isArray(data?.jobs)) {
+    throw new Error('Legal document job list returned an invalid result.')
+  }
+  return data.jobs
+}
+
 export async function fetchSigningFieldLayout({ packetId, versionId } = {}) {
   const client = requireClient()
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')

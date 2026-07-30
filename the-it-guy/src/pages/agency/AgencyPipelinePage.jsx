@@ -78,6 +78,7 @@ import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, su
 import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
+import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
@@ -166,6 +167,9 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED = ['1', 'true', 'yes', 'on', 'enabled'].includes(
+  String(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED || '').trim().toLowerCase(),
+)
 const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
@@ -484,6 +488,10 @@ function canMovePipelineCard({ user = {}, card = null, fromStage = '', toStage =
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
 function getMandateManualOverrideFromSource(sourceContext = {}) {
@@ -826,6 +834,8 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       documentRow?.file_url ||
       documentRow?.downloadUrl ||
       documentRow?.download_url ||
+      documentRow?.generatedHtml ||
+      documentRow?.generated_html ||
       documentRow?.uploadedAt ||
       documentRow?.uploaded_at,
   )
@@ -864,6 +874,260 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
     iconClass: 'bg-[#f3f7fb] text-[#7890a8]',
     Icon: FileText,
   }
+}
+
+function getSellerLeadDocumentCanonicalLabel(row = {}) {
+  const key = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key)
+  if (key === 'signed_mandate') return 'Signed Mandate'
+  if (key === 'property_condition_disclosure') return 'Seller Declaration / Disclosure'
+  return row?.label || row?.title || row?.document_name || row?.name || 'Seller document'
+}
+
+function buildSellerLeadMandatePacketForDocuments({
+  mandatePacketStatus = null,
+  lead = {},
+  listing = null,
+} = {}) {
+  const listingRecord = listing && typeof listing === 'object' ? listing : {}
+  const packet = mandatePacketStatus?.packet || lead?.mandatePacket || lead?.mandate_packet || listingRecord?.mandatePacket || listingRecord?.mandate_packet || listingRecord?.mandate || {}
+  const versions = Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []
+  const latestVersion = versions.find((version) =>
+    normalizeText(version?.final_signed_file_path || version?.final_signed_file_url || version?.final_signed_file_access_url),
+  ) || versions[0] || packet?.version || {}
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object' ? packet.source_context_json : {}
+  const finalSignedFilePath = firstWorkspaceText(
+    latestVersion?.final_signed_file_path,
+    latestVersion?.finalSignedFilePath,
+    packet?.finalSignedFilePath,
+    packet?.final_signed_file_path,
+    listingRecord?.mandate?.finalSignedFilePath,
+    listingRecord?.mandate?.final_signed_file_path,
+    lead?.mandateSignedDocumentPath,
+    lead?.mandate_signed_document_path,
+    sourceContext?.finalSignedFilePath,
+    sourceContext?.final_signed_file_path,
+  )
+  const finalSignedFileUrl = firstWorkspaceText(
+    latestVersion?.final_signed_file_access_url,
+    latestVersion?.final_signed_file_url,
+    latestVersion?.finalSignedFileAccessUrl,
+    latestVersion?.finalSignedFileUrl,
+    packet?.finalSignedDownloadUrl,
+    packet?.finalSignedFileAccessUrl,
+    packet?.finalSignedFileUrl,
+    packet?.final_signed_file_access_url,
+    packet?.final_signed_file_url,
+    listingRecord?.mandate?.finalSignedDownloadUrl,
+    listingRecord?.mandate?.finalSignedFileAccessUrl,
+    listingRecord?.mandate?.finalSignedFileUrl,
+    listingRecord?.mandate?.final_signed_file_access_url,
+    listingRecord?.mandate?.final_signed_file_url,
+    lead?.mandateSignedDocumentUrl,
+    lead?.mandate_signed_document_url,
+    sourceContext?.finalSignedDownloadUrl,
+    sourceContext?.finalSignedFileAccessUrl,
+    sourceContext?.finalSignedFileUrl,
+    sourceContext?.final_signed_file_access_url,
+    sourceContext?.final_signed_file_url,
+  )
+  const finalSignedFileName = firstWorkspaceText(
+    latestVersion?.final_signed_file_name,
+    latestVersion?.finalSignedFileName,
+    packet?.finalSignedFileName,
+    packet?.final_signed_file_name,
+    'Signed Mandate.pdf',
+  )
+  const versionId = firstWorkspaceText(
+    latestVersion?.id,
+    latestVersion?.versionId,
+    latestVersion?.version_id,
+    packet?.packetVersionId,
+    packet?.packet_version_id,
+  )
+  const status = normalizeKey(
+    mandatePacketStatus?.state ||
+      mandatePacketStatus?.signingStatus ||
+      packet?.status ||
+      packet?.state ||
+      packet?.packet?.status ||
+      lead?.mandateStatus ||
+      lead?.mandate_status ||
+      listingRecord?.mandateStatus ||
+      listingRecord?.mandate_status,
+  )
+  const signedStates = ['signed', 'completed', 'complete', 'fully_signed', 'uploaded_signed', 'signed_uploaded', 'finalised', 'finalized']
+  const signed = signedStates.includes(status) || Boolean(finalSignedFilePath || finalSignedFileUrl)
+  const finalSignedRecorded = Boolean(
+    finalSignedFilePath ||
+      finalSignedFileUrl ||
+      latestVersion?.final_signed_document_id ||
+      latestVersion?.finalSignedDocumentId ||
+      packet?.finalSignedRecorded ||
+      packet?.final_signed_recorded,
+  )
+  const packetId = firstWorkspaceText(
+    packet?.id,
+    packet?.packetId,
+    packet?.packet_id,
+    packet?.packet?.id,
+    lead?.mandatePacketId,
+    lead?.mandate_packet_id,
+    listingRecord?.mandatePacketId,
+    listingRecord?.mandate_packet_id,
+  )
+
+  if (!packetId && !finalSignedRecorded) return null
+
+  return {
+    ...packet,
+    id: packetId,
+    state: signed ? 'fully_signed' : status,
+    status: signed ? 'fully_signed' : status,
+    packet: {
+      ...(packet?.packet || {}),
+      id: packetId,
+      status: signed ? 'fully_signed' : status,
+    },
+    version: {
+      ...latestVersion,
+      id: versionId,
+      final_signed_file_path: finalSignedFilePath,
+      final_signed_file_url: finalSignedFileUrl,
+      final_signed_file_access_url: finalSignedFileUrl,
+      final_signed_file_name: finalSignedFileName,
+      final_signed_file_bucket: firstWorkspaceText(latestVersion?.final_signed_file_bucket, latestVersion?.finalSignedFileBucket, packet?.finalSignedFileBucket, packet?.final_signed_file_bucket),
+      finalised_at: firstWorkspaceText(latestVersion?.finalised_at, latestVersion?.finalized_at, packet?.finalised_at, packet?.finalized_at),
+    },
+    finalSignedRecorded,
+    final_signed_recorded: finalSignedRecorded,
+    finalSignedFilePath: finalSignedFilePath,
+    final_signed_file_path: finalSignedFilePath,
+    finalSignedDownloadUrl: finalSignedFileUrl,
+    final_signed_file_url: finalSignedFileUrl,
+    finalSignedFileName: finalSignedFileName,
+    final_signed_file_name: finalSignedFileName,
+  }
+}
+
+function mapSellerLeadDocumentSourceRow(row = {}) {
+  const upload = row?.upload || {}
+  const originalDocument = row?.original?.document || {}
+  const key = normalizeText(row?.key || row?.requirementKey || row?.requirement_key || row?.id)
+  const label = getSellerLeadDocumentCanonicalLabel(row)
+  const category = normalizeKey(row?.category) === 'sales' ? 'legal' : row?.category
+  const url = firstWorkspaceText(
+    upload.url,
+    row.url,
+    row.documentUrl,
+    originalDocument.url,
+    originalDocument.fileUrl,
+    originalDocument.file_url,
+    originalDocument.downloadUrl,
+    originalDocument.download_url,
+    originalDocument.signedUrl,
+    originalDocument.signed_url,
+  )
+  const generatedHtml = firstWorkspaceText(upload.generatedHtml, row.generatedHtml, row.generated_html, originalDocument.generatedHtml, originalDocument.generated_html)
+  const generatedFileName = firstWorkspaceText(upload.generatedFileName, row.generatedFileName, row.generated_file_name, originalDocument.generatedFileName, originalDocument.generated_file_name)
+  const status = normalizeText(row?.status || (row?.complete ? 'completed' : 'required'))
+
+  return {
+    ...row,
+    id: normalizeText(row?.id) || key || label,
+    key,
+    requirementKey: key,
+    requirement_key: key,
+    title: label,
+    label,
+    category,
+    document_category: category,
+    status,
+    statusLabel: row?.statusLabel || status,
+    url,
+    fileUrl: url,
+    file_url: url,
+    downloadUrl: url,
+    download_url: url,
+    uploadedAt: firstWorkspaceText(upload.uploadedAt, row.uploadedAt, originalDocument.uploadedAt, originalDocument.uploaded_at),
+    uploaded_at: firstWorkspaceText(upload.uploadedAt, row.uploadedAt, originalDocument.uploadedAt, originalDocument.uploaded_at),
+    generatedHtml,
+    generated_html: generatedHtml,
+    generatedFileName,
+    generated_file_name: generatedFileName,
+    uploadedFileName: firstWorkspaceText(upload.fileName, row.uploadedFileName, originalDocument.fileName, originalDocument.file_name, originalDocument.document_name, generatedFileName),
+    originalDocument,
+  }
+}
+
+function buildSellerLeadDocumentRowsFromSource({
+  lead = {},
+  listing = null,
+  journey = null,
+  mandatePacketStatus = null,
+} = {}) {
+  const listingRecord = listing && typeof listing === 'object' ? listing : {}
+  const leadRecord = lead && typeof lead === 'object' ? lead : {}
+  const formData = {
+    ...getListingSellerFormData(listingRecord),
+    ...getLeadSellerOnboardingFormData(leadRecord),
+  }
+  const documents = [
+    ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
+    ...(Array.isArray(journey?.documents) ? journey.documents.map((document) => document?.original?.document || document).filter(Boolean) : []),
+  ]
+  const sourceListing = {
+    ...leadRecord,
+    ...listingRecord,
+    id: firstWorkspaceText(listingRecord?.id, listingRecord?.private_listing_id, leadRecord?.listingId, leadRecord?.listing_id),
+    private_listing_id: firstWorkspaceText(listingRecord?.private_listing_id, listingRecord?.id, leadRecord?.listingId, leadRecord?.listing_id),
+    sellerLeadId: firstWorkspaceText(listingRecord?.sellerLeadId, listingRecord?.seller_lead_id, leadRecord?.leadId, leadRecord?.id),
+    seller_lead_id: firstWorkspaceText(listingRecord?.seller_lead_id, listingRecord?.sellerLeadId, leadRecord?.leadId, leadRecord?.id),
+    documentRequirements: Array.isArray(listingRecord?.documentRequirements)
+      ? listingRecord.documentRequirements
+      : Array.isArray(leadRecord?.documentRequirements)
+        ? leadRecord.documentRequirements
+        : [],
+    documents,
+    sellerOnboarding: {
+      ...(isPlainObject(leadRecord?.sellerOnboarding) ? leadRecord.sellerOnboarding : {}),
+      ...(isPlainObject(listingRecord?.sellerOnboarding) ? listingRecord.sellerOnboarding : {}),
+      status: firstWorkspaceText(listingRecord?.sellerOnboardingStatus, listingRecord?.seller_onboarding_status, leadRecord?.sellerOnboardingStatus, leadRecord?.seller_onboarding_status),
+      formData,
+      form_data: formData,
+    },
+    seller_onboarding: {
+      ...(isPlainObject(leadRecord?.seller_onboarding) ? leadRecord.seller_onboarding : {}),
+      ...(isPlainObject(listingRecord?.seller_onboarding) ? listingRecord.seller_onboarding : {}),
+      status: firstWorkspaceText(listingRecord?.sellerOnboardingStatus, listingRecord?.seller_onboarding_status, leadRecord?.sellerOnboardingStatus, leadRecord?.seller_onboarding_status),
+      formData,
+      form_data: formData,
+    },
+  }
+  const source = buildSellerDocumentSourceOfTruth({
+    listing: sourceListing,
+    documents,
+    formData,
+    mandatePacket: buildSellerLeadMandatePacketForDocuments({ mandatePacketStatus, lead: leadRecord, listing: listingRecord }),
+  })
+
+  return source.rows.map(mapSellerLeadDocumentSourceRow)
+}
+
+function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-document.html') {
+  if (typeof window === 'undefined' || typeof URL === 'undefined' || typeof Blob === 'undefined') return
+  const html = String(markup || '').trim()
+  if (!html) return
+  const targetWindow = window.open('about:blank', '_blank')
+  if (!targetWindow) return
+  const documentTitle = normalizeText(fileName).replace(/[-_]+/g, ' ').replace(/\.(html?|pdf)$/i, '').trim() || 'Seller document'
+  const htmlWithTitle = html.replace(
+    /<\/body>\s*<\/html>\s*$/i,
+    `<script>window.addEventListener('load',function(){document.title=${JSON.stringify(documentTitle)}})</script></body></html>`,
+  )
+  const blob = new Blob([htmlWithTitle || html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  targetWindow.location.href = url
+  window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
 }
 
 function buildSellerLeadDocumentCategories(documents = []) {
@@ -6919,8 +7183,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     : 'Contact Seller First'
 
   const selectedSellerDocumentCategories = useMemo(
-    () => buildSellerLeadDocumentCategories(selectedSellerJourney?.documents || []),
-    [selectedSellerJourney],
+    () => buildSellerLeadDocumentCategories(buildSellerLeadDocumentRowsFromSource({
+      lead: selectedLead || {},
+      listing: selectedLeadLinkedListing,
+      journey: selectedSellerJourney,
+      mandatePacketStatus,
+    })),
+    [mandatePacketStatus, selectedLead, selectedLeadLinkedListing, selectedSellerJourney],
   )
 
   const selectedSellerDocumentSummary = useMemo(() => {
@@ -10931,40 +11200,48 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       let emailDelivery = null
       try {
+        const emailPayload = {
+          type: 'seller_mandate_sent',
+          to: recipientEmail,
+          organisationId,
+          packetId: mandatePacketId,
+          recipientRole,
+          recipientName,
+          sellerName,
+          propertyTitle,
+          mandateType: 'Mandate',
+          mandateStartDate: '',
+          mandateEndDate: '',
+          askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+          portalLink: outboundMandateLink,
+          agentName: agentRecipientName,
+          resend: options.resend === true,
+          reminder: options.reminder === true,
+          dispatchId,
+        }
+        const useServerSendReady = LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED && options.resend !== true && options.reminder !== true
         const emailResponse = await withPipelineTimeout(
-          invokeEdgeFunction('send-mandate-signing-email', {
-            body: {
-              type: 'seller_mandate_sent',
-              to: recipientEmail,
-              organisationId,
-              packetId: mandatePacketId,
-              recipientRole,
-              recipientName,
-              sellerName,
-              propertyTitle,
-              mandateType: 'Mandate',
-              mandateStartDate: '',
-              mandateEndDate: '',
-              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-              portalLink: outboundMandateLink,
-              agentName: agentRecipientName,
-              resend: options.resend === true,
-              reminder: options.reminder === true,
-              dispatchId,
-            },
+          invokeEdgeFunction(useServerSendReady ? 'legal-document-job-runner' : 'send-mandate-signing-email', {
+            body: useServerSendReady
+              ? {
+                  action: 'send_ready_packet',
+                  ...emailPayload,
+                }
+              : emailPayload,
           }),
           'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
           PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
         )
         assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
-        const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
-        const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+        const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
+        const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
+        const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
         if (!emailConfirmed) {
           const error = new Error('Mandate signing email was prepared, but provider delivery was not confirmed. No sent status was recorded.')
           error.code = 'SIGNING_EMAIL_UNCONFIRMED'
           throw error
         }
-        emailDelivery = { emailDeliveryId, emailConfirmed, delivery: emailResponse?.data?.delivery || null }
+        emailDelivery = { emailDeliveryId, emailConfirmed, delivery: serverSendResult?.delivery || emailResponse?.data?.delivery || null }
       } catch (emailError) {
         signingEmailFailed = true
         console.warn('[MANDATE] signing email failed after link preparation', emailError)
@@ -17203,6 +17480,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+                                        const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
+                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure'].includes(documentKey) ? 'Download' : 'Open'
                                         return (
                                           <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
                                             <div className="flex min-w-0 items-center gap-3">
@@ -17218,8 +17498,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
                                               {documentUrl ? (
                                                 <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
-                                                  Open <ExternalLink className="h-3.5 w-3.5" />
+                                                  {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
                                                 </a>
+                                              ) : generatedHtml ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => openSellerLeadGeneratedDocumentHtml(
+                                                    generatedHtml,
+                                                    documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.html`,
+                                                  )}
+                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                                >
+                                                  {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+                                                </button>
                                               ) : null}
                                             </div>
                                           </div>
@@ -17238,7 +17529,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <aside className="space-y-4">
                               <section className="rounded-[22px] border border-[#dbe7f2] bg-[#102033] p-5 text-white shadow-[0_18px_38px_rgba(16,32,51,0.16)]">
                                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Document Progress</p>
-                                <h5 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">{selectedSellerDocumentSummary.progress}%</h5>
+                                <h5 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">{selectedSellerDocumentSummary.progress}%</h5>
                                 <p className="mt-2 text-sm leading-6 text-[#c7d5e2]">
                                   {selectedSellerDocumentSummary.outstanding
                                     ? `${selectedSellerDocumentSummary.outstanding} document${selectedSellerDocumentSummary.outstanding === 1 ? '' : 's'} still need attention before this seller pack is complete.`

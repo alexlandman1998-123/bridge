@@ -1501,6 +1501,29 @@ Deno.serve(async (req: Request) => {
 
   const startedAt = Date.now();
   const requestId = normalizeText(req.headers.get("x-request-id")) || crypto.randomUUID();
+  const stageTimings: Array<Record<string, unknown>> = [];
+  let observedPacketId = "";
+  let observedPacketType = "";
+  let observedTemplateId = "";
+  const recordStageTiming = (stage: string, stageStartedAt: number, metadata: JsonRecord = {}) => {
+    const durationMs = Date.now() - stageStartedAt;
+    const timing = {
+      stage,
+      durationMs,
+      totalDurationMs: Date.now() - startedAt,
+      ...metadata,
+    };
+    stageTimings.push(timing);
+    console.log(JSON.stringify({
+      level: "info",
+      event: "legal_document_generation_stage_timing",
+      requestId,
+      packetId: observedPacketId || null,
+      packetType: observedPacketType || null,
+      templateId: observedTemplateId || null,
+      ...timing,
+    }));
+  };
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -1512,6 +1535,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const parseStartedAt = Date.now();
     const payload = (await req.json()) as GenerateMandateRequest;
     const capacityProbe = Boolean(payload.capacityProbe || payload.capacity_probe);
     const bearer = normalizeText(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
@@ -1519,6 +1543,8 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(403, { success: false, error: "Service-role renderer capacity authority is required.", errorCode: "RENDER_CAPACITY_FORBIDDEN" });
     }
     const packetId = normalizeText(payload.packetId || payload.packet_id);
+    observedPacketId = packetId;
+    recordStageTiming("request_parse", parseStartedAt, { capacityProbe });
     if (!packetId) {
       return jsonResponse(400, { success: false, error: "packetId is required." });
     }
@@ -1567,6 +1593,7 @@ Deno.serve(async (req: Request) => {
         : { ...requireCaller(req), service: false };
     let approval: { templateId: string; packetType: string; packet: JsonRecord; isPhase4LegalPacket: boolean };
     let pilotReleaseDecision: { planDigest?: string | null } | null = null;
+    const approvalStartedAt = Date.now();
     try {
       approval = await requireApprovedMandateTemplate({
         supabase,
@@ -1585,7 +1612,14 @@ Deno.serve(async (req: Request) => {
       if (!capacityProbe && approval.isPhase4LegalPacket) {
         pilotReleaseDecision = assertDocumentPilotAllowed(approval.packet, normalizeText(approval.templateId));
       }
+      observedTemplateId = normalizeText(approval.templateId);
+      observedPacketType = approval.packetType === "otp" ? "otp" : "mandate";
+      recordStageTiming("template_authority", approvalStartedAt, {
+        isPhase4LegalPacket: approval.isPhase4LegalPacket,
+        serviceCaller: caller.service === true,
+      });
     } catch (error) {
+      recordStageTiming("template_authority", approvalStartedAt, { failed: true });
       const typed = error as { auditContext?: GenerationBlockAuditContext };
       if (!capacityProbe && typed.auditContext) {
         await recordGenerationReleaseBlock({ supabase, requestId, context: typed.auditContext });
@@ -1593,6 +1627,7 @@ Deno.serve(async (req: Request) => {
       throw error;
     }
     const packetType = approval.packetType === "otp" ? "otp" : "mandate";
+    observedPacketType = packetType;
     const packetTransactionId = normalizeText(approval.packet.transaction_id);
     // A browser may describe the context of a render, but it cannot choose a
     // legal packet's transaction, attribution, or visibility. Those values
@@ -1635,7 +1670,16 @@ Deno.serve(async (req: Request) => {
       // A signable OTP is always stored in the packet-controlled documents bucket.
       outputBucketName = bucketCandidates[0] || "documents";
     }
-    const preRenderFence = capacityProbe ? null : await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render");
+    let preRenderFence = null;
+    if (!capacityProbe) {
+      const preRenderFenceStartedAt = Date.now();
+      preRenderFence = await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render");
+      recordStageTiming("lease_pre_render", preRenderFenceStartedAt, {
+        generationAttemptId,
+        leaseFence: normalizeText(preRenderFence?.stage) || "pre_render",
+      });
+    }
+    const frozenInputStartedAt = Date.now();
     const frozenInput = renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
       ? await resolveFrozenNativeRenderInputD2({
           supabase,
@@ -1646,6 +1690,11 @@ Deno.serve(async (req: Request) => {
           requestedPlaceholders: rawPlaceholders as JsonRecord,
         })
       : { sections: sectionManifest, placeholders: rawPlaceholders as JsonRecord, attestation: null };
+    recordStageTiming("frozen_render_input", frozenInputStartedAt, {
+      renderMode,
+      sectionCount: Array.isArray(frozenInput.sections) ? frozenInput.sections.length : 0,
+      frozen: Boolean(frozenInput.attestation),
+    });
     if (packetType === "otp" && !frozenInput.attestation) {
       return jsonResponse(409, {
         success: false,
@@ -1671,6 +1720,7 @@ Deno.serve(async (req: Request) => {
 
     if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
       const generationTemplate = ((generationPayload as Record<string, unknown>).template || {}) as Record<string, unknown>;
+      const structuredTemplateStartedAt = Date.now();
       nativeRender = (renderStructuredTemplate as any)({
         packetType,
         template: {
@@ -1688,6 +1738,11 @@ Deno.serve(async (req: Request) => {
         mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
         assetBaseUrl: appBaseUrl,
       });
+      recordStageTiming("structured_template_render", structuredTemplateStartedAt, {
+        renderable: nativeRender.renderable === true,
+        blockingIssueCount: Array.isArray(nativeRender.blockingIssues) ? nativeRender.blockingIssues.length : 0,
+        warningCount: Array.isArray(nativeRender.warnings) ? nativeRender.warnings.length : 0,
+      });
 
       if (!nativeRender.renderable) {
         return jsonResponse(400, {
@@ -1700,6 +1755,7 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
+        const pdfRenderStartedAt = Date.now();
         if (buildPdfConverterUrl() && packetType !== "mandate") {
           outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
         } else {
@@ -1719,6 +1775,12 @@ Deno.serve(async (req: Request) => {
           };
         }
         assertValidPdfBytes(outputBytes);
+        recordStageTiming("pdf_render", pdfRenderStartedAt, {
+          renderer: buildPdfConverterUrl() && packetType !== "mandate" ? "gotenberg" : "native_pdf_lib",
+          byteLength: outputBytes.length,
+          pageCount: Number(nativePdfLayout?.pageCount || 0) || null,
+          plannedSigningFieldCount: Array.isArray(nativePdfLayout?.plannedSigningFields) ? nativePdfLayout.plannedSigningFields.length : 0,
+        });
         contentType = "application/pdf";
         generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");
         filePath = packetType === "otp"
@@ -1738,12 +1800,18 @@ Deno.serve(async (req: Request) => {
     } else {
       let templateBytes: Uint8Array;
       try {
+        const templateDownloadStartedAt = Date.now();
         templateBytes = await downloadTemplateBytes({
           supabase,
           templateBase64,
           templateBucket,
           templatePath,
           bucketCandidates,
+        });
+        recordStageTiming("legacy_template_download", templateDownloadStartedAt, {
+          byteLength: templateBytes.length,
+          templateBucket: templateBucket || null,
+          templatePath: templatePath || null,
         });
       } catch (error) {
         const details = String(error);
@@ -1757,7 +1825,9 @@ Deno.serve(async (req: Request) => {
 
       let zip: PizZip;
       try {
+        const zipStartedAt = Date.now();
         zip = new PizZip(templateBytes);
+        recordStageTiming("legacy_template_zip_parse", zipStartedAt, { byteLength: templateBytes.length });
       } catch (_error) {
         return jsonResponse(400, {
           success: false,
@@ -1773,7 +1843,11 @@ Deno.serve(async (req: Request) => {
       });
 
       try {
+        const docxRenderStartedAt = Date.now();
         doc.render(placeholderMap);
+        recordStageTiming("legacy_docx_render", docxRenderStartedAt, {
+          placeholderCount: Object.keys(placeholderMap).length,
+        });
       } catch (error) {
         console.error("Mandate template render failed", error);
         return jsonResponse(400, {
@@ -1783,7 +1857,9 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      const docxOutputStartedAt = Date.now();
       outputBytes = doc.getZip().generate({ type: "uint8array" });
+      recordStageTiming("legacy_docx_output", docxOutputStartedAt, { byteLength: outputBytes.length });
       const fileNameBase = sanitizePart(
         placeholderMap.seller_display_name || placeholderMap["seller.display_name"] || leadId || "seller",
         "seller",
@@ -1820,13 +1896,25 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const prePersistFenceStartedAt = Date.now();
     const prePersistFence = await assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_persist");
+    recordStageTiming("lease_pre_persist", prePersistFenceStartedAt, {
+      generationAttemptId,
+      leaseFence: normalizeText(prePersistFence?.stage) || "pre_persist",
+    });
+    const uploadStartedAt = Date.now();
     const uploadResult = await supabase.storage
       .from(outputBucketName)
       .upload(filePath, outputBytes, {
         contentType,
         upsert: false,
       });
+    recordStageTiming("storage_upload", uploadStartedAt, {
+      bucket: outputBucketName,
+      filePath,
+      byteLength: outputBytes.length,
+      failed: Boolean(uploadResult.error),
+    });
 
     if (uploadResult.error) {
       return jsonResponse(500, {
@@ -1839,6 +1927,7 @@ Deno.serve(async (req: Request) => {
 
     let inserted: Awaited<ReturnType<typeof insertMandateDocumentRecord>>;
     try {
+      const documentRecordStartedAt = Date.now();
       inserted = await insertMandateDocumentRecord({
         supabase,
         transactionId: persistedTransactionId,
@@ -1850,6 +1939,10 @@ Deno.serve(async (req: Request) => {
         generatedByUserId: persistedGeneratedByUserId,
         clientVisible,
         internalOnly: approval.isPhase4LegalPacket,
+      });
+      recordStageTiming("document_record_insert", documentRecordStartedAt, {
+        sourceTable: inserted.sourceTable,
+        documentId: normalizeText(inserted.record?.id) || null,
       });
     } catch (error) {
       const persistenceFailure = error as { message?: unknown; details?: unknown; code?: unknown };
@@ -1873,8 +1966,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_completed", requestId, packetType, templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
+    console.log(JSON.stringify({ level: "info", event: "legal_document_generation_render_persist_completed", requestId, packetType, templateId: approval.templateId, packetId, durationMs: Date.now() - startedAt, outputBytes: outputBytes.length }));
+    const hashStartedAt = Date.now();
     const outputSha256 = await sha256Hex(outputBytes);
+    recordStageTiming("artifact_hash", hashStartedAt, { sha256: `sha256:${outputSha256}` });
     const renderAttestation = frozenInput.attestation
       ? {
           ...frozenInput.attestation,
@@ -1888,6 +1983,7 @@ Deno.serve(async (req: Request) => {
       : null;
     let canonicalOtp = null;
     if (packetType === "otp") {
+      const canonicalOtpStartedAt = Date.now();
       canonicalOtp = await createAndSealCanonicalOtpVersion({
         supabase,
         packet: approval.packet,
@@ -1907,8 +2003,13 @@ Deno.serve(async (req: Request) => {
         renderAttestation: asJsonObject(renderAttestation),
         generatedBy: normalizeText(caller.id) || null,
       });
+      recordStageTiming("canonical_otp_seal", canonicalOtpStartedAt, {
+        sealed: Boolean(canonicalOtp?.seal),
+        versionId: normalizeText(canonicalOtp?.version?.id) || null,
+      });
     }
     if (approval.isPhase4LegalPacket) {
+      const releaseTraceStartedAt = Date.now();
       const activationPlanDigest = normalizeText(pilotReleaseDecision?.planDigest).toLowerCase();
       if (!/^sha256:[0-9a-f]{64}$/.test(activationPlanDigest)) {
         throw Object.assign(new Error("The approved pilot release did not provide a valid activation-plan digest."), {
@@ -1923,10 +2024,30 @@ Deno.serve(async (req: Request) => {
         activationPlanDigest,
         generatedArtifactSha256: `sha256:${outputSha256}`,
       });
+      recordStageTiming("pilot_release_trace_bind", releaseTraceStartedAt, {
+        activationPlanDigest,
+      });
     }
+    const signedUrlStartedAt = Date.now();
     const signedUrlResult = await supabase.storage
       .from(outputBucketName)
       .createSignedUrl(filePath, 60 * 60);
+    recordStageTiming("signed_url_create", signedUrlStartedAt, {
+      bucket: outputBucketName,
+      filePath,
+      failed: Boolean(signedUrlResult.error),
+    });
+    console.log(JSON.stringify({
+      level: "info",
+      event: "legal_document_generation_completed",
+      requestId,
+      packetType,
+      templateId: approval.templateId,
+      packetId,
+      durationMs: Date.now() - startedAt,
+      outputBytes: outputBytes.length,
+      stageTimings,
+    }));
     return jsonResponse(200, {
       success: true,
       templateSource: { verified: true, templateId: approval.templateId },

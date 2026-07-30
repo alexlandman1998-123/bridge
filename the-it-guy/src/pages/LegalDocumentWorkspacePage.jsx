@@ -2338,6 +2338,9 @@ const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
 const LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS = 10000
+const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED = ['1', 'true', 'yes', 'on', 'enabled'].includes(
+  String(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED || '').trim().toLowerCase(),
+)
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -3806,7 +3809,51 @@ export default function LegalDocumentWorkspacePage() {
       packetId: normalizeText(packet?.id) || null,
       versionId: normalizeText(generationResult?.version?.id) || null,
       renderStatus: normalizeText(generationResult?.version?.render_status) || null,
+      backgroundGenerationQueued: generationResult?.backgroundGenerationQueued === true,
+      jobId: normalizeText(generationResult?.job?.jobId || generationResult?.job?.job_id) || null,
     })
+
+    if (generationResult?.backgroundGenerationQueued) {
+      const queuedStatus = {
+        packetType,
+        state: 'GENERATION_QUEUED',
+        packet: generationResult.packet || packet,
+        versions: [],
+        legalDocumentJob: generationResult.job || null,
+        signingSummary: null,
+        warnings: generationResult.validation?.warnings || [],
+        actionHint: `${packetType === 'otp' ? 'OTP' : 'Mandate'} generation is running in the background.`,
+      }
+      setValidatedRoutePacketId(normalizeText(packet?.id))
+      setInitialStatus(queuedStatus)
+      if (packetType === 'mandate' && leadContext.lead?.leadId) {
+        void syncLeadMandateState({
+          mandatePacketId: normalizeText(packet?.id),
+          mandateRuntimeDraftId: '',
+          mandateStatus: 'generating',
+          mandateGeneratedAt: '',
+        }, { reason: 'persist the background mandate generation job state' })
+        void recordLeadMandateActivity({
+          agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+          activityType: 'Mandate Generation Started',
+          activityNote: 'Mandate generation is running in the background.',
+          outcome: 'Queued',
+        })
+      }
+      onProgress?.(`${packetType === 'otp' ? 'OTP' : 'Mandate'} generation started in the background.`)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      recordGenerationMetric('legal_document.generation.total', generationStartedAt, {
+        packetId: normalizeText(packet?.id) || null,
+        generatedVersionId: null,
+        backgroundGenerationQueued: true,
+        jobId: normalizeText(generationResult?.job?.jobId || generationResult?.job?.job_id) || null,
+      })
+      return {
+        ...generationResult,
+        status: queuedStatus,
+        actionFeedback: 'Mandate generation started. You can leave this screen while the PDF is prepared.',
+      }
+    }
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
       void syncLeadMandateState({
@@ -3955,32 +4002,40 @@ export default function LegalDocumentWorkspacePage() {
         throw error
       }
 
+      const emailPayload = {
+        type: 'otp_signing',
+        packetType: 'otp',
+        to: recipientEmail,
+        organisationId,
+        packetId: canonicalPacketId,
+        packetVersionId: canonicalVersionId,
+        recipientRole: signerRole,
+        recipientName,
+        propertyTitle: transactionReference || 'your property transaction',
+        mandateType: 'Offer to Purchase',
+        portalLink: signingLink,
+        resend: Boolean(resend),
+        reminder: Boolean(reminder),
+        dispatchId: canonicalDispatchId,
+      }
+      const useServerSendReady = LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED && !resend && !reminder
       const emailResponse = await withLegalWorkspaceTimeout(
-        invokeEdgeFunction('send-mandate-signing-email', {
-          body: {
-            type: 'otp_signing',
-            packetType: 'otp',
-            to: recipientEmail,
-            organisationId,
-            packetId: canonicalPacketId,
-            packetVersionId: canonicalVersionId,
-            recipientRole: signerRole,
-            recipientName,
-            propertyTitle: transactionReference || 'your property transaction',
-            mandateType: 'Offer to Purchase',
-            portalLink: signingLink,
-            resend: Boolean(resend),
-            reminder: Boolean(reminder),
-            dispatchId: canonicalDispatchId,
-          },
+        invokeEdgeFunction(useServerSendReady ? 'legal-document-job-runner' : 'send-mandate-signing-email', {
+          body: useServerSendReady
+            ? {
+                action: 'send_ready_packet',
+                ...emailPayload,
+              }
+            : emailPayload,
         }),
         `The OTP signing email to ${recipientEmail} timed out before delivery was confirmed. Refresh the signer status before resending.`,
         LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
       )
       assertEdgeFunctionSuccess(emailResponse, `The OTP signing email could not be sent to ${recipientEmail}.`)
-      const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
-      const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
-      const delivery = asRecord(emailResponse?.data?.delivery)
+      const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
+      const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
+      const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+      const delivery = asRecord(serverSendResult?.delivery || emailResponse?.data?.delivery)
       const deliveryRecorded =
         normalizeText(delivery?.contract) === 'phase2-otp-signing-delivery-v1' &&
         delivery?.recorded === true &&
@@ -4050,31 +4105,39 @@ export default function LegalDocumentWorkspacePage() {
         error.code = 'SIGNING_EMAIL_UNAVAILABLE'
         throw error
       }
+      const emailPayload = {
+        type: 'seller_mandate_sent',
+        to: recipientEmail,
+        organisationId,
+        packetId: normalizeText(sentPacketId),
+        recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+        recipientName,
+        sellerName,
+        propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
+        mandateType: 'Mandate',
+        portalLink: signingLink,
+        agentName,
+        resend: Boolean(resend),
+        reminder: Boolean(reminder),
+        dispatchId: normalizeText(dispatchId),
+      }
+      const useServerSendReady = LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED && !resend && !reminder
       const emailResponse = await withLegalWorkspaceTimeout(
-        invokeEdgeFunction('send-mandate-signing-email', {
-          body: {
-            type: 'seller_mandate_sent',
-            to: recipientEmail,
-            organisationId,
-            packetId: normalizeText(sentPacketId),
-            recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
-            recipientName,
-            sellerName,
-            propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
-            mandateType: 'Mandate',
-            portalLink: signingLink,
-            agentName,
-            resend: Boolean(resend),
-            reminder: Boolean(reminder),
-            dispatchId: normalizeText(dispatchId),
-          },
+        invokeEdgeFunction(useServerSendReady ? 'legal-document-job-runner' : 'send-mandate-signing-email', {
+          body: useServerSendReady
+            ? {
+                action: 'send_ready_packet',
+                ...emailPayload,
+              }
+            : emailPayload,
         }),
         `The mandate signing email to the ${recipientLabelLower} timed out before the email provider confirmed delivery. The signing link is prepared; use Resend from this page if no email arrives.`,
         LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
       )
       assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientLabelLower}.`)
-      const emailDeliveryId = normalizeText(emailResponse?.data?.emailId)
-      const emailConfirmed = emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+      const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
+      const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
+      const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
       if (!emailConfirmed) {
         const error = new Error(`The mandate signing email to the ${recipientLabelLower} was prepared, but provider delivery was not confirmed.`)
         error.code = 'SIGNING_EMAIL_UNCONFIRMED'

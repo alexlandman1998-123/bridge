@@ -1,4 +1,5 @@
 import { generateMandateDocumentFromTemplate } from '../../lib/api'
+import { invokeEdgeFunction } from '../../lib/supabaseClient'
 import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
 import { findLatestSignableGeneratedVersion, isPilotDocumentFallbackVersion } from './pilotDocumentFallback'
 import { assertGeneratedDraftVersion, buildDraftLegalProvenance } from './draftGenerationAssurance'
@@ -109,6 +110,21 @@ function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
 }
+
+function readBooleanFlag(value, fallback = false) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return fallback
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
+}
+
+function asPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+const LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED = readBooleanFlag(
+  import.meta.env.VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED,
+  false,
+)
 
 function throwContainmentPolicyFailure(policy = {}) {
   throw createPacketError(
@@ -3505,6 +3521,170 @@ export async function generatePacketVersion({
             rendererPreflight.issues.map((item) => item.message).join(' '),
             { issues: rendererPreflight.issues },
           )
+        }
+        if (
+          LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED &&
+          validation.packetType === 'mandate' &&
+          renderMode === 'native_structured'
+        ) {
+          const renderProvenance = buildRenderProvenance({
+            packetType: validation.packetType,
+            template: effectiveTemplate,
+            validation,
+            pdfPlaceholders,
+            generationPayload,
+            templateVersion,
+            generatedAt,
+          })
+          const backgroundSourceContext = {
+            ...(packet?.source_context_json || {}),
+            generationPayload,
+            templateVersion,
+            generatedAt,
+            renderProvenance,
+            generationAttemptId,
+            templateResolutionSource: generationPayload.templateResolutionSource || null,
+            mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+            mandateScenarioProfile: generationPayload.mandateScenarioProfile || null,
+            mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+            mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+            mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+            legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+            legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
+            mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+            mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+            generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+            missingFieldsSnapshot:
+              context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+            warningsSnapshot: buildWarningsSnapshot(context, validation),
+            sourceContext: sourceContextSnapshot,
+            readOnlyAnnexures,
+            annexures: readOnlyAnnexures,
+          }
+          try {
+            const backgroundResult = await invokeEdgeFunction('legal-document-job-runner', {
+              body: {
+                action: 'generate_ready_packet',
+                background: true,
+                packetId: packet.id,
+                packet_id: packet.id,
+                organisationId: packet.organisation_id,
+                organisation_id: packet.organisation_id,
+                generationAttemptId,
+                generation_attempt_id: generationAttemptId,
+                idempotencyKey: `phase5-generate:${packet.id}:${generationAttemptId}`,
+                rendererRequest: {
+                  packetId: packet.id,
+                  transactionId: normalizeNullableUuid(context?.transaction?.id || context?.transactionId),
+                  leadId: normalizeNullableUuid(context?.lead?.lead_id || context?.lead?.id || context?.leadId),
+                  templatePath: templateConfig.templatePath,
+                  templateBucket: templateConfig.templateBucket,
+                  templateFilename: templateConfig.templateFilename,
+                  outputBucket: templateConfig.outputBucket,
+                  outputPath,
+                  renderMode,
+                  placeholders: pdfPlaceholders,
+                  sectionManifest: validation.sectionManifest || [],
+                  generationPayload,
+                  sourceContext: sourceContextSnapshot,
+                  branding: validation.branding || {},
+                  templateVersion,
+                  generatedByRole: context?.generatedByRole || 'agent',
+                  generatedByUserId: context?.generatedByUserId || '',
+                  clientVisible: false,
+                },
+                versionInput: {
+                  placeholdersResolvedJson: pdfPlaceholders,
+                  placeholdersMissingJson: validation.missingPlaceholders,
+                  sectionManifestJson: validation.sectionManifest || [],
+                  validationSummaryJson: {
+                    ...buildValidationSummary(validation),
+                    generationStatus: 'queued',
+                    previewOnly: false,
+                    previewOnlyReason: null,
+                    pilotFallback: null,
+                    generationPayload,
+                    templateVersion,
+                    templateResolution: prepared.templateResolution || null,
+                    generatedAt,
+                    generationAttemptId,
+                    render_provenance: renderProvenance,
+                    generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+                    missingFieldsSnapshot:
+                      context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+                    warningsSnapshot: buildWarningsSnapshot(context, validation),
+                    sourceContext: sourceContextSnapshot,
+                    readOnlyAnnexures,
+                    annexures: readOnlyAnnexures,
+                  },
+                  generatedBy: context?.generatedByUserId || null,
+                  generatedAt,
+                },
+                packetUpdate: {
+                  sourceContextJson: backgroundSourceContext,
+                  brandingSnapshotJson: validation.branding || {},
+                },
+                successEventPayload: {
+                  leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
+                  transactionId: context?.transaction?.id || context?.transactionId || null,
+                  templateResolutionSource: generationPayload.templateResolutionSource || null,
+                  mandateTemplateVariant: generationPayload.mandateTemplateVariant || null,
+                  mandateTemplateRouting: generationPayload.mandateTemplateRouting || null,
+                  mandateTemplateFallback: Boolean(generationPayload.mandateTemplateFallback),
+                  mandateTemplateFallbackWarning: generationPayload.mandateTemplateFallbackWarning || null,
+                  legalDocumentTemplateFallback: Boolean(generationPayload.legalDocumentTemplateFallback),
+                  legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
+                  mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
+                  mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+                },
+                pdfCreatedEventPayload: {
+                  leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
+                  transactionId: context?.transaction?.id || context?.transactionId || null,
+                },
+              },
+            })
+            if (backgroundResult.error) throw backgroundResult.error
+            if (!backgroundResult.data || backgroundResult.data.success === false || !backgroundResult.data.accepted) {
+              const error = new Error(
+                normalizeText(backgroundResult.data?.error || backgroundResult.data?.message) ||
+                  'Background mandate generation was not accepted.',
+              )
+              error.code = normalizeText(backgroundResult.data?.errorCode || backgroundResult.data?.error_code) ||
+                'BACKGROUND_GENERATION_NOT_ACCEPTED'
+              throw error
+            }
+            deferGenerationLeaseRelease = true
+            return {
+              packet: {
+                ...packet,
+                source_context_json: backgroundSourceContext,
+              },
+              version: null,
+              validation,
+              previewHtml: prepared.previewHtml,
+              template: effectiveTemplate,
+              templateResolution: prepared.templateResolution || null,
+              backgroundGenerationQueued: true,
+              job: asPlainObject(backgroundResult.data.job),
+            }
+          } catch (backgroundError) {
+            console.warn('[PACKETS] background mandate generation enqueue failed; foreground fallback disabled.', {
+              packetId: packet.id,
+              generationAttemptId,
+              code: backgroundError?.code || null,
+            })
+            throw createPacketError(
+              normalizeText(backgroundError?.code) || 'BACKGROUND_GENERATION_ENQUEUE_FAILED',
+              normalizeText(backgroundError?.message) ||
+                'Mandate generation could not be queued. No browser fallback render was started.',
+              {
+                phase8ServerJobRequired: true,
+                safeToRetry: true,
+                packetId: packet.id,
+                generationAttemptId,
+              },
+            )
+          }
         }
         const mandateResult = await withPacketTimeout(
           withPacketRetries(

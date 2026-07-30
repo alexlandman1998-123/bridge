@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import process from 'node:process'
+
+const root = process.cwd()
+const packetService = fs.readFileSync(path.join(root, 'src', 'core', 'documents', 'packetService.js'), 'utf8')
+const workspacePage = fs.readFileSync(path.join(root, 'src', 'pages', 'LegalDocumentWorkspacePage.jsx'), 'utf8')
+
+function assertIncludes(source, needle, label) {
+  assert.ok(source.includes(needle), `${label} is missing: ${needle}`)
+}
+
+function assertMatches(source, pattern, label) {
+  assert.match(source, pattern, `${label} did not match ${pattern}`)
+}
+
+for (const token of [
+  'VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED',
+  'LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED',
+  'generate_ready_packet',
+  'legal-document-job-runner',
+  'backgroundGenerationQueued: true',
+  'deferGenerationLeaseRelease = true',
+  'rendererRequest',
+  'versionInput',
+  'packetUpdate',
+  'Background mandate generation was not accepted.',
+  'foreground fallback disabled',
+]) {
+  assertIncludes(packetService, token, 'Phase 5 packet service background generation')
+}
+
+assertMatches(
+  packetService,
+  /LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED[\s\S]+validation\.packetType === 'mandate'[\s\S]+renderMode === 'native_structured'/,
+  'Background generation must be flag-gated and mandate/native-structured scoped',
+)
+assertMatches(
+  packetService,
+  /invokeEdgeFunction\('legal-document-job-runner'[\s\S]+action: 'generate_ready_packet'[\s\S]+background: true/,
+  'Packet service must enqueue via the job runner instead of calling the renderer directly',
+)
+assertMatches(
+  packetService,
+  /catch \(backgroundError\) \{[\s\S]+foreground fallback disabled[\s\S]+phase8ServerJobRequired/,
+  'Packet service must surface enqueue failure without starting a foreground fallback',
+)
+
+for (const token of [
+  'backgroundGenerationQueued',
+  'GENERATION_QUEUED',
+  'Mandate generation is running in the background.',
+  'mandateStatus: \'generating\'',
+  'Mandate Generation Started',
+]) {
+  assertIncludes(workspacePage, token, 'Phase 5 workspace UI queued state')
+}
+
+assertMatches(
+  workspacePage,
+  /if \(generationResult\?\.backgroundGenerationQueued\) \{[\s\S]+return \{[\s\S]+actionFeedback: 'Mandate generation started\. You can leave this screen while the PDF is prepared\.'/,
+  'Workspace page must return a queued result without treating it as a generated PDF',
+)
+
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+assert.equal(
+  packageJson.scripts?.['test:legal-document-background-generation-phase5-ui'],
+  'node scripts/legal-document-background-generation-phase5-ui.test.mjs',
+)
+
+console.log('Legal document background generation phase 5 UI contract passed.')

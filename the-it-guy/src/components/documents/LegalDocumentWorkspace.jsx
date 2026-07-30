@@ -34,6 +34,7 @@ import {
   saveSigningFieldPlacement,
   applySigningFieldLayout,
   getFinalDocumentCompletionStatus,
+  listLegalDocumentJobsForPacket,
   retryFinalDocumentCompletion,
   resolveWorkspaceFinalSignedDocumentAccess,
   restoreEditableDocumentDraftRevision,
@@ -178,6 +179,7 @@ const SIGNING_DELIVERY_TIMEOUT_MS = 12000
 const WORKSPACE_STATUS_FRESH_MS = 2500
 const WORKSPACE_STATUS_REVALIDATION_DELAYS_MS = [1000, 4000]
 const SIGNING_STATUS_REVALIDATION_DELAYS_MS = [800, 3000, 8000]
+const LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS = [1500, 3500, 6000, 10000, 15000]
 
 function withWorkspaceTimeout(task, message, timeoutMs = WORKSPACE_REFRESH_TIMEOUT_MS) {
   let timeoutId = null
@@ -202,6 +204,16 @@ function buildWorkspaceFallbackStatus(packetType = 'mandate', warning = '') {
     warnings: warning ? [warning] : [],
     actionHint: 'Packet details are still loading.',
   }
+}
+
+function normalizeLegalDocumentJobStatus(job = null) {
+  return normalizeKey(job?.status || job?.jobStatus || '')
+}
+
+function isActiveLegalDocumentGenerationJob(job = null) {
+  const status = normalizeLegalDocumentJobStatus(job)
+  const jobType = normalizeKey(job?.jobType || job?.job_type)
+  return jobType === 'generate_packet_version' && ['queued', 'claimed', 'running', 'failed'].includes(status)
 }
 
 function slugifySectionKey(value) {
@@ -3301,6 +3313,7 @@ export default function LegalDocumentWorkspace({
   const [actionFeedback, setActionFeedback] = useState('')
   const [loadError, setLoadError] = useState('')
   const [generationRecovery, setGenerationRecovery] = useState(null)
+  const [backgroundGenerationJob, setBackgroundGenerationJob] = useState(null)
   const [signerBusy, setSignerBusy] = useState(false)
   const [signerDraftByRole, setSignerDraftByRole] = useState({})
   const [finalizeBusy, setFinalizeBusy] = useState(false)
@@ -3335,7 +3348,6 @@ export default function LegalDocumentWorkspace({
   const autoFinalizeGuardRef = useRef(new Set())
   const autoGenerateGuardRef = useRef('')
   const autoGenerateRunRef = useRef(0)
-  const queuedMandateSendRef = useRef(null)
   const statusStateRef = useRef(initialStatus || null)
   const actionBusyRef = useRef(false)
   const generationFailureCountsRef = useRef(new Map())
@@ -3351,6 +3363,7 @@ export default function LegalDocumentWorkspace({
   const autosavePromiseRef = useRef(null)
   const lastWorkspaceJourneyTelemetryRef = useRef('')
   const lastWorkspaceOutcomeTelemetryRef = useRef('')
+  const generationJobPollRunRef = useRef(0)
 
   const recordWorkspaceExperience = useCallback((eventName, metadata = {}) => {
     void recordDocumentExperienceEvent({
@@ -3402,10 +3415,12 @@ export default function LegalDocumentWorkspace({
     if (!initialStatus) return
     statusStateRef.current = initialStatus
     setStatusState(initialStatus)
+    if (initialStatus?.legalDocumentJob) setBackgroundGenerationJob(initialStatus.legalDocumentJob)
   }, [initialStatus])
 
   useEffect(() => {
     statusStateRef.current = statusState
+    if (statusState?.legalDocumentJob) setBackgroundGenerationJob(statusState.legalDocumentJob)
   }, [statusState])
 
   useEffect(() => {
@@ -4235,6 +4250,94 @@ export default function LegalDocumentWorkspace({
     }
     scheduledWorkspaceRefreshTimersRef.current.clear()
   }, [])
+
+  useEffect(() => {
+    const currentStatus = statusStateRef.current || statusState
+    const job = backgroundGenerationJob || currentStatus?.legalDocumentJob || null
+    const packetIdForJob = normalizeText(currentStatus?.packet?.id || packetId)
+    const currentJobId = normalizeText(job?.jobId || job?.job_id)
+    const currentJobStatus = normalizeLegalDocumentJobStatus(job)
+    const shouldPoll =
+      open &&
+      isMandatePacket &&
+      isUuidLike(packetIdForJob) &&
+      currentJobId &&
+      ['queued', 'claimed', 'running', 'failed'].includes(currentJobStatus)
+    if (!shouldPoll) return undefined
+
+    const runId = generationJobPollRunRef.current + 1
+    generationJobPollRunRef.current = runId
+    let stopped = false
+    let timerId = null
+    const isCurrent = () => !stopped && generationJobPollRunRef.current === runId
+
+    setActionProgressMessage((message) => (
+      normalizeText(message) || 'Mandate generation is running in the background…'
+    ))
+
+    const poll = async (attemptIndex = 0) => {
+      try {
+        const jobs = await listLegalDocumentJobsForPacket({ packetId: packetIdForJob, limit: 5 })
+        if (!isCurrent()) return
+        const latestJob = jobs.find((row) => normalizeText(row?.jobId || row?.job_id) === currentJobId) ||
+          jobs.find((row) => normalizeKey(row?.jobType || row?.job_type) === 'generate_packet_version') ||
+          null
+        if (!latestJob) return
+        setBackgroundGenerationJob(latestJob)
+        setStatusState((previous) => (
+          previous?.packet?.id === packetIdForJob
+            ? { ...previous, legalDocumentJob: latestJob }
+            : previous
+        ))
+
+        const latestStatus = normalizeLegalDocumentJobStatus(latestJob)
+        if (latestStatus === 'succeeded') {
+          setActionProgressMessage('Refreshing generated mandate…')
+          const refreshed = await refreshWorkspaceData({ force: true })
+          if (!isCurrent()) return
+          if (refreshed?.resolved) {
+            statusStateRef.current = refreshed.resolved
+            setStatusState(refreshed.resolved)
+          }
+          setBackgroundGenerationJob(null)
+          setActionProgressMessage('')
+          setActionFeedback('Mandate PDF generated and ready to review.')
+          void Promise.resolve(onRefreshContext?.()).catch(() => null)
+          return
+        }
+
+        if (latestStatus === 'cancelled' || (latestStatus === 'failed' && Number(latestJob?.attemptCount || latestJob?.attempt_count || 0) >= Number(latestJob?.maxAttempts || latestJob?.max_attempts || 1))) {
+          setBackgroundGenerationJob(null)
+          setActionProgressMessage('')
+          const errorText = normalizeText(latestJob?.error?.error || latestJob?.error?.message)
+          setLoadError(errorText || 'Mandate generation did not complete. Refresh this workspace or retry generation.')
+          return
+        }
+
+        const nextDelay = LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS[Math.min(attemptIndex, LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS.length - 1)]
+        timerId = setTimeout(() => poll(attemptIndex + 1), nextDelay)
+      } catch (error) {
+        if (!isCurrent()) return
+        console.warn('[LegalDocumentWorkspace] background mandate generation job poll failed.', error)
+        const nextDelay = LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS[Math.min(attemptIndex + 1, LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS.length - 1)]
+        timerId = setTimeout(() => poll(attemptIndex + 1), nextDelay)
+      }
+    }
+
+    void poll()
+    return () => {
+      stopped = true
+      if (timerId) clearTimeout(timerId)
+    }
+  }, [
+    backgroundGenerationJob,
+    isMandatePacket,
+    onRefreshContext,
+    open,
+    packetId,
+    refreshWorkspaceData,
+    statusState,
+  ])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {
     if (!isMandatePacket) return
@@ -5511,50 +5614,7 @@ export default function LegalDocumentWorkspace({
     return { packet: updatedPacket, version: updatedVersion, transition }
   }
 
-  function queueMandateSendAfterGeneration({ targetSignerRole = '' } = {}) {
-    if (queuedMandateSendRef.current) return queuedMandateSendRef.current
-    setActionFeedback('Mandate send queued. The PDF will finish preparing and the signing email will send automatically.')
-    const queued = Promise.resolve()
-      .then(async () => {
-        if (typeof onGenerate !== 'function') throw new Error('Mandate generation is not configured for this workspace.')
-        setActionProgressMessage('Preparing mandate PDF in the background...')
-        const generationResult = await onGenerate({
-          mandateManualOverride,
-          persistForSend: true,
-          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
-        })
-        if (generationResult?.status) {
-          statusStateRef.current = generationResult.status
-          setStatusState(generationResult.status)
-        }
-        setActionProgressMessage('Mandate PDF ready. Sending signing email...')
-        const sendResult = await handleSendForSignatureFromWorkspace({
-          resend: false,
-          reminder: false,
-          targetSignerRole,
-          queuedContinuation: true,
-        })
-        if (sendResult?.queued) throw new Error('Mandate send was queued again instead of completing.')
-        setActionFeedback('Mandate sent for signature.')
-        void Promise.resolve(onRefreshContext?.()).catch(() => null)
-        await refreshWorkspaceData().catch((refreshError) => {
-          console.warn('[LegalDocumentWorkspace] queued mandate send completed but status refresh was delayed.', refreshError)
-        })
-      })
-      .catch(async (error) => {
-        await logMandateFailure('queued_send_signature', error)
-        setLoadError(toFriendlyWorkspaceError(error, 'Mandate send was queued, but background delivery did not complete. Refresh and retry from this page.'))
-      })
-      .finally(() => {
-        queuedMandateSendRef.current = null
-        setActionProgressMessage('')
-      })
-    queuedMandateSendRef.current = queued
-    void queued
-    return queued
-  }
-
-  async function ensurePersistedPacketBeforeSend({ queueIfGenerationNeeded = false, targetSignerRole = '' } = {}) {
+  async function ensurePersistedPacketBeforeSend({ queueIfGenerationNeeded = false } = {}) {
     let currentStatus = statusStateRef.current || statusState
     if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
       try {
@@ -5640,10 +5700,26 @@ export default function LegalDocumentWorkspace({
     }
 
     if (queueIfGenerationNeeded && isMandatePacket) {
-      queueMandateSendAfterGeneration({ targetSignerRole })
+      setActionProgressMessage('Starting background mandate generation…')
+      const generationResult = await onGenerate({
+        mandateManualOverride,
+        persistForSend: true,
+        onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+      })
+      if (generationResult?.status) {
+        statusStateRef.current = generationResult.status
+        setStatusState(generationResult.status)
+      }
+      const generatedVersionId = normalizeText(
+        getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])?.id,
+      )
+      if (generatedVersionId) {
+        return generationResult.status
+      }
       return {
         queued: true,
-        status: currentStatus,
+        status: generationResult?.status || currentStatus,
+        job: generationResult?.job || generationResult?.status?.legalDocumentJob || null,
       }
     }
 
@@ -5683,7 +5759,7 @@ export default function LegalDocumentWorkspace({
     return postGenerationCheck.status || nextStatus
   }
 
-  async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '', queuedContinuation = false } = {}) {
+  async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
     const sendStartedAt = getPerformanceNow()
     if (isOtpPacket && reminder) {
       throw createWorkspaceError(
@@ -5708,10 +5784,34 @@ export default function LegalDocumentWorkspace({
       persistedStatus?.state || persistedStatus?.packet?.source_context_json?.lifecycle_state || persistedStatus?.packet?.status,
     )
     if (!resend) {
-      const persistedResult = await ensurePersistedPacketBeforeSend({
-        queueIfGenerationNeeded: isMandatePacket && !queuedContinuation,
-        targetSignerRole,
-      })
+      const ensureBeforeSendStartedAt = getPerformanceNow()
+      let persistedResult = null
+      try {
+        persistedResult = await ensurePersistedPacketBeforeSend({
+          queueIfGenerationNeeded: isMandatePacket,
+        })
+        const ensuredStatus = persistedResult?.queued ? persistedResult.status : persistedResult
+        recordWorkspacePerformance('legal_document.signing.ensure_generated_before_send', ensureBeforeSendStartedAt, {
+          resend: false,
+          reminder: false,
+          queued: persistedResult?.queued === true,
+          targetSignerRole: targetSignerRole || null,
+          packetId: normalizeText(ensuredStatus?.packet?.id || packetId) || null,
+          lifecycleState: normalizeDocumentLifecycleState(
+            ensuredStatus?.state || ensuredStatus?.packet?.source_context_json?.lifecycle_state || ensuredStatus?.packet?.status,
+          ) || null,
+          generatedVersionId: normalizeText(getGeneratedPacketVersionForSigning(ensuredStatus?.versions || [])?.id) || null,
+        })
+      } catch (persistError) {
+        recordWorkspacePerformance('legal_document.signing.ensure_generated_before_send', ensureBeforeSendStartedAt, {
+          resend: false,
+          reminder: false,
+          failed: true,
+          targetSignerRole: targetSignerRole || null,
+          errorCode: normalizeText(persistError?.code) || null,
+        })
+        throw persistError
+      }
       if (persistedResult?.queued) {
         recordWorkspacePerformance('legal_document.signing.total', sendStartedAt, {
           resend: false,
@@ -6054,14 +6154,53 @@ export default function LegalDocumentWorkspace({
       )
     }
     if (!resend) {
-      const packetAfterLinkPreparation = await fetchDocumentPacket(
-        normalizeText(linkResult?.packetId || persistedStatus?.packet?.id || packetId),
-        { includeVersions: false, includeEvents: false },
-      )
+      const packetRefreshStartedAt = getPerformanceNow()
+      const refreshedPacketId = normalizeText(linkResult?.packetId || persistedStatus?.packet?.id || packetId)
+      let packetAfterLinkPreparation = null
+      try {
+        packetAfterLinkPreparation = await fetchDocumentPacket(
+          refreshedPacketId,
+          { includeVersions: false, includeEvents: false },
+        )
+        recordWorkspacePerformance('legal_document.signing.post_link_packet_refresh', packetRefreshStartedAt, {
+          resend: false,
+          targetSignerRole: normalizedTargetSignerRole || null,
+          packetId: refreshedPacketId || null,
+          lifecycleState: resolveDocumentLifecycleStateFromPacket(packetAfterLinkPreparation) || null,
+        })
+      } catch (packetRefreshError) {
+        recordWorkspacePerformance('legal_document.signing.post_link_packet_refresh', packetRefreshStartedAt, {
+          resend: false,
+          targetSignerRole: normalizedTargetSignerRole || null,
+          packetId: refreshedPacketId || null,
+          failed: true,
+          errorCode: normalizeText(packetRefreshError?.code) || null,
+        })
+        throw packetRefreshError
+      }
       lifecycleBeforeSend = resolveDocumentLifecycleStateFromPacket(packetAfterLinkPreparation)
     }
     if (!resend && lifecycleBeforeSend === 'pdf_generated') {
-      await transitionLifecycleState('ready_to_send', { validateReadiness: true })
+      const readyTransitionStartedAt = getPerformanceNow()
+      try {
+        await transitionLifecycleState('ready_to_send', { validateReadiness: true })
+        recordWorkspacePerformance('legal_document.signing.ready_to_send_transition', readyTransitionStartedAt, {
+          resend: false,
+          targetSignerRole: normalizedTargetSignerRole || null,
+          fromState: 'pdf_generated',
+          toState: 'ready_to_send',
+        })
+      } catch (transitionError) {
+        recordWorkspacePerformance('legal_document.signing.ready_to_send_transition', readyTransitionStartedAt, {
+          resend: false,
+          targetSignerRole: normalizedTargetSignerRole || null,
+          fromState: 'pdf_generated',
+          toState: 'ready_to_send',
+          failed: true,
+          errorCode: normalizeText(transitionError?.code) || null,
+        })
+        throw transitionError
+      }
       lifecycleBeforeSend = 'ready_to_send'
     }
     if (!resend) {
@@ -6191,9 +6330,23 @@ export default function LegalDocumentWorkspace({
     const serverPacketStatus = normalizeText(serverDelivery.packetStatus || serverDelivery.packet_status)
     const serverSignerStatus = normalizeText(serverDelivery.signerStatus || serverDelivery.signer_status)
     setActionProgressMessage('Delivery confirmed. Refreshing signing status…')
+    const statusRefreshStartedAt = getPerformanceNow()
     try {
       await refreshWorkspaceData({ force: true })
+      recordWorkspacePerformance('legal_document.signing.status_refresh_after_delivery', statusRefreshStartedAt, {
+        resend: resend === true,
+        targetSignerRole: linkRecipientRole || normalizedTargetSignerRole || null,
+        packetId: currentPacketId || null,
+        emailConfirmed: true,
+      })
     } catch (refreshError) {
+      recordWorkspacePerformance('legal_document.signing.status_refresh_after_delivery', statusRefreshStartedAt, {
+        resend: resend === true,
+        targetSignerRole: linkRecipientRole || normalizedTargetSignerRole || null,
+        packetId: currentPacketId || null,
+        failed: true,
+        errorCode: normalizeText(refreshError?.code) || null,
+      })
       console.warn('[LegalDocumentWorkspace] signing delivery succeeded but the authoritative status refresh is delayed.', refreshError)
     }
 
@@ -6708,11 +6861,15 @@ export default function LegalDocumentWorkspace({
     normalizedLifecycleState === 'ready_to_send' ||
     (isMandatePacket && launchSigningReadyState && signingMethod === 'digital')
   const hasGeneratedMandateVersion = Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id)
+  const backgroundGenerationActive =
+    isActiveLegalDocumentGenerationJob(backgroundGenerationJob || statusState?.legalDocumentJob) ||
+    normalizeKey(statusState?.state) === 'generation_queued'
   const pilotFallbackVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
   const showGeneratePdfButton =
     legalPermissions.canGenerate &&
     typeof onGenerate === 'function' &&
     (isMandatePacket || isOtpPacket) &&
+    !backgroundGenerationActive &&
     (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
   const handleSendForSignatureIntent = () => {
     if (signingDeliveryDisabled) {
