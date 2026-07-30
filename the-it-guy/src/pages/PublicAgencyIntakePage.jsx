@@ -427,13 +427,13 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
       type="button"
       onClick={onToggle}
       aria-pressed={selected}
-      className={`group overflow-hidden rounded-lg border text-left transition focus:outline-none focus:ring-4 focus:ring-slate-200 ${
+      className={`group min-h-[196px] overflow-hidden rounded-lg border text-left transition focus:outline-none focus:ring-4 focus:ring-slate-200 sm:min-h-[220px] ${
         selected
           ? 'border-[var(--intake-primary)] bg-slate-50 shadow-[0_18px_40px_rgba(15,23,42,0.12)]'
           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
       }`}
     >
-      <span className="relative block min-h-[230px] overflow-hidden bg-slate-800">
+      <span className="relative block h-[196px] overflow-hidden bg-slate-800 sm:h-[220px]">
         {listing.coverImageUrl ? (
           <img
             src={listing.coverImageUrl}
@@ -949,8 +949,7 @@ export default function PublicAgencyIntakePage() {
               <section className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-lg border border-white/18 bg-white text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:min-h-0 sm:p-6' : 'rounded-lg border border-white/18 bg-white p-5 text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-6'}`}>
                 <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-5 p-5 sm:p-0' : 'space-y-5'}`} onSubmit={handleFormSubmit} noValidate>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{intent === 'sell' ? 'Seller lead' : 'Buyer lead'}</p>
-                    <h2 className="mt-1 text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : currentBuyerStep.title}</h2>
+                    <h2 className="text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : currentBuyerStep.title}</h2>
                     {intent === 'buy' ? (
                       <>
                         <p className="mt-2 text-sm leading-6 text-slate-500">{currentBuyerStep.summary}</p>
@@ -1016,7 +1015,7 @@ export default function PublicAgencyIntakePage() {
                       ) : null}
 
                       {buyerStep === 'listings' ? (
-                        <div className="grid min-h-0 gap-4">
+                        <div className="flex min-h-0 flex-1 flex-col gap-4">
                           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                             <div className="flex items-center justify-between gap-3">
                               <div>
@@ -1048,7 +1047,7 @@ export default function PublicAgencyIntakePage() {
                               {listingError} You can still continue without selecting a listing.
                             </div>
                           ) : listingOptions.length ? (
-                            <div className="grid max-h-[52dvh] gap-3 overflow-y-auto pr-1 sm:max-h-none sm:grid-cols-2 sm:overflow-visible sm:pr-0">
+                            <div className="grid min-h-[260px] max-h-[40dvh] flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain pr-1 sm:max-h-[min(58dvh,620px)] sm:grid-cols-2 sm:pr-2">
                               {listingOptions.map((listing) => {
                                 const key = listingKey(listing)
                                 const selected = form.selectedListings.some((item) => listingKey(item) === key)
