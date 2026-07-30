@@ -3018,6 +3018,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
   const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
   const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
+  const ownershipBranch = getOwnershipBranch(form?.ownershipType)
+  const isMarriedOwnership = ownershipBranch === 'married'
+  const isCompanyOwnership = ownershipBranch === 'company'
+  const isTrustOwnership = ownershipBranch === 'trust'
+  const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
+  const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
+  const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const requiresSellerResidentialAddress = ownershipBranch === 'individual' || ownershipBranch === 'married'
+  const showVatFields = ['company', 'trust'].includes(ownershipBranch)
   const mandateRequestsTitleReference = useMemo(() => {
     const structureType = normalizePropertyStructureType(form?.propertyStructureType, { fallback: '' })
     return ['full_title', 'freehold', 'estate', 'agricultural_holding'].includes(structureType)
@@ -4329,26 +4338,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     )
   }
 
-  const ownershipBranch = getOwnershipBranch(form.ownershipType)
   const ownerEntityType = form.ownerEntityType || deriveOwnerEntityType(form.ownershipType, form)
   const ownerStructureType = form.ownerStructureType || deriveOwnerStructureType(form.ownershipType, ownerEntityType, form)
   const ownerStructureOptions = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   const isForeignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
-  const isMarriedOwnership = ownershipBranch === 'married'
-  const isCompanyOwnership = ownershipBranch === 'company'
-  const isTrustOwnership = ownershipBranch === 'trust'
-  const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
-  const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
-  const isMultipleOwners = ownershipBranch === 'multiple_owners'
-  const requiresSellerResidentialAddress = ownershipBranch === 'individual' || ownershipBranch === 'married'
   const sellerResidentialAddress = resolveSellerResidentialAddress(form)
   const canCopySellerResidentialAddressToProperty = Boolean(sellerResidentialAddress)
   const transferAttorneyChoice = getTransferAttorneyChoice(form)
   const preferredTransferAttorneyName = getPreferredTransferAttorneyName(form.preferredTransferAttorney)
   const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
   const isMultipleOwnerInviteMode = isMultipleOwners && multipleOwnerCaptureMode === 'send_onboarding'
-  const showVatFields = ['company', 'trust'].includes(ownershipBranch)
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
   const hasEstateSignals = Boolean(form.estateOrHoa || form.estateName || form.estateComplexName)
   const showEstateDetails = propertyBranch === 'estate_hoa' || hasEstateSignals
