@@ -267,6 +267,7 @@ async function runSelectedListingJourney(page, baseUrl, state) {
   await page.getByText('Step 3 of 4').waitFor()
   assert.equal(state.listingRequests.at(-1)?.minPrice, '1500000', 'listing API should receive budget min filter')
   assert.equal(state.listingRequests.at(-1)?.maxPrice, '4000000', 'listing API should receive budget max filter')
+  assert.equal(state.listingRequests.at(-1)?.audience, 'agency-intake', 'buyer intake should request agency-intake listing visibility')
   assert.equal('bedrooms' in state.listingRequests.at(-1), false, 'listing API should not receive bedroom filter from buyer intake')
   assert.equal('bathrooms' in state.listingRequests.at(-1), false, 'listing API should not receive bathroom filter from buyer intake')
   assert.equal('propertyType' in state.listingRequests.at(-1), false, 'listing API should not receive property type filter from buyer intake')

@@ -101,7 +101,7 @@ export async function resolveAgencyPublicIntake(slug = '') {
 export async function resolveAgencyPublicListings(slug = '', filters = {}) {
   const safeSlug = normalizeSlug(slug)
   if (!safeSlug) return []
-  const params = new URLSearchParams({ agencySlug: safeSlug, limit: String(filters.limit || 12) })
+  const params = new URLSearchParams({ agencySlug: safeSlug, audience: 'agency-intake', limit: String(filters.limit || 12) })
   for (const [key, value] of Object.entries(filters)) {
     const text = normalizeText(value)
     if (key !== 'limit' && text) params.set(key, text)

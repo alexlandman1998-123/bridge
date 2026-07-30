@@ -80,6 +80,7 @@ export async function createPublicListingsResponse({ method = 'GET', url = '', h
       bathrooms: params.get('bathrooms'),
       limit: params.get('limit'),
       offset: params.get('offset'),
+      audience: params.get('audience') || params.get('surface'),
     })
 
     if (params.get('slug') && !result.listing) {

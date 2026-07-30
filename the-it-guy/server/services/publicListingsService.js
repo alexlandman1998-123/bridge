@@ -214,6 +214,48 @@ export function isPublicListingEligible({ listing = {}, publication = {}, media 
   )
 }
 
+function isAgencyIntakeListingEligible({ listing = {} } = {}) {
+  const visibility = normalizeLower(listing.listing_visibility)
+  const listingStatus = normalizeToken(listing.listing_status)
+  const title = normalizeText(listing.title || listing.listing_reference || listing.address_line_1)
+  const price = toNumber(listing.asking_price)
+
+  return Boolean(
+    visibility === 'active_market' &&
+      !['archived', 'withdrawn', 'sold', 'transaction_created'].includes(listingStatus) &&
+      title &&
+      price !== null &&
+      price > 0,
+  )
+}
+
+function createAgencyIntakePublication(listing = {}, publication = {}) {
+  return {
+    listing_id: listing.id,
+    title: normalizeText(listing.title || listing.listing_reference || publication.title || listing.address_line_1),
+    address: normalizeText(listing.address_line_1 || publication.address),
+    suburb: normalizeText(listing.suburb || publication.suburb),
+    province: normalizeText(listing.province || publication.province),
+    property_type: normalizeText(listing.property_type || publication.property_type),
+    listing_type: normalizeText(publication.listing_type || 'Sale'),
+    asking_price: listing.asking_price ?? publication.asking_price,
+    bedrooms: publication.bedrooms ?? listing.bedrooms,
+    bathrooms: publication.bathrooms ?? listing.bathrooms,
+    garages: publication.garages ?? listing.garages,
+    parking_bays: publication.parking_bays ?? listing.parking_bays,
+    floor_size: publication.floor_size ?? listing.floor_size,
+    erf_size: publication.erf_size ?? listing.erf_size,
+    rates_taxes: publication.rates_taxes ?? listing.rates_taxes,
+    levies: publication.levies ?? listing.levies,
+    description: normalizeText(publication.description || listing.description),
+    features: publication.features ?? listing.features,
+    amenities: publication.amenities ?? listing.amenities,
+    status: normalizeText(publication.status || listing.bridge_listing_status || listing.listing_status),
+    created_at: publication.created_at || listing.created_at,
+    updated_at: publication.updated_at || listing.updated_at,
+  }
+}
+
 export function mapPublicListingContract({ listing = {}, publication = {}, media = [], host = 'https://www.arch9.co.za' } = {}) {
   const coverImage = getCoverImage(media)
   const imageRows = media
@@ -401,11 +443,84 @@ export async function getPublicListings(options = {}) {
   const limit = normalizeLimit(options.limit)
   const offset = normalizeOffset(options.offset)
   const agencySlug = normalizeText(options.agencySlug)
+  const audience = normalizeToken(options.audience || options.surface)
   const agencyScope = await resolveAgencyScope(client, agencySlug)
   if (agencySlug && !agencyScope) {
     return options.slug
       ? { listing: null, generatedAt: new Date().toISOString() }
       : { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
+  }
+  const isAgencyIntakeAudience = Boolean(agencyScope?.organisation_id && ['agency_intake', 'buyer_intake', 'intake'].includes(audience))
+
+  if (isAgencyIntakeAudience) {
+    const listingsResult = await client
+      .from('private_listings')
+      .select(PUBLIC_LISTING_FIELDS)
+      .eq('organisation_id', agencyScope.organisation_id)
+      .eq('listing_visibility', 'active_market')
+      .order('updated_at', { ascending: false })
+      .limit(500)
+
+    if (listingsResult.error) throw listingsResult.error
+
+    const listingRows = listingsResult.data || []
+    const listingIds = listingRows.map((row) => normalizeText(row.id)).filter(Boolean)
+    if (!listingIds.length) {
+      return { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
+    }
+
+    const [publicationResult, mediaResult, agencyMetadata] = await Promise.all([
+      client
+        .from('listing_publication_data')
+        .select(PUBLICATION_FIELDS)
+        .in('listing_id', listingIds)
+        .order('updated_at', { ascending: false }),
+      client
+        .from('listing_media')
+        .select(MEDIA_FIELDS)
+        .in('listing_id', listingIds)
+        .order('sort_order', { ascending: true }),
+      loadAgencyPublicMetadata(client, [agencyScope.organisation_id]),
+    ])
+
+    if (publicationResult.error) throw publicationResult.error
+    if (mediaResult.error) throw mediaResult.error
+
+    const publicationsByListingId = new Map()
+    for (const publication of publicationResult.data || []) {
+      const listingId = normalizeText(publication.listing_id)
+      if (listingId && !publicationsByListingId.has(listingId)) publicationsByListingId.set(listingId, publication)
+    }
+    const mediaByListingId = groupByListingId(mediaResult.data || [])
+    const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
+    const items = listingRows
+      .map((row) => {
+        const listing = {
+          ...row,
+          agency_public_intake_slug: metadata.agencySlug || agencyScope.slug || agencySlug,
+          agency_public_name: metadata.agencyName || '',
+        }
+        if (!isAgencyIntakeListingEligible({ listing })) return null
+        const publication = createAgencyIntakePublication(listing, publicationsByListingId.get(normalizeText(listing.id)) || {})
+        const media = mediaByListingId.get(normalizeText(listing.id)) || []
+        return mapPublicListingContract({ listing, publication, media, host })
+      })
+      .filter(Boolean)
+      .filter((item) => matchesFilters(item, options))
+
+    const slug = normalizeText(options.slug)
+    if (slug) {
+      const listing = items.find((item) => item.slug === slug || item.id === slug)
+      return { listing: listing || null, generatedAt: new Date().toISOString() }
+    }
+
+    return {
+      items: items.slice(offset, offset + limit),
+      count: items.length,
+      limit,
+      offset,
+      generatedAt: new Date().toISOString(),
+    }
   }
 
   const publicationResult = await client

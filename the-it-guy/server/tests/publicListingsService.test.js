@@ -154,7 +154,7 @@ assert.equal(
   'https://www.arch9.co.za/intake/kingstons?intent=buy&listing=modern-family-home-bedfordview-gauteng-11111111&listingId=11111111-2222-3333-4444-555555555555',
 )
 
-function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-1', slug: 'kingstons' } } = {}) {
+function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-1', slug: 'kingstons' }, overrides = {} } = {}) {
   const calls = []
   const results = {
     agency_public_intake_links: { data: agencyScope ? [agencyScope] : [], error: null },
@@ -162,6 +162,7 @@ function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-
     private_listings: { data: [validListing], error: null },
     listing_media: { data: validMedia, error: null },
     organisations: { data: [{ id: 'org-1', name: 'Kingstons Real Estate' }], error: null },
+    ...overrides,
   }
 
   function createBuilder(table) {
@@ -236,5 +237,43 @@ const missingAgencyListings = await getPublicListings({
 
 assert.equal(missingAgencyListings.count, 0)
 assert.deepEqual(missingAgencyListings.items, [])
+
+const intakeListing = {
+  ...validListing,
+  id: '22222222-3333-4444-5555-666666666666',
+  title: 'Active App Listing',
+  bridge_listing_status: 'not_published',
+  asking_price: 2100000,
+}
+
+const strictUnpublishedListings = await getPublicListings({
+  client: createFakePublicListingsClient({
+    overrides: {
+      listing_publication_data: { data: [{ ...validPublication, listing_id: intakeListing.id, status: 'Draft' }], error: null },
+      private_listings: { data: [intakeListing], error: null },
+      listing_media: { data: [], error: null },
+    },
+  }),
+  agencySlug: 'kingstons',
+})
+
+assert.equal(strictUnpublishedListings.count, 0, 'public listings should stay strict outside agency intake mode')
+
+const agencyIntakeListings = await getPublicListings({
+  client: createFakePublicListingsClient({
+    overrides: {
+      listing_publication_data: { data: [{ ...validPublication, listing_id: intakeListing.id, title: '', status: 'Draft' }], error: null },
+      private_listings: { data: [intakeListing], error: null },
+      listing_media: { data: [], error: null },
+    },
+  }),
+  agencySlug: 'kingstons',
+  audience: 'agency-intake',
+})
+
+assert.equal(agencyIntakeListings.count, 1, 'agency intake should show active agency listings before public publication')
+assert.equal(agencyIntakeListings.items[0].title, 'Active App Listing')
+assert.equal(agencyIntakeListings.items[0].askingPrice, 2100000)
+assert.equal(agencyIntakeListings.items[0].coverImageUrl, '')
 
 console.log('publicListingsService tests passed')
