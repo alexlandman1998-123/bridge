@@ -14546,7 +14546,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             {isLeadWorkspaceRoute ? (
             <article className="mx-auto w-full max-w-[1680px] space-y-6">
               <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)]">
-                {selectedLead && !selectedLeadIsSeller ? (
+                {selectedLead && !selectedLeadIsSeller && leadWorkspaceTab === 'buyer_dashboard' ? (
                   <div className="bg-white px-4 py-4 sm:px-6 sm:py-5">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <button
@@ -14999,43 +14999,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                    </div>
 
                     <div className="min-w-0">
-                      {selectedLead && !selectedLeadIsSeller ? (
-                        <>
-                          <h1 className="max-w-full truncate text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]" title={selectedLeadDisplayName}>
-                            {selectedLeadDisplayName}
-	                          </h1>
-	                          <div className="mt-2 flex flex-wrap items-center gap-2">
-	                            <span className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-[0.72rem] font-semibold text-[#244f70]">
-	                              {selectedLeadIsSeller ? 'Seller Lead' : 'Buyer Lead'}
-	                            </span>
-	                            <span className="rounded-full bg-[#eef8f2] px-2.5 py-1 text-[0.72rem] font-semibold text-[#247345]">
-	                              {selectedLeadEffectiveLifecycleStage}
-	                            </span>
-	                          </div>
-	                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-medium text-[#60758b]">
-	                            <span className="inline-flex min-w-0 items-center gap-2">
-	                              <Home className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
-	                              <span className="truncate">{selectedLeadPropertyLabel}</span>
-	                            </span>
-	                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-	                            <span className="inline-flex min-w-0 items-center gap-2">
-	                              <UserRound className="h-4 w-4 shrink-0 text-[#8aa0b7]" />
-	                              <span className="truncate">{selectedLeadAssignedAgentLabel}</span>
-	                            </span>
-	                            <span className="hidden h-1 w-1 rounded-full bg-[#c8d4e0] sm:block" />
-	                            <span>{selectedLeadIsSeller ? 'Seller relationship' : 'Buyer relationship'}</span>
-                          </div>
-                        </>
-                      ) : !selectedLead ? (
+                      {!selectedLead ? (
                         <h1 className="text-[1.875rem] font-bold leading-tight tracking-[-0.035em] text-[#102033] sm:text-[2.25rem] lg:text-[2.5rem]">
                           Lead Workspace
                         </h1>
                       ) : null}
                     </div>
-	                  </div>
+		                  </div>
 
-                  {selectedLead && !selectedLeadIsSeller ? (
-                    <div className="mt-6 grid overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
+	                  {selectedLead && !selectedLeadIsSeller && leadWorkspaceTab === 'buyer_dashboard' ? (
+	                    <div className="mt-6 grid overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] sm:grid-cols-2 xl:grid-cols-4">
                       {(selectedLeadIsSeller
                         ? (selectedSellerReadiness.kpis || selectedSellerJourney.workspaceKpis || selectedSellerJourney.kpis).slice(0, 4).map((item, index) => [
                             item.label,
@@ -15066,8 +15039,99 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
                   ) : null}
 
-                  {selectedLead && selectedLeadIsSeller ? (
-                    <>
+	                  {selectedLead && !selectedLeadIsSeller ? (
+	                    <>
+	                      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]">
+	                        <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
+	                          <div className="bg-[linear-gradient(135deg,#0b2b4c_0%,#092640_52%,#061d33_100%)] p-6 text-white sm:p-8">
+	                            <div className="flex h-full min-h-[270px] min-w-0 flex-col justify-between gap-10">
+	                              <div className="min-w-0">
+	                                <div className="flex flex-wrap items-center gap-2">
+	                                  <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/14">Buyer Lead</span>
+	                                  <span className="rounded-full bg-[#2f7b9e]/25 px-3 py-1 text-xs font-semibold text-[#ccecff] ring-1 ring-[#66b4dd]/25">
+	                                    {selectedLeadEffectiveLifecycleStage}
+	                                  </span>
+	                                </div>
+	                                <h1 className="mt-8 max-w-4xl text-[2.2rem] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[2.8rem]" title={selectedLeadDisplayName}>
+	                                  {selectedLeadDisplayName}
+	                                </h1>
+	                                <p className="mt-5 flex max-w-4xl items-start gap-2 text-[15px] font-semibold leading-6" style={{ color: 'rgba(255,255,255,0.9)' }}>
+	                                  <Home className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+	                                  <span className="min-w-0 break-words" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLead?.areaInterest || selectedLeadPropertyLabel || 'Area pending'}</span>
+	                                </p>
+	                              </div>
+
+	                              <div className="grid gap-4 text-sm font-semibold md:grid-cols-[max-content_max-content_minmax(0,1fr)]" style={{ color: 'rgba(255,255,255,0.88)' }}>
+	                                {normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? (
+	                                  <a href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+	                                    <Phone className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+	                                    <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.phone || selectedLead?.phone}</span>
+	                                  </a>
+	                                ) : null}
+	                                {normalizeText(selectedLeadContact?.email || selectedLead?.email) ? (
+	                                  <a href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`} className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+	                                    <Mail className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+	                                    <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadContact?.email || selectedLead?.email}</span>
+	                                  </a>
+	                                ) : null}
+	                                <span className="inline-flex min-w-0 items-center gap-2" style={{ color: 'rgba(255,255,255,0.9)' }}>
+	                                  <UserRound className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.72)' }} />
+	                                  <span className="truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{selectedLeadAssignedAgentLabel}</span>
+	                                </span>
+	                              </div>
+	                            </div>
+	                          </div>
+
+	                          <div className="p-6 sm:p-8">
+	                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#30445a]">Buyer Readiness</p>
+	                            <div className="mt-5 grid gap-5 sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]">
+	                              <div className="flex flex-col items-center">
+	                                <div
+	                                  className="grid h-36 w-36 place-items-center rounded-full"
+	                                  style={{ background: `conic-gradient(#2f7b9e ${selectedLeadBuyerScore * 3.6}deg, #e6edf4 0deg)` }}
+	                                  aria-label={`Buyer readiness ${selectedLeadBuyerScore}`}
+	                                >
+	                                  <div className="grid h-[112px] w-[112px] place-items-center rounded-full bg-white shadow-inner">
+	                                    <strong className="text-3xl font-bold tracking-[-0.05em] text-[#102033]">{selectedLeadBuyerScore}</strong>
+	                                  </div>
+	                                </div>
+	                                <p className="mt-4 text-center text-sm font-semibold text-[#20364c]">
+	                                  {selectedLeadBuyerScore >= 80 ? 'High Potential' : selectedLeadBuyerScore >= 62 ? 'Qualified' : 'Needs Nurture'}
+	                                </p>
+	                                <p className="mt-1 text-center text-xs font-semibold text-[#6d839b]">{selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} steps complete</p>
+	                              </div>
+
+	                              <div className="min-w-0 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff]">
+	                                <div className="divide-y divide-[#e8eef5]">
+	                                  {[
+	                                    ['Budget', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs capture' : 'Captured', Home],
+	                                    ['Financing', selectedLeadFinanceReadinessSummary.confidenceLabel || selectedLead?.financeType || 'Not captured', selectedLeadFinanceReadinessSummary.confidenceLabel ? 'Active signal' : 'Pending', CheckSquare],
+	                                    ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, 'Active signals', Bookmark],
+	                                    ['Match Score', `${selectedLeadBuyerMatchScore}%`, selectedLeadBuyerMatchScore >= 86 ? 'Strong fit' : 'Good fit', TrendingUp],
+	                                    ['Urgency', selectedLeadBuyerUrgency, selectedLeadBuyerUrgency === 'High' ? 'Act now' : 'Monitor', Zap],
+	                                  ].map(([label, value, status, Icon]) => (
+	                                    <div key={label} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+	                                      <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#20364c]">
+	                                        {createElement(Icon, { className: 'h-4 w-4 shrink-0 text-[#315b7a]' })}
+	                                        <span className="truncate">{label}</span>
+	                                      </span>
+	                                      <span className="min-w-0 text-right text-xs font-semibold text-[#607891]" title={`${value} · ${status}`}>
+	                                        <span className="block truncate">{value}</span>
+	                                        <span className="block truncate text-[#8aa0b7]">{status}</span>
+	                                      </span>
+	                                    </div>
+	                                  ))}
+	                                </div>
+	                              </div>
+	                            </div>
+	                          </div>
+	                        </div>
+	                      </section>
+	                    </>
+	                  ) : null}
+
+	                  {selectedLead && selectedLeadIsSeller ? (
+	                    <>
                       <section className="mt-6 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]">
                         <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
                           <div className="bg-[radial-gradient(circle_at_20%_0%,rgba(47,155,105,0.22),transparent_34%),linear-gradient(135deg,#073a33_0%,#052d2c_52%,#031f25_100%)] p-6 text-white sm:p-8">
@@ -15198,23 +15262,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
 
                 {selectedLead && !selectedLeadIsSeller ? (
-                  <div className={`${selectedLeadIsSeller ? 'mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8' : 'scroll-mt-4 overflow-x-auto border-t border-[#e3ebf4] bg-[#fbfdff]'}`} role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                    <div className={`${selectedLeadIsSeller ? 'grid min-w-[860px] grid-cols-7 gap-2' : 'grid min-w-[640px] grid-cols-4'}`}>
-                      {(selectedLeadIsSeller ? [
+                  <div className="mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
+                    <div className="grid min-w-[980px] grid-cols-8 gap-2">
+                      {[
                         { key: 'overview', label: 'Overview', meta: '' },
-                        { key: 'seller', label: 'Seller', meta: '' },
-                        { key: 'property', label: 'Property', meta: '' },
-                        { key: 'mandate', label: 'Mandate', meta: '' },
+                        { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'documents', label: 'Documents', meta: '' },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
-                      ] : [
-                        { key: 'overview', label: 'Overview', meta: '' },
-                        { key: 'activity', label: 'Timeline', meta: selectedLeadUnifiedTimeline.length },
-                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
-                      ]).map((tab) => {
-                        const isActive = leadWorkspaceTab === tab.key
+                        { key: 'insights', label: 'Insights', meta: '' },
+                        { key: 'mapping', label: 'Mapping', meta: '' },
+                      ].map((tab) => {
+                        const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
                         return (
                           <button
                             key={tab.key}
@@ -15222,21 +15282,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             onClick={() => handleLeadWorkspaceTabSelection(tab.key)}
                             role="tab"
                             aria-selected={isActive}
-                            className={`relative flex items-center justify-center gap-2 whitespace-nowrap px-4 text-sm transition ${
+                            className={`relative flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-[16px] px-4 text-sm transition ${
                               isActive
-                                ? selectedLeadIsSeller
-                                  ? 'min-h-[52px] rounded-[16px] bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
-                                  : 'min-h-[64px] font-semibold text-[#123955]'
-                                : selectedLeadIsSeller
-                                  ? 'min-h-[52px] rounded-[16px] font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
-                                  : 'min-h-[64px] font-medium text-[#60758b] hover:text-[#163247]'
+                                ? 'bg-white font-semibold text-[#102033] shadow-[0_8px_20px_rgba(31,54,78,0.06)] ring-1 ring-[#d9e6f2]'
+                                : 'font-medium text-[#60758b] hover:bg-white/80 hover:text-[#163247]'
                             }`}
                           >
                             <span>{tab.label}</span>
                             {tab.meta !== '' ? (
                               <span className={`rounded-full px-2 py-0.5 text-[0.72rem] ${isActive ? 'bg-[#e8f2fb] text-[#1f5f8a]' : 'bg-white text-[#8aa0b7]'}`}>{tab.meta}</span>
                             ) : null}
-                            <span className={`absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-[#2f7b9e] transition ${isActive && !selectedLeadIsSeller ? 'opacity-100' : 'opacity-0'}`} />
                           </button>
                         )
                       })}
@@ -15246,7 +15301,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </>
                 )}
               </section>
-              {selectedLead && !selectedLeadIsSeller ? (
+              {selectedLead && !selectedLeadIsSeller && leadWorkspaceTab === 'buyer_dashboard' ? (
                 <>
                   <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
