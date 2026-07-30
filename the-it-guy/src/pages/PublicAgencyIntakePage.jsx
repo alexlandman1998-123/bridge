@@ -28,11 +28,10 @@ import {
   submitAgencyPublicIntake,
 } from '../services/agencyPublicIntakeService'
 
-const AGENCY_INTAKE_BACKGROUND_IMAGE = '/brand/agency-intake-buy.jpg'
 const BACKGROUND_IMAGES = {
-  buy: AGENCY_INTAKE_BACKGROUND_IMAGE,
-  sell: AGENCY_INTAKE_BACKGROUND_IMAGE,
-  contact: AGENCY_INTAKE_BACKGROUND_IMAGE,
+  buy: '/brand/agency-intake-buy.webp',
+  sell: '/brand/agency-intake-sell.webp',
+  contact: '/brand/agency-intake-contact.webp',
 }
 
 const INITIAL_FORM = Object.freeze({
@@ -383,9 +382,9 @@ function IntakeOptionCard({ title, description, cta, icon, image, imagePosition 
   const content = (
     <>
       <span className="absolute inset-0 bg-cover bg-center transition duration-500 group-hover:scale-[1.03]" style={{ backgroundImage: `url("${image}")`, backgroundPosition: imagePosition }} />
-      <span className="absolute inset-0 bg-slate-950/18" />
-      <span className="absolute inset-0 bg-gradient-to-r from-slate-950/96 via-slate-950/72 to-slate-950/38" />
-      <span className="absolute inset-0 bg-gradient-to-t from-slate-950/88 via-slate-950/28 to-transparent" />
+      <span className="absolute inset-0 bg-black/48" />
+      <span className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/68 to-black/50" />
+      <span className="absolute inset-0 bg-gradient-to-t from-black/86 via-black/40 to-transparent" />
       <span className="relative flex min-h-[214px] flex-col justify-end p-6">
         <span className="mb-6 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--agency-primary)]/74 text-[var(--agency-accent)] shadow-[0_14px_34px_rgba(0,0,0,0.22)] backdrop-blur">
           <Icon size={28} strokeWidth={2.1} aria-hidden="true" />

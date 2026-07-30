@@ -1,7 +1,7 @@
 {
   "tool": "scripts/performance-baseline.mjs",
   "toolVersion": 1,
-  "generatedAt": "2026-07-26T07:05:10.560Z",
+  "generatedAt": "2026-07-30T07:42:10.456Z",
   "distDir": "dist",
   "options": {
     "top": 20,
@@ -12,32 +12,32 @@
     "captured": true,
     "source": "current-run",
     "command": "npm run build",
-    "startedAt": "2026-07-26T07:04:37.645Z",
-    "completedAt": "2026-07-26T07:05:10.109Z",
-    "durationMs": 32464
+    "startedAt": "2026-07-30T07:41:05.134Z",
+    "completedAt": "2026-07-30T07:42:09.951Z",
+    "durationMs": 64818
   },
   "summary": {
-    "assetCount": 439,
+    "assetCount": 456,
     "totals": {
       "all": {
-        "count": 439,
-        "rawBytes": 22367578,
-        "gzipBytes": 6419005
+        "count": 456,
+        "rawBytes": 23269318,
+        "gzipBytes": 6798703
       },
       "script": {
-        "count": 419,
-        "rawBytes": 20122329,
-        "gzipBytes": 5284198
+        "count": 429,
+        "rawBytes": 20760790,
+        "gzipBytes": 5437640
       },
       "style": {
         "count": 3,
-        "rawBytes": 1199511,
-        "gzipBytes": 153435
+        "rawBytes": 1238679,
+        "gzipBytes": 157495
       },
       "image": {
-        "count": 15,
-        "rawBytes": 1023514,
-        "gzipBytes": 974133
+        "count": 22,
+        "rawBytes": 1247121,
+        "gzipBytes": 1196136
       },
       "font": {
         "count": 0,
@@ -47,12 +47,12 @@
       "html": {
         "count": 1,
         "rawBytes": 2115,
-        "gzipBytes": 658
+        "gzipBytes": 655
       },
       "json": {
         "count": 1,
-        "rawBytes": 20109,
-        "gzipBytes": 6581
+        "rawBytes": 20613,
+        "gzipBytes": 6777
       },
       "other": {
         "count": 0,
@@ -90,19 +90,19 @@
       },
       {
         "relation": "stylesheet",
-        "path": "assets/index-D6TId4mZ.css",
+        "path": "assets/index-CQIliRR5.css",
         "kind": "style",
-        "rawBytes": 1040832,
-        "gzipBytes": 124384,
+        "rawBytes": 1080000,
+        "gzipBytes": 128444,
         "found": true,
         "flaggedHeavy": false
       },
       {
         "relation": "script",
-        "path": "assets/index-BJINGO-K.js",
+        "path": "assets/index-DeY4pPP1.js",
         "kind": "script",
-        "rawBytes": 359975,
-        "gzipBytes": 86649,
+        "rawBytes": 367755,
+        "gzipBytes": 88347,
         "found": true,
         "flaggedHeavy": false
       }
@@ -110,18 +110,18 @@
     "initialTotals": {
       "all": {
         "count": 5,
-        "rawBytes": 1804780,
-        "gzipBytes": 331478
+        "rawBytes": 1851728,
+        "gzipBytes": 337236
       },
       "script": {
         "count": 4,
-        "rawBytes": 763948,
-        "gzipBytes": 207094
+        "rawBytes": 771728,
+        "gzipBytes": 208792
       },
       "style": {
         "count": 1,
-        "rawBytes": 1040832,
-        "gzipBytes": 124384
+        "rawBytes": 1080000,
+        "gzipBytes": 128444
       },
       "image": {
         "count": 0,
@@ -151,10 +151,10 @@
     },
     "largestAssets": [
       {
-        "path": "assets/api-C8rx9H5n.js",
+        "path": "assets/api-VJC3NFO9.js",
         "kind": "script",
-        "rawBytes": 1540698,
-        "gzipBytes": 352878
+        "rawBytes": 1727412,
+        "gzipBytes": 394741
       },
       {
         "path": "assets/pdf.worker.min-iDqQPrd3.mjs",
@@ -163,16 +163,22 @@
         "gzipBytes": 364728
       },
       {
-        "path": "assets/index-D6TId4mZ.css",
+        "path": "assets/index-CQIliRR5.css",
         "kind": "style",
-        "rawBytes": 1040832,
-        "gzipBytes": 124384
+        "rawBytes": 1080000,
+        "gzipBytes": 128444
       },
       {
-        "path": "assets/AttorneyTransactionDetail-D7BcdIDP.js",
+        "path": "assets/ClientPortal-DAtNkci4.js",
         "kind": "script",
-        "rawBytes": 780182,
-        "gzipBytes": 178131
+        "rawBytes": 852208,
+        "gzipBytes": 196310
+      },
+      {
+        "path": "assets/AttorneyTransactionDetail-DjdIEY0T.js",
+        "kind": "script",
+        "rawBytes": 787817,
+        "gzipBytes": 179259
       },
       {
         "path": "assets/html2pdf-C5y4hFf5.js",
@@ -181,16 +187,10 @@
         "gzipBytes": 231809
       },
       {
-        "path": "assets/ClientPortal-CVI5bblC.js",
+        "path": "assets/Pipeline-Bwv3BQaK.js",
         "kind": "script",
-        "rawBytes": 740538,
-        "gzipBytes": 166915
-      },
-      {
-        "path": "assets/Pipeline-CQbGvso4.js",
-        "kind": "script",
-        "rawBytes": 510623,
-        "gzipBytes": 121022
+        "rawBytes": 590086,
+        "gzipBytes": 140911
       },
       {
         "path": "assets/xlsx-CNerDvZX.js",
@@ -205,16 +205,16 @@
         "gzipBytes": 123203
       },
       {
+        "path": "assets/privateListingService-BatF0ogh.js",
+        "kind": "script",
+        "rawBytes": 409094,
+        "gzipBytes": 98676
+      },
+      {
         "path": "assets/vendor-html2canvas-CVApvLAy.js",
         "kind": "script",
         "rawBytes": 403268,
         "gzipBytes": 95214
-      },
-      {
-        "path": "assets/privateListingService-D9bG60mj.js",
-        "kind": "script",
-        "rawBytes": 388101,
-        "gzipBytes": 93679
       },
       {
         "path": "assets/vendor-jspdf-DmhUUlb9.js",
@@ -223,34 +223,34 @@
         "gzipBytes": 122792
       },
       {
-        "path": "assets/SettingsSigningTemplatesPage-CzKD-aKc.js",
+        "path": "assets/SettingsSigningTemplatesPage-Bi8EMYeq.js",
         "kind": "script",
-        "rawBytes": 375478,
-        "gzipBytes": 86467
+        "rawBytes": 375683,
+        "gzipBytes": 86409
       },
       {
-        "path": "assets/index-BJINGO-K.js",
+        "path": "assets/index-DeY4pPP1.js",
         "kind": "script",
-        "rawBytes": 359975,
-        "gzipBytes": 86649
+        "rawBytes": 367755,
+        "gzipBytes": 88347
       },
       {
-        "path": "assets/AgentListingDetail-4iPOXUqy.js",
+        "path": "assets/AgentListingDetail-D7dL8Gga.js",
         "kind": "script",
-        "rawBytes": 344838,
-        "gzipBytes": 81666
+        "rawBytes": 361455,
+        "gzipBytes": 86754
       },
       {
-        "path": "assets/UnitDetail-D-9GahjA.js",
+        "path": "assets/UnitDetail-CLL7NpBM.js",
         "kind": "script",
-        "rawBytes": 310630,
-        "gzipBytes": 70403
+        "rawBytes": 310671,
+        "gzipBytes": 70431
       },
       {
-        "path": "assets/Dashboard-DgNSPl0W.js",
+        "path": "assets/Dashboard-BzM7SWl3.js",
         "kind": "script",
-        "rawBytes": 292900,
-        "gzipBytes": 71425
+        "rawBytes": 292999,
+        "gzipBytes": 71471
       },
       {
         "path": "brand/kingstons-logo-form.png",
@@ -265,10 +265,10 @@
         "gzipBytes": 261459
       },
       {
-        "path": "assets/Agents-DCzav37G.js",
+        "path": "assets/Agents-P-LDzdpC.js",
         "kind": "script",
-        "rawBytes": 246498,
-        "gzipBytes": 60098
+        "rawBytes": 246625,
+        "gzipBytes": 60163
       }
     ],
     "flaggedInitialAssets": []
