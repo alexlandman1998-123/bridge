@@ -5,6 +5,7 @@ let cachedRuntimeEnv = null
 
 const DEFAULT_LIMIT = 24
 const MAX_LIMIT = 60
+const AGENCY_INTAKE_PRICE_TOLERANCE = 300000
 const PUBLIC_LISTING_FIELDS = [
   'id',
   'organisation_id',
@@ -437,6 +438,17 @@ function matchesFilters(item = {}, filters = {}) {
   return true
 }
 
+function createAgencyIntakeFilterOptions(filters = {}) {
+  const minPrice = toOptionalNumber(filters.minPrice)
+  const maxPrice = toOptionalNumber(filters.maxPrice)
+
+  return {
+    ...filters,
+    minPrice: minPrice === null ? filters.minPrice : Math.max(0, minPrice - AGENCY_INTAKE_PRICE_TOLERANCE),
+    maxPrice: maxPrice === null ? filters.maxPrice : maxPrice + AGENCY_INTAKE_PRICE_TOLERANCE,
+  }
+}
+
 export async function getPublicListings(options = {}) {
   const client = options.client || createPublicListingClient()
   const host = normalizeText(options.host) || 'https://www.arch9.co.za'
@@ -493,6 +505,7 @@ export async function getPublicListings(options = {}) {
     }
     const mediaByListingId = groupByListingId(mediaResult.data || [])
     const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
+    const filterOptions = createAgencyIntakeFilterOptions(options)
     const items = listingRows
       .map((row) => {
         const listing = {
@@ -506,7 +519,7 @@ export async function getPublicListings(options = {}) {
         return mapPublicListingContract({ listing, publication, media, host })
       })
       .filter(Boolean)
-      .filter((item) => matchesFilters(item, options))
+      .filter((item) => matchesFilters(item, filterOptions))
 
     const slug = normalizeText(options.slug)
     if (slug) {

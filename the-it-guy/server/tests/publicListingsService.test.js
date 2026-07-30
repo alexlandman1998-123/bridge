@@ -287,4 +287,56 @@ assert.equal(agencyIntakeListings.items[0].title, 'Active App Listing')
 assert.equal(agencyIntakeListings.items[0].askingPrice, 2100000)
 assert.equal(agencyIntakeListings.items[0].coverImageUrl, '')
 
+const createAgencyIntakeClient = () => createFakePublicListingsClient({
+  overrides: {
+    listing_publication_data: { data: [{ ...validPublication, listing_id: intakeListing.id, title: '', status: 'Draft' }], error: null },
+    private_listings: { data: [intakeListing], error: null },
+    listing_media: { data: [], error: null },
+  },
+})
+
+assert.equal(
+  (await getPublicListings({
+    client: createAgencyIntakeClient(),
+    agencySlug: 'kingstons',
+    audience: 'agency-intake',
+    minPrice: 2400000,
+  })).count,
+  1,
+  'agency intake min price should include listings up to R300,000 below the buyer budget',
+)
+
+assert.equal(
+  (await getPublicListings({
+    client: createAgencyIntakeClient(),
+    agencySlug: 'kingstons',
+    audience: 'agency-intake',
+    minPrice: 2400001,
+  })).count,
+  0,
+  'agency intake min price should exclude listings more than R300,000 below the buyer budget',
+)
+
+assert.equal(
+  (await getPublicListings({
+    client: createAgencyIntakeClient(),
+    agencySlug: 'kingstons',
+    audience: 'agency-intake',
+    maxPrice: 1800000,
+  })).count,
+  1,
+  'agency intake max price should include listings up to R300,000 above the buyer budget',
+)
+
+assert.equal(
+  (await getPublicListings({
+    client: createAgencyIntakeClient(),
+    agencySlug: 'kingstons',
+    audience: 'agency-intake',
+    maxPrice: 1799999,
+  })).count,
+  0,
+  'agency intake max price should exclude listings more than R300,000 above the buyer budget',
+)
+
 console.log('publicListingsService tests passed')
