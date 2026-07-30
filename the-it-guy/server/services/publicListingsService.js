@@ -424,10 +424,10 @@ function matchesFilters(item = {}, filters = {}) {
     if (filters[key] && normalizeLower(item[field]) !== normalizeLower(filters[key])) return false
   }
 
-  const minPrice = toNumber(filters.minPrice)
-  const maxPrice = toNumber(filters.maxPrice)
-  const bedrooms = toNumber(filters.bedrooms)
-  const bathrooms = toNumber(filters.bathrooms)
+  const minPrice = toOptionalNumber(filters.minPrice)
+  const maxPrice = toOptionalNumber(filters.maxPrice)
+  const bedrooms = toOptionalNumber(filters.bedrooms)
+  const bathrooms = toOptionalNumber(filters.bathrooms)
   const askingPrice = toOptionalNumber(item.askingPrice)
   if (minPrice !== null && (askingPrice === null || askingPrice < minPrice)) return false
   if (maxPrice !== null && (askingPrice === null || askingPrice > maxPrice)) return false

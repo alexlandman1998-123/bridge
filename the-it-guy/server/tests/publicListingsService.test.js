@@ -230,6 +230,17 @@ assert.deepEqual(
   ['eq', 'organisation_id', 'org-1'],
 )
 
+const scopedListingsWithUnsetFilters = await getPublicListings({
+  client: createFakePublicListingsClient(),
+  agencySlug: 'kingstons',
+  minPrice: null,
+  maxPrice: null,
+  bedrooms: null,
+  bathrooms: null,
+})
+
+assert.equal(scopedListingsWithUnsetFilters.count, 1, 'unset API query filters should not be treated as zero values')
+
 const missingAgencyListings = await getPublicListings({
   client: createFakePublicListingsClient({ agencyScope: null }),
   agencySlug: 'missing-agency',
