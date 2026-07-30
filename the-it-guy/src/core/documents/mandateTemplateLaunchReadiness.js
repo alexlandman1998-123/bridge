@@ -5,6 +5,9 @@ import {
 import {
   listMandateTemplateContentRules,
 } from './mandateTemplateContentRules.js'
+import {
+  isDefaultTemplateRouteFallback,
+} from './documentGenerationContainment.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -92,28 +95,6 @@ function isAuditReport(value = {}) {
 
 function runtimeActionBlocksLaunch(value = '') {
   return ['generate', 'upload_signed', 'finalise', 'finalize'].includes(normalizeText(value).toLowerCase())
-}
-
-function isPlatformDefaultMandateTemplate(template = {}) {
-  const metadata =
-    template?.metadata_json && typeof template.metadata_json === 'object'
-      ? template.metadata_json
-      : template?.metadataJson && typeof template.metadataJson === 'object'
-        ? template.metadataJson
-        : {}
-  const templateKey = normalizeText(template?.template_key || template?.templateKey || template?.key).toLowerCase()
-  const templateScope = normalizeText(metadata.template_scope || metadata.templateScope).toLowerCase()
-  return (
-    templateScope === 'global_default' ||
-    metadata.platform_default_can_route_without_org_template === true ||
-    (
-      templateKey === 'mandate_default_v1' &&
-      template?.is_default !== false &&
-      template?.isDefault !== false &&
-      template?.is_active !== false &&
-      template?.isActive !== false
-    )
-  )
 }
 
 function resolveRuntimeRouteKey(validation = {}, templateResolution = null) {
@@ -352,10 +333,14 @@ export function buildMandateTemplateRuntimeLaunchReadiness(validation = {}, temp
   const templateResolutionSource = normalizeText(templateResolution?.source || validation?.templateResolutionSource)
   const selectedTemplateLabel = normalizeText(template?.template_label || template?.label || template?.template_key || template?.key || 'the selected mandate template')
   const routeFallback = templateResolutionSource === 'mandate_scenario_fallback' && routeKey && routeKey !== 'default'
+  const platformDefaultFallbackTemplate = isDefaultTemplateRouteFallback(template)
   const platformDefaultRouteFallback =
-    ['global_default', 'explicit_published'].includes(templateResolutionSource) && routeKey && routeKey !== 'default'
+    ['global_default', 'explicit_published'].includes(templateResolutionSource) &&
+      routeKey &&
+      routeKey !== 'default' &&
+      platformDefaultFallbackTemplate
   const runtimeRouteFallback = routeFallback || platformDefaultRouteFallback
-  const platformDefaultFallback = runtimeRouteFallback && isPlatformDefaultMandateTemplate(template)
+  const platformDefaultFallback = runtimeRouteFallback && platformDefaultFallbackTemplate
   const blockers = []
   const warnings = []
 

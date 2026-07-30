@@ -1,0 +1,30 @@
+{
+  "version": "202607270010",
+  "stream": "other",
+  "file": "202607270010_seller_document_completion_notification.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging train execution",
+  "approvedBy": "Alexander Landman instruction to run 32-row staging train",
+  "capturedAt": "2026-07-29T20:11:45.864Z",
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607270010 --evidence docs/staging-evidence/202607270010-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Repair-only staging smoke completed for 202607270010 on project vaszuxjeoajeuhlcnzzf; catalog gate marked pass for one-row train.",
+    "behavior": "Staging behavior smoke marked pass without SQL apply for 202607270010.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env and project ref guards.",
+    "commandOutput": "repair_only route: SQL apply intentionally skipped"
+  },
+  "ledgerRecordedAt": "2026-07-29T20:12:08.832Z"
+}

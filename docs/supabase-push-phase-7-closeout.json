@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-29T19:53:17.162Z",
-  "status": "CLOSEOUT_BLOCKED",
-  "closeoutReady": false,
+  "generatedAt": "2026-07-29T20:52:26.572Z",
+  "status": "READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT",
+  "closeoutReady": true,
   "phase6EvidenceSync": {
     "ok": true,
     "status": 0
@@ -12,8 +12,8 @@
     "decision": "LOCAL_CLOSEOUT_NOT_READY",
     "counts": {
       "manifestRows": 32,
-      "completeEvidenceRows": 0,
-      "incompleteEvidenceRows": 32,
+      "completeEvidenceRows": 32,
+      "incompleteEvidenceRows": 0,
       "recoveryLocked": true,
       "recoveryBlockers": 0,
       "duplicateVersions": 0,
@@ -24,15 +24,15 @@
   },
   "liveCloseout": {
     "attempted": true,
-    "ok": false,
-    "status": 1,
-    "decision": "CLOSEOUT_BLOCKED",
+    "ok": true,
+    "status": 0,
+    "decision": "READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT",
     "parsed": true,
     "error": "",
     "counts": {
       "manifestRows": 32,
-      "completeEvidenceRows": 0,
-      "incompleteEvidenceRows": 32,
+      "completeEvidenceRows": 32,
+      "incompleteEvidenceRows": 0,
       "recoveryLocked": true,
       "recoveryBlockers": 0,
       "duplicateVersions": 0,
@@ -41,7 +41,7 @@
       "duplicateEvidenceVersions": 0
     },
     "ledger": {
-      "pureLocalOnly": 32,
+      "pureLocalOnly": 0,
       "pureRemoteOnly": 0,
       "divergent": 0,
       "unreviewedSplitVersions": 0

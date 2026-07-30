@@ -1,0 +1,31 @@
+{
+  "version": "202607280018",
+  "stream": "other",
+  "file": "202607280018_originator_rollout_phase_r3_document_requests.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging train execution",
+  "approvedBy": "Alexander Landman instruction to run 32-row staging train",
+  "capturedAt": "2026-07-29T20:17:48.465Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280018 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280018 --evidence docs/staging-evidence/202607280018-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "Staging SQL apply completed for 202607280018 on project vaszuxjeoajeuhlcnzzf; catalog gate marked pass for one-row train.",
+    "behavior": "Staging behavior smoke marked pass after SQL apply for 202607280018.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by run-with-staging-env and project ref guards.",
+    "commandOutput": "Applied SQL for 202607280018 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied."
+  },
+  "ledgerRecordedAt": "2026-07-29T20:18:09.615Z"
+}

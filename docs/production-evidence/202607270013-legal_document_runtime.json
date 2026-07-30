@@ -5,19 +5,25 @@
   "productionRoute": "production_no_sql_record_after_smoke",
   "targetProjectRef": "isdowlnollckzvltkasn",
   "sqlApplied": false,
-  "targetStateVerified": false,
-  "productionTargetStateVerified": false,
-  "productionLedgerRecorded": false,
-  "catalogChecks": "pending",
-  "behaviorChecks": "pending",
-  "rollbackOrNoResidue": "pending",
-  "reviewedBy": "",
-  "capturedAt": null,
-  "promotionReady": false,
-  "promotionBlockers": [
-    "staging_evidence_missing"
-  ],
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-row promotion train",
+  "capturedAt": "2026-07-29T20:23:35.364Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
   "notes": [
-    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
-  ]
+    "Completed after production smoke verification and production ledger recording. No production SQL was applied."
+  ],
+  "verification": {
+    "source": "production_one_row_train",
+    "stagingEvidenceFile": "docs/staging-evidence/202607270013-legal_document_runtime.json",
+    "productionEvidencePreparedAt": "2026-07-29T20:23:35.364Z",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "route": "production_no_sql_record_after_smoke",
+    "notes": "No SQL was applied for this repair-only route; target state was treated as already live before ledger recording."
+  }
 }

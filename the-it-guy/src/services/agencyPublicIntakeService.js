@@ -98,6 +98,21 @@ export async function resolveAgencyPublicIntake(slug = '') {
   return payload?.intake || null
 }
 
+export async function resolveAgencyPublicListings(slug = '', filters = {}) {
+  const safeSlug = normalizeSlug(slug)
+  if (!safeSlug) return []
+  const params = new URLSearchParams({ agencySlug: safeSlug, limit: String(filters.limit || 12) })
+  for (const [key, value] of Object.entries(filters)) {
+    const text = normalizeText(value)
+    if (key !== 'limit' && text) params.set(key, text)
+  }
+  const response = await fetch(`/api/public/listings?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await readJsonResponse(response, 'Published listings could not be loaded.')
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
 export async function submitAgencyPublicIntake({ slug = '', idempotencyKey = '', payload = {} } = {}) {
   const safeSlug = normalizeSlug(slug || payload.slug)
   if (!safeSlug) throw new Error('Agency intake link is missing.')

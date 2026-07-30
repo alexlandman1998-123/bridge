@@ -1,0 +1,778 @@
+{
+  "generatedAt": "2026-07-29T20:15:52.166Z",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sourceRouting": "docs/supabase-push-phase-3-action-routing.json",
+  "totalRows": 32,
+  "completedRows": 32,
+  "failed": null,
+  "rows": [
+    {
+      "version": "202607270013",
+      "stream": "legal_document_runtime",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607270013_final_mandate_completion_terminal_state.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270013-legal_document_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270015",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607270015_bond_finance_document_metadata_cleanup.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270015-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280003",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280003_guided_bond_application_phase5_submissions.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280003-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280004",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280004_guided_bond_application_phase6_participants.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280004-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280005",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280005_guided_bond_application_phase7_sureties_revisions.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280005-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280006",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280006_guided_bond_application_phase8_external_exports.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280006-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280007",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280007_guided_bond_application_phase8a_originator_intake.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280007-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280008",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280008_guided_bond_application_phase8b_originator_document_requests.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280008-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280009",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280009_guided_bond_application_phase8c_originator_progress_tracking.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280009-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280010",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280010_guided_bond_application_phase8d_originator_offers_grants.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280010-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280011",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280011_guided_bond_application_phase8e_buyer_offer_grant_experience.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280011-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280012",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280012_guided_bond_application_phase8f_agent_progress_view.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280012-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280013",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280013_guided_bond_application_phase8g_attorney_handoff.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280013-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280014",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280014_guided_bond_application_phase8h_recipient_specific_formats.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280014-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280015",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280015_guided_bond_application_phase8i_governance_reporting.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280015-bond_finance_runtime.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607260008",
+      "stream": "other",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607260008_document_packet_hot_lookup_indexes.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607260008-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270002",
+      "stream": "other",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607270002_agency_lead_workspace_hot_path_indexes.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270002-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270009",
+      "stream": "other",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607270009_client_portal_bootstrap_hot_path_indexes.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270009-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270010",
+      "stream": "other",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607270010_seller_document_completion_notification.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270010-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270011",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607270011_attorney_transaction_key_dates.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270011-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607290005",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607290005_corrective_canonical_matter_lifecycle_stages.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607290005-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607270014",
+      "stream": "other",
+      "route": "repair_only",
+      "action": "repair_only_after_smoke",
+      "file": "202607270014_certify_native_structured_legal_pdf.sql",
+      "apply": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607270014-other.json",
+      "record": {
+        "attempted": false,
+        "ok": true,
+        "status": 0,
+        "stdout": "already recorded in staging evidence; skipped for resume",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280002",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280002_email_notification_branding_readiness.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280002 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280002-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280002 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280016",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280016_originator_rollout_phase_r1_internal_readiness.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280016 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280016-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280016 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280017",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280017_originator_rollout_phase_r2_workspace_mvp.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280017 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280017-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280017 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280018",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280018_originator_rollout_phase_r3_document_requests.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280018 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280018-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280018 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280019",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280019_originator_rollout_phase_r4_progress_tracking.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280019 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280019-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280019 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280020",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280020_originator_rollout_phase_r5_offers_grants_capture.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280020 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280020-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280020 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280021",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280021_originator_rollout_phase_r6_one_originator_pilot.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280021 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280021-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280021 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280022",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280022_originator_rollout_phase_r7_operational_hardening.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280022 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280022-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280022 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280023",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280023 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280023-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280023 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    },
+    {
+      "version": "202607280024",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql",
+      "apply": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Applied SQL for 202607280024 to staging project vaszuxjeoajeuhlcnzzf.\nThe migration ledger was not changed. Run verification and prepare evidence before --record-applied.\n",
+        "stderr": "",
+        "error": ""
+      },
+      "evidenceFile": "docs/staging-evidence/202607280024-other.json",
+      "record": {
+        "attempted": true,
+        "ok": true,
+        "status": 0,
+        "stdout": "Recorded 202607280024 as applied on staging project vaszuxjeoajeuhlcnzzf.\n",
+        "stderr": "",
+        "error": ""
+      }
+    }
+  ]
+}

@@ -410,6 +410,57 @@ function normalizeSelectedListings(payload = {}) {
     .slice(0, MAX_SELECTED_LISTINGS)
 }
 
+function normalizeListingSummary(item = {}) {
+  if (!item || typeof item !== 'object') return null
+  const id = normalizeText(item.id)
+  const slug = normalizeText(item.slug)
+  if (!id && !slug) return null
+  return {
+    id,
+    slug,
+    title: normalizeText(item.title),
+    askingPrice: toFiniteNumber(item.askingPrice ?? item.asking_price),
+  }
+}
+
+function mergeListingSummaries(...groups) {
+  const seen = new Set()
+  return groups
+    .flat()
+    .map(normalizeListingSummary)
+    .filter((listing) => {
+      const key = normalizeText(listing?.id || listing?.slug)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, MAX_SELECTED_LISTINGS)
+}
+
+function buildRequirementAutomationPayload(requirement = {}, normalized = {}) {
+  const propertyTypes = normalizeArray(requirement.propertyTypes || requirement.property_types || requirement.propertyType || requirement.property_type)
+  return {
+    budgetMin: normalized.budgetMin ?? toFiniteNumber(requirement.budgetMin ?? requirement.budget_min),
+    budgetMax: normalized.budgetMax ?? toFiniteNumber(requirement.budgetMax ?? requirement.budget_max ?? requirement.budget),
+    areas: normalizeTextList(requirement.areas || requirement.area || requirement.suburbs || requirement.suburb),
+    propertyType: normalizeText(propertyTypes[0] || requirement.propertyType || requirement.property_type),
+    bedroomsMin: toFiniteNumber(requirement.bedroomsMin ?? requirement.bedrooms_min),
+    bathroomsMin: toFiniteNumber(requirement.bathroomsMin ?? requirement.bathrooms_min),
+    financeStatus: normalizeFinanceStatus(requirement.financeStatus || requirement.finance_status) || null,
+    timeline: normalizeRequirementTimeline(requirement.timeline) || normalizeText(requirement.timeline) || null,
+  }
+}
+
+function buildSellerAutomationPayload(seller = {}) {
+  return {
+    propertyAddress: normalizeText(seller.propertyAddress || seller.property_address),
+    suburb: normalizeText(seller.suburb),
+    propertyType: normalizeText(seller.propertyType || seller.property_type),
+    estimatedValue: toFiniteNumber(seller.estimatedValue ?? seller.estimated_value),
+    timeline: normalizeRequirementTimeline(seller.timeline) || normalizeText(seller.timeline) || null,
+  }
+}
+
 export function normalizeAgencyIntakeSubmissionPayload(payload = {}, link = {}) {
   const contact = safeObject(payload.contact)
   const requirement = safeObject(payload.requirement)
@@ -528,6 +579,7 @@ export function buildAgencyPublicIntakeCrmRows({ link = {}, submission = {}, nor
   ]
     .map((item) => normalizeText(item?.id || item))
     .filter(isUuidLike)
+  const selectedListings = mergeListingSummaries(normalized.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings)
   const primaryListingId = selectedListingIds[0] || ''
 
   const leadRow = {
@@ -604,6 +656,7 @@ export function buildAgencyPublicIntakeCrmRows({ link = {}, submission = {}, nor
     contactRow,
     leadRow,
     requirementRow,
+    selectedListings,
     selectedListingIds,
   }
 }
@@ -740,6 +793,18 @@ async function persistListingInterests(client, rows) {
 async function persistLeadActivityAndTask(client, rows, submission = {}) {
   const nowIso = new Date().toISOString()
   const dueDate = nowIso.slice(0, 10)
+  const selectedListings = mergeListingSummaries(rows.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings)
+  const selectedListingLine = selectedListings.length
+    ? `${selectedListings.length} selected listing${selectedListings.length === 1 ? '' : 's'}: ${selectedListings.map((listing) => listing.title || listing.slug || listing.id).filter(Boolean).slice(0, 4).join(', ')}${selectedListings.length > 4 ? ` and ${selectedListings.length - 4} more` : ''}.`
+    : ''
+  const followUpDescription = [
+    'Public intake follow-up.',
+    selectedListingLine,
+    rows.intent === 'buy' && rows.requirementRow?.areas?.length ? `Areas: ${rows.requirementRow.areas.join(', ')}.` : '',
+    rows.intent === 'buy' && (rows.requirementRow?.budget_min !== null || rows.requirementRow?.budget_max !== null)
+      ? `Budget: ${rows.requirementRow.budget_min ?? 0}${rows.requirementRow.budget_max !== null ? `-${rows.requirementRow.budget_max}` : '+'}.`
+      : '',
+  ].filter(Boolean).join('\n')
   const [activityResult, taskResult] = await Promise.all([
     client
       .from('lead_activities')
@@ -750,6 +815,7 @@ async function persistLeadActivityAndTask(client, rows, submission = {}) {
         activity_type: 'Public intake received',
         activity_note: [
           `${rows.intent === 'sell' ? 'Seller' : 'Buyer'} public intake submitted.`,
+          selectedListingLine,
           submission.idempotency_key ? `Reference: ${submission.idempotency_key}` : '',
         ].filter(Boolean).join('\n'),
         activity_date: nowIso,
@@ -764,7 +830,7 @@ async function persistLeadActivityAndTask(client, rows, submission = {}) {
         lead_id: rows.leadId,
         assigned_agent_id: rows.leadRow.assigned_agent_id || null,
         title: 'Contact Lead',
-        description: 'Public intake follow-up.',
+        description: followUpDescription,
         due_date: dueDate,
         status: 'Pending',
         priority: 'High',
@@ -786,9 +852,11 @@ function buildPublicIntakeAutomationPreview({ rows = {}, normalized = {}, submis
   ].filter(Boolean).join(' ')) || 'Public lead'
   const sourceChannel = normalizeSourceChannel(normalized.sourceChannel || submission.source_channel || rows.leadRow?.source_channel)
   const campaignCode = normalizeCampaignCode(normalized.campaignCode || submission.campaign_code || rows.leadRow?.campaign_code)
-  const selectedCount = Array.isArray(rows.selectedListingIds) ? rows.selectedListingIds.length : 0
+  const selectedListings = mergeListingSummaries(rows.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings, normalized.selectedListings)
+  const selectedCount = selectedListings.length || (Array.isArray(rows.selectedListingIds) ? rows.selectedListingIds.length : 0)
   const budgetMin = normalized.budgetMin ?? toFiniteNumber(submission.budget_min)
   const budgetMax = normalized.budgetMax ?? toFiniteNumber(submission.budget_max)
+  const selectedTitles = selectedListings.map((listing) => listing.title || listing.slug || listing.id).filter(Boolean).slice(0, 2).join(', ')
   const previewParts = [
     `${intentLabel} public intake from ${contactName}.`,
     sourceChannel ? `Source: ${sourceChannel}.` : '',
@@ -796,7 +864,7 @@ function buildPublicIntakeAutomationPreview({ rows = {}, normalized = {}, submis
     rows.intent === 'buy' && (budgetMin !== null || budgetMax !== null)
       ? `Budget: ${budgetMin ?? 0}${budgetMax !== null ? `-${budgetMax}` : '+'}.`
       : '',
-    selectedCount ? `${selectedCount} listing${selectedCount === 1 ? '' : 's'} selected.` : '',
+    selectedCount ? `${selectedCount} listing${selectedCount === 1 ? '' : 's'} selected${selectedTitles ? `: ${selectedTitles}` : ''}.` : '',
   ]
   return previewParts.filter(Boolean).join(' ').slice(0, 320)
 }
@@ -817,6 +885,20 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
   const idempotencyKey = normalizeText(submission.idempotency_key || normalized.idempotencyKey || rows.leadRow?.source_reference_id)
   const dedupeId = submissionId || idempotencyKey || rows.leadId
   const payloadMessage = normalizeText(submission.payload_json?.message || normalized.message)
+  const selectedListings = mergeListingSummaries(rows.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings, normalized.selectedListings)
+  const requirement = {
+    ...safeObject(rows.requirementRow),
+    ...safeObject(submission.payload_json?.requirement),
+    ...safeObject(normalized.requirement),
+  }
+  const seller = {
+    ...safeObject(submission.payload_json?.seller),
+    ...safeObject(normalized.seller),
+  }
+  const buyerRequirement = buildRequirementAutomationPayload(requirement, normalized)
+  const sellerDetails = buildSellerAutomationPayload(seller)
+  const pageUrl = normalizeText(submission.request_metadata_json?.pageUrl || submission.payload_json?.context?.pageUrl || normalized.metadata?.pageUrl)
+  const referrer = normalizeText(submission.request_metadata_json?.referrer || submission.payload_json?.context?.referrer || normalized.metadata?.referrer)
 
   return {
     automation_key: PUBLIC_INTAKE_AUTOMATION_KEY,
@@ -849,12 +931,18 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
       budgetMin: normalized.budgetMin ?? toFiniteNumber(submission.budget_min),
       budgetMax: normalized.budgetMax ?? toFiniteNumber(submission.budget_max),
       selectedListingIds: Array.isArray(rows.selectedListingIds) ? rows.selectedListingIds : [],
+      selectedListings,
       listingInterestIds,
+      buyerRequirement: intent === 'buy' ? buyerRequirement : null,
+      sellerDetails: intent === 'sell' ? sellerDetails : null,
       message: payloadMessage,
       submissionId: submissionId || null,
       idempotencyKey: idempotencyKey || null,
       taskId: taskId || null,
       activityId: activityId || null,
+      requirementId: normalizeText(rows.requirement?.requirement_id) || null,
+      pageUrl: pageUrl || null,
+      referrer: referrer || null,
     },
     metadata_json: {
       publicIntake: true,
@@ -864,6 +952,8 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
       phase: 'agency_public_intake_phase8',
       taskId: taskId || null,
       activityId: activityId || null,
+      requirementId: normalizeText(rows.requirement?.requirement_id) || null,
+      listingInterestIds,
       submissionId: submissionId || null,
       idempotencyKey: idempotencyKey || null,
     },
@@ -1025,6 +1115,22 @@ function summarizePublicSubmission(submission = {}) {
   }
 }
 
+function summarizeAutomationHandoff(rows = {}) {
+  const automation = rows.automation || {}
+  const prepared = Boolean(automation.created || automation.duplicate)
+  return {
+    prepared,
+    created: Boolean(automation.created),
+    duplicate: Boolean(automation.duplicate),
+    skipped: Boolean(automation.skipped),
+    status: normalizeText(automation.status),
+    reason: normalizeText(automation.reason),
+    taskCreated: Boolean(rows.task?.task_id),
+    activityCreated: Boolean(rows.activity?.activity_id),
+    listingInterestCount: Array.isArray(rows.listingInterests) ? rows.listingInterests.length : 0,
+  }
+}
+
 async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submission = {}, normalized = {} } = {}) {
   if (submission.lead_id) {
     return {
@@ -1062,6 +1168,7 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
         category: rows.leadRow.lead_category,
         created: true,
         followUpPrepared: Boolean(rows.automation?.created || rows.automation?.duplicate),
+        automation: summarizeAutomationHandoff(rows),
       },
     }
   } catch (error) {

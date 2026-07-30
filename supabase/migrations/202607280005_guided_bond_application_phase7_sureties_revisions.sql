@@ -311,22 +311,12 @@ begin
   end if;
 end $$;
 
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'transaction_bond_application_submissions'
-      and column_name = 'supersedes_submission_id'
-  ) then
-    alter table public.transaction_bond_application_submissions
-      add column supersedes_submission_id uuid references public.transaction_bond_application_submissions(id) on delete set null,
-      add column superseded_by_submission_id uuid references public.transaction_bond_application_submissions(id) on delete set null,
-      add column superseded_at timestamptz,
-      add column supersession_reason text,
-      add column revision_change_request_id uuid references public.bond_application_change_requests(id) on delete set null;
-  end if;
-end $$;
+alter table public.transaction_bond_application_submissions
+  add column if not exists supersedes_submission_id uuid references public.transaction_bond_application_submissions(id) on delete set null,
+  add column if not exists superseded_by_submission_id uuid references public.transaction_bond_application_submissions(id) on delete set null,
+  add column if not exists superseded_at timestamptz,
+  add column if not exists supersession_reason text,
+  add column if not exists revision_change_request_id uuid references public.bond_application_change_requests(id) on delete set null;
 
 do $$
 begin

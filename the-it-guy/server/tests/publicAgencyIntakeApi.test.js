@@ -86,7 +86,7 @@ const buyerCrmRows = buildAgencyPublicIntakeCrmRows({
     contact_email: 'avery@example.com',
     budget_min: 1500000,
     budget_max: 2500000,
-    selected_listings_json: [{ id: '44444444-4444-4444-8444-444444444444' }],
+    selected_listings_json: [{ id: '44444444-4444-4444-8444-444444444444', title: 'Bedfordview family home', askingPrice: 2450000 }],
     payload_json: { message: 'Looking in Bedfordview' },
   },
   normalized: {
@@ -129,7 +129,12 @@ const buyerAutomationEvent = buildAgencyPublicIntakeAutomationEvent({
     budget_max: 2500000,
     source_channel: 'website',
     campaign_code: 'instagram-july',
-    payload_json: { message: 'Looking in Bedfordview' },
+    selected_listings_json: [{ id: '44444444-4444-4444-8444-444444444444', title: 'Bedfordview family home', askingPrice: 2450000 }],
+    request_metadata_json: { pageUrl: 'https://app.arch9.co.za/intake/kingstons-atlantic?intent=buy' },
+    payload_json: {
+      message: 'Looking in Bedfordview',
+      context: { referrer: 'https://kingstons.example/listings' },
+    },
   },
   normalized: {
     ...validSubmission.normalized,
@@ -154,9 +159,31 @@ assert.equal(buyerAutomationEvent.dedupe_key, 'agency_public_intake:88888888-888
 assert.equal(buyerAutomationEvent.payload_json.communicationType, 'agency_public_intake_received')
 assert.equal(buyerAutomationEvent.payload_json.campaignCode, 'instagram-july')
 assert.deepEqual(buyerAutomationEvent.payload_json.selectedListingIds, ['44444444-4444-4444-8444-444444444444'])
+assert.deepEqual(buyerAutomationEvent.payload_json.selectedListings, [
+  {
+    id: '',
+    slug: 'modern-home-abc123',
+    title: '',
+    askingPrice: null,
+  },
+  {
+    id: '44444444-4444-4444-8444-444444444444',
+    slug: '',
+    title: 'Bedfordview family home',
+    askingPrice: 2450000,
+  },
+])
 assert.deepEqual(buyerAutomationEvent.payload_json.listingInterestIds, ['77777777-7777-4777-8777-777777777777'])
+assert.deepEqual(buyerAutomationEvent.payload_json.buyerRequirement.areas, ['Bedfordview', 'Edenvale'])
+assert.equal(buyerAutomationEvent.payload_json.buyerRequirement.propertyType, 'House')
+assert.equal(buyerAutomationEvent.payload_json.buyerRequirement.bedroomsMin, 3)
+assert.equal(buyerAutomationEvent.payload_json.buyerRequirement.financeStatus, 'pre_approved')
+assert.equal(buyerAutomationEvent.payload_json.pageUrl, 'https://app.arch9.co.za/intake/kingstons-atlantic?intent=buy')
+assert.equal(buyerAutomationEvent.payload_json.referrer, 'https://kingstons.example/listings')
 assert.equal(buyerAutomationEvent.payload_json.taskId, '66666666-6666-4666-8666-666666666666')
+assert.equal(buyerAutomationEvent.payload_json.requirementId, null)
 assert.equal(buyerAutomationEvent.metadata_json.handoffRequired, true)
+assert.deepEqual(buyerAutomationEvent.metadata_json.listingInterestIds, ['77777777-7777-4777-8777-777777777777'])
 assert.equal(buyerAutomationEvent.metadata_json.phase, 'agency_public_intake_phase8')
 
 const sellerCrmRows = buildAgencyPublicIntakeCrmRows({

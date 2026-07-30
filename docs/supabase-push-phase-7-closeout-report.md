@@ -1,10 +1,10 @@
 # Supabase Push Phase 7 Closeout Report
 
-Generated: 2026-07-29T19:53:17.162Z
+Generated: 2026-07-29T20:52:26.572Z
 
 ## Decision
 
-**Status: CLOSEOUT_BLOCKED**
+**Status: READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT**
 
 Phase 7 runs the closeout gate after syncing production evidence. It does not remove the Phase 0 broad-push freeze; it only records whether the closeout gates are ready for reviewed freeze retirement.
 
@@ -16,16 +16,16 @@ Phase 7 runs the closeout gate after syncing production evidence. It does not re
 | Local closeout decision | `LOCAL_CLOSEOUT_NOT_READY` |
 | Live closeout attempted | Yes |
 | Live closeout parsed | Yes |
-| Live closeout decision | `CLOSEOUT_BLOCKED` |
-| Closeout ready | No |
+| Live closeout decision | `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT` |
+| Closeout ready | Yes |
 
 ## Evidence Gate
 
 | Check | Value |
 | --- | --- |
 | Manifest rows | 32 |
-| Complete production evidence rows | 0 |
-| Incomplete production evidence rows | 32 |
+| Complete production evidence rows | 32 |
+| Incomplete production evidence rows | 0 |
 | Production recovery locked | Yes |
 | Production recovery blockers | 0 |
 | Duplicate migration versions | 0 |
@@ -37,7 +37,7 @@ Phase 7 runs the closeout gate after syncing production evidence. It does not re
 
 | Check | Value |
 | --- | --- |
-| Pure local-only versions | 32 |
+| Pure local-only versions | 0 |
 | Pure remote-only versions | 0 |
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |

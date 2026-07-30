@@ -92,6 +92,23 @@ assert.equal(explicitGlobalDefault.canGenerateWithoutFallback, false)
 assert.ok(explicitGlobalDefault.warnings.some((issue) => issue.code === 'MANDATE_LAUNCH_RUNTIME_ROUTE_FALLBACK'))
 assert.ok(explicitGlobalDefault.warningMessages.some((message) => message.includes('published global/default mandate template is allowed')))
 
+const explicitRouteTemplate = buildMandateTemplateRuntimeLaunchReadiness(validation('generate'), {
+  source: 'explicit_published',
+  packetType: 'mandate',
+  template: routeTemplate,
+  mandateScenarioProfile: {
+    templateVariant: 'company_full_title',
+  },
+  mandateTemplateRouting: {
+    mandateTemplateVariant: 'company_full_title',
+  },
+})
+assert.equal(explicitRouteTemplate.status, 'ready')
+assert.equal(explicitRouteTemplate.shouldBlockGeneration, false)
+assert.equal(explicitRouteTemplate.canGenerateWithoutFallback, true)
+assert.equal(explicitRouteTemplate.blockers.length, 0)
+assert.equal(explicitRouteTemplate.warnings.length, 0)
+
 const exactRoute = buildMandateTemplateRuntimeLaunchReadiness(validation('generate'), {
   source: 'mandate_scenario_variant',
   packetType: 'mandate',

@@ -9,6 +9,9 @@ alter table if exists public.organisation_branding
   add column if not exists email_reply_to text,
   add column if not exists tagline text;
 
+alter table if exists public.organisations
+  add column if not exists lead_acknowledgement_sender_name text;
+
 insert into public.organisation_branding (
   organisation_id,
   organisation_display_name,

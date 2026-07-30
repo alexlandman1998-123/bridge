@@ -5,7 +5,7 @@ Stream: `bond_finance_runtime`
 Route: `apply_original`
 File: `202607270015_bond_finance_document_metadata_cleanup.sql`
 Evidence: `docs/staging-evidence/202607270015-bond_finance_runtime.json`
-Status: Pending
+Status: Complete
 
 ## Commands
 
@@ -30,7 +30,4 @@ node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20
 
 ## Blockers
 
-- `staging_project_ref_env_missing`
-- `staging_db_url_env_missing`
-- `staging_recovery_confirmation_missing`
-- `staging_evidence_missing`
+- None

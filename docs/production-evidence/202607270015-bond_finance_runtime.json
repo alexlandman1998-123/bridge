@@ -5,19 +5,25 @@
   "productionRoute": "production_apply_sql",
   "targetProjectRef": "isdowlnollckzvltkasn",
   "sqlApplied": true,
-  "targetStateVerified": false,
-  "productionTargetStateVerified": false,
-  "productionLedgerRecorded": false,
-  "catalogChecks": "pending",
-  "behaviorChecks": "pending",
-  "rollbackOrNoResidue": "pending",
-  "reviewedBy": "",
-  "capturedAt": null,
-  "promotionReady": false,
-  "promotionBlockers": [
-    "staging_evidence_missing"
-  ],
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-row promotion train",
+  "capturedAt": "2026-07-29T20:24:36.082Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
   "notes": [
-    "Complete after production SQL apply, target-state verification, and production ledger recording."
-  ]
+    "Completed after single-version production SQL apply, target-state verification, and production ledger recording."
+  ],
+  "verification": {
+    "source": "production_one_row_train",
+    "stagingEvidenceFile": "docs/staging-evidence/202607270015-bond_finance_runtime.json",
+    "productionEvidencePreparedAt": "2026-07-29T20:24:36.082Z",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "route": "production_apply_sql",
+    "notes": "SQL was applied through scripts/supabase-phase7-production-execution.mjs for this single version before ledger recording."
+  }
 }

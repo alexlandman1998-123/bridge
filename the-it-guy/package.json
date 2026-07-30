@@ -138,6 +138,7 @@
     "test:public-listing-phase9": "node scripts/public-listing-phase9.test.mjs",
     "test:public-listing-phase11": "node scripts/public-listing-phase11.test.mjs",
     "test:public-listing-phase12": "node scripts/public-listing-phase12.test.mjs",
+    "test:agency-public-intake-phase5": "node scripts/agency-public-intake-phase5-qa.test.mjs",
     "diagnose:public-listings": "node scripts/diagnose-public-listing-readiness.mjs",
     "report:public-listing-candidates": "node scripts/report-public-listing-candidates.mjs",
     "backfill:public-listings": "node scripts/backfill-public-listing-publication-data.mjs",

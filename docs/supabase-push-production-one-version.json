@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-29T19:45:16.503Z",
+  "generatedAt": "2026-07-29T20:22:48.693Z",
   "sourceReport": "docs/supabase-push-phase-5-production-promotion.json",
-  "status": "PROMOTION_BLOCKED",
+  "status": "PROMOTION_READY",
   "mode": "plan",
   "selected": {
     "version": "202607270013",
@@ -10,13 +10,12 @@
     "productionRoute": "production_no_sql_record_after_smoke",
     "stagingEvidenceFile": "docs/staging-evidence/202607270013-legal_document_runtime.json",
     "productionEvidenceFile": "docs/production-evidence/202607270013-legal_document_runtime.json",
-    "readyForProduction": false
+    "readyForProduction": true
   },
-  "blockers": [
-    "phase5_production_promotion_not_ready",
-    "phase5_staging_evidence_missing"
+  "blockers": [],
+  "commands": [
+    "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607270013 --staging-evidence docs/staging-evidence/202607270013-legal_document_runtime.json --production-evidence docs/production-evidence/202607270013-legal_document_runtime.json --confirm APPLY_TO_PRODUCTION"
   ],
-  "commands": [],
   "execution": {
     "attempted": false,
     "ok": false,
