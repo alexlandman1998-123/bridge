@@ -188,6 +188,11 @@ async function clickNext(page) {
   await page.getByRole('button', { name: /^Next/ }).click()
 }
 
+async function assertNoHorizontalOverflow(page, message) {
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
+  assert.equal(hasHorizontalOverflow, false, message)
+}
+
 async function runLandingJourney(page, baseUrl) {
   await page.goto(`${baseUrl}/intake/produktive-realty?utm_source=instagram`, { waitUntil: 'networkidle' })
   await page.getByRole('heading', { name: "What's your next move?" }).waitFor()
@@ -198,8 +203,7 @@ async function runLandingJourney(page, baseUrl) {
   const contactCard = page.getByRole('link', { name: /Speak to the team/ })
   await contactCard.waitFor()
   assert.equal(await contactCard.getAttribute('href'), 'mailto:hello@produktive.test')
-  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
-  assert.equal(hasHorizontalOverflow, false, 'landing page should not horizontally overflow on mobile')
+  await assertNoHorizontalOverflow(page, 'landing page should not horizontally overflow on mobile')
   await page.getByRole('button', { name: /Find a home/ }).click()
   await page.getByText('Step 1 of 4').waitFor()
 }
@@ -219,8 +223,7 @@ async function runResponsiveLandingChecks(page, baseUrl) {
     await page.setViewportSize(viewport)
     await page.goto(`${baseUrl}/intake/produktive-realty`, { waitUntil: 'networkidle' })
     await page.getByRole('heading', { name: "What's your next move?" }).waitFor()
-    const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
-    assert.equal(hasHorizontalOverflow, false, `landing page should not horizontally overflow at ${viewport.width}px`)
+    await assertNoHorizontalOverflow(page, `landing page should not horizontally overflow at ${viewport.width}px`)
 
     const logoBox = await page.locator('img[alt="Produktive Realty logo"]').first().boundingBox()
     assert.ok(logoBox, `logo should be visible at ${viewport.width}px`)
@@ -236,6 +239,7 @@ async function runSelectedListingJourney(page, baseUrl, state) {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${baseUrl}/intake/produktive-realty?intent=buy&listing=preselected-home&listingId=33333333-3333-4333-8333-333333333333&utm_source=instagram`, { waitUntil: 'networkidle' })
   await page.getByText('Step 1 of 4').waitFor()
+  await assertNoHorizontalOverflow(page, 'buyer budget fields should not horizontally overflow on mobile')
 
   const heroVisible = await page.getByText('Tell us what you want to buy.').isVisible().catch(() => false)
   assert.equal(heroVisible, false, 'mobile buyer flow should hide the hero copy')
@@ -264,6 +268,7 @@ async function runSelectedListingJourney(page, baseUrl, state) {
   await page.getByText('2 selected').waitFor()
   await clickNext(page)
   await page.getByText('Step 3 of 4').waitFor()
+  await assertNoHorizontalOverflow(page, 'buyer contact fields should not horizontally overflow on mobile')
   await clickNext(page)
   await page.getByText('Please enter your name.').waitFor()
   assert.equal(state.submissions.length, 0, 'contact validation should block submission')
@@ -320,6 +325,38 @@ async function runOptionalSkipJourney(page, baseUrl, state) {
   state.forceEmptyListings = false
 }
 
+async function runSellerFormJourney(page, baseUrl, state) {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${baseUrl}/intake/produktive-realty?intent=sell&utm_source=facebook`, { waitUntil: 'networkidle' })
+  await page.getByRole('heading', { name: 'Selling details' }).waitFor()
+  await assertNoHorizontalOverflow(page, 'seller form fields should not horizontally overflow on mobile')
+
+  await page.getByLabel('Full name').fill('Sage Seller')
+  await page.getByLabel('Mobile number').fill('0831234567')
+  await page.getByLabel('Email address').fill('sage@example.com')
+  await page.getByLabel('Property address').fill('12 Example Estate')
+  await page.getByLabel('Suburb').fill('Waterkloof')
+  await page.getByLabel('Property type').selectOption('House')
+  await page.getByLabel('Estimated value').fill('2750000')
+  await page.getByLabel('Timeline').selectOption('1_3_months')
+  await page.getByLabel('Notes').fill('Please send valuation options.')
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: /Send enquiry/ }).click()
+  await page.getByText('Enquiry received').waitFor()
+
+  const payload = state.submissions.at(-1)
+  assert.equal(payload.intent, 'sell')
+  assert.equal(payload.contact.name, 'Sage Seller')
+  assert.equal(payload.contact.email, 'sage@example.com')
+  assert.equal(payload.contact.phone, '0831234567')
+  assert.equal(payload.sourceChannel, 'facebook')
+  assert.equal(payload.seller.propertyAddress, '12 Example Estate')
+  assert.equal(payload.seller.suburb, 'Waterkloof')
+  assert.equal(payload.seller.propertyType, 'House')
+  assert.equal(payload.seller.estimatedValue, 2750000)
+  assert.equal(payload.seller.timeline, '1_3_months')
+}
+
 const server = await startViteServer()
 const browser = await chromium.launch({ headless: true })
 try {
@@ -338,6 +375,7 @@ try {
   await runLandingJourney(page, server.baseUrl)
   await runSelectedListingJourney(page, server.baseUrl, state)
   await runOptionalSkipJourney(page, server.baseUrl, state)
+  await runSellerFormJourney(page, server.baseUrl, state)
   await context.close()
 } finally {
   await browser.close()

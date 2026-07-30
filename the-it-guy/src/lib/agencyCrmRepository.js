@@ -119,11 +119,33 @@ function isPermissionDeniedError(error) {
   return status === 403 || code === '42501' || message.includes('permission denied') || message.includes('row-level security')
 }
 
+function isForeignKeyViolation(error, constraintName = '') {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLowerText(error?.message || error?.details || '')
+  const constraint = normalizeLowerText(constraintName)
+  return code === '23503' || (constraint && message.includes(constraint))
+}
+
 function isMissingRpcError(error, functionName = '') {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLowerText(error?.message || error?.details || '')
   const target = normalizeLowerText(functionName)
   return code === '42883' || message.includes('function') && message.includes(target)
+}
+
+async function detachAgencyPublicIntakeSubmissionsForLead(organisationId, leadId) {
+  if (!isSupabaseConfigured || !supabase || !organisationId || !leadId) return false
+  const result = await supabase
+    .from('agency_public_intake_submissions')
+    .update({ lead_id: null, updated_at: new Date().toISOString() })
+    .eq('organisation_id', organisationId)
+    .eq('lead_id', leadId)
+
+  if (result.error) {
+    if (isMissingSchemaOrTableError(result.error) || isPermissionDeniedError(result.error)) return false
+    throw result.error
+  }
+  return true
 }
 
 function mapSupabaseContact(row = {}) {
@@ -1622,6 +1644,12 @@ export async function deleteAgencyCrmLeadRecord(organisationId, leadId) {
     }
 
     if (!remoteDeleted) {
+      try {
+        await detachAgencyPublicIntakeSubmissionsForLead(normalizedOrganisationId, dbLeadId)
+      } catch (syncError) {
+        console.warn('[agencyCrmRepository] non-blocking public intake submission unlink before lead delete failed', syncError)
+      }
+
       const deleteResult = await supabase
         .from('leads')
         .delete()
@@ -1653,6 +1681,9 @@ export async function deleteAgencyCrmLeadRecord(organisationId, leadId) {
       if (stillExists) {
         if (isPermissionDeniedError(remoteDeleteError)) {
           throw new Error('The lead still exists in the database, and your account is not allowed to delete it there.')
+        }
+        if (isForeignKeyViolation(remoteDeleteError, 'agency_public_intake_submissions_lead_org_fkey')) {
+          throw new Error('This lead is linked to a public intake submission. Apply the latest database migration, then try deleting the lead again.')
         }
         throw remoteDeleteError || new Error('The lead could not be deleted from the database.')
       }

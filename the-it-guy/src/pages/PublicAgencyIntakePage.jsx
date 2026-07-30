@@ -2,19 +2,24 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Banknote,
   Bath,
   BedDouble,
   Building2,
+  CalendarDays,
   CheckCircle2,
   CircleHelp,
   Home,
   LoaderCircle,
+  Mail,
   MapPin,
   MessageCircle,
+  Phone,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
+  User,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
@@ -215,29 +220,83 @@ function FieldLabel({ children, required = false }) {
   )
 }
 
-function TextInput({ label, required = false, className = '', ...props }) {
+function FieldIcon({ icon: Icon }) {
+  if (!Icon) return null
+  return (
+    <span className="flex h-full items-center pl-4 pr-3 text-slate-400 transition group-focus-within:text-[var(--intake-primary)]" aria-hidden="true">
+      <Icon size={18} strokeWidth={1.9} />
+    </span>
+  )
+}
+
+function TextInput({ label, required = false, icon, prefix = '', className = '', ...props }) {
+  const hasAdornment = Boolean(icon || prefix)
   return (
     <label className={`grid gap-2 ${className}`}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <input
-        {...props}
-        className="min-h-12 rounded-lg border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--intake-primary)] focus:ring-4 focus:ring-slate-100"
-      />
+      <span className="group flex min-h-14 items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10">
+        <FieldIcon icon={icon} />
+        {prefix ? <span className={`${icon ? '' : 'pl-4'} pr-2 text-sm font-semibold text-slate-500`}>{prefix}</span> : null}
+        <input
+          {...props}
+          className={`min-h-14 min-w-0 flex-1 bg-transparent py-3 pr-4 text-base text-slate-900 outline-none placeholder:text-slate-400 ${hasAdornment ? '' : 'pl-4'}`}
+        />
+      </span>
     </label>
   )
 }
 
-function SelectInput({ label, required = false, children, className = '', ...props }) {
+function SelectInput({ label, required = false, icon, children, className = '', ...props }) {
   return (
     <label className={`grid gap-2 ${className}`}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <select
-        {...props}
-        className="min-h-12 rounded-lg border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-[var(--intake-primary)] focus:ring-4 focus:ring-slate-100"
-      >
-        {children}
-      </select>
+      <span className="group flex min-h-14 items-center overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10">
+        <FieldIcon icon={icon} />
+        <select
+          {...props}
+          className={`min-h-14 min-w-0 flex-1 bg-transparent py-3 pr-4 text-base text-slate-900 outline-none ${icon ? '' : 'pl-4'}`}
+        >
+          {children}
+        </select>
+      </span>
     </label>
+  )
+}
+
+function IntakeTextarea({ label, required = false, icon, className = '', ...props }) {
+  const Icon = icon
+  return (
+    <label className={`grid gap-2 ${className}`}>
+      <FieldLabel required={required}>{label}</FieldLabel>
+      <span className="group flex items-start overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(15,23,42,0.04)] transition focus-within:border-[var(--intake-primary)] focus-within:bg-white focus-within:ring-4 focus-within:ring-[var(--intake-primary)]/10">
+        {Icon ? (
+          <span className="pl-4 pr-3 pt-4 text-slate-400 transition group-focus-within:text-[var(--intake-primary)]" aria-hidden="true">
+            <Icon size={18} strokeWidth={1.9} />
+          </span>
+        ) : null}
+        <textarea
+          {...props}
+          className={`min-h-[132px] min-w-0 flex-1 resize-y bg-transparent py-3 pr-4 text-base leading-6 text-slate-900 outline-none placeholder:text-slate-400 ${icon ? '' : 'pl-4'}`}
+        />
+      </span>
+    </label>
+  )
+}
+
+function IntakeSection({ title, children }) {
+  return (
+    <section className="grid gap-4 border-l-2 border-slate-200/80 pl-4">
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function ContactHelper() {
+  return (
+    <p className="rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-500">
+      Please provide at least one contact method.
+    </p>
   )
 }
 
@@ -973,41 +1032,41 @@ export default function PublicAgencyIntakePage() {
                       </div>
 
                       {buyerStep === 'contact' ? (
-                        <>
+                        <IntakeSection title="Your details">
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <TextInput label="Full name" required value={form.name} onChange={(event) => updateForm('name', event.target.value)} autoComplete="name" maxLength={240} placeholder="Your name" />
-                            <TextInput label="Mobile number" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} autoComplete="tel" inputMode="tel" maxLength={40} placeholder="082 123 4567" />
+                            <TextInput icon={User} label="Full name" required value={form.name} onChange={(event) => updateForm('name', event.target.value)} autoComplete="name" maxLength={240} placeholder="Your name" />
+                            <TextInput icon={Phone} label="Mobile number" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} autoComplete="tel" inputMode="tel" maxLength={40} placeholder="082 123 4567" />
                           </div>
-                          <TextInput label="Email address" value={form.email} onChange={(event) => updateForm('email', event.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="name@example.com" />
-                          <p className="-mt-3 text-xs leading-5 text-slate-500">Please provide at least one contact method.</p>
-                        </>
+                          <TextInput icon={Mail} label="Email address" value={form.email} onChange={(event) => updateForm('email', event.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="name@example.com" />
+                          <ContactHelper />
+                        </IntakeSection>
                       ) : null}
 
                       {buyerStep === 'budget' ? (
                         <>
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <TextInput label="Minimum budget" value={form.budgetMin} onChange={(event) => updateForm('budgetMin', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="1500000" />
-                            <TextInput label="Maximum budget" value={form.budgetMax} onChange={(event) => updateForm('budgetMax', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="2500000" />
+                            <TextInput icon={Banknote} prefix="R" label="Minimum budget" value={form.budgetMin} onChange={(event) => updateForm('budgetMin', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="1500000" />
+                            <TextInput icon={Banknote} prefix="R" label="Maximum budget" value={form.budgetMax} onChange={(event) => updateForm('budgetMax', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="2500000" />
                           </div>
-                          <TextInput label="Preferred areas" value={form.areas} onChange={(event) => updateForm('areas', event.target.value)} maxLength={500} placeholder="Suburbs or areas" />
+                          <TextInput icon={MapPin} label="Preferred areas" value={form.areas} onChange={(event) => updateForm('areas', event.target.value)} maxLength={500} placeholder="Suburbs or areas" />
                           <div className="grid gap-4 sm:grid-cols-3">
-                            <SelectInput label="Property type" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                            <SelectInput icon={Home} label="Property type" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
                               {PROPERTY_TYPES.map((type) => <option key={type || 'any'} value={type}>{type || 'Any type'}</option>)}
                             </SelectInput>
-                            <SelectInput label="Bedrooms" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)}>
+                            <SelectInput icon={BedDouble} label="Bedrooms" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)}>
                               <option value="">Any</option>
                               {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}+</option>)}
                             </SelectInput>
-                            <SelectInput label="Bathrooms" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)}>
+                            <SelectInput icon={Bath} label="Bathrooms" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)}>
                               <option value="">Any</option>
                               {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value}+</option>)}
                             </SelectInput>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <SelectInput label="Finance" value={form.financeStatus} onChange={(event) => updateForm('financeStatus', event.target.value)}>
+                            <SelectInput icon={ShieldCheck} label="Finance" value={form.financeStatus} onChange={(event) => updateForm('financeStatus', event.target.value)}>
                               {FINANCE_STATUSES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
                             </SelectInput>
-                            <SelectInput label="Timeline" value={form.buyerTimeline} onChange={(event) => updateForm('buyerTimeline', event.target.value)}>
+                            <SelectInput icon={CalendarDays} label="Timeline" value={form.buyerTimeline} onChange={(event) => updateForm('buyerTimeline', event.target.value)}>
                               {TIMELINES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
                             </SelectInput>
                           </div>
@@ -1074,17 +1133,15 @@ export default function PublicAgencyIntakePage() {
                             </div>
                           ) : null}
 
-                          <label className="grid gap-2">
-                            <FieldLabel>Notes</FieldLabel>
-                            <textarea
-                              rows={4}
-                              maxLength={5000}
-                              value={form.message}
-                              onChange={(event) => updateForm('message', event.target.value)}
-                              className="resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-base leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--intake-primary)] focus:ring-4 focus:ring-slate-100"
-                              placeholder="Anything useful for the agency"
-                            />
-                          </label>
+                          <IntakeTextarea
+                            icon={MessageCircle}
+                            label="Notes"
+                            rows={4}
+                            maxLength={5000}
+                            value={form.message}
+                            onChange={(event) => updateForm('message', event.target.value)}
+                            placeholder="Anything useful for the agency"
+                          />
 
                           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
                             <input
@@ -1136,38 +1193,40 @@ export default function PublicAgencyIntakePage() {
                     </>
                   ) : (
                     <>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <TextInput label="Full name" required value={form.name} onChange={(event) => updateForm('name', event.target.value)} autoComplete="name" maxLength={240} placeholder="Your name" />
-                        <TextInput label="Mobile number" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} autoComplete="tel" inputMode="tel" maxLength={40} placeholder="082 123 4567" />
-                      </div>
-                      <TextInput label="Email address" value={form.email} onChange={(event) => updateForm('email', event.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="name@example.com" />
-                      <p className="-mt-3 text-xs leading-5 text-slate-500">Please provide at least one contact method.</p>
+                      <IntakeSection title="Your details">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <TextInput icon={User} label="Full name" required value={form.name} onChange={(event) => updateForm('name', event.target.value)} autoComplete="name" maxLength={240} placeholder="Your name" />
+                          <TextInput icon={Phone} label="Mobile number" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} autoComplete="tel" inputMode="tel" maxLength={40} placeholder="082 123 4567" />
+                        </div>
+                        <TextInput icon={Mail} label="Email address" value={form.email} onChange={(event) => updateForm('email', event.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="name@example.com" />
+                        <ContactHelper />
+                      </IntakeSection>
 
-                      <TextInput label="Property address" value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} maxLength={1000} placeholder="Address or complex name" />
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <TextInput label="Suburb" value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} maxLength={160} placeholder="Suburb" />
-                        <SelectInput label="Property type" value={form.sellerPropertyType} onChange={(event) => updateForm('sellerPropertyType', event.target.value)}>
-                          {PROPERTY_TYPES.map((type) => <option key={type || 'any'} value={type}>{type || 'Please select'}</option>)}
-                        </SelectInput>
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <TextInput label="Estimated value" value={form.estimatedValue} onChange={(event) => updateForm('estimatedValue', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="2500000" />
-                        <SelectInput label="Timeline" value={form.sellerTimeline} onChange={(event) => updateForm('sellerTimeline', event.target.value)}>
-                          {TIMELINES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
-                        </SelectInput>
-                      </div>
+                      <IntakeSection title="Property details">
+                        <TextInput icon={MapPin} label="Property address" value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} maxLength={1000} placeholder="Address or complex name" />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <TextInput icon={MapPin} label="Suburb" value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} maxLength={160} placeholder="Suburb" />
+                          <SelectInput icon={Home} label="Property type" value={form.sellerPropertyType} onChange={(event) => updateForm('sellerPropertyType', event.target.value)}>
+                            {PROPERTY_TYPES.map((type) => <option key={type || 'any'} value={type}>{type || 'Please select'}</option>)}
+                          </SelectInput>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <TextInput icon={Banknote} prefix="R" label="Estimated value" value={form.estimatedValue} onChange={(event) => updateForm('estimatedValue', event.target.value)} type="number" inputMode="decimal" min="0" step="50000" placeholder="2500000" />
+                          <SelectInput icon={CalendarDays} label="Timeline" value={form.sellerTimeline} onChange={(event) => updateForm('sellerTimeline', event.target.value)}>
+                            {TIMELINES.map(([value, label]) => <option key={value || 'unknown'} value={value}>{label}</option>)}
+                          </SelectInput>
+                        </div>
+                      </IntakeSection>
 
-                      <label className="grid gap-2">
-                        <FieldLabel>Notes</FieldLabel>
-                        <textarea
-                          rows={4}
-                          maxLength={5000}
-                          value={form.message}
-                          onChange={(event) => updateForm('message', event.target.value)}
-                          className="resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-base leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--intake-primary)] focus:ring-4 focus:ring-slate-100"
-                          placeholder="Anything useful for the agency"
-                        />
-                      </label>
+                      <IntakeTextarea
+                        icon={MessageCircle}
+                        label="Notes"
+                        rows={4}
+                        maxLength={5000}
+                        value={form.message}
+                        onChange={(event) => updateForm('message', event.target.value)}
+                        placeholder="Anything useful for the agency"
+                      />
 
                       <div className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
                         <label>
