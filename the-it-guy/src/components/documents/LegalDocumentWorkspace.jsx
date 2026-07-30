@@ -3335,6 +3335,7 @@ export default function LegalDocumentWorkspace({
   const autoFinalizeGuardRef = useRef(new Set())
   const autoGenerateGuardRef = useRef('')
   const autoGenerateRunRef = useRef(0)
+  const queuedMandateSendRef = useRef(null)
   const statusStateRef = useRef(initialStatus || null)
   const actionBusyRef = useRef(false)
   const generationFailureCountsRef = useRef(new Map())
@@ -5510,7 +5511,50 @@ export default function LegalDocumentWorkspace({
     return { packet: updatedPacket, version: updatedVersion, transition }
   }
 
-  async function ensurePersistedPacketBeforeSend() {
+  function queueMandateSendAfterGeneration({ targetSignerRole = '' } = {}) {
+    if (queuedMandateSendRef.current) return queuedMandateSendRef.current
+    setActionFeedback('Mandate send queued. The PDF will finish preparing and the signing email will send automatically.')
+    const queued = Promise.resolve()
+      .then(async () => {
+        if (typeof onGenerate !== 'function') throw new Error('Mandate generation is not configured for this workspace.')
+        setActionProgressMessage('Preparing mandate PDF in the background...')
+        const generationResult = await onGenerate({
+          mandateManualOverride,
+          persistForSend: true,
+          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+        })
+        if (generationResult?.status) {
+          statusStateRef.current = generationResult.status
+          setStatusState(generationResult.status)
+        }
+        setActionProgressMessage('Mandate PDF ready. Sending signing email...')
+        const sendResult = await handleSendForSignatureFromWorkspace({
+          resend: false,
+          reminder: false,
+          targetSignerRole,
+          queuedContinuation: true,
+        })
+        if (sendResult?.queued) throw new Error('Mandate send was queued again instead of completing.')
+        setActionFeedback('Mandate sent for signature.')
+        void Promise.resolve(onRefreshContext?.()).catch(() => null)
+        await refreshWorkspaceData().catch((refreshError) => {
+          console.warn('[LegalDocumentWorkspace] queued mandate send completed but status refresh was delayed.', refreshError)
+        })
+      })
+      .catch(async (error) => {
+        await logMandateFailure('queued_send_signature', error)
+        setLoadError(toFriendlyWorkspaceError(error, 'Mandate send was queued, but background delivery did not complete. Refresh and retry from this page.'))
+      })
+      .finally(() => {
+        queuedMandateSendRef.current = null
+        setActionProgressMessage('')
+      })
+    queuedMandateSendRef.current = queued
+    void queued
+    return queued
+  }
+
+  async function ensurePersistedPacketBeforeSend({ queueIfGenerationNeeded = false, targetSignerRole = '' } = {}) {
     let currentStatus = statusStateRef.current || statusState
     if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
       try {
@@ -5595,6 +5639,14 @@ export default function LegalDocumentWorkspace({
       return currentStatus
     }
 
+    if (queueIfGenerationNeeded && isMandatePacket) {
+      queueMandateSendAfterGeneration({ targetSignerRole })
+      return {
+        queued: true,
+        status: currentStatus,
+      }
+    }
+
     setActionProgressMessage(needsPersist ? 'Saving mandate packet before sending…' : 'Generating mandate draft before sending…')
     let generationResult = null
     try {
@@ -5631,7 +5683,7 @@ export default function LegalDocumentWorkspace({
     return postGenerationCheck.status || nextStatus
   }
 
-  async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '' } = {}) {
+  async function handleSendForSignatureFromWorkspace({ resend = false, reminder = false, targetSignerRole = '', queuedContinuation = false } = {}) {
     const sendStartedAt = getPerformanceNow()
     if (isOtpPacket && reminder) {
       throw createWorkspaceError(
@@ -5656,7 +5708,23 @@ export default function LegalDocumentWorkspace({
       persistedStatus?.state || persistedStatus?.packet?.source_context_json?.lifecycle_state || persistedStatus?.packet?.status,
     )
     if (!resend) {
-      persistedStatus = await ensurePersistedPacketBeforeSend()
+      const persistedResult = await ensurePersistedPacketBeforeSend({
+        queueIfGenerationNeeded: isMandatePacket && !queuedContinuation,
+        targetSignerRole,
+      })
+      if (persistedResult?.queued) {
+        recordWorkspacePerformance('legal_document.signing.total', sendStartedAt, {
+          resend: false,
+          reminder: false,
+          queued: true,
+          targetSignerRole: targetSignerRole || null,
+        })
+        return {
+          queued: true,
+          message: 'Mandate send queued while the PDF is prepared.',
+        }
+      }
+      persistedStatus = persistedResult
       lifecycleBeforeSend = normalizeDocumentLifecycleState(
         persistedStatus?.state || persistedStatus?.packet?.source_context_json?.lifecycle_state || persistedStatus?.packet?.status,
       )
@@ -6174,11 +6242,12 @@ export default function LegalDocumentWorkspace({
     setGenerationRecovery(null)
     setActionFeedback('')
     setActionProgressMessage('')
+    let primaryActionResult = null
     try {
       if (normalizedLifecycleState === 'ready_to_send') {
         assertWorkspacePermission('canSend', 'send documents for signature')
         setActionProgressMessage('Preparing signature send…')
-        await handleSendForSignatureFromWorkspace()
+        primaryActionResult = await handleSendForSignatureFromWorkspace()
       } else if (action.actionKey === 'generate') {
         setActionProgressMessage('Preparing template…')
         await handleGeneratePacketDraft()
@@ -6186,7 +6255,7 @@ export default function LegalDocumentWorkspace({
       } else if (action.actionKey === 'send') {
         assertWorkspacePermission('canSend', 'send documents for signature')
         setActionProgressMessage('Preparing signature send…')
-        await handleSendForSignatureFromWorkspace()
+        primaryActionResult = await handleSendForSignatureFromWorkspace()
       } else if (action.actionKey === 'edit') {
         assertWorkspacePermission('canEditDraft', 'edit legal drafts')
         setActionProgressMessage('Saving editable draft…')
@@ -6209,7 +6278,7 @@ export default function LegalDocumentWorkspace({
       } else if (action.actionKey === 'edit') {
         setActionFeedback('Draft saved and version history updated.')
       } else if (action.actionKey === 'send' || normalizedLifecycleState === 'ready_to_send') {
-        setActionFeedback('Document sent for signature workflow.')
+        setActionFeedback(primaryActionResult?.queued ? 'Mandate send queued. You can continue working while the signing email is prepared.' : 'Document sent for signature workflow.')
       } else {
         setActionFeedback('Action completed successfully.')
       }
@@ -6364,8 +6433,8 @@ export default function LegalDocumentWorkspace({
     try {
       if (actionKey === 'send_signature') {
         assertWorkspacePermission('canSend', 'send documents for signature')
-        await handleSendForSignatureFromWorkspace({ resend: false })
-        setActionFeedback('Document sent for signature workflow.')
+        const sendResult = await handleSendForSignatureFromWorkspace({ resend: false })
+        setActionFeedback(sendResult?.queued ? 'Mandate send queued. You can continue working while the signing email is prepared.' : 'Document sent for signature workflow.')
       } else if (actionKey === 'finalize_signed') {
         assertWorkspacePermission('canFinalize', 'finalize signed records')
         await handleFinalizeSignedRecord()

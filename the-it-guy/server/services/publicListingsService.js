@@ -81,6 +81,11 @@ function toNumber(value) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
+function toOptionalNumber(value) {
+  if (value === null || value === undefined || normalizeText(value) === '') return null
+  return toNumber(value)
+}
+
 function toInteger(value) {
   const numeric = toNumber(value)
   return numeric === null ? null : Math.max(0, Math.round(numeric))
@@ -381,8 +386,9 @@ function matchesFilters(item = {}, filters = {}) {
   const maxPrice = toNumber(filters.maxPrice)
   const bedrooms = toNumber(filters.bedrooms)
   const bathrooms = toNumber(filters.bathrooms)
-  if (minPrice !== null && Number(item.askingPrice || 0) < minPrice) return false
-  if (maxPrice !== null && Number(item.askingPrice || 0) > maxPrice) return false
+  const askingPrice = toOptionalNumber(item.askingPrice)
+  if (minPrice !== null && (askingPrice === null || askingPrice < minPrice)) return false
+  if (maxPrice !== null && (askingPrice === null || askingPrice > maxPrice)) return false
   if (bedrooms !== null && Number(item.bedrooms || 0) < bedrooms) return false
   if (bathrooms !== null && Number(item.bathrooms || 0) < bathrooms) return false
 

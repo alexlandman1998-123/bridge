@@ -100,6 +100,12 @@ function formatCurrency(value = null) {
   }).format(numeric)
 }
 
+function hasDisplayPrice(listing = {}) {
+  const value = listing.askingPrice ?? listing.asking_price
+  if (value === null || value === undefined || value === '') return false
+  return normalizeNumber(value) !== null
+}
+
 function listingKey(listing = {}) {
   return normalizeText(listing.id || listing.slug)
 }
@@ -659,17 +665,14 @@ export default function PublicAgencyIntakePage() {
     let cancelled = false
     const filters = {
       limit: 12,
-      propertyType: form.propertyType,
       minPrice: form.budgetMin,
       maxPrice: form.budgetMax,
-      bedrooms: form.bedrooms,
-      bathrooms: form.bathrooms,
     }
     setListingLoading(true)
     setListingError('')
     resolveAgencyPublicListings(agencySlug, filters)
       .then((items) => {
-        if (!cancelled) setListingOptions(items)
+        if (!cancelled) setListingOptions(items.filter(hasDisplayPrice))
       })
       .catch((error) => {
         if (!cancelled) {
@@ -683,7 +686,7 @@ export default function PublicAgencyIntakePage() {
     return () => {
       cancelled = true
     }
-  }, [agencySlug, buyerStep, form.bathrooms, form.bedrooms, form.budgetMax, form.budgetMin, form.propertyType, intent])
+  }, [agencySlug, buyerStep, form.budgetMax, form.budgetMin, intent])
 
   function retryLoad() {
     setReloadKey((value) => value + 1)

@@ -4554,7 +4554,7 @@ export default function LegalDocumentWorkspacePage() {
         onSignedFinalized={handleSignedFinalized}
         onView={() => openLatestDocument()}
         onRefreshContext={undefined}
-        autoGenerateEnabled={contextHydrated && false}
+        autoGenerateEnabled={contextHydrated && packetType === 'mandate'}
       />
     </>
   )

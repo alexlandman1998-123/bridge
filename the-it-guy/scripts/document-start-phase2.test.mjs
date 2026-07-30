@@ -70,12 +70,12 @@ for (const reference of [
   'const selectedLeadMandateQuickStartBlockers = useMemo',
   'const selectedLeadMandateQuickStartWarnings = useMemo',
   'title="Confirm OTP details"',
-  'title="Confirm mandate details"',
+  'title={resolveMandateQuickStartTitle(mandateQuickStartStep)}',
   'Edit Offer / Terms',
   'Edit Wording / Terms',
   'onGenerate={handleGenerateMandateFromSellerLead}',
   'onSend={handleSendMandateToSeller}',
-  'autoGenerateEnabled={false}',
+  'autoGenerateEnabled={legalWorkspaceOpen}',
 ]) {
   assertIncludes(agencyPipeline, reference, `Unified lead workspace should keep ${reference}.`)
 }

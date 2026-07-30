@@ -122,6 +122,18 @@ function listingFixtures() {
       bathrooms: 2,
       coverImageUrl: '',
     },
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      slug: 'unpriced-placeholder',
+      title: 'Unpriced Placeholder',
+      propertyType: 'House',
+      suburb: 'Waterkloof',
+      city: 'Pretoria',
+      askingPrice: null,
+      bedrooms: 3,
+      bathrooms: 2,
+      coverImageUrl: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=70',
+    },
   ]
 }
 
@@ -255,7 +267,10 @@ async function runSelectedListingJourney(page, baseUrl, state) {
   await page.getByText('Step 3 of 4').waitFor()
   assert.equal(state.listingRequests.at(-1)?.minPrice, '1500000', 'listing API should receive budget min filter')
   assert.equal(state.listingRequests.at(-1)?.maxPrice, '4000000', 'listing API should receive budget max filter')
-  assert.equal(state.listingRequests.at(-1)?.bedrooms, '3', 'listing API should receive bedroom filter')
+  assert.equal('bedrooms' in state.listingRequests.at(-1), false, 'listing API should not receive bedroom filter from buyer intake')
+  assert.equal('bathrooms' in state.listingRequests.at(-1), false, 'listing API should not receive bathroom filter from buyer intake')
+  assert.equal('propertyType' in state.listingRequests.at(-1), false, 'listing API should not receive property type filter from buyer intake')
+  assert.equal(await page.getByText('Unpriced Placeholder').count(), 0, 'unpriced listings should not render as blank-price cards')
 
   await page.getByText('1 selected').waitFor()
   await page.getByRole('button', { name: /Modern Waterkloof Home/ }).click()

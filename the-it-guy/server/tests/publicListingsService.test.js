@@ -76,6 +76,15 @@ assert.equal(
 )
 
 assert.equal(
+  isPublicListingEligible({
+    listing: validListing,
+    publication: { ...validPublication, asking_price: null },
+    media: validMedia,
+  }),
+  false,
+)
+
+assert.equal(
   createListingSlug({ listing: validListing, publication: validPublication }),
   'modern-family-home-bedfordview-gauteng-11111111',
 )

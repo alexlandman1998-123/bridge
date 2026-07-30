@@ -75,7 +75,7 @@ for (const reference of [
   'const selectedLeadOtpQuickStartBlockers = useMemo',
   'const selectedLeadOtpQuickStartWarnings = useMemo',
   'title="Confirm OTP details"',
-  'title="Confirm mandate details"',
+  'title={resolveMandateQuickStartTitle(mandateQuickStartStep)}',
   'PreferredAttorneySelectionModal',
   'sellerAttorneyPickerOpen',
   'transferAttorneyPreferredPartnerId: preferredAttorneyId',
@@ -88,7 +88,7 @@ for (const reference of [
   'gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`',
   'Edit Offer / Terms',
   'Edit Wording / Terms',
-  'autoGenerateEnabled={false}',
+  'autoGenerateEnabled={legalWorkspaceOpen}',
 ]) {
   assert.ok(source.includes(reference), `AgencyPipelinePage should keep ${reference}.`)
 }
