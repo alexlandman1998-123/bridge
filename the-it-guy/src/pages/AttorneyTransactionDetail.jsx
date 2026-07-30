@@ -5618,8 +5618,8 @@ function ArchlineMatterHeader({
         </section>
 
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
-          <div className="overflow-x-auto px-1 pb-1">
-            <div className="grid min-w-[760px] items-start gap-0" style={{ gridTemplateColumns: `repeat(${visibleWorkflowSteps.length}, minmax(112px, 1fr))` }}>
+          <div className="overflow-x-auto px-1 pb-2">
+            <div className="flex min-w-max items-start">
               {visibleWorkflowSteps.map((stage, index) => {
                 const completed = stage.displayStatus === 'completed'
                 const blocked = stage.displayStatus === 'blocked'
@@ -5632,7 +5632,7 @@ function ArchlineMatterHeader({
                       ? 'In Progress'
                       : 'Pending'
                 return (
-                  <div key={stage.key || stage.stepKey || index} className="relative grid justify-items-center gap-2 text-center">
+                  <div key={stage.key || stage.stepKey || index} className="relative grid w-[158px] shrink-0 justify-items-center gap-2 px-2 text-center sm:w-[176px]">
                     {index > 0 ? <span className={`absolute right-1/2 top-3.5 h-px w-full ${completed || current ? 'bg-emerald-700' : 'border-t border-dashed border-slate-300'}`} /> : null}
                     <span className={`relative z-10 inline-flex size-8 items-center justify-center rounded-full border-2 bg-white ${
                       completed
@@ -5645,8 +5645,10 @@ function ArchlineMatterHeader({
                     }`}>
                       {completed ? <CheckCircle2 size={16} /> : blocked ? <AlertTriangle size={15} /> : null}
                     </span>
-                    <div className="min-w-0 px-2">
-                      <strong className={`block truncate text-xs font-semibold ${completed || current ? 'text-[#142132]' : 'text-slate-600'}`}>{stage.label || getWorkflowStepLabel(stage)}</strong>
+                    <div className="w-full min-w-0">
+                      <strong className={`mx-auto block max-w-[150px] text-balance text-xs font-semibold leading-4 ${completed || current ? 'text-[#142132]' : 'text-slate-600'}`}>
+                        {stage.label || getWorkflowStepLabel(stage)}
+                      </strong>
                       <span className="mt-1 block truncate text-xs text-[#60758d]">{statusLabel}</span>
                     </div>
                   </div>
@@ -5843,48 +5845,52 @@ function ArchlineOverviewWorkspace({
       </div>
 
       <ArchlinePanel className="p-5">
-        <div className="grid gap-5 lg:grid-cols-[minmax(180px,0.8fr)_repeat(5,minmax(120px,1fr))]">
-          <div className="flex items-center gap-4 border-slate-200 lg:border-r lg:pr-5">
-            <span className={`inline-flex size-16 shrink-0 items-center justify-center rounded-full border-4 border-emerald-100 bg-white text-lg font-semibold ${healthTone}`}>
+        <div className="grid gap-5 xl:grid-cols-[minmax(260px,0.75fr)_minmax(0,1.65fr)] xl:items-stretch">
+          <div className="flex min-w-0 items-start gap-4 rounded-[16px] border border-slate-200 bg-slate-50/60 px-4 py-4">
+            <span className={`mt-1 inline-flex size-14 shrink-0 items-center justify-center rounded-full border-4 border-emerald-100 bg-white text-lg font-semibold ${healthTone}`}>
               {healthStatus === 'Healthy' ? <CheckCircle2 size={28} /> : <AlertTriangle size={28} />}
             </span>
-            <div>
+            <div className="min-w-0">
               <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#60758d]">Matter Health</span>
               <strong className={`mt-1 block text-lg font-semibold ${healthTone}`}>{healthStatus}</strong>
-              <ul className="mt-2 space-y-1 text-xs leading-5 text-[#60758d]">
-                {supportingReasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
+              <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#60758d]">
+                {supportingReasons.slice(0, 3).map((reason) => <li key={reason} className="truncate">{reason}</li>)}
               </ul>
             </div>
           </div>
-          {[
-            ['Estimated Lodgement', lodgementDate, ''],
-            ['Estimated Registration', registrationDate, ''],
-            ['Financial Summary', financialTotal, 'Current / estimated'],
-            ['Documents', totalDocs ? `${completedDocs} / ${totalDocs}` : 'Not configured', 'Complete'],
-            ['Tasks', String(outstandingTasks), 'Outstanding'],
-            ['Risks / Blockers', String(riskCount), riskCount ? 'Require attention' : 'Clear'],
-          ].map(([label, value, helper]) => (
-            <button key={label} type="button" className="min-w-0 rounded-[14px] border border-transparent px-2 py-2 text-left transition hover:border-slate-200 hover:bg-slate-50" onClick={() => {
-              if (/document/i.test(label)) onOpenWorkspace?.('documents')
-              else if (/task/i.test(label)) onOpenWorkspace?.('tasks')
-              else if (/financial/i.test(label)) onOpenWorkspace?.('finance')
-              else if (/risk|lodgement|registration/i.test(label)) onOpenWorkspace?.('transfer')
-            }}>
-              <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#60758d]">{label}</span>
-              <strong className="mt-1 block truncate text-base font-semibold text-[#142132]">{value}</strong>
-              {helper ? <span className="mt-1 block truncate text-xs text-[#60758d]">{helper}</span> : null}
-              {/document/i.test(label) && totalDocs ? (
-                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <span className="block h-full rounded-full bg-emerald-700" style={{ width: `${documentProgress}%` }} />
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            {[
+              ['Estimated Lodgement', lodgementDate, ''],
+              ['Estimated Registration', registrationDate, ''],
+              ['Financial Summary', financialTotal, 'Current / estimated'],
+              ['Documents', totalDocs ? `${completedDocs} / ${totalDocs}` : 'Not configured', 'Complete'],
+              ['Tasks', String(outstandingTasks), 'Outstanding'],
+              ['Risks / Blockers', String(riskCount), riskCount ? 'Require attention' : 'Clear'],
+            ].map(([label, value, helper]) => (
+              <button key={label} type="button" className="flex min-h-[116px] min-w-0 flex-col justify-between rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50" onClick={() => {
+                if (/document/i.test(label)) onOpenWorkspace?.('documents')
+                else if (/task/i.test(label)) onOpenWorkspace?.('tasks')
+                else if (/financial/i.test(label)) onOpenWorkspace?.('finance')
+                else if (/risk|lodgement|registration/i.test(label)) onOpenWorkspace?.('transfer')
+              }}>
+                <span className="block text-[0.66rem] font-semibold uppercase leading-4 tracking-[0.1em] text-[#60758d]">{label}</span>
+                <span className="mt-2 block min-w-0">
+                  <strong className="block truncate text-base font-semibold text-[#142132]" title={value}>{value}</strong>
+                  {helper ? <span className="mt-1 block truncate text-xs text-[#60758d]">{helper}</span> : null}
                 </span>
-              ) : null}
-              {/task/i.test(label) ? (
-                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <span className="block h-full rounded-full bg-amber-500" style={{ width: `${taskProgress}%` }} />
-                </span>
-              ) : null}
-            </button>
-          ))}
+                {/document/i.test(label) && totalDocs ? (
+                  <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <span className="block h-full rounded-full bg-emerald-700" style={{ width: `${documentProgress}%` }} />
+                  </span>
+                ) : null}
+                {/task/i.test(label) ? (
+                  <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <span className="block h-full rounded-full bg-amber-500" style={{ width: `${taskProgress}%` }} />
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
         </div>
       </ArchlinePanel>
 
@@ -6265,7 +6271,7 @@ function ArchlineTransferWorkspace({
   const [statusFilter, setStatusFilter] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [expandedPhaseKeys, setExpandedPhaseKeys] = useState({})
-  const [activeTaskTab, setActiveTaskTab] = useState('overview')
+  const [activeTaskTab, setActiveTaskTab] = useState('checklist')
   const [statusDraft, setStatusDraft] = useState({
     open: false,
     task: null,
@@ -6303,8 +6309,12 @@ function ArchlineTransferWorkspace({
   )
   const selectedDocuments = viewModel.selectedTaskContext.relatedDocuments || []
   const documentSummary = viewModel.selectedTaskContext.documentSummary || { required: 0, received: 0, missing: 0, label: 'No required documents' }
-  const taskTabs = viewModel.selectedTaskContext.tabs || [{ key: 'overview', label: 'Overview' }]
   const checklistItems = viewModel.selectedTaskContext.checklistItems || []
+  const rawTaskTabs = viewModel.selectedTaskContext.tabs || []
+  const taskTabs = [
+    { key: 'checklist', label: 'Checklist', count: checklistItems.length, readOnly: true },
+    ...rawTaskTabs.filter((tab) => ['documents', 'notes', 'activity'].includes(tab.key)),
+  ]
   const taskNotes = viewModel.selectedTaskContext.notes || []
   const taskActivity = viewModel.selectedTaskContext.activityFeed || []
   const statusMeta = WORKFLOW_STATUS_META[selectedTask?.displayStatus] || WORKFLOW_STATUS_META.not_started
@@ -6370,7 +6380,7 @@ function ArchlineTransferWorkspace({
 
   useEffect(() => {
     if (!taskTabs.some((tab) => tab.key === activeTaskTab)) {
-      setActiveTaskTab('overview')
+      setActiveTaskTab('checklist')
     }
   }, [activeTaskTab, taskTabs])
 
@@ -6453,115 +6463,89 @@ function ArchlineTransferWorkspace({
     if (nextTaskKey) {
       setSelectedTaskKey(nextTaskKey)
       setExpandedPhaseKeys((previous) => ({ ...previous, [viewModel.nextActionableTask.phaseKey]: true }))
-      setActiveTaskTab('overview')
+      setActiveTaskTab('checklist')
     }
     closeStatusDraft()
   }
 
   return (
     <>
-      <section className="space-y-4">
-        <ArchlinePanel className="px-5 py-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(180px,0.22fr)_minmax(240px,0.28fr)_minmax(360px,1fr)_minmax(300px,0.34fr)] xl:items-center">
-            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
-              <span className="text-xs font-semibold text-slate-500">Current Phase</span>
-              <strong className="mt-1 block text-base font-semibold text-emerald-800">{currentPhase?.label || 'Transfer Workflow'}</strong>
-            </div>
-            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-slate-500">Overall Progress</span>
-                <strong className="text-xs font-semibold text-slate-700">{viewModel.progress.percent}%</strong>
-              </div>
-              <p className="mt-1 text-sm font-semibold text-slate-950">{viewModel.progress.label}</p>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-emerald-700" style={{ width: `${viewModel.progress.percent}%` }} />
-              </div>
-            </div>
-            <div className="border-b border-slate-100 pb-3 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
-              <span className="text-xs font-semibold text-slate-500">Needs Attention</span>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[
-                  ['blocked', 'Blocked', viewModel.attention.blocked, 'bg-red-50 text-red-700 border-red-100'],
-                  ['overdue', 'Overdue', viewModel.attention.overdue, 'bg-orange-50 text-orange-700 border-orange-100'],
-                  ['due_this_week', 'Due This Week', viewModel.attention.dueThisWeek, 'bg-amber-50 text-amber-700 border-amber-100'],
-                  ['missing_documents', 'Missing Docs', viewModel.attention.missingDocuments, 'bg-blue-50 text-blue-700 border-blue-100'],
-                ].map(([keyValue, label, value, tone]) => (
-                  <button
-                    key={keyValue}
-                    type="button"
-                    className={`rounded-lg border px-3 py-2 text-left transition ${attentionFilter === keyValue ? 'ring-2 ring-emerald-700/20' : ''} ${tone}`}
-                    onClick={() => setAttentionFilter((previous) => previous === keyValue ? '' : keyValue)}
-                  >
-                    <strong className="block text-lg leading-none">{value}</strong>
-                    <span className="mt-1 block text-[0.7rem] font-semibold">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
-              <label className="relative min-w-0 flex-1 xl:max-w-[230px]">
-                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Field value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks or sections" className="h-10 pl-9 text-sm" />
-              </label>
-              <Button type="button" variant={showFilters ? 'accent' : 'secondary'} size="sm" onClick={() => setShowFilters((previous) => !previous)}>
-                <Filter size={15} />
-                Filters
-                {activeFilterCount ? <span className="rounded-full bg-emerald-700 px-1.5 py-0.5 text-[0.68rem] text-white">{activeFilterCount}</span> : null}
-              </Button>
-              {activeFilterCount || search ? (
-                <Button type="button" variant="ghost" size="sm" onClick={clearToolbarFilters}>
-                  Reset Filters
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {showFilters ? (
-            <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.34fr)]">
-              <div>
-                <span className="text-xs font-semibold text-slate-500">Phase</span>
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {viewModel.phases.map((phase) => (
-                    <button
-                      key={phase.key}
-                      type="button"
-                      className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                        phaseFilter === phase.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                      onClick={() => setPhaseFilter((previous) => previous === phase.key ? '' : phase.key)}
-                    >
-                      {phase.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-xs font-semibold text-slate-500">Status</span>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {statusFilterOptions.map(([value, label]) => (
-                    <button
-                      key={value || 'all'}
-                      type="button"
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                        statusFilter === value ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                      onClick={() => setStatusFilter(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </ArchlinePanel>
-
-        <section className="grid gap-4 xl:grid-cols-[minmax(280px,0.34fr)_minmax(0,1fr)_minmax(300px,0.34fr)]">
-          <aside className="space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-1">
+      <section className="grid gap-4 xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)]">
+          <aside className="space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-150px)] xl:overflow-y-auto xl:pr-1">
             <ArchlinePanel className="overflow-hidden">
               <div className="border-b border-slate-200 px-4 py-4">
-                <h2 className="text-sm font-semibold text-slate-950">Workflow Navigator</h2>
-                <p className="mt-1 text-xs text-slate-500">{viewModel.visibleTasks.length} of {viewModel.tasks.length} tasks visible</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-slate-950">Workflow Navigator</h2>
+                    <p className="mt-1 text-xs text-slate-500">{viewModel.visibleTasks.length} of {viewModel.tasks.length} tasks visible</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">{viewModel.progress.percent}%</span>
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-emerald-700" style={{ width: `${viewModel.progress.percent}%` }} />
+                </div>
+                <label className="relative mt-4 block">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Field value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" className="h-10 pl-9 text-sm" />
+                </label>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button type="button" variant={statusFilter === 'open' ? 'accent' : 'secondary'} size="sm" onClick={() => setStatusFilter((previous) => previous === 'open' ? '' : 'open')}>
+                    Hide completed
+                  </Button>
+                  <Button type="button" variant={showFilters ? 'accent' : 'secondary'} size="sm" onClick={() => setShowFilters((previous) => !previous)}>
+                    <Filter size={15} />
+                    Filters
+                    {activeFilterCount ? <span className="rounded-full bg-emerald-700 px-1.5 py-0.5 text-[0.68rem] text-white">{activeFilterCount}</span> : null}
+                  </Button>
+                  {activeFilterCount || search ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={clearToolbarFilters}>
+                      Reset
+                    </Button>
+                  ) : null}
+                </div>
+                {showFilters ? (
+                  <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500">Focus</span>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[
+                          ['blocked', 'Blocked', viewModel.attention.blocked],
+                          ['overdue', 'Overdue', viewModel.attention.overdue],
+                          ['due_this_week', 'Due This Week', viewModel.attention.dueThisWeek],
+                          ['missing_documents', 'Missing Docs', viewModel.attention.missingDocuments],
+                        ].map(([keyValue, label, value]) => (
+                          <button
+                            key={keyValue}
+                            type="button"
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              attentionFilter === keyValue ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                            onClick={() => setAttentionFilter((previous) => previous === keyValue ? '' : keyValue)}
+                          >
+                            {label} {value ? `(${value})` : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500">Status</span>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {statusFilterOptions.filter(([value]) => !['delayed', 'assigned_to_me', 'missing_documents'].includes(value)).map(([value, label]) => (
+                          <button
+                            key={value || 'all'}
+                            type="button"
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              statusFilter === value ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                            onClick={() => setStatusFilter(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="divide-y divide-slate-100">
                 {viewModel.phases.map((phase, phaseIndex) => {
@@ -6632,7 +6616,7 @@ function ArchlineTransferWorkspace({
                                 onClick={() => {
                                   setSelectedTaskKey(task.key)
                                   setExpandedPhaseKeys((previous) => ({ ...previous, [task.phaseKey]: true }))
-                                  setActiveTaskTab('overview')
+                                  setActiveTaskTab('checklist')
                                 }}
                               >
                                 <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-white ${taskMeta.border} ${taskMeta.text}`}>
@@ -6695,41 +6679,20 @@ function ArchlineTransferWorkspace({
 
                 {!completionReadiness.canComplete && completionReadiness.warnings?.length ? (
                   <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                    <div className="flex items-start gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
                       <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-700" />
                       <div>
                         <strong className="block text-sm font-semibold text-amber-900">Completion requirements still need attention</strong>
                         <p className="mt-1 text-sm leading-6 text-amber-800">{completionReadiness.warnings.slice(0, 2).join(' ')}</p>
                       </div>
+                      </div>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setActiveTaskTab('documents')}>
+                        View Details
+                      </Button>
                     </div>
                   </div>
                 ) : null}
-              </div>
-
-              <div className="flex flex-wrap gap-2 border-t border-slate-200 px-5 py-4">
-                {primaryTaskActions.map((action) => (
-                  <Button
-                    key={action.id}
-                    type="button"
-                    variant={action.status === 'completed' ? 'primary' : 'secondary'}
-                    size="sm"
-                    disabled={saving || action.disabled}
-                    title={action.reason || ''}
-                    onClick={() => openStatusDraft(selectedTask, action)}
-                  >
-                    {action.status === 'completed' ? <CheckCircle2 size={15} /> : null}
-                    {action.status === 'blocked' ? <AlertTriangle size={15} /> : null}
-                    {action.label}
-                  </Button>
-                ))}
-                {viewModel.availableActions.unsupported.map((action) => (
-                  <Button key={action.id} type="button" variant="ghost" size="sm" disabled title={action.reason}>
-                    {action.label}
-                  </Button>
-                ))}
-                <Button type="button" variant="ghost" size="sm" onClick={onAddNote}>
-                  <MoreHorizontal size={15} />
-                </Button>
               </div>
 
               <div className="border-t border-slate-200">
@@ -6820,27 +6783,40 @@ function ArchlineTransferWorkspace({
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <h3 className="text-sm font-semibold text-slate-950">Checklist</h3>
-                          <p className="mt-1 text-sm text-slate-500">Checklist rows are derived from configured task requirements. No per-item toggle mutation exists yet.</p>
+                          <p className="mt-1 text-sm text-slate-500">{selectedTask?.phaseLabel || 'Transfer'} requirements for this task.</p>
                         </div>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">Read-only</span>
                       </div>
                       <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
-                        {checklistItems.map((item) => (
-                          <div key={item.id} className="flex items-start gap-3 px-4 py-3">
-                            <span className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded border ${item.complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-400'}`}>
-                              {item.complete ? <CheckCircle2 size={13} /> : null}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <strong className="block text-sm font-semibold text-slate-950">{item.label}</strong>
-                              <span className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span>{toTitle(item.type)}</span>
-                                <span>{item.required ? 'Required' : 'Optional'}</span>
-                                {!item.persisted ? <span>Configured requirement</span> : null}
+                        {checklistItems.map((item) => {
+                          const blocked = item.type === 'document' && !item.complete
+                          const statusLabel = item.complete ? 'Completed' : blocked ? 'Blocked' : 'Pending'
+                          const statusClass = item.complete
+                            ? 'text-emerald-700'
+                            : blocked
+                              ? 'text-amber-700'
+                              : 'text-slate-500'
+                          return (
+                            <div key={item.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                              <span className="flex min-w-0 items-center gap-3">
+                                <span className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full border ${
+                                  item.complete
+                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                    : blocked
+                                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                      : 'border-slate-300 bg-white text-slate-400'
+                                }`}>
+                                  {item.complete ? <CheckCircle2 size={13} /> : blocked ? <AlertTriangle size={12} /> : null}
+                                </span>
+                                <span className="min-w-0">
+                                  <strong className="block truncate text-sm font-semibold text-slate-950">{item.label}</strong>
+                                  {item.description ? <span className="mt-1 block truncate text-xs text-slate-500">{item.description}</span> : null}
+                                </span>
                               </span>
-                              {item.description ? <span className="mt-1 block text-xs text-slate-500">{item.description}</span> : null}
-                            </span>
-                          </div>
-                        ))}
+                              <span className={`shrink-0 text-sm font-semibold ${statusClass}`}>{statusLabel}</span>
+                            </div>
+                          )
+                        })}
+                        {!checklistItems.length ? <p className="px-4 py-8 text-sm text-slate-500">No checklist requirements are mapped to this task.</p> : null}
                       </div>
                     </section>
                   ) : activeTaskTab === 'documents' ? (
@@ -6848,7 +6824,7 @@ function ArchlineTransferWorkspace({
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <h3 className="text-sm font-semibold text-slate-950">Task Documents</h3>
-                          <p className="mt-1 text-sm text-slate-500">These documents are matched to this task from configured document requirements and uploaded matter documents.</p>
+                          <p className="mt-1 text-sm text-slate-500">{documentSummary.label}</p>
                         </div>
                         <Button type="button" variant="secondary" size="sm" onClick={onUploadDocument}>
                           <Upload size={14} />
@@ -6925,83 +6901,33 @@ function ArchlineTransferWorkspace({
                   )}
                 </div>
               </div>
+
+              <div className="sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+                {primaryTaskActions.map((action) => (
+                  <Button
+                    key={action.id}
+                    type="button"
+                    variant={action.status === 'completed' ? 'primary' : 'secondary'}
+                    size="sm"
+                    disabled={saving || action.disabled}
+                    title={action.reason || ''}
+                    onClick={() => openStatusDraft(selectedTask, action)}
+                  >
+                    {action.status === 'completed' ? <CheckCircle2 size={15} /> : null}
+                    {action.status === 'blocked' ? <AlertTriangle size={15} /> : null}
+                    {action.status === 'waiting' ? <Clock3 size={15} /> : null}
+                    {action.label}
+                  </Button>
+                ))}
+                <Button type="button" variant="ghost" size="sm" onClick={onAddNote}>
+                  <MoreHorizontal size={15} />
+                  More Actions
+                </Button>
+              </div>
             </ArchlinePanel>
           </main>
 
-          <aside className="space-y-4 xl:max-h-[calc(100vh-230px)] xl:overflow-y-auto xl:pr-1">
-            <ArchlinePanel
-              title="Required Documents"
-              action={<span className={`text-xs font-semibold ${documentSummary.missing ? 'text-amber-700' : 'text-emerald-700'}`}>{documentSummary.label}</span>}
-              className="p-4"
-            >
-              <div className="mb-3 grid grid-cols-3 gap-2">
-                {[
-                  ['Required', documentSummary.required],
-                  ['Received', documentSummary.received],
-                  ['Missing', documentSummary.missing],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center">
-                    <strong className="block text-base font-semibold text-slate-950">{value}</strong>
-                    <span className="mt-0.5 block text-[0.68rem] font-semibold text-slate-500">{label}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-2">
-                {selectedDocuments.slice(0, 6).map((document) => (
-                  <article key={document.id || document.sourceRequirementKey} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
-                    <FileText size={15} className={`mt-0.5 shrink-0 ${document.ready ? 'text-emerald-700' : 'text-amber-700'}`} />
-                    <div className="min-w-0 flex-1">
-                      <strong className="block truncate text-sm font-semibold text-slate-950">{document.displayName || document.label || document.name || toTitle(document.sourceRequirementKey)}</strong>
-                      <span className={`mt-1 inline-flex rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(document.status)}`}>
-                        {getDocumentCommandStatusLabel(document.status)}
-                      </span>
-                    </div>
-                  </article>
-                ))}
-                {!selectedDocuments.length ? <p className="text-sm text-slate-500">No required documents are mapped to this task.</p> : null}
-              </div>
-              <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={onUploadDocument}>
-                <Upload size={14} />
-                Upload Document
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="mt-2 w-full justify-center" onClick={onOpenDocuments}>
-                Open Document Library
-              </Button>
-            </ArchlinePanel>
-
-            <ArchlinePanel title="Key Dates" className="p-4">
-              <div className="divide-y divide-slate-100">
-                {(viewModel.selectedTaskContext.keyDates || []).slice(0, 6).map((item) => (
-                  <div key={item.key || item.label} className="flex items-center justify-between gap-3 py-3 text-sm">
-                    <span className="text-slate-600">{item.label}</span>
-                    <strong className="text-right font-medium text-slate-950">{item.value || item.date || 'Not set'}</strong>
-                  </div>
-                ))}
-              </div>
-            </ArchlinePanel>
-
-            <ArchlinePanel title="Parties" className="p-4">
-              <div className="divide-y divide-slate-100">
-                {(viewModel.selectedTaskContext.parties || []).slice(0, 4).map((item) => (
-                  <button
-                    key={`${item.label || item.role}-${item.value || item.name}`}
-                    type="button"
-                    className="flex w-full items-center justify-between gap-3 py-3 text-left text-sm transition hover:text-emerald-800"
-                    onClick={() => onOpenParties?.(item)}
-                    disabled={!onOpenParties}
-                  >
-                    <span className="flex items-center gap-2 text-slate-600">
-                      <UserRound size={15} />
-                      {item.label || item.role}
-                    </span>
-                    <strong className="text-right font-medium text-slate-950">{item.value || item.name || 'Pending'}</strong>
-                  </button>
-                ))}
-              </div>
-            </ArchlinePanel>
-          </aside>
         </section>
-      </section>
 
       <Modal
         open={canUpdateSteps && statusDraft.open}
