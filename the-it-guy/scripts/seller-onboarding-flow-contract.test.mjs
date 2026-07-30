@@ -287,7 +287,7 @@ test('shares visible and required fields through the flow helper', () => {
   assert.ok(flow.required_fields.includes('seller.trust.authority_basis'))
   assert.ok(flow.required_fields.includes('property.category'))
   assert.ok(flow.required_fields.includes('property.structure_type'))
-  assert.ok(flow.required_fields.includes('property.erf_number'))
+  assert.equal(flow.required_fields.includes('property.erf_number'), false)
   assert.ok(flow.required_fields.includes('property.rates_taxes'))
   assert.ok(flow.required_fields.includes('property.levies_or_not_applicable'))
   assert.ok(flow.required_fields.includes('property.utilities.water_billing_type'))

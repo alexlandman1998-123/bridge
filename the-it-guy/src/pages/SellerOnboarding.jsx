@@ -3018,11 +3018,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
   const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
   const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
-  const mandateRequiresErfNumber = useMemo(() => {
+  const mandateRequestsTitleReference = useMemo(() => {
     const structureType = normalizePropertyStructureType(form?.propertyStructureType, { fallback: '' })
-    return (
-      ['full_title', 'freehold', 'estate', 'agricultural_holding'].includes(structureType)
-    )
+    return ['full_title', 'freehold', 'estate', 'agricultural_holding'].includes(structureType)
   }, [form?.propertyStructureType])
   const mandateRequiresSellerSpouseEmail = useMemo(
     () => mandateRequiresSpouseEmail(form, ownershipBranch),
@@ -3867,9 +3865,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       if (missingAddressItems.length) {
         return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
-      }
-      if (mandateRequiresErfNumber && !form.erfNumber) {
-        return 'Title / ERF / portion number is required for mandate generation on this property type.'
       }
       const sectionalIdentifier = form.sectionNumber || form.unitNumber
       if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
@@ -5465,8 +5460,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.country} onChange={(event) => handlePropertyAddressUpdate({ country: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        {mandateRequiresErfNumber ? 'Title / ERF / portion number' : 'Title / ERF / portion number (optional)'}
-                        <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} />
+                        {mandateRequestsTitleReference ? 'Title / ERF / portion number (if available)' : 'Title / ERF / portion number (optional)'}
+                        <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} placeholder={mandateRequestsTitleReference ? 'Use the title deed reference if you have it' : ''} />
                       </label>
                     </div>
                   </div>

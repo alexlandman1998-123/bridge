@@ -677,13 +677,6 @@ function mergeUnique(...groups) {
   return merged
 }
 
-function propertyRequiresErfNumber(propertyModel = {}) {
-  const structureType = normalizeSellerStructureType(propertyModel.structure_type, { fallback: '' })
-  return (
-    ['full_title', 'freehold', 'agricultural_holding'].includes(structureType)
-  )
-}
-
 function sellerRequiresSpouseEmailForMandate(ownershipModel = {}, form = {}, source = {}) {
   const branch = normalizeKey(ownershipModel.branch || resolveSellerBranch(form, {}, source))
   const structureType = normalizeKey(ownershipModel.structure_type || form?.ownerStructureType || form?.ownershipType)
@@ -1208,9 +1201,6 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
   const estateOverlayDefinition = propertyModel.estate_or_hoa && propertyBranch !== 'estate_hoa'
     ? PROPERTY_BRANCH_RULES.estate_hoa
     : null
-  const mandateRequiredPropertyFields = propertyRequiresErfNumber(resolvedPropertyModel)
-    ? ['property.erf_number']
-    : []
   const mandateRequiredSellerFields = sellerRequiresSpouseEmailForMandate(resolvedOwnershipModel, form, source)
     ? ['seller.spouse.email']
     : []
@@ -1229,7 +1219,6 @@ export function resolveSellerOnboardingFlowContract(form = {}, listing = {}, fac
     CORE_PROPERTY_RULES.requiredFields,
     propertyDefinition.requiredFields,
     estateOverlayDefinition?.requiredFields,
-    mandateRequiredPropertyFields,
   ))
   const optionalFields = migrateSellerOnboardingFieldListToV2(mergeUnique(
     CORE_SELLER_RULES.optionalFields,

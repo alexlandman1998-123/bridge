@@ -110,6 +110,7 @@ export function buildLegalDocumentRequirementDraftFromPlaceholders(placeholders 
 export function resolveLegalDocumentScenarioRequirements(options = {}) {
   const draft = asRecord(options.draft)
   const profile = options.scenarioProfile || resolveLegalDocumentScenarioProfile(options)
+  const hasPropertyAddress = normalizeText(draft.propertyAddress) !== ''
   const requiredKeys = unique([
     ...requiredPartyFields('seller', profile.sellerClauseProfile),
     ...(profile.packetType === 'otp' ? requiredPartyFields('buyer', profile.buyerClauseProfile) : []),
@@ -117,7 +118,7 @@ export function resolveLegalDocumentScenarioRequirements(options = {}) {
     'propertyTitleType',
     profile.propertyClauseProfile === 'sectional_title' ? 'unitNumber' : '',
     profile.propertyClauseProfile === 'sectional_title' ? 'complexName' : '',
-    profile.propertyClauseProfile === 'full_title' ? 'erfNumber' : '',
+    profile.propertyClauseProfile === 'full_title' && !hasPropertyAddress ? 'erfNumber' : '',
     profile.packetType === 'otp' ? 'purchasePrice' : '',
     profile.financeClauseProfile === 'bond' ? 'bondAmount' : '',
     profile.financeClauseProfile === 'cash' ? 'cashAmount' : '',

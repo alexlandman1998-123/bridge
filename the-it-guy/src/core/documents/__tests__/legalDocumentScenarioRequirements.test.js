@@ -83,10 +83,10 @@ test('reports readiness from the same scenario-specific field list', () => {
       sellerMaritalRegime: 'out_of_community',
       propertyAddress: '1 Main Road',
       propertyTitleType: 'full_title',
-      erfNumber: '1234',
     },
   })
 
   assert.equal(requirements.complete, true)
   assert.deepEqual(requirements.missingFields, [])
+  assert.ok(!requirements.requiredFieldKeys.includes('erfNumber'))
 })
