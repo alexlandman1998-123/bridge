@@ -1,0 +1,34 @@
+{
+  "version": "202607310006",
+  "stream": "other",
+  "file": "202607310006_legal_document_agent_notification_sequence.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging train execution",
+  "approvedBy": "Alexander Landman instruction to validate PR #8 in staging",
+  "capturedAt": "2026-07-31T18:57:00+02:00",
+  "notes": [
+    "Applied the original migration to staging only through the Phase 6 runner.",
+    "Verified seven functions, five automation definitions, two triggers, three indexes, and the active hourly cron job.",
+    "Read-only helper and reminder dry-run smoke checks passed. No production mutation was performed."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607310006 --confirm APPLY_TO_STAGING_ONLY",
+    "Read-only staging catalog verification for functions, automation definitions, triggers, indexes, cron, and migration ledger",
+    "Read-only staging smoke verification for legal-document helpers and bridge_queue_legal_document_signing_reminders_phase1(100, now(), true)",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607310006 --evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "verification": {
+    "catalog": "All expected legal-document notification objects are present on staging project vaszuxjeoajeuhlcnzzf.",
+    "behavior": "Helper functions returned expected values and the reminder queue dry-run returned success with zero emitted notifications.",
+    "rollbackOrNoResidue": "No production mutation. Staging-only target confirmed by project-ref and recovery guards."
+  },
+  "ledgerRecordedAt": "2026-07-31T16:59:10.854Z"
+}

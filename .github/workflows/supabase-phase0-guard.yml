@@ -6,6 +6,8 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/supabase-phase0-guard.mjs'
       - 'scripts/supabase-phase0-guard.test.mjs'
+      - 'scripts/supabase-phase0-migration-freeze.mjs'
+      - 'docs/supabase-ledger-drift-resolution.json'
       - 'docs/supabase-migration-phase-0-stabilization.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
@@ -17,6 +19,8 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/supabase-phase0-guard.mjs'
       - 'scripts/supabase-phase0-guard.test.mjs'
+      - 'scripts/supabase-phase0-migration-freeze.mjs'
+      - 'docs/supabase-ledger-drift-resolution.json'
       - 'docs/supabase-migration-phase-0-stabilization.md'
       - 'docs/database-release-runbook.md'
       - 'package.json'
@@ -50,14 +54,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          added_migrations="$(git diff --diff-filter=A --name-only "$BASE_SHA" "$HEAD_SHA" -- 'supabase/migrations/*.sql')"
-          if [ -n "$added_migrations" ]; then
-            echo "Phase 0 blocks new migration files while ledger drift is unresolved:"
-            echo "$added_migrations"
-            echo "Use the database-reconciliation label only for a reviewed history restoration or corrective migration."
-            exit 1
-          fi
+        run: node scripts/supabase-phase0-migration-freeze.mjs
 
       - name: Report local migration state
         run: node scripts/supabase-phase0-guard.mjs --status

@@ -26,8 +26,8 @@ for (const [source, token, message] of [
   [notifications, 'organizerName: normalizeText(metadata?.organizerName', 'Calendar email must receive organizer identity.'],
   [component, 'buildAttorneyInviteOutcome(created.delivery)', 'Modal feedback must use the real delivery result.'],
   [delivery, 'Appointment saved, but the invite email could not be delivered.', 'Delivery failure must not be reported as sent.'],
-  [appointmentEmail, "const method = isCancellation ? 'CANCEL' : 'REQUEST'", 'Calendar attachment must distinguish request and cancellation.'],
-  [appointmentEmail, "? 'TENTATIVE'", 'Pending invites must be emitted as tentative calendar events.'],
+  [appointmentEmail, 'const method = isCancellation ? "CANCEL" : "REQUEST"', 'Calendar attachment must distinguish request and cancellation.'],
+  [appointmentEmail, '? "TENTATIVE"', 'Pending invites must be emitted as tentative calendar events.'],
   [appointmentEmail, 'X-WR-TIMEZONE:', 'Calendar attachment must identify its timezone.'],
   [emailTypes, 'timezone?: string;', 'Appointment email payload must carry timezone.'],
 ]) {

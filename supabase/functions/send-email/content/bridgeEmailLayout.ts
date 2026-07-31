@@ -157,6 +157,7 @@ export function renderBridgeEmailLayout({
   supportPhone = "",
   organisationTagline = "",
   supportWebsite = "",
+  footerText = "",
   branding,
 }: {
   preheader?: string;
@@ -173,6 +174,7 @@ export function renderBridgeEmailLayout({
   supportPhone?: string;
   organisationTagline?: string;
   supportWebsite?: string;
+  footerText?: string;
   branding?: BridgeEmailLayoutBranding;
 }) {
   const resolvedBranding = normalizeEmailBranding({
@@ -184,7 +186,6 @@ export function renderBridgeEmailLayout({
     website: supportWebsite,
     ...(branding || {}),
   });
-  const safeOrganisationName = escapeHtml(resolvedBranding.organisationName);
   const primaryColor = normalizeBrandColor(
     resolvedBranding.primaryColor,
     "#07152f",
@@ -215,6 +216,7 @@ export function renderBridgeEmailLayout({
       : "",
   ].filter(Boolean);
   const supportLine = supportParts.join(" · ");
+  const safeFooterText = escapeHtml(footerText || `${resolvedBranding.organisationName} · Powered by Arch9`);
   const headerBrandHtml = renderBridgeBrandMark({
     organisationName: resolvedBranding.organisationName,
     logoUrl: resolvedBranding.logoUrl || resolvedBranding.logoIconUrl,
@@ -260,7 +262,7 @@ export function renderBridgeEmailLayout({
       ? `<p style="margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: #35506d;">Support: ${supportLine}</p>`
       : ""
   }
-          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #748aa2;">${safeOrganisationName} · Powered by Arch9</p>
+          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #748aa2;">${safeFooterText}</p>
         </div>
       </div>
     </div>

@@ -4,6 +4,10 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  evaluateMigrationFreeze,
+  isResolvedLedgerRecord,
+} from './supabase-phase0-migration-freeze.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const guardPath = path.join(repoRoot, 'scripts', 'supabase-phase0-guard.mjs')
@@ -44,5 +48,36 @@ const override = runGuard(
 )
 assert.equal(override.status, 0, override.stderr)
 assert.match(override.stderr, /Phase 0 override accepted\./)
+
+const resolvedLedger = {
+  status: 'LEDGER_DRIFT_RESOLVED',
+  resolved: true,
+  counts: { blockers: 0 },
+  blockers: [],
+}
+const unresolvedLedger = {
+  status: 'LEDGER_DRIFT_BLOCKED',
+  resolved: false,
+  counts: { blockers: 1 },
+  blockers: ['unresolved drift'],
+}
+
+assert.equal(isResolvedLedgerRecord(resolvedLedger), true)
+assert.equal(isResolvedLedgerRecord(unresolvedLedger), false)
+assert.equal(evaluateMigrationFreeze({
+  addedMigrations: [],
+  baseLedger: unresolvedLedger,
+  headLedger: unresolvedLedger,
+}).allowed, true)
+assert.equal(evaluateMigrationFreeze({
+  addedMigrations: ['supabase/migrations/202607310006_legal_document_agent_notification_sequence.sql'],
+  baseLedger: resolvedLedger,
+  headLedger: resolvedLedger,
+}).allowed, true)
+assert.equal(evaluateMigrationFreeze({
+  addedMigrations: ['supabase/migrations/202607310006_legal_document_agent_notification_sequence.sql'],
+  baseLedger: unresolvedLedger,
+  headLedger: resolvedLedger,
+}).allowed, false)
 
 console.log('Supabase Phase 0 guard tests passed.')

@@ -59,6 +59,23 @@ Deno.test("renderBridgeEmailLayout remains backward compatible with legacy props
   assertIncludes(html, "mailto:legacy@example.test");
 });
 
+Deno.test("renderBridgeEmailLayout supports white-label footer copy", () => {
+  const html = renderBridgeEmailLayout({
+    title: "Mandate Ready",
+    greeting: "Hi Seller,",
+    contentHtml: "<p>Body</p>",
+    footerText: "Kingstons Property",
+    branding: {
+      organisationName: "Kingstons Property",
+      primaryColor: "#123456",
+      secondaryColor: "#abcdef",
+    },
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertNotIncludes(html, "Powered by Arch9");
+});
+
 Deno.test("renderBridgeEmailLayout falls back to organisation text when logo is missing", () => {
   const html = renderBridgeEmailLayout({
     title: "No Logo",

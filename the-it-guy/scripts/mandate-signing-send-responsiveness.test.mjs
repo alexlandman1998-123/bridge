@@ -24,6 +24,12 @@ const packetService = await readFile(new URL('../src/core/documents/packetServic
 assert.doesNotMatch(packetService, /continuing with a generated preview-only draft/)
 assert.match(packetService, /A failed render is never a generated legal document/)
 
+const sellerMandateEmail = await readFile(new URL('../../supabase/functions/send-email/handlers/sellerMandateSent.ts', import.meta.url), 'utf8')
+assert.match(sellerMandateEmail, /brandedOrganisationName/)
+assert.match(sellerMandateEmail, /secure \$\{brandedOrganisationName\} signing link/)
+assert.match(sellerMandateEmail, /footerText: brandedOrganisationName/)
+assert.doesNotMatch(sellerMandateEmail, /secure Arch9 link/)
+
 const handleSendStart = page.indexOf('const handleSend = useCallback')
 const mandateSendStart = page.indexOf("if (packetType === 'mandate' && leadContext.lead?.leadId)", handleSendStart)
 const mandateSendEnd = page.indexOf("window.dispatchEvent(new Event('itg:transaction-updated'))", mandateSendStart)
