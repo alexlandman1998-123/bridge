@@ -1,0 +1,38 @@
+{
+  "version": "202607310006",
+  "stream": "other",
+  "file": "202607310006_legal_document_agent_notification_sequence.sql",
+  "productionRoute": "production_apply_sql",
+  "route": "production_apply_sql",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production one-version promotion train",
+  "approvedBy": "Alexander Landman instruction to promote the staged legal-document migration separately",
+  "capturedAt": "2026-07-31T19:50:00+02:00",
+  "notes": [
+    "Applied only supabase/migrations/202607310006_legal_document_agent_notification_sequence.sql through the Phase 7 production runner.",
+    "Verified five automation definitions, seven functions, three indexes, two triggers, and the hourly cron job on production.",
+    "Verified the migration version was not recorded before the ledger step and the dependency 202607290005 was already recorded.",
+    "Read-only helper checks and bridge_queue_legal_document_signing_reminders_phase1(100, now(), true) dry-run passed.",
+    "No broad Supabase push, reset, repair batch, or unrelated migration was executed."
+  ],
+  "verification": {
+    "catalog": "All expected legal-document notification objects are present on production project isdowlnollckzvltkasn.",
+    "behavior": "UUID and document-label helpers returned expected values; reminder queue dry-run returned success.",
+    "ledgerBeforeRecord": "202607310006 was absent before the ledger step.",
+    "dependency": "202607290005 was already recorded in the production ledger.",
+    "rollbackOrNoResidue": "Production recovery evidence was present and the single-file transaction completed without a reported error."
+  },
+  "commands": [
+    "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION",
+    "Read-only production catalog and behavior verification for legal-document notification objects",
+    "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --production-evidence docs/production-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION"
+  ]
+}

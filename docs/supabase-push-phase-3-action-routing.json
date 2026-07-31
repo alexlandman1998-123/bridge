@@ -903,6 +903,34 @@
         "Apply only this file; do not run a broad db push.",
         "Record the staging ledger only after reviewed evidence exists."
       ]
+    },
+    {
+      "version": "202607310006",
+      "stream": "other",
+      "dependsOn": "202607290005",
+      "module": "notification_automation",
+      "file": "202607310006_legal_document_agent_notification_sequence.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 17,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607310006 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607310006 --evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202607310006-other.json",
+      "notes": [
+        "Staging catalog and behavior checks passed before production promotion.",
+        "Apply only this file; do not run a broad db push.",
+        "Production target state and ledger were verified after the single-version promotion."
+      ]
     }
   ],
   "actionCounts": {

@@ -398,6 +398,18 @@
       "objectCount": 8,
       "action": "apply_original_after_dependency_check",
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202607310006",
+      "stream": "other",
+      "dependsOn": "202607290005",
+      "module": "notification_automation",
+      "file": "202607310006_legal_document_agent_notification_sequence.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 17,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     }
   ]
 }
