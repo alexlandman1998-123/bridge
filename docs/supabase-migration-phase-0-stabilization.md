@@ -2,6 +2,10 @@
 
 Date started: 2026-07-12
 
+## Current status
+
+This is the historical Phase 0 stabilization runbook. The broad-push guard and its CI freeze were retired through a reviewed closeout change after the live reconciliation gate recorded `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT` with 33/33 complete evidence rows, zero ledger drift, locked recovery evidence, and seven physical backups. The procedures below explain the former freeze and are retained for audit history; they are not the current release workflow.
+
 ## Purpose
 
 The linked Supabase project has migration ledger drift. Until the ledger is reconciled, broad migration commands can misreport state, skip required objects, or attempt the wrong pending set. Phase 0 keeps production stable while the reconciliation work is prepared.

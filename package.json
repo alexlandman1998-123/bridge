@@ -3,7 +3,6 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "supabase:phase0": "node scripts/supabase-phase0-guard.mjs",
     "supabase:phase1": "node scripts/supabase-phase1-reconciliation.mjs --fetch-remote --write",
     "supabase:phase1:local": "node scripts/supabase-phase1-reconciliation.mjs --write",
     "supabase:phase2": "node scripts/supabase-phase2-onboarding-readiness.mjs --fetch-remote --rest-probe --write",
@@ -46,8 +45,7 @@
     "test:supabase-resolve-ledger-drift": "node scripts/supabase-resolve-ledger-drift.test.mjs",
     "test:supabase-push-phase6": "node scripts/supabase-push-phase6-record-production-evidence.test.mjs",
     "test:supabase-push-phase7": "node scripts/supabase-push-phase7-run-closeout.test.mjs",
-    "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
-    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
+    "test:supabase-phase0-retirement": "node scripts/supabase-phase0-retirement.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

@@ -7,7 +7,7 @@ Production project: `isdowlnollckzvltkasn`
 
 **Status: READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT**
 
-The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`. Even a ready report authorizes a reviewed guard-removal change; it does not remove the guard automatically.
+The Phase 0 broad-push freeze was retired through a separate reviewed change after this report recorded `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`.
 
 ## Gate Summary
 
@@ -57,4 +57,4 @@ No rows.
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 33 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+The closeout gates passed before the separate guard-retirement change: all 33 manifest versions have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested.
