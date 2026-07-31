@@ -411,16 +411,22 @@ function buildDependencySummary(tasks = [], task = null) {
       status: 'not_started',
       label: 'No task selected',
       blockers: [],
+      advisory: false,
+      blocksWork: false,
     }
   }
 
   const taskIndex = tasks.findIndex((item) => item.key === task.key)
   const earlierTasks = taskIndex > 0 ? tasks.slice(0, taskIndex) : []
   const blockers = earlierTasks.filter((item) => item.displayStatus !== 'completed')
+  const advisory = blockers.length > 0
   return {
-    status: blockers.length ? 'waiting' : 'completed',
-    label: blockers.length ? `${blockers.length} preceding task${blockers.length === 1 ? '' : 's'} still open` : 'Dependencies clear',
+    status: advisory ? 'waiting' : 'completed',
+    label: advisory ? `${blockers.length} earlier task${blockers.length === 1 ? '' : 's'} still open` : 'Dependencies clear',
     blockers: blockers.slice(-3),
+    advisory,
+    blocksWork: false,
+    helper: advisory ? 'You can work ahead, but review these before completion.' : 'No earlier open tasks.',
   }
 }
 

@@ -133,11 +133,20 @@ try {
       }),
     )
 
-    assert.match(markup, /External Finance Documents/)
+    assert.match(markup, /Client Requests/)
+    assert.match(markup, /Outstanding/)
     assert.match(markup, /Buyer \/ Attorney/)
     assert.doesNotMatch(markup, /Bank Applications/)
     assert.doesNotMatch(markup, /Instruction to Attorney/)
     assert.doesNotMatch(markup, /Bond Application Owner/)
+  })
+
+  await test('finance workspace subnavigation does not trigger router navigation', () => {
+    const source = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'components', 'transaction', 'TransactionFinanceCommandCenter.jsx'), 'utf8')
+
+    assert.doesNotMatch(source, /useNavigate|useLocation/, 'finance submenu state should not use React Router navigation')
+    assert.doesNotMatch(source, /navigate\(\{ pathname: location\.pathname/, 'finance submenu clicks should not mutate the route via navigate')
+    assert.match(source, /window\.history\.replaceState/, 'finance submenu may update the address bar without notifying the router')
   })
 
   await test('unit detail bond workspace and structure cards are owner-aware', () => {

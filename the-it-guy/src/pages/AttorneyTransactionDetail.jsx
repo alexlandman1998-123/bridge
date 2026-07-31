@@ -6318,7 +6318,8 @@ function ArchlineTransferWorkspace({
   const taskNotes = viewModel.selectedTaskContext.notes || []
   const taskActivity = viewModel.selectedTaskContext.activityFeed || []
   const statusMeta = WORKFLOW_STATUS_META[selectedTask?.displayStatus] || WORKFLOW_STATUS_META.not_started
-  const dependencyMeta = WORKFLOW_STATUS_META[selectedTask?.dependencySummary?.status] || WORKFLOW_STATUS_META.not_started
+  const dependencySummary = selectedTask?.dependencySummary || {}
+  const dependencyMeta = WORKFLOW_STATUS_META[dependencySummary.status] || WORKFLOW_STATUS_META.not_started
   const completionReadiness = selectedTask?.completionReadiness || { canComplete: false, warnings: [] }
   const activeFilterCount = [attentionFilter, phaseFilter, statusFilter].filter(Boolean).length
   const navigatorFiltersActive = Boolean(search || attentionFilter || phaseFilter || statusFilter)
@@ -6470,10 +6471,10 @@ function ArchlineTransferWorkspace({
 
   return (
     <>
-      <section className="grid gap-4 xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)]">
-          <aside className="space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-150px)] xl:overflow-y-auto xl:pr-1">
-            <ArchlinePanel className="overflow-hidden">
-              <div className="border-b border-slate-200 px-4 py-4">
+      <section className="grid gap-4 xl:sticky xl:top-24 xl:h-[calc(100dvh-150px)] xl:min-h-[560px] xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] xl:overflow-hidden">
+          <aside className="min-h-0">
+            <ArchlinePanel className="flex h-full min-h-0 flex-col overflow-hidden">
+              <div className="shrink-0 border-b border-slate-200 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="text-sm font-semibold text-slate-950">Workflow Navigator</h2>
@@ -6547,7 +6548,7 @@ function ArchlineTransferWorkspace({
                   </div>
                 ) : null}
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto overscroll-contain">
                 {viewModel.phases.map((phase, phaseIndex) => {
                   const phaseTasks = phase.tasks.filter((task) => visibleTaskKeys.has(task.key))
                   if (!phaseTasks.length) return null
@@ -6646,9 +6647,9 @@ function ArchlineTransferWorkspace({
             </ArchlinePanel>
           </aside>
 
-          <main className="min-w-0 space-y-4">
-            <ArchlinePanel className="overflow-hidden">
-              <div className="px-5 py-5">
+          <main className="min-h-0 min-w-0">
+            <ArchlinePanel className="flex h-full min-h-0 flex-col overflow-hidden">
+              <div className="shrink-0 px-5 py-5">
                 <div className="min-w-0">
                   <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Current Task</span>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -6665,7 +6666,7 @@ function ArchlineTransferWorkspace({
                     ['Current Status', statusMeta.label, <span key="status" className={`inline-block size-2 rounded-full ${statusMeta.dot}`} />],
                     ['Assignee', selectedTask?.ownerLabel || workflow?.assignedDisplay || 'Matter team', <UserRound key="assignee" size={15} className="text-slate-500" />],
                     ['Due Date', formatDate(selectedTask?.dueDate, 'Not set'), <CalendarDays key="due" size={15} className="text-slate-500" />],
-                    ['Dependencies', selectedTask?.dependencySummary?.label || 'Dependencies clear', <span key="dependency" className={`inline-block size-2 rounded-full ${dependencyMeta.dot}`} />],
+                    [dependencySummary.advisory ? 'Sequence Note' : 'Dependencies', dependencySummary.label || 'Dependencies clear', <span key="dependency" className={`inline-block size-2 rounded-full ${dependencyMeta.dot}`} />],
                   ].map(([label, value, icon]) => (
                     <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                       <span className="text-xs font-semibold text-slate-500">{label}</span>
@@ -6683,7 +6684,7 @@ function ArchlineTransferWorkspace({
                       <div className="flex min-w-0 items-start gap-3">
                       <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-700" />
                       <div>
-                        <strong className="block text-sm font-semibold text-amber-900">Completion requirements still need attention</strong>
+                        <strong className="block text-sm font-semibold text-amber-900">You can work ahead, but completion still needs evidence</strong>
                         <p className="mt-1 text-sm leading-6 text-amber-800">{completionReadiness.warnings.slice(0, 2).join(' ')}</p>
                       </div>
                       </div>
@@ -6695,7 +6696,7 @@ function ArchlineTransferWorkspace({
                 ) : null}
               </div>
 
-              <div className="border-t border-slate-200">
+              <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200">
                 <div className="flex gap-6 overflow-x-auto px-5 pt-4">
                   {taskTabs.map((tab) => (
                     <button
@@ -6710,7 +6711,7 @@ function ArchlineTransferWorkspace({
                   ))}
                 </div>
 
-                <div className="grid gap-4 px-5 py-5 lg:grid-cols-2">
+                <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain px-5 py-5 lg:grid-cols-2">
                   {activeTaskTab === 'overview' ? (
                     <>
                       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -6726,11 +6727,14 @@ function ArchlineTransferWorkspace({
                         <h3 className="text-sm font-semibold text-slate-950">Dependencies</h3>
                         <div className="mt-2 rounded-lg bg-slate-50 px-3 py-3">
                           <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${dependencyMeta.border} ${dependencyMeta.bg} ${dependencyMeta.text}`}>
-                            {selectedTask?.dependencySummary?.label || 'Dependencies clear'}
+                            {dependencySummary.label || 'Dependencies clear'}
                           </span>
-                          {selectedTask?.dependencySummary?.blockers?.length ? (
+                          {dependencySummary.helper ? (
+                            <p className="mt-2 text-sm leading-6 text-slate-600">{dependencySummary.helper}</p>
+                          ) : null}
+                          {dependencySummary.blockers?.length ? (
                             <div className="mt-3 space-y-2">
-                              {selectedTask.dependencySummary.blockers.map((task) => (
+                              {dependencySummary.blockers.map((task) => (
                                 <div key={task.key} className="flex items-center justify-between gap-3 text-sm">
                                   <span className="min-w-0 truncate text-slate-700">{task.label}</span>
                                   <span className="shrink-0 text-xs font-semibold text-amber-700">{task.statusLabel}</span>
@@ -6902,7 +6906,7 @@ function ArchlineTransferWorkspace({
                 </div>
               </div>
 
-              <div className="sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+              <div className="z-10 flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
                 {primaryTaskActions.map((action) => (
                   <Button
                     key={action.id}

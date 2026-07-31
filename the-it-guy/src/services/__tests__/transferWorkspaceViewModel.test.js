@@ -81,6 +81,8 @@ assert.equal(viewModel.currentPhase.total, 7)
 assert.equal(viewModel.selectedTask.completionReadiness.canComplete, false)
 assert.ok(viewModel.selectedTask.completionReadiness.missingRequiredDocuments.length > 0)
 assert.equal(viewModel.selectedTask.dependencySummary.status, 'completed')
+assert.equal(viewModel.selectedTask.dependencySummary.advisory, false)
+assert.equal(viewModel.selectedTask.dependencySummary.blocksWork, false)
 assert.ok(viewModel.nextActionableTask)
 
 const relatedKeys = viewModel.selectedTaskContext.relatedDocuments.map((document) => document.sourceRequirementKey)
@@ -99,6 +101,20 @@ assert.deepEqual(
 assert.equal(viewModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, true)
 assert.ok(viewModel.availableActions.unsupported.some((action) => action.status === 'delayed'))
 assert.ok(viewModel.availableActions.unsupported.some((action) => action.status === 'not_applicable'))
+
+const outOfSequenceModel = buildTransferWorkspaceViewModel({
+  workflow,
+  selectedTaskKey: 'transfer_documents_prepared',
+})
+const outOfSequenceActions = new Map(outOfSequenceModel.availableActions.primary.map((action) => [action.id, action]))
+assert.equal(outOfSequenceModel.selectedTask.key, 'transfer_documents_prepared')
+assert.equal(outOfSequenceModel.selectedTask.dependencySummary.advisory, true)
+assert.equal(outOfSequenceModel.selectedTask.dependencySummary.blocksWork, false)
+assert.ok(outOfSequenceModel.selectedTask.dependencySummary.blockers.length > 0)
+assert.equal(outOfSequenceActions.get('mark_in_progress')?.disabled, false)
+assert.equal(outOfSequenceActions.get('mark_waiting')?.disabled, false)
+assert.equal(outOfSequenceActions.get('mark_blocked')?.disabled, false)
+assert.equal(outOfSequenceActions.get('mark_complete')?.disabled, true)
 
 assert.equal(viewModel.unsupportedCapabilities.editableTaskAssignee, true)
 assert.equal(viewModel.unsupportedCapabilities.persistedChecklistItems, true)

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import {
   BadgeCheck,
   CheckCircle2,
@@ -91,6 +90,14 @@ const FINANCE_WORKSPACE_TABS = [
 function normalizeFinanceWorkspaceKey(value = '') {
   const normalized = String(value || '').trim().toLowerCase().replaceAll('_', '-')
   return FINANCE_WORKSPACE_TABS.some((tab) => tab.key === normalized) ? normalized : ''
+}
+
+function getInitialFinanceWorkspaceKey(defaultWorkspaceKey = 'accounts') {
+  if (typeof window === 'undefined') return defaultWorkspaceKey
+  const params = new URLSearchParams(window.location.search || '')
+  const urlKey = normalizeFinanceWorkspaceKey(params.get('financeWorkspace'))
+  if (urlKey) return urlKey
+  return normalizeFinanceWorkspaceKey(window.localStorage?.getItem(FINANCE_WORKSPACE_STORAGE_KEY)) || defaultWorkspaceKey
 }
 
 function SummaryBlock({ item }) {
@@ -1689,8 +1696,6 @@ function FinanceCommandCenter({
   onUpdateBlockers,
   onOpenDocument,
 }) {
-  const location = useLocation()
-  const navigate = useNavigate()
   const [uploadingKey, setUploadingKey] = useState('')
   const [blockerForm, setBlockerForm] = useState({
     blockerStatus: '',
@@ -1762,35 +1767,24 @@ function FinanceCommandCenter({
   const hasExternalBondFinance = hasBondLikeFinance && workspace.clientManagedBondFinance
   const hasCashWorkflow = workspace.financeType === 'cash' || workspace.financeType === 'combination'
   const hasDeveloperWorkflow = workspace.financeType === 'developer'
-  const defaultWorkspaceKey = hasBondWorkflow ? 'bond-workflow' : 'accounts'
-  const [activeWorkspaceKey, setActiveWorkspaceKey] = useState(() => {
-    const search = typeof window !== 'undefined' ? window.location.search : ''
-    const params = new URLSearchParams(search)
-    const urlKey = normalizeFinanceWorkspaceKey(params.get('financeWorkspace'))
-    if (urlKey) return urlKey
-    if (typeof window !== 'undefined') {
-      return normalizeFinanceWorkspaceKey(window.localStorage?.getItem(FINANCE_WORKSPACE_STORAGE_KEY)) || defaultWorkspaceKey
-    }
-    return defaultWorkspaceKey
-  })
+  const defaultWorkspaceKey = hasBondWorkflow ? 'bond-workflow' : hasExternalBondFinance ? 'requests' : 'accounts'
+  const [activeWorkspaceKey, setActiveWorkspaceKey] = useState(() => getInitialFinanceWorkspaceKey(defaultWorkspaceKey))
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const urlKey = normalizeFinanceWorkspaceKey(params.get('financeWorkspace'))
-    if (urlKey && urlKey !== activeWorkspaceKey) {
-      setActiveWorkspaceKey(urlKey)
+    if (!normalizeFinanceWorkspaceKey(activeWorkspaceKey)) {
+      setActiveWorkspaceKey(defaultWorkspaceKey)
     }
-  }, [activeWorkspaceKey, location.search])
+  }, [activeWorkspaceKey, defaultWorkspaceKey])
 
   function handleWorkspaceChange(nextKey) {
     const normalizedKey = normalizeFinanceWorkspaceKey(nextKey) || 'accounts'
     setActiveWorkspaceKey(normalizedKey)
     if (typeof window !== 'undefined') {
       window.localStorage?.setItem(FINANCE_WORKSPACE_STORAGE_KEY, normalizedKey)
+      const url = new URL(window.location.href)
+      url.searchParams.set('financeWorkspace', normalizedKey)
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
     }
-    const params = new URLSearchParams(location.search)
-    params.set('financeWorkspace', normalizedKey)
-    navigate({ pathname: location.pathname, search: `?${params.toString()}`, hash: location.hash }, { replace: false })
   }
 
   const financeCommandCard = (

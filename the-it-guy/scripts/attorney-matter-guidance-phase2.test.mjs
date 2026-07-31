@@ -67,6 +67,11 @@ const source = await readFile(new URL('../src/pages/AttorneyTransactionDetail.js
 const overviewStart = source.indexOf('function ArchlineOverviewWorkspace')
 const overviewEnd = source.indexOf('function ArchlineWorkflowWorkspace', overviewStart)
 const overviewSource = source.slice(overviewStart, overviewEnd)
+const transferWorkspaceStart = source.indexOf('function ArchlineTransferWorkspace')
+const transferWorkspaceEnd = source.indexOf('function ArchlineDocumentsWorkspace', transferWorkspaceStart)
+const transferWorkspaceSource = source.slice(transferWorkspaceStart, transferWorkspaceEnd)
+assert.ok(overviewStart >= 0 && overviewEnd > overviewStart, 'Matter overview workspace source should be discoverable.')
+assert.ok(transferWorkspaceStart >= 0 && transferWorkspaceEnd > transferWorkspaceStart, 'Transfer workflow workspace source should be discoverable.')
 for (const expected of [
   'What needs to happen next?',
   'To finish this checkpoint',
@@ -79,23 +84,37 @@ for (const expected of [
 }
 
 for (const expected of [
-  '<section className="space-y-4">',
-  '<ArchlinePanel title="Matter Progress" className="p-4">',
-  '<div className="grid gap-4 lg:grid-cols-3">',
-  '<ArchlinePanel title="Key Dates" className="p-4">',
-  '<ArchlinePanel title="Financial Summary" className="p-4">',
-  '<ArchlinePanel title="Parties" className="p-4">',
-  '<div className="grid gap-4 xl:grid-cols-2">',
-  '<ArchlinePanel title="Matter Notes"',
-  '<ArchlinePanel title="Document Checklist" className="p-4">',
+  '<section className="space-y-5">',
+  '<div className="grid gap-4 xl:grid-cols-[minmax(260px,0.9fr)_minmax(360px,1.25fr)_minmax(260px,0.85fr)]">',
+  'title="Today\'s Tasks"',
+  'title="Latest Activity"',
+  'Matter Health',
+  'Estimated Lodgement',
+  'Financial Summary',
+  'title="People on This Matter"',
+  'Upload Document',
 ]) {
   assert.ok(overviewSource.includes(expected), `Matter overview should include updated layout element: ${expected}`)
 }
 
-assert.ok(overviewStart >= 0 && overviewEnd > overviewStart, 'Matter overview workspace source should be discoverable.')
 assert.doesNotMatch(overviewSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,0\.36fr\)\]/)
 assert.doesNotMatch(overviewSource, /<aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">/)
 assert.doesNotMatch(overviewSource, /<ArchlinePanel title="Quick Actions"/)
 assert.doesNotMatch(overviewSource, /<ArchlinePanel title="Tasks"/)
+
+for (const expected of [
+  'xl:sticky xl:top-24',
+  'xl:h-[calc(100dvh-150px)]',
+  'xl:overflow-hidden',
+  'flex h-full min-h-0 flex-col overflow-hidden',
+  'overflow-y-auto overscroll-contain',
+  'Workflow Navigator',
+  'Current Task',
+  'Sequence Note',
+  'You can work ahead, but completion still needs evidence',
+]) {
+  assert.ok(transferWorkspaceSource.includes(expected), `Transfer workflow workspace should keep anchored internal scrolling: ${expected}`)
+}
+assert.doesNotMatch(transferWorkspaceSource, /<aside className="[^"]*xl:sticky xl:top-24/, 'Workflow navigator should no longer depend on sidebar-only sticky positioning.')
 
 console.log('Attorney matter guidance Phase 2 checks passed.')
