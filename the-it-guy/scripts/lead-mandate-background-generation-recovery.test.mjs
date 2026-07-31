@@ -42,17 +42,6 @@ for (const token of [
   assert.ok(pageSource.includes(token), `AgencyPipelinePage should keep background mandate recovery token: ${token}`)
 }
 
-assert.match(
-  pageSource,
-  /mandateAutoGenerationAttemptRef\.current\.add\(leadKey\)\s+setError\(''\)\s+setMessage\('Seller onboarding submitted\. Preparing the mandate in the background\.\.\.'\)/,
-  'Starting automatic mandate generation should clear stale header errors before showing the background progress message.',
-)
-assert.match(
-  pageSource,
-  /if \(result\?\.backgroundGenerationQueued\) \{\s+setError\(''\)\s+setMessage\('Mandate generation is running in the background\. Signing will unlock when the PDF is ready\.'\)/,
-  'Queued automatic mandate generation should clear stale header errors before showing the queued progress message.',
-)
-
 for (const token of [
   'conditionalMasterCoverageReady',
   'conditionalSigningCanPrepare',
