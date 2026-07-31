@@ -1108,8 +1108,8 @@ async function renderStructuredSectionsToPdfBytes({
 
   const drawSignaturePanel = (targetPage: any, options: { title: string; name: string; role: string; panelTop: number; x: number; signerRole: string }) => {
     const panelWidth = 210;
-    const panelHeight = 154;
-    const fieldHeight = 50;
+    const panelHeight = 176;
+    const fieldHeight = 56;
     const panelY = pageHeight - options.panelTop - panelHeight;
     const fieldTop = options.panelTop + 34;
     const signatureFieldY = pageHeight - fieldTop - fieldHeight;
@@ -1119,9 +1119,9 @@ async function renderStructuredSectionsToPdfBytes({
     const lineLeft = options.x + 12;
     const lineRight = options.x + 198;
     const lineRows = [
-      { label: "Signature", y: panelY + 55, value: "" },
-      { label: "Name", y: panelY + 35, value: normalizePdfText(options.name) || options.role },
-      { label: "Signed", y: panelY + 15, value: "" },
+      { label: "Signature", y: panelY + 72, value: "" },
+      { label: "Signed", y: panelY + 49, value: "" },
+      { label: "Name", y: panelY + 25, value: normalizePdfText(options.name) || options.role },
     ];
     lineRows.forEach((row) => {
       targetPage.drawLine({ start: { x: lineLeft, y: row.y }, end: { x: lineRight, y: row.y }, thickness: 0.6, color: lineColor });
@@ -1196,7 +1196,7 @@ async function renderStructuredSectionsToPdfBytes({
     bytes: new Uint8Array(await pdf.save()),
     pageCount: pages.length,
     plannedSigningFields,
-    layoutContract: "arch9-mandate-branded-signature-layout-v1",
+    layoutContract: "arch9-mandate-branded-signature-layout-v2",
   };
 }
 

@@ -98,6 +98,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     sender,
     branding.fromName || branding.organisationName,
   );
+  const brandedOrganisationName = branding.organisationName || organisationName;
   const agentLabel = agentName ? ` ${agentName}` : " your agent";
   const propertyContext = [
     propertyTitle && propertyTitle !== "your property"
@@ -186,11 +187,12 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     greeting: `Hi ${recipientName},`,
     contentHtml,
     securityTitle: normalizeText(templateOverrides?.securityTitle) || (isOtp ? "Secure Offer Review" : "Secure Mandate Review"),
-    securityBody: normalizeText(templateOverrides?.securityBody) || `Your ${isOtp ? "offer" : "mandate"} is shared through a secure Arch9 link. Only authorised parties involved in your transaction can access this workflow.`,
+    securityBody: normalizeText(templateOverrides?.securityBody) || `Your ${isOtp ? "offer" : "mandate"} is shared through a secure ${brandedOrganisationName} signing link. Only authorised parties involved in your transaction can access this workflow.`,
     helpBody: normalizeText(templateOverrides?.helpBody) || "Need help? Reply to this email or contact your agent directly before signing.",
-    organisationName: branding.organisationName || organisationName,
+    organisationName: brandedOrganisationName,
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
+    footerText: brandedOrganisationName,
     branding,
   });
   const text = [
@@ -221,8 +223,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     "",
     "Need help? Reply to this email or contact your agent directly before signing.",
     "",
-    branding.organisationName || organisationName,
-    "Powered by Arch9",
+    brandedOrganisationName,
   ].filter(Boolean).join("\n");
 
   console.log("[mandate_signing_email] send attempt", {

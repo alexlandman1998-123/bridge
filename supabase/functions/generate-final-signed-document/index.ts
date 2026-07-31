@@ -3303,7 +3303,7 @@ Deno.serve(async (req: Request) => {
               ? `Signed: ${signedDate.toISOString().slice(0, 10)}`
               : "";
           if (signedDateText) {
-            const signedDateY = y > 58 ? y - 50 : Math.max(0, y - 12);
+            const signedDateY = y > 58 ? y - 40 : Math.max(0, y - 12);
             page.drawText(signedDateText, {
               x: width >= 120 ? x + 42 : x,
               y: signedDateY,
@@ -3313,8 +3313,8 @@ Deno.serve(async (req: Request) => {
             });
           }
         }
-        // The full digest is visibly rendered beside the embedded mark, while
-        // the canonical structured copy is retained in the F2 event payload.
+        // Keep digest evidence in the F2 payload only. The customer-facing PDF
+        // should show the mark and signed date without technical hash text.
         drawVisibleSignatureFingerprint({
           page,
           font: dateFont,
