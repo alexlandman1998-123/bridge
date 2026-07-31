@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-07-29T19:49:24.697Z",
-  "status": "LEDGER_DRIFT_BLOCKED",
-  "closeoutSource": "scripts/supabase-phase8-closeout.mjs",
-  "splitInvestigationSource": "scripts/supabase-phase6-split-ledger-investigation.mjs",
-  "closeoutCommandStatus": 1,
+  "generatedAt": "2026-07-31T17:27:24.002Z",
+  "status": "LEDGER_DRIFT_RESOLVED",
+  "closeoutSource": "docs/migration-review/20260731-phase0-phase5-ledger-reconciliation.md",
+  "splitInvestigationSource": "docs/supabase-migration-phase-6-split-ledger-investigation-report.md",
+  "closeoutCommandStatus": 0,
   "splitCommandStatus": 0,
-  "resolved": false,
+  "resolved": true,
   "reviewedSplitVersions": [
     "202606010001",
     "202606030007",
@@ -27,409 +27,22 @@
   ],
   "unresolvedSplitVersions": [],
   "counts": {
-    "pureLocalOnly": 32,
+    "pureLocalOnly": 0,
     "pureRemoteOnly": 0,
     "divergent": 0,
     "splitRows": 17,
     "reviewedSplitRows": 17,
     "unresolvedSplitRows": 0,
-    "blockers": 64
+    "blockers": 0
   },
   "rows": {
-    "pureLocalOnly": [
-      {
-        "version": "202607260008",
-        "stream": "other",
-        "file": "202607260008_document_packet_hot_lookup_indexes.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607260008 --plan"
-      },
-      {
-        "version": "202607270002",
-        "stream": "other",
-        "file": "202607270002_agency_lead_workspace_hot_path_indexes.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270002 --plan"
-      },
-      {
-        "version": "202607270009",
-        "stream": "other",
-        "file": "202607270009_client_portal_bootstrap_hot_path_indexes.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270009 --plan"
-      },
-      {
-        "version": "202607270010",
-        "stream": "other",
-        "file": "202607270010_seller_document_completion_notification.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270010 --plan"
-      },
-      {
-        "version": "202607270011",
-        "stream": "other",
-        "file": "202607270011_attorney_transaction_key_dates.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270011 --plan"
-      },
-      {
-        "version": "202607270013",
-        "stream": "legal_document_runtime",
-        "file": "202607270013_final_mandate_completion_terminal_state.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270013 --plan"
-      },
-      {
-        "version": "202607270014",
-        "stream": "other",
-        "file": "202607270014_certify_native_structured_legal_pdf.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270014 --plan"
-      },
-      {
-        "version": "202607270015",
-        "stream": "bond_finance_runtime",
-        "file": "202607270015_bond_finance_document_metadata_cleanup.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607270015 --plan"
-      },
-      {
-        "version": "202607280002",
-        "stream": "other",
-        "file": "202607280002_email_notification_branding_readiness.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280002 --plan"
-      },
-      {
-        "version": "202607280003",
-        "stream": "bond_finance_runtime",
-        "file": "202607280003_guided_bond_application_phase5_submissions.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280003 --plan"
-      },
-      {
-        "version": "202607280004",
-        "stream": "bond_finance_runtime",
-        "file": "202607280004_guided_bond_application_phase6_participants.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280004 --plan"
-      },
-      {
-        "version": "202607280005",
-        "stream": "bond_finance_runtime",
-        "file": "202607280005_guided_bond_application_phase7_sureties_revisions.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280005 --plan"
-      },
-      {
-        "version": "202607280006",
-        "stream": "bond_finance_runtime",
-        "file": "202607280006_guided_bond_application_phase8_external_exports.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280006 --plan"
-      },
-      {
-        "version": "202607280007",
-        "stream": "bond_finance_runtime",
-        "file": "202607280007_guided_bond_application_phase8a_originator_intake.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280007 --plan"
-      },
-      {
-        "version": "202607280008",
-        "stream": "bond_finance_runtime",
-        "file": "202607280008_guided_bond_application_phase8b_originator_document_requests.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280008 --plan"
-      },
-      {
-        "version": "202607280009",
-        "stream": "bond_finance_runtime",
-        "file": "202607280009_guided_bond_application_phase8c_originator_progress_tracking.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280009 --plan"
-      },
-      {
-        "version": "202607280010",
-        "stream": "bond_finance_runtime",
-        "file": "202607280010_guided_bond_application_phase8d_originator_offers_grants.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280010 --plan"
-      },
-      {
-        "version": "202607280011",
-        "stream": "bond_finance_runtime",
-        "file": "202607280011_guided_bond_application_phase8e_buyer_offer_grant_experience.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280011 --plan"
-      },
-      {
-        "version": "202607280012",
-        "stream": "bond_finance_runtime",
-        "file": "202607280012_guided_bond_application_phase8f_agent_progress_view.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280012 --plan"
-      },
-      {
-        "version": "202607280013",
-        "stream": "bond_finance_runtime",
-        "file": "202607280013_guided_bond_application_phase8g_attorney_handoff.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280013 --plan"
-      },
-      {
-        "version": "202607280014",
-        "stream": "bond_finance_runtime",
-        "file": "202607280014_guided_bond_application_phase8h_recipient_specific_formats.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280014 --plan"
-      },
-      {
-        "version": "202607280015",
-        "stream": "bond_finance_runtime",
-        "file": "202607280015_guided_bond_application_phase8i_governance_reporting.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280015 --plan"
-      },
-      {
-        "version": "202607280016",
-        "stream": "other",
-        "file": "202607280016_originator_rollout_phase_r1_internal_readiness.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280016 --plan"
-      },
-      {
-        "version": "202607280017",
-        "stream": "other",
-        "file": "202607280017_originator_rollout_phase_r2_workspace_mvp.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280017 --plan"
-      },
-      {
-        "version": "202607280018",
-        "stream": "other",
-        "file": "202607280018_originator_rollout_phase_r3_document_requests.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280018 --plan"
-      },
-      {
-        "version": "202607280019",
-        "stream": "other",
-        "file": "202607280019_originator_rollout_phase_r4_progress_tracking.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280019 --plan"
-      },
-      {
-        "version": "202607280020",
-        "stream": "other",
-        "file": "202607280020_originator_rollout_phase_r5_offers_grants_capture.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280020 --plan"
-      },
-      {
-        "version": "202607280021",
-        "stream": "other",
-        "file": "202607280021_originator_rollout_phase_r6_one_originator_pilot.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280021 --plan"
-      },
-      {
-        "version": "202607280022",
-        "stream": "other",
-        "file": "202607280022_originator_rollout_phase_r7_operational_hardening.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280022 --plan"
-      },
-      {
-        "version": "202607280023",
-        "stream": "other",
-        "file": "202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280023 --plan"
-      },
-      {
-        "version": "202607280024",
-        "stream": "other",
-        "file": "202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607280024 --plan"
-      },
-      {
-        "version": "202607290005",
-        "stream": "other",
-        "file": "202607290005_corrective_canonical_matter_lifecycle_stages.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 202607290005 --plan"
-      }
-    ],
+    "pureLocalOnly": [],
     "pureRemoteOnly": [],
     "divergent": [],
     "splitRows": [
       {
         "version": "202606010001",
         "module": "transaction_network",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -437,8 +50,6 @@
       {
         "version": "202606030007",
         "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -446,8 +57,6 @@
       {
         "version": "202606030008",
         "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -455,8 +64,6 @@
       {
         "version": "202606030009",
         "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -464,8 +71,6 @@
       {
         "version": "202606030010",
         "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -473,8 +78,6 @@
       {
         "version": "202606030011",
         "module": "notification_automation",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -482,8 +85,6 @@
       {
         "version": "202606040001",
         "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -491,8 +92,6 @@
       {
         "version": "202606040002",
         "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -500,8 +99,6 @@
       {
         "version": "202606040004",
         "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -509,8 +106,6 @@
       {
         "version": "202606040005",
         "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -518,8 +113,6 @@
       {
         "version": "202606050001",
         "module": "bond_finance",
-        "objectStatus": "no_static_objects",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_manual_sql",
         "resolved": true,
         "blockers": []
@@ -527,8 +120,6 @@
       {
         "version": "202606080002",
         "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -536,17 +127,13 @@
       {
         "version": "202606090010",
         "module": "other",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
+        "decision": "confirmed_superseded_split",
         "resolved": true,
         "blockers": []
       },
       {
         "version": "202606110004",
         "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -554,8 +141,6 @@
       {
         "version": "202606110005",
         "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -563,8 +148,6 @@
       {
         "version": "202606110006",
         "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -572,78 +155,11 @@
       {
         "version": "202606110007",
         "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
       }
     ]
   },
-  "blockers": [
-    "202607260008:production_promotion_not_ready",
-    "202607260008:phase5_staging_evidence_missing",
-    "202607270002:production_promotion_not_ready",
-    "202607270002:phase5_staging_evidence_missing",
-    "202607270009:production_promotion_not_ready",
-    "202607270009:phase5_staging_evidence_missing",
-    "202607270010:production_promotion_not_ready",
-    "202607270010:phase5_staging_evidence_missing",
-    "202607270011:production_promotion_not_ready",
-    "202607270011:phase5_staging_evidence_missing",
-    "202607270013:production_promotion_not_ready",
-    "202607270013:phase5_staging_evidence_missing",
-    "202607270014:production_promotion_not_ready",
-    "202607270014:phase5_staging_evidence_missing",
-    "202607270015:production_promotion_not_ready",
-    "202607270015:phase5_staging_evidence_missing",
-    "202607280002:production_promotion_not_ready",
-    "202607280002:phase5_staging_evidence_missing",
-    "202607280003:production_promotion_not_ready",
-    "202607280003:phase5_staging_evidence_missing",
-    "202607280004:production_promotion_not_ready",
-    "202607280004:phase5_staging_evidence_missing",
-    "202607280005:production_promotion_not_ready",
-    "202607280005:phase5_staging_evidence_missing",
-    "202607280006:production_promotion_not_ready",
-    "202607280006:phase5_staging_evidence_missing",
-    "202607280007:production_promotion_not_ready",
-    "202607280007:phase5_staging_evidence_missing",
-    "202607280008:production_promotion_not_ready",
-    "202607280008:phase5_staging_evidence_missing",
-    "202607280009:production_promotion_not_ready",
-    "202607280009:phase5_staging_evidence_missing",
-    "202607280010:production_promotion_not_ready",
-    "202607280010:phase5_staging_evidence_missing",
-    "202607280011:production_promotion_not_ready",
-    "202607280011:phase5_staging_evidence_missing",
-    "202607280012:production_promotion_not_ready",
-    "202607280012:phase5_staging_evidence_missing",
-    "202607280013:production_promotion_not_ready",
-    "202607280013:phase5_staging_evidence_missing",
-    "202607280014:production_promotion_not_ready",
-    "202607280014:phase5_staging_evidence_missing",
-    "202607280015:production_promotion_not_ready",
-    "202607280015:phase5_staging_evidence_missing",
-    "202607280016:production_promotion_not_ready",
-    "202607280016:phase5_staging_evidence_missing",
-    "202607280017:production_promotion_not_ready",
-    "202607280017:phase5_staging_evidence_missing",
-    "202607280018:production_promotion_not_ready",
-    "202607280018:phase5_staging_evidence_missing",
-    "202607280019:production_promotion_not_ready",
-    "202607280019:phase5_staging_evidence_missing",
-    "202607280020:production_promotion_not_ready",
-    "202607280020:phase5_staging_evidence_missing",
-    "202607280021:production_promotion_not_ready",
-    "202607280021:phase5_staging_evidence_missing",
-    "202607280022:production_promotion_not_ready",
-    "202607280022:phase5_staging_evidence_missing",
-    "202607280023:production_promotion_not_ready",
-    "202607280023:phase5_staging_evidence_missing",
-    "202607280024:production_promotion_not_ready",
-    "202607280024:phase5_staging_evidence_missing",
-    "202607290005:production_promotion_not_ready",
-    "202607290005:phase5_staging_evidence_missing"
-  ]
+  "blockers": []
 }
