@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   BadgeCheck,
   CheckCircle2,
@@ -19,7 +20,6 @@ import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { buildTransactionFinanceWorkspace } from '../../services/transactionFinanceService'
 import IndicativeFinanceReadinessContainer from '../finance/IndicativeFinanceReadinessContainer'
-import FinanceProgressBar from '../finance/FinanceProgressBar'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -69,90 +69,28 @@ function getStatusTone(status = '') {
   return 'border-[#dbe5ef] bg-[#fbfdff] text-[#61758a]'
 }
 
-function getOwnershipValue(sources = [], fallback = 'Unassigned') {
-  return sources.map((value) => String(value || '').trim()).find(Boolean) || fallback
-}
-
-function buildApplicationOwnershipCard(transaction = {}, workspace = {}) {
-  const application = workspace.bond?.applications?.[0] || {}
-  return {
-    consultant: getOwnershipValue([
-      transaction.assignedConsultantName,
-      transaction.assigned_consultant_name,
-      transaction.assignedBondOriginatorName,
-      transaction.assigned_bond_originator_name,
-      transaction.assigned_agent,
-      application.originatorName,
-      application.assignedUserName,
-      application.assigned_user_name,
-      application.assignedUserEmail,
-      application.assigned_user_email,
-    ]),
-    branch: getOwnershipValue([
-      transaction.assignedBranchName,
-      transaction.assigned_branch_name,
-      transaction.branch,
-      transaction.branch_name,
-      application.branch,
-      application.assignedBranchName,
-      application.assigned_branch_name,
-      transaction.assignedBranchId,
-      transaction.assigned_branch_id,
-      application.assignedBranchId,
-      application.assigned_branch_id,
-    ]),
-    region: getOwnershipValue([
-      transaction.assignedRegionName,
-      transaction.assigned_region_name,
-      transaction.region,
-      transaction.region_name,
-      application.region,
-      application.assignedRegionName,
-      application.assigned_region_name,
-      transaction.assignedRegionId,
-      transaction.assigned_region_id,
-      application.assignedRegionId,
-      application.assigned_region_id,
-    ]),
-    assignedAt: getOwnershipValue([
-      transaction.assignedAt,
-      transaction.assigned_at,
-      application.assignedAt,
-      application.assigned_at,
-      application.scope_metadata?.assignedAt,
-    ], 'Not assigned yet'),
-    method: getOwnershipValue([
-      transaction.assignmentMethod,
-      transaction.assignment_method,
-      transaction.bond_assignment_method,
-      application.assignmentMethod,
-      application.assignment_method,
-      application.bond_assignment_method,
-      application.scope_metadata?.method,
-    ], 'Not assigned'),
-    routingSource: getOwnershipValue([
-      transaction.routingSource,
-      transaction.routing_source,
-      application.routingSource,
-      application.routing_source,
-      application.scope_metadata?.routingSource,
-    ], 'Not captured'),
-    routingRule: getOwnershipValue([
-      transaction.routingRuleId,
-      transaction.routing_rule_id,
-      application.routingRuleId,
-      application.routing_rule_id,
-      application.scope_metadata?.routingRuleId,
-    ], 'No rule'),
-  }
-}
-
 const SUMMARY_ICONS = {
   finance_type: Landmark,
   finance_owner: UserRound,
   current_stage: FileText,
   next_action: ClipboardCheck,
   blocker_status: BadgeCheck,
+}
+
+const FINANCE_WORKSPACE_STORAGE_KEY = 'arch9.financeWorkspace.activeTab'
+const FINANCE_WORKSPACE_TABS = [
+  { key: 'accounts', label: 'Accounts', icon: UserRound },
+  { key: 'requests', label: 'Client Requests', icon: ClipboardCheck },
+  { key: 'payments', label: 'Payments', icon: Landmark },
+  { key: 'documents', label: 'Documents', icon: FileText },
+  { key: 'bond-workflow', label: 'Bond Workflow', icon: ShieldCheck },
+  { key: 'handover', label: 'Handover / Transfer', icon: UploadCloud },
+  { key: 'audit', label: 'Audit Log', icon: Clock3 },
+]
+
+function normalizeFinanceWorkspaceKey(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replaceAll('_', '-')
+  return FINANCE_WORKSPACE_TABS.some((tab) => tab.key === normalized) ? normalized : ''
 }
 
 function SummaryBlock({ item }) {
@@ -1054,6 +992,678 @@ function CashStatusList({ items = [] }) {
   )
 }
 
+function FinanceWorkspaceNav({ activeKey = 'accounts', onChange }) {
+  return (
+    <section className="border-b border-[#dfe7f1] bg-white">
+      <div className="flex flex-wrap items-end gap-5 px-1 pt-1">
+        {FINANCE_WORKSPACE_TABS.map((tab) => {
+          const Icon = tab.icon
+          const active = tab.key === activeKey
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              className={`inline-flex min-h-[46px] items-center gap-2 border-b-2 px-1 text-sm font-semibold transition ${
+                active
+                  ? 'border-[#0f8f63] text-[#08734f]'
+                  : 'border-transparent text-[#31445f] hover:border-[#cfd9e6] hover:text-[#142132]'
+              }`}
+              onClick={() => onChange?.(tab.key)}
+            >
+              <Icon size={16} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function MetricStrip({ items = [] }) {
+  return (
+    <div className="grid overflow-hidden rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] sm:grid-cols-2 xl:grid-cols-5">
+      {items.map((item) => (
+        <SummaryBlock key={item.key} item={item} />
+      ))}
+    </div>
+  )
+}
+
+function FinanceWorkspaceFrame({ title, copy, children }) {
+  return (
+    <section className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#08734f]">Finance Workspace</p>
+        <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#101b2d]">{title}</h3>
+        {copy ? <p className="mt-1 text-sm leading-6 text-[#66758b]">{copy}</p> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function AccountSummaryTile({ label, value, copy = '' }) {
+  return (
+    <article className="rounded-[8px] border border-[#e1e9f2] bg-white px-4 py-4">
+      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{label}</span>
+      <strong className="mt-2 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{value}</strong>
+      {copy ? <p className="mt-1 text-xs leading-5 text-[#70839a]">{copy}</p> : null}
+    </article>
+  )
+}
+
+function FinanceAccountsPage({ workspace, proofStatusItems, financeCommandCard, financeReadinessHandoff, matterAccountsPanel = null }) {
+  const nextAction = workspace.summaryBlocks.find((item) => item.key === 'next_action')?.value || 'Review finance progress'
+  const buyerAmount = workspace.amounts.bondAmount !== 'Not captured' ? workspace.amounts.bondAmount : workspace.amounts.cashPortion
+  return (
+    <FinanceWorkspaceFrame
+      title="Accounts"
+      copy="Buyer, seller, balance and readiness summaries for the matter."
+    >
+      <MetricStrip items={workspace.summaryBlocks} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
+        <main className="space-y-4">
+          {matterAccountsPanel}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <AccountSummaryTile label="Buyer Account" value={buyerAmount} copy="Captured buyer finance contribution." />
+            <AccountSummaryTile label="Seller Account" value={workspace.amounts.purchasePrice} copy="Matter purchase price reference." />
+            <AccountSummaryTile label="Deposit" value={workspace.amounts.deposit} copy="Deposit or paid contribution." />
+            <AccountSummaryTile label="Next Action" value={nextAction} copy={workspace.financeOwner || 'Finance owner'} />
+          </div>
+          <SectionCard title="Finance Position" copy="Matter amounts and finance route in one place.">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ['Purchase Price', workspace.amounts.purchasePrice],
+                ['Bond Amount', workspace.amounts.bondAmount],
+                ['Cash Portion', workspace.amounts.cashPortion],
+                ['Transfer Fees', workspace.amounts.transferFees],
+                ['Bond Registration Fees', workspace.amounts.bondRegistrationFees],
+                ['Commission', workspace.amounts.commission],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] px-3 py-3">
+                  <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{label}</span>
+                  <strong className="mt-1 block text-sm font-semibold text-[#142132]">{value}</strong>
+                </article>
+              ))}
+            </div>
+          </SectionCard>
+          <CashPortionStatusPanel items={proofStatusItems} title={workspace.financeType === 'combination' ? 'Cash Portion Readiness' : 'Funding Readiness'} />
+        </main>
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} variant="compact" />
+          {financeCommandCard}
+        </aside>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function splitRequestRows(rows = []) {
+  return rows.reduce((groups, row) => {
+    const status = String(row.status || '').toLowerCase()
+    const key = ['approved', 'verified', 'completed', 'accepted'].includes(status)
+      ? 'completed'
+      : ['uploaded', 'submitted', 'received', 'pending_review', 'in_review'].includes(status)
+        ? 'waiting'
+        : 'outstanding'
+    groups[key].push(row)
+    return groups
+  }, { outstanding: [], waiting: [], completed: [] })
+}
+
+function RequestQueueSection({ title, rows, canUpload, uploadingKey, onUpload, onOpenDocument }) {
+  return (
+    <SectionCard title={title}>
+      <RequiredDocumentTable
+        rows={rows}
+        canUpload={canUpload}
+        uploadingKey={uploadingKey}
+        onUpload={onUpload}
+        onOpenDocument={onOpenDocument}
+      />
+    </SectionCard>
+  )
+}
+
+function FinanceRequestsPage({
+  workspace,
+  hasExternalBondFinance,
+  hasCashWorkflow,
+  hasDeveloperWorkflow,
+  proofStatusItems,
+  uploadingKey,
+  handleRequirementUpload,
+  loadingAction,
+  onReviewDocuments,
+  onVerifyProofOfFunds,
+  onOpenDocument,
+}) {
+  const groups = splitRequestRows(workspace.bond.buyerDocuments)
+  return (
+    <FinanceWorkspaceFrame
+      title="Client Requests"
+      copy="Outstanding, waiting and completed finance requests."
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.48fr)]">
+        <main className="space-y-4">
+          <RequestQueueSection
+            title="Outstanding"
+            rows={groups.outstanding}
+            canUpload={workspace.permissions.canUploadDocuments}
+            uploadingKey={uploadingKey}
+            onUpload={(row, file) =>
+              handleRequirementUpload(
+                row,
+                file,
+                hasExternalBondFinance ? 'external' : 'bond',
+                hasExternalBondFinance ? 'external_finance_document' : 'buyer_finance_document',
+                workspace.permissions.role,
+              )
+            }
+            onOpenDocument={onOpenDocument}
+          />
+          <RequestQueueSection
+            title="Waiting"
+            rows={groups.waiting}
+            canUpload={workspace.permissions.canUploadDocuments}
+            uploadingKey={uploadingKey}
+            onUpload={(row, file) =>
+              handleRequirementUpload(row, file, hasExternalBondFinance ? 'external' : 'bond', 'buyer_finance_document', workspace.permissions.role)
+            }
+            onOpenDocument={onOpenDocument}
+          />
+          <RequestQueueSection
+            title="Completed"
+            rows={groups.completed}
+            canUpload={false}
+            uploadingKey={uploadingKey}
+            onOpenDocument={onOpenDocument}
+          />
+        </main>
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          {hasCashWorkflow ? (
+            <SectionCard
+              title={workspace.financeType === 'combination' ? 'Cash Portion Requests' : 'Proof Of Funds Requests'}
+              copy="Proof of funds, deposit evidence and guarantees."
+              actions={workspace.permissions.canVerifyProofOfFunds ? (
+                <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
+                  Verify
+                </Button>
+              ) : null}
+            >
+              <div className="space-y-3">
+                <CashStatusList items={proofStatusItems} />
+                <div className="flex flex-wrap gap-2">
+                  {workspace.permissions.canUploadDocuments ? (
+                    <UploadAction
+                      label={uploadingKey === 'proof_of_funds' ? 'Uploading...' : 'Upload proof of funds'}
+                      disabled={uploadingKey === 'proof_of_funds'}
+                      onSelect={(file) => handleRequirementUpload({ key: 'proof_of_funds', label: 'Proof Of Funds' }, file, 'cash', 'proof_of_funds', workspace.permissions.role)}
+                    />
+                  ) : null}
+                  {workspace.permissions.canUploadDocuments ? (
+                    <UploadAction
+                      label={uploadingKey === 'deposit_proof' ? 'Uploading...' : 'Upload deposit proof'}
+                      disabled={uploadingKey === 'deposit_proof'}
+                      onSelect={(file) => handleRequirementUpload({ key: 'deposit_proof', label: 'Deposit Proof' }, file, 'cash', 'deposit_proof', workspace.permissions.role)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </SectionCard>
+          ) : null}
+          {hasDeveloperWorkflow ? (
+            <SectionCard title="Developer Finance Requests" copy="Application, deposit, approval and payment schedule requests.">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['developer_application', 'Upload application', 'developer_finance_application'],
+                  ['developer_deposit', 'Upload deposit proof', 'developer_deposit'],
+                  ['developer_approval', 'Upload approval', 'developer_finance_approval'],
+                  ['developer_terms', 'Upload signed terms', 'developer_finance_terms'],
+                  ['developer_schedule', 'Upload payment schedule', 'developer_payment_schedule'],
+                ].map(([key, label, type]) => (
+                  <UploadAction
+                    key={key}
+                    label={uploadingKey === key ? 'Uploading...' : label}
+                    disabled={uploadingKey === key || !workspace.permissions.canUploadDocuments}
+                    onSelect={(file) => handleRequirementUpload({ key, label }, file, 'developer', type, workspace.permissions.role)}
+                  />
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
+          {workspace.permissions.canReviewDocuments ? (
+            <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
+              Mark finance documents reviewed
+            </Button>
+          ) : null}
+        </aside>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function FinancePaymentsPage({ workspace }) {
+  return (
+    <FinanceWorkspaceFrame title="Payments" copy="Focused payment posting, adjustments, ledger and history.">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.42fr)_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <SectionCard title="Post Payment">
+            <div className="grid gap-2">
+              <Field placeholder="Amount" inputMode="decimal" />
+              <Field as="select" defaultValue="buyer">
+                <option value="buyer">Buyer</option>
+                <option value="seller">Seller</option>
+                <option value="third_party">Third party</option>
+              </Field>
+              <Field placeholder="Reference" />
+              <Button type="button" size="sm" disabled>Post payment</Button>
+            </div>
+          </SectionCard>
+          <SectionCard title="Adjust Balance">
+            <div className="grid gap-2">
+              <Field placeholder="Adjustment amount" inputMode="decimal" />
+              <Field placeholder="Reason" />
+              <Button type="button" size="sm" variant="secondary" disabled>Adjust balance</Button>
+            </div>
+          </SectionCard>
+        </div>
+        <div className="space-y-4">
+          <SectionCard title="Ledger">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <AccountSummaryTile label="Purchase Price" value={workspace.amounts.purchasePrice} />
+              <AccountSummaryTile label="Deposit" value={workspace.amounts.deposit} />
+              <AccountSummaryTile label="Transfer Fees" value={workspace.amounts.transferFees} />
+              <AccountSummaryTile label="Commission" value={workspace.amounts.commission} />
+            </div>
+          </SectionCard>
+          <SectionCard title="History">
+            <EmptyState message="No finance payment ledger entries are available in this workspace yet." />
+          </SectionCard>
+        </div>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function buildFinanceDocumentCollections(workspace) {
+  return [
+    { key: 'invoices', title: 'Invoices', rows: [] },
+    { key: 'statements', title: 'Statements', rows: [] },
+    { key: 'pops', title: 'POPs', rows: [...workspace.cash.proofDocuments, ...workspace.cash.depositDocuments] },
+    { key: 'guarantees', title: 'Guarantees', rows: [...workspace.cash.guaranteeDocuments, ...workspace.bond.offerDocuments] },
+    { key: 'other', title: 'Other', rows: [...workspace.bond.supportingDocuments, ...workspace.bond.instructionDocuments, ...workspace.developer.applicationDocuments, ...workspace.developer.approvalDocuments, ...workspace.developer.signedTermsDocuments, ...workspace.developer.paymentScheduleDocuments] },
+  ]
+}
+
+function FinanceDocumentsPage({ workspace, uploadingKey, handleRequirementUpload, onOpenDocument }) {
+  return (
+    <FinanceWorkspaceFrame title="Documents" copy="Finance documents only, grouped by operating category.">
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {workspace.permissions.canUploadDocuments ? (
+            <UploadAction
+              label={uploadingKey === 'finance_document' ? 'Uploading...' : 'Upload finance document'}
+              disabled={uploadingKey === 'finance_document'}
+              onSelect={(file) => handleRequirementUpload({ key: 'finance_document', label: 'Finance Document' }, file, 'finance', 'finance_document', workspace.permissions.role)}
+            />
+          ) : null}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {buildFinanceDocumentCollections(workspace).map((group) => (
+            <SectionCard key={group.key} title={group.title}>
+              <FinanceDocumentList rows={group.rows} emptyMessage={`No ${group.title.toLowerCase()} uploaded yet.`} onOpenDocument={onOpenDocument} />
+            </SectionCard>
+          ))}
+        </div>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function getStepStatusLabel(status = '') {
+  if (status === 'completed') return 'Completed'
+  if (status === 'current') return 'In Progress'
+  return 'Pending'
+}
+
+function getBondStageDocuments(stageKey, workspace) {
+  if (stageKey === 'documents') return [...workspace.bond.supportingDocuments]
+  if (stageKey === 'quote_received' || stageKey === 'quote_accepted' || stageKey === 'bond_approved') return workspace.bond.offerDocuments
+  if (['grant_received', 'grant_signed', 'grant_submitted'].includes(stageKey)) return workspace.bond.supportingDocuments
+  if (stageKey === 'instruction_sent' || stageKey === 'complete') return workspace.bond.instructionDocuments
+  return []
+}
+
+function getBondStageRequirements(stageKey, selectedStep, workspace) {
+  const instruction = workspace.bond.instruction || {}
+  const acceptedOffer = workspace.bond.acceptedOffer
+  const completed = selectedStep?.status === 'completed'
+  const current = selectedStep?.status === 'current'
+  const basic = (label, done = completed, detail = '') => ({ id: label, label, status: done ? 'completed' : current ? 'in_progress' : 'pending', detail })
+  if (stageKey === 'documents') {
+    return workspace.bond.buyerDocuments.map((row) => ({
+      id: row.id,
+      label: row.label,
+      status: ['approved', 'verified', 'completed'].includes(String(row.status || '').toLowerCase()) ? 'completed' : row.matchedDocument ? 'in_progress' : 'pending',
+      detail: row.statusLabel || row.requiredParty,
+    }))
+  }
+  if (stageKey === 'submitted_to_banks') {
+    return workspace.bond.applications.length
+      ? workspace.bond.applications.map((row) => ({ id: row.id, label: row.bankName || 'Bank application', status: 'completed', detail: row.applicationReference || row.statusLabel }))
+      : [basic('Bank application submitted', false)]
+  }
+  if (stageKey === 'quote_received') {
+    return workspace.bond.offers.length
+      ? workspace.bond.offers.map((row) => ({ id: row.id, label: row.bankName || 'Bank offer', status: 'completed', detail: formatCurrency(row.quotedAmount, row.quoteStatusLabel || 'Offer received') }))
+      : [basic('Offer received from bank', false)]
+  }
+  if (stageKey === 'quote_accepted' || stageKey === 'bond_approved') {
+    return [basic('Buyer accepted a bond offer', Boolean(acceptedOffer), acceptedOffer?.bankName || '')]
+  }
+  if (stageKey === 'grant_received') {
+    return [basic('Grant received from bank', Boolean(instruction.grantReceived || instruction.grant_received || instruction.grantDocumentId || instruction.grant_document_id))]
+  }
+  if (stageKey === 'grant_signed') {
+    return [basic('Grant signed', Boolean(instruction.grantSigned || instruction.grant_signed || instruction.signedGrantDocumentId || instruction.signed_grant_document_id))]
+  }
+  if (stageKey === 'grant_submitted') {
+    return [basic('Signed grant submitted', Boolean(instruction.grantSubmitted || instruction.grant_submitted))]
+  }
+  if (stageKey === 'instruction_sent') {
+    return [basic('Instruction sent to transfer attorney', Boolean(instruction.instructionSent || instruction.instruction_sent))]
+  }
+  return [basic(selectedStep?.label || 'Stage requirement', completed)]
+}
+
+function BondWorkflowWorkspace({
+  workspace,
+  documents,
+  loadingAction,
+  onStageChange,
+  onSubmitBankApplication,
+  onUpdateBankApplication,
+  onCaptureBondOffer,
+  onAcceptOffer,
+  onDeclineOffer,
+  onMarkGrantMilestone,
+  onMarkInstructionSent,
+  onOpenDocument,
+}) {
+  const bondGroup = workspace.railGroups.find((group) => group.key === 'bond') || workspace.railGroups[0] || { steps: [] }
+  const currentStep = bondGroup.steps.find((step) => step.status === 'current') || bondGroup.steps.find((step) => step.status !== 'completed') || bondGroup.steps[0] || null
+  const [selectedStageKey, setSelectedStageKey] = useState(currentStep?.key || '')
+  const [activeTaskTab, setActiveTaskTab] = useState('checklist')
+
+  useEffect(() => {
+    if (!bondGroup.steps.some((step) => step.key === selectedStageKey)) {
+      setSelectedStageKey(currentStep?.key || bondGroup.steps[0]?.key || '')
+    }
+  }, [bondGroup.steps, currentStep?.key, selectedStageKey])
+
+  const selectedStep = bondGroup.steps.find((step) => step.key === selectedStageKey) || currentStep || bondGroup.steps[0] || null
+  const requirements = getBondStageRequirements(selectedStep?.key, selectedStep, workspace)
+  const attentionItems = requirements.filter((item) => item.status !== 'completed')
+  const stageDocuments = getBondStageDocuments(selectedStep?.key, workspace)
+  const editable = workspace.permissions.canManageApplications || workspace.permissions.canMarkInstructionSent || workspace.permissions.canAcceptOffer
+
+  return (
+    <FinanceWorkspaceFrame title="Bond Workflow" copy="Operational bond stages, task requirements, documents and actions.">
+      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold text-[#142132]">Bond Workflow</h4>
+              <p className="mt-1 text-sm text-[#66758b]">{bondGroup.steps.length} stages visible</p>
+            </div>
+            <span className="text-xs font-semibold text-[#08734f]">
+              {bondGroup.steps.length ? Math.round((bondGroup.steps.filter((step) => step.status === 'completed').length / bondGroup.steps.length) * 100) : 0}%
+            </span>
+          </div>
+          <div className="mt-4 space-y-1.5">
+            {bondGroup.steps.map((step, index) => {
+              const active = step.key === selectedStep?.key
+              const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
+              return (
+                <button
+                  key={step.key}
+                  type="button"
+                  className={`flex w-full items-start gap-3 rounded-[8px] px-3 py-3 text-left transition ${
+                    active ? 'border border-[#ccebdc] bg-[#effbf5]' : 'border border-transparent hover:bg-[#f7fbff]'
+                  }`}
+                  onClick={() => setSelectedStageKey(step.key)}
+                >
+                  <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
+                    <Icon size={14} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block text-sm font-semibold text-[#142132]">{index + 1}. {step.label}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#61758a]">{getStepStatusLabel(step.status)}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
+
+        <main className="rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+          <div className="border-b border-[#e5ecf4] px-5 py-4">
+            <p className="text-xs font-semibold text-[#35546c]">Bond Workflow Stage</p>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h4 className="text-xl font-semibold tracking-[-0.02em] text-[#101b2d]">{selectedStep?.label || 'Bond stage'}</h4>
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusTone(selectedStep?.status || 'pending')}`}>
+                {getStepStatusLabel(selectedStep?.status)}
+              </span>
+            </div>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              {[
+                ['Status', getStepStatusLabel(selectedStep?.status)],
+                ['Assigned To', selectedStep?.responsibleRole || 'Finance team'],
+                ['Due Date', formatDate(selectedStep?.completedAt, 'Not set')],
+                ['Dependencies', attentionItems.length ? `${attentionItems.length} open` : 'None'],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] px-3 py-3">
+                  <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{label}</span>
+                  <strong className="mt-1 block text-sm font-semibold text-[#142132]">{value}</strong>
+                </article>
+              ))}
+            </div>
+
+            {attentionItems.length ? (
+              <div className="rounded-[8px] border border-[#ffd596] bg-[#fff8e8] px-4 py-3 text-sm text-[#9a4b00]">
+                <strong className="block font-semibold">Action required</strong>
+                <span className="mt-1 block">{attentionItems[0].label} is not complete.</span>
+              </div>
+            ) : null}
+
+            <div className="border-b border-[#e5ecf4]">
+              <div className="flex flex-wrap gap-5">
+                {[
+                  ['checklist', 'Checklist', requirements.length],
+                  ['documents', 'Documents', stageDocuments.length],
+                  ['notes', 'Notes', 0],
+                  ['activity', 'Activity', 0],
+                ].map(([key, label, count]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`border-b-2 pb-3 text-sm font-semibold ${
+                      activeTaskTab === key ? 'border-[#0f8f63] text-[#08734f]' : 'border-transparent text-[#526780]'
+                    }`}
+                    onClick={() => setActiveTaskTab(key)}
+                  >
+                    {label} <span className="ml-1 rounded-full bg-[#edf4fb] px-1.5 py-0.5 text-xs text-[#526780]">{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {activeTaskTab === 'checklist' ? (
+              <div className="overflow-hidden rounded-[8px] border border-[#e1e9f2]">
+                {requirements.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-3 last:border-b-0">
+                    <span>
+                      <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
+                      {item.detail ? <span className="block text-xs text-[#70839a]">{item.detail}</span> : null}
+                    </span>
+                    <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusTone(item.status)}`}>
+                      {titleCaseStatus(item.status)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {activeTaskTab === 'documents' ? (
+              <FinanceDocumentList rows={stageDocuments} emptyMessage="No documents are linked to this stage yet." onOpenDocument={onOpenDocument} />
+            ) : null}
+
+            {activeTaskTab === 'notes' ? <EmptyState message="No finance notes recorded for this stage yet." /> : null}
+            {activeTaskTab === 'activity' ? (
+              <BankOutcomeHistory rows={workspace.bond.bankOutcomes} />
+            ) : null}
+
+            <div className="sticky bottom-0 -mx-5 -mb-4 flex flex-wrap items-center gap-3 border-t border-[#e5ecf4] bg-white px-5 py-4">
+              <Button type="button" disabled={!editable || !selectedStep || Boolean(loadingAction)} onClick={() => onStageChange?.(selectedStep?.key)}>
+                <CheckCircle2 size={15} />
+                Mark Complete
+              </Button>
+              <Button type="button" variant="secondary" disabled>
+                <ShieldCheck size={15} />
+                Mark Blocked
+              </Button>
+              <Button type="button" variant="secondary" disabled>
+                <Clock3 size={15} />
+                Mark Waiting
+              </Button>
+              <Button type="button" variant="secondary" disabled>
+                More Actions
+                <MoreHorizontal size={15} />
+              </Button>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionCard title="Bank Applications" copy="Submitted applications, references, originator, and status.">
+          <ApplicationsSection
+            rows={workspace.bond.applications}
+            canManage={workspace.permissions.canManageApplications}
+            loadingAction={loadingAction}
+            onSubmit={onSubmitBankApplication}
+            onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
+          />
+        </SectionCard>
+        <SectionCard title="Offers / Buyer Decision" copy="Received bank offers, quote documents, and buyer outcome.">
+          <OffersSection
+            rows={workspace.bond.offers}
+            acceptedOfferId={workspace.bond.acceptedOffer?.id || ''}
+            canManage={workspace.permissions.canManageOffers}
+            canAccept={workspace.permissions.canAcceptOffer}
+            loadingAction={loadingAction}
+            onSubmit={(payload) => onCaptureBondOffer?.(payload)}
+            onAccept={(row) => onAcceptOffer?.(row)}
+            onDecline={(row) => onDeclineOffer?.(row)}
+            onOpenDocument={onOpenDocument}
+          />
+        </SectionCard>
+        <SectionCard title="Grant Milestones" copy="Grant received, signed and submitted.">
+          <GrantMilestoneCard
+            instruction={workspace.bond.instruction}
+            acceptedOffer={workspace.bond.acceptedOffer}
+            documents={documents}
+            canMark={workspace.permissions.canMarkInstructionSent}
+            loadingAction={loadingAction}
+            onSubmit={(payload) => onMarkGrantMilestone?.(payload)}
+            onOpenDocument={onOpenDocument}
+          />
+        </SectionCard>
+        <SectionCard title="Instruction to Attorney" copy="Bond instruction handoff to the transfer attorneys.">
+          <InstructionCard
+            instruction={workspace.bond.instruction}
+            acceptedOffer={workspace.bond.acceptedOffer}
+            canMark={workspace.permissions.canMarkInstructionSent}
+            loadingAction={loadingAction}
+            onSubmit={(payload) => onMarkInstructionSent?.(payload)}
+            onOpenDocument={onOpenDocument}
+          />
+        </SectionCard>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function FinanceHandoverPage({ workspace, transaction, documents, loadingAction, handoffPanel = null, onMarkGrantMilestone, onMarkInstructionSent, onOpenDocument }) {
+  return (
+    <FinanceWorkspaceFrame title="Handover / Transfer" copy="Bond grant, attorney handoff and submission package.">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.5fr)]">
+        <main className="space-y-4">
+          {handoffPanel}
+          <SectionCard title="Bond Grant">
+            <GrantMilestoneCard
+              instruction={workspace.bond.instruction}
+              acceptedOffer={workspace.bond.acceptedOffer}
+              documents={documents}
+              canMark={workspace.permissions.canMarkInstructionSent}
+              loadingAction={loadingAction}
+              onSubmit={(payload) => onMarkGrantMilestone?.(payload)}
+              onOpenDocument={onOpenDocument}
+            />
+          </SectionCard>
+          <SectionCard title="Attorney Handoff">
+            <InstructionCard
+              instruction={workspace.bond.instruction}
+              acceptedOffer={workspace.bond.acceptedOffer}
+              canMark={workspace.permissions.canMarkInstructionSent}
+              loadingAction={loadingAction}
+              onSubmit={(payload) => onMarkInstructionSent?.(payload)}
+              onOpenDocument={onOpenDocument}
+            />
+          </SectionCard>
+        </main>
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <SectionCard title="Submission Package">
+            <FinanceDocumentList rows={[...workspace.bond.supportingDocuments, ...workspace.bond.offerDocuments, ...workspace.bond.instructionDocuments]} emptyMessage="No handover documents uploaded yet." onOpenDocument={onOpenDocument} />
+          </SectionCard>
+          <RegistrationHandoffCard transaction={transaction} />
+        </aside>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
+function FinanceAuditPage({ workspace, transaction }) {
+  const auditRows = [
+    { id: 'stage', label: 'Current finance stage', value: workspace.summaryBlocks.find((item) => item.key === 'current_stage')?.value || 'Not captured' },
+    { id: 'blocker', label: 'Blocker status', value: workspace.summaryBlocks.find((item) => item.key === 'blocker_status')?.value || 'No blockers' },
+    { id: 'updated', label: 'Matter updated', value: formatDate(transaction?.updated_at || transaction?.updatedAt, 'Not recorded') },
+  ]
+  return (
+    <FinanceWorkspaceFrame title="Audit Log" copy="Ledger history, workflow updates and bank outcome history.">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.42fr)_minmax(0,1fr)]">
+        <SectionCard title="Timeline">
+          <div className="space-y-2">
+            {auditRows.map((row) => (
+              <article key={row.id} className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
+                <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{row.label}</span>
+                <strong className="mt-1 block text-sm font-semibold text-[#142132]">{row.value}</strong>
+              </article>
+            ))}
+          </div>
+        </SectionCard>
+        <SectionCard title="Bank Outcome History">
+          <BankOutcomeHistory rows={workspace.bond.bankOutcomes} />
+        </SectionCard>
+      </div>
+    </FinanceWorkspaceFrame>
+  )
+}
+
 function FinanceCommandCenter({
   transaction = {},
   workflowData = null,
@@ -1062,6 +1672,8 @@ function FinanceCommandCenter({
   viewerRole = '',
   activeViewerPermissions = null,
   financeReadinessHandoff = null,
+  matterAccountsPanel = null,
+  handoffPanel = null,
   loadingAction = '',
   onUploadDocument,
   onSubmitBankApplication,
@@ -1069,6 +1681,7 @@ function FinanceCommandCenter({
   onCaptureBondOffer,
   onAcceptOffer,
   onDeclineOffer,
+  onStageChange,
   onMarkGrantMilestone,
   onMarkInstructionSent,
   onReviewDocuments,
@@ -1076,6 +1689,8 @@ function FinanceCommandCenter({
   onUpdateBlockers,
   onOpenDocument,
 }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [uploadingKey, setUploadingKey] = useState('')
   const [blockerForm, setBlockerForm] = useState({
     blockerStatus: '',
@@ -1142,14 +1757,42 @@ function FinanceCommandCenter({
     }
   }
 
-  const acceptedOfferId = workspace.bond.acceptedOffer?.id || ''
   const hasBondLikeFinance = workspace.financeType === 'bond' || workspace.financeType === 'combination'
   const hasBondWorkflow = hasBondLikeFinance && workspace.originatorManagedFinance
   const hasExternalBondFinance = hasBondLikeFinance && workspace.clientManagedBondFinance
-  const hasBondDocumentWorkflow = hasBondLikeFinance
   const hasCashWorkflow = workspace.financeType === 'cash' || workspace.financeType === 'combination'
   const hasDeveloperWorkflow = workspace.financeType === 'developer'
-  const applicationOwnership = buildApplicationOwnershipCard(transaction, workspace)
+  const defaultWorkspaceKey = hasBondWorkflow ? 'bond-workflow' : 'accounts'
+  const [activeWorkspaceKey, setActiveWorkspaceKey] = useState(() => {
+    const search = typeof window !== 'undefined' ? window.location.search : ''
+    const params = new URLSearchParams(search)
+    const urlKey = normalizeFinanceWorkspaceKey(params.get('financeWorkspace'))
+    if (urlKey) return urlKey
+    if (typeof window !== 'undefined') {
+      return normalizeFinanceWorkspaceKey(window.localStorage?.getItem(FINANCE_WORKSPACE_STORAGE_KEY)) || defaultWorkspaceKey
+    }
+    return defaultWorkspaceKey
+  })
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const urlKey = normalizeFinanceWorkspaceKey(params.get('financeWorkspace'))
+    if (urlKey && urlKey !== activeWorkspaceKey) {
+      setActiveWorkspaceKey(urlKey)
+    }
+  }, [activeWorkspaceKey, location.search])
+
+  function handleWorkspaceChange(nextKey) {
+    const normalizedKey = normalizeFinanceWorkspaceKey(nextKey) || 'accounts'
+    setActiveWorkspaceKey(normalizedKey)
+    if (typeof window !== 'undefined') {
+      window.localStorage?.setItem(FINANCE_WORKSPACE_STORAGE_KEY, normalizedKey)
+    }
+    const params = new URLSearchParams(location.search)
+    params.set('financeWorkspace', normalizedKey)
+    navigate({ pathname: location.pathname, search: `?${params.toString()}`, hash: location.hash }, { replace: false })
+  }
+
   const financeCommandCard = (
     <SectionCard
       title="Finance Command"
@@ -1199,14 +1842,77 @@ function FinanceCommandCenter({
     </SectionCard>
   )
 
-  return (
-    <div className="space-y-4">
-      <div className="grid overflow-hidden rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] sm:grid-cols-2 xl:grid-cols-5">
-        {workspace.summaryBlocks.map((item) => (
-          <SummaryBlock key={item.key} item={item} />
-        ))}
-      </div>
+  const activeFinanceWorkspace =
+    activeWorkspaceKey === 'requests' ? (
+      <FinanceRequestsPage
+        workspace={workspace}
+        hasExternalBondFinance={hasExternalBondFinance}
+        hasCashWorkflow={hasCashWorkflow}
+        hasDeveloperWorkflow={hasDeveloperWorkflow}
+        proofStatusItems={proofStatusItems}
+        uploadingKey={uploadingKey}
+        handleRequirementUpload={handleRequirementUpload}
+        loadingAction={loadingAction}
+        onReviewDocuments={onReviewDocuments}
+        onVerifyProofOfFunds={onVerifyProofOfFunds}
+        onOpenDocument={onOpenDocument}
+      />
+    ) : activeWorkspaceKey === 'payments' ? (
+      <FinancePaymentsPage workspace={workspace} />
+    ) : activeWorkspaceKey === 'documents' ? (
+      <FinanceDocumentsPage
+        workspace={workspace}
+        uploadingKey={uploadingKey}
+        handleRequirementUpload={handleRequirementUpload}
+        onOpenDocument={onOpenDocument}
+      />
+    ) : activeWorkspaceKey === 'bond-workflow' ? (
+      hasBondWorkflow ? (
+        <BondWorkflowWorkspace
+          workspace={workspace}
+          documents={documents}
+          loadingAction={loadingAction}
+          onStageChange={onStageChange}
+          onSubmitBankApplication={onSubmitBankApplication}
+          onUpdateBankApplication={onUpdateBankApplication}
+          onCaptureBondOffer={onCaptureBondOffer}
+          onAcceptOffer={onAcceptOffer}
+          onDeclineOffer={onDeclineOffer}
+          onMarkGrantMilestone={onMarkGrantMilestone}
+          onMarkInstructionSent={onMarkInstructionSent}
+          onOpenDocument={onOpenDocument}
+        />
+      ) : (
+        <FinanceWorkspaceFrame title="Bond Workflow" copy="This matter is not using an originator-managed bond workflow.">
+          <ProgressRail groups={workspace.railGroups} />
+        </FinanceWorkspaceFrame>
+      )
+    ) : activeWorkspaceKey === 'handover' ? (
+      <FinanceHandoverPage
+        workspace={workspace}
+        transaction={transaction}
+        documents={documents}
+        loadingAction={loadingAction}
+        handoffPanel={handoffPanel}
+        onMarkGrantMilestone={onMarkGrantMilestone}
+        onMarkInstructionSent={onMarkInstructionSent}
+        onOpenDocument={onOpenDocument}
+      />
+    ) : activeWorkspaceKey === 'audit' ? (
+      <FinanceAuditPage workspace={workspace} transaction={transaction} />
+    ) : (
+      <FinanceAccountsPage
+        workspace={workspace}
+        proofStatusItems={proofStatusItems}
+        financeCommandCard={financeCommandCard}
+        financeReadinessHandoff={financeReadinessHandoff}
+        matterAccountsPanel={matterAccountsPanel}
+      />
+    )
 
+  return (
+    <div className="space-y-5">
+      <FinanceWorkspaceNav activeKey={activeWorkspaceKey} onChange={handleWorkspaceChange} />
       <OwnershipBadgeStrip
         financeType={workspace.financeType}
         financeOwner={workspace.financeOwner}
@@ -1214,348 +1920,7 @@ function FinanceCommandCenter({
         clientManagedBondFinance={workspace.clientManagedBondFinance}
         canProxyFinanceWorkflow={workspace.permissions.canProxyFinanceWorkflow}
       />
-
-      {hasBondWorkflow ? (
-        <div className={workspace.financeType === 'combination' ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]' : ''}>
-          <FinanceProgressBar
-            workflowData={workflowData}
-            mode="readonly"
-            viewerRole={viewerRole}
-            title="Bond Application Progress"
-            description={workspace.financeType === 'combination'
-              ? 'Bond lane progress for the hybrid finance workflow.'
-              : 'Bond finance workflow status shared across Arch9.'}
-          />
-          {workspace.financeType === 'combination' ? (
-            <CashPortionStatusPanel items={proofStatusItems} />
-          ) : null}
-        </div>
-      ) : (
-        <ProgressRail groups={workspace.railGroups} />
-      )}
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
-        <main className="space-y-4">
-          {hasBondDocumentWorkflow ? (
-            <SectionCard
-              title={hasExternalBondFinance ? 'External Finance Documents' : 'Buyer Finance Documents'}
-              copy={
-                hasExternalBondFinance
-                  ? 'Approval letters, bank confirmations, and buyer-arranged finance evidence.'
-                  : 'Required buyer finance documents and upload status.'
-              }
-              actions={workspace.permissions.canReviewDocuments ? (
-                <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onReviewDocuments?.()}>
-                  Mark reviewed
-                </Button>
-              ) : null}
-            >
-              <RequiredDocumentTable
-                rows={workspace.bond.buyerDocuments}
-                canUpload={workspace.permissions.canUploadDocuments}
-                uploadingKey={uploadingKey}
-                onUpload={(row, file) =>
-                  handleRequirementUpload(
-                    row,
-                    file,
-                    hasExternalBondFinance ? 'external' : 'bond',
-                    hasExternalBondFinance ? 'external_finance_document' : 'buyer_finance_document',
-                    workspace.permissions.role,
-                  )
-                }
-                onOpenDocument={onOpenDocument}
-              />
-            </SectionCard>
-          ) : null}
-
-          {hasCashWorkflow ? (
-            <SectionCard
-              title={workspace.financeType === 'combination' ? 'Cash Portion Evidence' : 'Proof Of Funds Evidence'}
-              copy="Proof of funds, deposit support, source of funds, and guarantees."
-              actions={workspace.permissions.canVerifyProofOfFunds ? (
-                <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
-                  Verify proof of funds
-                </Button>
-              ) : null}
-            >
-              <div className="space-y-3">
-                <CashStatusList items={proofStatusItems} />
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'proof_of_funds' ? 'Uploading...' : 'Upload proof of funds'}
-                      disabled={uploadingKey === 'proof_of_funds'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'proof_of_funds', label: 'Proof Of Funds' },
-                          file,
-                          'cash',
-                          'proof_of_funds',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'deposit_proof' ? 'Uploading...' : 'Upload deposit proof'}
-                      disabled={uploadingKey === 'deposit_proof'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'deposit_proof', label: 'Deposit Proof' },
-                          file,
-                          'cash',
-                          'deposit_proof',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'guarantees' ? 'Uploading...' : 'Upload guarantees'}
-                      disabled={uploadingKey === 'guarantees'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'guarantees', label: 'Guarantees' },
-                          file,
-                          'cash',
-                          'guarantees',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.cash.proofDocuments, ...workspace.cash.depositDocuments, ...workspace.cash.guaranteeDocuments]} emptyMessage="No proof of funds, deposit, or guarantee documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {hasDeveloperWorkflow ? (
-            <SectionCard
-              title="Developer Finance Application"
-              copy="Application, deposit, approval, and payment schedule support."
-            >
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_application' ? 'Uploading...' : 'Upload application'}
-                      disabled={uploadingKey === 'developer_application'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_application', label: 'Developer Finance Application' },
-                          file,
-                          'developer',
-                          'developer_finance_application',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_deposit' ? 'Uploading...' : 'Upload deposit proof'}
-                      disabled={uploadingKey === 'developer_deposit'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_deposit', label: 'Deposit Proof' },
-                          file,
-                          'developer',
-                          'developer_deposit',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.developer.applicationDocuments, ...workspace.developer.depositDocuments]} emptyMessage="No developer finance application or deposit documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {hasBondWorkflow ? (
-            <SectionCard
-              title="Bank Applications"
-              copy="Submitted applications, references, originator, and status. Final decisions are retained below as bank outcomes."
-            >
-              <ApplicationsSection
-                rows={workspace.bond.applications}
-                canManage={workspace.permissions.canManageApplications}
-                loadingAction={loadingAction}
-                onSubmit={onSubmitBankApplication}
-                onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
-              />
-            </SectionCard>
-          ) : null}
-
-          {hasBondWorkflow ? (
-            <SectionCard
-              title="Bank Outcome History"
-              copy="Approved, declined, expired, and additional-document outcomes are retained for the application record."
-            >
-              <BankOutcomeHistory rows={workspace.bond.bankOutcomes} />
-            </SectionCard>
-          ) : null}
-
-          {hasBondWorkflow ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)]">
-              <SectionCard
-                title="Offers / Buyer Decision"
-                copy="Received bank offers, quote documents, and buyer outcome."
-              >
-                <OffersSection
-                  rows={workspace.bond.offers}
-                  acceptedOfferId={acceptedOfferId}
-                  canManage={workspace.permissions.canManageOffers}
-                  canAccept={workspace.permissions.canAcceptOffer}
-                  loadingAction={loadingAction}
-                  onSubmit={(payload) => onCaptureBondOffer?.(payload)}
-                  onAccept={(row) => onAcceptOffer?.(row)}
-                  onDecline={(row) => onDeclineOffer?.(row)}
-                  onOpenDocument={onOpenDocument}
-                />
-              </SectionCard>
-
-              <SectionCard
-                title="Buyer Decision"
-                copy="Accepted or declined quote outcome."
-              >
-                <DecisionCard
-                  acceptedOffer={workspace.bond.acceptedOffer}
-                  latestDecision={workspace.bond.latestDecision}
-                  offers={workspace.bond.offers}
-                  canAccept={workspace.permissions.canAcceptOffer}
-                  loadingAction={loadingAction}
-                  onAccept={(row) => onAcceptOffer?.(row)}
-                  onDecline={(row) => onDeclineOffer?.(row)}
-                  onOpenDocument={onOpenDocument}
-                />
-              </SectionCard>
-            </div>
-          ) : null}
-
-          {hasDeveloperWorkflow ? (
-            <SectionCard
-              title="Developer Approval"
-              copy="Approval letters, signed terms, and payment schedule."
-            >
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_approval' ? 'Uploading...' : 'Upload approval'}
-                      disabled={uploadingKey === 'developer_approval'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_approval', label: 'Finance Approval' },
-                          file,
-                          'developer',
-                          'developer_finance_approval',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_terms' ? 'Uploading...' : 'Upload signed terms'}
-                      disabled={uploadingKey === 'developer_terms'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_terms', label: 'Signed Terms' },
-                          file,
-                          'developer',
-                          'developer_finance_terms',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                  {workspace.permissions.canUploadDocuments ? (
-                    <UploadAction
-                      label={uploadingKey === 'developer_schedule' ? 'Uploading...' : 'Upload payment schedule'}
-                      disabled={uploadingKey === 'developer_schedule'}
-                      onSelect={(file) =>
-                        handleRequirementUpload(
-                          { key: 'developer_schedule', label: 'Payment Schedule' },
-                          file,
-                          'developer',
-                          'developer_payment_schedule',
-                          workspace.permissions.role,
-                        )
-                      }
-                    />
-                  ) : null}
-                </div>
-                <FinanceDocumentList rows={[...workspace.developer.approvalDocuments, ...workspace.developer.signedTermsDocuments, ...workspace.developer.paymentScheduleDocuments]} emptyMessage="No approval, signed terms, or payment schedule documents uploaded yet." onOpenDocument={onOpenDocument} />
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {hasBondWorkflow ? (
-            <SectionCard
-              title="Instruction to Attorney"
-              copy="Bond instruction handoff to the transfer attorneys."
-            >
-              <div className="space-y-4">
-                <GrantMilestoneCard
-                  instruction={workspace.bond.instruction}
-                  acceptedOffer={workspace.bond.acceptedOffer}
-                  documents={documents}
-                  canMark={workspace.permissions.canMarkInstructionSent}
-                  loadingAction={loadingAction}
-                  onSubmit={(payload) => onMarkGrantMilestone?.(payload)}
-                  onOpenDocument={onOpenDocument}
-                />
-                <InstructionCard
-                  instruction={workspace.bond.instruction}
-                  acceptedOffer={workspace.bond.acceptedOffer}
-                  canMark={workspace.permissions.canMarkInstructionSent}
-                  loadingAction={loadingAction}
-                  onSubmit={(payload) => onMarkInstructionSent?.(payload)}
-                  onOpenDocument={onOpenDocument}
-                />
-                <RegistrationHandoffCard transaction={transaction} />
-              </div>
-            </SectionCard>
-          ) : null}
-        </main>
-
-        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-          {hasBondWorkflow ? (
-            <IndicativeFinanceReadinessContainer handoff={financeReadinessHandoff} variant="compact" />
-          ) : null}
-
-          {hasBondWorkflow ? (
-            <SectionCard
-              title="Bond Application Owner"
-              copy="Originator assignment, routing, and ownership."
-              actions={<UserRound size={16} className="text-[#6d8197]" />}
-            >
-              <div className="grid gap-2">
-                {[
-                  { label: 'Consultant', value: applicationOwnership.consultant },
-                  { label: 'Branch', value: applicationOwnership.branch },
-                  { label: 'Region', value: applicationOwnership.region },
-                  { label: 'Assigned', value: formatDate(applicationOwnership.assignedAt, applicationOwnership.assignedAt) },
-                  { label: 'Method', value: title(applicationOwnership.method) },
-                  { label: 'Routing Source', value: title(applicationOwnership.routingSource) },
-                  { label: 'Routing Rule', value: applicationOwnership.routingRule },
-                ].map((item) => (
-                  <article key={item.label} className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] px-3 py-3">
-                    <span className="block text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8ca0b6]">{item.label}</span>
-                    <strong className="mt-1 block text-sm font-semibold leading-5 text-[#142132]">{item.value}</strong>
-                  </article>
-                ))}
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {financeCommandCard}
-        </aside>
-      </div>
+      {activeFinanceWorkspace}
     </div>
   )
 }

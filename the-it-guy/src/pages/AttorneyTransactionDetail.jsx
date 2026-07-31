@@ -11522,6 +11522,23 @@ function AttorneyTransactionDetail() {
       requiredDocumentChecklist={requiredDocumentChecklist}
       documents={documents}
       financeReadinessHandoff={financeReadinessHandoff}
+      matterAccountsPanel={workspaceRole === 'attorney' && transaction?.id ? (
+        <AttorneyMatterAccountsPanel
+          transactionId={transaction.id}
+          buyerName={buyerDisplayName}
+          sellerName={sellerDisplayName}
+        />
+      ) : null}
+      handoffPanel={workspaceRole === 'attorney' ? (
+        <BondOriginatorAttorneyHandoffView
+          handoffView={bondOriginatorAttorneyHandoffView}
+          transaction={transaction}
+          documents={documents}
+          rolePlayers={transactionRolePlayers}
+          onOpenDocument={handleOpenFinanceDocument}
+          onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+        />
+      ) : null}
       viewerRole={workspaceRole}
       activeViewerPermissions={{ canEditFinanceWorkflow: canEditBondHybridFinanceWorkflow }}
       loadingAction={bondHybridFinanceActionLoading}
@@ -11529,6 +11546,7 @@ function AttorneyTransactionDetail() {
       onUpdateBankApplication={(application, payload) => void handleUpdateBondHybridApplication(application.id, payload)}
       onCaptureBondOffer={(payload) => void handleAddBondHybridQuote(payload)}
       onAcceptOffer={(offer) => void handleApproveBondHybridQuote(offer.id)}
+      onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
       onMarkGrantMilestone={(payload) => void handleMarkBondHybridGrantMilestone(payload)}
       onMarkInstructionSent={(payload) => void handleMarkBondHybridInstructionSent(payload)}
       onOpenDocument={handleOpenFinanceDocument}
@@ -14848,50 +14866,7 @@ function AttorneyTransactionDetail() {
 
         {workspaceRole === 'attorney' && (activeWorkspaceMenu === 'finance' || activeLegalWorkflowDetailKey === 'bond-registration') ? (
           <section className="space-y-5">
-            <section className="rounded-[18px] border border-slate-200 bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attorney finance workspace</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-slate-950">Matter finance and bond attorney workflow</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {['Matter accounts', 'Buyer / seller payment evidence', 'Guarantees', 'Bond-registration readiness', 'Originator workflow separate'].map((label) => (
-                  <span key={label} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </section>
-
-            <BondOriginatorAttorneyHandoffView
-              handoffView={bondOriginatorAttorneyHandoffView}
-              transaction={transaction}
-              documents={documents}
-              rolePlayers={transactionRolePlayers}
-              onOpenDocument={handleOpenFinanceDocument}
-              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
-            />
-
-            {transaction?.id ? (
-              <AttorneyMatterAccountsPanel
-                transactionId={transaction.id}
-                buyerName={buyerDisplayName}
-                sellerName={sellerDisplayName}
-              />
-            ) : null}
-
-            <ArchlineWorkflowWorkspace
-              workflow={archlineFinanceWorkflow}
-              workflowKey="finance"
-              title="Bond Attorney Workflow"
-              badge={financeTypeLabel}
-              summaryRows={archlineFinanceSummaryRows}
-              documents={archlineDocumentsByWorkflow.finance}
-              blockers={archlineFinanceWorkflow.blockers || []}
-              keyDates={archlineKeyDates}
-              activityFeed={overviewConversationEntries}
-              saving={Boolean(bondHybridFinanceActionLoading)}
-              onUploadDocument={() => openDocumentUploadModal({ category: 'finance' })}
-              onAddNote={handleQuickAddWorkflowNote}
-              onOpenDocuments={() => openWorkspaceMenu('documents')}
-            />
+            {financeCommandCenterPanel}
           </section>
         ) : null}
 
