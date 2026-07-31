@@ -1,16 +1,3 @@
-import {
-  BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
-  buildBondHybridFinanceStageSteps,
-  getBondHybridFinanceStageLabel,
-  normalizeBondHybridFinanceStage,
-  summarizeBondHybridFinanceWorkflow,
-} from '../../core/transactions/bondHybridFinanceWorkflow'
-import {
-  normalizeDocumentRequestPriority,
-  normalizeDocumentRequestStatus,
-} from '../../core/transactions/attorneyOperationalEngine'
-import { financeTypeMatchesFilter } from '../../core/transactions/financeType'
-import { normalizeRoleType } from '../../core/transactions/permissions'
 import { bondPerfLog, createPerfTimer } from '../performanceTrace'
 import {
   fetchDevelopmentIdsForOrganisation,
@@ -27,6 +14,91 @@ import {
   requireClient,
   selectWithoutKnownMissingColumns,
 } from './dashboardOverviewApi.js'
+
+const TRANSACTION_ROLE_TYPES = [
+  'developer',
+  'agent',
+  'attorney',
+  'bond_originator',
+  'buyer',
+  'seller',
+  'internal_admin',
+]
+const DOCUMENT_REQUEST_PRIORITY_VALUES = ['required', 'urgent', 'normal', 'optional']
+const DOCUMENT_REQUEST_STATUS_VALUES = ['requested', 'submitted', 'under_review', 'approved', 'rejected', 'cancelled']
+const BOND_HYBRID_FINANCE_WORKFLOW_TYPE = 'bond_hybrid'
+const BOND_HYBRID_FINANCE_STAGES = [
+  'intake',
+  'documents',
+  'submitted_to_banks',
+  'bank_review',
+  'quote_received',
+  'quote_accepted',
+  'bond_approved',
+  'grant_received',
+  'grant_signed',
+  'grant_submitted',
+  'instruction_sent',
+  'complete',
+]
+const BOND_HYBRID_FINANCE_STAGE_LABELS = {
+  intake: 'Intake',
+  documents: 'Documents',
+  submitted_to_banks: 'Submitted to Banks',
+  bank_review: 'Bank Review',
+  quote_received: 'Quote Received',
+  quote_accepted: 'Quote Accepted',
+  bond_approved: 'Bond Approved',
+  grant_received: 'Grant Received',
+  grant_signed: 'Grant Signed',
+  grant_submitted: 'Grant Submitted',
+  instruction_sent: 'Instruction Issued',
+  complete: 'Complete',
+}
+const BOND_HYBRID_FINANCE_STAGE_DESCRIPTIONS = {
+  intake: 'The bond application intake is open.',
+  documents: 'Buyer finance documents are being collected and reviewed.',
+  submitted_to_banks: 'Applications have been submitted to one or more banks or lenders.',
+  bank_review: 'Banks are reviewing the application or requesting additional documents.',
+  quote_received: 'Bank feedback or finance quotes have been received.',
+  quote_accepted: 'The buyer has accepted one finance quote.',
+  bond_approved: 'The bond approval is confirmed and ready for grant processing.',
+  grant_received: 'The formal bond grant has been received from the lender.',
+  grant_signed: 'The buyer has signed the bond grant.',
+  grant_submitted: 'The signed bond grant has been submitted for instruction.',
+  instruction_sent: 'Finance instruction has been issued to the attorney workflow.',
+  complete: 'Finance workflow is complete.',
+}
+const BOND_HYBRID_FINANCE_STAGE_ALIASES = {
+  buyer_onboarding_started: 'intake',
+  intake_started: 'intake',
+  documents_requested: 'documents',
+  documents_pending: 'documents',
+  documents_received: 'documents',
+  documents_reviewed: 'documents',
+  documents_verified: 'documents',
+  applications_submitted: 'submitted_to_banks',
+  submitted: 'submitted_to_banks',
+  bank_feedback: 'bank_review',
+  bank_feedback_pending: 'bank_review',
+  quotes_received: 'quote_received',
+  quote_approved: 'quote_accepted',
+  approved_by_buyer: 'quote_accepted',
+  accepted: 'quote_accepted',
+  approved: 'bond_approved',
+  bond_approved: 'bond_approved',
+  approval_granted: 'bond_approved',
+  grant_received: 'grant_received',
+  bond_grant_received: 'grant_received',
+  grant_signed: 'grant_signed',
+  bond_grant_signed: 'grant_signed',
+  grant_submitted: 'grant_submitted',
+  bond_grant_submitted: 'grant_submitted',
+  instruction_issued: 'instruction_sent',
+  bond_instruction_sent: 'instruction_sent',
+  registered: 'complete',
+  completed: 'complete',
+}
 
 const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
 const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
@@ -79,6 +151,211 @@ const DEVELOPMENT_TEAM_ROLE_MAP = {
     emailFields: ['email', 'contactEmail'],
     organisationFields: ['company', 'organisation', 'organisationName'],
   },
+}
+
+function normalizeRoleType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+
+  if (
+    [
+      'conveyancer',
+      'transfer_conveyancer',
+      'transfer_attorney',
+      'bond_attorney',
+      'cancellation_attorney',
+      'conveyancing_secretary',
+      'buyer_attorney',
+      'seller_attorney',
+      'tuckers',
+    ].includes(normalized)
+  ) {
+    return 'attorney'
+  }
+
+  if (['bondoriginator', 'bond_originator'].includes(normalized)) {
+    return 'bond_originator'
+  }
+
+  if (['listing_agent', 'selling_agent', 'estate_agent', 'sales_agent'].includes(normalized)) {
+    return 'agent'
+  }
+
+  if (['developer_contact', 'developer_rep'].includes(normalized)) {
+    return 'developer'
+  }
+
+  if (['internal_admin'].includes(normalized)) {
+    return 'internal_admin'
+  }
+
+  return TRANSACTION_ROLE_TYPES.includes(normalized) ? normalized : 'developer'
+}
+
+function normalizeDocumentRequestPriority(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'high') return 'urgent'
+  if (normalized === 'medium') return 'normal'
+  if (normalized === 'low') return 'optional'
+  return DOCUMENT_REQUEST_PRIORITY_VALUES.includes(normalized) ? normalized : 'required'
+}
+
+function normalizeDocumentRequestStatus(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'under review' || normalized === 'under-review' || normalized === 'in_review' || normalized === 'in review') {
+    return 'under_review'
+  }
+  return DOCUMENT_REQUEST_STATUS_VALUES.includes(normalized) ? normalized : 'requested'
+}
+
+function normalizeDashboardFinanceType(value, { fallback = 'cash', allowUnknown = false } = {}) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (!normalized) {
+    return allowUnknown ? 'unknown' : fallback
+  }
+
+  if (normalized === 'hybrid') {
+    return 'combination'
+  }
+
+  if (normalized === 'developer' || normalized === 'developer_finance' || normalized === 'developer finance') {
+    return 'developer'
+  }
+
+  if (normalized === 'combination' || normalized === 'cash_bond' || normalized === 'cash+bond') {
+    return 'combination'
+  }
+
+  const hasCash = normalized.includes('cash')
+  const hasBond = normalized.includes('bond') || normalized.includes('mortgage')
+
+  if (hasCash && hasBond) {
+    return 'combination'
+  }
+
+  if (hasBond) {
+    return 'bond'
+  }
+
+  if (normalized.includes('developer')) {
+    return 'developer'
+  }
+
+  if (hasCash) {
+    return 'cash'
+  }
+
+  if (allowUnknown) {
+    return 'unknown'
+  }
+
+  return fallback
+}
+
+function financeTypeMatchesFilter(value, filter) {
+  const normalizedFilter = String(filter || 'all')
+    .trim()
+    .toLowerCase()
+
+  if (!normalizedFilter || normalizedFilter === 'all') {
+    return true
+  }
+
+  const canonicalFilter = normalizeDashboardFinanceType(normalizedFilter, {
+    fallback: normalizedFilter,
+    allowUnknown: normalizedFilter === 'unknown',
+  })
+  const canonicalValue = normalizeDashboardFinanceType(value, { allowUnknown: true })
+  return canonicalValue === canonicalFilter
+}
+
+function normalizeBondHybridFinanceStage(value, fallback = 'intake') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (BOND_HYBRID_FINANCE_STAGE_ALIASES[normalized]) return BOND_HYBRID_FINANCE_STAGE_ALIASES[normalized]
+  return BOND_HYBRID_FINANCE_STAGES.includes(normalized) ? normalized : fallback
+}
+
+function getBondHybridFinanceStageLabel(stage) {
+  const normalized = normalizeBondHybridFinanceStage(stage)
+  return BOND_HYBRID_FINANCE_STAGE_LABELS[normalized] || BOND_HYBRID_FINANCE_STAGE_LABELS.intake
+}
+
+function getBondHybridFinanceStageIndex(stage) {
+  return BOND_HYBRID_FINANCE_STAGES.indexOf(normalizeBondHybridFinanceStage(stage))
+}
+
+function isBondHybridFinanceWorkflowComplete(workflow = {}) {
+  const stage = normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage)
+  return workflow?.status === 'completed' || stage === 'complete'
+}
+
+function summarizeBondHybridFinanceWorkflow(workflowData = {}) {
+  const workflow = workflowData.workflow || workflowData || null
+  const applications = Array.isArray(workflowData.applications) ? workflowData.applications : []
+  const quotes = Array.isArray(workflowData.quotes) ? workflowData.quotes : []
+  const instruction = workflowData?.instruction || null
+  const approvedQuote = quotes.find((quote) =>
+    ['approved_by_buyer', 'accepted'].includes(quote.quoteStatus || quote.quote_status),
+  ) || null
+  const submittedApplications = applications.filter((application) =>
+    [
+      'submitted',
+      'in_review',
+      'feedback_received',
+      'quote_received',
+      'additional_documents_required',
+      'declined',
+      'approved',
+      'buyer_approved',
+    ].includes(application.status),
+  )
+  const quoteCount = quotes.filter((quote) =>
+    ['received', 'approved_by_buyer', 'accepted', 'declined', 'not_selected'].includes(quote.quoteStatus || quote.quote_status),
+  ).length
+
+  return {
+    currentStage: workflow?.currentStage || workflow?.current_stage || null,
+    currentStageLabel: workflow?.currentStageLabel || getBondHybridFinanceStageLabel(workflow?.currentStage || workflow?.current_stage),
+    status: workflow?.status || 'active',
+    submittedBanksCount: submittedApplications.length,
+    quotesReceivedCount: quoteCount,
+    approvedBank: approvedQuote?.bankName || approvedQuote?.bank_name || null,
+    approvedQuote,
+    bondApproved: Boolean(approvedQuote),
+    grantReceived: Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id),
+    grantSigned: Boolean(instruction?.grantSigned || instruction?.grant_signed || instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id),
+    grantSubmitted: Boolean(instruction?.grantSubmitted || instruction?.grant_submitted),
+    instructionSent: Boolean(instruction?.instructionSent || instruction?.instruction_sent) || isBondHybridFinanceWorkflowComplete(workflow),
+  }
+}
+
+function buildBondHybridFinanceStageSteps(workflowData = {}) {
+  const workflow = workflowData.workflow || workflowData || null
+  const currentStage = normalizeBondHybridFinanceStage(workflow?.currentStage || workflow?.current_stage)
+  const currentIndex = getBondHybridFinanceStageIndex(currentStage)
+  const status = workflow?.status || 'active'
+
+  return BOND_HYBRID_FINANCE_STAGES.map((stage, index) => {
+    let stepStatus = 'upcoming'
+    if (status === 'completed' || index < currentIndex) stepStatus = 'completed'
+    else if (index === currentIndex) stepStatus = 'current'
+
+    return {
+      key: stage,
+      label: BOND_HYBRID_FINANCE_STAGE_LABELS[stage],
+      description: BOND_HYBRID_FINANCE_STAGE_DESCRIPTIONS[stage],
+      status: stepStatus,
+    }
+  })
 }
 
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =

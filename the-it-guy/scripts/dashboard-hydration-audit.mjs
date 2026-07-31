@@ -8,8 +8,17 @@ const json = process.argv.includes('--json')
 
 const files = {
   dashboardPage: path.join(root, 'src/pages/Dashboard.jsx'),
+  hydrationRollout: path.join(root, 'src/lib/dashboardHydrationRollout.js'),
   overviewApi: path.join(root, 'src/lib/api/dashboardOverviewApi.js'),
   transactionSummaryApi: path.join(root, 'src/lib/api/dashboardTransactionSummaryApi.js'),
+  developerAggregateMigration: path.join(
+    root,
+    '../supabase/migrations/202607310004_dashboard_developer_aggregate_rpc.sql',
+  ),
+  developerRollupMigration: path.join(
+    root,
+    '../supabase/migrations/202607310005_dashboard_developer_metric_rollups.sql',
+  ),
 }
 
 const source = Object.fromEntries(
@@ -22,11 +31,12 @@ const surfaces = [
     file: 'src/pages/Dashboard.jsx',
     risk: 'entrypoint',
     evidence: [
-      'fetchDashboardOverview({',
+      'fetchDashboardOverviewAggregate(overviewRequest)',
+      'fetchDashboardOverview(overviewRequest)',
       'fetchTransactionsByParticipantSummary({',
       'fetchTransactionsListSummary({',
     ],
-    detail: 'Dashboard initial load can enter the developer overview, participant summary, or principal list summary paths.',
+    detail: 'Dashboard initial load can enter the developer aggregate/detail overview, participant summary, or principal list summary paths.',
   }),
   surface({
     id: 'developer_overview_unit_hydration',
@@ -34,7 +44,7 @@ const surfaces = [
     risk: 'high',
     evidence: [
       'units = await fetchUnitsBase(client, developmentId)',
-      'await hydrateUnitRows(client, units)',
+      'await hydrateUnitRows(client, units, { includeOperationalSignals })',
     ],
     detail: 'Developer overview fetches units first, then hydrates row objects for dashboard metrics.',
   }),
@@ -152,6 +162,9 @@ const dynamicCounts = {
     source.dashboardPage,
     /\bfetch(?:DashboardOverview|TransactionsByParticipantSummary|TransactionsListSummary)\s*\(/g,
   ),
+  dashboardBodyLoadingGateCount: countMatches(source.dashboardPage, /!\s*loading\s*&&\s*isSupabaseConfigured/g),
+  dashboardAggregateLoaderCount: countMatches(source.dashboardPage, /\bfetchDashboardOverviewAggregate\s*\(/g),
+  dashboardLazyPanelHydrationCount: countMatches(source.dashboardPage, /\bhydrateDashboardOverviewPanels\s*\(/g),
   overviewTransactionIdInFilters: countMatches(source.overviewApi, /\.in\('transaction_id', transactionIds\)/g),
   overviewUnitIdInFilters: countMatches(source.overviewApi, /\.in\('unit_id', unitIds\)/g),
   transactionSummaryTransactionIdInFilters: countMatches(
@@ -163,21 +176,64 @@ const dynamicCounts = {
 
 const report = {
   enforce,
-  contract: 'dashboard-hydration-phase0-v1',
+  contract: 'dashboard-hydration-phase6-v1',
   summary: {
     presentSurfaceCount: presentCount,
     highRiskSurfaceCount: highRiskCount,
     mediumRiskSurfaceCount: mediumRiskCount,
+    shellFirst: {
+      bodyGate: source.dashboardPage.includes('const shouldRenderDashboardBody = isSupabaseConfigured'),
+      loadingStateGate: source.dashboardPage.includes(
+        'const shouldShowDashboardLoadingState = loading && shouldRenderDashboardBody',
+      ),
+      bodyBlockedByLoading: dynamicCounts.dashboardBodyLoadingGateCount > 0,
+    },
+    supabaseAggregation: {
+      migration: source.developerAggregateMigration.includes(
+        'create or replace function public.bridge_dashboard_developer_overview_aggregate',
+      ),
+      clientRpc: source.overviewApi.includes("client.rpc('bridge_dashboard_developer_overview_aggregate'"),
+      loaderFastPath: source.dashboardPage.includes('const aggregate = await fetchDashboardOverviewAggregate'),
+    },
+    lazyPanelHydration: {
+      apiWrapper: source.overviewApi.includes('export async function hydrateDashboardOverviewPanels'),
+      baseRowsSkipOperationalSignals: source.dashboardPage.includes('includeOperationalSignals: false') &&
+        source.dashboardPage.includes('includeCommissionSnapshots: false'),
+      panelWrapper: source.dashboardPage.includes('void hydrateDashboardOverviewPanels({'),
+      staleLoadToken: source.dashboardPage.includes('dashboardPanelHydrationRef.current === panelHydrationLoadId'),
+    },
+    rollups: {
+      table: source.developerRollupMigration.includes('create table if not exists public.dashboard_developer_metric_rollups'),
+      refreshRpc: source.developerRollupMigration.includes(
+        'create or replace function public.bridge_refresh_dashboard_developer_metric_rollups',
+      ),
+      aggregatePrefersRollups: source.developerRollupMigration.includes("aggregateSource', 'rollup'") &&
+        source.developerRollupMigration.includes('v_rollup_count = v_scoped_development_count'),
+      clientRefreshRpc: source.overviewApi.includes("client.rpc('bridge_refresh_dashboard_developer_metric_rollups'"),
+      clientMetadata: source.overviewApi.includes('rollupGeneratedAt'),
+    },
+    rollout: {
+      helper: source.hydrationRollout.includes('export function getDashboardHydrationRollout'),
+      aggregateRoleFlag: source.hydrationRollout.includes('VITE_DASHBOARD_AGGREGATE_ROLLOUT_ROLES'),
+      lazyPanelRoleFlag: source.hydrationRollout.includes('VITE_DASHBOARD_LAZY_PANEL_ROLLOUT_ROLES'),
+      rollupRefreshFlag: source.hydrationRollout.includes('VITE_DASHBOARD_ROLLUP_REFRESH_ENABLED'),
+      aggregateLoaderGate: source.dashboardPage.includes('dashboardHydrationRollout.aggregateEnabled'),
+      lazyPanelLoaderGate: source.dashboardPage.includes('dashboardHydrationRollout.lazyPanelsEnabled'),
+    },
     dynamicCounts,
   },
   budgets: {
     maxPresentSurfaces: 12,
     maxHighRiskSurfaces: 5,
     maxDashboardLoaderEntrypoints: 4,
+    maxDashboardBodyLoadingGates: 0,
+    minDashboardAggregateLoaderCalls: 1,
+    minDashboardLazyPanelHydrationCalls: 1,
     maxOverviewTransactionIdInFilters: 2,
     maxOverviewUnitIdInFilters: 4,
     maxTransactionSummaryTransactionIdInFilters: 8,
     maxTransactionSummaryIdBatchFilters: 4,
+    minRolloutGates: 2,
   },
   surfaces,
 }
@@ -200,6 +256,79 @@ if (enforce) {
     failures.push(
       `dashboard loader entrypoints ${dynamicCounts.dashboardLoaderEntrypointCount} exceeds ${report.budgets.maxDashboardLoaderEntrypoints}`,
     )
+  }
+  if (!report.summary.shellFirst.bodyGate) {
+    failures.push('dashboard shell-first body gate is missing')
+  }
+  if (!report.summary.shellFirst.loadingStateGate) {
+    failures.push('dashboard shell-first loading state gate is missing')
+  }
+  if (dynamicCounts.dashboardBodyLoadingGateCount > report.budgets.maxDashboardBodyLoadingGates) {
+    failures.push(
+      `dashboard body loading gates ${dynamicCounts.dashboardBodyLoadingGateCount} exceeds ${report.budgets.maxDashboardBodyLoadingGates}`,
+    )
+  }
+  if (!report.summary.supabaseAggregation.migration) {
+    failures.push('dashboard developer aggregate RPC migration is missing')
+  }
+  if (!report.summary.supabaseAggregation.clientRpc) {
+    failures.push('dashboard aggregate RPC client is missing')
+  }
+  if (!report.summary.supabaseAggregation.loaderFastPath) {
+    failures.push('dashboard aggregate loader fast path is missing')
+  }
+  if (dynamicCounts.dashboardAggregateLoaderCount < report.budgets.minDashboardAggregateLoaderCalls) {
+    failures.push(
+      `dashboard aggregate loader calls ${dynamicCounts.dashboardAggregateLoaderCount} is below ${report.budgets.minDashboardAggregateLoaderCalls}`,
+    )
+  }
+  if (!report.summary.lazyPanelHydration.apiWrapper) {
+    failures.push('dashboard lazy panel hydration API wrapper is missing')
+  }
+  if (!report.summary.lazyPanelHydration.baseRowsSkipOperationalSignals) {
+    failures.push('dashboard base row load does not skip operational signals and commission snapshots')
+  }
+  if (!report.summary.lazyPanelHydration.panelWrapper) {
+    failures.push('dashboard lazy panel hydrator is missing')
+  }
+  if (!report.summary.lazyPanelHydration.staleLoadToken) {
+    failures.push('dashboard lazy panel stale-load token is missing')
+  }
+  if (dynamicCounts.dashboardLazyPanelHydrationCount < report.budgets.minDashboardLazyPanelHydrationCalls) {
+    failures.push(
+      `dashboard lazy panel hydration calls ${dynamicCounts.dashboardLazyPanelHydrationCount} is below ${report.budgets.minDashboardLazyPanelHydrationCalls}`,
+    )
+  }
+  if (!report.summary.rollups.table) {
+    failures.push('dashboard developer metric rollup table is missing')
+  }
+  if (!report.summary.rollups.refreshRpc) {
+    failures.push('dashboard developer metric rollup refresh RPC is missing')
+  }
+  if (!report.summary.rollups.aggregatePrefersRollups) {
+    failures.push('dashboard aggregate RPC does not prefer stored rollups')
+  }
+  if (!report.summary.rollups.clientRefreshRpc) {
+    failures.push('dashboard aggregate client refresh RPC is missing')
+  }
+  if (!report.summary.rollups.clientMetadata) {
+    failures.push('dashboard aggregate client does not preserve rollup metadata')
+  }
+  if (!report.summary.rollout.helper) {
+    failures.push('dashboard hydration rollout helper is missing')
+  }
+  if (!report.summary.rollout.aggregateRoleFlag) {
+    failures.push('dashboard aggregate rollout role flag is missing')
+  }
+  if (!report.summary.rollout.lazyPanelRoleFlag) {
+    failures.push('dashboard lazy panel rollout role flag is missing')
+  }
+  if (!report.summary.rollout.rollupRefreshFlag) {
+    failures.push('dashboard rollup refresh rollout flag is missing')
+  }
+  const rolloutGateCount = Number(report.summary.rollout.aggregateLoaderGate) + Number(report.summary.rollout.lazyPanelLoaderGate)
+  if (rolloutGateCount < report.budgets.minRolloutGates) {
+    failures.push(`dashboard rollout gates ${rolloutGateCount} is below ${report.budgets.minRolloutGates}`)
   }
   if (dynamicCounts.overviewTransactionIdInFilters > report.budgets.maxOverviewTransactionIdInFilters) {
     failures.push(
@@ -254,6 +383,32 @@ function printReport(value) {
   console.log(`  surfaces present: ${value.summary.presentSurfaceCount}/${value.surfaces.length}`)
   console.log(`  high-risk surfaces: ${value.summary.highRiskSurfaceCount}`)
   console.log(`  medium-risk surfaces: ${value.summary.mediumRiskSurfaceCount}`)
+  console.log('  shell-first:')
+  console.log(`    - body gate: ${value.summary.shellFirst.bodyGate ? 'present' : 'missing'}`)
+  console.log(`    - loading state gate: ${value.summary.shellFirst.loadingStateGate ? 'present' : 'missing'}`)
+  console.log(`    - body blocked by loading: ${value.summary.shellFirst.bodyBlockedByLoading ? 'yes' : 'no'}`)
+  console.log('  supabase aggregation:')
+  console.log(`    - migration: ${value.summary.supabaseAggregation.migration ? 'present' : 'missing'}`)
+  console.log(`    - client RPC: ${value.summary.supabaseAggregation.clientRpc ? 'present' : 'missing'}`)
+  console.log(`    - loader fast path: ${value.summary.supabaseAggregation.loaderFastPath ? 'present' : 'missing'}`)
+  console.log('  lazy panel hydration:')
+  console.log(`    - API wrapper: ${value.summary.lazyPanelHydration.apiWrapper ? 'present' : 'missing'}`)
+  console.log(`    - base rows skip heavy signals: ${value.summary.lazyPanelHydration.baseRowsSkipOperationalSignals ? 'yes' : 'no'}`)
+  console.log(`    - panel wrapper: ${value.summary.lazyPanelHydration.panelWrapper ? 'present' : 'missing'}`)
+  console.log(`    - stale-load token: ${value.summary.lazyPanelHydration.staleLoadToken ? 'present' : 'missing'}`)
+  console.log('  rollups:')
+  console.log(`    - table: ${value.summary.rollups.table ? 'present' : 'missing'}`)
+  console.log(`    - refresh RPC: ${value.summary.rollups.refreshRpc ? 'present' : 'missing'}`)
+  console.log(`    - aggregate prefers rollups: ${value.summary.rollups.aggregatePrefersRollups ? 'yes' : 'no'}`)
+  console.log(`    - client refresh RPC: ${value.summary.rollups.clientRefreshRpc ? 'present' : 'missing'}`)
+  console.log(`    - client metadata: ${value.summary.rollups.clientMetadata ? 'present' : 'missing'}`)
+  console.log('  rollout:')
+  console.log(`    - helper: ${value.summary.rollout.helper ? 'present' : 'missing'}`)
+  console.log(`    - aggregate role flag: ${value.summary.rollout.aggregateRoleFlag ? 'present' : 'missing'}`)
+  console.log(`    - lazy panel role flag: ${value.summary.rollout.lazyPanelRoleFlag ? 'present' : 'missing'}`)
+  console.log(`    - rollup refresh flag: ${value.summary.rollout.rollupRefreshFlag ? 'present' : 'missing'}`)
+  console.log(`    - aggregate loader gate: ${value.summary.rollout.aggregateLoaderGate ? 'present' : 'missing'}`)
+  console.log(`    - lazy panel loader gate: ${value.summary.rollout.lazyPanelLoaderGate ? 'present' : 'missing'}`)
   console.log('  dynamic counts:')
   for (const [key, count] of Object.entries(value.summary.dynamicCounts)) {
     console.log(`    - ${key}: ${count}`)

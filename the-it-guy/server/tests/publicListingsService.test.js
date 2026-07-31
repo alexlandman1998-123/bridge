@@ -170,12 +170,25 @@ function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-
     const call = { table, filters: [] }
     calls.push(call)
     return {
-      select(fields) {
+      select(fields, options) {
         call.select = fields
+        call.selectOptions = options
         return this
       },
       eq(field, value) {
         call.filters.push(['eq', field, value])
+        return this
+      },
+      gte(field, value) {
+        call.filters.push(['gte', field, value])
+        return this
+      },
+      lte(field, value) {
+        call.filters.push(['lte', field, value])
+        return this
+      },
+      ilike(field, value) {
+        call.filters.push(['ilike', field, value])
         return this
       },
       is(field, value) {
@@ -186,12 +199,16 @@ function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-
         call.filters.push(['in', field, value])
         return this
       },
+      not(field, operator, value) {
+        call.filters.push(['not', field, operator, value])
+        return this
+      },
       order(field, options) {
         call.filters.push(['order', field, options])
         return this
       },
-      limit(value) {
-        call.limit = value
+      range(from, to) {
+        call.range = [from, to]
         return this
       },
       maybeSingle() {
@@ -199,7 +216,15 @@ function createFakePublicListingsClient({ agencyScope = { organisation_id: 'org-
         return Promise.resolve({ data: agencyScope, error: null })
       },
       then(resolve, reject) {
-        return Promise.resolve(results[table] || { data: [], error: null }).then(resolve, reject)
+        const result = results[table] || { data: [], error: null }
+        const data = Array.isArray(result.data) && call.range
+          ? result.data.slice(call.range[0], call.range[1] + 1)
+          : result.data
+        return Promise.resolve({
+          ...result,
+          data,
+          count: result.count ?? (Array.isArray(result.data) ? result.data.length : null),
+        }).then(resolve, reject)
       },
     }
   }
@@ -401,6 +426,107 @@ assert.equal(
   })).count,
   0,
   'agency intake max price should exclude listings more than R300,000 above the buyer budget',
+)
+
+const deepPublicListing = {
+  ...validListing,
+  id: '99999999-aaaa-bbbb-cccc-000000000520',
+  title: 'Hidden Catalogue Match',
+}
+const deepPublicPublication = {
+  ...validPublication,
+  listing_id: deepPublicListing.id,
+  title: 'Hidden Catalogue Match',
+  description: 'needle-public-catalogue',
+}
+const deepPublicMedia = [{ ...validMedia[0], listing_id: deepPublicListing.id }]
+const publicSourceRows = Array.from({ length: 520 }, (_, index) => ({
+  ...validPublication,
+  listing_id: `00000000-0000-0000-0000-${String(index).padStart(12, '0')}`,
+  title: `Catalogue filler ${index}`,
+  description: 'ordinary listing',
+}))
+publicSourceRows.push(deepPublicPublication)
+
+const deepPublicClient = createFakePublicListingsClient({
+  agencyScope: null,
+  overrides: {
+    listing_publication_data: { data: publicSourceRows, error: null },
+    private_listings: { data: [deepPublicListing], error: null },
+    listing_media: { data: deepPublicMedia, error: null },
+    organisations: { data: [{ id: 'org-1', name: 'Kingstons Real Estate' }], error: null },
+  },
+})
+const deepPublicResult = await getPublicListings({
+  client: deepPublicClient,
+  q: 'needle-public-catalogue',
+})
+assert.equal(deepPublicResult.count, 1, 'public catalogue search should find matches beyond the first 500 source rows')
+assert.equal(deepPublicResult.items[0].id, deepPublicListing.id)
+assert.ok(
+  deepPublicClient.calls
+    .filter((call) => call.table === 'listing_publication_data')
+    .some((call) => call.range?.[0] >= 480),
+  'public catalogue should page past the former 500-row source cap',
+)
+assert.ok(
+  deepPublicClient.calls
+    .filter((call) => call.table === 'listing_publication_data')
+    .some((call) => call.selectOptions?.count === 'exact'),
+  'public catalogue should request a database-side source count',
+)
+
+const filteredPublicClient = createFakePublicListingsClient({ agencyScope: null })
+await getPublicListings({
+  client: filteredPublicClient,
+  propertyType: 'House',
+  province: 'Gauteng',
+  minPrice: 3000000,
+  bedrooms: 3,
+})
+const filteredPublicationCall = filteredPublicClient.calls.find((call) => call.table === 'listing_publication_data' && call.range)
+assert.deepEqual(
+  filteredPublicationCall.filters.filter((filter) => ['ilike', 'gte'].includes(filter[0])).slice(0, 4),
+  [
+    ['ilike', 'property_type', 'House'],
+    ['ilike', 'province', 'Gauteng'],
+    ['gte', 'asking_price', 3000000],
+    ['gte', 'bedrooms', 3],
+  ],
+  'public catalogue should push exact and numeric filters into Supabase before hydration',
+)
+
+const agencySourceRows = Array.from({ length: 520 }, (_, index) => ({
+  ...intakeListing,
+  id: `10000000-0000-0000-0000-${String(index).padStart(12, '0')}`,
+  title: `Agency filler ${index}`,
+}))
+const deepAgencyListing = {
+  ...intakeListing,
+  id: '88888888-aaaa-bbbb-cccc-000000000520',
+  title: 'needle-agency-intake match',
+}
+agencySourceRows.push(deepAgencyListing)
+const deepAgencyClient = createFakePublicListingsClient({
+  overrides: {
+    private_listings: { data: agencySourceRows, error: null },
+    listing_publication_data: { data: [], error: null },
+    listing_media: { data: [], error: null },
+  },
+})
+const deepAgencyResult = await getPublicListings({
+  client: deepAgencyClient,
+  agencySlug: 'kingstons',
+  audience: 'agency-intake',
+  q: 'needle-agency-intake',
+})
+assert.equal(deepAgencyResult.count, 1, 'agency intake search should find active listings beyond the first 500 source rows')
+assert.equal(deepAgencyResult.items[0].id, deepAgencyListing.id)
+assert.ok(
+  deepAgencyClient.calls
+    .filter((call) => call.table === 'private_listings')
+    .some((call) => call.range?.[0] >= 480),
+  'agency intake should page past the former 500-row source cap',
 )
 
 console.log('publicListingsService tests passed')

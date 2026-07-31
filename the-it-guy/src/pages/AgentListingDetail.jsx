@@ -55,16 +55,7 @@ import {
   getRequiredSellerDocuments,
   getSellerRequirementProfile,
 } from '../lib/privateListingRequirementEngine'
-import {
-  createAppointmentAsync,
-  listAppointmentsAsync,
-} from '../lib/agencyPipelineService'
-import {
-  fetchAgencyCrmLeadWorkspace,
-  listAgencyCrmLeadContacts,
-  updateAgencyCrmContactRecord,
-  updateAgencyCrmLeadRecord,
-} from '../lib/agencyCrmRepository'
+import { listAppointmentsAsync } from '../lib/api/agentListingDetailApi'
 import {
   buildLeadListingLinkPatch,
   getBuyerLeadOptions,
@@ -73,7 +64,6 @@ import {
 } from '../lib/agencyLeadSelection'
 import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
 import { buildAgentAssistedOfferEntry } from '../lib/agentAssistedOfferEntry'
-import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
 import {
   buildSellerOnboardingLink,
   buildSellerClientPortalLink,
@@ -94,91 +84,966 @@ import {
   VIEWING_RESPONSE_STATUS,
   VIEWING_STATUS,
 } from '../lib/viewingWorkflow'
-import {
-  createOfferInvite,
-  getOfferInvitesForListing,
-  getOffersForListing,
-  markOfferAgentAction,
-  normalizeOfferWorkflowStatus,
-  OFFER_WORKFLOW_STATUS,
-} from '../lib/listingOffersService'
-import {
-  CLIENT_INTAKE_PREFERENCE,
-  createCanonicalOffer,
-  createOfferSellerReviewSession,
-  createTransactionFromAcceptedCanonicalOffer,
-  getClientIntakePreferenceLabel,
-  getSellerOfferReviewDeliveryModeLabel,
-  listCanonicalOffersForListing,
-  normalizeSellerReviewDeliveryMode,
-  buildSellerOfferReviewPreparation,
-  normalizeClientIntakePreference,
-  recordBuyerLeadActivity,
-  SELLER_REVIEW_DELIVERY_MODE,
-  updateCanonicalOfferStatus,
-} from '../lib/buyerLifecycleService'
+import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from '../lib/listingOfferStatus'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   getPrivateListing,
   createPrivateListingDocumentDownloadUrl,
-  deletePrivateListing,
   getSellerPortalAccessState,
   getSellerPortalSecurityDiagnostics,
-  issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
-  manageSellerPortalAccess,
-  resetSellerPortalPassword,
-  sendSellerOnboarding,
-  syncPrivateListingDistributionData,
-  updatePrivateListing,
-  updatePrivateListingOnboardingFormData,
-  uploadPrivateListingDocument,
-  uploadPrivateListingMediaAsset,
-} from '../services/privateListingService'
-import { listListingLeadInterests } from '../services/leadListingInterestService'
-import { listListingPropertyShares } from '../services/leadPropertySharingService'
-import {
-  buildDefaultLeadCommunicationPreferences,
-  getLeadCommunicationPreferences,
-  NOTIFICATION_MODE,
-  resolveNotificationDispatchPlan,
-  listCommunicationDeliveries,
-} from '../services/communicationDeliveryService'
-import {
-  prepareNotificationOutbox,
-  updateNotificationOutboxStatus,
-} from '../services/notificationOutboxService'
-import { buildListingWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+} from '../lib/api/agentListingDetailApi'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
-import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import { buildSellerDocumentReviewSlaReport } from '../lib/sellerDocumentReviewSla'
-import {
-  SELLER_PORTAL_ACTIVATION_SOURCES,
-  activateSellerPortalForListing,
-  buildSellerPortalInvitationPreview,
-  getSellerPortalStatusLabel,
-  resolveSellerPortalLifecycle,
-} from '../services/sellerPortalActivationService'
-import {
-  captureShowDayLead,
-  captureShowDayLeadBatch,
-  DEFAULT_SHOW_DAY_NEXT_STEP,
-  parseShowDayVisitorRows,
-} from '../services/showDayLeadCaptureService'
-import {
-  acceptSuggestion,
-  generateSuggestionsForListing,
-  getSuggestionsForListing,
-  rejectSuggestion,
-} from '../services/leadSuggestionService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
+const CLIENT_INTAKE_PREFERENCE = {
+  DIGITAL_PORTAL: 'digital_portal',
+  AGENT_ASSISTED: 'agent_assisted',
+  HARD_COPY: 'hard_copy',
+}
+
+const SELLER_REVIEW_DELIVERY_MODE = {
+  EMAIL: 'email',
+  AGENT_ASSISTED: 'agent_assisted',
+  HARD_COPY: 'hard_copy',
+}
+
+const NOTIFICATION_MODE = {
+  EMAIL: 'email',
+  WHATSAPP: 'whatsapp',
+  EMAIL_AND_WHATSAPP: 'email_and_whatsapp',
+  AGENT_ASSISTED: 'agent_assisted',
+}
+
+const NOTIFICATION_MODE_OPTIONS = [
+  { value: NOTIFICATION_MODE.EMAIL, label: 'Email' },
+  { value: NOTIFICATION_MODE.WHATSAPP, label: 'WhatsApp' },
+  { value: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP, label: 'Email and WhatsApp' },
+  { value: NOTIFICATION_MODE.AGENT_ASSISTED, label: 'Agent assisted' },
+]
+
+const NOTIFICATION_MODE_ALIASES = {
+  email: NOTIFICATION_MODE.EMAIL,
+  mail: NOTIFICATION_MODE.EMAIL,
+  whatsapp: NOTIFICATION_MODE.WHATSAPP,
+  whats_app: NOTIFICATION_MODE.WHATSAPP,
+  both: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  email_and_whatsapp: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  email_whatsapp: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  multi_channel: NOTIFICATION_MODE.EMAIL_AND_WHATSAPP,
+  agent: NOTIFICATION_MODE.AGENT_ASSISTED,
+  assisted: NOTIFICATION_MODE.AGENT_ASSISTED,
+  agent_assisted: NOTIFICATION_MODE.AGENT_ASSISTED,
+  manual: NOTIFICATION_MODE.AGENT_ASSISTED,
+}
+
+const CONTROLLED_TEST_NOTIFICATION_SUPPRESSION_REASON = 'controlled_test_recipient'
+
+const CLIENT_INTAKE_PREFERENCE_ALIASES = {
+  digital: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+  portal: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+  digital_portal: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+  email: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+  agent: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED,
+  assisted: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED,
+  agent_assisted: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED,
+  assisted_capture: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED,
+  hard_copy: CLIENT_INTAKE_PREFERENCE.HARD_COPY,
+  hardcopy: CLIENT_INTAKE_PREFERENCE.HARD_COPY,
+  printed: CLIENT_INTAKE_PREFERENCE.HARD_COPY,
+  paper: CLIENT_INTAKE_PREFERENCE.HARD_COPY,
+}
+
+const SELLER_REVIEW_DELIVERY_MODE_ALIASES = {
+  email: SELLER_REVIEW_DELIVERY_MODE.EMAIL,
+  digital: SELLER_REVIEW_DELIVERY_MODE.EMAIL,
+  portal: SELLER_REVIEW_DELIVERY_MODE.EMAIL,
+  agent: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED,
+  assisted: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED,
+  agent_assisted: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED,
+  hard_copy: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY,
+  hardcopy: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY,
+  printed: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY,
+  paper: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY,
+}
+
+const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
+  sellerLead: 'seller_lead',
+  existingListing: 'existing_listing',
+  manualListing: 'manual_listing',
+  bulkImport: 'bulk_import',
+  agentInvitation: 'agent_invitation',
+})
+
+const SELLER_PORTAL_STATUSES = Object.freeze({
+  notActivated: 'not_activated',
+  invitationPending: 'invitation_pending',
+  invitationSent: 'invitation_sent',
+  activated: 'activated',
+  profileIncomplete: 'profile_incomplete',
+  profileComplete: 'profile_complete',
+  transactionReady: 'transaction_ready',
+  invitationExpired: 'invitation_expired',
+  invitationCancelled: 'invitation_cancelled',
+})
+
+const DEFAULT_SHOW_DAY_NEXT_STEP = 'Phone follow-up and confirm whether buyer wants to submit an offer.'
+
+async function loadPrivateListingActions() {
+  return import('../services/privateListingService')
+}
+
+async function loadAgencyPipelineActions() {
+  return import('../lib/agencyPipelineService')
+}
+
+async function loadAgencyCrmRepository() {
+  return import('../lib/agencyCrmRepository')
+}
+
+async function loadBuyerLifecycleActions() {
+  return import('../lib/buyerLifecycleService')
+}
+
+async function loadCommunicationDeliveryService() {
+  return import('../services/communicationDeliveryService')
+}
+
+async function loadLeadListingInterestService() {
+  return import('../services/leadListingInterestService')
+}
+
+async function loadLeadPropertySharingService() {
+  return import('../services/leadPropertySharingService')
+}
+
+async function loadLeadSuggestionService() {
+  return import('../services/leadSuggestionService')
+}
+
+async function loadListingOffersService() {
+  return import('../lib/listingOffersService')
+}
+
+async function loadNotificationOutboxService() {
+  return import('../services/notificationOutboxService')
+}
+
+async function loadSellerDocumentReviewActions() {
+  return import('../services/sellerDocumentReviewWorkflowService')
+}
+
+async function loadSellerPortalActivationActions() {
+  return import('../services/sellerPortalActivationService')
+}
+
+async function loadShowDayLeadCaptureActions() {
+  return import('../services/showDayLeadCaptureService')
+}
+
+async function fetchAgencyCrmLeadWorkspace(...args) {
+  const { fetchAgencyCrmLeadWorkspace: fetchWorkspace } = await loadAgencyCrmRepository()
+  return fetchWorkspace(...args)
+}
+
+async function listAgencyCrmLeadContacts(...args) {
+  const { listAgencyCrmLeadContacts: listContacts } = await loadAgencyCrmRepository()
+  return listContacts(...args)
+}
+
+async function updateAgencyCrmContactRecord(...args) {
+  const { updateAgencyCrmContactRecord: updateContact } = await loadAgencyCrmRepository()
+  return updateContact(...args)
+}
+
+async function updateAgencyCrmLeadRecord(...args) {
+  const { updateAgencyCrmLeadRecord: updateLead } = await loadAgencyCrmRepository()
+  return updateLead(...args)
+}
+
+async function createAppointmentAsync(...args) {
+  const { createAppointmentAsync: createAppointment } = await loadAgencyPipelineActions()
+  return createAppointment(...args)
+}
+
+async function createCanonicalOffer(...args) {
+  const { createCanonicalOffer: createOffer } = await loadBuyerLifecycleActions()
+  return createOffer(...args)
+}
+
+async function createOfferSellerReviewSession(...args) {
+  const { createOfferSellerReviewSession: createReviewSession } = await loadBuyerLifecycleActions()
+  return createReviewSession(...args)
+}
+
+async function createTransactionFromAcceptedCanonicalOffer(...args) {
+  const { createTransactionFromAcceptedCanonicalOffer: createTransaction } = await loadBuyerLifecycleActions()
+  return createTransaction(...args)
+}
+
+async function listCanonicalOffersForListing(...args) {
+  const { listCanonicalOffersForListing: listOffers } = await loadBuyerLifecycleActions()
+  return listOffers(...args)
+}
+
+async function getLeadCommunicationPreferences(...args) {
+  const { getLeadCommunicationPreferences: getPreferences } = await loadCommunicationDeliveryService()
+  return getPreferences(...args)
+}
+
+async function listCommunicationDeliveries(...args) {
+  const { listCommunicationDeliveries: listDeliveries } = await loadCommunicationDeliveryService()
+  return listDeliveries(...args)
+}
+
+async function prepareNotificationOutbox(...args) {
+  const { prepareNotificationOutbox: prepareOutbox } = await loadNotificationOutboxService()
+  return prepareOutbox(...args)
+}
+
+async function recordBuyerLeadActivity(...args) {
+  const { recordBuyerLeadActivity: recordActivity } = await loadBuyerLifecycleActions()
+  return recordActivity(...args)
+}
+
+async function updateCanonicalOfferStatus(...args) {
+  const { updateCanonicalOfferStatus: updateStatus } = await loadBuyerLifecycleActions()
+  return updateStatus(...args)
+}
+
+async function updateNotificationOutboxStatus(...args) {
+  const { updateNotificationOutboxStatus: updateOutboxStatus } = await loadNotificationOutboxService()
+  return updateOutboxStatus(...args)
+}
+
+async function deletePrivateListing(...args) {
+  const { deletePrivateListing: deleteListing } = await loadPrivateListingActions()
+  return deleteListing(...args)
+}
+
+async function issueSellerPortalInvite(...args) {
+  const { issueSellerPortalInvite: issueInvite } = await loadPrivateListingActions()
+  return issueInvite(...args)
+}
+
+async function manageSellerPortalAccess(...args) {
+  const { manageSellerPortalAccess: manageAccess } = await loadPrivateListingActions()
+  return manageAccess(...args)
+}
+
+async function resetSellerPortalPassword(...args) {
+  const { resetSellerPortalPassword: resetPassword } = await loadPrivateListingActions()
+  return resetPassword(...args)
+}
+
+async function sendSellerOnboarding(...args) {
+  const { sendSellerOnboarding: sendOnboarding } = await loadPrivateListingActions()
+  return sendOnboarding(...args)
+}
+
+async function syncPrivateListingDistributionData(...args) {
+  const { syncPrivateListingDistributionData: syncDistribution } = await loadPrivateListingActions()
+  return syncDistribution(...args)
+}
+
+async function updatePrivateListing(...args) {
+  const { updatePrivateListing: updateListing } = await loadPrivateListingActions()
+  return updateListing(...args)
+}
+
+async function updatePrivateListingOnboardingFormData(...args) {
+  const { updatePrivateListingOnboardingFormData: updateOnboardingFormData } = await loadPrivateListingActions()
+  return updateOnboardingFormData(...args)
+}
+
+async function uploadPrivateListingDocument(...args) {
+  const { uploadPrivateListingDocument: uploadDocument } = await loadPrivateListingActions()
+  return uploadDocument(...args)
+}
+
+async function uploadPrivateListingMediaAsset(...args) {
+  const { uploadPrivateListingMediaAsset: uploadMediaAsset } = await loadPrivateListingActions()
+  return uploadMediaAsset(...args)
+}
+
+async function listListingLeadInterests(...args) {
+  const { listListingLeadInterests: listInterests } = await loadLeadListingInterestService()
+  return listInterests(...args)
+}
+
+async function listListingPropertyShares(...args) {
+  const { listListingPropertyShares: listShares } = await loadLeadPropertySharingService()
+  return listShares(...args)
+}
+
+async function createOfferInvite(...args) {
+  const { createOfferInvite: createInvite } = await loadListingOffersService()
+  return createInvite(...args)
+}
+
+async function markOfferAgentAction(...args) {
+  const { markOfferAgentAction: markAction } = await loadListingOffersService()
+  return markAction(...args)
+}
+
+async function acceptSuggestion(...args) {
+  const { acceptSuggestion: accept } = await loadLeadSuggestionService()
+  return accept(...args)
+}
+
+async function generateSuggestionsForListing(...args) {
+  const { generateSuggestionsForListing: generateSuggestions } = await loadLeadSuggestionService()
+  return generateSuggestions(...args)
+}
+
+async function getSuggestionsForListing(...args) {
+  const { getSuggestionsForListing: getSuggestions } = await loadLeadSuggestionService()
+  return getSuggestions(...args)
+}
+
+async function rejectSuggestion(...args) {
+  const { rejectSuggestion: reject } = await loadLeadSuggestionService()
+  return reject(...args)
+}
+
+async function reviewSellerDocument(...args) {
+  const { reviewSellerDocument: reviewDocument } = await loadSellerDocumentReviewActions()
+  return reviewDocument(...args)
+}
+
+async function sendSellerDocumentManualReminder(...args) {
+  const { sendSellerDocumentManualReminder: sendReminder } = await loadSellerDocumentReviewActions()
+  return sendReminder(...args)
+}
+
+async function activateSellerPortalForListing(...args) {
+  const { activateSellerPortalForListing: activatePortal } = await loadSellerPortalActivationActions()
+  return activatePortal(...args)
+}
+
+async function captureShowDayLead(...args) {
+  const { captureShowDayLead: captureLead } = await loadShowDayLeadCaptureActions()
+  return captureLead(...args)
+}
+
+async function captureShowDayLeadBatch(...args) {
+  const { captureShowDayLeadBatch: captureBatch } = await loadShowDayLeadCaptureActions()
+  return captureBatch(...args)
+}
+
+async function parseShowDayVisitorRows(...args) {
+  const { parseShowDayVisitorRows: parseRows } = await loadShowDayLeadCaptureActions()
+  return parseRows(...args)
+}
+
+function normalizeLocalText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeLocalLower(value) {
+  return normalizeLocalText(value).toLowerCase()
+}
+
+function normalizeLocalKey(value) {
+  return normalizeLocalLower(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function normalizePhoneDigits(value) {
+  return normalizeLocalText(value).replace(/[^\d+]/g, '')
+}
+
+function toNullableUuid(value) {
+  const normalized = normalizeLocalText(value)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalized) ? normalized : null
+}
+
+function normalizeLocalDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+}
+
+function addDaysIso(days = 7) {
+  const date = new Date()
+  date.setDate(date.getDate() + Number(days || 0))
+  return date.toISOString()
+}
+
+function pickFirstText(...values) {
+  for (const value of values) {
+    const normalized = normalizeLocalText(value)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function normalizeClientIntakePreference(value, fallback = CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) {
+  const normalized = normalizeLocalLower(value)
+  return CLIENT_INTAKE_PREFERENCE_ALIASES[normalized] || fallback
+}
+
+function getClientIntakePreferenceLabel(value) {
+  const normalized = normalizeClientIntakePreference(value)
+  if (normalized === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) return 'Agent Assisted'
+  if (normalized === CLIENT_INTAKE_PREFERENCE.HARD_COPY) return 'Hard Copy'
+  return 'Digital Portal'
+}
+
+function normalizeNotificationMode(value = '') {
+  const normalized = normalizeLocalLower(value).replace(/[-\s]+/g, '_')
+  return NOTIFICATION_MODE_ALIASES[normalized] || NOTIFICATION_MODE.EMAIL
+}
+
+function getNotificationModeLabel(value = '') {
+  const mode = normalizeNotificationMode(value)
+  return NOTIFICATION_MODE_OPTIONS.find((option) => option.value === mode)?.label || 'Email'
+}
+
+function normalizeChannel(value = 'email') {
+  const normalized = normalizeLocalLower(value).replace(/[-\s]+/g, '_')
+  return ['email', 'whatsapp', 'sms'].includes(normalized) ? normalized : 'email'
+}
+
+function normalizeFrequency(value = 'immediate') {
+  const normalized = normalizeLocalLower(value).replace(/[-\s]+/g, '_')
+  return ['immediate', 'daily', 'weekly', 'monthly'].includes(normalized) ? normalized : 'immediate'
+}
+
+function readCommunicationId(row = {}, keys = []) {
+  for (const key of keys) {
+    const value = normalizeLocalText(row?.[key])
+    if (value) return value
+  }
+  return ''
+}
+
+function readCommunicationDate(row = {}, keys = []) {
+  for (const key of keys) {
+    const value = row?.[key]
+    if (!value) continue
+    const date = new Date(value)
+    if (!Number.isNaN(date.getTime())) return date.toISOString()
+  }
+  return null
+}
+
+function resolveNotificationModeFromPreferences(row = {}) {
+  const explicitMode = normalizeLocalText(row.notificationMode || row.notification_mode)
+  if (explicitMode) return normalizeNotificationMode(explicitMode)
+  const emailEnabled = row.emailEnabled ?? row.email_enabled ?? true
+  const whatsappEnabled = row.whatsappEnabled ?? row.whatsapp_enabled ?? false
+  if (emailEnabled && whatsappEnabled) return NOTIFICATION_MODE.EMAIL_AND_WHATSAPP
+  if (whatsappEnabled) return NOTIFICATION_MODE.WHATSAPP
+  if (emailEnabled) return NOTIFICATION_MODE.EMAIL
+  return NOTIFICATION_MODE.AGENT_ASSISTED
+}
+
+function normalizeLeadCommunicationPreferences(row = {}) {
+  const leadId = readCommunicationId(row, ['lead_id', 'leadId'])
+  const preferences = {
+    leadId,
+    organisationId: readCommunicationId(row, ['organisation_id', 'organisationId']),
+    emailEnabled: row.emailEnabled ?? row.email_enabled ?? true,
+    whatsappEnabled: row.whatsappEnabled ?? row.whatsapp_enabled ?? false,
+    marketingOptIn: row.marketingOptIn ?? row.marketing_opt_in ?? false,
+    propertyAlertsEnabled: row.propertyAlertsEnabled ?? row.property_alerts_enabled ?? true,
+    preferredChannel: normalizeChannel(row.preferredChannel || row.preferred_channel),
+    frequency: normalizeFrequency(row.frequency),
+    unsubscribeToken: normalizeLocalText(row.unsubscribeToken || row.unsubscribe_token),
+    createdAt: readCommunicationDate(row, ['createdAt', 'created_at']),
+    updatedAt: readCommunicationDate(row, ['updatedAt', 'updated_at']),
+    raw: row,
+  }
+  return {
+    ...preferences,
+    notificationMode: resolveNotificationModeFromPreferences(preferences),
+  }
+}
+
+function buildDefaultLeadCommunicationPreferences({ organisationId = '', leadId = '' } = {}) {
+  const now = new Date().toISOString()
+  return normalizeLeadCommunicationPreferences({
+    organisation_id: toNullableUuid(organisationId) || normalizeLocalText(organisationId),
+    lead_id: toNullableUuid(leadId) || normalizeLocalText(leadId),
+    email_enabled: true,
+    whatsapp_enabled: false,
+    marketing_opt_in: false,
+    property_alerts_enabled: true,
+    preferred_channel: 'email',
+    frequency: 'immediate',
+    unsubscribe_token: `unsubscribe_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`,
+    created_at: now,
+    updated_at: now,
+  })
+}
+
+function assessNotificationRecipientSafety({ email = '', recipientName = '', metadata = {} } = {}) {
+  const normalizedEmail = normalizeLocalLower(email)
+  const normalizedName = normalizeLocalLower(recipientName)
+  const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}
+  const controlledTestRoleSet = normalizeLocalText(safeMetadata.controlledTestRoleSet || safeMetadata.controlled_test_role_set)
+  const blocked = normalizedEmail.endsWith('.invalid') ||
+    normalizedName.includes('test - do not action') ||
+    normalizedName.includes('test — do not action') ||
+    Boolean(controlledTestRoleSet)
+  return {
+    safe: !blocked,
+    suppressed: blocked,
+    reason: blocked ? CONTROLLED_TEST_NOTIFICATION_SUPPRESSION_REASON : '',
+    message: blocked ? 'Controlled test recipient: external notification delivery is suppressed.' : '',
+  }
+}
+
+function resolveNotificationDispatchPlan({ mode = '', email = '', phone = '', recipientName = '', metadata = {} } = {}) {
+  const notificationMode = normalizeNotificationMode(mode)
+  const recipientSafety = assessNotificationRecipientSafety({ email, recipientName, metadata })
+  if (recipientSafety.suppressed) {
+    return {
+      mode: notificationMode,
+      label: getNotificationModeLabel(notificationMode),
+      channels: [],
+      autoDispatch: false,
+      handoffRequired: false,
+      blockers: [],
+      suppressed: true,
+      suppressionReason: recipientSafety.reason,
+      suppressionMessage: recipientSafety.message,
+    }
+  }
+  const hasEmail = Boolean(normalizeLocalText(email))
+  const hasPhone = Boolean(normalizeLocalText(phone))
+  const requiresEmail = [NOTIFICATION_MODE.EMAIL, NOTIFICATION_MODE.EMAIL_AND_WHATSAPP].includes(notificationMode)
+  const requiresWhatsApp = [NOTIFICATION_MODE.WHATSAPP, NOTIFICATION_MODE.EMAIL_AND_WHATSAPP].includes(notificationMode)
+  const blockers = []
+  if (requiresEmail && !hasEmail) blockers.push('Add an email address for this notification mode.')
+  if (requiresWhatsApp && !hasPhone) blockers.push('Add a mobile number for this notification mode.')
+
+  return {
+    mode: notificationMode,
+    label: getNotificationModeLabel(notificationMode),
+    channels: [
+      ...(requiresEmail && hasEmail ? ['email'] : []),
+      ...(requiresWhatsApp && hasPhone ? ['whatsapp'] : []),
+    ],
+    autoDispatch: notificationMode !== NOTIFICATION_MODE.AGENT_ASSISTED && blockers.length === 0,
+    handoffRequired: notificationMode === NOTIFICATION_MODE.AGENT_ASSISTED,
+    blockers,
+    suppressed: false,
+    suppressionReason: '',
+    suppressionMessage: '',
+  }
+}
+
+function resolveOfferOnboardingLinkExperience() {
+  return {
+    label: 'Offer + Onboarding Link',
+    buyerFacingTitle: 'Make an Offer',
+    buyerFacingSubtitle: 'Complete your buyer profile, finance readiness and residential offer terms in one secure flow.',
+    dataBuckets: ['buyer_onboarding', 'residential_offer_terms', 'condition_requests'],
+  }
+}
+
+function resolveOfferLinkDeliveryPlan({ clientIntakePreference = '', notificationMode = NOTIFICATION_MODE.EMAIL, email = '', phone = '', recipientName = '', metadata = {} } = {}) {
+  const experience = resolveOfferOnboardingLinkExperience()
+  const intake = normalizeLocalLower(clientIntakePreference)
+  if (intake === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) {
+    return { kind: 'agent_assisted', deliversLink: false, handoffRequired: false, channels: [], blockers: [], experience }
+  }
+  if (intake === CLIENT_INTAKE_PREFERENCE.HARD_COPY) {
+    return { kind: 'hard_copy', deliversLink: false, handoffRequired: true, channels: [], blockers: [], notificationMode: NOTIFICATION_MODE.AGENT_ASSISTED, experience }
+  }
+  const dispatch = resolveNotificationDispatchPlan({ mode: notificationMode, email, phone, recipientName, metadata })
+  return { ...dispatch, kind: 'digital_portal', deliversLink: dispatch.autoDispatch, notificationMode: dispatch.mode, experience }
+}
+
+function normalizeCommunicationDelivery(row = {}) {
+  return {
+    leadId: readCommunicationId(row, ['lead_id', 'leadId']),
+    status: normalizeLocalLower(row.status || 'prepared').replace(/[-\s]+/g, '_'),
+  }
+}
+
+function getListingDeliveryStatistics(deliveries = []) {
+  const rows = (Array.isArray(deliveries) ? deliveries : []).map(normalizeCommunicationDelivery)
+  return {
+    timesShared: rows.length,
+    uniqueBuyers: new Set(rows.map((row) => row.leadId).filter(Boolean)).size,
+    sent: rows.filter((row) => ['sent', 'delivered', 'failed'].includes(row.status)).length,
+    delivered: rows.filter((row) => row.status === 'delivered').length,
+    failed: rows.filter((row) => row.status === 'failed').length,
+  }
+}
+
+function normalizeSellerReviewDeliveryMode(value, { sellerEmail = '', sellerPhone = '' } = {}) {
+  const normalized = normalizeLocalLower(value)
+  const aliased = SELLER_REVIEW_DELIVERY_MODE_ALIASES[normalized]
+  if (aliased) return aliased
+  if (isValidEmail(sellerEmail)) return SELLER_REVIEW_DELIVERY_MODE.EMAIL
+  if (normalizePhoneDigits(sellerPhone)) return SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED
+  return SELLER_REVIEW_DELIVERY_MODE.HARD_COPY
+}
+
+function getSellerOfferReviewDeliveryModeLabel(value) {
+  const normalized = normalizeSellerReviewDeliveryMode(value)
+  if (normalized === SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED) return 'Agent Assisted'
+  if (normalized === SELLER_REVIEW_DELIVERY_MODE.HARD_COPY) return 'Hard Copy'
+  return 'Email Link'
+}
+
+function buildListingWorkspaceAnalyticsSummary({ interests = [], viewings = [], offers = [], transactions = [], propertyShares = [], communicationDeliveries = [] } = {}) {
+  const deliveryStats = getListingDeliveryStatistics(communicationDeliveries)
+  return {
+    totalEnquiries: interests.filter((interest) => interest.isOriginalEnquiry || interest.is_original_enquiry).length,
+    matchedLeads: interests.length,
+    viewings: viewings.length || interests.filter((interest) => ['viewed', 'viewing_scheduled'].includes(normalizeLocalLower(interest.status))).length,
+    offers: offers.length,
+    transactions: transactions.length,
+    sentToLeads: propertyShares.length,
+    deliveryTimesShared: deliveryStats.timesShared,
+    deliveryUniqueBuyers: deliveryStats.uniqueBuyers,
+    deliverySent: deliveryStats.sent,
+    deliveryDelivered: deliveryStats.delivered,
+    deliveryFailed: deliveryStats.failed,
+  }
+}
+
+function buildSellerOfferReviewPreparation({
+  listing = {},
+  offer = {},
+  deliveryMode = '',
+  sellerEmail = '',
+  sellerPhone = '',
+  sellerName = '',
+  sellerLeadId = '',
+  sellerContactId = '',
+  expiresAt = '',
+} = {}) {
+  const resolvedSellerEmail = normalizeLocalText(sellerEmail || offer?.sellerEmail || resolveSellerEmailFromListing(listing)).toLowerCase()
+  const resolvedSellerPhone = normalizePhoneDigits(sellerPhone || offer?.sellerPhone || resolveSellerPhoneFromListing(listing))
+  const resolvedSellerName = normalizeLocalText(
+    sellerName ||
+      offer?.sellerName ||
+      offer?.conditions?.sellerReviewRecipientName ||
+      offer?.conditions?.sellerName ||
+      resolveSellerNameFromListing(listing),
+  )
+  const selectedDeliveryMode = normalizeSellerReviewDeliveryMode(deliveryMode || offer?.conditions?.sellerReviewDeliveryMode, {
+    sellerEmail: resolvedSellerEmail,
+    sellerPhone: resolvedSellerPhone,
+  })
+  const summary = listing?.id ? getListingReadinessSummary(listing) : null
+  const profile = summary?.requirementProfile || {}
+  const sellerType = normalizeLocalText(profile?.sellerType || listing?.sellerType || listing?.seller_type || '')
+  const owners = Array.isArray(profile?.owners) ? profile.owners : []
+  const ownerCount = Number(profile?.ownerCount || owners.length || 0)
+  const allOwnersCaptured = sellerType !== 'multiple_individuals' || owners.length >= Math.max(ownerCount, 2)
+  const authorisedSignatoryPresent = sellerType
+    ? !['company', 'trust', 'deceased_estate', 'other_legal_entity'].includes(normalizeLocalLower(sellerType)) ||
+        Boolean(normalizeLocalText(profile?.authorisedSignatory))
+    : true
+  const linkedSellerLeadId = toNullableUuid(sellerLeadId || offer?.sellerLeadId || listing?.sellerLeadId || listing?.seller_lead_id || listing?.leadId || listing?.lead_id)
+  const linkedSellerContactId = toNullableUuid(sellerContactId || offer?.sellerContactId || listing?.sellerContactId || listing?.seller_contact_id)
+  const blockers = []
+  const warnings = []
+
+  if (!resolvedSellerName) blockers.push('Seller name or entity name is missing.')
+  if (!linkedSellerLeadId && !linkedSellerContactId) blockers.push('Link a seller lead or seller contact to this listing before routing the offer.')
+  if (selectedDeliveryMode === SELLER_REVIEW_DELIVERY_MODE.EMAIL && !isValidEmail(resolvedSellerEmail)) {
+    blockers.push('A valid seller email is required for email-based seller review.')
+  }
+  if (selectedDeliveryMode === SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED && !resolvedSellerPhone && !resolvedSellerEmail) {
+    blockers.push('Add at least one seller contact method before using agent-assisted seller review.')
+  }
+  if (sellerType === 'multiple_individuals' && !allOwnersCaptured) {
+    blockers.push('Capture all owners before routing the offer for seller decision.')
+  }
+  if (!authorisedSignatoryPresent) {
+    blockers.push('Authorised signatory details are missing for this seller structure.')
+  }
+  if (summary?.mandateReady === false) {
+    warnings.push(...(Array.isArray(summary?.mandateChecks) ? summary.mandateChecks.filter((item) => !item?.satisfied).slice(0, 3).map((item) => item?.blocker || `Missing ${item?.label}`) : []))
+  }
+  if (summary?.mandateSigned === false) warnings.push('Signed mandate is not yet recorded on this listing.')
+  if (summary?.missingRequirementsCount) {
+    warnings.push(`Seller workspace still has ${summary.missingRequirementsCount} outstanding requirement${summary.missingRequirementsCount === 1 ? '' : 's'}.`)
+  }
+
+  const effectiveExpiresAt = normalizeLocalDate(expiresAt) || addDaysIso(7)
+  const authorityStatus = blockers.length ? 'blocked' : warnings.length ? 'watch' : 'ready'
+  const normalizedWarnings = Array.from(new Set(warnings)).filter(Boolean)
+  const deliveryModeLabel = getSellerOfferReviewDeliveryModeLabel(selectedDeliveryMode)
+
+  return {
+    ready: blockers.length === 0,
+    authorityStatus,
+    deliveryMode: selectedDeliveryMode,
+    deliveryModeLabel,
+    sellerName: resolvedSellerName,
+    sellerEmail: resolvedSellerEmail,
+    sellerPhone: resolvedSellerPhone,
+    sellerLeadId: linkedSellerLeadId,
+    sellerContactId: linkedSellerContactId,
+    sellerType: sellerType || 'individual',
+    ownerCount,
+    allOwnersCaptured,
+    authorisedSignatory: normalizeLocalText(profile?.authorisedSignatory),
+    mandateReady: Boolean(summary?.mandateReady),
+    mandateSigned: Boolean(summary?.mandateSigned),
+    onboardingComplete: Boolean(summary?.onboardingComplete),
+    blockers,
+    warnings: normalizedWarnings,
+    expiresAt: effectiveExpiresAt,
+    metadata: {
+      deliveryMode: selectedDeliveryMode,
+      deliveryModeLabel,
+      authorityStatus,
+      sellerType: sellerType || 'individual',
+      ownerCount,
+      allOwnersCaptured,
+      authorisedSignatory: normalizeLocalText(profile?.authorisedSignatory),
+      mandateReady: Boolean(summary?.mandateReady),
+      mandateSigned: Boolean(summary?.mandateSigned),
+      onboardingComplete: Boolean(summary?.onboardingComplete),
+      blockers,
+      warnings: normalizedWarnings,
+    },
+  }
+}
+
+function resolveSellerPortalLifecycle({ listing = {}, accessState = null, diagnostics = null } = {}) {
+  const onboarding = listing?.sellerOnboarding || {}
+  const rawStatus = normalizeLocalKey(
+    onboarding.sellerPortalStatus ||
+      onboarding.seller_portal_status ||
+      accessState?.portalStatus ||
+      diagnostics?.portalStatus,
+  )
+  if (rawStatus && Object.values(SELLER_PORTAL_STATUSES).includes(rawStatus)) return rawStatus
+  if (accessState?.linkActive === false || onboarding.cancelledAt || onboarding.invitationCancelledAt) {
+    return SELLER_PORTAL_STATUSES.invitationCancelled
+  }
+  if (onboarding.inviteExpiresAt && new Date(onboarding.inviteExpiresAt).getTime() <= Date.now() && !onboarding.inviteConsumedAt) {
+    return SELLER_PORTAL_STATUSES.invitationExpired
+  }
+  if (accessState?.passwordSet || onboarding.activatedAt || onboarding.inviteConsumedAt) {
+    const profileStatus = normalizeLocalKey(onboarding.status || listing?.sellerOnboardingStatus)
+    return ['completed', 'submitted', 'approved'].includes(profileStatus)
+      ? SELLER_PORTAL_STATUSES.profileComplete
+      : SELLER_PORTAL_STATUSES.activated
+  }
+  if (onboarding.inviteCreatedAt || onboarding.invitationSentAt || onboarding.invitationLastSentAt) {
+    return SELLER_PORTAL_STATUSES.invitationSent
+  }
+  if (onboarding.token || onboarding.sellerPortalToken) return SELLER_PORTAL_STATUSES.invitationPending
+  return SELLER_PORTAL_STATUSES.notActivated
+}
+
+function getSellerPortalStatusLabel(status = '') {
+  const labels = {
+    [SELLER_PORTAL_STATUSES.notActivated]: 'Not Activated',
+    [SELLER_PORTAL_STATUSES.invitationPending]: 'Invitation Pending',
+    [SELLER_PORTAL_STATUSES.invitationSent]: 'Invitation Sent',
+    [SELLER_PORTAL_STATUSES.activated]: 'Activated',
+    [SELLER_PORTAL_STATUSES.profileIncomplete]: 'Profile Incomplete',
+    [SELLER_PORTAL_STATUSES.profileComplete]: 'Profile Complete',
+    [SELLER_PORTAL_STATUSES.transactionReady]: 'Transaction Ready',
+    [SELLER_PORTAL_STATUSES.invitationExpired]: 'Invitation Expired',
+    [SELLER_PORTAL_STATUSES.invitationCancelled]: 'Invitation Cancelled',
+  }
+  return labels[normalizeLocalKey(status)] || 'Not Activated'
+}
+
+function buildSellerPortalInvitationPreview({
+  activationSource = SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+  sellerName = '',
+  propertyAddress = '',
+  agencyName = '',
+  agentName = '',
+} = {}) {
+  const source = normalizeLocalKey(activationSource)
+  const name = pickFirstText(sellerName, 'there')
+  const property = pickFirstText(propertyAddress, 'your property')
+  const agency = pickFirstText(agencyName, 'Your agency')
+  const agent = pickFirstText(agentName, 'Your agent')
+
+  if (source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead) {
+    return {
+      subject: `Complete your property profile with ${agency}`,
+      body: [
+        `Hi ${name},`,
+        `${agent} from ${agency} has invited you to complete your secure property profile.`,
+        'Through your Seller Portal, you can provide your property information, upload documents and complete the steps required to prepare your property for sale.',
+        '[Get Started]',
+      ].join('\n\n'),
+    }
+  }
+
+  return {
+    subject: `Activate your Seller Portal for ${property}`,
+    body: [
+      `Hi ${name},`,
+      `${agency} has invited you to activate your secure Seller Portal for ${property}.`,
+      'Your property is already listed. The portal gives you one place to follow the sale, receive updates, upload documents and track the transaction through to registration.',
+      '[Activate Seller Portal]',
+    ].join('\n\n'),
+  }
+}
+
+const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
+const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
+
+function readOfferJson(key, fallback) {
+  if (typeof window === 'undefined') return fallback
+  if (!isUnsafeFallbackAllowed()) return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeOfferJson(key, value) {
+  if (typeof window === 'undefined') return
+  if (!isUnsafeFallbackAllowed()) return
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+function offerMoney(value) {
+  const amount = Number(value || 0)
+  return Number.isFinite(amount) ? Math.max(0, amount) : 0
+}
+
+function offerExpiryIso(days = 7) {
+  return new Date(Date.now() + Number(days || 7) * 24 * 60 * 60 * 1000).toISOString()
+}
+
+function getOfferRecords() {
+  const rows = readOfferJson(KEY_OFFER_RECORDS, [])
+  return Array.isArray(rows) ? rows : []
+}
+
+function writeOfferRecords(rows) {
+  writeOfferJson(KEY_OFFER_RECORDS, Array.isArray(rows) ? rows : [])
+}
+
+function getOfferInvites() {
+  const rows = readOfferJson(KEY_OFFER_INVITES, [])
+  const invites = Array.isArray(rows) ? rows : []
+  const now = Date.now()
+  let changed = false
+  const nextRows = invites.map((invite) => {
+    const status = normalizeOfferWorkflowStatus(invite?.status)
+    if ([OFFER_WORKFLOW_STATUS.EXPIRED, OFFER_WORKFLOW_STATUS.WITHDRAWN].includes(status)) return invite
+    const expiresAt = new Date(invite?.expiresAt || 0).getTime()
+    if (Number.isFinite(expiresAt) && expiresAt < now) {
+      changed = true
+      return {
+        ...invite,
+        status: OFFER_WORKFLOW_STATUS.EXPIRED,
+        expiredAt: new Date().toISOString(),
+      }
+    }
+    return invite
+  })
+  if (changed) writeOfferJson(KEY_OFFER_INVITES, nextRows)
+  return nextRows
+}
+
+function getOfferInviteLink(token, baseUrl = '') {
+  const origin =
+    baseUrl ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://app.arch9.co.za')
+  return `${origin}/client/offer/${token}`
+}
+
+function listingFromId(listingId) {
+  const rows = readAgentPrivateListings()
+  return (Array.isArray(rows) ? rows : []).find((row) => String(row?.id || '') === String(listingId || '')) || null
+}
+
+function hydrateLegacyListingOffers(listingId) {
+  const records = getOfferRecords().filter((record) => String(record?.listingId || '') === String(listingId || ''))
+  if (records.length) return
+
+  const listing = listingFromId(listingId)
+  const legacyOffers = Array.isArray(listing?.offers) ? listing.offers : []
+  if (!legacyOffers.length) return
+
+  const now = new Date().toISOString()
+  const nextRecords = [...getOfferRecords()]
+  for (const legacy of legacyOffers) {
+    nextRecords.push({
+      id: legacy?.id || generateId('offer_record'),
+      threadId: legacy?.threadId || generateId('offer_thread'),
+      version: Number(legacy?.version || 1),
+      listingId: String(listingId || ''),
+      buyerLeadId: '',
+      viewingId: '',
+      sellerToken: listing?.sellerOnboarding?.token || '',
+      inviteToken: '',
+      source: 'legacy_listing',
+      status: normalizeOfferWorkflowStatus(legacy?.status || OFFER_WORKFLOW_STATUS.SUBMITTED),
+      verification: {
+        verified: true,
+        method: 'legacy',
+        verifiedAt: legacy?.offerDate || now,
+      },
+      buyer: {
+        fullName: legacy?.buyerName || 'Buyer',
+        email: '',
+        phone: '',
+        idNumber: '',
+      },
+      offer: {
+        offerAmount: offerMoney(legacy?.offerPrice),
+        depositAmount: 0,
+        financeType: legacy?.financeType || 'unknown',
+        proofOfFundsUrl: legacy?.supportingDocsUrl || '',
+        suspensiveConditions: legacy?.conditions || '',
+        specialConditions: legacy?.conditions || '',
+        expiryDate: legacy?.expiryDate || offerExpiryIso(7),
+      },
+      agentNotes: legacy?.agentNotes || '',
+      sellerNotes: legacy?.sellerNotes || '',
+      submittedAt: legacy?.offerDate || now,
+      updatedAt: now,
+      transactionId: '',
+      onboardingUrl: '',
+    })
+  }
+  writeOfferRecords(nextRecords)
+}
+
+function getOfferInvitesForListing(listingId) {
+  const targetListingId = String(listingId || '').trim()
+  if (!targetListingId) return []
+  return getOfferInvites()
+    .filter((invite) => String(invite?.listingId || '').trim() === targetListingId)
+    .sort((left, right) => new Date(right?.createdAt || 0) - new Date(left?.createdAt || 0))
+    .map((invite) => ({
+      ...invite,
+      status: normalizeOfferWorkflowStatus(invite?.status),
+      link: getOfferInviteLink(invite?.token || ''),
+    }))
+}
+
+function getOffersForListing(listingId) {
+  hydrateLegacyListingOffers(listingId)
+  return getOfferRecords()
+    .filter((row) => String(row?.listingId || '') === String(listingId || ''))
+    .sort((left, right) => new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0))
+}
 
 const DETAIL_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -3425,7 +4290,7 @@ function AgentListingDetail() {
         setOffersRefreshTick((value) => value + 1)
         return
       }
-      const { invite, link } = createOfferInvite({
+      const { invite, link } = await createOfferInvite({
         listingId: listingRecord.id,
         buyerLeadId: selectedLead.id,
         buyerLeadName: selectedLead.name || '',
@@ -3535,12 +4400,12 @@ function AgentListingDetail() {
     )
   }
 
-  function handleOfferAction(offerId, action) {
+  async function handleOfferAction(offerId, action) {
     setOfferActionError('')
     setOfferActionMessage('')
     try {
       const notes = String(offerNotesDraftById?.[offerId] || '').trim()
-      markOfferAgentAction(offerId, action, notes)
+      await markOfferAgentAction(offerId, action, notes)
       setOfferActionMessage('Offer updated successfully.')
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
@@ -6315,7 +7180,7 @@ function AgentListingDetail() {
       assignedAgent: listingActor,
     }
     const bulkVisitors = isBulkCapture
-      ? parseShowDayVisitorRows(form.bulkVisitorText, {
+      ? await parseShowDayVisitorRows(form.bulkVisitorText, {
           outcome: form.outcome,
           nextStep: form.nextStep,
           followUpDueDate: form.followUpDueDate,

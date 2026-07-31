@@ -1,0 +1,90 @@
+{
+  "contract": "domain-api-split-phase7-staged-rollout-v1",
+  "domain": "agent-listing-detail",
+  "label": "Agent Listing Detail",
+  "date": "2026-07-31",
+  "status": "ready_for_staged_rollout",
+  "scope": {
+    "route": "src/pages/AgentListingDetail.jsx",
+    "roles": ["agent", "principal"],
+    "staticSplitCertified": true,
+    "globalEnforceClean": false,
+    "knownBoundary": "Vite preload map still references api-*.js through click-time lazy services."
+  },
+  "requiredPreflightCommands": [
+    "npm run build",
+    "npm run test:domain-api-split-phase6-gate",
+    "npm run test:domain-api-split-phase7-rollout",
+    "npm run test:domain-import-inventory",
+    "npm run test:domain-api-chunks",
+    "npm run test:performance-budget"
+  ],
+  "budgets": {
+    "maxEntryGzipKb": 140,
+    "maxStaticScriptGzipKb": 750,
+    "maxStaticApiRouteGzipKb": 1,
+    "expectedTrackedHeavyStaticImports": 0,
+    "expectedStaticApiRouteDependencies": 0
+  },
+  "stages": [
+    {
+      "key": "local_preflight",
+      "environment": "local",
+      "audience": "engineering",
+      "promotionCriteria": [
+        "Fresh production build succeeds.",
+        "Phase 6 gate passes against the fresh build artifact.",
+        "Performance budget test passes."
+      ],
+      "rollback": "Do not deploy. Fix the failing source, audit, or budget layer locally."
+    },
+    {
+      "key": "staging_internal",
+      "environment": "staging",
+      "audience": "internal agent and principal accounts",
+      "promotionCriteria": [
+        "Route loads without initial api-*.js static dependency.",
+        "Listing overview, seller onboarding preview, offers list, interested leads, and show-day sections render.",
+        "No new route-load JavaScript error appears in monitoring during the observation window."
+      ],
+      "rollback": "Revert or redeploy the previous application version. No database rollback is required."
+    },
+    {
+      "key": "production_canary",
+      "environment": "production",
+      "audience": "one low-risk agency or internal production agency account",
+      "promotionCriteria": [
+        "Canary users can open Agent Listing Detail for active and draft listings.",
+        "One seller-onboarding action, one offer action, and one show-day action are exercised successfully.",
+        "No material increase in Agent Listing Detail route-load errors or failed lazy-action imports."
+      ],
+      "rollback": "Redeploy the previous application version and keep Agent Listing Detail report-only."
+    },
+    {
+      "key": "production_full",
+      "environment": "production",
+      "audience": "all agent and principal users",
+      "promotionCriteria": [
+        "Production canary completes without blocking incidents.",
+        "Phase 6 gate remains green on the release artifact.",
+        "Support and monitoring show no domain-specific regression trend."
+      ],
+      "rollback": "Redeploy the previous application version. Keep global enforceClean false until the preload-reference boundary is resolved."
+    }
+  ],
+  "stopConditions": [
+    "Phase 6 gate fails.",
+    "Tracked heavy static imports are reintroduced.",
+    "The built Agent Listing Detail route statically depends on api-*.js.",
+    "Entry gzip exceeds 140 KB or static script gzip exceeds 750 KB.",
+    "Route-load errors or lazy-action import failures increase materially during staging or canary."
+  ],
+  "monitoringSignals": [
+    "Agent Listing Detail route-load JavaScript errors",
+    "dynamic import failures for privateListingService, agencyPipelineService, buyerLifecycleService, listingOffersService, lead services, or seller services",
+    "seller onboarding send failures",
+    "offer invite or offer status action failures",
+    "show-day lead capture failures",
+    "route initial JS payload and static script dependency gzip"
+  ]
+}

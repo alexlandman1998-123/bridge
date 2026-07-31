@@ -440,6 +440,45 @@ function buildAlerts(rows) {
   }
 }
 
+function isMissingRpcError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const status = Number(error.status || error.statusCode || 0)
+  const message = String(error.message || '').toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    code === 'FUNCTION_NOT_FOUND' ||
+    status === 404 ||
+    (message.includes('function') && (message.includes('not found') || message.includes('schema cache')))
+  )
+}
+
+function normalizeDashboardOverviewAggregate(payload = null) {
+  if (!payload || typeof payload !== 'object') return null
+  const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : {}
+
+  return {
+    rows: [],
+    metrics: {
+      totalDevelopments: Number(metrics.totalDevelopments ?? metrics.total_developments ?? 0) || 0,
+      totalUnits: Number(metrics.totalUnits ?? metrics.total_units ?? 0) || 0,
+      activeTransactions: Number(metrics.activeTransactions ?? metrics.active_transactions ?? 0) || 0,
+      unitsInTransfer: Number(metrics.unitsInTransfer ?? metrics.units_in_transfer ?? 0) || 0,
+      unitsRegistered: Number(metrics.unitsRegistered ?? metrics.units_registered ?? 0) || 0,
+      totalRevenue: Number(metrics.totalRevenue ?? metrics.total_revenue ?? 0) || 0,
+    },
+    developmentSummaries: Array.isArray(payload.developmentSummaries)
+      ? payload.developmentSummaries
+      : Array.isArray(payload.development_summaries)
+        ? payload.development_summaries
+        : [],
+    alerts: payload.alerts && typeof payload.alerts === 'object' ? payload.alerts : buildAlerts([]),
+    aggregateSource: payload.aggregateSource || payload.aggregate_source || 'supabase',
+    rollupGeneratedAt: payload.rollupGeneratedAt || payload.rollup_generated_at || null,
+  }
+}
+
 async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
   const selectVariants = [
     'id, development_id, unit_id, transaction_id, buyer_id, category, description, location, priority, photo_path, signed_off_by, signed_off_at, status, created_at, updated_at',
@@ -790,6 +829,16 @@ async function hydrateUnitRows(client, units, { includeOperationalSignals = true
     return rows.sort(byDevelopmentThenUnit)
   }
 
+  return hydrateDashboardOperationalSignals(client, rows)
+}
+
+export async function hydrateDashboardOperationalSignals(client, rows = []) {
+  const baseRows = Array.isArray(rows) ? rows : []
+  if (!baseRows.length) {
+    return []
+  }
+
+  const unitIds = [...new Set(baseRows.map((row) => row?.unit?.id).filter(Boolean))]
   const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
   const transactionIdByUnitId = rows.reduce((accumulator, row) => {
     if (row.transaction?.id) {
@@ -879,7 +928,7 @@ async function hydrateUnitRows(client, units, { includeOperationalSignals = true
     }
   }
 
-  return rows
+  return baseRows
     .map((row) => {
       const defaultHandover = getDefaultHandoverRecord({
         developmentId: row.unit?.development_id || null,
@@ -1055,6 +1104,8 @@ export async function fetchDashboardOverview({
   developmentId = null,
   client: scopedClient = null,
   organisationId = null,
+  includeOperationalSignals = true,
+  includeCommissionSnapshots = true,
 } = {}) {
   const client = scopedClient || requireClient()
   const normalizedOrganisationId = String(organisationId || '').trim()
@@ -1090,8 +1141,8 @@ export async function fetchDashboardOverview({
       allowedDevelopmentIds.has(String(unit?.development_id || unit?.development?.id || '').trim()),
     )
   }
-  const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units))
-  const rows = await hydrateRowsWithCommissionSnapshots(client, baseRows)
+  const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units, { includeOperationalSignals }))
+  const rows = includeCommissionSnapshots ? await hydrateRowsWithCommissionSnapshots(client, baseRows) : baseRows
 
   const developmentSummaries = buildDevelopmentSummaries(rows)
 
@@ -1100,5 +1151,88 @@ export async function fetchDashboardOverview({
     metrics: buildDashboardMetrics(rows, developmentSummaries.length),
     developmentSummaries,
     alerts: buildAlerts(rows),
+    hydration: {
+      operationalSignals: Boolean(includeOperationalSignals),
+      commissionSnapshots: Boolean(includeCommissionSnapshots),
+    },
+  }
+}
+
+export async function hydrateDashboardOverviewPanels({
+  rows = [],
+  client: scopedClient = null,
+  includeOperationalSignals = true,
+  includeCommissionSnapshots = true,
+} = {}) {
+  const client = scopedClient || requireClient()
+  let hydratedRows = Array.isArray(rows) ? rows : []
+  if (includeOperationalSignals) {
+    hydratedRows = await hydrateDashboardOperationalSignals(client, hydratedRows)
+  }
+  if (includeCommissionSnapshots) {
+    hydratedRows = await hydrateRowsWithCommissionSnapshots(client, hydratedRows)
+  }
+
+  const developmentSummaries = buildDevelopmentSummaries(hydratedRows)
+  return {
+    rows: hydratedRows,
+    metrics: buildDashboardMetrics(hydratedRows, developmentSummaries.length),
+    developmentSummaries,
+    alerts: buildAlerts(hydratedRows),
+    hydration: {
+      operationalSignals: Boolean(includeOperationalSignals),
+      commissionSnapshots: Boolean(includeCommissionSnapshots),
+    },
+  }
+}
+
+export async function fetchDashboardOverviewAggregate({
+  developmentId = null,
+  client: scopedClient = null,
+  organisationId = null,
+} = {}) {
+  const client = scopedClient || requireClient()
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  const normalizedDevelopmentId = String(developmentId || '').trim()
+  const rpcDevelopmentId = normalizedDevelopmentId && normalizedDevelopmentId !== 'all' ? normalizedDevelopmentId : null
+
+  const { data, error } = await client.rpc('bridge_dashboard_developer_overview_aggregate', {
+    p_development_id: rpcDevelopmentId,
+    p_organisation_id: normalizedOrganisationId || null,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error) || isPermissionDeniedError(error)) {
+      return null
+    }
+    throw error
+  }
+
+  return normalizeDashboardOverviewAggregate(data)
+}
+
+export async function refreshDashboardOverviewRollups({
+  developmentId = null,
+  client: scopedClient = null,
+  organisationId = null,
+} = {}) {
+  const client = scopedClient || requireClient()
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  const normalizedDevelopmentId = String(developmentId || '').trim()
+  const rpcDevelopmentId = normalizedDevelopmentId && normalizedDevelopmentId !== 'all' ? normalizedDevelopmentId : null
+
+  const { data, error } = await client.rpc('bridge_refresh_dashboard_developer_metric_rollups', {
+    p_development_id: rpcDevelopmentId,
+    p_organisation_id: normalizedOrganisationId || null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data || {
+    refreshed: 0,
+    organisationId: normalizedOrganisationId || null,
+    developmentId: rpcDevelopmentId,
   }
 }

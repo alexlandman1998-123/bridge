@@ -18,8 +18,8 @@ import { setActiveWorkspacePreference } from '../services/workspaceResolutionSer
 import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCache'
 
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
-const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
-const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS
+const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 25000
+const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 10000
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -45,6 +45,7 @@ const EMPTY_AUTH_STATE = Object.freeze({
   onboardingComplete: false,
   onboardingRequiredReason: '',
   bootError: '',
+  bootErrorCode: '',
 })
 
 const AuthSessionContext = createContext(null)
@@ -114,6 +115,7 @@ function createDevOnlyAuthState(devAuthRole) {
     onboardingComplete: true,
     onboardingRequiredReason: '',
     bootError: '',
+    bootErrorCode: '',
   }
 }
 
@@ -128,6 +130,14 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
     return 'Authentication bootstrap timed out while restoring your session. Please retry.'
   }
   return 'Authentication bootstrap timed out. Please retry.'
+}
+
+function createBootstrapTimeoutError({ phase = '', diagnostics = [] } = {}) {
+  const error = new Error(buildBootstrapTimeoutMessage({ phase, diagnostics }))
+  error.name = 'AuthBootstrapTimeoutError'
+  error.code = phase === 'bridge' ? 'bridge_auth_bootstrap_timeout' : 'auth_session_bootstrap_timeout'
+  error.diagnostics = diagnostics
+  return error
 }
 
 function getMembershipWorkspaceId(membership = null) {
@@ -155,7 +165,7 @@ async function withBootstrapTimeout(task, {
       new Promise((_, reject) => {
         timeoutId = window.setTimeout(() => {
           const diagnostics = typeof getDiagnostics === 'function' ? getDiagnostics() : []
-          reject(new Error(buildBootstrapTimeoutMessage({ phase, diagnostics })))
+          reject(createBootstrapTimeoutError({ phase, diagnostics }))
         }, timeoutMs)
       }),
     ])
@@ -370,7 +380,14 @@ export function AuthSessionProvider({ children }) {
             },
           })
         }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
-        const nextState = await loadBridgeAuthState({ session, selectedWorkspaceId })
+        const nextState = await withBootstrapTimeout(
+          loadBridgeAuthState({ session, selectedWorkspaceId }),
+          {
+            timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+            phase: 'bridge',
+            getDiagnostics: getActiveAuthBootStepDiagnostics,
+          },
+        )
         resolvedBridgeState = nextState
         if (!active) {
           bridgeOutcome = 'cancelled'
@@ -410,6 +427,17 @@ export function AuthSessionProvider({ children }) {
           userId: session.user.id,
           operation: 'bridge_auth_boot',
           category: 'auth_error',
+          metadata: {
+            code: error?.code || null,
+            diagnostics: error?.diagnostics || getActiveAuthBootStepDiagnostics(),
+          },
+        })
+        void trackAuthMetric(error?.code === 'bridge_auth_bootstrap_timeout' ? 'auth_boot_timeout' : 'auth_boot_failed', {
+          userId: session.user.id,
+          metadata: {
+            selectedWorkspaceId: selectedWorkspaceId || null,
+            diagnostics: error?.diagnostics || getActiveAuthBootStepDiagnostics(),
+          },
         })
         setAuthState({
           ...EMPTY_AUTH_STATE,
@@ -417,6 +445,7 @@ export function AuthSessionProvider({ children }) {
           session,
           user: session.user,
           bootError: error?.message || 'Unable to load your Arch9 workspace.',
+          bootErrorCode: error?.code || '',
         })
       } finally {
         if (slowTimerId) window.clearTimeout(slowTimerId)
@@ -445,7 +474,7 @@ export function AuthSessionProvider({ children }) {
     return () => {
       active = false
     }
-  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, sessionLoading, sessionUserId])
+  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, session, sessionLoading, sessionUserId])
 
   const refreshAuthState = useCallback(() => {
     setBootAttempt((previous) => previous + 1)

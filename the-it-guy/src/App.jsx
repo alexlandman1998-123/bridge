@@ -746,7 +746,7 @@ function AppLayout({ onLogout, session = null, user }) {
   )
 }
 
-const WORKSPACE_GATE_SLOW_MS = 30000
+const WORKSPACE_GATE_SLOW_MS = 10000
 
 function AccessDenied({ title = 'Access restricted', message = 'You do not have access to this area.' }) {
   return <AccessState type="denied" title={title} description={message} />
@@ -777,6 +777,8 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const baseRole = authState.appRole
   const onboardingCompleted = authState.onboardingComplete
   const waitingOnWorkspace = authState.status === 'loading'
+  const authErrorCode = authState.bootErrorCode || ''
+  const retryBootstrap = onRetryBootstrap || retryWorkspaceBootstrap
 
   useEffect(() => {
     if (!waitingOnWorkspace) {
@@ -839,8 +841,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
                 className="auth-primary-cta"
                 onClick={() => {
                   setLoadingSlow(false)
-                  onRetryBootstrap?.()
-                  retryWorkspaceBootstrap?.()
+                  retryBootstrap?.()
                 }}
               >
                 Retry
@@ -878,16 +879,24 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   if (authState.status === 'error') {
+    const timeoutCopy =
+      authErrorCode === 'bridge_auth_bootstrap_timeout' ||
+      normalizedProfileError.includes('bootstrap timed out')
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>We couldn’t load your Arch9 account.</h2>
+          <h2>{timeoutCopy ? 'Your session is valid, but workspace setup is taking too long.' : 'We couldn’t load your Arch9 account.'}</h2>
           <p>{profileError || 'Authentication boot failed.'}</p>
+          {timeoutCopy ? (
+            <p className="mt-2 text-sm text-[#5f738a]">
+              Retry will re-run profile, workspace, and onboarding checks without forcing a new sign-in.
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               className="auth-primary-cta"
-              onClick={() => retryWorkspaceBootstrap?.()}
+              onClick={() => retryBootstrap?.()}
             >
               Retry
             </button>

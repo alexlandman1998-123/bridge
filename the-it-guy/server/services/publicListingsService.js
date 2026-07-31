@@ -5,6 +5,7 @@ let cachedRuntimeEnv = null
 
 const DEFAULT_LIMIT = 24
 const MAX_LIMIT = 60
+const SOURCE_PAGE_SIZE = 120
 const AGENCY_INTAKE_PRICE_TOLERANCE = 300000
 const PUBLIC_LISTING_FIELDS = [
   'id',
@@ -431,6 +432,61 @@ function normalizeOffset(value) {
   return Math.max(0, Math.round(numeric))
 }
 
+function hasFilterValue(value) {
+  return value !== null && value !== undefined && normalizeText(value) !== ''
+}
+
+function applyCaseInsensitiveExactFilter(query, field, value) {
+  if (!hasFilterValue(value)) return query
+  return query.ilike(field, normalizeText(value))
+}
+
+function applyPublicationFilters(query, filters = {}) {
+  let nextQuery = query
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'listing_type', filters.listingType)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'property_type', filters.propertyType)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'suburb', filters.suburb)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'province', filters.province)
+
+  const minPrice = toOptionalNumber(filters.minPrice)
+  const maxPrice = toOptionalNumber(filters.maxPrice)
+  const bedrooms = toOptionalNumber(filters.bedrooms)
+  const bathrooms = toOptionalNumber(filters.bathrooms)
+  if (minPrice !== null) nextQuery = nextQuery.gte('asking_price', minPrice)
+  if (maxPrice !== null) nextQuery = nextQuery.lte('asking_price', maxPrice)
+  if (bedrooms !== null) nextQuery = nextQuery.gte('bedrooms', bedrooms)
+  if (bathrooms !== null) nextQuery = nextQuery.gte('bathrooms', bathrooms)
+  return nextQuery
+}
+
+function applyAgencyListingFilters(query, filters = {}) {
+  let nextQuery = query
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'property_type', filters.propertyType)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'suburb', filters.suburb)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'city', filters.city)
+  nextQuery = applyCaseInsensitiveExactFilter(nextQuery, 'province', filters.province)
+
+  const minPrice = toOptionalNumber(filters.minPrice)
+  const maxPrice = toOptionalNumber(filters.maxPrice)
+  if (minPrice !== null) nextQuery = nextQuery.gte('asking_price', minPrice)
+  if (maxPrice !== null) nextQuery = nextQuery.lte('asking_price', maxPrice)
+  return nextQuery
+}
+
+function requiresFullPublicScan(options = {}) {
+  return Boolean(options.slug || hasFilterValue(options.q) || hasFilterValue(options.city))
+}
+
+function requiresFullAgencyScan(options = {}) {
+  return Boolean(
+    options.slug ||
+      hasFilterValue(options.q) ||
+      hasFilterValue(options.listingType) ||
+      hasFilterValue(options.bedrooms) ||
+      hasFilterValue(options.bathrooms)
+  )
+}
+
 async function resolveAgencyScope(client, agencySlug = '') {
   const normalizedSlug = normalizeText(agencySlug).toLowerCase()
   if (!normalizedSlug) return null
@@ -554,154 +610,228 @@ export async function getPublicListings(options = {}) {
   const isAgencyIntakeAudience = Boolean(agencyScope?.organisation_id && ['agency_intake', 'buyer_intake', 'intake'].includes(audience))
 
   if (isAgencyIntakeAudience) {
-    const listingsResult = await client
-      .from('private_listings')
-      .select(PUBLIC_LISTING_FIELDS)
-      .eq('organisation_id', agencyScope.organisation_id)
-      .eq('listing_visibility', 'active_market')
-      .order('updated_at', { ascending: false })
-      .limit(500)
-
-    if (listingsResult.error) throw listingsResult.error
-
-    const listingRows = listingsResult.data || []
-    const listingIds = listingRows.map((row) => normalizeText(row.id)).filter(Boolean)
-    if (!listingIds.length) {
-      return { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
-    }
-
-    const [publicationResult, mediaResult, onboardingResult, agencyMetadata] = await Promise.all([
-      client
-        .from('listing_publication_data')
-        .select(PUBLICATION_FIELDS)
-        .in('listing_id', listingIds)
-        .order('updated_at', { ascending: false }),
-      client
-        .from('listing_media')
-        .select(MEDIA_FIELDS)
-        .in('listing_id', listingIds)
-        .order('sort_order', { ascending: true }),
-      client
-        .from('private_listing_seller_onboarding')
-        .select('private_listing_id, form_data, updated_at')
-        .in('private_listing_id', listingIds)
-        .order('updated_at', { ascending: false }),
-      loadAgencyPublicMetadata(client, [agencyScope.organisation_id]),
-    ])
-
-    if (publicationResult.error) throw publicationResult.error
-    if (mediaResult.error) throw mediaResult.error
-    if (onboardingResult.error && !isMissingRelationError(onboardingResult.error)) throw onboardingResult.error
-
-    const publicationsByListingId = new Map()
-    for (const publication of publicationResult.data || []) {
-      const listingId = normalizeText(publication.listing_id)
-      if (listingId && !publicationsByListingId.has(listingId)) publicationsByListingId.set(listingId, publication)
-    }
-    const mediaByListingId = groupByListingId(mediaResult.data || [])
-    const onboardingByListingId = groupOnboardingByListingId(onboardingResult.error ? [] : onboardingResult.data || [])
-    const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
     const filterOptions = createAgencyIntakeFilterOptions(options)
-    const items = listingRows
-      .map((row) => {
-        const listing = {
-          ...row,
-          agency_public_intake_slug: metadata.agencySlug || agencyScope.slug || agencySlug,
-          agency_public_name: metadata.agencyName || '',
-        }
-        if (!isAgencyIntakeListingEligible({ listing })) return null
-        const publication = createAgencyIntakePublication(listing, publicationsByListingId.get(normalizeText(listing.id)) || {})
-        const onboarding = onboardingByListingId.get(normalizeText(listing.id)) || {}
-        const onboardingMedia = extractFormDataMediaRows(onboarding.form_data, listing)
-        const media = onboardingMedia.length ? onboardingMedia : mediaByListingId.get(normalizeText(listing.id)) || []
-        return mapPublicListingContract({ listing, publication, media, host })
-      })
-      .filter(Boolean)
-      .filter((item) => matchesFilters(item, filterOptions))
+    const shouldScanAll = requiresFullAgencyScan(filterOptions)
+    const requiredItems = offset + limit
+    const agencyMetadata = await loadAgencyPublicMetadata(client, [agencyScope.organisation_id])
+    const metadata = agencyMetadata.get(normalizeText(agencyScope.organisation_id)) || {}
+    const items = []
+    let totalCount = null
+    let sourceOffset = 0
+    let scannedAllSources = false
 
-    const slug = normalizeText(options.slug)
-    if (slug) {
-      const listing = items.find((item) => item.slug === slug || item.id === slug)
-      return { listing: listing || null, generatedAt: new Date().toISOString() }
+    while (true) {
+      let listingsQuery = client
+        .from('private_listings')
+        .select(PUBLIC_LISTING_FIELDS, { count: 'exact' })
+        .eq('organisation_id', agencyScope.organisation_id)
+        .eq('listing_visibility', 'active_market')
+        .not('listing_status', 'in', '(archived,withdrawn,sold,transaction_created)')
+
+      listingsQuery = applyAgencyListingFilters(listingsQuery, filterOptions)
+
+      const listingsResult = await listingsQuery
+        .order('updated_at', { ascending: false })
+        .range(sourceOffset, sourceOffset + SOURCE_PAGE_SIZE - 1)
+
+      if (listingsResult.error) throw listingsResult.error
+      if (totalCount === null && Number.isFinite(Number(listingsResult.count))) totalCount = Number(listingsResult.count)
+
+      const listingRows = listingsResult.data || []
+      const listingIds = listingRows.map((row) => normalizeText(row.id)).filter(Boolean)
+      if (!listingRows.length) {
+        scannedAllSources = true
+        break
+      }
+      if (!listingIds.length) {
+        if (listingRows.length < SOURCE_PAGE_SIZE) {
+          scannedAllSources = true
+          break
+        }
+        sourceOffset += SOURCE_PAGE_SIZE
+        continue
+      }
+
+      const [publicationResult, mediaResult, onboardingResult] = await Promise.all([
+        client
+          .from('listing_publication_data')
+          .select(PUBLICATION_FIELDS)
+          .in('listing_id', listingIds)
+          .order('updated_at', { ascending: false }),
+        client
+          .from('listing_media')
+          .select(MEDIA_FIELDS)
+          .in('listing_id', listingIds)
+          .order('sort_order', { ascending: true }),
+        client
+          .from('private_listing_seller_onboarding')
+          .select('private_listing_id, form_data, updated_at')
+          .in('private_listing_id', listingIds)
+          .order('updated_at', { ascending: false }),
+      ])
+
+      if (publicationResult.error) throw publicationResult.error
+      if (mediaResult.error) throw mediaResult.error
+      if (onboardingResult.error && !isMissingRelationError(onboardingResult.error)) throw onboardingResult.error
+
+      const publicationsByListingId = new Map()
+      for (const publication of publicationResult.data || []) {
+        const listingId = normalizeText(publication.listing_id)
+        if (listingId && !publicationsByListingId.has(listingId)) publicationsByListingId.set(listingId, publication)
+      }
+      const mediaByListingId = groupByListingId(mediaResult.data || [])
+      const onboardingByListingId = groupOnboardingByListingId(onboardingResult.error ? [] : onboardingResult.data || [])
+      const pageItems = listingRows
+        .map((row) => {
+          const listing = {
+            ...row,
+            agency_public_intake_slug: metadata.agencySlug || agencyScope.slug || agencySlug,
+            agency_public_name: metadata.agencyName || '',
+          }
+          if (!isAgencyIntakeListingEligible({ listing })) return null
+          const publication = createAgencyIntakePublication(listing, publicationsByListingId.get(normalizeText(listing.id)) || {})
+          const onboarding = onboardingByListingId.get(normalizeText(listing.id)) || {}
+          const onboardingMedia = extractFormDataMediaRows(onboarding.form_data, listing)
+          const media = onboardingMedia.length ? onboardingMedia : mediaByListingId.get(normalizeText(listing.id)) || []
+          return mapPublicListingContract({ listing, publication, media, host })
+        })
+        .filter(Boolean)
+        .filter((item) => matchesFilters(item, filterOptions))
+
+      const slug = normalizeText(options.slug)
+      if (slug) {
+        const listing = pageItems.find((item) => item.slug === slug || item.id === slug)
+        if (listing) return { listing, generatedAt: new Date().toISOString() }
+      } else {
+        items.push(...pageItems)
+        if (!shouldScanAll && items.length >= requiredItems) break
+      }
+
+      if (listingRows.length < SOURCE_PAGE_SIZE) {
+        scannedAllSources = true
+        break
+      }
+      sourceOffset += SOURCE_PAGE_SIZE
     }
+
+    if (options.slug) return { listing: null, generatedAt: new Date().toISOString() }
 
     return {
       items: items.slice(offset, offset + limit),
-      count: items.length,
+      count: shouldScanAll || scannedAllSources || totalCount === null ? items.length : Math.max(totalCount, items.length),
       limit,
       offset,
       generatedAt: new Date().toISOString(),
     }
   }
 
-  const publicationResult = await client
-    .from('listing_publication_data')
-    .select(PUBLICATION_FIELDS)
-    .eq('status', 'Published')
-    .order('updated_at', { ascending: false })
-    .limit(500)
+  const shouldScanAll = requiresFullPublicScan(options) || Boolean(agencyScope?.organisation_id)
+  const requiredItems = offset + limit
+  const items = []
+  let totalCount = null
+  let sourceOffset = 0
+  let scannedAllSources = false
 
-  if (publicationResult.error) throw publicationResult.error
+  while (true) {
+    let publicationQuery = client
+      .from('listing_publication_data')
+      .select(PUBLICATION_FIELDS, { count: 'exact' })
+      .eq('status', 'Published')
 
-  const publications = Array.isArray(publicationResult.data) ? publicationResult.data : []
-  const listingIds = publications.map((row) => normalizeText(row.listing_id)).filter(Boolean)
-  if (!listingIds.length) {
-    return { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
+    publicationQuery = applyPublicationFilters(publicationQuery, options)
+
+    const publicationResult = await publicationQuery
+      .order('updated_at', { ascending: false })
+      .range(sourceOffset, sourceOffset + SOURCE_PAGE_SIZE - 1)
+
+    if (publicationResult.error) throw publicationResult.error
+    if (totalCount === null && Number.isFinite(Number(publicationResult.count))) totalCount = Number(publicationResult.count)
+
+    const publications = Array.isArray(publicationResult.data) ? publicationResult.data : []
+    const listingIds = publications.map((row) => normalizeText(row.listing_id)).filter(Boolean)
+    if (!publications.length) {
+      scannedAllSources = true
+      break
+    }
+    if (!listingIds.length) {
+      if (publications.length < SOURCE_PAGE_SIZE) {
+        scannedAllSources = true
+        break
+      }
+      sourceOffset += SOURCE_PAGE_SIZE
+      continue
+    }
+
+    let listingsQuery = client
+      .from('private_listings')
+      .select(PUBLIC_LISTING_FIELDS)
+      .in('id', listingIds)
+      .eq('bridge_listing_status', 'published')
+      .eq('listing_visibility', 'active_market')
+      .not('listing_status', 'in', '(withdrawn,sold,transaction_created)')
+
+    if (agencyScope?.organisation_id) {
+      listingsQuery = listingsQuery.eq('organisation_id', agencyScope.organisation_id)
+    }
+
+    if (hasFilterValue(options.city)) {
+      listingsQuery = applyCaseInsensitiveExactFilter(listingsQuery, 'city', options.city)
+    }
+
+    const listingsResult = await listingsQuery
+
+    if (listingsResult.error) throw listingsResult.error
+
+    const listingRows = listingsResult.data || []
+    const agencyMetadata = await loadAgencyPublicMetadata(client, listingRows.map((row) => row.organisation_id))
+    const listingsById = new Map(listingRows.map((row) => {
+      const metadata = agencyMetadata.get(normalizeText(row.organisation_id)) || {}
+      return [normalizeText(row.id), {
+        ...row,
+        agency_public_intake_slug: metadata.agencySlug || '',
+        agency_public_name: metadata.agencyName || '',
+      }]
+    }))
+    const mediaResult = await client
+      .from('listing_media')
+      .select(MEDIA_FIELDS)
+      .in('listing_id', listingIds)
+      .order('sort_order', { ascending: true })
+
+    if (mediaResult.error) throw mediaResult.error
+
+    const mediaByListingId = groupByListingId(mediaResult.data || [])
+    const pageItems = publications
+      .map((publication) => {
+        const listing = listingsById.get(normalizeText(publication.listing_id))
+        const media = mediaByListingId.get(normalizeText(publication.listing_id)) || []
+        if (!listing || !isPublicListingEligible({ listing, publication, media })) return null
+        return mapPublicListingContract({ listing, publication, media, host })
+      })
+      .filter(Boolean)
+      .filter((item) => matchesFilters(item, options))
+
+    const slug = normalizeText(options.slug)
+    if (slug) {
+      const listing = pageItems.find((item) => item.slug === slug || item.id === slug)
+      if (listing) return { listing, generatedAt: new Date().toISOString() }
+    } else {
+      items.push(...pageItems)
+      if (!shouldScanAll && items.length >= requiredItems) break
+    }
+
+    if (publications.length < SOURCE_PAGE_SIZE) {
+      scannedAllSources = true
+      break
+    }
+    sourceOffset += SOURCE_PAGE_SIZE
   }
 
-  let listingsQuery = client
-    .from('private_listings')
-    .select(PUBLIC_LISTING_FIELDS)
-    .in('id', listingIds)
-    .eq('bridge_listing_status', 'published')
-    .eq('listing_visibility', 'active_market')
-
-  if (agencyScope?.organisation_id) {
-    listingsQuery = listingsQuery.eq('organisation_id', agencyScope.organisation_id)
-  }
-
-  const listingsResult = await listingsQuery
-
-  if (listingsResult.error) throw listingsResult.error
-
-  const listingRows = listingsResult.data || []
-  const agencyMetadata = await loadAgencyPublicMetadata(client, listingRows.map((row) => row.organisation_id))
-  const listingsById = new Map(listingRows.map((row) => {
-    const metadata = agencyMetadata.get(normalizeText(row.organisation_id)) || {}
-    return [normalizeText(row.id), {
-      ...row,
-      agency_public_intake_slug: metadata.agencySlug || '',
-      agency_public_name: metadata.agencyName || '',
-    }]
-  }))
-  const mediaResult = await client
-    .from('listing_media')
-    .select(MEDIA_FIELDS)
-    .in('listing_id', listingIds)
-    .order('sort_order', { ascending: true })
-
-  if (mediaResult.error) throw mediaResult.error
-
-  const mediaByListingId = groupByListingId(mediaResult.data || [])
-  const items = publications
-    .map((publication) => {
-      const listing = listingsById.get(normalizeText(publication.listing_id))
-      const media = mediaByListingId.get(normalizeText(publication.listing_id)) || []
-      if (!listing || !isPublicListingEligible({ listing, publication, media })) return null
-      return mapPublicListingContract({ listing, publication, media, host })
-    })
-    .filter(Boolean)
-    .filter((item) => matchesFilters(item, options))
-
-  const slug = normalizeText(options.slug)
-  if (slug) {
-    const listing = items.find((item) => item.slug === slug || item.id === slug)
-    return { listing: listing || null, generatedAt: new Date().toISOString() }
-  }
+  if (options.slug) return { listing: null, generatedAt: new Date().toISOString() }
 
   return {
     items: items.slice(offset, offset + limit),
-    count: items.length,
+    count: shouldScanAll || scannedAllSources || totalCount === null ? items.length : Math.max(totalCount, items.length),
     limit,
     offset,
     generatedAt: new Date().toISOString(),

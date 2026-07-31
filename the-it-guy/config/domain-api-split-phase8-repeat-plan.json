@@ -1,0 +1,157 @@
+{
+  "contract": "domain-api-split-phase8-repeat-plan-v1",
+  "date": "2026-07-31",
+  "purpose": "Repeat the domain API split safely across the remaining large route domains after Agent Listing Detail.",
+  "completedPilotDomain": "agent-listing-detail",
+  "globalRules": {
+    "repeatOneDomainAtATime": true,
+    "dashboardMustRemainEnforced": true,
+    "queuedDomainsRemainReportOnly": true,
+    "noRuntimeFallbackToEagerImports": true,
+    "strictPreloadReferenceRequiredBeforeGlobalEnforceClean": true
+  },
+  "requiredPhaseSequence": [
+    "domain_baseline",
+    "import_inventory",
+    "read_only_facade",
+    "lazy_user_actions",
+    "parity_tests",
+    "domain_audit_gate",
+    "staged_rollout"
+  ],
+  "requiredCommandsPerDomain": [
+    "npm run build",
+    "node scripts/domain-import-inventory.mjs --domain <domain>",
+    "node scripts/domain-api-chunk-audit.mjs --domain <domain> --enforce --max-api-gzip-kb 1",
+    "node scripts/domain-api-chunk-audit.mjs --domain <domain> --enforce --max-api-gzip-kb 1 --enforce-preload-references",
+    "npm run test:domain-import-inventory",
+    "npm run test:domain-api-chunks",
+    "npm run test:performance-budget"
+  ],
+  "domains": [
+    {
+      "key": "agent-listing-detail",
+      "label": "Agent Listing Detail",
+      "status": "staged_rollout_ready",
+      "order": 0,
+      "entry": "src/pages/AgentListingDetail.jsx",
+      "roles": ["agent", "principal"],
+      "phaseState": {
+        "domain_baseline": "complete",
+        "import_inventory": "complete",
+        "read_only_facade": "complete",
+        "lazy_user_actions": "complete",
+        "parity_tests": "complete",
+        "domain_audit_gate": "complete",
+        "staged_rollout": "ready"
+      },
+      "nextAction": "Observe staged rollout and only promote global enforceClean after the strict preload-reference audit passes."
+    },
+    {
+      "key": "client-portal",
+      "label": "Client Portal",
+      "status": "queued",
+      "order": 1,
+      "entry": "src/pages/ClientPortal.jsx",
+      "roles": ["client"],
+      "risk": "highest external-user blast radius",
+      "firstFacadeBoundary": [
+        "token workspace reads",
+        "notification reads",
+        "document signed URL reads",
+        "seller portal session reads"
+      ],
+      "deferUntilLazyActionPhase": [
+        "uploads",
+        "bond application submission",
+        "password recovery",
+        "service reviews",
+        "issue submission",
+        "seller interest requests",
+        "co-applicant invitations"
+      ]
+    },
+    {
+      "key": "unit-detail",
+      "label": "Unit Detail",
+      "status": "queued",
+      "order": 2,
+      "entry": "src/pages/UnitDetail.jsx",
+      "roles": ["developer", "principal", "agent"],
+      "risk": "transaction workspace coupling with several child panels",
+      "firstFacadeBoundary": [
+        "unit workspace shell reads",
+        "unit detail reads",
+        "transaction rollup reads",
+        "workflow snapshot reads"
+      ],
+      "deferUntilLazyActionPhase": [
+        "transaction deletion",
+        "document upload",
+        "finance mutations",
+        "alteration writes",
+        "attorney closeout writes",
+        "client issue sign-off"
+      ]
+    },
+    {
+      "key": "attorney-transaction-detail",
+      "label": "Attorney Transaction Detail",
+      "status": "queued",
+      "order": 3,
+      "entry": "src/pages/AttorneyTransactionDetail.jsx",
+      "roles": ["attorney", "conveyancer"],
+      "risk": "mutation-heavy attorney workflow",
+      "firstFacadeBoundary": [
+        "transaction core reads",
+        "transaction rollup reads",
+        "matter financial read model",
+        "final report reads"
+      ],
+      "deferUntilLazyActionPhase": [
+        "registration",
+        "archiving",
+        "roleplayer save",
+        "document uploads",
+        "finance writes",
+        "bond application mutations",
+        "workflow actions"
+      ]
+    },
+    {
+      "key": "pipeline",
+      "label": "Pipeline",
+      "status": "queued",
+      "order": 4,
+      "entry": "src/pages/Pipeline.jsx",
+      "roles": ["agent", "principal"],
+      "risk": "widest workflow surface and largest static script footprint",
+      "firstFacadeBoundary": [
+        "pipeline dashboard read models",
+        "pipeline list read models",
+        "board summary reads",
+        "notification read models"
+      ],
+      "deferUntilLazyActionPhase": [
+        "agency lead CRUD",
+        "appointment reconciliation",
+        "seller onboarding",
+        "private listing activation",
+        "document generation",
+        "board mutations"
+      ]
+    }
+  ],
+  "promotionRule": {
+    "canEnableDomainGate": [
+      "tracked heavy static imports are zero",
+      "static API route dependencies are zero",
+      "entry and static-script budgets pass",
+      "domain parity tests pass"
+    ],
+    "canEnableGlobalEnforceClean": [
+      "strict preload-reference audit passes with max API gzip 1 KB",
+      "staged rollout completes without blocking incidents"
+    ]
+  }
+}

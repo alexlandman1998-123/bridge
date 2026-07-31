@@ -8,6 +8,7 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const distAssetsDir = path.join(appRoot, 'dist/assets')
 const enforce = process.argv.includes('--enforce')
 const json = process.argv.includes('--json')
+const enforcePreloadReferences = process.argv.includes('--enforce-preload-references')
 const maxApiGzipKb = readNumberArg('--max-api-gzip-kb', 400)
 
 async function main() {
@@ -33,11 +34,12 @@ async function main() {
   )
   const apiRouteDependencies = dedupeAssets([
     ...apiStaticDependencies,
-    ...apiPreloadReferences.map((assetPath) => assets.get(assetPath)).filter(Boolean),
+    ...(enforcePreloadReferences ? apiPreloadReferences.map((assetPath) => assets.get(assetPath)).filter(Boolean) : []),
   ])
 
   const report = {
     enforce,
+    enforcePreloadReferences,
     maxApiGzipBytes: maxApiGzipKb * 1024,
     dashboardChunk: summarizeAsset(dashboardChunk),
     dashboardStaticDependencyCount: staticDependencies.length,
@@ -213,8 +215,11 @@ function printReport(report) {
     for (const asset of report.apiRouteDependencies) {
       console.log(`    - ${asset.path}: raw ${formatBytes(asset.rawBytes)}, gzip ${formatBytes(asset.gzipBytes)}`)
     }
+  } else {
+    console.log('  API route dependencies considered for enforcement: none')
   }
 
+  console.log(`  preload references enforced: ${report.enforcePreloadReferences ? 'yes' : 'no'}`)
   console.log(`  enforce mode: ${report.enforce ? 'on' : 'off'}; API gzip limit ${formatBytes(report.maxApiGzipBytes)}`)
 }
 

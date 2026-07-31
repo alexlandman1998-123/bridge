@@ -20,9 +20,7 @@ import {
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
-import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
 import ActivePipelineCarousel from '../components/pipeline/ActivePipelineCarousel'
 import { PillToggle } from '../components/ui/FilterBar'
@@ -41,8 +39,6 @@ import {
   selectAgentRecentActivity,
   selectAgentSummary,
 } from '../core/transactions/agentSelectors'
-import {
-} from '../core/transactions/attorneySelectors'
 import { buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import {
   getBondApplicationStage,
@@ -59,11 +55,12 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { useOrganisation } from '../context/OrganisationContext'
 import {
   fetchDashboardOverview,
+  fetchDashboardOverviewAggregate,
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
+  hydrateDashboardOverviewPanels,
 } from '../lib/api/dashboardApi'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
-import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
 import { listOrganisationUserAssignmentAliases } from '../lib/settingsApi'
 import {
@@ -72,11 +69,11 @@ import {
   getScopedDashboardTransactions,
   logDashboardPipelineDiagnostics,
 } from '../lib/dashboardTransactionIntegrity'
+import { getDashboardHydrationRollout } from '../lib/dashboardHydrationRollout'
 import { resolveAgentDashboardViewMode } from '../lib/dashboardRoleView'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAgentCommissionTracker } from '../services/commissionService'
-import { getAgentPrivateListingSummaries } from '../services/privateListingService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
   DASHBOARD_PERFORMANCE_METRICS,
@@ -135,6 +132,7 @@ const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_month', label: 'This Month' },
 ]
 const PrincipalDashboard = lazy(() => import('./PrincipalDashboard'))
+const ConveyancerDashboardPage = lazy(() => import('../components/ConveyancerDashboardPage'))
 
 function formatPercent(value) {
   if (!Number.isFinite(value)) {
@@ -708,6 +706,7 @@ async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId
       profile,
     })
     const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
+    const { getAgentPrivateListingSummaries } = await import('../services/privateListingDashboardService')
     const listingRows = await getAgentPrivateListingSummaries(profile.id, {
       organisationId,
       assignedAgentEmail: profile.email,
@@ -1719,6 +1718,7 @@ function Dashboard() {
   const currentOrganisationId = String(organisation?.id || '').trim()
   const isDevAuthBypassWorkspace = String(currentMembership?.source || '').trim() === 'dev_auth_bypass'
   const developerDashboardOrganisationId = role === 'developer' && isDevAuthBypassWorkspace ? null : currentOrganisationId
+  const dashboardHydrationRollout = useMemo(() => getDashboardHydrationRollout(role), [role])
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -1733,6 +1733,8 @@ function Dashboard() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const shouldRenderDashboardBody = isSupabaseConfigured
+  const shouldShowDashboardLoadingState = loading && shouldRenderDashboardBody
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
@@ -1757,6 +1759,7 @@ function Dashboard() {
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
   const dashboardHasLoadedRef = useRef(false)
   const dashboardLoadKeyRef = useRef('')
+  const dashboardPanelHydrationRef = useRef(0)
   const agentPrivateListingLoadRef = useRef(0)
 
   const navigateWithTrace = useCallback(
@@ -1802,6 +1805,8 @@ function Dashboard() {
       isPrincipalAgentView ? 'principal' : 'standard',
     ].join('|')
     const canReuseDashboardShell = dashboardHasLoadedRef.current && dashboardLoadKeyRef.current === dashboardLoadKey
+    const panelHydrationLoadId = dashboardPanelHydrationRef.current + 1
+    dashboardPanelHydrationRef.current = panelHydrationLoadId
 
     if (isPrincipalAgentView) {
       dashboardHasLoadedRef.current = false
@@ -1958,13 +1963,53 @@ function Dashboard() {
       } else {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
-        const data = await fetchDashboardOverview({
+        const overviewRequest = {
           developmentId: workspace.id === 'all' ? null : workspace.id,
           organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
-        })
-        setOverview(data)
-        dashboardHasLoadedRef.current = true
-        dashboardLoadKeyRef.current = dashboardLoadKey
+        }
+        const shouldUseDeveloperAggregate = role === 'developer' && dashboardHydrationRollout.aggregateEnabled
+        const shouldUseDeveloperLazyPanels = role === 'developer' && dashboardHydrationRollout.lazyPanelsEnabled
+        if (shouldUseDeveloperAggregate) {
+          const aggregate = await fetchDashboardOverviewAggregate(overviewRequest)
+          if (dashboardPanelHydrationRef.current !== panelHydrationLoadId) return
+          if (aggregate) {
+            setOverview((currentOverview) => ({
+              ...aggregate,
+              rows: canReuseDashboardShell ? currentOverview.rows || [] : [],
+            }))
+            setLoading(false)
+          }
+        }
+        if (shouldUseDeveloperLazyPanels) {
+          const baseData = await fetchDashboardOverview({
+            ...overviewRequest,
+            includeOperationalSignals: false,
+            includeCommissionSnapshots: false,
+          })
+          if (dashboardPanelHydrationRef.current !== panelHydrationLoadId) return
+          setOverview(baseData)
+          dashboardHasLoadedRef.current = true
+          dashboardLoadKeyRef.current = dashboardLoadKey
+          setLoading(false)
+          void hydrateDashboardOverviewPanels({
+            rows: baseData.rows,
+            includeOperationalSignals: true,
+            includeCommissionSnapshots: true,
+          }).then((panelData) => {
+            if (dashboardPanelHydrationRef.current === panelHydrationLoadId) {
+              setOverview(panelData)
+            }
+          }).catch((panelError) => {
+            if (dashboardPanelHydrationRef.current === panelHydrationLoadId) {
+              console.warn('[dashboard] Lazy panel hydration failed.', panelError)
+            }
+          })
+        } else {
+          const data = await fetchDashboardOverview(overviewRequest)
+          setOverview(data)
+          dashboardHasLoadedRef.current = true
+          dashboardLoadKeyRef.current = dashboardLoadKey
+        }
       }
     } catch (loadError) {
       if (agentSummaryTrace) agentSummaryOutcome = 'failed'
@@ -1972,7 +2017,9 @@ function Dashboard() {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
       }
-      setError(loadError.message)
+      if (dashboardPanelHydrationRef.current === panelHydrationLoadId) {
+        setError(loadError.message)
+      }
     } finally {
       if (agentSummaryTrace) {
         void persistDashboardPerformanceTrace(agentSummaryTrace, {
@@ -1988,9 +2035,11 @@ function Dashboard() {
           isInitialLoad: !canReuseDashboardShell,
         })
       }
-      setLoading(false)
+      if (dashboardPanelHydrationRef.current === panelHydrationLoadId) {
+        setLoading(false)
+      }
     }
-  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, location.pathname, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
+  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, dashboardHydrationRollout.aggregateEnabled, dashboardHydrationRollout.lazyPanelsEnabled, developerDashboardOrganisationId, isPrincipalAgentView, location.pathname, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -2017,6 +2066,7 @@ function Dashboard() {
     const resolvedAgentIdentity = String(profile?.id || profile?.email || '').trim()
     const refreshAppointments = async () => {
       try {
+        const { getAppointmentsDashboardSummaryAsync } = await import('../lib/agencyDashboardService')
         const summary = await getAppointmentsDashboardSummaryAsync(organisationIdForAppointments, {
           includeAll: isPrincipalAgentView,
           agentId: isPrincipalAgentView ? '' : resolvedAgentIdentity,
@@ -2079,6 +2129,7 @@ function Dashboard() {
     let active = true
     const refreshSnapshots = async () => {
       try {
+        const { getAgencyPipelineSnapshot } = await import('../lib/agencyDashboardService')
         const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
         const canvassing = await listCanvassingWorkspace(organisationIdForAppointments)
         if (!active) return
@@ -4073,7 +4124,7 @@ function renderActiveTransactionsBlock({
     return '#7e91a8'
   }
 
-  if (isViewerRole && !loading && isSupabaseConfigured) {
+  if (isViewerRole && !shouldShowDashboardLoadingState && isSupabaseConfigured) {
     return (
       <section className="flex flex-col gap-4">
         {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
@@ -4672,9 +4723,9 @@ function renderActiveTransactionsBlock({
       ) : null}
 
       {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
-      {loading ? <LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" /> : null}
+      {shouldShowDashboardLoadingState ? <LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" /> : null}
 
-      {!loading && isSupabaseConfigured ? (
+      {shouldRenderDashboardBody ? (
         <>
           {isDeveloperRole ? (
             <DeveloperLandingCommandCenter
@@ -5714,7 +5765,9 @@ function renderActiveTransactionsBlock({
               ) : null}
             </>
           ) : isAttorneyRole ? (
-            <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />
+            <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
+              <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />
+            </Suspense>
           ) : isBondRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

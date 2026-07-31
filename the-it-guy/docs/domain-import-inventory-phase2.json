@@ -1,0 +1,234 @@
+{
+  "phase": "Phase 2: Import Inventory",
+  "capturedAt": "2026-07-31",
+  "sourceCommand": "npm run audit:domain-import-inventory",
+  "trackedModules": [
+    {
+      "key": "shared-api",
+      "label": "Giant shared frontend API",
+      "path": "src/lib/api.js"
+    },
+    {
+      "key": "private-listing-service",
+      "label": "Private listing service",
+      "path": "src/services/privateListingService.js"
+    },
+    {
+      "key": "agency-pipeline-service",
+      "label": "Agency pipeline service",
+      "path": "src/lib/agencyPipelineService.js"
+    }
+  ],
+  "domains": [
+    {
+      "key": "dashboard",
+      "label": "Dashboard",
+      "entry": "src/pages/Dashboard.jsx",
+      "controlClean": true,
+      "scannedFileCount": 105,
+      "staticImportEdgeCount": 259,
+      "dynamicImportEdgeCount": 7,
+      "trackedStaticImportCount": 0,
+      "trackedDynamicImportCount": 2,
+      "status": "static_clean_control"
+    },
+    {
+      "key": "client-portal",
+      "label": "Client Portal",
+      "entry": "src/pages/ClientPortal.jsx",
+      "scannedFileCount": 225,
+      "staticImportEdgeCount": 500,
+      "dynamicImportEdgeCount": 5,
+      "trackedStaticImportCount": 6,
+      "trackedDynamicImportCount": 1,
+      "trackedModules": [
+        {
+          "moduleKey": "shared-api",
+          "staticImportCount": 3,
+          "dynamicImportCount": 1,
+          "directFromEntry": true,
+          "importers": [
+            "src/pages/ClientPortal.jsx",
+            "src/services/clientPortalNotificationsService.js",
+            "src/services/clientPortalWorkspaceService.js"
+          ]
+        },
+        {
+          "moduleKey": "private-listing-service",
+          "staticImportCount": 3,
+          "dynamicImportCount": 0,
+          "directFromEntry": true,
+          "importers": [
+            "src/lib/buyerLifecycleService.js",
+            "src/pages/ClientPortal.jsx",
+            "src/services/clientPortalWorkspaceService.js"
+          ]
+        }
+      ],
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "attorney-transaction-detail",
+      "label": "Attorney Transaction Detail",
+      "entry": "src/pages/AttorneyTransactionDetail.jsx",
+      "scannedFileCount": 173,
+      "staticImportEdgeCount": 418,
+      "dynamicImportEdgeCount": 2,
+      "trackedStaticImportCount": 3,
+      "trackedDynamicImportCount": 2,
+      "trackedModules": [
+        {
+          "moduleKey": "shared-api",
+          "staticImportCount": 3,
+          "dynamicImportCount": 1,
+          "directFromEntry": true,
+          "importers": [
+            "src/components/AttorneyMatterAccountsPanel.jsx",
+            "src/pages/AttorneyTransactionDetail.jsx",
+            "src/services/transactionFinanceService.js"
+          ]
+        },
+        {
+          "moduleKey": "agency-pipeline-service",
+          "staticImportCount": 0,
+          "dynamicImportCount": 1,
+          "directFromEntry": false,
+          "importers": []
+        }
+      ],
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "pipeline",
+      "label": "Pipeline",
+      "entry": "src/pages/Pipeline.jsx",
+      "scannedFileCount": 245,
+      "staticImportEdgeCount": 587,
+      "dynamicImportEdgeCount": 11,
+      "trackedStaticImportCount": 11,
+      "trackedDynamicImportCount": 2,
+      "trackedModules": [
+        {
+          "moduleKey": "shared-api",
+          "staticImportCount": 5,
+          "dynamicImportCount": 1,
+          "directFromEntry": true,
+          "importers": [
+            "src/core/documents/packetService.js",
+            "src/lib/onboardingLinks.js",
+            "src/pages/Pipeline.jsx",
+            "src/services/clientPortalNotificationsService.js"
+          ]
+        },
+        {
+          "moduleKey": "private-listing-service",
+          "staticImportCount": 3,
+          "dynamicImportCount": 0,
+          "directFromEntry": false,
+          "importers": [
+            "src/lib/buyerLifecycleService.js",
+            "src/pages/agency/AgencyPipelinePage.jsx",
+            "src/services/leadListingInterestService.js"
+          ]
+        },
+        {
+          "moduleKey": "agency-pipeline-service",
+          "staticImportCount": 3,
+          "dynamicImportCount": 1,
+          "directFromEntry": false,
+          "importers": [
+            "src/lib/agencyCrmRepository.js",
+            "src/pages/agency/AgencyPipelinePage.jsx",
+            "src/services/leadListingInterestService.js"
+          ]
+        }
+      ],
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "agent-listing-detail",
+      "label": "Agent Listing Detail",
+      "entry": "src/pages/AgentListingDetail.jsx",
+      "scannedFileCount": 184,
+      "staticImportEdgeCount": 471,
+      "dynamicImportEdgeCount": 12,
+      "trackedStaticImportCount": 11,
+      "trackedDynamicImportCount": 1,
+      "trackedModules": [
+        {
+          "moduleKey": "shared-api",
+          "staticImportCount": 1,
+          "dynamicImportCount": 1,
+          "directFromEntry": false,
+          "importers": [
+            "src/services/clientPortalNotificationsService.js"
+          ]
+        },
+        {
+          "moduleKey": "private-listing-service",
+          "staticImportCount": 5,
+          "dynamicImportCount": 0,
+          "directFromEntry": true,
+          "importers": [
+            "src/lib/buyerLifecycleService.js",
+            "src/pages/AgentListingDetail.jsx",
+            "src/services/leadListingInterestService.js",
+            "src/services/leadSuggestionService.js",
+            "src/services/sellerPortalActivationService.js"
+          ]
+        },
+        {
+          "moduleKey": "agency-pipeline-service",
+          "staticImportCount": 5,
+          "dynamicImportCount": 0,
+          "directFromEntry": true,
+          "importers": [
+            "src/lib/agencyCrmRepository.js",
+            "src/pages/AgentListingDetail.jsx",
+            "src/services/leadAnalyticsService.js",
+            "src/services/leadListingInterestService.js",
+            "src/services/showDayLeadCaptureService.js"
+          ]
+        }
+      ],
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "unit-detail",
+      "label": "Unit Detail",
+      "entry": "src/pages/UnitDetail.jsx",
+      "scannedFileCount": 216,
+      "staticImportEdgeCount": 480,
+      "dynamicImportEdgeCount": 5,
+      "trackedStaticImportCount": 8,
+      "trackedDynamicImportCount": 1,
+      "trackedModules": [
+        {
+          "moduleKey": "shared-api",
+          "staticImportCount": 7,
+          "dynamicImportCount": 1,
+          "directFromEntry": true,
+          "importers": [
+            "src/components/AlterationRequestsPanel.jsx",
+            "src/components/AttorneyCloseoutPanel.jsx",
+            "src/components/ClientIssuesPanel.jsx",
+            "src/core/documents/packetService.js",
+            "src/pages/UnitDetail.jsx",
+            "src/services/clientPortalNotificationsService.js",
+            "src/services/transactionFinanceService.js"
+          ]
+        },
+        {
+          "moduleKey": "private-listing-service",
+          "staticImportCount": 1,
+          "dynamicImportCount": 0,
+          "directFromEntry": false,
+          "importers": [
+            "src/lib/buyerLifecycleService.js"
+          ]
+        }
+      ],
+      "status": "report_only_coupled"
+    }
+  ]
+}

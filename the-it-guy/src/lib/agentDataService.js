@@ -7,7 +7,7 @@ import {
   getScopedDashboardTransactions,
 } from './dashboardTransactionIntegrity'
 import { MOCK_DATA_ENABLED } from './mockData'
-import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOffersService'
+import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOfferStatus'
 
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'

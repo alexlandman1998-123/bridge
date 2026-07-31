@@ -1,0 +1,97 @@
+{
+  "phase": "Phase 0: Domain Baseline",
+  "capturedAt": "2026-07-31",
+  "sourceCommand": "node scripts/domain-api-chunk-audit.mjs --json",
+  "buildRequired": true,
+  "apiChunk": {
+    "path": "assets/api-DjPJNwIO.js",
+    "rawBytes": 1679727,
+    "gzipBytes": 382897
+  },
+  "domains": [
+    {
+      "key": "dashboard",
+      "label": "Dashboard",
+      "enforceClean": true,
+      "entryChunk": "assets/Dashboard-3890c8rq.js",
+      "entryRawBytes": 293762,
+      "entryGzipBytes": 74371,
+      "staticDependencyCount": 32,
+      "staticScriptGzipBytes": 396368,
+      "apiStaticDependencyCount": 0,
+      "apiStaticGzipBytes": 0,
+      "apiPreloadReferenceCount": 0,
+      "status": "clean_enforced"
+    },
+    {
+      "key": "client-portal",
+      "label": "Client Portal",
+      "enforceClean": false,
+      "entryChunk": "assets/ClientPortal-BJU2D6d1.js",
+      "entryRawBytes": 854557,
+      "entryGzipBytes": 196973,
+      "staticDependencyCount": 49,
+      "staticScriptGzipBytes": 966163,
+      "apiStaticDependencyCount": 1,
+      "apiStaticGzipBytes": 382897,
+      "apiPreloadReferenceCount": 0,
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "attorney-transaction-detail",
+      "label": "Attorney Transaction Detail",
+      "enforceClean": false,
+      "entryChunk": "assets/AttorneyTransactionDetail-Mi_BuT-L.js",
+      "entryRawBytes": 808932,
+      "entryGzipBytes": 185521,
+      "staticDependencyCount": 55,
+      "staticScriptGzipBytes": 861343,
+      "apiStaticDependencyCount": 1,
+      "apiStaticGzipBytes": 382897,
+      "apiPreloadReferenceCount": 0,
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "pipeline",
+      "label": "Pipeline",
+      "enforceClean": false,
+      "entryChunk": "assets/Pipeline-BTucgB65.js",
+      "entryRawBytes": 638257,
+      "entryGzipBytes": 150570,
+      "staticDependencyCount": 73,
+      "staticScriptGzipBytes": 1361863,
+      "apiStaticDependencyCount": 1,
+      "apiStaticGzipBytes": 382897,
+      "apiPreloadReferenceCount": 0,
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "agent-listing-detail",
+      "label": "Agent Listing Detail",
+      "enforceClean": false,
+      "entryChunk": "assets/AgentListingDetail-H6jxXWbz.js",
+      "entryRawBytes": 361696,
+      "entryGzipBytes": 86841,
+      "staticDependencyCount": 64,
+      "staticScriptGzipBytes": 1060975,
+      "apiStaticDependencyCount": 1,
+      "apiStaticGzipBytes": 382897,
+      "apiPreloadReferenceCount": 0,
+      "status": "report_only_coupled"
+    },
+    {
+      "key": "unit-detail",
+      "label": "Unit Detail",
+      "enforceClean": false,
+      "entryChunk": "assets/UnitDetail-BMzZG_Dp.js",
+      "entryRawBytes": 310872,
+      "entryGzipBytes": 70510,
+      "staticDependencyCount": 57,
+      "staticScriptGzipBytes": 1085025,
+      "apiStaticDependencyCount": 1,
+      "apiStaticGzipBytes": 382897,
+      "apiPreloadReferenceCount": 0,
+      "status": "report_only_coupled"
+    }
+  ]
+}

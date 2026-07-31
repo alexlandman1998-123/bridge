@@ -27,9 +27,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
-import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
-import { getOrganisationPrivateListings } from '../services/privateListingService'
 import Modal from './ui/Modal'
 
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
@@ -931,6 +929,7 @@ function QuickCreateDropdown({ className = '' }) {
 
       try {
         const organisationId = await resolveOrganisationId()
+        const { getOrganisationPrivateListings } = await import('../services/privateListingService')
         const remoteListings = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
         if (!isCancelled) {
           setListingOptions(dedupeListingOptions([
@@ -1198,6 +1197,7 @@ function QuickCreateDropdown({ className = '' }) {
           workspacePath: location.pathname,
           createdAt,
         }
+        const { createAppointmentAsync } = await import('../lib/agencyPipelineService')
         await createAppointmentAsync(
           organisationId,
           {

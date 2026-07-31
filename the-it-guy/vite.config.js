@@ -161,6 +161,21 @@ export default defineConfig({
           if (normalizedId.includes('vite/preload-helper') || normalizedId.includes('commonjsHelpers.js')) {
             return 'vendor-runtime'
           }
+          if (normalizedId.includes('/src/core/transactions/attorneyOperationalEngine.js')) {
+            return 'transaction-attorney-operational-engine'
+          }
+          if (normalizedId.includes('/src/core/transactions/bondHybridFinanceWorkflow.js')) {
+            return 'transaction-bond-hybrid-finance-workflow'
+          }
+          if (normalizedId.includes('/src/core/transactions/permissions.js')) {
+            return 'transaction-permissions'
+          }
+          if (normalizedId.includes('/src/lib/appointmentAvailabilityEngine.js')) {
+            return 'appointment-availability-engine'
+          }
+          if (normalizedId.includes('/src/lib/agencyDashboardService.js')) {
+            return 'agency-dashboard-service'
+          }
           if (!normalizedId.includes('node_modules')) return undefined
           if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-router-dom/')) {
             return 'vendor-react'

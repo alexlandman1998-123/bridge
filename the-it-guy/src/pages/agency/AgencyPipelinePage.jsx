@@ -169,6 +169,11 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MESSAGE =
+  'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.'
+const PIPELINE_MANDATE_SIGNING_RECONCILE_TIMEOUT_MS = 4000
+const PIPELINE_MANDATE_SIGNING_RECONCILE_DELAYS_MS = [0, 1500, 3000, 6000]
+const PIPELINE_MANDATE_NATIVE_PDF_LAYOUT_CONTRACT = 'arch9-mandate-branded-signature-layout-v2'
 const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED = ['1', 'true', 'yes', 'on', 'enabled'].includes(
   String(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED || '').trim().toLowerCase(),
 )
@@ -264,6 +269,127 @@ function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT
   ]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId)
   })
+}
+
+function pipelineDelay(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)))
+}
+
+function isMandateSigningTimeoutError(error) {
+  return normalizeText(error?.message) === PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MESSAGE
+}
+
+function mandateSigningDeliveryMatchesRecipient({ signer = {}, recipientRole = '', recipientEmail = '' } = {}) {
+  const signerRole = normalizeText(signer?.signer_role || signer?.signerRole || signer?.role).toLowerCase()
+  const signerEmail = normalizeText(signer?.signer_email || signer?.signerEmail || signer?.email).toLowerCase()
+  const signerStatus = normalizeText(signer?.status || signer?.statusRaw).toLowerCase()
+  return (
+    ['sent', 'viewed', 'signed'].includes(signerStatus) &&
+    (!recipientRole || signerRole === normalizeText(recipientRole).toLowerCase()) &&
+    (!recipientEmail || signerEmail === normalizeText(recipientEmail).toLowerCase())
+  )
+}
+
+async function reconcileMandateSigningDeliveryAfterTimeout({
+  packetId = '',
+  packetVersionId = '',
+  dispatchId = '',
+  leadId = '',
+  transactionId = '',
+  organisationId = '',
+  recipientRole = '',
+  recipientEmail = '',
+  onProgress = null,
+} = {}) {
+  let lastError = null
+  for (const delayMs of PIPELINE_MANDATE_SIGNING_RECONCILE_DELAYS_MS) {
+    if (delayMs > 0) await pipelineDelay(delayMs)
+    onProgress?.('Checking whether the signing email was confirmed…')
+
+    try {
+      if (isSupabaseConfigured && supabase && isUuidLike(dispatchId)) {
+        const dispatchLookup = await withPipelineTimeout(
+          supabase
+            .from('document_signing_dispatches')
+            .select('id, packet_id, packet_version_id, target_signer_role, status, delivery_evidence_json, completed_at')
+            .eq('id', dispatchId)
+            .maybeSingle(),
+          'Signing delivery proof is taking too long to refresh.',
+          PIPELINE_MANDATE_SIGNING_RECONCILE_TIMEOUT_MS,
+        )
+        if (!dispatchLookup.error && dispatchLookup.data) {
+          const dispatch = dispatchLookup.data
+          const dispatchStatus = normalizeText(dispatch.status).toLowerCase()
+          const evidence =
+            dispatch.delivery_evidence_json && typeof dispatch.delivery_evidence_json === 'object'
+              ? dispatch.delivery_evidence_json
+              : {}
+          const dispatchMatches =
+            normalizeText(dispatch.packet_id) === normalizeText(packetId) &&
+            (!packetVersionId || normalizeText(dispatch.packet_version_id) === normalizeText(packetVersionId)) &&
+            (!recipientRole || normalizeText(dispatch.target_signer_role).toLowerCase() === normalizeText(recipientRole).toLowerCase())
+          if (dispatchMatches && dispatchStatus === 'delivered') {
+            return {
+              confirmed: true,
+              emailDeliveryId: normalizeText(evidence.providerMessageId || evidence.emailId),
+              delivery: {
+                contract: 'phase0-mandate-signing-delivery-v1',
+                recorded: true,
+                recoveredAfterTimeout: true,
+                dispatchId,
+                packetId,
+                packetVersionId: normalizeText(dispatch.packet_version_id || packetVersionId),
+                deliveryEvidence: evidence,
+              },
+            }
+          }
+        } else if (dispatchLookup.error) {
+          lastError = dispatchLookup.error
+        }
+      }
+
+      const refreshedStatus = await withPipelineTimeout(
+        resolveDocumentPacketStatus({
+          packetType: 'mandate',
+          packetId,
+          leadId: normalizeLeadUuid(leadId),
+          transactionId: isUuidLike(transactionId) ? transactionId : '',
+          organisationId,
+        }),
+        'Mandate signing status is taking too long to refresh.',
+        PIPELINE_MANDATE_SIGNING_RECONCILE_TIMEOUT_MS,
+      )
+      const signers = Array.isArray(refreshedStatus?.signingSummary?.signers)
+        ? refreshedStatus.signingSummary.signers
+        : []
+      const deliveredSigner = signers.find((signer) =>
+        mandateSigningDeliveryMatchesRecipient({ signer, recipientRole, recipientEmail }),
+      )
+      if (deliveredSigner) {
+        return {
+          confirmed: true,
+          emailDeliveryId: '',
+          delivery: {
+            contract: 'phase0-mandate-signing-delivery-v1',
+            recorded: true,
+            recoveredAfterTimeout: true,
+            packetId,
+            packetVersionId,
+            signerStatus: normalizeText(deliveredSigner.status || deliveredSigner.statusRaw),
+          },
+          status: refreshedStatus,
+        }
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  return {
+    confirmed: false,
+    error: lastError,
+    message: 'The signing email is still being confirmed. Refresh this lead before resending; if the email arrived, the signer can use that link.',
+  }
 }
 
 function createEmptyPipelineSnapshot(organisationId = '') {
@@ -3307,6 +3433,25 @@ function hasEditableMandateSections(version = null) {
 
 function findEditableMandateSourceVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find(hasEditableMandateSections) || null
+}
+
+function getMandateNativePdfLayoutContract(version = null) {
+  const validationSummary = version?.validation_summary_json || version?.validationSummaryJson || {}
+  const nativeLayout = validationSummary?.native_pdf_layout || validationSummary?.nativePdfLayout || {}
+  return normalizeText(nativeLayout?.contract)
+}
+
+function shouldRefreshMandateDraftForActiveTemplate(packet = null, template = null) {
+  const activeTemplateId = normalizeText(template?.id)
+  if (!packet || !activeTemplateId) return false
+  const packetTemplateId = normalizeText(packet?.template_id || packet?.templateId)
+  if (packetTemplateId && packetTemplateId !== activeTemplateId) return true
+  const editableSource = findEditableMandateSourceVersion(packet?.versions || [])
+  const sourceTemplateId = normalizeText(editableSource?.source_template_revision_id || editableSource?.sourceTemplateRevisionId)
+  if (sourceTemplateId && sourceTemplateId !== activeTemplateId) return true
+  const generatedVersion = findLatestD3PersistedGeneratedVersion(packet?.versions || [])
+  if (generatedVersion && getMandateNativePdfLayoutContract(generatedVersion) !== PIPELINE_MANDATE_NATIVE_PDF_LAYOUT_CONTRACT) return true
+  return Boolean(editableSource && !sourceTemplateId && packetTemplateId && packetTemplateId !== activeTemplateId)
 }
 
 function isD3PersistedSigningVersion(version = null) {
@@ -6670,6 +6815,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
     if (!leadKey || mandateAutoGenerationAttemptRef.current.has(leadKey)) return undefined
     mandateAutoGenerationAttemptRef.current.add(leadKey)
+    setError('')
     setMessage('Seller onboarding submitted. Preparing the mandate in the background...')
 
     let cancelled = false
@@ -6683,6 +6829,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }).then((result) => {
       if (cancelled) return
       if (result?.backgroundGenerationQueued) {
+        setError('')
         setMessage('Mandate generation is running in the background. Signing will unlock when the PDF is ready.')
       }
     }).catch((autoError) => {
@@ -10725,7 +10872,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let packet = existingPacket
       let fallbackPacketId = ''
       try {
-        if (packet?.id && !providedRenderFreeze && !findEditableMandateSourceVersion(packet?.versions || [])) {
+        if (packet?.id && !providedRenderFreeze && shouldRefreshMandateDraftForActiveTemplate(packet, template)) {
+          onProgress?.('Refreshing mandate template…')
+          packet = await createEditableMandatePacket()
+        } else if (packet?.id && !providedRenderFreeze && !findEditableMandateSourceVersion(packet?.versions || [])) {
           packet = await createEditableMandatePacket()
         }
         if (!packet?.id) {
@@ -11537,6 +11687,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
     let dispatchId = normalizeText(options.dispatchId)
+    let activeSigningPacketVersionId = normalizeText(options.packetVersionId)
     const statusPacket =
       mandatePacketStatus?.packet &&
       documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
@@ -11740,15 +11891,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           })
           const signingVersionId = normalizeText(signingPreparation?.version?.id)
+          activeSigningPacketVersionId = signingVersionId || activeSigningPacketVersionId
           await applyPreparedSigningLayoutForQuickFlow({
             packetId: mandatePacketId,
-            versionId: signingVersionId,
+            versionId: activeSigningPacketVersionId,
             preparedFields: signingPreparation?.seed?.fields || [],
           })
 
           const linkResult = await generateSigningLinks({
             packetId: mandatePacketId,
-            packetVersionId: signingVersionId || null,
+            packetVersionId: activeSigningPacketVersionId || null,
             organisationId,
             expiresInHours: 168,
             baseUrl:
@@ -11874,7 +12026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 }
               : emailPayload,
           }),
-          'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
+          PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MESSAGE,
           PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
         )
         assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
@@ -11888,9 +12040,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         emailDelivery = { emailDeliveryId, emailConfirmed, delivery: serverSendResult?.delivery || emailResponse?.data?.delivery || null }
       } catch (emailError) {
-        signingEmailFailed = true
-        console.warn('[MANDATE] signing email failed after link preparation', emailError)
-        throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
+        if (isMandateSigningTimeoutError(emailError)) {
+          const recoveredDelivery = await reconcileMandateSigningDeliveryAfterTimeout({
+            packetId: mandatePacketId,
+            packetVersionId: activeSigningPacketVersionId,
+            dispatchId,
+            leadId: selectedLead?.leadId,
+            transactionId: selectedLeadLinkedTransactionId,
+            organisationId,
+            recipientRole,
+            recipientEmail,
+            onProgress: (message) => setMandateQuickStartProgress(normalizeText(message)),
+          })
+          if (recoveredDelivery?.confirmed) {
+            if (recoveredDelivery.status?.packet?.id && documentPacketBelongsToLead(recoveredDelivery.status.packet, selectedLead.leadId)) {
+              setMandatePacketStatus(recoveredDelivery.status)
+            }
+            emailDelivery = {
+              emailDeliveryId: recoveredDelivery.emailDeliveryId || null,
+              emailConfirmed: true,
+              delivery: recoveredDelivery.delivery || null,
+            }
+          } else {
+            signingEmailFailed = true
+            console.warn('[MANDATE] signing email delivery still unconfirmed after timeout reconciliation', recoveredDelivery?.error || emailError)
+            throw new Error(recoveredDelivery?.message || PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MESSAGE)
+          }
+        } else {
+          signingEmailFailed = true
+          console.warn('[MANDATE] signing email failed after link preparation', emailError)
+          throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
+        }
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
@@ -12114,8 +12294,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusGeneratedVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
-      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
+      let needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
       let generationJob = mandatePacketStatus?.legalDocumentJob || null
+
+      if (currentStep === 'send' && !needsGeneration && isUuidLike(mandatePacketId)) {
+        const currentPacket = mandatePacketStatus?.packet && documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
+          ? {
+              ...mandatePacketStatus.packet,
+              versions: Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : [],
+            }
+          : await fetchDocumentPacket(mandatePacketId, { includeVersions: true, includeEvents: false }).catch((packetError) => {
+              console.warn('[MANDATE] quick-start stale template check skipped because packet lookup failed', packetError)
+              return null
+            })
+        if (
+          currentPacket?.id &&
+          documentPacketBelongsToLead(currentPacket, selectedLead.leadId) &&
+          !['sent', 'partially_signed', 'signed', 'completed', 'voided', 'archived'].includes(normalizeText(currentPacket?.status).toLowerCase())
+        ) {
+          const templateContextReadiness = resolveMandateReadiness({
+            lead: selectedLead,
+            contact: selectedLeadContact,
+            agent: currentAgent,
+            agency: {
+              name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            },
+            organisation: {
+              id: organisationId,
+              name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            },
+          })
+          const activeTemplateResolution = await resolveActiveTemplate({
+            packetType: 'mandate',
+            moduleType: 'residential',
+            organisationId,
+            includeSections: false,
+            context: {
+              organisationId,
+              validationAction: 'generate',
+              mandateData: templateContextReadiness.mandateData,
+              sourceContext: templateContextReadiness.mandateData?.sourceContext || {},
+            },
+          }).catch((templateError) => {
+            console.warn('[MANDATE] quick-start stale template check skipped because active template lookup failed', templateError)
+            return null
+          })
+          if (shouldRefreshMandateDraftForActiveTemplate(currentPacket, activeTemplateResolution?.template || null)) {
+            needsGeneration = true
+            mandatePacketVersionId = ''
+            setMandateQuickStartProgress('Refreshing mandate template…')
+          }
+        }
+      }
 
       if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
         const jobs = await listLegalDocumentJobsForPacket({ packetId: mandatePacketId, limit: 5 }).catch((jobError) => {
