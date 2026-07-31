@@ -246,6 +246,15 @@ async function resolveInvocationAuthority({
   return { kind: "user" as const, userId };
 }
 
+async function authorizeServiceCredential(url: string, credential: string) {
+  if (!credential) return false;
+  const verifier: any = createClient(url, credential, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const result = await verifier.auth.admin.listUsers({ page: 1, perPage: 1 });
+  return !result.error;
+}
+
 async function updateJobStatus({
   client,
   jobId,
@@ -1963,7 +1972,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "watchdog_retry") {
-      if (bearerToken(req) !== serviceRoleKey) {
+      const token = bearerToken(req);
+      const hasWatchdogAuthority = token === serviceRoleKey || await authorizeServiceCredential(supabaseUrl, token);
+      if (!hasWatchdogAuthority) {
         return jsonResponse(401, {
           success: false,
           error: "Service-role watchdog authority is required.",

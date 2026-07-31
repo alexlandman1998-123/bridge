@@ -47,6 +47,7 @@
     "test:legal-document-background-generation-phase7-ui-switch": "node scripts/legal-document-background-generation-phase7-ui-switch.test.mjs",
     "test:legal-document-background-generation-phase8-remove-app-fallback": "node scripts/legal-document-background-generation-phase8-remove-app-fallback.test.mjs",
     "test:lead-mandate-quick-start": "node scripts/lead-mandate-quick-start.test.mjs",
+    "test:lead-mandate-background-generation-recovery": "node scripts/lead-mandate-background-generation-recovery.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",
     "test:workspace-branding-observability": "node scripts/workspace-branding-observability.test.mjs",
     "test:dashboard-performance-telemetry": "node --test src/services/observability/__tests__/dashboardPerformanceTelemetry.test.js && node scripts/dashboard-performance-telemetry.test.mjs",

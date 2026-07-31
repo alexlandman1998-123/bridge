@@ -95,6 +95,7 @@ import {
   fetchDocumentPacket,
   fetchSigningFieldLayout,
   freezeEditableDocumentRevisionForRender,
+  listLegalDocumentJobsForPacket,
   listDocumentPackets,
   persistGeneratedPdfToTransaction,
   resolveWorkspaceFinalSignedDocumentAccess,
@@ -3320,6 +3321,34 @@ function findLatestD3PersistedGeneratedVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find(isD3PersistedSigningVersion) || null
 }
 
+function isActiveLegalDocumentGenerationJob(job = null) {
+  const status = normalizeText(job?.status || job?.jobStatus || job?.job_status).toLowerCase()
+  return ['queued', 'claimed', 'running'].includes(status)
+}
+
+function findLatestMandateGenerationJob(jobs = []) {
+  return (Array.isArray(jobs) ? jobs : [])
+    .filter((job) => normalizeText(job?.jobType || job?.job_type).toLowerCase() === 'generate_packet_version')
+    .sort((first, second) => {
+      const firstTime = Date.parse(normalizeText(first?.updatedAt || first?.updated_at || first?.createdAt || first?.created_at))
+      const secondTime = Date.parse(normalizeText(second?.updatedAt || second?.updated_at || second?.createdAt || second?.created_at))
+      return (Number.isFinite(secondTime) ? secondTime : 0) - (Number.isFinite(firstTime) ? firstTime : 0)
+    })[0] || null
+}
+
+function buildMandateGenerationQueuedStatus({ packet = null, versions = [], job = null, warnings = [] } = {}) {
+  return {
+    packetType: 'mandate',
+    state: 'generating',
+    packet,
+    versions: Array.isArray(versions) ? versions : [],
+    signingSummary: null,
+    warnings: Array.isArray(warnings) ? warnings : [],
+    actionHint: 'Mandate generation is running in the background.',
+    legalDocumentJob: job || null,
+  }
+}
+
 async function waitForD3PersistedSigningVersion({ packetId, versionId, attempts = 5 } = {}) {
   const resolvedPacketId = normalizeText(packetId)
   const resolvedVersionId = normalizeText(versionId)
@@ -4505,12 +4534,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)
   const [mandateQuickStartProgress, setMandateQuickStartProgress] = useState('')
   const [mandateQuickStartError, setMandateQuickStartError] = useState('')
+  const [mandateQuickStartNotice, setMandateQuickStartNotice] = useState('')
   const [mandateQuickStartStep, setMandateQuickStartStep] = useState('details')
   const [mandateQuickStartSigningMethod, setMandateQuickStartSigningMethod] = useState('')
   const [mandateQuickStartPacketId, setMandateQuickStartPacketId] = useState('')
   const [mandateQuickStartPacketVersionId, setMandateQuickStartPacketVersionId] = useState('')
   const [mandateQuickStartEmailDraft, setMandateQuickStartEmailDraft] = useState({ agent: '', seller: '' })
   const [selectedLeadMandateTemplateReadiness, setSelectedLeadMandateTemplateReadiness] = useState(null)
+  const mandateAutoGenerationAttemptRef = useRef(new Set())
+  const generateMandateFromSellerLeadRef = useRef(null)
 
   const routeLeadRecord = useMemo(() => {
     if (!routeLeadId) return null
@@ -6615,6 +6647,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIsSeller,
     selectedLeadMandateQuickStartActionKey,
   ])
+
+  useEffect(() => {
+    if (
+      !selectedLead ||
+      !selectedLeadIsSeller ||
+      !selectedLeadOnboardingCompleted ||
+      !organisationId ||
+      !isSupabaseConfigured ||
+      selectedLeadMandateQuickStartActionKey !== 'generate' ||
+      selectedLeadMandateTemplateReadiness?.ready !== true ||
+      isMandateGenerating
+    ) return undefined
+
+    const existingPacketId = normalizeText(
+      selectedLead?.mandatePacketId ||
+      selectedLead?.mandate_packet_id ||
+      mandatePacketStatus?.packet?.id,
+    )
+    if (isUuidLike(existingPacketId) || isActiveLegalDocumentGenerationJob(mandatePacketStatus?.legalDocumentJob)) return undefined
+
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
+    if (!leadKey || mandateAutoGenerationAttemptRef.current.has(leadKey)) return undefined
+    mandateAutoGenerationAttemptRef.current.add(leadKey)
+    setMessage('Seller onboarding submitted. Preparing the mandate in the background...')
+
+    let cancelled = false
+    const generateMandateFromSellerLead = generateMandateFromSellerLeadRef.current
+    if (typeof generateMandateFromSellerLead !== 'function') return undefined
+
+    void generateMandateFromSellerLead({
+      onProgress: (message) => {
+        if (!cancelled && normalizeText(message)) setMandateQuickStartProgress(normalizeText(message))
+      },
+    }).then((result) => {
+      if (cancelled) return
+      if (result?.backgroundGenerationQueued) {
+        setMessage('Mandate generation is running in the background. Signing will unlock when the PDF is ready.')
+      }
+    }).catch((autoError) => {
+      if (cancelled) return
+      mandateAutoGenerationAttemptRef.current.delete(leadKey)
+      console.warn('[MANDATE] automatic generation after seller onboarding failed', autoError)
+      setError(autoError?.message || 'Seller onboarding was submitted, but mandate generation could not start automatically.')
+    }).finally(() => {
+      if (!cancelled) setMandateQuickStartProgress('')
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    isMandateGenerating,
+    mandatePacketStatus?.legalDocumentJob,
+    mandatePacketStatus?.packet?.id,
+    organisationId,
+    selectedLead,
+    selectedLeadIsSeller,
+    selectedLeadMandateQuickStartActionKey,
+    selectedLeadMandateTemplateReadiness?.ready,
+    selectedLeadOnboardingCompleted,
+  ])
+
   const selectedLeadMandateQuickStartRows = useMemo(
     () => selectedLeadMandateReadiness.rows,
     [selectedLeadMandateReadiness],
@@ -7307,6 +7401,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadMandatePacketId,
     selectedLeadIsSeller,
     selectedLeadLinkedTransactionId,
+  ])
+
+  useEffect(() => {
+    const job = mandatePacketStatus?.legalDocumentJob || null
+    const packetId = normalizeText(mandatePacketStatus?.packet?.id)
+    const jobId = normalizeText(job?.jobId || job?.job_id)
+    if (
+      !selectedLeadRecordId ||
+      !selectedLeadIsSeller ||
+      !organisationId ||
+      !isUuidLike(packetId) ||
+      !jobId ||
+      !isActiveLegalDocumentGenerationJob(job)
+    ) return undefined
+
+    let cancelled = false
+    let timerId = null
+    const pollDelays = [4000, 8000, 15000, 30000]
+
+    const pollJob = async (attemptIndex = 0) => {
+      try {
+        const jobs = await listLegalDocumentJobsForPacket({ packetId, limit: 5 })
+        if (cancelled) return
+        const latestJob =
+          jobs.find((row) => normalizeText(row?.jobId || row?.job_id) === jobId) ||
+          findLatestMandateGenerationJob(jobs)
+        if (latestJob) {
+          setMandatePacketStatus((previous) => (
+            normalizeText(previous?.packet?.id) === packetId
+              ? { ...previous, legalDocumentJob: latestJob }
+              : previous
+          ))
+        }
+        const latestStatus = normalizeText(latestJob?.status).toLowerCase()
+        if (latestStatus === 'succeeded') {
+          const resolved = await resolveDocumentPacketStatus({
+            packetType: 'mandate',
+            packetId,
+            leadId: normalizeLeadUuid(selectedLeadRecordId),
+            transactionId: isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : '',
+            organisationId,
+          })
+          if (!cancelled) {
+            setMandatePacketStatus(resolved)
+            setMessage('Mandate PDF generated and ready to send for signature.')
+          }
+          return
+        }
+        if (latestStatus === 'failed' || latestStatus === 'cancelled') return
+      } catch (pollError) {
+        console.warn('[MANDATE] background generation poll failed in pipeline view', pollError)
+      }
+      if (cancelled) return
+      const delay = pollDelays[Math.min(attemptIndex, pollDelays.length - 1)]
+      timerId = window.setTimeout(() => pollJob(attemptIndex + 1), delay)
+    }
+
+    timerId = window.setTimeout(() => pollJob(0), pollDelays[0])
+    return () => {
+      cancelled = true
+      if (timerId) window.clearTimeout(timerId)
+    }
+  }, [
+    mandatePacketStatus?.legalDocumentJob,
+    mandatePacketStatus?.packet?.id,
+    organisationId,
+    selectedLeadIsSeller,
+    selectedLeadLinkedTransactionId,
+    selectedLeadRecordId,
   ])
 
   const calendarScopedAppointments = useMemo(() => {
@@ -10702,8 +10865,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         try {
           onProgress?.('Generating mandate PDF…')
           generatedVersionResult = await generatePacketVersion(generationRequest)
-          generatedVersionResult = await certifyGeneratedMandateVersion(generatedVersionResult)
-          onProgress?.('Preparing preview…')
+          if (generatedVersionResult?.backgroundGenerationQueued) {
+            onProgress?.('Mandate generation is running in the background…')
+          } else {
+            generatedVersionResult = await certifyGeneratedMandateVersion(generatedVersionResult)
+            onProgress?.('Preparing preview…')
+          }
         } catch (generationError) {
           let recoveredGeneration = false
           const generationMessage = normalizeText(generationError?.message || String(generationError))
@@ -10748,9 +10915,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
+      const backgroundGenerationQueued = generatedVersionResult?.backgroundGenerationQueued === true
+      const nextLeadMandateStatus = backgroundGenerationQueued ? 'Mandate Generating' : 'Mandate Generated'
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: 'Mandate Generated',
-        status: 'Mandate Generated',
+        stage: nextLeadMandateStatus,
+        status: nextLeadMandateStatus,
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
       setRecords((previous) => ({
@@ -10759,8 +10928,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
             ? {
                 ...lead,
-                stage: 'Mandate Generated',
-                status: 'Mandate Generated',
+                stage: nextLeadMandateStatus,
+                status: nextLeadMandateStatus,
                 mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
                 updatedAt: new Date().toISOString(),
               }
@@ -10769,28 +10938,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Mandate Generated',
-        activityNote: 'Mandate was generated successfully.',
-        outcome: normalizeText(packet?.id) ? 'Mandate packet created' : 'Generated in fallback mode',
+        activityType: backgroundGenerationQueued ? 'Mandate Generation Started' : 'Mandate Generated',
+        activityNote: backgroundGenerationQueued
+          ? 'Mandate PDF generation was queued automatically and is running in the background.'
+          : 'Mandate was generated successfully.',
+        outcome: backgroundGenerationQueued
+          ? 'Queued'
+          : normalizeText(packet?.id)
+            ? 'Mandate packet created'
+            : 'Generated in fallback mode',
       }, { actor: currentAgent })
       setError('')
       setMessage(
-        normalizeText(packet?.id)
-          ? 'Mandate packet generated for this seller lead.'
+        backgroundGenerationQueued
+          ? 'Mandate generation is running in the background. Signing will unlock when the PDF is ready.'
+          : normalizeText(packet?.id)
+            ? 'Mandate packet generated for this seller lead.'
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
-      onProgress?.('Draft ready.')
+      onProgress?.(backgroundGenerationQueued ? 'Mandate generation queued.' : 'Draft ready.')
       let generatedStatus = null
       if (isUuidLike(packet?.id)) {
-        generatedStatus = {
-          packetType: 'mandate',
-          state: 'generated',
-          packet: generatedVersionResult?.packet || packet,
-          versions: [generatedVersionResult?.version].filter(Boolean),
-          signingSummary: null,
-          warnings: generatedVersionResult?.validation?.warnings || [],
-          actionHint: 'Draft generated.',
-        }
+        generatedStatus = backgroundGenerationQueued
+          ? buildMandateGenerationQueuedStatus({
+              packet: generatedVersionResult?.packet || packet,
+              versions: packet?.versions || [],
+              job: generatedVersionResult?.job || null,
+              warnings: generatedVersionResult?.validation?.warnings || [],
+            })
+          : {
+              packetType: 'mandate',
+              state: 'generated',
+              packet: generatedVersionResult?.packet || packet,
+              versions: [generatedVersionResult?.version].filter(Boolean),
+              signingSummary: null,
+              warnings: generatedVersionResult?.validation?.warnings || [],
+              actionHint: 'Draft generated.',
+            }
         void withPipelineTimeout(
           resolveDocumentPacketStatus({
             packetType: 'mandate',
@@ -10842,6 +11026,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         packet,
         version: generatedVersionResult?.version || null,
         status: generatedStatus,
+        backgroundGenerationQueued,
+        job: generatedVersionResult?.job || null,
       }
     } catch (mandateError) {
       if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
@@ -10862,6 +11048,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setIsMandateGenerating(false)
     }
   }
+  generateMandateFromSellerLeadRef.current = handleGenerateMandateFromSellerLead
 
   async function handleCreateListingFromSellerLead() {
     if (!selectedLead) return
@@ -11731,6 +11918,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     setMandateQuickStartError('')
+    setMandateQuickStartNotice('')
     setMandateQuickStartProgress('')
     setMandateQuickStartStep('details')
     setMandateQuickStartSigningMethod('')
@@ -11750,6 +11938,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (currentStep === 'method') {
       if (mandateQuickStartSigningMethod === 'digital') {
         setMandateQuickStartError('')
+        setMandateQuickStartNotice('')
         setMandateQuickStartStep('emails')
         return
       }
@@ -11760,46 +11949,55 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setMandateQuickStartPacketVersionId('')
         setMandateQuickStartEmailDraft({ agent: '', seller: '' })
         setMandateQuickStartError('')
+        setMandateQuickStartNotice('')
         setMandateQuickStartProgress('')
         openSelectedLeadMandateWorkspace('send')
         setMessage('Mandate prepared. Choose physical signature handling in the mandate workspace.')
         return
       }
       setMandateQuickStartError('Choose digital signing or physical signature before continuing.')
+      setMandateQuickStartNotice('')
       return
     }
 
     if (currentStep === 'emails') {
       if (mandateQuickStartDigitalEmailBlockers.length) {
         setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
+        setMandateQuickStartNotice('')
         return
       }
       setMandateQuickStartError('')
+      setMandateQuickStartNotice('')
       setMandateQuickStartStep('send')
       return
     }
 
     if (currentStep === 'send' && mandateQuickStartSigningMethod !== 'digital') {
       setMandateQuickStartError('Choose digital signing before sending signing links.')
+      setMandateQuickStartNotice('')
       return
     }
 
     if (currentStep === 'send' && mandateQuickStartDigitalEmailBlockers.length) {
       setMandateQuickStartError(mandateQuickStartDigitalEmailBlockers[0])
+      setMandateQuickStartNotice('')
       return
     }
 
     if (selectedLeadMandateTemplateBlocking) {
       setMandateQuickStartError(selectedLeadMandateTemplateReadiness?.value || 'Checking the published mandate template route. Try again in a moment.')
+      setMandateQuickStartNotice('')
       return
     }
     if (selectedLeadMandateQuickStartBlockers.length) {
       setMandateQuickStartError(selectedLeadMandateQuickStartBlockers[0])
+      setMandateQuickStartNotice('')
       return
     }
 
     setMandateQuickStartBusy(true)
     setMandateQuickStartError('')
+    setMandateQuickStartNotice('')
     setMandateQuickStartProgress('')
     try {
       const actionKey = selectedLeadMandateQuickStartActionKey
@@ -11810,6 +12008,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
       const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
+      let generationJob = mandatePacketStatus?.legalDocumentJob || null
+
+      if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
+        const jobs = await listLegalDocumentJobsForPacket({ packetId: mandatePacketId, limit: 5 }).catch((jobError) => {
+          console.warn('[MANDATE] background generation job lookup failed before quick start retry', jobError)
+          return []
+        })
+        generationJob = findLatestMandateGenerationJob(jobs) || generationJob
+        if (isActiveLegalDocumentGenerationJob(generationJob)) {
+          const queuedStatus = buildMandateGenerationQueuedStatus({
+            packet: mandatePacketStatus?.packet || { id: mandatePacketId, packet_type: 'mandate', lead_id: normalizeLeadUuid(selectedLead.leadId) || null },
+            versions: mandatePacketStatus?.versions || [],
+            job: generationJob,
+            warnings: mandatePacketStatus?.warnings || [],
+          })
+          setMandatePacketStatus(queuedStatus)
+          setMandateQuickStartPacketId(mandatePacketId)
+          setMandateQuickStartNotice('Mandate generation is already running in the background. Signing will unlock automatically when the PDF is ready.')
+          setMessage('Mandate generation is running in the background. You can come back to send signing as soon as it is ready.')
+          return
+        }
+      }
 
       if ((currentStep === 'details' || currentStep === 'send') && needsGeneration) {
         const generated = await handleGenerateMandateFromSellerLead({
@@ -11826,6 +12046,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
           mandatePacketVersionId,
         )
+        generationJob = generated?.job || generated?.status?.legalDocumentJob || generationJob
+        if (generated?.backgroundGenerationQueued || isActiveLegalDocumentGenerationJob(generationJob)) {
+          setMandateQuickStartPacketId(mandatePacketId)
+          setMandateQuickStartNotice('Mandate generation has started in the background. Signing will unlock automatically when the PDF is ready.')
+          return
+        }
       }
 
       if (!isUuidLike(mandatePacketId)) {
@@ -11861,8 +12087,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartPacketId('')
       setMandateQuickStartPacketVersionId('')
       setMandateQuickStartEmailDraft({ agent: '', seller: '' })
+      setMandateQuickStartNotice('')
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
+      setMandateQuickStartNotice('')
       const recoveryMessage = quickStartError?.code || quickStartError?.details || quickStartError?.validation
         ? formatLegalDocumentGenerationRecovery(quickStartError, { packetType: 'mandate' })
         : ''
@@ -19868,6 +20096,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (mandateQuickStartBusy) return
           setMandateQuickStartOpen(false)
           setMandateQuickStartError('')
+          setMandateQuickStartNotice('')
           setMandateQuickStartProgress('')
           setMandateQuickStartStep('details')
           setMandateQuickStartSigningMethod('')
@@ -19897,6 +20126,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   onClick={() => {
                     const currentStep = normalizeText(mandateQuickStartStep).toLowerCase()
                     setMandateQuickStartError('')
+                    setMandateQuickStartNotice('')
                     setMandateQuickStartProgress('')
                     if (currentStep === 'send') setMandateQuickStartStep('emails')
                     else if (currentStep === 'emails') setMandateQuickStartStep('method')
@@ -19913,6 +20143,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 onClick={() => {
                   setMandateQuickStartOpen(false)
                   setMandateQuickStartError('')
+                  setMandateQuickStartNotice('')
                   setMandateQuickStartProgress('')
                   setMandateQuickStartStep('details')
                   setMandateQuickStartSigningMethod('')
@@ -20142,6 +20373,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <div className="flex items-center gap-2 rounded-[14px] border border-[#d6e7f5] bg-[#f4f9ff] px-3 py-3 text-sm font-semibold text-[#315f8c]">
               <RefreshCw className="h-4 w-4 animate-spin" />
               {mandateQuickStartProgress}
+            </div>
+          ) : null}
+
+          {mandateQuickStartNotice ? (
+            <div className="rounded-[14px] border border-[#b9d9ee] bg-[#f3f9fd] px-3 py-3 text-sm font-semibold text-[#275f82]">
+              {mandateQuickStartNotice}
             </div>
           ) : null}
 

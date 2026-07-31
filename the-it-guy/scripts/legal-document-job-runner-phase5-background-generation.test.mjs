@@ -33,6 +33,8 @@ for (const token of [
   'queueBackgroundTask',
   'EdgeRuntime.waitUntil',
   'LEGAL_DOCUMENT_BACKGROUND_GENERATION_MANDATE_ONLY',
+  'authorizeServiceCredential',
+  'LEGAL_DOCUMENT_WATCHDOG_AUTH_REQUIRED',
 ]) {
   assertIncludes(source, token, 'Phase 5 background generation runner')
 }
@@ -61,6 +63,11 @@ assertMatches(
   source,
   /jobType === "generate_packet_version"[\s\S]+runGeneratePacketVersionJob/,
   'Direct service-role job execution must route generation jobs explicitly',
+)
+assertMatches(
+  source,
+  /if \(action === "watchdog_retry"\) \{[\s\S]+authorizeServiceCredential\(supabaseUrl, token\)[\s\S]+runWatchdogRetry/,
+  'Watchdog retry must accept a verified service-role credential even when Vault and Edge env keys differ',
 )
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))

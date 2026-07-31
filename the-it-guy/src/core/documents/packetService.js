@@ -531,6 +531,12 @@ function buildRenderProvenance({
     normalizeText(generationPayload?.mandateTemplateVariant) ||
     normalizeText(mandateScenarioProfile?.templateVariant) ||
     normalizeText(pdfPlaceholders?.mandate_template_variant)
+  const launchReadiness =
+    generationPayload?.mandateTemplateLaunchReadiness && typeof generationPayload.mandateTemplateLaunchReadiness === 'object'
+      ? generationPayload.mandateTemplateLaunchReadiness
+      : validation?.mandateTemplateLaunchReadiness && typeof validation.mandateTemplateLaunchReadiness === 'object'
+        ? validation.mandateTemplateLaunchReadiness
+        : {}
   const contentFingerprint = buildContentFingerprint({
     packetType: normalizedPacketType,
     renderMode,
@@ -554,10 +560,25 @@ function buildRenderProvenance({
     mandateTemplateFallback: Boolean(generationPayload?.mandateTemplateFallback),
     legalDocumentTemplateFallback: Boolean(generationPayload?.legalDocumentTemplateFallback),
     mandateTemplateLaunchReadinessStatus:
-      normalizeText(generationPayload?.mandateTemplateLaunchReadiness?.status) || null,
+      normalizeText(launchReadiness?.status) || null,
     legalDocumentScenarioKey:
       normalizeText(legalDocumentScenarioProfile?.scenarioKey || pdfPlaceholders?.legal_document_scenario) || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
+    conditionalMasterCoverageReady: Boolean(
+      launchReadiness?.conditionalMasterCoverageReady ??
+      launchReadiness?.conditional_master_coverage_ready ??
+      validation?.conditionalMasterCoverageReady ??
+      validation?.conditionalPackCanProceed,
+    ),
+    conditionalSigningCanPrepare: Boolean(
+      launchReadiness?.conditionalSigningCanPrepare ??
+      launchReadiness?.conditional_signing_can_prepare ??
+      validation?.conditionalSigningCanPrepare ??
+      (
+        validation?.legalDocumentScenarioComplete &&
+        validation?.legalScenarioValidation?.canProceed !== false
+      ),
+    ),
     sellerClauseProfile:
       normalizeText(legalDocumentScenarioProfile?.sellerClauseProfile || pdfPlaceholders?.seller_clause_profile) ||
       null,
@@ -2675,6 +2696,12 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
           selectedTemplateLabel: launchReadiness.selectedTemplateLabel,
           blockerCodes: (launchReadiness.blockers || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
           warningCodes: (launchReadiness.warnings || []).map((issue) => normalizeText(issue.code)).filter(Boolean),
+          conditionalMasterCoverageReady: Boolean(validation?.conditionalPackCanProceed),
+          conditionalSigningCanPrepare: Boolean(
+            validation?.legalDocumentScenarioComplete &&
+            validation?.legalScenarioValidation?.canProceed !== false &&
+            !launchReadiness.shouldBlockGeneration
+          ),
         }
       : validation?.mandateTemplateLaunchReadiness || null,
     mandateTemplateContentGate: contentGate
@@ -3032,6 +3059,7 @@ export async function validatePacket({ packetType, context = {}, template = null
     conditionalPackDataRequirements,
     conditionalPackMissingPlaceholders,
     conditionalPackAudit,
+    conditionalPackCanProceed,
     legalDocumentScenarioProfile,
     legalDocumentScenarioKey: legalDocumentScenarioProfile?.scenarioKey || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
