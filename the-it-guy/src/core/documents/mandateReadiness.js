@@ -90,9 +90,59 @@ export function resolveMandateSellerOnboarding(lead = {}) {
   return asPlainObject(lead?.sellerOnboarding || lead?.seller_onboarding)
 }
 
+function resolveMandateSellerCanonicalFacts(lead = {}) {
+  const onboarding = resolveMandateSellerOnboarding(lead)
+  const listings = Array.isArray(lead?.listings) ? lead.listings : []
+  const listing = asPlainObject(lead?.privateListing || lead?.private_listing || listings[0])
+  const listingOnboarding = asPlainObject(listing.sellerOnboarding || listing.seller_onboarding)
+  return [
+    lead?.sellerCanonicalFacts || lead?.seller_canonical_facts_json,
+    onboarding.canonicalFacts || onboarding.canonical_facts_json,
+    listing.sellerCanonicalFacts || listing.seller_canonical_facts_json,
+    listingOnboarding.canonicalFacts || listingOnboarding.canonical_facts_json,
+  ].map(asPlainObject).find((candidate) => Object.keys(candidate).length) || {}
+}
+
 export function resolveMandateSellerOnboardingFormData(lead = {}) {
   const onboarding = resolveMandateSellerOnboarding(lead)
+  const canonicalFacts = resolveMandateSellerCanonicalFacts(lead)
+  const seller = asPlainObject(canonicalFacts.seller)
+  const property = asPlainObject(canonicalFacts.property)
+  const transaction = asPlainObject(canonicalFacts.transaction)
+  const addressDetails = asPlainObject(property.address_details)
+  const canonicalFormData = {
+    sellerFirstName: seller.first_name || seller.firstName,
+    sellerSurname: seller.surname || seller.last_name || seller.lastName,
+    sellerFullName: seller.full_name || seller.fullName || seller.name,
+    sellerEmail: seller.email || seller.seller_email,
+    sellerPhone: seller.phone || seller.seller_phone,
+    entityType: seller.owner_entity_type || seller.entity_type,
+    ownershipType: seller.ownership_type || seller.owner_structure_type,
+    maritalStatus: seller.marital_status || seller.maritalStatus,
+    maritalRegime: seller.marital_regime || seller.maritalRegime,
+    spouseName: seller.spouse?.name || seller.spouse_name,
+    spouseIdNumber: seller.spouse?.id_number || seller.spouse_id_number,
+    propertyAddress: property.address || property.formatted,
+    propertyAddressLine1: property.address_line_1 || addressDetails.line_1,
+    propertyAddressLine2: property.address_line_2 || addressDetails.line_2,
+    suburb: property.suburb || addressDetails.suburb,
+    city: property.city || addressDetails.city,
+    province: property.province || addressDetails.province,
+    postalCode: property.postal_code || addressDetails.postal_code,
+    propertyType: property.property_type,
+    propertyStructureType: property.property_structure_type || property.title_type,
+    propertyTitleType: property.property_title_type || property.title_type,
+    unitNumber: property.unit_number,
+    sectionNumber: property.section_number,
+    schemeName: property.scheme_name || property.scheme?.name,
+    estateName: property.estate_name || property.estate?.name,
+    askingPrice: transaction.asking_price,
+    mandateType: transaction.mandate_type,
+    mandateStartDate: transaction.mandate_start_date,
+    mandateEndDate: transaction.mandate_end_date,
+  }
   return {
+    ...canonicalFormData,
     ...asPlainObject(onboarding.form_data),
     ...asPlainObject(onboarding.formData),
   }
@@ -108,7 +158,7 @@ export function resolveMandatePropertyLabel(lead = {}) {
     ...asPlainObject(listingOnboarding.formData),
   }
   const propertyDetails = asPlainObject(lead?.propertyDetails || lead?.property_details || listing.propertyDetails || listing.property_details)
-  const canonicalFacts = asPlainObject(lead?.sellerCanonicalFacts || lead?.seller_canonical_facts_json || listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
+  const canonicalFacts = resolveMandateSellerCanonicalFacts(lead)
   const canonicalProperty = asPlainObject(canonicalFacts.property)
   const addressDetails = asPlainObject(
     formData.propertyAddressDetails ||

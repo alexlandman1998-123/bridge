@@ -7126,11 +7126,14 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     throw rpc.error
   }
   if (!rpc.error) {
-    let rpcContext = mapSellerClientPortalPayload(rpc.data)
+    const rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
-    await persistCanonicalSellerFactPayload(client, {
+    // The RPC has already persisted the raw draft. Canonical facts and
+    // requirement reconciliation are secondary projections and must not
+    // hold up the Step 1 save/next transition.
+    void persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
@@ -7140,19 +7143,12 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
       return null
     })
-    const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
+    void syncPrivateListingRequirements(rpcContext.listing, {
       emitActivity: false,
       reason: 'seller_onboarding_progress',
     }).catch((requirementsError) => {
       console.warn('[Private Listings] seller requirement sync skipped after onboarding progress update', requirementsError)
-      return null
     })
-    if (requirementSync?.listing) {
-      rpcContext = {
-        ...rpcContext,
-        listing: requirementSync.listing,
-      }
-    }
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
