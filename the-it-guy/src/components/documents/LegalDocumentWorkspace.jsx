@@ -34,6 +34,8 @@ import {
   saveSigningFieldPlacement,
   applySigningFieldLayout,
   getFinalDocumentCompletionStatus,
+  completePhysicalSignedPacketUpload,
+  replacePhysicalSignedPacketArtifact,
   listLegalDocumentJobsForPacket,
   retryFinalDocumentCompletion,
   resolveWorkspaceFinalSignedDocumentAccess,
@@ -1738,6 +1740,8 @@ function humanizeLifecycleEvent(eventType = '') {
     mandate_failed: 'Mandate action failed',
     packet_archived: 'Archived packet',
     final_signed_generated: 'Final signed generated',
+    generated_document_change_requested: 'Generated document change requested',
+    post_signing_amendment_requested: 'Post-signing amendment requested',
   }
   return labels[key] || normalizeText(eventType).replace(/_/g, ' ')
 }
@@ -2616,20 +2620,39 @@ function SigningMethodPanel({
   )
 }
 
-function PhysicalMandatePanel({
+function PhysicalSignedUploadPanel({
+  packetType = 'mandate',
   uploaded = false,
   uploadedAt = '',
   signedUrl = '',
   busy = false,
+  file = null,
+  signedAt = '',
+  note = '',
+  attestation = {},
+  onFileChange = null,
+  onSignedAtChange = null,
+  onNoteChange = null,
+  onAttestationChange = null,
+  onUpload = null,
   onDownload = null,
 }) {
+  const isOtp = normalizeText(packetType).toLowerCase() === 'otp'
+  const documentLabel = isOtp ? 'OTP' : 'Mandate'
+  const attestationItems = [
+    { key: 'matchesGeneratedVersion', label: `This is the signed copy of the generated ${documentLabel} version shown here.` },
+    { key: 'allRequiredPartiesSigned', label: 'All required parties have signed the uploaded PDF.' },
+    { key: 'noPagesSubstituted', label: 'No pages were substituted after generation.' },
+    { key: 'lockRecordAccepted', label: 'I understand this will lock the legal record.' },
+  ]
+
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">Physical / Printed Mandate</h4>
+          <h4 className="text-sm font-semibold text-[#1a2f45]">Signed Physical {documentLabel}</h4>
           <p className="mt-1 text-xs leading-5 text-[#6f839b]">
-            Download a copy for review or printing. Server-attested physical completion is not enabled yet, so this workspace cannot upload or finalize a signed paper mandate.
+            Download the generated PDF for signing, then upload the fully signed copy against this exact version.
           </p>
         </div>
         <Printer size={18} className="text-[#5d7892]" />
@@ -2650,11 +2673,279 @@ function PhysicalMandatePanel({
           <Button type="button" size="sm" variant="secondary" onClick={() => void onDownload?.()} disabled={busy}>
             Download PDF
           </Button>
-          <p className="rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs leading-5 text-[#7d520d]">
-            Physical completion is paused until the server can capture the signed PDF, required-party attestation, and immutable evidence in one controlled action. No completion was recorded.
-          </p>
+          <label className="block rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839b]">Signed PDF</span>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={busy}
+              onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
+              className="mt-2 block w-full text-xs font-semibold text-[#1a2f45] file:mr-3 file:rounded-lg file:border-0 file:bg-[#eef5ff] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#0a66ff]"
+            />
+            {file?.name ? <span className="mt-2 block truncate text-xs font-semibold text-[#526b84]">{file.name}</span> : null}
+          </label>
+          <label className="block rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839b]">Date signed</span>
+            <input
+              type="date"
+              value={signedAt}
+              disabled={busy}
+              onChange={(event) => onSignedAtChange?.(event.target.value)}
+              className="mt-2 h-10 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
+            />
+          </label>
+          <div className="grid gap-2 rounded-[12px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-3">
+            {attestationItems.map((item) => (
+              <label key={item.key} className="flex items-start gap-2 text-xs font-semibold leading-5 text-[#7d520d]">
+                <input
+                  type="checkbox"
+                  checked={Boolean(attestation?.[item.key])}
+                  disabled={busy}
+                  onChange={(event) => onAttestationChange?.(item.key, event.target.checked)}
+                  className="mt-1"
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+          </div>
+          <label className="block rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839b]">Upload note</span>
+            <textarea
+              rows={2}
+              value={note}
+              disabled={busy}
+              onChange={(event) => onNoteChange?.(event.target.value)}
+              placeholder="Optional internal note"
+              className="mt-2 min-h-[72px] w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 py-2 text-sm font-medium text-[#102033] outline-none transition focus:border-[#0a66ff]"
+            />
+          </label>
+          <Button type="button" size="sm" onClick={() => void onUpload?.()} disabled={busy}>
+            {busy ? 'Uploading…' : `Upload Signed ${documentLabel}`}
+          </Button>
         </div>
       )}
+    </section>
+  )
+}
+
+function SignedCopyReplacementPanel({
+  packetType = 'mandate',
+  open = false,
+  busy = false,
+  file = null,
+  reason = '',
+  note = '',
+  onToggle = null,
+  onFileChange = null,
+  onReasonChange = null,
+  onNoteChange = null,
+  onReplace = null,
+}) {
+  const documentLabel = normalizeText(packetType).toLowerCase() === 'otp' ? 'OTP' : 'Mandate'
+  return (
+    <div className="mt-4 rounded-[18px] border border-[#f4e2bf] bg-[#fffaf1] px-4 py-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#7d520d]">Replace signed {documentLabel} copy</p>
+          <p className="mt-1 text-xs leading-5 text-[#8a651d]">
+            Uploading a replacement preserves the previous signed artifact in the audit trail and does not retrigger downstream handoff.
+          </p>
+        </div>
+        <Button type="button" size="sm" variant="secondary" onClick={() => onToggle?.(!open)} disabled={busy}>
+          {open ? 'Cancel replacement' : 'Replace copy'}
+        </Button>
+      </div>
+
+      {open ? (
+        <div className="mt-4 grid gap-3">
+          <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Replacement PDF</span>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={busy}
+              onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
+              className="mt-2 block w-full text-xs font-semibold text-[#1a2f45] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff3d8] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#8a651d]"
+            />
+            {file?.name ? <span className="mt-2 block truncate text-xs font-semibold text-[#526b84]">{file.name}</span> : null}
+          </label>
+          <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Replacement reason</span>
+            <input
+              value={reason}
+              disabled={busy}
+              onChange={(event) => onReasonChange?.(event.target.value)}
+              placeholder="Required"
+              className="mt-2 h-10 w-full rounded-[10px] border border-[#ead8b5] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#c98722]"
+            />
+          </label>
+          <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Internal note</span>
+            <textarea
+              rows={2}
+              value={note}
+              disabled={busy}
+              onChange={(event) => onNoteChange?.(event.target.value)}
+              placeholder="Optional"
+              className="mt-2 min-h-[72px] w-full rounded-[10px] border border-[#ead8b5] bg-white px-3 py-2 text-sm font-medium text-[#102033] outline-none transition focus:border-[#c98722]"
+            />
+          </label>
+          <Button type="button" size="sm" onClick={() => void onReplace?.()} disabled={busy}>
+            {busy ? 'Replacing…' : 'Upload Replacement'}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function DocumentChangeRequestPanel({
+  packetType = 'mandate',
+  open = false,
+  activeRequest = null,
+  busy = false,
+  reason = '',
+  summary = '',
+  disabled = false,
+  disabledReason = '',
+  onToggle = null,
+  onReasonChange = null,
+  onSummaryChange = null,
+  onStart = null,
+  onEdit = null,
+} = {}) {
+  const documentLabel = normalizeText(packetType).toLowerCase() === 'otp' ? 'OTP' : 'Mandate'
+  const hasActiveRequest = Boolean(activeRequest?.reason || activeRequest?.summary)
+  return (
+    <section className="mb-5 rounded-[20px] border border-[#dbe7f4] bg-white px-4 py-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#102033]">{hasActiveRequest ? `${documentLabel} change in progress` : `Change generated ${documentLabel}`}</p>
+          <p className="mt-1 text-xs leading-5 text-[#667f99]">
+            {hasActiveRequest
+              ? `Reason: ${activeRequest.reason || 'Change reason captured'}`
+              : 'Capture a reason before changing generated wording, clauses, or captured details.'}
+          </p>
+          {activeRequest?.summary ? <p className="mt-1 text-xs leading-5 text-[#667f99]">{activeRequest.summary}</p> : null}
+          {disabled && disabledReason ? <p className="mt-2 text-xs font-semibold text-[#9b5f13]">{disabledReason}</p> : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {hasActiveRequest ? (
+            <Button type="button" size="sm" variant="secondary" onClick={() => onEdit?.()} disabled={busy}>
+              Review Draft
+            </Button>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" onClick={() => onToggle?.(!open)} disabled={busy || disabled}>
+              {open ? 'Cancel Change' : 'Start Change'}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {open && !hasActiveRequest ? (
+        <div className="mt-4 grid gap-3">
+          <label className="block rounded-[12px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">Change reason</span>
+            <input
+              value={reason}
+              disabled={busy}
+              onChange={(event) => onReasonChange?.(event.target.value)}
+              placeholder="Required"
+              className="mt-2 h-10 w-full rounded-[10px] border border-[#d4e0ed] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
+            />
+          </label>
+          <label className="block rounded-[12px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">What is changing</span>
+            <textarea
+              rows={3}
+              value={summary}
+              disabled={busy}
+              onChange={(event) => onSummaryChange?.(event.target.value)}
+              placeholder="Clause, party detail, commercial term, or other change"
+              className="mt-2 min-h-[92px] w-full rounded-[10px] border border-[#d4e0ed] bg-white px-3 py-2 text-sm font-medium text-[#102033] outline-none transition focus:border-[#0a66ff]"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" onClick={() => void onStart?.()} disabled={busy}>
+              {busy ? 'Saving…' : 'Start Controlled Change'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function PostSigningAmendmentPanel({
+  packetType = 'mandate',
+  open = false,
+  activeRequest = null,
+  busy = false,
+  reason = '',
+  summary = '',
+  disabled = false,
+  disabledReason = '',
+  onToggle = null,
+  onReasonChange = null,
+  onSummaryChange = null,
+  onRecord = null,
+  onOpenBuilder = null,
+} = {}) {
+  const documentLabel = normalizeText(packetType).toLowerCase() === 'otp' ? 'OTP' : 'Mandate'
+  const hasActiveRequest = Boolean(activeRequest?.reason || activeRequest?.summary)
+  return (
+    <section className="mb-5 rounded-[20px] border border-[#f1dfb9] bg-[#fffaf1] px-4 py-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#7d520d]">{hasActiveRequest ? `${documentLabel} amendment request recorded` : `Need to change this ${documentLabel}?`}</p>
+          <p className="mt-1 text-xs leading-5 text-[#8a651d]">
+            {hasActiveRequest
+              ? `Reason: ${activeRequest.reason || 'Amendment reason captured'}`
+              : 'Do not edit this signed or signing document. Record the reason, then create an addendum or amendment linked to the original.'}
+          </p>
+          {activeRequest?.summary ? <p className="mt-1 text-xs leading-5 text-[#8a651d]">{activeRequest.summary}</p> : null}
+          {disabled && disabledReason ? <p className="mt-2 text-xs font-semibold text-[#9b5f13]">{disabledReason}</p> : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={() => onOpenBuilder?.()} disabled={busy}>
+            Open Document Builder
+          </Button>
+          {!hasActiveRequest ? (
+            <Button type="button" size="sm" onClick={() => onToggle?.(!open)} disabled={busy || disabled}>
+              {open ? 'Cancel Request' : 'Record Amendment Need'}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {open && !hasActiveRequest ? (
+        <div className="mt-4 grid gap-3">
+          <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Reason</span>
+            <input
+              value={reason}
+              disabled={busy}
+              onChange={(event) => onReasonChange?.(event.target.value)}
+              placeholder="Required"
+              className="mt-2 h-10 w-full rounded-[10px] border border-[#ead8b5] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#c98722]"
+            />
+          </label>
+          <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Change summary</span>
+            <textarea
+              rows={3}
+              value={summary}
+              disabled={busy}
+              onChange={(event) => onSummaryChange?.(event.target.value)}
+              placeholder="What the addendum or amendment must change"
+              className="mt-2 min-h-[92px] w-full rounded-[10px] border border-[#ead8b5] bg-white px-3 py-2 text-sm font-medium text-[#102033] outline-none transition focus:border-[#c98722]"
+            />
+          </label>
+          <Button type="button" size="sm" onClick={() => void onRecord?.()} disabled={busy}>
+            {busy ? 'Recording…' : 'Record Amendment Request'}
+          </Button>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -3321,6 +3612,31 @@ export default function LegalDocumentWorkspace({
   const [finalCompletionBusy, setFinalCompletionBusy] = useState(false)
   const [finalSignedAccess, setFinalSignedAccess] = useState(null)
   const [finalSignedAccessBusy, setFinalSignedAccessBusy] = useState(false)
+  const [physicalUploadFile, setPhysicalUploadFile] = useState(null)
+  const [physicalSignedAt, setPhysicalSignedAt] = useState('')
+  const [physicalUploadNote, setPhysicalUploadNote] = useState('')
+  const [physicalUploadBusy, setPhysicalUploadBusy] = useState(false)
+  const [physicalUploadAttestation, setPhysicalUploadAttestation] = useState({
+    matchesGeneratedVersion: false,
+    allRequiredPartiesSigned: false,
+    noPagesSubstituted: false,
+    lockRecordAccepted: false,
+  })
+  const [signedReplacementOpen, setSignedReplacementOpen] = useState(false)
+  const [signedReplacementFile, setSignedReplacementFile] = useState(null)
+  const [signedReplacementReason, setSignedReplacementReason] = useState('')
+  const [signedReplacementNote, setSignedReplacementNote] = useState('')
+  const [signedReplacementBusy, setSignedReplacementBusy] = useState(false)
+  const [documentChangeOpen, setDocumentChangeOpen] = useState(false)
+  const [documentChangeReason, setDocumentChangeReason] = useState('')
+  const [documentChangeSummary, setDocumentChangeSummary] = useState('')
+  const [documentChangeBusy, setDocumentChangeBusy] = useState(false)
+  const [localDocumentChangeRequest, setLocalDocumentChangeRequest] = useState(null)
+  const [postSigningAmendmentOpen, setPostSigningAmendmentOpen] = useState(false)
+  const [postSigningAmendmentReason, setPostSigningAmendmentReason] = useState('')
+  const [postSigningAmendmentSummary, setPostSigningAmendmentSummary] = useState('')
+  const [postSigningAmendmentBusy, setPostSigningAmendmentBusy] = useState(false)
+  const [localPostSigningAmendmentRequest, setLocalPostSigningAmendmentRequest] = useState(null)
   const [editableSections, setEditableSections] = useState([])
   const [editableDirty, setEditableDirty] = useState(false)
   const [draftSaveState, setDraftSaveState] = useState('saved')
@@ -3614,6 +3930,10 @@ export default function LegalDocumentWorkspace({
   const editableAllowed = useMemo(() => {
     return canEditForLifecycle(normalizedLifecycleState)
   }, [normalizedLifecycleState])
+  const hasGeneratedPacketVersion = useMemo(
+    () => Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id),
+    [statusState?.versions],
+  )
 
   const editableSnapshot = useMemo(() => {
     if (editableVersion?.editable_content_json && typeof editableVersion.editable_content_json === 'object' && Array.isArray(editableVersion.editable_content_json.sections)) {
@@ -3625,6 +3945,56 @@ export default function LegalDocumentWorkspace({
     }
     return null
   }, [editableVersion?.editable_content_json, editableVersion?.validation_summary_json])
+  const persistedDocumentChangeRequest = useMemo(() => {
+    const fromValidation = editableVersion?.validation_summary_json?.document_change_request
+    const fromEditable = editableSnapshot?.documentChangeRequest || editableSnapshot?.document_change_request
+    const source = fromValidation && typeof fromValidation === 'object'
+      ? fromValidation
+      : fromEditable && typeof fromEditable === 'object'
+        ? fromEditable
+        : null
+    if (!source) return null
+    const reason = normalizeText(source.reason)
+    const summary = normalizeText(source.summary)
+    if (!reason && !summary) return null
+    return {
+      reason,
+      summary,
+      requestedAt: normalizeText(source.requestedAt || source.requested_at),
+      requestedBy: normalizeText(source.requestedBy || source.requested_by),
+      sourceVersionId: normalizeText(source.sourceVersionId || source.source_version_id),
+      sourceVersionNumber: Number(source.sourceVersionNumber || source.source_version_number || 0) || null,
+      sourceLifecycleState: normalizeText(source.sourceLifecycleState || source.source_lifecycle_state),
+    }
+  }, [editableSnapshot, editableVersion?.validation_summary_json])
+  const activeDocumentChangeRequest = localDocumentChangeRequest || persistedDocumentChangeRequest
+  const controlledDocumentChangeRequired = Boolean(
+      hasGeneratedPacketVersion &&
+      editableAllowed &&
+      editableSections.length &&
+      !normalizeText(latestVersion?.final_signed_file_path || '') &&
+      !['draft', 'sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState),
+  )
+  const documentChangeCaptureDisabledReason = (() => {
+    if (!legalPermissions.canEditDraft) return 'Your role can view this generated document but cannot change legal wording.'
+    if (!editableAllowed) return 'This document has already moved beyond editable draft status.'
+    if (normalizeText(latestVersion?.final_signed_file_path || '') || ['sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)) {
+      return 'This document is already in signing or final record status. Create an amendment or addendum instead.'
+    }
+    if (!editableSections.length) return 'Generate editable sections before capturing a change.'
+    return ''
+  })()
+  const canCaptureDocumentChange = Boolean(controlledDocumentChangeRequired && legalPermissions.canEditDraft && !documentChangeCaptureDisabledReason)
+  const documentChangeActive = Boolean(activeDocumentChangeRequest?.reason || activeDocumentChangeRequest?.summary)
+  const documentChangePanelVisible = Boolean(
+    controlledDocumentChangeRequired ||
+      (
+        documentChangeActive &&
+        editableAllowed &&
+        !normalizeText(latestVersion?.final_signed_file_path || '') &&
+        !['sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)
+      ),
+  )
 
   const editableSectionsValidation = useMemo(() => {
     const byKey = {}
@@ -3863,6 +4233,52 @@ export default function LegalDocumentWorkspace({
   const manualSignedUploadedAt = normalizeText(sourceContext.manualSignedUploadedAt || sourceContext.manual_signed_uploaded_at)
   const digitalSigningStarted = hasDigitalSigningStarted(statusState?.signingSummary?.signers)
   const manualSignedUploaded = Boolean(manualSignedDocumentId || manualSignedFilePath)
+  const physicalSignedRecord = Boolean(
+    manualSignedUploaded ||
+      sourceContext.physicalSigningUpload ||
+      normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) === 'physical',
+  )
+  const canReplaceSignedCopy = Boolean(
+    physicalSignedRecord &&
+      (isFullySignedLifecycle || hasFinalArtifact) &&
+      latestVersion?.id &&
+      legalPermissions.canFinalize,
+  )
+  const persistedPostSigningAmendmentRequest = useMemo(() => {
+    const requests = Array.isArray(sourceContext.postSigningAmendmentRequests)
+      ? sourceContext.postSigningAmendmentRequests
+      : Array.isArray(sourceContext.post_signing_amendment_requests)
+        ? sourceContext.post_signing_amendment_requests
+        : []
+    const latestRequest = requests.find((item) => item && typeof item === 'object') || null
+    if (!latestRequest) return null
+    const reason = normalizeText(latestRequest.reason)
+    const summary = normalizeText(latestRequest.summary)
+    if (!reason && !summary) return null
+    return {
+      reason,
+      summary,
+      requestedAt: normalizeText(latestRequest.requestedAt || latestRequest.requested_at),
+      requestedBy: normalizeText(latestRequest.requestedBy || latestRequest.requested_by),
+      sourceVersionId: normalizeText(latestRequest.sourceVersionId || latestRequest.source_version_id),
+      sourceVersionNumber: Number(latestRequest.sourceVersionNumber || latestRequest.source_version_number || 0) || null,
+      sourceLifecycleState: normalizeText(latestRequest.sourceLifecycleState || latestRequest.source_lifecycle_state),
+      recommendedDocumentKind: normalizeText(latestRequest.recommendedDocumentKind || latestRequest.recommended_document_kind),
+    }
+  }, [sourceContext.postSigningAmendmentRequests, sourceContext.post_signing_amendment_requests])
+  const activePostSigningAmendmentRequest = localPostSigningAmendmentRequest || persistedPostSigningAmendmentRequest
+  const postSigningAmendmentRelevant = Boolean(
+    latestVersion?.id &&
+      !editableAllowed &&
+      (hasFinalArtifact || ['sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)),
+  )
+  const postSigningAmendmentDisabledReason = (() => {
+    if (!postSigningAmendmentRelevant) return 'This document is still editable; use the controlled change flow before signing.'
+    if (!legalPermissions.canEditDraft) return 'Your role can view this record but cannot start legal amendment work.'
+    return ''
+  })()
+  const canRequestPostSigningAmendment = Boolean(postSigningAmendmentRelevant && !postSigningAmendmentDisabledReason)
+  const postSigningAmendmentPanelVisible = Boolean(postSigningAmendmentRelevant || activePostSigningAmendmentRequest)
   const signingMethodLockedReason = (() => {
     if (!isMandatePacket) return ''
     if (hasFinalArtifact) return 'This mandate already has a final signed document. The signing method can no longer be changed.'
@@ -4796,7 +5212,211 @@ export default function LegalDocumentWorkspace({
     setDraftSaveState('unsaved')
   }
 
+  function ensureControlledDocumentChange() {
+    if (!controlledDocumentChangeRequired || documentChangeActive) return true
+    setDocumentChangeOpen(true)
+    setLoadError('Capture a change reason before editing this generated document.')
+    return false
+  }
+
+  async function handleStartDocumentChange() {
+    if (documentChangeBusy || actionBusyRef.current) return
+    const reason = normalizeText(documentChangeReason)
+    const summary = normalizeText(documentChangeSummary)
+    if (!reason) {
+      setLoadError('Add a change reason before editing this generated document.')
+      setDocumentChangeOpen(true)
+      return
+    }
+    if (!canCaptureDocumentChange) {
+      setLoadError(documentChangeCaptureDisabledReason || 'This document cannot be changed in its current status.')
+      return
+    }
+    assertWorkspacePermission('canEditDraft', 'change generated legal drafts')
+
+    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    if (!resolvedPacketId || !editableVersion?.id) {
+      setLoadError('Reload the workspace before starting a document change.')
+      return
+    }
+
+    const requestedAt = new Date().toISOString()
+    const changeRequest = {
+      reason,
+      summary,
+      requestedAt,
+      requestedBy: normalizeText(workspaceProfile?.id || workspaceProfile?.user_id || workspaceRole),
+      sourceVersionId: normalizeText(editableVersion.id),
+      sourceVersionNumber: Number(editableVersion.version_number || 0) || null,
+      sourceLifecycleState: normalizedLifecycleState,
+    }
+
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setDocumentChangeBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+    setActionProgressMessage('Saving change reason...')
+    try {
+      await saveEditableDraftVersion({
+        reviewState: 'draft',
+        source: 'change_request',
+        changeRequest,
+      })
+      await appendDocumentPacketEvent({
+        packetId: resolvedPacketId,
+        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        versionId: editableVersion.id,
+        eventType: 'generated_document_change_requested',
+        eventPayload: {
+          packetType: normalizeKey(packetType),
+          reason,
+          summary: summary || null,
+          requestedAt,
+          sourceVersionId: editableVersion.id,
+          sourceVersionNumber: Number(editableVersion.version_number || 0) || null,
+          sourceLifecycleState: normalizedLifecycleState,
+          downstreamWorkflowRetriggered: false,
+        },
+      })
+      setLocalDocumentChangeRequest(changeRequest)
+      setDocumentChangeOpen(false)
+      setDocumentChangeReason('')
+      setDocumentChangeSummary('')
+      centerTabPreferenceRef.current = 'editor'
+      setCenterTab('editor')
+      setActionFeedback('Change reason saved. Update the draft and generate a revised PDF when ready.')
+      await refreshWorkspaceData()
+    } catch (error) {
+      setDraftSaveState(normalizeText(error?.code) === 'STALE_EDITABLE_DOCUMENT_REVISION' ? 'conflict' : 'error')
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to start the controlled document change.'))
+    } finally {
+      setActionProgressMessage('')
+      setDocumentChangeBusy(false)
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }
+
+  function handleOpenDocumentBuilderForAmendment() {
+    if (typeof window === 'undefined') return
+    const resolvedPacketId = normalizeText(
+      activePostSigningAmendmentRequest?.originalPacketId ||
+        statusState?.packet?.id ||
+        packetId,
+    )
+    const params = new URLSearchParams()
+    if (resolvedPacketId) params.set('startAddendumFor', resolvedPacketId)
+    params.set('packetType', normalizeKey(packetType) || 'otp')
+    const summary = normalizeText(activePostSigningAmendmentRequest?.summary || postSigningAmendmentSummary)
+    const reason = normalizeText(activePostSigningAmendmentRequest?.reason || postSigningAmendmentReason)
+    if (summary) params.set('changeSummary', summary)
+    if (reason) params.set('amendmentReason', reason)
+    params.set('source', 'post_signing_amendment_request')
+    window.location.assign(`/settings/legal-templates?${params.toString()}`)
+  }
+
+  async function handleRecordPostSigningAmendmentRequest() {
+    if (postSigningAmendmentBusy || actionBusyRef.current) return
+    const reason = normalizeText(postSigningAmendmentReason)
+    const summary = normalizeText(postSigningAmendmentSummary)
+    if (!reason) {
+      setLoadError('Add a reason before recording the amendment request.')
+      setPostSigningAmendmentOpen(true)
+      return
+    }
+    if (!summary) {
+      setLoadError('Add a change summary so the addendum can be linked to the right amendment need.')
+      setPostSigningAmendmentOpen(true)
+      return
+    }
+    if (!canRequestPostSigningAmendment) {
+      setLoadError(postSigningAmendmentDisabledReason || 'This document is not ready for post-signing amendment handling.')
+      return
+    }
+    assertWorkspacePermission('canEditDraft', 'record legal amendment requests')
+
+    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    const resolvedVersionId = normalizeText(latestVersion?.id)
+    if (!resolvedPacketId || !resolvedVersionId) {
+      setLoadError('Reload the workspace before recording the amendment request.')
+      return
+    }
+
+    const requestedAt = new Date().toISOString()
+    const amendmentRequest = {
+      reason,
+      summary,
+      requestedAt,
+      requestedBy: normalizeText(workspaceProfile?.id || workspaceProfile?.user_id || workspaceRole),
+      sourceVersionId: resolvedVersionId,
+      sourceVersionNumber: Number(latestVersion?.version_number || 0) || null,
+      sourceLifecycleState: normalizedLifecycleState,
+      recommendedDocumentKind: 'addendum',
+      originalPacketId: resolvedPacketId,
+      originalPacketType: normalizeKey(packetType),
+    }
+    const existingRequests = Array.isArray(sourceContext.postSigningAmendmentRequests)
+      ? sourceContext.postSigningAmendmentRequests
+      : Array.isArray(sourceContext.post_signing_amendment_requests)
+        ? sourceContext.post_signing_amendment_requests
+        : []
+    const nextRequests = [amendmentRequest, ...existingRequests].slice(0, 10)
+
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setPostSigningAmendmentBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+    setActionProgressMessage('Recording amendment request...')
+    try {
+      await updateWorkspacePacket(resolvedPacketId, {
+        sourceContextJson: {
+          postSigningAmendmentRequests: nextRequests,
+          post_signing_amendment_requests: nextRequests,
+          latestPostSigningAmendmentRequest: amendmentRequest,
+          latest_post_signing_amendment_request: amendmentRequest,
+          amendmentRequired: true,
+          amendment_required: true,
+        },
+      })
+      await appendDocumentPacketEvent({
+        packetId: resolvedPacketId,
+        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        versionId: resolvedVersionId,
+        eventType: 'post_signing_amendment_requested',
+        eventPayload: {
+          packetType: normalizeKey(packetType),
+          reason,
+          summary,
+          requestedAt,
+          originalPacketId: resolvedPacketId,
+          originalVersionId: resolvedVersionId,
+          originalVersionNumber: Number(latestVersion?.version_number || 0) || null,
+          sourceLifecycleState: normalizedLifecycleState,
+          recommendedDocumentKind: 'addendum',
+          downstreamWorkflowRetriggered: false,
+          originalRecordMutated: false,
+        },
+      })
+      setLocalPostSigningAmendmentRequest(amendmentRequest)
+      setPostSigningAmendmentOpen(false)
+      setPostSigningAmendmentReason('')
+      setPostSigningAmendmentSummary('')
+      setActionFeedback('Amendment request recorded. Create an addendum in Document Builder and link it to this original document.')
+      await refreshWorkspaceData()
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to record the amendment request right now.'))
+    } finally {
+      setActionProgressMessage('')
+      setPostSigningAmendmentBusy(false)
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }
+
   function handleChangeSection(sectionKey, value) {
+    if (!ensureControlledDocumentChange()) return
     const nextValue = String(value || '')
     markEditableDraftDirty()
     setEditableSections((previous) =>
@@ -4805,6 +5425,7 @@ export default function LegalDocumentWorkspace({
   }
 
   function handleInsertToken(sectionKey, token) {
+    if (!ensureControlledDocumentChange()) return
     const normalizedToken = normalizeText(token)
     if (!normalizedToken) return
     markEditableDraftDirty()
@@ -4833,6 +5454,7 @@ export default function LegalDocumentWorkspace({
   }
 
   function handleAddCustomSection() {
+    if (!ensureControlledDocumentChange()) return
     if (!editableAllowed) {
       setLoadError('Custom sections can only be added while this document is editable.')
       return
@@ -4870,6 +5492,7 @@ export default function LegalDocumentWorkspace({
   }
 
   function handleRemoveSection(sectionKey) {
+    if (!ensureControlledDocumentChange()) return
     if (!editableAllowed || !legalPermissions.canEditDraft) {
       setLoadError('Document sections can only be removed while this document is editable.')
       return
@@ -5326,7 +5949,7 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  async function saveEditableDraftVersion({ reviewState = 'draft', source = 'manual' } = {}) {
+  async function saveEditableDraftVersion({ reviewState = 'draft', source = 'manual', changeRequest = null } = {}) {
     if (source !== 'autosave' && autosavePromiseRef.current) {
       return autosavePromiseRef.current
     }
@@ -5348,12 +5971,29 @@ export default function LegalDocumentWorkspace({
       throw new Error('The editable document revision is missing. Reload the workspace and retry.')
     }
 
+    const normalizedChangeRequest = changeRequest && typeof changeRequest === 'object'
+      ? {
+          reason: normalizeText(changeRequest.reason),
+          summary: normalizeText(changeRequest.summary),
+          requestedAt: normalizeText(changeRequest.requestedAt) || new Date().toISOString(),
+          requestedBy: normalizeText(changeRequest.requestedBy || workspaceProfile?.id || workspaceProfile?.user_id || workspaceRole),
+          sourceVersionId: normalizeText(changeRequest.sourceVersionId || editableVersion.id),
+          sourceVersionNumber: Number(changeRequest.sourceVersionNumber || editableVersion.version_number || 0) || null,
+          sourceLifecycleState: normalizeText(changeRequest.sourceLifecycleState || normalizedLifecycleState),
+        }
+      : activeDocumentChangeRequest
     setDraftSaveState('saving')
     const result = await saveEditableDocumentDraftRevision({
       packetId: resolvedPacketId,
       baseVersionId: editableVersion.id,
       expectedEditSequence: editableVersion.edit_sequence || 0,
-      baseDocument: editableVersion.editable_content_json || editableSnapshot || {},
+      baseDocument: {
+        ...(editableVersion.editable_content_json || editableSnapshot || {}),
+        ...(normalizedChangeRequest ? {
+          documentChangeRequest: normalizedChangeRequest,
+          document_change_request: normalizedChangeRequest,
+        } : {}),
+      },
       sections: editableSections.map((section) => ({
         key: section.key,
         label: section.label,
@@ -5372,6 +6012,10 @@ export default function LegalDocumentWorkspace({
         review_state: normalizeText(reviewState) || 'draft',
         editable_save_source: normalizeText(source) || 'manual',
         editable_draft_warnings: draftValidationSummary.warnings,
+        ...(normalizedChangeRequest ? {
+          document_change_request: normalizedChangeRequest,
+          generated_document_change: true,
+        } : {}),
       },
       reviewState,
     })
@@ -6845,6 +7489,191 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  async function handlePhysicalSignedUpload() {
+    if (physicalUploadBusy || actionBusyRef.current) return
+    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    const generatedVersion = getGeneratedPacketVersionForSigning(statusState?.versions || [])
+    if (!resolvedPacketId || !generatedVersion?.id) {
+      setLoadError(`Generate the ${isOtpPacket ? 'OTP' : 'mandate'} PDF before uploading a signed copy.`)
+      return
+    }
+    if (!physicalUploadFile) {
+      setLoadError('Select the fully signed PDF before uploading.')
+      return
+    }
+    const fileName = normalizeText(physicalUploadFile.name)
+    const fileType = normalizeText(physicalUploadFile.type).toLowerCase()
+    if (fileType && fileType !== 'application/pdf') {
+      setLoadError('Upload the signed copy as a PDF.')
+      return
+    }
+    if (fileName && !fileName.toLowerCase().endsWith('.pdf')) {
+      setLoadError('Upload the signed copy as a PDF.')
+      return
+    }
+    const requiredAttestations = ['matchesGeneratedVersion', 'allRequiredPartiesSigned', 'noPagesSubstituted', 'lockRecordAccepted']
+    const missingAttestation = requiredAttestations.find((key) => !physicalUploadAttestation[key])
+    if (missingAttestation) {
+      setLoadError('Confirm all physical signing attestations before uploading.')
+      return
+    }
+    if (isMandatePacket) {
+      assertMandateActionValidation('upload_signed', {
+        packetId: resolvedPacketId,
+        versionId: generatedVersion.id,
+        file: physicalUploadFile,
+        hasPermission: legalPermissions.canFinalize,
+      })
+    }
+    assertWorkspacePermission('canFinalize', 'upload signed legal records')
+
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setPhysicalUploadBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+    setActionProgressMessage(`Uploading signed ${isOtpPacket ? 'OTP' : 'mandate'}…`)
+    try {
+      const result = await completePhysicalSignedPacketUpload({
+        packetId: resolvedPacketId,
+        packetVersionId: generatedVersion.id,
+        file: physicalUploadFile,
+        fileName: physicalUploadFile.name,
+        signedAt: physicalSignedAt,
+        note: physicalUploadNote,
+        signingMethod: 'physical',
+        attestation: {
+          ...physicalUploadAttestation,
+          generatedVersionNumber: generatedVersion.version_number || null,
+          generatedVersionId: generatedVersion.id,
+        },
+      })
+      await onSignedFinalized?.({
+        source: 'physical_signed_upload',
+        packetType,
+        packetId: resolvedPacketId,
+        packetVersionId: generatedVersion.id,
+        packet: result.packet,
+        version: result.version,
+        finalArtifact: result.finalArtifact,
+        finalFilePath: result.finalArtifact?.path,
+        finalFileName: result.finalArtifact?.fileName,
+        finalFileUrl: result.finalArtifact?.signedUrl,
+        finalFileBucket: result.finalArtifact?.bucket,
+        signingMethod: 'physical',
+        signingStatus: 'uploaded_signed',
+        finalizedAt: result.signedAt,
+      })
+      const refreshed = await refreshWorkspaceData({ force: true }).catch(() => null)
+      if (refreshed?.resolved) {
+        statusStateRef.current = refreshed.resolved
+        setStatusState(refreshed.resolved)
+      } else {
+        setStatusState((previous) => ({
+          ...(previous || {}),
+          packet: result.packet,
+          versions: [result.version, ...(previous?.versions || []).filter((item) => normalizeText(item?.id) !== normalizeText(result.version?.id))],
+        }))
+      }
+      setFinalSignedAccess({
+        available: Boolean(result.finalArtifact?.signedUrl),
+        finalArtifact: {
+          downloadUrl: result.finalArtifact?.signedUrl || '',
+          fileName: result.finalArtifact?.fileName || `Signed ${isOtpPacket ? 'OTP' : 'Mandate'}.pdf`,
+        },
+      })
+      setPhysicalUploadFile(null)
+      setPhysicalSignedAt('')
+      setPhysicalUploadNote('')
+      setPhysicalUploadAttestation({
+        matchesGeneratedVersion: false,
+        allRequiredPartiesSigned: false,
+        noPagesSubstituted: false,
+        lockRecordAccepted: false,
+      })
+      setActionFeedback(`Signed ${isOtpPacket ? 'OTP' : 'mandate'} uploaded and locked as the final legal record.`)
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, `Unable to upload the signed ${isOtpPacket ? 'OTP' : 'mandate'} right now.`))
+    } finally {
+      setActionProgressMessage('')
+      setPhysicalUploadBusy(false)
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }
+
+  async function handleReplaceSignedCopy() {
+    if (signedReplacementBusy || actionBusyRef.current) return
+    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    const resolvedVersionId = normalizeText(latestVersion?.id)
+    if (!resolvedPacketId || !resolvedVersionId) {
+      setLoadError('The signed packet reference is incomplete. Refresh the workspace before replacing the file.')
+      return
+    }
+    if (!signedReplacementFile) {
+      setLoadError('Select the replacement signed PDF before uploading.')
+      return
+    }
+    const fileName = normalizeText(signedReplacementFile.name)
+    const fileType = normalizeText(signedReplacementFile.type).toLowerCase()
+    if ((fileType && fileType !== 'application/pdf') || (fileName && !fileName.toLowerCase().endsWith('.pdf'))) {
+      setLoadError('Upload the replacement signed copy as a PDF.')
+      return
+    }
+    if (!normalizeText(signedReplacementReason)) {
+      setLoadError('Add a reason before replacing the signed copy.')
+      return
+    }
+    assertWorkspacePermission('canFinalize', 'replace signed legal records')
+
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setSignedReplacementBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+    setActionProgressMessage(`Replacing signed ${isOtpPacket ? 'OTP' : 'mandate'} copy…`)
+    try {
+      const result = await replacePhysicalSignedPacketArtifact({
+        packetId: resolvedPacketId,
+        packetVersionId: resolvedVersionId,
+        file: signedReplacementFile,
+        fileName: signedReplacementFile.name,
+        reason: signedReplacementReason,
+        note: signedReplacementNote,
+      })
+      const refreshed = await refreshWorkspaceData({ force: true }).catch(() => null)
+      if (refreshed?.resolved) {
+        statusStateRef.current = refreshed.resolved
+        setStatusState(refreshed.resolved)
+      } else {
+        setStatusState((previous) => ({
+          ...(previous || {}),
+          packet: result.packet,
+          versions: [result.version, ...(previous?.versions || []).filter((item) => normalizeText(item?.id) !== normalizeText(result.version?.id))],
+        }))
+      }
+      setFinalSignedAccess({
+        available: Boolean(result.finalArtifact?.signedUrl),
+        finalArtifact: {
+          downloadUrl: result.finalArtifact?.signedUrl || '',
+          fileName: result.finalArtifact?.fileName || `Signed ${isOtpPacket ? 'OTP' : 'Mandate'}.pdf`,
+        },
+      })
+      setSignedReplacementOpen(false)
+      setSignedReplacementFile(null)
+      setSignedReplacementReason('')
+      setSignedReplacementNote('')
+      setActionFeedback(`Replacement signed ${isOtpPacket ? 'OTP' : 'mandate'} uploaded. The previous file was preserved in the audit trail.`)
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, `Unable to replace the signed ${isOtpPacket ? 'OTP' : 'mandate'} right now.`))
+    } finally {
+      setActionProgressMessage('')
+      setSignedReplacementBusy(false)
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }
+
   const launchSigningReadyState =
     Boolean(statusState?.packet?.id) &&
     ['draft', 'pdf_generated', 'ready_to_send'].includes(normalizedLifecycleState)
@@ -6860,7 +7689,7 @@ export default function LegalDocumentWorkspace({
   const workspacePrimaryRequiresDelivery =
     normalizedLifecycleState === 'ready_to_send' ||
     (isMandatePacket && launchSigningReadyState && signingMethod === 'digital')
-  const hasGeneratedMandateVersion = Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id)
+  const hasGeneratedMandateVersion = hasGeneratedPacketVersion
   const backgroundGenerationActive =
     isActiveLegalDocumentGenerationJob(backgroundGenerationJob || statusState?.legalDocumentJob) ||
     normalizeKey(statusState?.state) === 'generation_queued'
@@ -7278,6 +8107,41 @@ export default function LegalDocumentWorkspace({
                         Merge field details
                         <ChevronRight size={14} className="text-[#8a99ad]" />
                       </button>
+                      {documentChangePanelVisible ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false)
+                            if (documentChangeActive) {
+                              centerTabPreferenceRef.current = 'editor'
+                              setCenterTab('editor')
+                            } else {
+                              setDocumentChangeOpen(true)
+                            }
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          {documentChangeActive ? 'Review controlled change' : 'Start controlled change'}
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                      ) : null}
+                      {postSigningAmendmentPanelVisible ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false)
+                            if (activePostSigningAmendmentRequest) {
+                              handleOpenDocumentBuilderForAmendment()
+                            } else {
+                              setPostSigningAmendmentOpen(true)
+                            }
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          {activePostSigningAmendmentRequest ? 'Open addendum builder' : 'Record amendment need'}
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -7370,6 +8234,44 @@ export default function LegalDocumentWorkspace({
                 Read-only mode: your role can view lifecycle progress and signer status, but cannot modify legal drafts.
               </article>
             ) : null}
+            {documentChangePanelVisible ? (
+              <DocumentChangeRequestPanel
+                packetType={packetType}
+                open={documentChangeOpen}
+                activeRequest={activeDocumentChangeRequest}
+                busy={documentChangeBusy || actionBusy || loading}
+                reason={documentChangeReason}
+                summary={documentChangeSummary}
+                disabled={!canCaptureDocumentChange && !documentChangeActive}
+                disabledReason={documentChangeCaptureDisabledReason}
+                onToggle={setDocumentChangeOpen}
+                onReasonChange={setDocumentChangeReason}
+                onSummaryChange={setDocumentChangeSummary}
+                onStart={handleStartDocumentChange}
+                onEdit={() => {
+                  centerTabPreferenceRef.current = 'editor'
+                  setCenterTab('editor')
+                  document.getElementById('legal-document-main-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+              />
+            ) : null}
+            {postSigningAmendmentPanelVisible ? (
+              <PostSigningAmendmentPanel
+                packetType={packetType}
+                open={postSigningAmendmentOpen}
+                activeRequest={activePostSigningAmendmentRequest}
+                busy={postSigningAmendmentBusy || actionBusy || loading}
+                reason={postSigningAmendmentReason}
+                summary={postSigningAmendmentSummary}
+                disabled={!canRequestPostSigningAmendment && !activePostSigningAmendmentRequest}
+                disabledReason={postSigningAmendmentDisabledReason}
+                onToggle={setPostSigningAmendmentOpen}
+                onReasonChange={setPostSigningAmendmentReason}
+                onSummaryChange={setPostSigningAmendmentSummary}
+                onRecord={handleRecordPostSigningAmendmentRequest}
+                onOpenBuilder={handleOpenDocumentBuilderForAmendment}
+              />
+            ) : null}
 
             {!isMandatePacket ? (
               <>
@@ -7443,6 +8345,21 @@ export default function LegalDocumentWorkspace({
                     </Button>
                   ) : null}
                 </div>
+                {canReplaceSignedCopy ? (
+                  <SignedCopyReplacementPanel
+                    packetType={packetType}
+                    open={signedReplacementOpen}
+                    busy={signedReplacementBusy || actionBusy || loading}
+                    file={signedReplacementFile}
+                    reason={signedReplacementReason}
+                    note={signedReplacementNote}
+                    onToggle={setSignedReplacementOpen}
+                    onFileChange={setSignedReplacementFile}
+                    onReasonChange={setSignedReplacementReason}
+                    onNoteChange={setSignedReplacementNote}
+                    onReplace={handleReplaceSignedCopy}
+                  />
+                ) : null}
                 {safeFinalCompletionState ? (
                   <div data-testid="final-completion-state" className={`mt-4 rounded-[16px] border px-4 py-3 text-sm ${safeFinalCompletionState.ready ? 'border-[#c8e5d4] bg-white text-[#1d5b3c]' : 'border-[#f1dfb9] bg-[#fff9ec] text-[#7d520d]'}`}>
                     <p className="font-semibold">{safeFinalCompletionState.ready ? 'Completed everywhere' : 'Signed PDF safe — completion pending'}</p>
@@ -7541,6 +8458,11 @@ export default function LegalDocumentWorkspace({
                         type="button"
                         className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
                         onClick={() => {
+                          if (controlledDocumentChangeRequired && !documentChangeActive) {
+                            setDocumentChangeOpen(true)
+                            setLoadError('Capture a change reason before editing this generated document.')
+                            return
+                          }
                           centerTabPreferenceRef.current = 'editor'
                           setCenterTab('editor')
                         }}
@@ -7698,11 +8620,21 @@ export default function LegalDocumentWorkspace({
 
               {signingMethod === 'physical' ? (
                 <div className="mt-5">
-                  <PhysicalMandatePanel
+                  <PhysicalSignedUploadPanel
+                    packetType={packetType}
                     uploaded={manualSignedUploaded || isFullySignedLifecycle}
                     uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
                     signedUrl={signedPreviewUrl}
-                    busy={actionBusy || loading}
+                    busy={actionBusy || loading || physicalUploadBusy}
+                    file={physicalUploadFile}
+                    signedAt={physicalSignedAt}
+                    note={physicalUploadNote}
+                    attestation={physicalUploadAttestation}
+                    onFileChange={setPhysicalUploadFile}
+                    onSignedAtChange={setPhysicalSignedAt}
+                    onNoteChange={setPhysicalUploadNote}
+                    onAttestationChange={(key, value) => setPhysicalUploadAttestation((current) => ({ ...current, [key]: value }))}
+                    onUpload={handlePhysicalSignedUpload}
                     onDownload={handlePhysicalDownload}
                   />
                 </div>
@@ -7731,12 +8663,42 @@ export default function LegalDocumentWorkspace({
                 ) : null}
 
                 {isMandatePacket && signingMethod === 'physical' ? (
-                  <PhysicalMandatePanel
+                  <PhysicalSignedUploadPanel
+                    packetType={packetType}
                     uploaded={manualSignedUploaded || isFullySignedLifecycle}
                     uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
                     signedUrl={signedPreviewUrl}
-                    busy={actionBusy || loading}
+                    busy={actionBusy || loading || physicalUploadBusy}
+                    file={physicalUploadFile}
+                    signedAt={physicalSignedAt}
+                    note={physicalUploadNote}
+                    attestation={physicalUploadAttestation}
+                    onFileChange={setPhysicalUploadFile}
+                    onSignedAtChange={setPhysicalSignedAt}
+                    onNoteChange={setPhysicalUploadNote}
+                    onAttestationChange={(key, value) => setPhysicalUploadAttestation((current) => ({ ...current, [key]: value }))}
+                    onUpload={handlePhysicalSignedUpload}
                     onDownload={handlePhysicalDownload}
+                  />
+                ) : null}
+
+                {isOtpPacket && hasGeneratedMandateVersion && !isFullySignedLifecycle && !hasFinalArtifact ? (
+                  <PhysicalSignedUploadPanel
+                    packetType={packetType}
+                    uploaded={manualSignedUploaded || isFullySignedLifecycle}
+                    uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
+                    signedUrl={signedPreviewUrl}
+                    busy={actionBusy || loading || physicalUploadBusy}
+                    file={physicalUploadFile}
+                    signedAt={physicalSignedAt}
+                    note={physicalUploadNote}
+                    attestation={physicalUploadAttestation}
+                    onFileChange={setPhysicalUploadFile}
+                    onSignedAtChange={setPhysicalSignedAt}
+                    onNoteChange={setPhysicalUploadNote}
+                    onAttestationChange={(key, value) => setPhysicalUploadAttestation((current) => ({ ...current, [key]: value }))}
+                    onUpload={handlePhysicalSignedUpload}
+                    onDownload={handleWorkspacePdfDownload}
                   />
                 ) : null}
 

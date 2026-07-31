@@ -40,7 +40,7 @@ import {
   updateDocumentPacket,
 } from '../lib/documentPacketsApi'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
-import { fetchTransactionById } from '../lib/api'
+import { fetchTransactionById, finalizeCanonicalPhysicalSignedOtpWorkflow } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings, listOrganisationPreferredPartners } from '../lib/settingsApi'
@@ -178,6 +178,182 @@ function compactObjectValues(source = {}) {
     if (text) output[key] = value
   }
   return output
+}
+
+const OTP_SOURCE_GROUP_FIELDS = {
+  buyer: [
+    'buyerEntityType',
+    'buyerFullName',
+    'buyerIdNumber',
+    'buyerEmail',
+    'buyerPhone',
+    'buyerDomiciliumAddress',
+    'buyerRepresentativeName',
+    'buyerRepresentativeCapacity',
+    'buyerMaritalRegime',
+    'buyerSpouseFullName',
+    'buyerSpouseIdNumber',
+    'buyerSpouseEmail',
+    'buyerTrusteeNames',
+    'buyerResolutionDate',
+    'buyerAuthorityBasis',
+    'coBuyerFullName',
+    'coBuyerEmail',
+    'coBuyerPhone',
+    'coBuyerIdNumber',
+  ],
+  seller: [
+    'sellerEntityType',
+    'sellerFullName',
+    'sellerIdNumber',
+    'sellerEmail',
+    'sellerPhone',
+    'sellerRegisteredAddress',
+    'sellerRepresentativeName',
+    'sellerRepresentativeCapacity',
+    'sellerRepresentativeEmail',
+    'sellerRepresentativePhone',
+    'sellerRepresentativeIdNumber',
+    'sellerMaritalRegime',
+    'sellerSpouseFullName',
+    'sellerSpouseIdNumber',
+    'sellerSpouseEmail',
+    'sellerTrusteeNames',
+    'sellerResolutionDate',
+    'sellerAuthorityBasis',
+  ],
+  property: [
+    'propertyAddress',
+    'propertySuburb',
+    'propertyCity',
+    'propertyType',
+    'propertyTitleType',
+    'unitNumber',
+    'complexName',
+    'erfNumber',
+  ],
+  finance: [
+    'purchasePrice',
+    'depositAmount',
+    'financeType',
+    'bondAmount',
+    'cashAmount',
+    'occupationDate',
+    'transferDate',
+    'suspensiveConditions',
+    'specialConditions',
+  ],
+  legal_route: [
+    'buyerEntityType',
+    'buyerMaritalRegime',
+    'sellerEntityType',
+    'sellerMaritalRegime',
+    'propertyTitleType',
+    'financeType',
+  ],
+}
+
+function sourceLabel(label, status = 'source') {
+  return { label, status }
+}
+
+function hasAnyText(source, keys = null) {
+  if (!source) return false
+  if (Array.isArray(source)) return source.some((item) => hasAnyText(item, keys))
+  if (typeof source !== 'object') return Boolean(normalizeText(source))
+
+  const entries = keys && keys.length
+    ? keys.map((key) => source[key])
+    : Object.values(source)
+  return entries.some((value) => {
+    if (Array.isArray(value)) return hasAnyText(value)
+    if (value && typeof value === 'object') return hasAnyText(value)
+    return Boolean(normalizeText(value))
+  })
+}
+
+function hasAnyOverride(overrides = {}, keys = []) {
+  const source = overrides && typeof overrides === 'object' ? overrides : {}
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(source, key))
+}
+
+function resolveOtpDraftSourceRecords({ transactionDetail = null, initialStatus = null, leadContext = {} } = {}) {
+  const transaction = transactionDetail?.transaction && typeof transactionDetail.transaction === 'object' ? transactionDetail.transaction : {}
+  const buyer = transactionDetail?.buyer && typeof transactionDetail.buyer === 'object' ? transactionDetail.buyer : {}
+  const unit = transactionDetail?.unit && typeof transactionDetail.unit === 'object' ? transactionDetail.unit : {}
+  const onboarding =
+    transactionDetail?.onboardingFormData?.formData ||
+    transactionDetail?.onboardingFormData ||
+    {}
+  const sellerDetails = resolveDevelopmentSellerDetailsFromTransactionDetail(transactionDetail)
+  const privateListing =
+    leadContext?.privateListing && typeof leadContext.privateListing === 'object'
+      ? leadContext.privateListing
+      : leadContext?.listing && typeof leadContext.listing === 'object'
+        ? leadContext.listing
+        : {}
+  const packetSourceContext =
+    initialStatus?.packet?.source_context_json && typeof initialStatus.packet.source_context_json === 'object'
+      ? initialStatus.packet.source_context_json
+      : {}
+  const nestedSourceContext = packetSourceContext?.sourceContext && typeof packetSourceContext.sourceContext === 'object'
+    ? packetSourceContext.sourceContext
+    : packetSourceContext?.source_context && typeof packetSourceContext.source_context === 'object'
+      ? packetSourceContext.source_context
+      : {}
+  const generatedSnapshot =
+    initialStatus?.versions?.[0]?.validation_summary_json?.generatedDataSnapshot &&
+    typeof initialStatus?.versions?.[0]?.validation_summary_json?.generatedDataSnapshot === 'object'
+      ? initialStatus.versions[0].validation_summary_json.generatedDataSnapshot
+      : packetSourceContext?.generatedDataSnapshot && typeof packetSourceContext.generatedDataSnapshot === 'object'
+        ? packetSourceContext.generatedDataSnapshot
+        : {}
+  const packetDraft =
+    packetSourceContext?.otpDraft && typeof packetSourceContext.otpDraft === 'object'
+      ? packetSourceContext.otpDraft
+      : nestedSourceContext?.otpDraft && typeof nestedSourceContext.otpDraft === 'object'
+        ? nestedSourceContext.otpDraft
+        : generatedSnapshot?.otpDraft && typeof generatedSnapshot.otpDraft === 'object'
+          ? generatedSnapshot.otpDraft
+          : {}
+  const sourceProperty =
+    nestedSourceContext?.property && typeof nestedSourceContext.property === 'object'
+      ? nestedSourceContext.property
+      : {}
+  const sourceSeller =
+    nestedSourceContext?.seller && typeof nestedSourceContext.seller === 'object'
+      ? nestedSourceContext.seller
+      : {}
+  const sourceBuyer =
+    nestedSourceContext?.buyer && typeof nestedSourceContext.buyer === 'object'
+      ? nestedSourceContext.buyer
+      : {}
+  const sourceOffer =
+    nestedSourceContext?.offer && typeof nestedSourceContext.offer === 'object'
+      ? nestedSourceContext.offer
+      : {}
+  const offerConditions =
+    sourceOffer?.conditions && typeof sourceOffer.conditions === 'object'
+      ? sourceOffer.conditions
+      : {}
+
+  return {
+    transaction,
+    buyer,
+    unit,
+    onboarding,
+    sellerDetails,
+    privateListing,
+    packetSourceContext,
+    nestedSourceContext,
+    generatedSnapshot,
+    packetDraft,
+    sourceProperty,
+    sourceSeller,
+    sourceBuyer,
+    sourceOffer,
+    offerConditions,
+  }
 }
 
 function parseListingMoney(...values) {
@@ -2055,7 +2231,243 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     transferDate: toIsoDate(firstText(packetDraft.transferDate, sourceOffer.transferDate, sourceOffer.transfer_date, transaction.expected_transfer_date, transaction.target_registration_date, onboarding.transferDate, onboarding.transfer_date)),
     suspensiveConditions: firstText(packetDraft.suspensiveConditions, offerConditions.suspensiveConditions, offerConditions.suspensive_conditions, onboarding.suspensiveConditions, onboarding.suspensive_conditions),
     specialConditions: firstText(packetDraft.specialConditions, nestedSourceContext.specialConditions, onboarding.specialConditions, onboarding.special_conditions),
+	  }
+	}
+
+function buildOtpDraftSourceSummary({
+  transactionDetail = null,
+  initialStatus = null,
+  leadContext = {},
+  otpDraftOverrides = {},
+  documentStartLegalScenario = {},
+  documentStartSourceMode = '',
+  documentStartEntryPoint = '',
+  routeOfferId = '',
+} = {}) {
+  const {
+    transaction,
+    buyer,
+    unit,
+    onboarding,
+    sellerDetails,
+    privateListing,
+    packetSourceContext,
+    nestedSourceContext,
+    packetDraft,
+    sourceProperty,
+    sourceSeller,
+    sourceBuyer,
+    sourceOffer,
+    offerConditions,
+  } = resolveOtpDraftSourceRecords({ transactionDetail, initialStatus, leadContext })
+  const sourceMode = normalizeKey(documentStartSourceMode)
+  const contextType = normalizeKey(
+    nestedSourceContext.contextType ||
+    nestedSourceContext.context_type ||
+    packetSourceContext.contextType ||
+    packetSourceContext.context_type ||
+    documentStartEntryPoint,
+  )
+  const acceptedOfferContext = Boolean(routeOfferId || contextType === 'accepted_offer' || contextType === 'accepted_offer_otp')
+  const purchaserRows = Array.isArray(onboarding.purchasers) ? onboarding.purchasers : []
+  const lead = leadContext?.lead && typeof leadContext.lead === 'object' ? leadContext.lead : {}
+  const unitDevelopment = unit?.development && typeof unit.development === 'object' ? unit.development : {}
+  const manualSourceLabel = sourceMode === 'manual_details' ? 'From manual details' : 'Manual override applied'
+
+  const buyerFromAcceptedOffer = acceptedOfferContext && hasAnyText([
+    sourceBuyer,
+    sourceOffer.buyer,
+    sourceOffer.purchaser,
+    sourceOffer.purchasers,
+    offerConditions.buyer,
+    offerConditions.purchaser,
+  ])
+  const sellerFromAcceptedOffer = acceptedOfferContext && hasAnyText([
+    sourceSeller,
+    sourceOffer.seller,
+    offerConditions.seller,
+  ])
+  const propertyFromAcceptedOffer = acceptedOfferContext && hasAnyText([
+    sourceProperty,
+    sourceOffer.property,
+    offerConditions.property,
+  ])
+  const sellerFromTransaction = hasAnyText([
+    sellerDetails,
+    {
+      seller_type: transaction.seller_type,
+      seller_registration_number: transaction.seller_registration_number,
+      matter_owner: transaction.matter_owner,
+    },
+    {
+      developer_company: unitDevelopment.developer_company,
+      development_name: unitDevelopment.name,
+    },
+  ])
+  const propertyFromTransaction = hasAnyText({
+    property_address_line_1: transaction.property_address_line_1,
+    property_address: transaction.property_address,
+    suburb: transaction.suburb,
+    city: transaction.city,
+    property_type: transaction.property_type,
+    property_title_type: transaction.property_title_type,
+    unit_number: unit.unit_number,
+    unit_property_type: unit.property_type,
+    development_address: unitDevelopment.address,
+    development_suburb: unitDevelopment.suburb,
+    development_city: unitDevelopment.city,
+  })
+  const financeFromAcceptedOffer = acceptedOfferContext && hasAnyText([
+    sourceOffer,
+    offerConditions,
+  ])
+  const financeFromTransaction = hasAnyText({
+    purchase_price: transaction.purchase_price,
+    sales_price: transaction.sales_price,
+    deposit_amount: transaction.deposit_amount,
+    finance_type: transaction.finance_type,
+    bond_amount: transaction.bond_amount,
+    cash_amount: transaction.cash_amount,
+    expected_transfer_date: transaction.expected_transfer_date,
+    target_registration_date: transaction.target_registration_date,
+    unit_price: unit.price,
+  })
+  const legalRouteScenarioSelected = hasAnyText(documentStartLegalScenario, OTP_SOURCE_GROUP_FIELDS.legal_route)
+
+  const summary = {
+    buyer: sourceLabel('Missing', 'missing'),
+    seller: sourceLabel('Missing', 'missing'),
+    property: sourceLabel('Missing', 'missing'),
+    finance: sourceLabel('Missing', 'missing'),
+    legal_route: sourceLabel('Missing', 'missing'),
+    template: sourceLabel('Checked on generate', 'pending'),
   }
+
+  if (hasAnyOverride(otpDraftOverrides, OTP_SOURCE_GROUP_FIELDS.buyer)) {
+    summary.buyer = sourceLabel(manualSourceLabel, 'manual')
+  } else if (buyerFromAcceptedOffer) {
+    summary.buyer = sourceLabel('From accepted offer')
+  } else if (hasAnyText(packetDraft, OTP_SOURCE_GROUP_FIELDS.buyer) || hasAnyText(sourceBuyer)) {
+    summary.buyer = sourceLabel('From saved details')
+  } else if (hasAnyText([onboarding, purchaserRows], [
+    'firstName',
+    'buyerFirstName',
+    'lastName',
+    'surname',
+    'buyerLastName',
+    'name',
+    'fullName',
+    'full_name',
+    'idNumber',
+    'id_number',
+    'identityNumber',
+    'email',
+    'buyerEmail',
+    'phone',
+    'buyerPhone',
+    'purchaserType',
+    'purchaser_type',
+  ])) {
+    summary.buyer = sourceLabel('From buyer onboarding')
+  } else if (hasAnyText(buyer)) {
+    summary.buyer = sourceLabel('From transaction')
+  }
+
+  if (hasAnyOverride(otpDraftOverrides, OTP_SOURCE_GROUP_FIELDS.seller)) {
+    summary.seller = sourceLabel(manualSourceLabel, 'manual')
+  } else if (sellerFromAcceptedOffer) {
+    summary.seller = sourceLabel('From accepted offer')
+  } else if (hasAnyText(packetDraft, OTP_SOURCE_GROUP_FIELDS.seller) || hasAnyText(sourceSeller)) {
+    summary.seller = sourceLabel('From saved details')
+  } else if (sellerFromTransaction) {
+    summary.seller = sourceLabel('From transaction')
+  } else if (hasAnyText([privateListing, lead], [
+    'sellerName',
+    'sellerFullName',
+    'sellerEmail',
+    'sellerPhone',
+    'ownerName',
+    'ownerEmail',
+  ])) {
+    summary.seller = sourceLabel('From saved details')
+  }
+
+  if (hasAnyOverride(otpDraftOverrides, OTP_SOURCE_GROUP_FIELDS.property)) {
+    summary.property = sourceLabel(manualSourceLabel, 'manual')
+  } else if (propertyFromAcceptedOffer) {
+    summary.property = sourceLabel('From accepted offer')
+  } else if (hasAnyText(packetDraft, OTP_SOURCE_GROUP_FIELDS.property) || hasAnyText(sourceProperty)) {
+    summary.property = sourceLabel('From saved details')
+  } else if (propertyFromTransaction) {
+    summary.property = sourceLabel('From transaction')
+  } else if (hasAnyText(onboarding, [
+    'propertyAddress',
+    'property_address',
+    'suburb',
+    'propertySuburb',
+    'city',
+    'propertyCity',
+    'propertyType',
+    'propertyTitleType',
+    'unitNumber',
+    'unit_number',
+    'complexName',
+    'erfNumber',
+  ])) {
+    summary.property = sourceLabel('From buyer onboarding')
+  } else if (hasAnyText([privateListing, lead], [
+    'propertyAddress',
+    'addressLine1',
+    'address_line_1',
+    'sellerPropertyAddress',
+    'propertyInterest',
+    'suburb',
+    'city',
+    'propertyType',
+  ])) {
+    summary.property = sourceLabel('From saved details')
+  }
+
+  if (hasAnyOverride(otpDraftOverrides, OTP_SOURCE_GROUP_FIELDS.finance)) {
+    summary.finance = sourceLabel(manualSourceLabel, 'manual')
+  } else if (financeFromAcceptedOffer) {
+    summary.finance = sourceLabel('From accepted offer')
+  } else if (hasAnyText(packetDraft, OTP_SOURCE_GROUP_FIELDS.finance) || hasAnyText(sourceOffer)) {
+    summary.finance = sourceLabel('From saved details')
+  } else if (financeFromTransaction) {
+    summary.finance = sourceLabel('From transaction')
+  } else if (hasAnyText(onboarding, [
+    'depositAmount',
+    'deposit_amount',
+    'financeType',
+    'finance_type',
+    'bondAmount',
+    'bond_amount',
+    'cashAmount',
+    'cash_amount',
+    'occupationDate',
+    'occupation_date',
+    'transferDate',
+    'transfer_date',
+    'suspensiveConditions',
+    'suspensive_conditions',
+    'specialConditions',
+    'special_conditions',
+  ])) {
+    summary.finance = sourceLabel('From buyer onboarding')
+  }
+
+  if (hasAnyOverride(otpDraftOverrides, OTP_SOURCE_GROUP_FIELDS.legal_route)) {
+    summary.legal_route = sourceLabel(manualSourceLabel, 'manual')
+  } else if (acceptedOfferContext && Object.values(summary).some((item) => item.label === 'From accepted offer')) {
+    summary.legal_route = sourceLabel('From accepted offer')
+  } else if (legalRouteScenarioSelected) {
+    summary.legal_route = sourceLabel(sourceMode === 'manual_details' ? 'From manual details' : 'From start choices')
+  } else if (Object.values(summary).some((item) => ['From accepted offer', 'From transaction', 'From buyer onboarding', 'From saved details'].includes(item.label))) {
+    summary.legal_route = sourceLabel('Mixed sources')
+  }
+
+  return summary
 }
 
 function buildOtpDraftGenerationOverrides({
@@ -2545,9 +2957,9 @@ export default function LegalDocumentWorkspacePage() {
     }),
     [initialStatus, leadContext, transactionDetail],
   )
-  const effectiveOtpDraft = useMemo(
-    () => ({
-      ...otpDraftDefaults,
+	  const effectiveOtpDraft = useMemo(
+	    () => ({
+	      ...otpDraftDefaults,
       ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
       ...(documentStartLegalScenario.sellerMaritalRegime ? {
         sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
@@ -2564,12 +2976,35 @@ export default function LegalDocumentWorkspacePage() {
       } : {}),
       ...(documentStartLegalScenario.financeType ? { financeType: documentStartLegalScenario.financeType } : {}),
       ...otpDraftOverrides,
-    }),
-    [documentStartLegalScenario, otpDraftDefaults, otpDraftOverrides],
-  )
-  const showOtpDraftPanel =
-    routeContextSettled &&
-    packetType === 'otp' &&
+	    }),
+	    [documentStartLegalScenario, otpDraftDefaults, otpDraftOverrides],
+	  )
+	  const otpDraftSourceSummary = useMemo(
+	    () => buildOtpDraftSourceSummary({
+	      transactionDetail,
+	      initialStatus,
+	      leadContext,
+	      otpDraftOverrides,
+	      documentStartLegalScenario,
+	      documentStartSourceMode,
+	      documentStartEntryPoint,
+	      routeOfferId,
+	    }),
+	    [
+	      documentStartEntryPoint,
+	      documentStartLegalScenario,
+	      documentStartSourceMode,
+	      initialStatus,
+	      leadContext,
+	      otpDraftOverrides,
+	      routeOfferId,
+	      transactionDetail,
+	    ],
+	  )
+	  const otpDraftManualChangeCount = Object.keys(otpDraftOverrides || {}).length
+	  const showOtpDraftPanel =
+	    routeContextSettled &&
+	    packetType === 'otp' &&
     mode === 'generate' &&
     !validatedRoutePacketId &&
     !initialStatus?.packet?.id
@@ -4224,6 +4659,52 @@ export default function LegalDocumentWorkspacePage() {
   }, [actor, leadContext, organisationId, packetType, profile, recordLeadMandateActivity, resolveCurrentStatus, syncLeadMandateState, transactionReference])
 
   const handleSignedFinalized = useCallback(async (payload = {}) => {
+    if (packetType === 'otp') {
+      const artifact = resolveSignedMandateArtifact(payload, initialStatus)
+      const packetId = normalizeText(artifact.packetId || validatedRoutePacketId || initialStatus?.packet?.id)
+      const packetVersionId = normalizeText(artifact.packetVersionId || payload?.packetVersionId)
+      const finalizedAt = normalizeText(artifact.finalizedAt) || new Date().toISOString()
+      const finalFilePath = normalizeText(artifact.finalFilePath)
+      const finalFileUrl = normalizeText(artifact.finalFileUrl)
+
+      const workflow = await finalizeCanonicalPhysicalSignedOtpWorkflow({
+        transactionId,
+        financeType: normalizeText(effectiveOtpDraft.financeType || transaction?.finance_type || transaction?.financeType),
+        actorRole: role,
+      })
+
+      if (isSupabaseConfigured && isUuidLike(packetId)) {
+        await appendDocumentPacketEvent({
+          packetId,
+          organisationId: normalizeText(payload?.packet?.organisation_id || initialStatus?.packet?.organisation_id || organisationId) || null,
+          versionId: packetVersionId,
+          eventType: 'canonical_physical_signed_otp_workflow_completed',
+          eventPayload: {
+            triggerSource: 'legal_document_workspace',
+            signingMethod: artifact.signingMethod || 'physical',
+            signingStatus: artifact.signingStatus || 'uploaded_signed',
+            finalizedAt,
+            finalArtifactPath: finalFilePath || null,
+            finalArtifactUrlPresent: Boolean(finalFileUrl),
+            workflow: workflow?.workflow || null,
+            financeManagedBy: workflow?.financeManagedBy || null,
+          },
+        }).catch((eventError) => {
+          console.warn('[LegalDocumentWorkspacePage] signed OTP workflow event skipped.', eventError)
+          return null
+        })
+      }
+
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:pipeline-updated'))
+      return {
+        packetId,
+        packetVersionId,
+        finalFilePath,
+        finalFileUrl,
+        workflow,
+      }
+    }
     if (packetType !== 'mandate') return null
 
     let currentStatus = null
@@ -4514,9 +4995,13 @@ export default function LegalDocumentWorkspacePage() {
     resolveCurrentStatus,
     routeListingId,
     syncLeadMandateState,
+    transaction,
+    transactionId,
     validatedRoutePacketId,
     organisationId,
     effectiveMandateDraft,
+    effectiveOtpDraft,
+    role,
   ])
 
   const openLatestDocument = useCallback(async () => {
@@ -4587,38 +5072,44 @@ export default function LegalDocumentWorkspacePage() {
 
       {showOtpDraftPanel ? (
         <OtpDraftIntakePanel
-          draft={effectiveOtpDraft}
-          sourceMode={documentStartSourceMode}
-          documentStart={documentStartEntryPoint}
-          onFieldChange={updateOtpDraftField}
-          onReset={resetOtpDraftFields}
-        />
+	          draft={effectiveOtpDraft}
+	          sourceMode={documentStartSourceMode}
+	          documentStart={documentStartEntryPoint}
+	          sourceSummary={otpDraftSourceSummary}
+	          signingReadiness={otpSigningReadiness}
+	          manualChangeCount={otpDraftManualChangeCount}
+	          generationWorkspaceId="otp-generation-workspace"
+	          onFieldChange={updateOtpDraftField}
+	          onReset={resetOtpDraftFields}
+	        />
       ) : null}
 
-      <LegalDocumentWorkspace
-        displayMode="page"
-        open
-        onBack={handleBack}
-        onClose={handleBack}
-        backLabel={routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
-        transactionId={transactionId}
-        transactionReference={transactionReference}
-        packetType={packetType}
-        packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
-        mode={mode}
-        initialStatus={initialStatus}
-        organisationId={organisationId}
-        branding={workspaceBranding}
-        onGenerate={handleGenerate}
-        onEdit={handleGenerate}
-        onSend={handleSend}
-        signingDeliveryEnabled={signingDeliveryEnabled}
-        signingDeliveryDisabledReason={signingDeliveryDisabledReason}
-        onSignedFinalized={handleSignedFinalized}
-        onView={() => openLatestDocument()}
-        onRefreshContext={undefined}
-        autoGenerateEnabled={contextHydrated && packetType === 'mandate'}
-      />
+      <div id={packetType === 'otp' ? 'otp-generation-workspace' : undefined} className="scroll-mt-28">
+        <LegalDocumentWorkspace
+          displayMode="page"
+          open
+          onBack={handleBack}
+          onClose={handleBack}
+          backLabel={routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
+          transactionId={transactionId}
+          transactionReference={transactionReference}
+          packetType={packetType}
+          packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
+          mode={mode}
+          initialStatus={initialStatus}
+          organisationId={organisationId}
+          branding={workspaceBranding}
+          onGenerate={handleGenerate}
+          onEdit={handleGenerate}
+          onSend={handleSend}
+          signingDeliveryEnabled={signingDeliveryEnabled}
+          signingDeliveryDisabledReason={signingDeliveryDisabledReason}
+          onSignedFinalized={handleSignedFinalized}
+          onView={() => openLatestDocument()}
+          onRefreshContext={undefined}
+          autoGenerateEnabled={contextHydrated && packetType === 'mandate'}
+        />
+      </div>
     </>
   )
 }

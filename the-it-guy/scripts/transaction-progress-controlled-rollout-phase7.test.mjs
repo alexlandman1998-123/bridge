@@ -37,6 +37,7 @@ assert.doesNotMatch(cron, /rest\/v1\/rpc\/bridge_reconcile_transaction_progress_
 assert.match(cron, /rolloutMode/)
 assert.match(cron, /rolloutDecision/)
 assert.match(cron, /alertRequired/)
+assert.match(cron, /upstreamTimeoutMs/)
 
 assert.match(service, /getTransactionProgressRolloutState/)
 assert.match(service, /setTransactionProgressRollout/)

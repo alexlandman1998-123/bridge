@@ -21,6 +21,7 @@ const packageJson = JSON.parse(readSource('../package.json'))
 const legacyOtpRenderer = readSource('../../supabase/functions/generate-otp/index.ts')
 const canonicalRenderer = readSource('../../supabase/functions/generate-mandate/index.ts')
 const packetService = readSource('../src/core/documents/packetService.js')
+const api = readSource('../src/lib/api.js')
 const phase2Migration = readSource('../../supabase/migrations/202607220004_canonical_otp_signing_phase2.sql')
 const atomicRecoveryMigration = readSource('../../supabase/migrations/202607220005_canonical_otp_seal_atomic_recovery.sql')
 const sender = readSource('../../supabase/functions/send-mandate-signing-email/index.ts')
@@ -44,6 +45,8 @@ assert.equal(
 assert.match(legacyOtpRenderer, /return jsonResponse\(410,\s*\{[\s\S]*OTP_LEGACY_RENDERER_RETIRED/)
 assert.match(legacyOtpRenderer, /CREATE_OR_REISSUE_CANONICAL_OTP_PDF/)
 assert.doesNotMatch(legacyOtpRenderer, /\b(createClient|renderDocx|docxtemplater|PizZip)\b/i)
+assert.match(api, /OTP_LEGACY_RENDERER_RETIRED/)
+assert.doesNotMatch(api, /invokeEdgeFunction\('generate-otp'/)
 
 // Packet generation must not silently fall back to the retired endpoint.  For
 // OTP, the browser accepts only a server-returned, sealed version and never
@@ -314,7 +317,10 @@ assertContainsAll(workspacePage, [
   'phase2-otp-signing-delivery-v1',
 ], 'OTP workspace readiness')
 assert.match(workspacePage, /const signingDeliveryEnabled = packetType !== 'otp' \|\| otpSigningReadiness\.ready/)
-assert.match(workspacePage, /invokeEdgeFunction\('send-mandate-signing-email',\s*\{[\s\S]{0,800}type: 'otp_signing'/)
+assert.match(workspacePage, /const emailPayload = \{[\s\S]{0,500}type: 'otp_signing'[\s\S]{0,500}packetType: 'otp'/)
+assert.match(workspacePage, /invokeEdgeFunction\(useServerSendReady \? 'legal-document-job-runner' : 'send-mandate-signing-email'/)
+assert.match(workspacePage, /action: 'send_ready_packet'[\s\S]{0,160}\.\.\.emailPayload/)
+assert.match(workspacePage, /body: useServerSendReady[\s\S]{0,260}: emailPayload/)
 assert.doesNotMatch(workspacePage, /['"`]generate-otp['"`]/)
 
 // An initial OTP invite is staged one signer at a time.  Targeted dispatch

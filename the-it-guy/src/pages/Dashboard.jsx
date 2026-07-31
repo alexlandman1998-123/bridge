@@ -57,7 +57,11 @@ import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransaction
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { useOrganisation } from '../context/OrganisationContext'
-import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
+import {
+  fetchDashboardOverview,
+  fetchTransactionsByParticipantSummary,
+  fetchTransactionsListSummary,
+} from '../lib/api/dashboardApi'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'

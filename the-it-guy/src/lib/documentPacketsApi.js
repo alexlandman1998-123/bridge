@@ -14,6 +14,7 @@ import { assertSigningDispatchReady } from '../core/documents/signingDispatchAss
 import { buildLegalDocumentSupportTriageSnapshot, LEGAL_DOCUMENT_SUPPORT_RESOLUTION_CODES } from '../core/documents/legalDocumentSupportTriage'
 import {
   assertDocumentLifecycleTransition,
+  normalizeDocumentLifecycleState,
   resolveDocumentLifecycleStateFromPacket,
   toDocumentPacketStorageStatus,
 } from '../core/documents/documentLifecycle'
@@ -169,6 +170,8 @@ function humanizePacketEventMessage(eventType = '', payload = {}) {
     all_signers_completed: 'All required signers completed the mandate.',
     signer_declined: sellerName ? `${sellerName} declined the mandate.` : 'Seller declined the mandate.',
     mandate_cancelled: 'Mandate was cancelled.',
+    generated_document_change_requested: reason ? `Generated document change requested: ${reason}.` : 'Generated document change requested.',
+    post_signing_amendment_requested: reason ? `Post-signing amendment requested: ${reason}.` : 'Post-signing amendment requested.',
   }
   return messages[type] || normalizeText(payload?.message) || normalizeText(eventType).replace(/_/g, ' ')
 }
@@ -2786,6 +2789,290 @@ export async function uploadFinalSignedPacketArtifact({
     path: objectPath,
     fileName: file.name || safeName,
     signedUrl: normalizeText(signedResult?.data?.signedUrl) || null,
+  }
+}
+
+export async function completePhysicalSignedPacketUpload({
+  packetId,
+  packetVersionId,
+  file,
+  fileName = '',
+  signedAt = '',
+  attestation = {},
+  note = '',
+  signingMethod = 'physical',
+} = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  const resolvedVersionId = normalizeText(packetVersionId)
+  if (!resolvedPacketId) throw new Error('packetId is required.')
+  if (!resolvedVersionId) throw new Error('packetVersionId is required.')
+  if (!file) throw new Error('Select the fully signed PDF to upload.')
+
+  const packet = await fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: false })
+  if (!packet?.id) throw new Error('Document packet not found.')
+  const currentStatus = normalizeText(packet.status).toLowerCase()
+  if (['completed', 'archived', 'voided'].includes(currentStatus)) {
+    throw new Error('This document is already completed or locked.')
+  }
+
+  const version = (await listDocumentPacketVersions(resolvedPacketId)).find((item) => normalizeText(item?.id) === resolvedVersionId)
+  if (!version?.id) throw new Error('The selected generated version could not be found.')
+  if (normalizeText(version.render_status).toLowerCase() !== 'generated') {
+    throw new Error('Upload is allowed only against a generated PDF version.')
+  }
+
+  const uploaded = await uploadFinalSignedPacketArtifact({
+    packetId: resolvedPacketId,
+    packetVersionId: resolvedVersionId,
+    file,
+    fileName,
+  })
+  const completedAt = normalizeText(signedAt) || new Date().toISOString()
+  const finalVersion = await updateDocumentPacketVersionFinalArtifact({
+    packetId: resolvedPacketId,
+    packetVersionId: resolvedVersionId,
+    finalSignedFilePath: uploaded.path,
+    finalSignedFileName: uploaded.fileName,
+    finalSignedFileUrl: uploaded.signedUrl,
+    finalSignedFileBucket: uploaded.bucket,
+    finalisedAt: completedAt,
+  })
+
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const signingUpload = {
+    method: normalizeText(signingMethod) || 'physical',
+    uploadedAt: new Date().toISOString(),
+    signedAt: completedAt,
+    packetVersionId: resolvedVersionId,
+    finalSignedFilePath: uploaded.path,
+    finalSignedFileName: uploaded.fileName,
+    finalSignedFileBucket: uploaded.bucket,
+    attestation: attestation && typeof attestation === 'object' ? attestation : {},
+    note: normalizeText(note),
+  }
+  const nextSourceContext = {
+    ...sourceContext,
+    signing_method: signingUpload.method,
+    signingMethod: signingUpload.method,
+    signing_status: 'uploaded_signed',
+    signingStatus: 'uploaded_signed',
+    manualSignedDocumentId: null,
+    manual_signed_document_id: null,
+    manualSignedFilePath: uploaded.path,
+    manual_signed_file_path: uploaded.path,
+    manualSignedFileName: uploaded.fileName,
+    manual_signed_file_name: uploaded.fileName,
+    manualSignedFileBucket: uploaded.bucket,
+    manual_signed_file_bucket: uploaded.bucket,
+    manualSignedUploadedAt: signingUpload.uploadedAt,
+    manual_signed_uploaded_at: signingUpload.uploadedAt,
+    finalSignedVersionId: resolvedVersionId,
+    finalSignedUploadedAt: signingUpload.uploadedAt,
+    finalArtifactPath: uploaded.path,
+    finalArtifactBucket: uploaded.bucket,
+    physicalSigningUpload: signingUpload,
+    lifecycle_state: 'completed',
+    lifecycle_previous_state: normalizeDocumentLifecycleState(sourceContext.lifecycle_state || packet.status),
+    lifecycle_updated_at: signingUpload.uploadedAt,
+  }
+
+  let workingPacket = packet
+  if (currentStatus === 'signing_prep') {
+    workingPacket = await updateDocumentPacket(resolvedPacketId, {
+      status: 'sent',
+      allowSigningMetadataUpdate: true,
+      sourceContextJson: {
+        ...nextSourceContext,
+        lifecycle_state: 'sent',
+        lifecycle_updated_at: signingUpload.uploadedAt,
+      },
+      sentAt: signingUpload.uploadedAt,
+    })
+  }
+
+  const completedPacket = await updateDocumentPacket(resolvedPacketId, {
+    status: 'completed',
+    allowSigningMetadataUpdate: true,
+    sourceContextJson: nextSourceContext,
+    completedAt,
+    expectedUpdatedAt: normalizeText(workingPacket?.updated_at) || null,
+  })
+
+  const eventType = normalizeText(packet.packet_type).toLowerCase() === 'otp'
+    ? 'signed_physical_otp_uploaded'
+    : 'signed_physical_mandate_uploaded'
+  await appendDocumentPacketEvent({
+    packetId: resolvedPacketId,
+    organisationId: completedPacket.organisation_id || packet.organisation_id || null,
+    versionId: resolvedVersionId,
+    eventType,
+    eventPayload: {
+      packetType: normalizeText(packet.packet_type).toLowerCase() || null,
+      signingMethod: signingUpload.method,
+      signingStatus: 'uploaded_signed',
+      signedAt: completedAt,
+      uploadedAt: signingUpload.uploadedAt,
+      finalSignedFilePath: uploaded.path,
+      finalSignedFileBucket: uploaded.bucket,
+      finalSignedFileName: uploaded.fileName,
+      attestation: signingUpload.attestation,
+      note: signingUpload.note || null,
+      canonicalPhysicalUpload: true,
+    },
+  })
+
+  return {
+    packet: completedPacket,
+    version: finalVersion,
+    finalArtifact: {
+      bucket: uploaded.bucket,
+      path: uploaded.path,
+      fileName: uploaded.fileName,
+      signedUrl: uploaded.signedUrl,
+    },
+    signedAt: completedAt,
+    uploadedAt: signingUpload.uploadedAt,
+    signingMethod: signingUpload.method,
+    signingStatus: 'uploaded_signed',
+  }
+}
+
+export async function replacePhysicalSignedPacketArtifact({
+  packetId,
+  packetVersionId,
+  file,
+  fileName = '',
+  reason = '',
+  note = '',
+} = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  const resolvedVersionId = normalizeText(packetVersionId)
+  const replacementReason = normalizeText(reason)
+  if (!resolvedPacketId) throw new Error('packetId is required.')
+  if (!resolvedVersionId) throw new Error('packetVersionId is required.')
+  if (!file) throw new Error('Select the replacement signed PDF to upload.')
+  if (!replacementReason) throw new Error('A replacement reason is required.')
+
+  const packet = await fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: false })
+  if (!packet?.id) throw new Error('Document packet not found.')
+  const currentStatus = normalizeText(packet.status).toLowerCase()
+  if (currentStatus !== 'completed') {
+    throw new Error('Signed copy replacement is allowed only after the packet is completed.')
+  }
+
+  const version = (await listDocumentPacketVersions(resolvedPacketId)).find((item) => normalizeText(item?.id) === resolvedVersionId)
+  if (!version?.id) throw new Error('The completed packet version could not be found.')
+  const previousArtifact = {
+    finalSignedFilePath: normalizeText(version.final_signed_file_path),
+    finalSignedFileName: normalizeText(version.final_signed_file_name),
+    finalSignedFileBucket: normalizeText(version.final_signed_file_bucket),
+    finalSignedDocumentId: normalizeText(version.final_signed_document_id),
+    finalisedAt: normalizeText(version.finalised_at),
+  }
+  if (!previousArtifact.finalSignedFilePath && !previousArtifact.finalSignedDocumentId) {
+    throw new Error('No existing signed artifact is available to replace.')
+  }
+
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const replacedAt = new Date().toISOString()
+  const uploaded = await uploadFinalSignedPacketArtifact({
+    packetId: resolvedPacketId,
+    packetVersionId: resolvedVersionId,
+    file,
+    fileName,
+  })
+  const finalVersion = await updateDocumentPacketVersionFinalArtifact({
+    packetId: resolvedPacketId,
+    packetVersionId: resolvedVersionId,
+    finalSignedFilePath: uploaded.path,
+    finalSignedFileName: uploaded.fileName,
+    finalSignedFileUrl: uploaded.signedUrl,
+    finalSignedFileBucket: uploaded.bucket,
+    finalisedAt: replacedAt,
+  })
+
+  const previousReplacements = Array.isArray(sourceContext.replacedPhysicalSignedArtifacts)
+    ? sourceContext.replacedPhysicalSignedArtifacts
+    : []
+  const supersededArtifact = {
+    ...previousArtifact,
+    supersededAt: replacedAt,
+    reason: replacementReason,
+    note: normalizeText(note),
+  }
+  const nextSourceContext = {
+    ...sourceContext,
+    manualSignedFilePath: uploaded.path,
+    manual_signed_file_path: uploaded.path,
+    manualSignedFileName: uploaded.fileName,
+    manual_signed_file_name: uploaded.fileName,
+    manualSignedFileBucket: uploaded.bucket,
+    manual_signed_file_bucket: uploaded.bucket,
+    finalArtifactPath: uploaded.path,
+    finalArtifactBucket: uploaded.bucket,
+    finalSignedUploadedAt: replacedAt,
+    physicalSigningReplacement: {
+      replacedAt,
+      reason: replacementReason,
+      note: normalizeText(note),
+      previous: supersededArtifact,
+      replacement: {
+        finalSignedFilePath: uploaded.path,
+        finalSignedFileName: uploaded.fileName,
+        finalSignedFileBucket: uploaded.bucket,
+      },
+    },
+    replacedPhysicalSignedArtifacts: [
+      supersededArtifact,
+      ...previousReplacements,
+    ].slice(0, 10),
+    lifecycle_state: 'completed',
+    lifecycle_updated_at: replacedAt,
+  }
+  const updatedPacket = await updateDocumentPacket(resolvedPacketId, {
+    status: 'completed',
+    allowSigningMetadataUpdate: true,
+    sourceContextJson: nextSourceContext,
+    expectedUpdatedAt: normalizeText(packet.updated_at) || null,
+  })
+
+  const eventType = normalizeText(packet.packet_type).toLowerCase() === 'otp'
+    ? 'signed_physical_otp_replaced'
+    : 'signed_physical_mandate_replaced'
+  await appendDocumentPacketEvent({
+    packetId: resolvedPacketId,
+    organisationId: updatedPacket.organisation_id || packet.organisation_id || null,
+    versionId: resolvedVersionId,
+    eventType,
+    eventPayload: {
+      packetType: normalizeText(packet.packet_type).toLowerCase() || null,
+      replacedAt,
+      reason: replacementReason,
+      note: normalizeText(note) || null,
+      previousFinalSignedFilePath: previousArtifact.finalSignedFilePath || null,
+      replacementFinalSignedFilePath: uploaded.path,
+      replacementFinalSignedFileBucket: uploaded.bucket,
+      replacementFinalSignedFileName: uploaded.fileName,
+      canonicalPhysicalReplacement: true,
+      downstreamWorkflowRetriggered: false,
+    },
+  })
+
+  return {
+    packet: updatedPacket,
+    version: finalVersion,
+    finalArtifact: {
+      bucket: uploaded.bucket,
+      path: uploaded.path,
+      fileName: uploaded.fileName,
+      signedUrl: uploaded.signedUrl,
+    },
+    replacedAt,
+    previousArtifact,
   }
 }
 

@@ -4203,6 +4203,8 @@ function buildAddendumRunFormFromPacket({
   packetType = 'otp',
   templateLabel = '',
   addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY,
+  documentChangeSummary = '',
+  amendmentReason = '',
 } = {}) {
   const sourceContext = getPacketSourceContext(packet)
   const previewContext = sourceContext.contractStudioPreviewContext && typeof sourceContext.contractStudioPreviewContext === 'object'
@@ -4254,9 +4256,15 @@ function buildAddendumRunFormFromPacket({
     privateListingId,
     parentDocumentId,
     parentDocumentReference,
-    documentChangeSummary: '',
+    documentChangeSummary: normalizeText(documentChangeSummary),
     addendumType: resolvedAddendumType,
-    addendumDetails,
+    addendumDetails: {
+      ...addendumDetails,
+      ...(normalizeText(documentChangeSummary) && !normalizeText(addendumDetails.special_conditions)
+        ? { special_conditions: normalizeText(documentChangeSummary) }
+        : {}),
+      ...(normalizeText(amendmentReason) ? { amendment_reason: normalizeText(amendmentReason) } : {}),
+    },
     title: `Addendum - ${parentDocumentReference}`,
   }
 }
@@ -5034,6 +5042,47 @@ function isUuidText(value = '') {
 function normalizeRunReference(value = '') {
   const text = normalizeText(value)
   return isUuidText(text) ? text : ''
+}
+
+function readPostSigningAmendmentHandoffFromLocation() {
+  if (typeof window === 'undefined' || !window.location?.search) return null
+  const params = new URLSearchParams(window.location.search)
+  const packetId = normalizeRunReference(
+    params.get('startAddendumFor') ||
+      params.get('amendmentPacketId') ||
+      params.get('parentDocumentId'),
+  )
+  if (!packetId) return null
+  const packetType = normalizeText(params.get('packetType')).toLowerCase()
+  const changeSummary = normalizeText(params.get('changeSummary') || params.get('documentChangeSummary'))
+  const amendmentReason = normalizeText(params.get('amendmentReason') || params.get('reason'))
+  const addendumType = normalizeText(params.get('addendumType') || GENERAL_ADDENDUM_TEMPLATE_FAMILY) || GENERAL_ADDENDUM_TEMPLATE_FAMILY
+  return {
+    packetId,
+    packetType,
+    changeSummary,
+    amendmentReason,
+    addendumType,
+    source: normalizeText(params.get('source')),
+    key: [
+      packetId,
+      packetType,
+      changeSummary,
+      amendmentReason,
+      addendumType,
+    ].join('|'),
+  }
+}
+
+function clearPostSigningAmendmentHandoffParams() {
+  if (typeof window === 'undefined' || !window.history?.replaceState) return
+  const params = new URLSearchParams(window.location.search)
+  for (const key of ['startAddendumFor', 'amendmentPacketId', 'parentDocumentId', 'packetType', 'changeSummary', 'documentChangeSummary', 'amendmentReason', 'reason', 'addendumType', 'source']) {
+    params.delete(key)
+  }
+  const nextSearch = params.toString()
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`
+  window.history.replaceState(null, '', nextUrl)
 }
 
 function buildDocumentRunPayload({
@@ -5906,6 +5955,8 @@ export default function SettingsSigningTemplatesPage({
   const [message, setMessage] = useState('')
   const documentGenerationFailureCountsRef = useRef(new Map())
   const recordedDocumentGenerationHandoffsRef = useRef(new Set())
+  const postSigningAmendmentHandoffRef = useRef(readPostSigningAmendmentHandoffFromLocation())
+  const consumedPostSigningAmendmentHandoffRef = useRef('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [packetType, setPacketType] = useState(defaultPacketType)
   const [activeDocumentTypeKey, setActiveDocumentTypeKey] = useState(defaultPacketType)
@@ -7144,7 +7195,7 @@ export default function SettingsSigningTemplatesPage({
     await loadDocumentLibrary({ targetPacketType })
   }, [loadDocumentLibrary, loadTemplatesAndRegistry, packetType, selectedTemplateId])
 
-  function handleStartAddendumFromLibraryPacket(packet = selectedLibraryPacket, addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY) {
+  function handleStartAddendumFromLibraryPacket(packet = selectedLibraryPacket, addendumType = GENERAL_ADDENDUM_TEMPLATE_FAMILY, options = {}) {
     const sourcePacket = packet || selectedLibraryPacket
     if (!sourcePacket?.id) {
       setError('Select a document before starting an addendum.')
@@ -7167,11 +7218,77 @@ export default function SettingsSigningTemplatesPage({
       packetType,
       templateLabel,
       addendumType: resolvedAddendumType,
+      documentChangeSummary: options.documentChangeSummary,
+      amendmentReason: options.amendmentReason,
     }))
     setActiveStudioArea('documents')
     setError('')
-    setMessage('Addendum details are prefilled from the selected document. Add the change summary, then create the addendum.')
+    setMessage(options.source === 'post_signing_amendment_handoff'
+      ? 'Post-signing amendment details are prefilled from the original document. Review the addendum details, then create the addendum.'
+      : 'Addendum details are prefilled from the selected document. Add the change summary, then create the addendum.')
   }
+
+  useEffect(() => {
+    const handoff = postSigningAmendmentHandoffRef.current
+    if (!handoff?.packetId) return
+    if (consumedPostSigningAmendmentHandoffRef.current === handoff.key) return
+
+    const targetPacketType = stableAllowedPacketTypes.includes(handoff.packetType)
+      ? handoff.packetType
+      : packetType
+    if (targetPacketType && packetType !== targetPacketType) {
+      setPacketType(targetPacketType)
+      setActiveDocumentTypeKey(targetPacketType)
+      return
+    }
+    if (loading || documentPacketsLoading || !selectedList.length) return
+
+    consumedPostSigningAmendmentHandoffRef.current = handoff.key
+    let active = true
+    const runHandoff = async () => {
+      let sourcePacket = documentPackets.find((packet) => normalizeText(packet?.id) === handoff.packetId) || null
+      if (!sourcePacket) {
+        try {
+          sourcePacket = await fetchDocumentPacket(handoff.packetId, { includeVersions: false, includeEvents: false })
+        } catch (fetchError) {
+          console.warn('[Document Builder] Unable to load post-signing amendment source packet.', fetchError)
+          sourcePacket = null
+        }
+      }
+      if (!active) return
+      if (!sourcePacket?.id) {
+        setActiveStudioArea('documents')
+        setError('The original document for this amendment request could not be found. Select it from the document library before starting the addendum.')
+        return
+      }
+      const preferredTemplate = getPreferredAddendumTemplateForType(selectedList, handoff.addendumType)
+      if (!preferredTemplate?.id) {
+        setActiveStudioArea('templates')
+        setMessage('Create a General Addendum template first, then return to Documents to start the addendum.')
+        return
+      }
+      handleStartAddendumFromLibraryPacket(sourcePacket, handoff.addendumType, {
+        documentChangeSummary: handoff.changeSummary,
+        amendmentReason: handoff.amendmentReason,
+        source: 'post_signing_amendment_handoff',
+      })
+      clearPostSigningAmendmentHandoffParams()
+    }
+
+    void runHandoff()
+    return () => {
+      active = false
+    }
+    // The handoff is read once from a stable ref; rerunning for handler identity would only churn this one-time URL bridge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    documentPackets,
+    documentPacketsLoading,
+    loading,
+    packetType,
+    selectedList,
+    stableAllowedPacketTypes,
+  ])
 
   async function handleCreateTemplate({
     starterKind = 'standard',

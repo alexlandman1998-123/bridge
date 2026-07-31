@@ -30,7 +30,10 @@ assert.match(schedulerMigration, /bridge_transaction_progress_schedule_health_ph
 assert.match(cron, /bridge_run_transaction_progress_assurance_phase7/)
 assert.match(cron, /Promise\.all/)
 assert.match(cron, /Transaction progress assurance run started/)
+assert.match(cron, /Transaction progress assurance run timed out upstream/)
 assert.match(cron, /durationMs/)
+assert.match(cron, /dispatcherTimedOut/)
+assert.match(cron, /reconciliationTimedOut/)
 assert.match(cron, /gapCount/)
 assert.match(cron, /repairedCount/)
 

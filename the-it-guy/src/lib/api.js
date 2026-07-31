@@ -40043,60 +40043,18 @@ export async function updateOtpDocumentWorkflowState({
 
 export async function generateOtpDocumentFromTemplate({
   transactionId,
-  templateId = '',
-  specialConditions = '',
-  templatePath = '',
-  templateBucket = '',
-  templateBase64 = '',
-  templateFilename = '',
-  outputBucket = '',
-  placeholders = {},
-  sourceContext = null,
-  generatedByRole = '',
-  generatedByUserId = '',
-  clientVisible = false,
 } = {}) {
   const normalizedTransactionId = String(transactionId || '').trim()
   if (!normalizedTransactionId) {
     throw new Error('Transaction is required.')
   }
 
-  const payload = {
-    transactionId: normalizedTransactionId,
-    templateId: String(templateId || '').trim() || undefined,
-    specialConditions: String(specialConditions || '').trim(),
-    templatePath: String(templatePath || '').trim() || undefined,
-    templateBucket: String(templateBucket || '').trim() || undefined,
-    templateBase64: String(templateBase64 || '').trim() || undefined,
-    templateFilename: String(templateFilename || '').trim() || undefined,
-    outputBucket: String(outputBucket || '').trim() || undefined,
-    placeholders: placeholders && typeof placeholders === 'object' ? placeholders : undefined,
-    sourceContext: sourceContext && typeof sourceContext === 'object' ? sourceContext : undefined,
-    generatedByRole: String(generatedByRole || '').trim() || undefined,
-    generatedByUserId: String(generatedByUserId || '').trim() || undefined,
-    clientVisible: Boolean(clientVisible),
-  }
-
-  const { data, error } = await invokeEdgeFunction('generate-otp', {
-    body: payload,
-  })
-
-  if (error) {
-    const invocationError = new Error(error.message || 'Unable to generate OTP from template right now.')
-    invocationError.code = 'EDGE_INVOCATION_FAILED'
-    throw invocationError
-  }
-
-  if (!data || data.success === false) {
-    const edgeError = new Error(
-      String(data?.error || data?.message || 'Unable to generate OTP from template right now.'),
-    )
-    edgeError.code = String(data?.errorCode || data?.error_code || 'EDGE_FUNCTION_FAILED')
-    edgeError.details = data || null
-    throw edgeError
-  }
-
-  return data
+  const error = new Error(
+    'The legacy OTP DOCX renderer is retired. Generate OTPs through the canonical packet-bound PDF workflow.',
+  )
+  error.code = 'OTP_LEGACY_RENDERER_RETIRED'
+  error.requiredAction = 'CREATE_OR_REISSUE_CANONICAL_OTP_PDF'
+  throw error
 }
 
 export async function generateMandateDocumentFromTemplate({
@@ -44169,6 +44127,18 @@ export async function finalizeSignedOtpWorkflow({ transactionId, financeType = '
     actorUserId: actorProfile.userId || null,
     actorRole: normalizeRoleType(actorRole || actorProfile.role || 'agent'),
     source: 'manual_signed_otp_upload',
+  })
+}
+
+export async function finalizeCanonicalPhysicalSignedOtpWorkflow({ transactionId, financeType = '', actorRole = null } = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  return triggerPostSigningWorkflowIfNeeded(client, {
+    transactionId,
+    financeType,
+    actorUserId: actorProfile.userId || null,
+    actorRole: normalizeRoleType(actorRole || actorProfile.role || 'agent'),
+    source: 'canonical_physical_signed_otp_upload',
   })
 }
 
