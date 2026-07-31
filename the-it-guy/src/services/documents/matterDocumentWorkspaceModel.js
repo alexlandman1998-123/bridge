@@ -144,6 +144,12 @@ export const MATTER_DOCUMENT_CATEGORY_GROUPS = {
 }
 
 const MATTER_DOCUMENT_OPERATIONAL_FILTERS = new Set(['critical', 'missing', 'pending_review', 'bank_requested', 'verified'])
+const DOCUMENT_SCOPE_LANES = new Set(['transfer', 'bond', 'cancellation'])
+const DOCUMENT_SCOPE_CATEGORY_KEYS = Object.freeze({
+  transfer: new Set(['transfer', 'buyer', 'seller', 'general']),
+  bond: new Set(['bond', 'finance', 'bank_requested']),
+  cancellation: new Set(['cancellation']),
+})
 
 const DEFAULT_REQUESTED_FROM_OPTIONS = [
   { value: 'buyer', label: 'Buyer' },
@@ -163,6 +169,157 @@ const DEFAULT_PRIORITY_OPTIONS = [
 
 function toArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : []
+}
+
+function normalizeDocumentScopeLane(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
+  if (DOCUMENT_SCOPE_LANES.has(normalized)) return normalized
+  if (normalized === 'bond-registration' || normalized === 'bond_registration' || normalized === 'finance') return 'bond'
+  if (normalized === 'bond-cancellation' || normalized === 'bond_cancellation') return 'cancellation'
+  return ''
+}
+
+function getScopedDocumentVisibleLaneKeys(matterScope = null) {
+  if (!matterScope?.scoped || matterScope.canSeeFullMatter) return []
+  return toArray(matterScope.visibleLaneKeys).map(normalizeDocumentScopeLane).filter(Boolean)
+}
+
+function getScopedDocumentDefaultCategory(visibleLaneKeys = []) {
+  if (visibleLaneKeys.includes('bond')) return 'bond'
+  if (visibleLaneKeys.includes('cancellation')) return 'cancellation'
+  if (visibleLaneKeys.includes('transfer')) return 'transfer'
+  return 'all'
+}
+
+function getLaneKeyFromMatterDocumentItem(item = {}) {
+  const requirement = item?.requirement || item?.requiredDocument || item?.linkedRequirement || null
+  const raw = item?.raw || item?.linkedDocument || item || {}
+  const directLane = normalizeDocumentScopeLane(
+    item?.laneKey ||
+      item?.lane_key ||
+      item?.workflowLane ||
+      item?.workflow_lane ||
+      item?.relatedWorkflow ||
+      item?.related_workflow ||
+      item?.owningWorkflow ||
+      item?.owning_workflow ||
+      requirement?.laneKey ||
+      requirement?.lane_key ||
+      requirement?.owningWorkflow ||
+      requirement?.owning_workflow ||
+      requirement?.workflow ||
+      requirement?.visibleSection ||
+      requirement?.visible_section ||
+      raw?.laneKey ||
+      raw?.lane_key ||
+      raw?.workflowLane ||
+      raw?.workflow_lane ||
+      raw?.relatedWorkflow ||
+      raw?.related_workflow ||
+      raw?.stageKey ||
+      raw?.stage_key ||
+      raw?.financeLane ||
+      raw?.finance_lane ||
+      '',
+  )
+  if (directLane) return directLane
+
+  const roleLane = normalizeDocumentScopeLane(
+    item?.attorneyRole ||
+      item?.attorney_role ||
+      requirement?.attorneyRole ||
+      requirement?.attorney_role ||
+      requirement?.expectedFromRole ||
+      requirement?.expected_from_role ||
+      requirement?.requiredFromRole ||
+      requirement?.required_from_role ||
+      raw?.attorneyRole ||
+      raw?.attorney_role ||
+      raw?.uploadedByRole ||
+      raw?.uploaded_by_role ||
+      raw?.requestedFrom ||
+      raw?.requested_from ||
+      '',
+  )
+  if (roleLane) return roleLane
+
+  const category = normalizeLibraryCategory(item?.category || raw?.category || raw?.document_category || '')
+  const canonicalCategory = item?.canonicalCategory || normalizeMatterDocumentCategory(category)
+  const categoryTokens = [
+    category,
+    canonicalCategory,
+    item?.displayName,
+    item?.title,
+    item?.documentType,
+    item?.document_type,
+    item?.documentTypeLabel,
+    item?.requiredDocumentKey,
+    item?.linkedToLabel,
+    raw?.name,
+    raw?.title,
+    raw?.displayName,
+    raw?.document_type,
+    raw?.documentType,
+    raw?.source,
+    requirement?.key,
+    requirement?.label,
+    requirement?.groupKey,
+    requirement?.group,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  if (categoryTokens.includes('cancellation') || categoryTokens.includes('cancel')) return 'cancellation'
+  if (categoryTokens.includes('bond') || categoryTokens.includes('guarantee') || categoryTokens.includes('bank approval') || categoryTokens.includes('grant')) return 'bond'
+  if (categoryTokens.includes('transfer') || categoryTokens.includes('lodgement') || categoryTokens.includes('registration') || categoryTokens.includes('otp')) return 'transfer'
+  return ''
+}
+
+function documentCategoryVisibleForLane(category = '', laneKey = '') {
+  const normalizedLane = normalizeDocumentScopeLane(laneKey)
+  if (!normalizedLane) return false
+  const normalizedCategory = normalizeLibraryCategory(category) || normalizeMatterDocumentCategory(category)
+  return DOCUMENT_SCOPE_CATEGORY_KEYS[normalizedLane]?.has(normalizedCategory) || false
+}
+
+export function rowMatchesMatterDocumentScope(row = {}, visibleLaneKeys = []) {
+  if (!visibleLaneKeys.length) return true
+  const laneKey = getLaneKeyFromMatterDocumentItem(row)
+  if (laneKey) return visibleLaneKeys.includes(laneKey)
+  const category = row.category || row.canonicalCategory || row.raw?.category || ''
+  return visibleLaneKeys.some((visibleLaneKey) => documentCategoryVisibleForLane(category, visibleLaneKey))
+}
+
+function filterRowsForMatterDocumentScope(rows = [], visibleLaneKeys = []) {
+  return visibleLaneKeys.length ? toArray(rows).filter((row) => rowMatchesMatterDocumentScope(row, visibleLaneKeys)) : toArray(rows)
+}
+
+function resolveScopedDocumentFilter(activeFilter = 'all', visibleLaneKeys = []) {
+  const normalizedFilter = String(activeFilter || 'all').trim().toLowerCase()
+  if (!visibleLaneKeys.length) return normalizedFilter
+  if (normalizedFilter === 'all') return normalizedFilter
+  if (normalizedFilter === 'bank_requested') {
+    return visibleLaneKeys.includes('bond') ? normalizedFilter : getScopedDocumentDefaultCategory(visibleLaneKeys)
+  }
+  if (MATTER_DOCUMENT_OPERATIONAL_FILTERS.has(normalizedFilter)) return normalizedFilter
+  if (visibleLaneKeys.some((laneKey) => documentCategoryVisibleForLane(normalizedFilter, laneKey))) return normalizedFilter
+  return getScopedDocumentDefaultCategory(visibleLaneKeys)
+}
+
+function buildScopedDocumentFilters(visibleLaneKeys = []) {
+  if (!visibleLaneKeys.length) return MATTER_DOCUMENT_LIBRARY_FILTERS
+  return MATTER_DOCUMENT_LIBRARY_FILTERS.filter((filter) => {
+    const key = filter.key
+    if (key === 'all') return true
+    if (key === 'bank_requested') return visibleLaneKeys.includes('bond')
+    if (MATTER_DOCUMENT_OPERATIONAL_FILTERS.has(key)) return true
+    return visibleLaneKeys.some((laneKey) => documentCategoryVisibleForLane(key, laneKey))
+  })
+}
+
+function buildScopedDocumentCategories(visibleLaneKeys = []) {
+  if (!visibleLaneKeys.length) return MATTER_DOCUMENT_CANONICAL_CATEGORIES
+  return MATTER_DOCUMENT_CANONICAL_CATEGORIES.filter((category) =>
+    visibleLaneKeys.some((laneKey) => documentCategoryVisibleForLane(category.key, laneKey)),
+  )
 }
 
 function toTitle(value) {
@@ -1082,30 +1239,37 @@ export function buildMatterDocumentWorkspaceModel({
   documentCategories = MATTER_DOCUMENT_CATEGORIES,
   requestedFromOptions = DEFAULT_REQUESTED_FROM_OPTIONS,
   priorityOptions = DEFAULT_PRIORITY_OPTIONS,
+  matterScope = null,
 } = {}) {
   const transactionRecord = transaction || {}
+  const scopedVisibleLaneKeys = getScopedDocumentVisibleLaneKeys(matterScope)
+  const scopedActiveFilter = resolveScopedDocumentFilter(activeFilter, scopedVisibleLaneKeys)
   const groupedDocuments = buildGroupedDocuments({
-    documents,
+    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
     getLinkedRequirementForDocument,
     documentGroups,
     documentCategories,
   })
-  const requirementDocumentLookup = buildRequirementDocumentLookup({ documents, getLinkedRequirementForDocument })
+  const requirementDocumentLookup = buildRequirementDocumentLookup({
+    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
+    getLinkedRequirementForDocument,
+  })
   const requiredRows = buildRequiredDocumentRows({
-    requiredDocumentChecklist,
+    requiredDocumentChecklist: filterRowsForMatterDocumentScope(requiredDocumentChecklist, scopedVisibleLaneKeys),
     requirementDocumentLookup,
     transaction: transactionRecord,
   })
   const allLibraryRows = buildAllDocumentLibraryRows({
-    documents,
+    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
     getLinkedRequirementForDocument,
     transaction: transactionRecord,
     transactionParticipants,
   })
+  const scopedDocumentRequests = filterRowsForMatterDocumentScope(documentRequests, scopedVisibleLaneKeys)
   const readiness = getDocumentReadiness({
     applicationId: transactionRecord?.bond_application_id || transactionRecord?.bondApplicationId || transactionRecord?.id || null,
     requiredDocumentRows: requiredRows,
-    documentRequests,
+    documentRequests: scopedDocumentRequests,
     documentLibraryRows: allLibraryRows,
     configuredBanks,
     workflowData,
@@ -1114,15 +1278,16 @@ export function buildMatterDocumentWorkspaceModel({
     readiness,
     requiredDocumentRows: requiredRows,
     allDocumentLibraryRows: allLibraryRows,
-    documentRequests,
+    documentRequests: scopedDocumentRequests,
     requestedFromOptions,
   })
   const categorySummaries = buildMatterDocumentCategorySummaries({
     allDocumentLibraryRows: allLibraryRows,
     requiredDocumentRows: requiredRows,
+    categories: buildScopedDocumentCategories(scopedVisibleLaneKeys),
   })
   const libraryRows = filterMatterDocumentLibraryRows({
-    activeFilter,
+    activeFilter: scopedActiveFilter,
     search,
     transaction: transactionRecord,
     allDocumentLibraryRows: allLibraryRows,
@@ -1146,7 +1311,14 @@ export function buildMatterDocumentWorkspaceModel({
     categorySummaries,
     libraryRows,
     documentsByWorkflow,
-    filters: MATTER_DOCUMENT_LIBRARY_FILTERS,
+    activeFilter: scopedActiveFilter,
+    requestedFilter: activeFilter,
+    scope: {
+      scoped: scopedVisibleLaneKeys.length > 0,
+      visibleLaneKeys: scopedVisibleLaneKeys,
+      defaultFilter: getScopedDocumentDefaultCategory(scopedVisibleLaneKeys),
+    },
+    filters: buildScopedDocumentFilters(scopedVisibleLaneKeys),
     operationalFilters: MATTER_DOCUMENT_OPERATIONAL_FILTERS,
   }
 }

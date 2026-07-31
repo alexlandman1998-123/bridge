@@ -1711,7 +1711,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <Navigate to="/attorney/matters/all" replace />
+                      <AttorneyMattersPage />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }

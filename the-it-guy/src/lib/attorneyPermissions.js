@@ -28,6 +28,10 @@ import {
   normalizeAttorneyLaneRole,
   deriveAttorneyProfessionalProfile,
 } from '../constants/attorneyRoleCatalog.js'
+import {
+  ATTORNEY_MATTER_SCOPE_LANES,
+  buildAttorneyMatterScope,
+} from '../core/transactions/attorneyMatterScope.js'
 
 export {
   ATTORNEY_FIRM_ADMIN_ROLES,
@@ -445,6 +449,42 @@ export async function canActAsAttorneyOnLane(userId, transactionId, attorneyRole
 
 export async function canUpdateAttorneyLane(userId, transactionId, attorneyRole) {
   return canActAsAttorneyOnLane(userId, transactionId, attorneyRole)
+}
+
+export async function getAttorneyMatterScope({
+  userId = null,
+  transactionId,
+  firmId = null,
+  requiredLaneKeys = ATTORNEY_MATTER_SCOPE_LANES,
+} = {}) {
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) {
+    return buildAttorneyMatterScope({ requiredLaneKeys: [] })
+  }
+
+  const requiredLanes = [...new Set((requiredLaneKeys || ATTORNEY_MATTER_SCOPE_LANES)
+    .map((laneKey) => normalizeAttorneyLaneRole(laneKey, ''))
+    .filter((laneKey) => ATTORNEY_MATTER_SCOPE_LANES.includes(laneKey)))]
+  if (!requiredLanes.length) {
+    return buildAttorneyMatterScope({ requiredLaneKeys: [] })
+  }
+
+  const laneAccessEntries = await Promise.all(
+    requiredLanes.map(async (laneKey) => [
+      laneKey,
+      await getAttorneyLaneAccessContext({
+        userId,
+        transactionId: resolvedTransactionId,
+        attorneyRole: laneKey,
+        firmId,
+      }),
+    ]),
+  )
+
+  return buildAttorneyMatterScope({
+    requiredLaneKeys: requiredLanes,
+    laneAccessContexts: Object.fromEntries(laneAccessEntries),
+  })
 }
 
 export async function canUserViewAttorneyAssignment(user, transactionId) {

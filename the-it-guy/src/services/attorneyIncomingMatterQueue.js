@@ -978,6 +978,7 @@ function mapCurrentUser(authUser = {}, membership = null, permissions = {}) {
     id: authUser.id || '',
     email: authUser.email || '',
     role: membership?.professionalRole || '',
+    practiceQualifications: membership?.practiceQualifications || [],
     permissions,
   }
 }

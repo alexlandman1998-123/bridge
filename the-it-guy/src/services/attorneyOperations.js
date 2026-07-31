@@ -26,6 +26,10 @@ import {
   recordAttorneyCalendarRolloutEvent,
   requireAttorneyCalendarRollout,
 } from './attorneyCalendarRolloutService'
+import {
+  applyAttorneyOperationsScope,
+  buildAttorneyOperationsScope,
+} from '../core/transactions/attorneyOperationsScope.js'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -779,6 +783,14 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
 
   const currentRole = resolvedCurrentMembership?.professionalRole || ''
   const permissions = getAttorneyProfessionalProfilePermissions(resolvedCurrentMembership)
+  const operationsScope = buildAttorneyOperationsScope({
+    currentUser: {
+      role: currentRole,
+      professionalRole: resolvedCurrentMembership?.professionalRole || currentRole,
+      practiceQualifications: resolvedCurrentMembership?.practiceQualifications || [],
+    },
+    permissions,
+  })
 
   const departmentById = (departments || []).reduce((accumulator, department) => {
     accumulator[department.id] = department
@@ -830,7 +842,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
   )
 
-  const matterQueue = relevantAssignments
+  const allMatterQueue = relevantAssignments
     .map((assignment) => {
       const transaction = transactionsById[assignment.transactionId]
       if (!transaction) return null
@@ -922,94 +934,103 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       }
     })
     .filter(Boolean)
+  const matterQueue = applyAttorneyOperationsScope(allMatterQueue, operationsScope)
+  const scopedMatterIds = new Set(matterQueue.map((matter) => matter.matterId).filter(Boolean))
+  const scopedRelevantAssignments = relevantAssignments.filter((assignment) => scopedMatterIds.has(assignment.transactionId))
+  const scopedChecklistItems = (checklistItems || []).filter((item) => scopedMatterIds.has(item.transaction_id))
+  const scopedPacketSigners = (packetSigners || []).filter((signer) => scopedMatterIds.has(signer.packet?.transaction_id))
 
   const canAccessDocumentQueue =
     permissions.can_request_documents || permissions.can_review_documents || permissions.can_upload_documents
 
   const documentQueue = canAccessDocumentQueue
-    ? (documentRequests || []).map((request) => {
-        const matter = matterQueue.find((item) => item.matterId === request.transaction_id)
-        return {
-          id: request.id,
-          matterReference: matter?.matterReference || getMatterReference({}, request.transaction_id),
-          clientName: matter?.clientName || 'Unassigned client',
-          documentType: request.document_type || request.title || request.category || 'Document',
-          status: normalizeText(request.status || 'requested') || 'requested',
-          requestedFrom: request.assigned_to_role || 'client',
-          lastUpdated: request.updated_at || request.created_at || null,
-          dueDate: request.due_date || null,
-          priority: request.priority || 'required',
-          actionLabel: 'Open Matter',
-          actionHref: request.transaction_id ? `/transactions/${encodeURIComponent(request.transaction_id)}` : '',
-          transactionId: request.transaction_id,
-        }
-      })
+    ? (documentRequests || [])
+        .filter((request) => scopedMatterIds.has(request.transaction_id))
+        .map((request) => {
+          const matter = matterQueue.find((item) => item.matterId === request.transaction_id)
+          return {
+            id: request.id,
+            matterReference: matter?.matterReference || getMatterReference({}, request.transaction_id),
+            clientName: matter?.clientName || 'Unassigned client',
+            documentType: request.document_type || request.title || request.category || 'Document',
+            status: normalizeText(request.status || 'requested') || 'requested',
+            requestedFrom: request.assigned_to_role || 'client',
+            lastUpdated: request.updated_at || request.created_at || null,
+            dueDate: request.due_date || null,
+            priority: request.priority || 'required',
+            actionLabel: 'Open Matter',
+            actionHref: request.transaction_id ? `/transactions/${encodeURIComponent(request.transaction_id)}` : '',
+            transactionId: request.transaction_id,
+          }
+        })
     : []
 
   const canAccessAppointments = permissions.can_manage_signing_appointments
 
   const appointmentQueue = canAccessAppointments
-    ? (appointments || []).map((appointment) => {
-        const matter = matterQueue.find((item) => item.matterId === appointment.transaction_id)
-        const attendeesDetailed = participantsByAppointment[appointment.appointment_id] || []
-        const attendees = attendeesDetailed.map((row) => row.name).filter(Boolean)
-        const rescheduleRequests = rescheduleRequestsByAppointment[appointment.appointment_id] || []
-        const latestRescheduleRequest = rescheduleRequests[0] || null
-        const dateTime = buildDateTimeFromAppointment(appointment)
-        const appointmentTypeKey = normalizeAppointmentTypeKey(appointment.appointment_type)
-        const appointmentTypeLabel = getAppointmentTypeLabel(appointmentTypeKey)
-        const appointmentStatus = normalizeText(appointment.status || 'Pending Confirmation') || 'Pending Confirmation'
-        const statusWithRescheduleContext = latestRescheduleRequest
-          ? (
-              toLower(latestRescheduleRequest.status) === 'proposed'
-                ? 'Proposed'
-                : 'Reschedule Requested'
-            )
-          : appointmentStatus
-        return {
-          id: appointment.appointment_id,
-          appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
-          appointmentTypeKey,
-          matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
-          transactionId: appointment.transaction_id || null,
-          organisationId: matter?.organisationId || null,
-          clientName: matter?.clientName || 'Unassigned client',
-          dateTime,
-          rawDateTime: dateTime,
-          attendees,
-          attendeesDetailed,
-          linkedWorkflow: appointment.linked_workflow || null,
-          linkedWorkflowStage: appointment.linked_workflow_stage || appointment.linked_transaction_stage || null,
-          location: appointment.location || '',
-          instructions: appointment.appointment_instructions || null,
-          requiredDocuments: Array.isArray(appointment.required_documents) ? appointment.required_documents : [],
-          visibility: appointment.visibility_scope || 'shared_role_players',
-          calendarEventUid: appointment.calendar_event_uid || null,
-          externalCalendarStatus: appointment.external_calendar_status || 'not_synced',
-          externalCalendarProvider: appointment.external_calendar_provider || null,
-          externalCalendarEventId: appointment.external_calendar_event_id || null,
-          icsGeneratedAt: appointment.ics_generated_at || null,
-          status: statusWithRescheduleContext,
-          rescheduleRequests,
-          latestRescheduleRequest,
-          assignedAttorneyId: matter?.assignedAttorneyId || null,
-          assignedSecretaryId: matter?.assignedSecretaryId || null,
-          assignedAdminHandlerId: matter?.assignedAdminHandlerId || null,
-          assignedAttorneyName: matter?.assignedAttorneyName || null,
-          assignedSecretaryName: matter?.assignedSecretaryName || null,
-          assignedAdminHandlerName: matter?.assignedAdminHandlerName || null,
-          matterType: matter?.matterType || null,
-          flags: matter?.flags || {},
-          actionLabel: 'Open Matter',
-          actionHref: appointment.transaction_id ? `/transactions/${encodeURIComponent(appointment.transaction_id)}` : '',
-        }
-      })
+    ? (appointments || [])
+        .filter((appointment) => scopedMatterIds.has(appointment.transaction_id))
+        .map((appointment) => {
+          const matter = matterQueue.find((item) => item.matterId === appointment.transaction_id)
+          const attendeesDetailed = participantsByAppointment[appointment.appointment_id] || []
+          const attendees = attendeesDetailed.map((row) => row.name).filter(Boolean)
+          const rescheduleRequests = rescheduleRequestsByAppointment[appointment.appointment_id] || []
+          const latestRescheduleRequest = rescheduleRequests[0] || null
+          const dateTime = buildDateTimeFromAppointment(appointment)
+          const appointmentTypeKey = normalizeAppointmentTypeKey(appointment.appointment_type)
+          const appointmentTypeLabel = getAppointmentTypeLabel(appointmentTypeKey)
+          const appointmentStatus = normalizeText(appointment.status || 'Pending Confirmation') || 'Pending Confirmation'
+          const statusWithRescheduleContext = latestRescheduleRequest
+            ? (
+                toLower(latestRescheduleRequest.status) === 'proposed'
+                  ? 'Proposed'
+                  : 'Reschedule Requested'
+              )
+            : appointmentStatus
+          return {
+            id: appointment.appointment_id,
+            appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
+            appointmentTypeKey,
+            matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
+            transactionId: appointment.transaction_id || null,
+            organisationId: matter?.organisationId || null,
+            clientName: matter?.clientName || 'Unassigned client',
+            dateTime,
+            rawDateTime: dateTime,
+            attendees,
+            attendeesDetailed,
+            linkedWorkflow: appointment.linked_workflow || null,
+            linkedWorkflowStage: appointment.linked_workflow_stage || appointment.linked_transaction_stage || null,
+            location: appointment.location || '',
+            instructions: appointment.appointment_instructions || null,
+            requiredDocuments: Array.isArray(appointment.required_documents) ? appointment.required_documents : [],
+            visibility: appointment.visibility_scope || 'shared_role_players',
+            calendarEventUid: appointment.calendar_event_uid || null,
+            externalCalendarStatus: appointment.external_calendar_status || 'not_synced',
+            externalCalendarProvider: appointment.external_calendar_provider || null,
+            externalCalendarEventId: appointment.external_calendar_event_id || null,
+            icsGeneratedAt: appointment.ics_generated_at || null,
+            status: statusWithRescheduleContext,
+            rescheduleRequests,
+            latestRescheduleRequest,
+            assignedAttorneyId: matter?.assignedAttorneyId || null,
+            assignedSecretaryId: matter?.assignedSecretaryId || null,
+            assignedAdminHandlerId: matter?.assignedAdminHandlerId || null,
+            assignedAttorneyName: matter?.assignedAttorneyName || null,
+            assignedSecretaryName: matter?.assignedSecretaryName || null,
+            assignedAdminHandlerName: matter?.assignedAdminHandlerName || null,
+            matterType: matter?.matterType || null,
+            flags: matter?.flags || {},
+            actionLabel: 'Open Matter',
+            actionHref: appointment.transaction_id ? `/transactions/${encodeURIComponent(appointment.transaction_id)}` : '',
+          }
+        })
     : []
 
   const pendingSignerStatuses = new Set(['pending', 'sent', 'viewed'])
-  const pendingSignaturesCount = packetSigners.filter((signer) => pendingSignerStatuses.has(toLower(signer.status))).length
+  const pendingSignaturesCount = scopedPacketSigners.filter((signer) => pendingSignerStatuses.has(toLower(signer.status))).length
 
-  const checklistTaskCount = (checklistItems || []).filter((item) => {
+  const checklistTaskCount = scopedChecklistItems.filter((item) => {
     const pending = ['pending', 'in_progress', 'blocked'].includes(toLower(item.status))
     if (!pending) return false
     if (permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(currentRole)) return true
@@ -1139,7 +1160,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       occurredAt: item.rawDateTime || null,
       source: 'Scheduling',
     })),
-    ...relevantAssignments.slice(0, 6).map((assignment) => ({
+    ...scopedRelevantAssignments.slice(0, 6).map((assignment) => ({
       id: `assignment-update-${assignment.id}`,
       message: `${normalizeRoleLabel(assignment.assignmentType)} assignment is ${assignment.status}.`,
       occurredAt: assignment.updatedAt || assignment.assignedAt || assignment.createdAt,
@@ -1156,14 +1177,21 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     documentQueue,
     appointmentQueue,
     priorityQueue: dedupedPriorityQueue,
-    packetSigners,
-    checklistItems,
+    packetSigners: scopedPacketSigners,
+    checklistItems: scopedChecklistItems,
     permissions,
     userContext: currentProfile,
   })
 
   const transferMatterCount = matterQueue.filter((matter) => ['Transfer', 'Transfer + Bond'].includes(matter.matterType)).length
   const bondMatterCount = matterQueue.filter((matter) => ['Bond', 'Transfer + Bond'].includes(matter.matterType)).length
+  const visibleDepartments = operationsScope.canViewAllOperationalQueues
+    ? departments || []
+    : (departments || []).filter((department) => department.id === resolvedCurrentMembership?.departmentId)
+  const visibleMembers = operationsScope.canViewAllOperationalQueues
+    ? activeMembers
+    : activeMembers.filter((member) => member.userId === currentUserId)
+  const availableMatterTypes = [...new Set(matterQueue.map((matter) => matter.matterType).filter(Boolean))]
 
   return {
     firm: {
@@ -1179,11 +1207,13 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       email: currentProfile.email,
       role: currentRole,
       roleLabel: normalizeRoleLabel(currentRole),
+      practiceQualifications: resolvedCurrentMembership?.practiceQualifications || [],
       department: currentDepartment?.name || 'Unassigned Department',
       roleCopy: ROLE_COPY[currentRole] || 'Your assigned matters, document tasks, and signing actions in one place.',
       status: resolvedCurrentMembership?.status || 'unknown',
     },
     permissions,
+    scope: operationsScope,
     kpis: {
       myActiveMatters: matterQueue.length,
       transferMatters: transferMatterCount,
@@ -1203,15 +1233,15 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     accessBlocked: false,
     canViewFirmDashboard: Boolean(permissions.can_view_firm_dashboard),
     availableFilters: {
-      departments: (departments || [])
+      departments: visibleDepartments
         .filter((department) => department.isActive)
         .map((department) => ({ value: department.id, label: department.name, type: department.departmentType })),
-      members: activeMembers.map((member) => ({
+      members: visibleMembers.map((member) => ({
         value: member.userId,
         label: profilesById[member.userId]?.name || 'Team Member',
         role: member.role,
       })),
-      matterTypes: ['Transfer', 'Bond', 'Transfer + Bond', 'Admin'],
+      matterTypes: availableMatterTypes,
       statuses: [...new Set(matterQueue.map((matter) => matter.status).filter(Boolean))],
     },
   }

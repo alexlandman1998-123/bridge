@@ -128,7 +128,6 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
-import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
@@ -374,6 +373,13 @@ const ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS = [
 ]
 
 const LEGAL_WORKFLOW_DETAIL_ROUTE_KEYS = ['transfer', 'bond-registration', 'bond-cancellation']
+
+function getLaneKeyForLegalWorkflowDetailKey(detailKey = '') {
+  const normalized = String(detailKey || '').trim().toLowerCase()
+  if (normalized === 'bond-registration' || normalized === 'finance') return 'bond'
+  if (normalized === 'bond-cancellation' || normalized === 'cancellation') return 'cancellation'
+  return 'transfer'
+}
 
 function inferLibraryCategoryFromTokens(tokens = '') {
   const haystack = String(tokens || '').toLowerCase()
@@ -4590,6 +4596,32 @@ function humanizeDiscussionActivity(comment = {}) {
   }
 }
 
+function humanizeLegalTimelineActivity(item = {}) {
+  const laneCategory = getLaneCategory(item.laneKey || item.lane_key || item.attorneyRole || item.attorney_role)
+  const category = item.category === 'documents'
+    ? 'documents'
+    : laneCategory || (item.visibility === 'internal' ? 'internal' : 'notes')
+  const meta = getActivityCategoryMeta(category)
+  const timestamp = item.timestamp || item.createdAt || item.created_at || item.changedAt || item.changed_at || ''
+  return {
+    id: item.id || `legal-${item.source || item.type || 'timeline'}-${timestamp}`,
+    title: item.title || 'Legal workflow update',
+    body: normalizeRichTextToPlainText(item.message || item.detail || item.description || '') || 'Matter activity recorded.',
+    createdAt: timestamp,
+    kind: item.source === 'document_request' ? 'event' : 'legal_timeline',
+    authorName: item.actor || item.actorName || 'Matter team',
+    roleLabel: toTitle(item.attorneyRole || item.attorney_role || item.createdByRole || item.created_by_role || 'attorney'),
+    category,
+    categoryLabel: meta.label,
+    commentType: meta.label,
+    filterKeys: buildActivityFilterKeys(category, [laneCategory, item.visibility]),
+    attachmentName: item.relatedDocumentId ? item.title || 'Document' : '',
+    meta,
+    messageType: item.source === 'document_request' ? 'document_request' : item.type || 'workflow_update',
+    visibility: item.visibility || 'shared',
+  }
+}
+
 function getActivityDateLabel(value) {
   const date = new Date(value || 0)
   if (!Number.isFinite(date.getTime())) return 'Earlier'
@@ -7019,6 +7051,7 @@ function ArchlineDocumentsWorkspace({
   libraryRows = [],
   missingRows = [],
   recentActivity = [],
+  filters = DOCUMENT_LIBRARY_FILTERS,
   activeFilter = 'all',
   search = '',
   onFilterChange,
@@ -7120,7 +7153,7 @@ function ArchlineDocumentsWorkspace({
                 <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
               </label>
               <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
-                {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                {filters.map((filter) => (
                   <button
                     key={filter.key}
                     type="button"
@@ -9939,6 +9972,7 @@ function AttorneyTransactionDetail() {
   const navigate = useNavigate()
   const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
+  const currentMatterAccessKey = `${workspaceRole || 'unknown'}:${transactionId || ''}`
   const navigationPreviewData = useMemo(
     () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
     [location.state?.matterPreview, transactionId],
@@ -9948,6 +9982,7 @@ function AttorneyTransactionDetail() {
   const [error, setError] = useState('')
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
+  const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('today')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
@@ -10189,12 +10224,13 @@ function AttorneyTransactionDetail() {
     setWorkflowFocusedStepKey('')
     setWorkflowInlineStepDraft(null)
     setLocalLegalWorkflowDetailKey('')
+    setMatterAccessKey(workspaceRole !== 'attorney' ? currentMatterAccessKey : '')
     setLoading(!navigationPreviewData)
-  }, [navigationPreviewData, transactionId])
+  }, [currentMatterAccessKey, navigationPreviewData, transactionId, workspaceRole])
 
   useEffect(() => {
     if (workspaceRole === 'attorney') {
-      if (attorneyPermissionState.loading) {
+      if (attorneyPermissionState.loading || !matterAccessChecked || matterAccessKey !== currentMatterAccessKey) {
         return
       }
       if (!matterAccessAllowed) {
@@ -10203,7 +10239,7 @@ function AttorneyTransactionDetail() {
       }
     }
     void loadData({ background: false })
-  }, [attorneyPermissionState.loading, loadData, matterAccessAllowed, workspaceRole])
+  }, [attorneyPermissionState.loading, currentMatterAccessKey, loadData, matterAccessAllowed, matterAccessChecked, matterAccessKey, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -10212,6 +10248,7 @@ function AttorneyTransactionDetail() {
       if (workspaceRole !== 'attorney') {
         if (!active) return
         setMatterAccessAllowed(true)
+        setMatterAccessKey(currentMatterAccessKey)
         setMatterAccessChecked(true)
         return
       }
@@ -10223,16 +10260,22 @@ function AttorneyTransactionDetail() {
       if (!attorneyPermissionState.membership?.isActive) {
         if (!active) return
         setMatterAccessAllowed(false)
+        setMatterAccessKey('')
         setMatterAccessChecked(true)
         return
       }
 
       try {
-        const allowed = await canAccessAttorneyMatter(transactionId, attorneyPermissionState.firmId || null)
+        const operations = await getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize: false })
         if (!active) return
-        setMatterAccessAllowed(Boolean(allowed))
-      } catch {
+        setWorkflowOperations(operations)
+        setMatterAccessKey(currentMatterAccessKey)
+        setMatterAccessAllowed(true)
+      } catch (accessError) {
         if (!active) return
+        setWorkflowOperations(null)
+        setMatterAccessKey('')
+        setError(accessError?.message || 'You do not have access to this matter.')
         setMatterAccessAllowed(false)
       } finally {
         if (active) setMatterAccessChecked(true)
@@ -10240,12 +10283,17 @@ function AttorneyTransactionDetail() {
     }
 
     setMatterAccessChecked(workspaceRole !== 'attorney')
+    if (workspaceRole === 'attorney') {
+      setMatterAccessKey('')
+    } else {
+      setMatterAccessKey(currentMatterAccessKey)
+    }
     void checkMatterAccess()
 
     return () => {
       active = false
     }
-  }, [attorneyPermissionState.firmId, attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, transactionId, workspaceRole])
+  }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, currentMatterAccessKey, transactionId, workspaceRole])
 
   const transaction = data?.transaction || null
   const buyer = data?.buyer || null
@@ -10860,6 +10908,18 @@ function AttorneyTransactionDetail() {
         : [],
     [currentMembership, profile, workspace, workspaceOrganisationId, workspaceRole],
   )
+  const attorneyMatterScope = workflowOperations?.matterScope || null
+  const visibleWorkflowLaneKeys = useMemo(() => {
+    const scopedKeys = attorneyMatterScope?.scoped
+      ? attorneyMatterScope.visibleLaneKeys
+      : null
+    const keys = Array.isArray(scopedKeys)
+      ? scopedKeys
+      : Array.isArray(workflowOperations?.lanes)
+        ? workflowOperations.lanes.map((lane) => lane?.laneKey)
+        : []
+    return new Set(keys.map((laneKey) => String(laneKey || '').trim().toLowerCase()).filter(Boolean))
+  }, [attorneyMatterScope, workflowOperations?.lanes])
   const matterDocumentWorkspaceModel = useMemo(
     () =>
       buildMatterDocumentWorkspaceModel({
@@ -10877,10 +10937,12 @@ function AttorneyTransactionDetail() {
         documentCategories: ATTORNEY_DOCUMENT_CATEGORIES,
         requestedFromOptions: ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS,
         priorityOptions: ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS,
+        matterScope: attorneyMatterScope,
       }),
     [
       activeDocumentLibraryCategory,
       additionalDocumentRequests,
+      attorneyMatterScope,
       configuredOriginatorBanks,
       documentLibrarySearch,
       documents,
@@ -11052,12 +11114,19 @@ function AttorneyTransactionDetail() {
     [attorneyPartnerOptions, cancellationAttorney],
   )
   const activityFeed = useMemo(
-    () =>
-      [
+    () => {
+      if (attorneyMatterScope?.scoped && !attorneyMatterScope.canSeeFullMatter) {
+        return (workflowOperations?.legalTimeline || [])
+          .map((item) => humanizeLegalTimelineActivity(item))
+          .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+      }
+
+      return [
         ...transactionEvents.map((event) => humanizeTransactionEvent(event)),
         ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
-      ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
-    [transactionEvents, visibleTransactionDiscussion],
+      ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+    },
+    [attorneyMatterScope, transactionEvents, visibleTransactionDiscussion, workflowOperations?.legalTimeline],
   )
   const overviewConversationEntries = useMemo(() => activityFeed.slice(0, 8), [activityFeed])
   const lifecycleProgressState = useMemo(
@@ -12852,6 +12921,10 @@ function AttorneyTransactionDetail() {
       lane: cancellationWorkflowLane,
     })
 
+    if (workflowOperations?.matterScope?.scoped) {
+      return items.filter((item) => visibleWorkflowLaneKeys.has(getLaneKeyForLegalWorkflowDetailKey(item.detailKey || item.key)))
+    }
+
     return items
   }, [
     activityFeed,
@@ -12868,6 +12941,8 @@ function AttorneyTransactionDetail() {
     transactionWorkspaceBasePath,
     transferAttorney,
     transferWorkflowLane,
+    visibleWorkflowLaneKeys,
+    workflowOperations?.matterScope?.scoped,
   ])
   const transferHubWorkflows = useMemo(
     () => legalWorkflowModels.filter((item) => item.required),
@@ -12918,6 +12993,19 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
   )
+  useEffect(() => {
+    if (!workflowOperations?.matterScope?.scoped || !activeLegalWorkflowDetailKey || activeLegalWorkflowModel) return
+    const fallbackWorkflow = legalWorkflowModels.find((item) => item.required) || legalWorkflowModels[0]
+    if (fallbackWorkflow?.detailKey) {
+      openLegalWorkflowDetail(fallbackWorkflow.detailKey)
+    }
+  }, [
+    activeLegalWorkflowDetailKey,
+    activeLegalWorkflowModel,
+    legalWorkflowModels,
+    openLegalWorkflowDetail,
+    workflowOperations?.matterScope?.scoped,
+  ])
   const handleDraftAttorneyStatusBrief = useCallback(({ audience = 'professional', body = '', target = null } = {}) => {
     const nextTarget = target || getAttorneyBriefComposerTarget(legalWorkflowModels, audience)
     if (!nextTarget?.laneKey || !nextTarget?.actionKey || !nextTarget?.visibility) {
@@ -14883,7 +14971,8 @@ function AttorneyTransactionDetail() {
               libraryRows={documentLibraryRows}
               missingRows={documentReadiness.missingDocuments || []}
               recentActivity={documentHealthSummary.recentActivity}
-              activeFilter={activeDocumentLibraryCategory}
+              filters={matterDocumentWorkspaceModel.filters}
+              activeFilter={matterDocumentWorkspaceModel.activeFilter}
               search={documentLibrarySearch}
               onFilterChange={setActiveDocumentLibraryCategory}
               onSearchChange={setDocumentLibrarySearch}
@@ -15778,12 +15867,12 @@ function AttorneyTransactionDetail() {
                   <p className="mt-1 text-sm text-[#60758d]">All uploaded and generated documents.</p>
                 </div>
                 <div className="flex max-w-5xl flex-1 flex-wrap justify-end gap-2">
-                  {DOCUMENT_LIBRARY_FILTERS.map((filter) => (
+                  {matterDocumentWorkspaceModel.filters.map((filter) => (
                     <button
                       key={filter.key}
                       type="button"
                       className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                        activeDocumentLibraryCategory === filter.key
+                        matterDocumentWorkspaceModel.activeFilter === filter.key
                           ? 'border-primary bg-primarySoft text-primary'
                           : 'border-[#dbe5ef] bg-white text-[#52677f] hover:border-primary/40 hover:text-primary'
                       }`}

@@ -31,6 +31,11 @@ import {
   buildAttorneyWorkflowFollowUpSummary,
   normalizeAttorneyWorkflowWorkPacket,
 } from '../../constants/attorneyWorkflowUsability.js'
+import {
+  ATTORNEY_MATTER_SCOPE_LANES,
+  buildAttorneyMatterScope,
+} from '../../core/transactions/attorneyMatterScope.js'
+import { buildAttorneyMatterScopeAudit } from '../../core/transactions/attorneyMatterScopeAudit.js'
 import { canAdvanceWorkflowStage } from '../documents/canonicalWorkflowGateService'
 import {
   getTransactionProgressNotifications,
@@ -76,6 +81,171 @@ const TIMELINE_FILTERS = [
   'client_visible',
 ]
 
+const WORKFLOW_LANE_FILTERS = new Set(ATTORNEY_MATTER_SCOPE_LANES)
+
+function safeNormalizeWorkflowLane(value = '') {
+  try {
+    const normalized = normalizeLaneKey(value)
+    return ATTORNEY_MATTER_SCOPE_LANES.includes(normalized) ? normalized : ''
+  } catch {
+    return ''
+  }
+}
+
+function attorneyRoleToLaneKey(attorneyRole = '') {
+  return safeNormalizeWorkflowLane(attorneyRole)
+}
+
+function getLaneKeyFromScopedItem(item = {}) {
+  const rawLaneKey =
+    item.laneKey ||
+    item.lane_key ||
+    item.processType ||
+    item.process_type ||
+    item.workflowLane ||
+    item.workflow_lane ||
+    item.metadata?.laneKey ||
+    item.metadata?.lane_key ||
+    item.eventData?.laneKey ||
+    item.eventData?.lane_key ||
+    item.event_data?.laneKey ||
+    item.event_data?.lane_key ||
+    ''
+  if (rawLaneKey) return safeNormalizeWorkflowLane(rawLaneKey)
+  const rawRole =
+    item.attorneyRole ||
+    item.attorney_role ||
+    item.createdByRole ||
+    item.created_by_role ||
+    item.metadata?.attorneyRole ||
+    item.metadata?.attorney_role ||
+    item.eventData?.attorneyRole ||
+    item.eventData?.attorney_role ||
+    item.event_data?.attorneyRole ||
+    item.event_data?.attorney_role ||
+    ''
+  return rawRole ? attorneyRoleToLaneKey(rawRole) : ''
+}
+
+function filterScopedArray(items = [], visibleLaneKeys = new Set(), { keepUnscoped = false } = {}) {
+  return (items || []).filter((item) => {
+    const laneKey = getLaneKeyFromScopedItem(item)
+    return laneKey ? visibleLaneKeys.has(laneKey) : keepUnscoped
+  })
+}
+
+function buildWorkflowMatterScope({ laneContexts = {}, requiredLaneKeys = [], scopedAttorneyActor = false } = {}) {
+  if (!scopedAttorneyActor) {
+    return {
+      scoped: false,
+      requiredLaneKeys: Object.freeze(requiredLaneKeys),
+      visibleLaneKeys: Object.freeze(requiredLaneKeys),
+      editableLaneKeys: Object.freeze(requiredLaneKeys),
+      summaryLaneKeys: Object.freeze([]),
+      assignedLaneKeys: Object.freeze([]),
+      canSeeFullMatter: true,
+      canSeeCoordinatorContext: true,
+      matterRole: 'professional',
+    }
+  }
+
+  const matterScopeContexts = Object.fromEntries(
+    Object.entries(laneContexts).map(([laneKey, context]) => {
+      const managementMatterAccess = Boolean(
+        context?.isFirmManagement &&
+          (context?.viewReason === 'management_view_only' ||
+            context?.managementOverrideEnabled ||
+            context?.canAssignAttorney),
+      )
+      return [
+        laneKey,
+        {
+          ...context,
+          canViewMatter: Boolean(context?.canViewLegalWorkspace || context?.canViewLane),
+          canManageMatter: managementMatterAccess,
+          canActAsAttorney: Boolean(context?.canUpdateLane),
+          canUpdateLane: Boolean(context?.canUpdateLane),
+          canAssignLane: Boolean(context?.canAssignAttorney),
+          isManagementUser: managementMatterAccess || Boolean(context?.isManagementUser),
+          isAssignedAttorney: Boolean(context?.isAssignedAttorney),
+          isAssignedParticipant: Boolean(context?.isAssignedParticipant),
+        },
+      ]
+    }),
+  )
+
+  return {
+    ...buildAttorneyMatterScope({
+      laneAccessContexts: matterScopeContexts,
+      requiredLaneKeys,
+    }),
+    scoped: true,
+  }
+}
+
+export function scopeAttorneyWorkflowOperations(operations = {}, matterScope = null) {
+  if (!matterScope?.scoped) {
+    return matterScope ? { ...operations, matterScope } : operations
+  }
+
+  const visibleLaneKeys = new Set(matterScope.visibleLaneKeys || [])
+  const scopedWorkflowLanes = Object.fromEntries(
+    Object.entries(operations.workflow?.lanes || {}).filter(([laneKey]) => visibleLaneKeys.has(safeNormalizeWorkflowLane(laneKey))),
+  )
+  const scopedRequiredRoles = (operations.workflow?.requiredAttorneyRoles || []).filter((role) =>
+    visibleLaneKeys.has(attorneyRoleToLaneKey(role)),
+  )
+  const scopedAssignedRoles = (operations.workflow?.assignedAttorneyRoles || []).filter((role) =>
+    visibleLaneKeys.has(attorneyRoleToLaneKey(role)),
+  )
+  const scopedMissingRoles = (operations.workflow?.missingRequiredRoles || operations.missingRequiredRoles || []).filter((role) =>
+    visibleLaneKeys.has(attorneyRoleToLaneKey(role)),
+  )
+  const scopedLegalDocuments = operations.legalDocuments
+    ? {
+        ...operations.legalDocuments,
+        requirements: filterScopedArray(operations.legalDocuments.requirements || [], visibleLaneKeys),
+        signingRequirements: filterScopedArray(operations.legalDocuments.signingRequirements || [], visibleLaneKeys),
+      }
+    : operations.legalDocuments
+  const scopedTimeline = filterScopedArray(operations.legalTimeline || [], visibleLaneKeys)
+  const scopedDeliveries = filterScopedArray(operations.notificationDeliveries || [], visibleLaneKeys, { keepUnscoped: true })
+
+  return {
+    ...operations,
+    matterScope,
+    workflow: operations.workflow
+      ? {
+          ...operations.workflow,
+          lanes: scopedWorkflowLanes,
+          requiredAttorneyRoles: scopedRequiredRoles,
+          assignedAttorneyRoles: scopedAssignedRoles,
+          missingRequiredRoles: scopedMissingRoles,
+          documentRequirements: filterScopedArray(operations.workflow.documentRequirements || [], visibleLaneKeys),
+          dataRequirements: filterScopedArray(operations.workflow.dataRequirements || [], visibleLaneKeys),
+          updateOptions: filterScopedArray(operations.workflow.updateOptions || [], visibleLaneKeys, { keepUnscoped: true }),
+          signingRequirements: filterScopedArray(operations.workflow.signingRequirements || [], visibleLaneKeys),
+        }
+      : operations.workflow,
+    legalDocuments: scopedLegalDocuments,
+    legalTimeline: scopedTimeline,
+    timelineFilters: (operations.timelineFilters || TIMELINE_FILTERS).filter(
+      (filter) => !WORKFLOW_LANE_FILTERS.has(filter) || visibleLaneKeys.has(filter),
+    ),
+    lanes: filterScopedArray(operations.lanes || [], visibleLaneKeys),
+    missingRequiredRoles: scopedMissingRoles,
+    assignments: filterScopedArray(operations.assignments || [], visibleLaneKeys),
+    notificationDeliveries: scopedDeliveries,
+    notificationSummary: {
+      total: scopedDeliveries.length,
+      queued: scopedDeliveries.filter((item) => ['prepared', 'queued', 'processing'].includes(item.status)).length,
+      sent: scopedDeliveries.filter((item) => ['sent', 'delivered'].includes(item.status)).length,
+      failed: scopedDeliveries.filter((item) => item.status === 'failed').length,
+      whatsappPending: scopedDeliveries.filter((item) => item.channel === 'whatsapp' && item.status === 'skipped').length,
+    },
+  }
+}
+
 function normalizeLaneKey(value) {
   const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
   if (normalized === 'transfer') return 'transfer'
@@ -95,11 +265,6 @@ function normalizeStepStatus(value, fallback = 'not_started') {
   if (normalized === 'complete') return 'completed'
   if (normalized === 'pending') return 'waiting'
   return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed'].includes(normalized) ? normalized : fallback
-}
-
-function isConstraintLikeError(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
-  return error?.code === '23514' || message.includes('constraint') || message.includes('violates')
 }
 
 function normalizeVisibility(value, fallback = 'internal') {
@@ -814,12 +979,38 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
 
   const authorizedContexts = Object.values(laneContexts).filter((context) => context?.canViewLegalWorkspace)
   const baselineContext = authorizedContexts[0] || null
+  const scopedAttorneyActor = authorizedContexts.some((context) => context?.isAttorneyAppUser)
+  const matterScope = buildWorkflowMatterScope({
+    laneContexts,
+    requiredLaneKeys: permissionLaneKeys,
+    scopedAttorneyActor,
+  })
+  const scopeAudit = buildAttorneyMatterScopeAudit(matterScope, {
+    transactionId: normalizedTransactionId,
+  })
   if (!baselineContext) {
+    const deniedScopeAudit = buildAttorneyMatterScopeAudit({
+      ...matterScope,
+      scoped: true,
+      visibleLaneKeys: [],
+      editableLaneKeys: [],
+    }, {
+      transactionId: normalizedTransactionId,
+    })
     await recordAttorneySecurityEvent(client, {
       transactionId: normalizedTransactionId,
       actorId: actor?.id || null,
       action: 'legal_workspace_view_denied',
-      metadata: { attemptedLanes: permissionLaneKeys },
+      metadata: { attemptedLanes: permissionLaneKeys, scopeAudit: deniedScopeAudit },
+    })
+    throw new Error('You do not have permission to view this legal workspace.')
+  }
+  if (scopedAttorneyActor && !matterScope.visibleLaneKeys.length) {
+    await recordAttorneySecurityEvent(client, {
+      transactionId: normalizedTransactionId,
+      actorId: actor?.id || null,
+      action: 'legal_workspace_view_denied',
+      metadata: { attemptedLanes: permissionLaneKeys, reason: 'no_visible_lane_scope', scopeAudit },
     })
     throw new Error('You do not have permission to view this legal workspace.')
   }
@@ -875,7 +1066,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     permissionByLane: laneContexts,
   })
   const coordinationSummaryNow = new Date().toISOString()
-  const visibleLaneKeys = new Set(permissionLaneKeys)
+  const visibleLaneKeys = new Set(matterScope.visibleLaneKeys || permissionLaneKeys)
   const deniedLaneContext = {
     canViewLane: false,
     canViewLegalWorkspace: false,
@@ -989,11 +1180,12 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     }),
   }))
 
-  return {
+  return scopeAttorneyWorkflowOperations({
     transaction,
     workflow,
     legalDocuments,
     legalTimeline,
+    scopeAudit,
     timelineFilters: TIMELINE_FILTERS,
     lanes,
     missingRequiredRoles: workflow.missingRequiredRoles,
@@ -1014,7 +1206,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
       appRole: baselineContext?.appRole || null,
       viewReason: baselineContext?.viewReason || null,
     },
-  }
+  }, matterScope)
 }
 
 async function assertCanUpdateLane({ user, transactionId, laneKey }) {

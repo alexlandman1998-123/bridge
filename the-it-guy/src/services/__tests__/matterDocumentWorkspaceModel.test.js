@@ -239,6 +239,111 @@ assert.deepEqual(
   'general filter should include generated/internal matter records through canonical category mapping',
 )
 
+const scopedRequirements = [
+  {
+    id: 'req-transfer-pack',
+    canonicalRequirementInstanceId: 'cri-transfer-pack',
+    key: 'transfer_pack',
+    label: 'Transfer pack',
+    laneKey: 'transfer',
+    visibleSection: 'transfer',
+    status: 'approved',
+  },
+  {
+    id: 'req-bond-grant',
+    canonicalRequirementInstanceId: 'cri-bond-grant',
+    key: 'bond_grant',
+    label: 'Bond grant',
+    laneKey: 'bond',
+    visibleSection: 'bond',
+    status: 'approved',
+  },
+  {
+    id: 'req-cancellation-figures',
+    canonicalRequirementInstanceId: 'cri-cancellation-figures',
+    key: 'cancellation_figures',
+    label: 'Cancellation figures',
+    laneKey: 'cancellation',
+    visibleSection: 'cancellation',
+    status: 'pending',
+  },
+]
+
+const scopedDocuments = [
+  {
+    id: 'doc-transfer-pack',
+    name: 'Transfer Pack.pdf',
+    category: 'transfer',
+    laneKey: 'transfer',
+    canonical_requirement_instance_id: 'cri-transfer-pack',
+  },
+  {
+    id: 'doc-bond-grant',
+    name: 'Bond Grant.pdf',
+    category: 'bond',
+    laneKey: 'bond',
+    canonical_requirement_instance_id: 'cri-bond-grant',
+  },
+  {
+    id: 'doc-cancellation-figures',
+    name: 'Cancellation Figures.pdf',
+    category: 'cancellation',
+    laneKey: 'cancellation',
+    canonical_requirement_instance_id: 'cri-cancellation-figures',
+  },
+]
+
+const bondScopedModel = buildMatterDocumentWorkspaceModel({
+  transaction,
+  documents: scopedDocuments,
+  requiredDocumentChecklist: scopedRequirements,
+  documentRequests: [
+    {
+      id: 'request-bank-proof',
+      title: 'Bank requested proof of income',
+      laneKey: 'bond',
+      status: 'requested',
+      requestedFrom: 'buyer',
+    },
+  ],
+  activeFilter: 'all',
+  getLinkedRequirementForDocument: (document = {}) =>
+    scopedRequirements.find((requirement) =>
+      String(requirement.canonicalRequirementInstanceId || '') === String(document.canonical_requirement_instance_id || ''),
+    ) || null,
+  matterScope: {
+    scoped: true,
+    visibleLaneKeys: ['bond'],
+    canSeeFullMatter: false,
+  },
+})
+
+assert.deepEqual(bondScopedModel.requiredRows.map((row) => row.displayName), ['Bond grant'])
+assert.deepEqual(bondScopedModel.allLibraryRows.map((row) => row.id), ['doc-bond-grant'])
+assert.deepEqual(bondScopedModel.filters.map((filter) => filter.key), ['all', 'critical', 'missing', 'pending_review', 'bank_requested', 'verified', 'finance', 'bond'])
+assert.equal(bondScopedModel.healthSummary.recentActivity.some((item) => item.id === 'request:request-bank-proof'), true)
+
+const cancellationScopedModel = buildMatterDocumentWorkspaceModel({
+  transaction,
+  documents: scopedDocuments,
+  requiredDocumentChecklist: scopedRequirements,
+  activeFilter: 'transfer',
+  getLinkedRequirementForDocument: (document = {}) =>
+    scopedRequirements.find((requirement) =>
+      String(requirement.canonicalRequirementInstanceId || '') === String(document.canonical_requirement_instance_id || ''),
+    ) || null,
+  matterScope: {
+    scoped: true,
+    visibleLaneKeys: ['cancellation'],
+    canSeeFullMatter: false,
+  },
+})
+
+assert.equal(cancellationScopedModel.activeFilter, 'cancellation')
+assert.deepEqual(cancellationScopedModel.requiredRows.map((row) => row.displayName), ['Cancellation figures'])
+assert.deepEqual(cancellationScopedModel.libraryRows.map((row) => row.id), ['doc-cancellation-figures'])
+assert.deepEqual(cancellationScopedModel.filters.map((filter) => filter.key), ['all', 'critical', 'missing', 'pending_review', 'verified', 'cancellation'])
+
 assert.equal(baseModel.documentsByWorkflow.finance.length > 0, true)
 assert.equal(baseModel.documentsByWorkflow.transfer.length > 0, true)
 

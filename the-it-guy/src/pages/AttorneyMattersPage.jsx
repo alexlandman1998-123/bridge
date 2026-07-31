@@ -12,7 +12,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
   ATTORNEY_MATTER_PAGE_SIZES,
@@ -959,6 +959,7 @@ function Pagination({ pagination, itemLabel = 'matters', onPageChange, pageSize,
 function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const permissionsState = useAttorneyPermissions()
   const [source, setSource] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1034,6 +1035,12 @@ function AttorneyMattersPage() {
       pageSize,
     })
   }, [filters, page, pageSize, searchTerm, source, viewKey])
+
+  useEffect(() => {
+    if (!workspace?.view?.key || workspace.view.key === viewKey) return
+    const basePath = location.pathname.startsWith('/attorney/transactions') ? '/attorney/transactions' : '/attorney/matters'
+    navigate(`${basePath}/${workspace.view.key}${location.search || ''}`, { replace: true })
+  }, [location.pathname, location.search, navigate, viewKey, workspace?.view?.key])
 
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
   const canManageIncomingAssignments = Boolean(

@@ -1,5 +1,9 @@
 import { getAttorneyOperationalWorkspaceData } from './attorneyOperations'
 import { getAttorneyIncomingMatterQueue } from './attorneyIncomingMatterQueue'
+import {
+  ATTORNEY_MATTER_SCOPE_LANES,
+  buildAttorneyMatterScope,
+} from '../core/transactions/attorneyMatterScope.js'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -67,6 +71,9 @@ const INCOMING_SAVED_VIEWS = [
   { id: 'incoming-my-matters', name: 'My Incoming Matters', filters: { quickFilter: 'my_matters' } },
   { id: 'incoming-document-blockers', name: 'Document Blockers', filters: { quickFilter: 'document_blockers' } },
 ]
+
+const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
+const STATUS_VIEW_KEYS = new Set(['active', 'registered', 'archived', 'delayed'])
 
 const ATTORNEY_MATTER_VIEW_CONFIGS = {
   all: {
@@ -150,6 +157,86 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
 
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function normalizePracticeQualifications(values = []) {
+  const candidates = Array.isArray(values) ? values : String(values || '').split(',')
+  return [...new Set(candidates
+    .map((value) => normalize(value).replace(/_attorney$/, ''))
+    .filter((value) => ATTORNEY_MATTER_SCOPE_LANES.includes(value)))]
+}
+
+function inferLaneKeysFromRole({ role = '', permissions = {}, practiceQualifications = [] } = {}) {
+  const normalizedRole = normalize(role)
+  const qualifications = normalizePracticeQualifications(practiceQualifications)
+  if (normalizedRole === 'bond_attorney') return ['bond']
+  if (normalizedRole === 'cancellation_attorney') return ['cancellation']
+  if (normalizedRole === 'transfer_attorney') return ['transfer']
+  if (qualifications.length) {
+    return ATTORNEY_MATTER_SCOPE_LANES.filter((laneKey) => qualifications.includes(laneKey))
+  }
+  if (permissions.can_view_bond_matters && !permissions.can_view_transfer_matters) return ['bond']
+  if (permissions.can_view_transfer_matters && !permissions.can_view_bond_matters) return ['transfer']
+  return ['transfer']
+}
+
+export function buildAttorneyMatterListScope(operational = {}) {
+  const permissions = operational.permissions || {}
+  const currentUser = operational.currentUser || {}
+  const role = normalize(currentUser.role || currentUser.professionalRole)
+  const isManagementUser = MANAGEMENT_ROLES.has(role) || Boolean(permissions.can_view_all_firm_matters)
+  const scopedLaneKeys = isManagementUser
+    ? [...ATTORNEY_MATTER_SCOPE_LANES]
+    : inferLaneKeysFromRole({
+        role,
+        permissions,
+        practiceQualifications: currentUser.practiceQualifications || currentUser.practice_qualifications || [],
+      })
+
+  const laneAccessContexts = Object.fromEntries(ATTORNEY_MATTER_SCOPE_LANES.map((laneKey) => {
+    const scoped = scopedLaneKeys.includes(laneKey)
+    return [
+      laneKey,
+      {
+        canViewMatter: isManagementUser || scoped,
+        canManageMatter: isManagementUser,
+        canAssignLane: isManagementUser && Boolean(permissions.can_update_attorney_assignments || permissions.can_create_attorney_assignments),
+        canActAsAttorney: !isManagementUser && scoped,
+        canUpdateLane: !isManagementUser && scoped,
+        isAssignedAttorney: !isManagementUser && scoped,
+        isAssignedParticipant: !isManagementUser && scoped,
+        isManagementUser,
+      },
+    ]
+  }))
+
+  const matterScope = buildAttorneyMatterScope({
+    requiredLaneKeys: ATTORNEY_MATTER_SCOPE_LANES,
+    laneAccessContexts,
+  })
+  const listLaneKeys = isManagementUser ? [...ATTORNEY_MATTER_SCOPE_LANES] : scopedLaneKeys
+
+  return Object.freeze({
+    ...matterScope,
+    canViewAllMatterLists: isManagementUser,
+    listLaneKeys: Object.freeze(listLaneKeys),
+    defaultMatterViewKey: isManagementUser ? 'all' : listLaneKeys[0] || matterScope.defaultLaneKey || 'transfer',
+  })
+}
+
+function resolveScopedViewKey(requestedView = 'all', scope = buildAttorneyMatterListScope()) {
+  const requested = getAttorneyMatterViewConfig(requestedView).key
+  if (scope.canViewAllMatterLists) return requested
+  if (STATUS_VIEW_KEYS.has(requested)) return requested
+  if (scope.listLaneKeys.includes(requested)) return requested
+  return scope.defaultMatterViewKey || 'transfer'
+}
+
+export function applyMatterListScope(rows = [], scope = buildAttorneyMatterListScope()) {
+  if (scope.canViewAllMatterLists) return rows
+  const visibleLanes = new Set(scope.listLaneKeys || [])
+  if (!visibleLanes.size) return []
+  return rows.filter((row) => (row.matterTypeKeys || []).some((laneKey) => visibleLanes.has(laneKey)))
 }
 
 function isIncomingQueueRow(row = {}) {
@@ -916,10 +1003,11 @@ function buildFilterPayload(operational = {}, rows = [], { view = 'all' } = {}) 
 }
 
 export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
-  const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
+  const scope = buildAttorneyMatterListScope(operational)
+  const viewConfig = getAttorneyMatterViewConfig(resolveScopedViewKey(options.view || 'all', scope))
   const documentStatusByMatter = buildDocumentStatusMap(operational.documentQueue || [])
   const incomingMatterQueue = operational.incomingMatterQueue || operational.incomingMatterSource?.filteredRows || []
-  const baseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
+  const unscopedBaseRows = viewConfig.usesIncomingQueue && (operational.incomingMatterSource || incomingMatterQueue.length)
     ? incomingMatterQueue.map((matter) =>
         normalizeIncomingMatterRow(matter, {
           currentUser: operational.currentUser || {},
@@ -931,6 +1019,7 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
           currentUser: operational.currentUser || {},
         }),
       )
+  const baseRows = applyMatterListScope(unscopedBaseRows, scope)
 
   const viewRows = applyBaseView(baseRows, viewConfig.key)
   const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, { ...options, view: viewConfig.key }))
@@ -944,6 +1033,8 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
     firm: operational.firm || null,
     currentUser: operational.currentUser || null,
     permissions: operational.permissions || {},
+    scope,
+    requestedViewKey: getAttorneyMatterViewConfig(options.view || 'all').key,
     view: viewConfig,
     summary: buildSummary(viewRows, { usesIncomingQueue: viewConfig.usesIncomingQueue }),
     filters: buildFilterPayload(operational, baseRows, { view: viewConfig.key }),
@@ -981,7 +1072,16 @@ export async function getAttorneyMatterWorkspace(options = {}) {
     operational.incomingMatterSource = incomingMatterSource
     operational.incomingMatterQueue = incomingMatterSource.filteredRows || incomingMatterSource.rows || []
     operational.firm = incomingMatterSource.firm || operational.firm
-    operational.currentUser = incomingMatterSource.currentUser || operational.currentUser
+    operational.currentUser = {
+      ...(operational.currentUser || {}),
+      ...(incomingMatterSource.currentUser || {}),
+      practiceQualifications:
+        incomingMatterSource.currentUser?.practiceQualifications ||
+        incomingMatterSource.currentUser?.practice_qualifications ||
+        operational.currentUser?.practiceQualifications ||
+        operational.currentUser?.practice_qualifications ||
+        [],
+    }
   }
 
   return buildAttorneyMatterWorkspace(operational, options)
