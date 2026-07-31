@@ -26,7 +26,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 32)
+assert.equal(JSON.parse(plan.stdout).count, 33)
 const planRows = JSON.parse(plan.stdout).rows
 assert.ok(planRows.some((row) => row.version === '202607270015' && row.originalAction === 'manual_data_review' && row.action === 'apply_original_after_dependency_check'))
 assert.ok(planRows.some((row) => row.version === '202607290005' && row.originalVersion === '202607270012' && row.action === 'apply_original_after_dependency_check'))

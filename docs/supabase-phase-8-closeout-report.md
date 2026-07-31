@@ -1,11 +1,11 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-29T20:53:02.664Z
+Generated: 2026-07-31T17:49:22.504Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT**
+**Status: LOCAL_CLOSEOUT_NOT_READY**
 
 The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`. Even a ready report authorizes a reviewed guard-removal change; it does not remove the guard automatically.
 
@@ -13,27 +13,27 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 
 | Check | Result |
 | --- | --- |
-| Local migration files | 605 |
-| Phase 5 manifest rows | 32 |
+| Local migration files | 615 |
+| Phase 5 manifest rows | 33 |
 | Duplicate versions | 0 |
 | Missing manifest files | 0 |
-| Complete production evidence rows | 32 |
+| Complete production evidence rows | 33 |
 | Incomplete production evidence rows | 0 |
 | Production recovery evidence locked | Yes |
 | Production recovery evidence blockers | 0 |
 | Unknown evidence rows | 0 |
 | Duplicate evidence versions | 0 |
 | Ledger drift resolution loaded | Yes |
-| Ledger drift resolution status | LEDGER_DRIFT_BLOCKED |
-| Ledger drift resolution blockers | 64 |
-| Live verification performed | Yes |
-| Pure local-only versions | 0 |
-| Pure remote-only versions | 0 |
-| Divergent versions | 0 |
-| Unreviewed split versions | 0 |
-| Production PITR | Disabled |
-| Physical backups | 8 |
-| Ready for reviewed freeze retirement | Yes |
+| Ledger drift resolution status | LEDGER_DRIFT_RESOLVED |
+| Ledger drift resolution blockers | 0 |
+| Live verification performed | No |
+| Pure local-only versions | Not checked |
+| Pure remote-only versions | Not checked |
+| Divergent versions | Not checked |
+| Unreviewed split versions | Not checked |
+| Production PITR | Not checked |
+| Physical backups | Not checked |
+| Ready for reviewed freeze retirement | No |
 
 ## Incomplete Evidence Versions
 
@@ -49,7 +49,7 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | --- | --- | --- | --- | --- |
 | `legal_document_runtime` | 1 | 1 | 0 | `repair_only_after_smoke` |
 | `bond_finance_runtime` | 14 | 14 | 0 | `apply_original_after_dependency_check` |
-| `other` | 17 | 17 | 0 | `apply_original_after_dependency_check`<br>`repair_only_after_smoke` |
+| `other` | 18 | 18 | 0 | `apply_original_after_dependency_check`<br>`repair_only_after_smoke` |
 
 ## Closeout Work Queue
 
@@ -57,4 +57,4 @@ No rows.
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 32 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 33 manifest versions have reviewed closeout evidence, and production recovery is available and tested.

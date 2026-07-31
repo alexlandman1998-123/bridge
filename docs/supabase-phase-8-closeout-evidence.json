@@ -416,6 +416,19 @@
       "rollbackOrNoResidue": "pass",
       "reviewedBy": "Codex production one-row promotion train",
       "productionEvidenceFile": "docs/production-evidence/202607280024-other.json"
+    },
+    {
+      "version": "202607310006",
+      "stream": "other",
+      "file": "202607310006_legal_document_agent_notification_sequence.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Codex production one-version promotion train",
+      "productionEvidenceFile": "docs/production-evidence/202607310006-other.json"
     }
   ]
 }

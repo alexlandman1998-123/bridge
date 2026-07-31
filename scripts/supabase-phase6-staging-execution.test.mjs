@@ -26,7 +26,7 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 32)
+assert.equal(JSON.parse(plan.stdout).count, 33)
 
 const streamPlan = run(['--plan', '--stream', 'legal_document_runtime', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)

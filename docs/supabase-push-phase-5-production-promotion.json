@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-29T20:22:20.652Z",
+  "generatedAt": "2026-07-31T17:48:44.511Z",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "productionEnvConfigured": false,
   "recoveryLock": {
@@ -513,12 +513,28 @@
         "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607280024 --staging-evidence docs/staging-evidence/202607280024-other.json --confirm APPLY_TO_PRODUCTION",
         "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607280024 --staging-evidence docs/staging-evidence/202607280024-other.json --production-evidence docs/production-evidence/202607280024-other.json --confirm APPLY_TO_PRODUCTION"
       ]
+    },
+    {
+      "version": "202607310006",
+      "stream": "other",
+      "file": "202607310006_legal_document_agent_notification_sequence.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/202607310006-other.json",
+      "productionEvidenceFile": "docs/production-evidence/202607310006-other.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --production-evidence docs/production-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     }
   ],
   "routeCounts": {
     "production_no_sql_record_after_smoke": 6,
-    "production_apply_sql": 26
+    "production_apply_sql": 27
   },
-  "readyCount": 32,
+  "readyCount": 33,
   "blockedCount": 0
 }

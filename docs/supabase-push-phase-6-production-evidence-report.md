@@ -1,6 +1,6 @@
 # Supabase Push Phase 6 Production Evidence Report
 
-Generated: 2026-07-29T20:52:14.211Z
+Generated: 2026-07-31T17:48:53.926Z
 
 ## Scope
 
@@ -10,19 +10,19 @@ Phase 6 records production evidence into the closeout evidence file only after p
 
 | Field | Value |
 | --- | --- |
-| Production evidence rows | 32 |
+| Production evidence rows | 33 |
 | Evidence files created | 0 |
-| Evidence files existing | 32 |
-| Complete production evidence rows | 32 |
+| Evidence files existing | 33 |
+| Complete production evidence rows | 33 |
 | Pending production evidence rows | 0 |
-| Closeout evidence rows recorded | 32 |
-| Phase 5 production-ready rows | 32 |
+| Closeout evidence rows recorded | 33 |
+| Phase 5 production-ready rows | 33 |
 
 ## Routes
 
 | Production Route | Rows |
 | --- | --- |
-| `production_apply_sql` | 26 |
+| `production_apply_sql` | 27 |
 | `production_no_sql_record_after_smoke` | 6 |
 
 ## Evidence Files
@@ -61,6 +61,7 @@ Phase 6 records production evidence into the closeout evidence file only after p
 | `202607280022` | `other` | `production_apply_sql` | Complete | Existing | `docs/production-evidence/202607280022-other.json` | None |
 | `202607280023` | `other` | `production_apply_sql` | Complete | Existing | `docs/production-evidence/202607280023-other.json` | None |
 | `202607280024` | `other` | `production_apply_sql` | Complete | Existing | `docs/production-evidence/202607280024-other.json` | None |
+| `202607310006` | `other` | `production_apply_sql` | Complete | Existing | `docs/production-evidence/202607310006-other.json` | None |
 
 ## Completion Rule
 
